@@ -1,0 +1,328 @@
+{
+  "cwd": "C:\\Users\\srvadmin",
+  "devices_accessible": true,
+  "disks": {
+    "\\\\?\\scsi#disk&ven_qemu&prod_harddisk#6&2b320803&0&000000#{53f56307-b6bf-11d0-94f2-00a0c91efb8b}": {
+      "ata": {
+        "identify": "QAD/PwAAEAAAfgACPwAAAAAAAABBRTNTQzkgUiAgICAgICAgICAgIAMAAAIEAC4yKzUgICAgRVFVTUggUkFERFNJIEsgICAgICAgICAgICAgICAgICAgICAgICAgIBCAAQAACwAAAAIAAgcA/z8QAD8AEPz7ABAB////DwcABwADAHgAeAB4AHgAAEAAAAAAAAAAAAAAHwAAAQAAAAAAAPAAFgAhQAB0AEAhQAA0AEA/IAAAAAAAAAAAAWAAAAAAAAAAAAAAAAAAAIA+AAAAAAAAAAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "smart_data": "AQABAwBkZAAAAAAAAAADAwBkZBAAAAAAAAAEAgBkZGQAAAAAAAAFAwBkZAAAAAAAAAAJAwBkZAEAAAAAAAAMAwBkZAAAAAAAAAC+AwBFRR8AHx8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCACABABkDAAEAAjYBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY=",
+        "smart_thresholds": "AQABBgAAAAAAAAAAAAADAAAAAAAAAAAAAAAEFAAAAAAAAAAAAAAFJAAAAAAAAAAAAAAJAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAC+MgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK8="
+      },
+      "device": {
+        "bus_type": "sata",
+        "model": "QEMU HARDDISK",
+        "rev": "2.5+",
+        "serial": "EAS39CR"
+      },
+      "node": "PhysicalDrive0",
+      "parent": "PCI\\VEN_8086&DEV_2922&SUBSYS_11001AF4&REV_02\\5&2490727A&0&3808F0",
+      "passthrough": true,
+      "path": "\\\\?\\scsi#disk&ven_qemu&prod_harddisk#6&2b320803&0&000000#{53f56307-b6bf-11d0-94f2-00a0c91efb8b}",
+      "size_bytes": 536870912000
+    }
+  },
+  "elevated": true,
+  "environment": {
+    "dmi_product": "Standard PC (Q35 + ICH9, 2009)",
+    "dmi_vendor": "QEMU"
+  },
+  "euid": 0,
+  "hostname": "windows-ahci",
+  "kernel": "10.0.26200",
+  "pci": {
+    "PCI\\VEN_1234&DEV_1111&SUBSYS_11001AF4&REV_02\\3&11583659&0&08": {
+      "address": "0000:00:01.0",
+      "children": [
+        "DISPLAY\\DEFAULT_MONITOR\\4&27B1E55B&0&UID0"
+      ],
+      "class": "0x030000",
+      "device": "0x1111",
+      "instance_id": "PCI\\VEN_1234&DEV_1111&SUBSYS_11001AF4&REV_02\\3&11583659&0&08",
+      "name": "Microsoft Basic Display Adapter",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x1234"
+    },
+    "PCI\\VEN_1AF4&DEV_1000&SUBSYS_00011AF4&REV_00\\5&2490727A&0&9008F0": {
+      "address": "0000:06:12.0",
+      "class": "0x020000",
+      "device": "0x1000",
+      "instance_id": "PCI\\VEN_1AF4&DEV_1000&SUBSYS_00011AF4&REV_00\\5&2490727A&0&9008F0",
+      "name": "Red Hat VirtIO Ethernet Adapter #2",
+      "parent": "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&08F0",
+      "vendor": "0x1af4"
+    },
+    "PCI\\VEN_1AF4&DEV_1002&SUBSYS_00051AF4&REV_00\\5&2490727A&0&1808F0": {
+      "address": "0000:06:03.0",
+      "class": "0x00ff00",
+      "device": "0x1002",
+      "instance_id": "PCI\\VEN_1AF4&DEV_1002&SUBSYS_00051AF4&REV_00\\5&2490727A&0&1808F0",
+      "name": "VirtIO Balloon Driver",
+      "parent": "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&08F0",
+      "vendor": "0x1af4"
+    },
+    "PCI\\VEN_1AF4&DEV_1003&SUBSYS_00031AF4&REV_00\\5&2490727A&0&4008F0": {
+      "address": "0000:06:08.0",
+      "children": [
+        "{6FDE7547-1B65-48AE-B628-80BE62016026}\\VIOSERIALPORT\\6&27A58325&0&01"
+      ],
+      "class": "0x078000",
+      "device": "0x1003",
+      "instance_id": "PCI\\VEN_1AF4&DEV_1003&SUBSYS_00031AF4&REV_00\\5&2490727A&0&4008F0",
+      "name": "VirtIO Serial Driver",
+      "parent": "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&08F0",
+      "vendor": "0x1af4"
+    },
+    "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&08F0": {
+      "address": "0000:05:01.0",
+      "children": [
+        "PCI\\VEN_1AF4&DEV_1002&SUBSYS_00051AF4&REV_00\\5&2490727A&0&1808F0",
+        "PCI\\VEN_8086&DEV_2922&SUBSYS_11001AF4&REV_02\\5&2490727A&0&3808F0",
+        "PCI\\VEN_1AF4&DEV_1003&SUBSYS_00031AF4&REV_00\\5&2490727A&0&4008F0",
+        "PCI\\VEN_1AF4&DEV_1000&SUBSYS_00011AF4&REV_00\\5&2490727A&0&9008F0"
+      ],
+      "class": "0x060400",
+      "device": "0x0001",
+      "instance_id": "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&08F0",
+      "name": "PCI-to-PCI Bridge",
+      "parent": "PCI\\VEN_8086&DEV_244E&SUBSYS_00000000&REV_92\\3&11583659&0&F0",
+      "vendor": "0x1b36"
+    },
+    "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&10F0": {
+      "address": "0000:05:02.0",
+      "class": "0x060400",
+      "device": "0x0001",
+      "instance_id": "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&10F0",
+      "name": "PCI-to-PCI Bridge",
+      "parent": "PCI\\VEN_8086&DEV_244E&SUBSYS_00000000&REV_92\\3&11583659&0&F0",
+      "vendor": "0x1b36"
+    },
+    "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&18F0": {
+      "address": "0000:05:03.0",
+      "class": "0x060400",
+      "device": "0x0001",
+      "instance_id": "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&18F0",
+      "name": "PCI-to-PCI Bridge",
+      "parent": "PCI\\VEN_8086&DEV_244E&SUBSYS_00000000&REV_92\\3&11583659&0&F0",
+      "vendor": "0x1b36"
+    },
+    "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&20F0": {
+      "address": "0000:05:04.0",
+      "class": "0x060400",
+      "device": "0x0001",
+      "instance_id": "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&20F0",
+      "name": "PCI-to-PCI Bridge",
+      "parent": "PCI\\VEN_8086&DEV_244E&SUBSYS_00000000&REV_92\\3&11583659&0&F0",
+      "vendor": "0x1b36"
+    },
+    "PCI\\VEN_1B36&DEV_000C&SUBSYS_00001B36&REV_00\\3&11583659&0&E0": {
+      "address": "0000:00:1c.0",
+      "class": "0x060400",
+      "device": "0x000c",
+      "instance_id": "PCI\\VEN_1B36&DEV_000C&SUBSYS_00001B36&REV_00\\3&11583659&0&E0",
+      "name": "PCI-to-PCI Bridge",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x1b36"
+    },
+    "PCI\\VEN_1B36&DEV_000C&SUBSYS_00001B36&REV_00\\3&11583659&0&E1": {
+      "address": "0000:00:1c.1",
+      "class": "0x060400",
+      "device": "0x000c",
+      "instance_id": "PCI\\VEN_1B36&DEV_000C&SUBSYS_00001B36&REV_00\\3&11583659&0&E1",
+      "name": "PCI-to-PCI Bridge",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x1b36"
+    },
+    "PCI\\VEN_1B36&DEV_000C&SUBSYS_00001B36&REV_00\\3&11583659&0&E2": {
+      "address": "0000:00:1c.2",
+      "class": "0x060400",
+      "device": "0x000c",
+      "instance_id": "PCI\\VEN_1B36&DEV_000C&SUBSYS_00001B36&REV_00\\3&11583659&0&E2",
+      "name": "PCI-to-PCI Bridge",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x1b36"
+    },
+    "PCI\\VEN_1B36&DEV_000C&SUBSYS_00001B36&REV_00\\3&11583659&0&E3": {
+      "address": "0000:00:1c.3",
+      "class": "0x060400",
+      "device": "0x000c",
+      "instance_id": "PCI\\VEN_1B36&DEV_000C&SUBSYS_00001B36&REV_00\\3&11583659&0&E3",
+      "name": "PCI-to-PCI Bridge",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x1b36"
+    },
+    "PCI\\VEN_8086&DEV_244E&SUBSYS_00000000&REV_92\\3&11583659&0&F0": {
+      "address": "0000:00:1e.0",
+      "children": [
+        "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&08F0",
+        "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&10F0",
+        "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&18F0",
+        "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&20F0"
+      ],
+      "class": "0x060401",
+      "device": "0x244e",
+      "instance_id": "PCI\\VEN_8086&DEV_244E&SUBSYS_00000000&REV_92\\3&11583659&0&F0",
+      "name": "PCI-to-PCI Bridge",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x8086"
+    },
+    "PCI\\VEN_8086&DEV_2918&SUBSYS_11001AF4&REV_02\\3&11583659&0&F8": {
+      "address": "0000:00:1f.0",
+      "children": [
+        "ACPI\\PNP0303\\4&22F5829E&0",
+        "ACPI\\PNP0F13\\4&22F5829E&0",
+        "ACPI\\PNP0B00\\4&22F5829E&0"
+      ],
+      "class": "0x060100",
+      "device": "0x2918",
+      "instance_id": "PCI\\VEN_8086&DEV_2918&SUBSYS_11001AF4&REV_02\\3&11583659&0&F8",
+      "name": "LPC Controller",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x8086"
+    },
+    "PCI\\VEN_8086&DEV_2922&SUBSYS_11001AF4&REV_02\\3&11583659&0&FA": {
+      "address": "0000:00:1f.2",
+      "class": "0x010601",
+      "device": "0x2922",
+      "instance_id": "PCI\\VEN_8086&DEV_2922&SUBSYS_11001AF4&REV_02\\3&11583659&0&FA",
+      "name": "Standard SATA AHCI Controller",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x8086"
+    },
+    "PCI\\VEN_8086&DEV_2922&SUBSYS_11001AF4&REV_02\\5&2490727A&0&3808F0": {
+      "address": "0000:06:07.0",
+      "children": [
+        "SCSI\\DISK&VEN_QEMU&PROD_HARDDISK\\6&2B320803&0&000000"
+      ],
+      "class": "0x010601",
+      "device": "0x2922",
+      "instance_id": "PCI\\VEN_8086&DEV_2922&SUBSYS_11001AF4&REV_02\\5&2490727A&0&3808F0",
+      "name": "Standard SATA AHCI Controller",
+      "parent": "PCI\\VEN_1B36&DEV_0001&SUBSYS_00000000&REV_00\\4&19ABE7DE&0&08F0",
+      "vendor": "0x8086"
+    },
+    "PCI\\VEN_8086&DEV_2930&SUBSYS_11001AF4&REV_02\\3&11583659&0&FB": {
+      "address": "0000:00:1f.3",
+      "class": "0x0c0500",
+      "device": "0x2930",
+      "instance_id": "PCI\\VEN_8086&DEV_2930&SUBSYS_11001AF4&REV_02\\3&11583659&0&FB",
+      "name": "SM Bus Controller",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x8086"
+    },
+    "PCI\\VEN_8086&DEV_2934&SUBSYS_11001AF4&REV_03\\3&11583659&0&E8": {
+      "address": "0000:00:1d.0",
+      "children": [
+        "USB\\ROOT_HUB\\4&CDDAA6D&0"
+      ],
+      "class": "0x0c0300",
+      "device": "0x2934",
+      "instance_id": "PCI\\VEN_8086&DEV_2934&SUBSYS_11001AF4&REV_03\\3&11583659&0&E8",
+      "name": "Intel(R) ICH9 Family USB Universal Host Controller - 2934",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x8086"
+    },
+    "PCI\\VEN_8086&DEV_2935&SUBSYS_11001AF4&REV_03\\3&11583659&0&E9": {
+      "address": "0000:00:1d.1",
+      "children": [
+        "USB\\ROOT_HUB\\4&8919E06&0"
+      ],
+      "class": "0x0c0300",
+      "device": "0x2935",
+      "instance_id": "PCI\\VEN_8086&DEV_2935&SUBSYS_11001AF4&REV_03\\3&11583659&0&E9",
+      "name": "Intel(R) ICH9 Family USB Universal Host Controller - 2935",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x8086"
+    },
+    "PCI\\VEN_8086&DEV_2936&SUBSYS_11001AF4&REV_03\\3&11583659&0&EA": {
+      "address": "0000:00:1d.2",
+      "children": [
+        "USB\\ROOT_HUB\\4&1222A604&0"
+      ],
+      "class": "0x0c0300",
+      "device": "0x2936",
+      "instance_id": "PCI\\VEN_8086&DEV_2936&SUBSYS_11001AF4&REV_03\\3&11583659&0&EA",
+      "name": "Intel(R) ICH9 Family USB Universal Host Controller - 2936",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x8086"
+    },
+    "PCI\\VEN_8086&DEV_2937&SUBSYS_11001AF4&REV_03\\3&11583659&0&D0": {
+      "address": "0000:00:1a.0",
+      "children": [
+        "USB\\ROOT_HUB\\4&2D76E1EA&0"
+      ],
+      "class": "0x0c0300",
+      "device": "0x2937",
+      "instance_id": "PCI\\VEN_8086&DEV_2937&SUBSYS_11001AF4&REV_03\\3&11583659&0&D0",
+      "name": "Intel(R) ICH9 Family USB Universal Host Controller - 2937",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x8086"
+    },
+    "PCI\\VEN_8086&DEV_2938&SUBSYS_11001AF4&REV_03\\3&11583659&0&D1": {
+      "address": "0000:00:1a.1",
+      "children": [
+        "USB\\ROOT_HUB\\4&A49778E&0"
+      ],
+      "class": "0x0c0300",
+      "device": "0x2938",
+      "instance_id": "PCI\\VEN_8086&DEV_2938&SUBSYS_11001AF4&REV_03\\3&11583659&0&D1",
+      "name": "Intel(R) ICH9 Family USB Universal Host Controller - 2938",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x8086"
+    },
+    "PCI\\VEN_8086&DEV_2939&SUBSYS_11001AF4&REV_03\\3&11583659&0&D2": {
+      "address": "0000:00:1a.2",
+      "children": [
+        "USB\\ROOT_HUB\\4&B25D0E5&0"
+      ],
+      "class": "0x0c0300",
+      "device": "0x2939",
+      "instance_id": "PCI\\VEN_8086&DEV_2939&SUBSYS_11001AF4&REV_03\\3&11583659&0&D2",
+      "name": "Intel(R) ICH9 Family USB Universal Host Controller - 2939",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x8086"
+    },
+    "PCI\\VEN_8086&DEV_293A&SUBSYS_11001AF4&REV_03\\3&11583659&0&EF": {
+      "address": "0000:00:1d.7",
+      "children": [
+        "USB\\ROOT_HUB20\\4&2146AE0&0"
+      ],
+      "class": "0x0c0320",
+      "device": "0x293a",
+      "instance_id": "PCI\\VEN_8086&DEV_293A&SUBSYS_11001AF4&REV_03\\3&11583659&0&EF",
+      "name": "Intel(R) ICH9 Family USB2 Enhanced Host Controller - 293A",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x8086"
+    },
+    "PCI\\VEN_8086&DEV_293C&SUBSYS_11001AF4&REV_03\\3&11583659&0&D7": {
+      "address": "0000:00:1a.7",
+      "children": [
+        "USB\\ROOT_HUB20\\4&313A3917&0"
+      ],
+      "class": "0x0c0320",
+      "device": "0x293c",
+      "instance_id": "PCI\\VEN_8086&DEV_293C&SUBSYS_11001AF4&REV_03\\3&11583659&0&D7",
+      "name": "Intel(R) ICH9 Family USB2 Enhanced Host Controller - 293C",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x8086"
+    },
+    "PCI\\VEN_8086&DEV_293E&SUBSYS_11001AF4&REV_03\\3&11583659&0&D8": {
+      "address": "0000:00:1b.0",
+      "class": "0x040300",
+      "device": "0x293e",
+      "instance_id": "PCI\\VEN_8086&DEV_293E&SUBSYS_11001AF4&REV_03\\3&11583659&0&D8",
+      "name": "High Definition Audio Controller",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x8086"
+    },
+    "PCI\\VEN_8086&DEV_29C0&SUBSYS_11001AF4&REV_00\\3&11583659&0&00": {
+      "address": "0000:00:00.0",
+      "device": "0x29c0",
+      "instance_id": "PCI\\VEN_8086&DEV_29C0&SUBSYS_11001AF4&REV_00\\3&11583659&0&00",
+      "name": "CPU to IO Controller",
+      "parent": "ACPI\\PNP0A08\\0",
+      "vendor": "0x8086"
+    }
+  },
+  "platform": "win32",
+  "schema": 1
+}

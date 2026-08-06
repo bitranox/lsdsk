@@ -1,0 +1,326 @@
+[project]
+name = "lsdsk"
+version = "1.0.0"
+description = "See your disks and controllers, and what is wrong with how they are connected"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "rich-click>=1.9.8",
+    "lib_cli_exit_tools>=2.3.4",
+    "lib_log_rich>=6.3.7",
+    "lib_layered_config>=5.6.2",
+    "pydantic>=2.13.4",
+    "orjson>=3.11.9",
+    "rich>=15.0.0",
+    "textual>=8.2.8",
+]
+license = { text = "MIT" }
+authors = [{ name = "bitranox", email = "bitranox@gmail.com" }]
+keywords = ["disk", "smart", "nvme", "sata", "sas", "pcie", "storage", "hardware", "diagnostics", "cli"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "License :: OSI Approved :: MIT License",
+  "Environment :: Console",
+  "Operating System :: OS Independent",
+  "Typing :: Typed",
+]
+
+# System packages required for CI runners (read by GitHub Actions workflow template)
+# Format: "apt_package_name" for Ubuntu, future: {"apt": "...", "brew": "...", "choco": "..."}
+[tool.ci]
+system-dependencies-ubuntu = []
+system-dependencies-macos = []
+system-dependencies-windows-pip = []
+system-dependencies-windows-choco = []
+os = ["ubuntu-latest", "windows-latest", "macos-latest"]
+
+[project.urls]
+Homepage = "https://github.com/bitranox/lsdsk"
+Repository = "https://github.com/bitranox/lsdsk.git"
+Issues = "https://github.com/bitranox/lsdsk/issues"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.1.1",
+  "pytest-cov>=7.1.0",
+  "pytest-asyncio>=1.4.0",
+  "hypothesis>=6.165.2",
+  "ruff>=0.16.1",
+  "pyright[nodejs]>=1.1.411",
+  "bandit>=1.9.4",
+  # 1.5.1 was yanked upstream (unintended breaking changes), so 1.5.0 is the newest usable
+  # release; a >=1.5.1 floor has ZERO candidates and makes this extra unresolvable.
+  "build>=1.5.0",
+  "twine>=7.0.0",
+  # codecov-cli is disabled, not dropped: it requires click<8.3.0, which drags click back to
+  # 8.2.1 - the version with CVE-2026-7246 (command injection in click.edit(), fixed in 8.3.3).
+  # Nothing else here caps click, so with this line active the audit gate goes red on every
+  # clean install. Leaving it off costs nothing: CI uploads coverage via codecov/codecov-action,
+  # not this CLI, and "bmk codecov" resolves codecovcli from PATH and only warns when absent.
+  # Re-enable once codecov-cli relaxes its click<8.3.0 pin.
+  # "codecov-cli>=11.2.8",
+  "pip-audit>=2.10.1",
+  "import-linter>=2.13",
+  "rtoml>=0.13.0",
+  "httpx2>=2.9.1",
+  # Transitive CVE pins
+  "click>=8.4.2",                # CVE-2026-7246
+  "jaraco-context>=6.1.2",       # CVE-2025-23949
+  "python-multipart>=0.0.32",    # CVE-2025-24486
+  "wheel>=0.47.0",               # CVE-2025-24049
+  "pynacl>=1.6.2",               # CVE-2025-69277
+  "urllib3>=2.7.0",              # CVE-2025-66471, CVE-2025-66418
+  "virtualenv>=21.7.1",         # CVE-2025-22702
+]
+
+[project.scripts]
+lsdsk = "lsdsk.entry:main"
+
+[build-system]
+requires = ["hatchling>=1.31.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lsdsk"]
+include = [
+    "src/lsdsk/py.typed",
+    "src/lsdsk/adapters/config/defaultconfig.toml",
+    "src/lsdsk/adapters/config/defaultconfig.d/*.toml",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+# old/ holds the shell-scraping predecessor this tool replaces, kept only as a
+# reference while the rewrite lands. It is not shipped and is deleted once the
+# rewrite is complete, so it is not worth holding to the project's standards.
+extend-exclude = ["old"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",     # pycodestyle
+  "F",           # pyflakes
+  "I",           # isort
+  "N",           # pep8-naming
+  "UP",          # pyupgrade
+  "B",           # bugbear
+  "A",           # builtins shadowing
+  "C4",          # comprehension simplification
+  "SIM",         # simplification
+  "TCH",         # type-checking imports
+  "RUF",         # ruff-specific
+  "G",           # logging format (catches f-string in logger)
+  "T20",         # print statements
+  "PTH",         # pathlib preference
+  "PLC", "PLE",  # pylint conventions/errors
+  "S",           # flake8-bandit security checks
+  "PERF",        # performance anti-patterns
+  "ERA",         # eradicate dead/commented-out code
+  "FBT",         # boolean trap (boolean positional args)
+  "PLR",         # pylint refactor
+  "PLW",         # pylint warnings
+]
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-type-checking]
+# The three Pydantic models (EmailConfig, PermissionDefaults, LoggingConfigModel)
+# resolve their field annotations at model-build time, so their field-type imports
+# must stay at runtime even though the file uses ``from __future__ import annotations``.
+# Telling ruff about the Pydantic base keeps TC001/TC002/TC003 from moving those
+# imports into a TYPE_CHECKING block and breaking model construction.
+runtime-evaluated-base-classes = ["pydantic.BaseModel"]
+
+[tool.ruff.lint.per-file-ignores]
+# Notebooks: unused imports are often intentional for side effects. F821 covers
+# `_exit_code`, an IPython builtin that only exists in a running kernel and is
+# how a notebook checks that a `!` command actually succeeded; S101 allows the
+# asserts that do the checking, without which a failing `!` passes CI silently.
+# T201: printing is how a notebook shows a result to its reader.
+"notebooks/*.ipynb" = ["F401", "F821", "S101", "T201"]
+# Tests: assert is standard, test fixtures have passwords, magic values are clearer inline, temp paths are fine.
+# PLC0415: local/deferred imports are a deliberate test idiom - several tests import inside the test
+# body to exercise import-time and cache behaviour, so moving them to module top would defeat intent.
+"tests/*.py" = ["T20", "S101", "S105", "S106", "S108", "FBT001", "FBT003", "PLR0913", "PLR0917", "PLR2004", "PLC0415"]
+# CLI: Click framework injects boolean params; commands have many options
+"src/lsdsk/adapters/cli/**/*.py" = ["FBT001", "FBT002", "PLR0913"]
+# Win32 bindings: the structures keep the exact names the Windows SDK gives them,
+# so a reader can match this file against the SDK headers and MSDN line for line.
+# Renaming them to CapWords would make that impossible for no gain.
+"src/lsdsk/adapters/hw/windows/winapi.py" = ["N801"]
+# The Windows reader mirrors Win32 call signatures, which are wide by nature.
+"src/lsdsk/adapters/hw/windows/reader.py" = ["PLR0913", "PLR0917"]
+# Protocols/adapters: many-param signatures by design
+"src/lsdsk/application/*.py" = ["PLR0913"]
+"src/lsdsk/adapters/config/*.py" = ["PLR0913"]
+"src/lsdsk/adapters/memory/*.py" = ["PLR0913"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.11"
+# Pinned so the check does not depend on which runner happens to execute it. CI
+# runs bare `pyright` on ubuntu, windows and macos; unpinned, each analyses for
+# its own host, and the Windows runner then reports 31 errors for POSIX-only
+# stdlib symbols in adapters/hw/linux/reader.py and the pty-based terminal test -
+# modules that by construction never run there. Those are not defects and cannot
+# be typed away, because platform availability is not expressible as a type.
+#
+# The trade: a Windows-only type error in adapters/hw/windows/ is not caught by
+# this check. It was not caught before either, since the Windows runner was
+# drowning in the 31 above, and the Windows transport is covered instead by the
+# captures replayed through its pure builder on every runner.
+pythonPlatform = "Linux"
+extraPaths = [
+  "src",
+]
+exclude = [
+  "**/node_modules",
+  "**/__pycache__",
+  ".venv",
+  ".venv*",
+]
+
+[tool.pytest.ini_options]
+addopts = ["--doctest-modules"]
+doctest_optionflags = ["ELLIPSIS", "NORMALIZE_WHITESPACE"]
+# Textual's Pilot driver is async, so its tests are coroutines.
+asyncio_mode = "strict"
+pythonpath = ["src"]
+markers = [
+  "os_agnostic: test runs on every supported operating system",
+  "os_windows: test exercises Windows-only behavior",
+  "os_macos: test exercises macOS-only behavior",
+  "os_posix: test exercises behavior requiring POSIX semantics",
+  "os_linux: test exercises Linux-only behavior",
+  "local_only: tests that require the local dev environment (external resources, script composition); skipped in CI",
+  "integration: tests requiring external resources (SMTP, databases, APIs); run via 'bmk ti' or 'mktesti.sh'",
+]
+
+[tool.coverage.run]
+branch = true
+omit = [
+    # The Windows transport binds Windows DLLs and issues DeviceIoControl, so not
+    # one line of it can execute on a Linux or macOS runner. Counting it as
+    # uncovered measures which platform the suite ran on, not how well the code
+    # is tested. Its output is covered instead by a capture taken from a real
+    # Windows machine, which tests/test_hw_builder.py replays through the pure
+    # Windows builder; that builder is measured normally.
+    "*/adapters/hw/windows/reader.py",
+    "*/adapters/hw/windows/winapi.py",
+    # The Linux transport is the same case: it needs a real /sys and real block
+    # devices to issue ioctls against, neither of which a Windows or macOS runner
+    # has. Both transports are covered by captures taken from real machines and
+    # replayed through the pure builders, which are measured normally.
+    "*/adapters/hw/linux/reader.py",
+]
+parallel = false
+# Use a temp directory for the coverage database to avoid SQLite locking
+# issues on network-mounted filesystems. The {envtmpdir} placeholder is
+# not supported by coverage.py, so we use an environment variable with
+# fallback to a cross-platform temp location via the pytest_configure
+# hook in tests/conftest.py. CI also sets COVERAGE_FILE via workflow env.
+#
+# For local development, the pytest hook automatically redirects to
+# tempfile.gettempdir() before pytest-cov creates its Coverage() object.
+# This static fallback catches edge cases where coverage is run directly.
+data_file = "/tmp/.coverage.lsdsk"
+source = ["src/lsdsk"]
+
+[tool.coverage.report]
+omit = [
+  "tests/*",
+]
+fail_under = 80
+show_missing = true
+
+[tool.coverage.json]
+output = "coverage.json"
+pretty_print = true
+
+[tool.clean]
+# Patterns to remove when running `make clean`
+patterns = [
+  "**/__pycache__",
+  ".hypothesis",
+  ".import_linter_cache",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".pyright",
+  ".mypy_cache",
+  ".tox",
+  ".nox",
+  ".eggs",
+  "*.egg-info",
+  "build",
+  "dist",
+  "htmlcov",
+  ".coverage",
+  "coverage.xml",
+  "codecov.sh",
+  ".cache",
+  "result",
+  ".data_arch_violations.json",
+]
+
+[tool.git]
+# Default git remote for push/release commands
+default-remote = "origin"
+
+[tool.scripts.test]
+# Configuration for CI/CD test runner
+pytest-verbosity = "-vv"
+coverage-report-file = "coverage.xml"
+src-path = "src"
+
+[tool.importlinter]
+root_package = "lsdsk"
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Domain is pure (no adapter dependencies)"
+type = "forbidden"
+source_modules = [
+  "lsdsk.domain",
+]
+forbidden_modules = [
+  "lsdsk.adapters",
+  "lsdsk.composition",
+]
+
+[[tool.importlinter.contracts]]
+name = "Clean Architecture layers"
+type = "layers"
+layers = [
+  # Composition wires adapters - can import everything
+  "lsdsk.composition",
+  # Adapters implement ports - can import application and domain
+  "lsdsk.adapters",
+  # Application defines ports - can import domain
+  "lsdsk.application",
+  # Domain is pure - bottom layer
+  "lsdsk.domain",
+]
+
+[tool.pip-audit]
+# Known vulnerabilities to ignore (environment-level packages, not project dependencies)
+# PYSEC-2022-42969: py library ReDoS — py 1.11.0 is installed in the development
+#   environment but is not a dependency of this project; no fix available.
+ignore-vulns = [
+  "PYSEC-2022-42969",  # py 1.11.0 — ReDoS, env-only, no fix available
+  "CVE-2025-8869",     # pip 24.3.1 — env-only, not a project dependency
+  "CVE-2026-1703",     # pip 24.3.1 — env-only, not a project dependency
+  "CVE-2026-25990",    # pillow 12.0.0 — env-only, fix in 12.1.1
+]
+
+[tool.bashate]
+# bashate style settings for .sh files (E003 excluded: indent handled by shfmt)
+max-line-length = 120
+ignores = ["E003"]

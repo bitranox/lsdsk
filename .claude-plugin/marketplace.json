@@ -1,0 +1,16 @@
+{
+  "name": "lsdsk",
+  "owner": {
+    "name": "bitranox"
+  },
+  "metadata": {
+    "description": "lsdsk delivered as a single Claude Code plugin: a skill to inspect and diagnose storage topology, link speeds and disk health on Linux and Windows."
+  },
+  "plugins": [
+    {
+      "name": "lsdsk",
+      "source": ".",
+      "description": "Install and use lsdsk: group disks by controller, compare every link against what both ends could do, read SMART wear and error counters, and decide whether a slow link is a fault, a better slot, or a mainboard limit."
+    }
+  ]
+}

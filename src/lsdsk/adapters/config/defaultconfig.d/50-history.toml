@@ -1,0 +1,65 @@
+# ==============================================================================
+# Counter History
+# ==============================================================================
+#
+# Every error counter a drive publishes is a lifetime total held in the drive's
+# own non-volatile table. It survives reboots and the host cannot clear it, so
+# the number says how much damage there has ever been and never when it
+# happened. lsdsk keeps its own record of those counters so it can report the
+# rate, which is the part that says whether a fault is live or long over.
+#
+# A reading is stored only when some drive's own power-on hours have advanced
+# past what was last recorded for it: two runs inside the same power-on hour
+# cannot produce a rate, so the second would add a row and no information.
+#
+# Nothing is ever recorded when replaying a snapshot (those samples belong to
+# whichever machine produced it) or when --format json is asked for (a command
+# in a pipeline must not mutate state on the side).
+
+[history]
+
+# Whether an ordinary run records a reading.
+#
+# Turning this off does NOT stop lsdsk reading the history it already has, so
+# findings are still graded against the past; it only stops new readings being
+# added. The equivalent for one run is the global --no-record flag.
+#
+# Environment Variable: LSDSK___HISTORY__ENABLED="false"
+enabled = true
+
+# Where the record is kept.
+#
+# Empty means the default for this platform AND for who is running, which is
+# where it belongs: this is machine-local measurement rather than configuration,
+# and a config sync that carried it would splice one machine's drives onto
+# another's.
+#
+#   Linux/macOS as root  /var/lib/lsdsk/history.json
+#   Linux                $XDG_STATE_HOME/lsdsk/history.json
+#                        or ~/.local/state/lsdsk/history.json
+#   macOS                ~/Library/Application Support/bitranox/lsdsk/history.json
+#   Windows              %LOCALAPPDATA%\bitranox\lsdsk\history.json
+#
+# Reading the error counters needs root, so on a server the root path is the one
+# that fills up and the per-user one stays empty. `lsdsk record --format json`
+# prints the path this run resolved, under `store`.
+#
+# Set an absolute path to keep it somewhere else, for instance a directory a
+# monitoring system also reads. The file carries every drive's serial number and
+# is written readable only by its owner, so widening it is a deliberate act.
+#
+# The global --history-file option overrides this for one run.
+#
+# Environment Variable: LSDSK___HISTORY__PATH="/var/lib/lsdsk/history.json"
+path = ""
+
+# How many readings any one drive keeps.
+#
+# Beyond this the middle of the series is thinned: the first reading is kept
+# forever because it is the only true baseline and the further back it reaches
+# the more a lifetime rate is worth, recent detail is kept in full because that
+# is what a live fault is judged on, and the middle is decimated evenly. Sampling
+# hourly for a decade would otherwise reach six figures of readings per drive.
+#
+# Environment Variable: LSDSK___HISTORY__MAX_SAMPLES_PER_DRIVE="512"
+max_samples_per_drive = 512

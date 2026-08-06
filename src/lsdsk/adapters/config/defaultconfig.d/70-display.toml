@@ -1,0 +1,56 @@
+# ==============================================================================
+# Display
+# ==============================================================================
+#
+# Layout and cut-off values. None of these change what the tool concludes, only
+# how much of it reaches the screen, with one exception noted below.
+
+[display]
+
+# Terminal width assumed when output is not a terminal.
+#
+# Default: 120. When lsdsk writes to a real terminal it uses the real width and
+# this is ignored. When output is redirected, piped or captured by CI there is no
+# width to read, and something has to be assumed: too narrow silently drops
+# columns from a log somebody will read later, and too wide wraps every row.
+#
+# Every table drops its lowest-priority columns first when the width runs out, so
+# a value below about 100 starts costing information rather than only whitespace.
+#
+# When to change: raise it when piping into a wide log viewer and you would
+# rather keep every column; lower it when a downstream system wraps at 80.
+#
+# Environment Variable: LSDSK___DISPLAY__PIPED_WIDTH="120"
+piped_width = 120
+
+# How many findings the one-line verdict names before it says "and N more".
+#
+# Default: 6. The verdict line exists to be read at a glance, so listing every
+# finding on a machine with thirty defeats it. The full list is always available
+# from `lsdsk findings`; this only caps the summary.
+#
+# Environment Variable: LSDSK___DISPLAY__SUMMARY_LIMIT="6"
+summary_limit = 6
+
+# Wear percentage below which a drive earns no row in `lsdsk trend`.
+#
+# Default: 10. Every healthy drive wears, so a young fleet sitting at 1 or 2
+# percent otherwise produces one row per drive saying "too soon to say" and
+# pushes the drive that is actually failing off the top of the screen. A drive
+# above this figure is worth planning a replacement around and keeps its row; so
+# does any drive with a measurable wear rate, whatever its current value.
+#
+# Set it to 1 to see wear for every drive, or high to suppress it entirely.
+#
+# Environment Variable: LSDSK___DISPLAY__WEAR_ROW_FLOOR_PERCENT="10"
+wear_row_floor_percent = 10
+# Characters of traceback kept in the short form and under `--traceback`.
+#
+# Default: 500 and 10000. The short form is meant to fit in a terminal without
+# scrolling; the verbose form is meant to be pasted into a bug report. Raise the
+# verbose limit if a deep stack is being cut off; lower the summary if even 500
+# characters is too much noise in a monitoring log.
+#
+# Environment Variable: LSDSK___DISPLAY__TRACEBACK_SUMMARY_LIMIT="500"
+traceback_summary_limit = 500
+traceback_verbose_limit = 10000

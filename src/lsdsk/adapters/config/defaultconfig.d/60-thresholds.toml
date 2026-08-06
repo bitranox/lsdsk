@@ -1,0 +1,108 @@
+# ==============================================================================
+# Judgement Thresholds
+# ==============================================================================
+#
+# Every number the rules judge by. A threshold baked into a function is an
+# untested assumption wearing a constant's clothes: nobody can tune it for their
+# fleet, and nobody can sweep it to find out whether the value was ever good.
+#
+# What is deliberately NOT configurable: anything a specification fixes. Register
+# offsets, IOCTL codes, the Kelvin offset, the 8b/10b encoding divisor and the
+# 512-byte sector are not choices. A file that could change them would break
+# decoding rather than tune it.
+#
+# A malformed value here falls back to the shipped default rather than failing
+# the run: refusing to diagnose a failing drive because a config value is wrong
+# would be the wrong trade.
+
+[thresholds]
+
+# Wear at which a replacement is worth planning, and the point at which the drive
+# is at its rated endurance.
+#
+# Default: 80 and 95. The drive reports wear as 0 to 100 where 100 is the
+# endurance its maker warranted. Below the warning value nothing is said at all.
+# Between them the finding is a warning; at or above the critical value it is
+# critical.
+#
+# When to change: lower both on a fleet where drives are replaced on a schedule
+# and you want earlier notice, or where the workload is write-heavy enough that
+# the last 20 percent passes quickly. Raise them where drives are routinely run
+# past their warranty on purpose and the earlier notice is only noise.
+#
+# Consequence: these set severity, and severity sets the exit code. Lowering them
+# makes more hosts exit 1. Endurance past 100 percent is not a cliff, it is where
+# the warranty ends, so raising them is a supportable choice rather than a risk.
+#
+# Environment Variable: LSDSK___THRESHOLDS__WEAR_WARNING_PERCENT="80"
+wear_warning_percent = 80
+wear_critical_percent = 95
+
+# Interface CRC count above which a count is a fault rather than a note.
+#
+# Default: 100. Below this, and with the link not downshifted, the finding is a
+# hint: a handful of corrupted frames can come from a single hotplug or a reboot
+# during a transfer. At or above it the finding is a warning naming the cable.
+#
+# When to change: this is the one threshold most worth tuning per fleet, because
+# what counts as "a handful" depends on how often the machines are hotplugged.
+# Lower it toward 10 on a machine nobody touches, where any corrupted frame is
+# news. Raise it on a chassis with drive trays in daily use.
+#
+# Consequence: it decides hint against warning, so it decides the exit code. Note
+# that counter history outranks it either way: a count proved to be climbing is
+# escalated whatever this says, and one proved to have stopped is stood down.
+#
+# Environment Variable: LSDSK___THRESHOLDS__CRC_ERRORS_SIGNIFICANT="100"
+crc_errors_significant = 100
+
+# How many distinct firmware revisions across copies of one model count as a
+# mismatch.
+#
+# Default: 2, meaning any disagreement is reported. Raise it only to silence the
+# check on a fleet where mixed revisions are deliberate and understood.
+#
+# Environment Variable: LSDSK___THRESHOLDS__MIXED_FIRMWARE_THRESHOLD="2"
+mixed_firmware_threshold = 2
+
+# Percentage points of measured wear movement required before a wear-out date is
+# projected.
+#
+# Default: 2. Wear is reported as a whole number, so one point of change is one
+# unit of resolution and a rate derived from it is noise wearing a decimal point.
+# Raising this delays the projection and makes it more trustworthy; lowering it
+# to 1 will produce confident dates from a single quantisation step.
+#
+# Environment Variable: LSDSK___THRESHOLDS__WEAR_PROJECTION_MIN_POINTS="2"
+wear_projection_min_points = 2
+
+# How many errors the drive's own lifetime rate must have predicted across a
+# quiet span before that silence counts as evidence the fault is over.
+#
+# Default: 10. This is what makes "no new errors" mean something: a drive that
+# errors a thousand times an hour proves itself quiet within hours, and one at
+# 0.04 an hour would need months, so no fixed waiting period can serve both. The
+# rule is self-calibrating against each drive's own history instead.
+#
+# When to change: raise it to demand stronger evidence before a fault is called
+# over, which is the conservative direction and costs only that some drives stay
+# at "too soon to say" for longer. Lower it to reach a verdict sooner, at the
+# risk of calling a bursty fault finished between its bursts.
+#
+# Consequence: a fault called over is downgraded, and a downgraded finding is not
+# actionable, so this value can move a host from exit 1 to exit 0. Measured on a
+# real 19-drive fleet, every value from 1 to 200 gave identical verdicts, because
+# the drives fell either side of a wide gap. Treat the shipped 10 as a safe point
+# in that gap rather than as a figure validated against a hard case.
+#
+# Environment Variable: LSDSK___THRESHOLDS__QUIET_EXPECTED_MIN="10.0"
+quiet_expected_min = 10.0
+
+# Power-on hours a span must cover before a rate is computed at all.
+#
+# Default: 1. Two readings inside the same power-on hour describe an instant
+# rather than a trend, and there is nothing to divide by. Raising it demands a
+# longer span before any rate is reported; there is little reason to.
+#
+# Environment Variable: LSDSK___THRESHOLDS__MIN_SPAN_HOURS="1"
+min_span_hours = 1

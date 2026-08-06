@@ -1,0 +1,208 @@
+# ====================================
+# PYCHARM SPEZIFISCH: Git commands you might run once
+# git add .gitignore && git commit -m "Ignore IDE settings"
+# git push
+# git rm -r --cached .idea
+# git commit -m "Remove .idea and add to .gitignore"
+# git push
+# alternative : BE CAREFUL: overwrites remote history
+# git push origin master --force
+
+# ====================================
+# APP
+# ====================================
+website/build/
+website/.docusaurus/
+website/node_modules/
+node_modules/
+web-local-preview/
+translation_app*.log
+translation_web*.log
+tmp_github_web_pages/
+tmp_linkcheck_web_pages/
+.eslintcache
+.vitest/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.env.*
+!.env.example
+todo.md
+tmp_*
+
+# ====================================
+# IDEs & Editors
+# ====================================
+# IntelliJ, PyCharm, etc.
+.idea/
+# VS Code workspace settings
+.vscode/
+*.code-workspace
+
+# ====================================
+# Python bytecode & caches
+# ====================================
+# __pycache__: compiled .pyc files at any depth
+# *.py[cod]: catches .pyc, .pyo, .pyd
+__pycache__/
+src/lsdsk/__pycache__/
+*.py[cod]
+*$py.class     # other compiled artifacts
+
+# pytest, coverage, MyPy, Hypothesis
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.coverage*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.tox/
+.nox/
+
+# general cache directories (any project-level caching)
+.cache/
+.run/
+.import_linter_cache/
+
+# ====================================
+# Build & distribution artifacts
+# ====================================
+# source/package builds
+build/
+dist/
+*.egg-info/    # metadata for pip installs
+*.egg
+*.whl
+pip-wheel-metadata/
+*.manifest     # PyInstaller metadata
+*.spec         # PyInstaller spec files
+
+# Eggs, parts, wheels, sdist, etc.
+develop-eggs/
+.eggs/
+parts/
+sdist/
+wheels/
+downloads/
+var/
+
+# pip logs & installer leftovers
+pip-log.txt
+pip-delete-this-directory.txt
+.installed.cfg
+
+# ====================================
+# Virtual environments & secrets
+# ====================================
+# common venv folder names
+env/
+venv/
+ENV/
+.venv/
+# backups, alternate names
+env.bak/
+venv.bak/
+# dotenv files with credentials
+.env
+
+# ====================================
+# Project-specific & framework files
+# ====================================
+# Django logs & local overrides
+*.log
+local_settings.py
+
+# Flask instance folder
+instance/
+.webassets-cache
+
+# Scrapy cache
+.scrapy
+
+# Sphinx docs
+docs/_build/
+
+# PyBuilder output
+target/
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints
+
+# pyenv Python version file
+.python-version
+
+# Celery beat schedule
+celerybeat-schedule
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder IDE
+.spyderproject
+.spyproject
+
+# Rope IDE
+.ropeproject
+
+# MkDocs static site folder
+/site
+
+# ====================================
+# OS-specific files
+# ====================================
+# macOS
+.DS_Store
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# Archives
+*.zip
+
+# Thunderbird build artifact (created temporarily by pack script)
+sources/manifest.json
+
+# ====================================
+# Tool-specific extras
+# ====================================
+# Codecov uploader script (downloaded during local uploads)
+codecov.sh
+codecov.xml
+
+# Nix build result symlink
+result
+
+# Optional lockfiles (for alternative managers)
+poetry.lock
+pdm.lock
+uv.lock
+
+# div
+# .devcontainer/ # needed for github codespaces
+.claude/
+CLAUDE.md
+prompts.md
+.grimp_cache/
+
+# Local, per-developer settings (Claude Code etc.) - never commit
+*.local.json
+# bitranox curated memory (local; CLAUDE.local.md @imports it)
+CLAUDE.local.md
+
+# Python virtual environments (managed by bmk)
+.venv-win/
+.venv-bmk/
+
+# Python virtual environments (managed by bmk)
+.venv*/
+
+# Autonomous-execution decision log (never committed)
+EXECUTION-USER-REVIEW.md
+
+# Session working notes (never committed)
+.remember/
+.data_arch_violations.json
+e2e-coverage.json
