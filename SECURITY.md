@@ -8,9 +8,6 @@
 
 ## Reporting a Vulnerability
 
-This project is not yet published, so the GitHub link below is not live. Until it
-is, report privately to the maintainer named in `pyproject.toml`.
-
 If you discover a security vulnerability in this project, please report it
 responsibly:
 

@@ -1,17 +1,27 @@
 # Installing lsdsk
 
-lsdsk is not published yet. Until the first release reaches PyPI, install it
-from a checkout or from a wheel you build; everything under
-[After the first release](#after-the-first-release) describes what will work
-once it ships and does not work today.
-
 Python 3.11 or newer, on Linux or Windows. Any other platform runs `--replay`
 against a capture taken on one of those.
 
-## From a checkout
+## From PyPI
 
 ```bash
-git clone <repository-url> lsdsk
+uvx lsdsk topology                  # run it once, installing nothing
+uv tool install lsdsk               # install for everyday use
+lsdsk --version
+```
+
+`uv tool upgrade lsdsk` moves it to the current release. If you prefer pipx,
+`pipx install lsdsk`; inside a virtual environment, `pip install lsdsk`.
+
+Installation registers one console script, `lsdsk`.
+
+## From a checkout
+
+For working on lsdsk itself, or to run a version that is not released.
+
+```bash
+git clone https://github.com/bitranox/lsdsk.git
 cd lsdsk
 uv sync                      # or: python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/lsdsk --version
@@ -60,18 +70,6 @@ affected columns read `-` and the header says so.
 Reading the counters needs root, so a scheduled `lsdsk record` belongs in the
 root crontab or a systemd timer rather than a user one.
 
-## After the first release
-
-Once `v1.0.0` is published these will work, and none of them does yet:
-
-```bash
-uvx lsdsk topology                  # run without installing
-uv tool install lsdsk               # install for everyday use
-uv tool upgrade lsdsk
-pipx install lsdsk                  # apt install pipx, if you prefer pipx
-pip install lsdsk                   # inside a virtual environment
-```
-
 ## Verifying an install
 
 ```bash
@@ -79,8 +77,6 @@ lsdsk --version                     # prints the version
 lsdsk --help                        # lists every command
 lsdsk topology                      # reads this machine
 ```
-
-Installation registers one console script, `lsdsk`.
 
 ## Uninstalling
 
