@@ -164,13 +164,15 @@ def cli(
     apply_traceback_preferences(traceback)
 
     if ctx.invoked_subcommand is None:
-        # Bare `lsdsk` renders the whole machine. Somebody who does not yet know
-        # what is wrong cannot know which section to ask for, so the default
-        # answers every question at once; each subcommand is one section of it.
+        # Bare `lsdsk` still answers "what is wrong here" without being asked for
+        # a section, but it does it interactively on a terminal: the whole
+        # machine on one page is more than a reader takes in at once. Off a
+        # terminal the page is printed exactly as before, so every pipe,
+        # redirect and CI log is unchanged. See run_default_view.
         from .commands.scan import (  # noqa: PLC0415 - deferred, same cycle as _register_commands
             resolve_history,
             resolve_tunables,
-            run_default_report,
+            run_default_view,
         )
 
         # The tunables have to be resolved here, exactly as every subcommand
@@ -180,7 +182,7 @@ def cli(
         # the view that exists to be the one you run when you do not yet know
         # which section to ask for.
         thresholds, display = resolve_tunables(ctx)
-        run_default_report(replay, settings=resolve_history(ctx), thresholds=thresholds, display=display)
+        run_default_view(replay, settings=resolve_history(ctx), thresholds=thresholds, display=display)
 
 
 # Deferred import required to break a circular dependency: this module defines

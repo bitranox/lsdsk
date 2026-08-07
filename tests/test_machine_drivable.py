@@ -223,3 +223,78 @@ def test_no_help_screen_shows_developer_content(cli_runner: CliRunner, productio
         assert text, f"{name or '<root>'}: --help produced nothing"
         offenders.extend(f"{name or '<root>'} shows {tell!r}" for tell in (">>>", "\\b", "test_") if tell in text)
     assert not offenders, "; ".join(offenders)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("interactive", "expect"),
+    [
+        pytest.param(True, "tui", id="a terminal gets the interactive view"),
+        pytest.param(False, "report", id="a pipe gets the printed page"),
+    ],
+)
+def test_the_default_view_follows_whether_anything_can_be_typed_at(
+    monkeypatch: pytest.MonkeyPatch, interactive: bool, expect: str
+) -> None:
+    """A bare ``lsdsk`` opens the TUI on a terminal and prints the page off one.
+
+    The whole point of the switch is that a full-screen application cannot run
+    into a pipe: it would draw nothing a script could read and would take the
+    terminal's exit code with it. So `lsdsk | grep`, `lsdsk > file` and every CI
+    log must keep getting the page.
+
+    The terminal is patched rather than injected because it IS the external edge
+    here - there is no seam to substitute, the question is literally what the
+    operating system says about the file descriptor.
+    """
+    import contextlib
+    import sys as _sys
+    from types import SimpleNamespace
+
+    from lsdsk.adapters.cli.commands import scan
+
+    # The logging runtime is a real external edge and refuses to bind
+    # without an init() the CLI entry point normally performs.
+    def no_binding(*_args: object, **_kwargs: object) -> contextlib.AbstractContextManager[None]:
+        return contextlib.nullcontext()
+
+    monkeypatch.setattr("lib_log_rich.runtime.bind", no_binding)
+
+    from lsdsk.domain.history import History
+    from lsdsk.domain.models import Finding, Inventory
+
+    machine = Inventory("probe")
+    read = SimpleNamespace(history=History(hostname="probe"), writable=False)
+    called: list[str] = []
+
+    def note_report(*_args: object, **_kwargs: object) -> None:
+        called.append("report")
+
+    def give_inventory(*_args: object, **_kwargs: object) -> tuple[Inventory, list[Finding]]:
+        return machine, []
+
+    def give_history(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        return read
+
+    class StubApp:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            called.append("tui")
+
+        def run(self) -> None:
+            """The real one blocks on the terminal; this test is about which ran."""
+
+    monkeypatch.setattr(_sys.stdout, "isatty", lambda: interactive, raising=False)
+    monkeypatch.setattr(scan, "run_default_report", note_report)
+    monkeypatch.setattr("lsdsk.adapters.tui.LsdskApp", StubApp)
+    # analyse and read_history are imported inside the function, so they are
+    # attributes of their defining module rather than of scan.
+    monkeypatch.setattr("lsdsk.adapters.cli.commands.history.analyse", give_inventory)
+    monkeypatch.setattr("lsdsk.adapters.cli.commands.history.read_history", give_history)
+
+    if interactive:
+        with pytest.raises(SystemExit):
+            scan.run_default_view(None)
+    else:
+        scan.run_default_view(None)
+
+    assert called == [expect], f"expected the {expect} path, got {called}"

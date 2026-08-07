@@ -11,7 +11,23 @@ mainboard, from DMI, which is what makes its placement advice actionable. Linux
 and Windows, no subprocesses, no network. It runs anywhere `--replay` is all you
 need, macOS included; only reading real hardware is the two.
 
-Bare `lsdsk` is the whole report: mainboard, problem summary, controller tree,
+**Bare `lsdsk` gives a PERSON the interactive view and a PROGRAM the printed
+page.** It looks at whether its output is a terminal: at one it opens the
+full-screen application, because the whole machine on one page is more than a
+reader takes in at once; anywhere else - a pipe, a redirect, a CI log, a
+subprocess - it prints the page exactly as before. The exit code is the
+findings' in both, so `lsdsk; echo $?` means the same thing either way.
+
+That distinction matters when you TELL somebody to run it. You are a program, so
+you always get the page; the person at a terminal does not. If they want the
+page on screen rather than the application, say `lsdsk | cat`.
+
+For a TICKET or a handover, still send a snapshot rather than redirected text:
+`lsdsk snapshot -o file.json` captures the raw reading, so the recipient can
+replay every section at any width and any privilege question is settled by the
+capture itself. A `lsdsk > report.txt` is a picture of one moment at one width.
+
+The page is the whole report: mainboard, problem summary, controller tree,
 the controller table, disk identities, wear and error counters, SMART
 attributes, PCIe slots, counter trends, and every finding with its reasoning, in
 that order. It already contains `trend` and `slots`, so running those again
@@ -20,6 +36,10 @@ ticket, or any machine you do not already know. Every subcommand is one section
 of it, for when you already know which section you want. Unprivileged it still
 renders every section and never aborts; what it could not read shows `-` and the
 header names it, so check that line before quoting a counter as zero.
+
+Bare `lsdsk` takes no `--format`: it is a group rather than a command. For a
+structured capture of everything, use `lsdsk snapshot -o file.json`; for one
+section's envelope, `lsdsk <section> --format json`.
 
 ## Running it
 

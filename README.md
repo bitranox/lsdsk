@@ -19,10 +19,14 @@ could, and how worn it is.
 uvx lsdsk
 ```
 
-That is the whole command. It prints the entire machine on one page: the
-mainboard, what is wrong, the controller tree, every disk's identity, wear and
-error counters, every SMART attribute, the PCIe slots, and each finding with its
-reasoning. Nothing has to be selected and no subcommand has to be guessed, so
+That is the whole command. At a terminal it opens an interactive view with a
+page per question; piped or redirected it prints the same machine as one page:
+the mainboard, what is wrong, the controller tree, every disk's identity, wear
+and error counters, every SMART attribute, the PCIe slots, and each finding with
+its reasoning. `lsdsk | cat` gives you that page at a terminal too, and the exit
+code is the findings' either way.
+
+Nothing has to be selected and no subcommand has to be guessed, so
 somebody who does not yet know what is wrong does not have to know what to ask
 for. What is wrong comes first, so stopping after the first screen still shows
 everything actionable, and each command in the table below is one section of the

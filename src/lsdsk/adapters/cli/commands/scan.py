@@ -18,6 +18,7 @@ knows which section they want.
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -358,6 +359,44 @@ def emit_json(inventory: Inventory, findings: Sequence[Finding], command: CliCom
     safe_console.echo(envelope.model_dump_json(indent=2))
 
 
+def run_default_view(
+    replay: Path | None,
+    *,
+    settings: HistorySettings | None = None,
+    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    display: DisplaySettings | None = None,
+) -> None:
+    """Open the interactive view, or print the page when nothing can be typed at.
+
+    A bare ``lsdsk`` still answers "what is wrong with this machine" without
+    being asked for a section. On a terminal it does that interactively, because
+    the whole machine on one page is more than a reader can take in at once. Off
+    a terminal - a pipe, a redirect, a CI log, a subprocess - a full-screen
+    application cannot run and would produce nothing useful, so the page is
+    printed exactly as before.
+
+    The exit code is the findings' either way, so ``lsdsk; echo $?`` means the
+    same thing in both, and nothing that scripts this has to care which ran.
+
+    Raises:
+        SystemExit: Always, carrying the exit code the findings imply.
+    """
+    if not sys.stdout.isatty():
+        run_default_report(replay, settings=settings, thresholds=thresholds, display=display)
+        return
+
+    from .history import analyse, read_history  # noqa: PLC0415 - deferred: history imports this module
+
+    resolved = settings if settings is not None else get_history_settings(Config({}, {}))
+    with lib_log_rich.runtime.bind(job_id="cli-tui", extra={"command": "tui"}):
+        inventory, findings = analyse(replay, OutputFormat.HUMAN, resolved, thresholds)
+        from lsdsk.adapters.tui import LsdskApp  # noqa: PLC0415 - keeps textual off the fast path
+
+        history = read_history(inventory, resolved).history
+        LsdskApp(inventory, history).run()
+        raise SystemExit(exit_code_for(findings))
+
+
 def run_default_report(
     replay: Path | None,
     *,
@@ -365,7 +404,10 @@ def run_default_report(
     thresholds: Thresholds = DEFAULT_THRESHOLDS,
     display: DisplaySettings | None = None,
 ) -> None:
-    """Render the whole machine, which is what a bare ``lsdsk`` does.
+    """Render the whole machine on one page.
+
+    Reached by a bare ``lsdsk`` whenever its output is not a terminal, and it is
+    the form every script, pipe and CI log gets.
 
     Not a Click command: it has no name to invoke and registering one would put
     a redundant entry in ``--help`` beside the sections it already contains.
