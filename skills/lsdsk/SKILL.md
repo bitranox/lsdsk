@@ -98,7 +98,57 @@ Never reach for them to answer a question about hardware.
 produces data, including `info`, `snapshot`, `record` and all three
 `config` commands. `tui`, `fail` and `logdemo` have none, having no data to structure.
 It carries `ok`, `command`, `data` and `skipped`,
-so a caller can tell a complete answer from a partial one. Run `lsdsk --help` and
+so a caller can tell a complete answer from a partial one.
+
+**The envelope's four keys, and what a caller may rely on.** `ok` is true when
+the command did everything asked of it, and false when something was left
+undone - it is NOT "the hardware is healthy", so never alert on it. `skipped` is
+a list of sentences saying what was not done and why, empty when nothing was.
+`command` names the command that produced the payload. `data` is that command's
+own result.
+
+**A finding, inside `data.findings`, has five string fields: `severity`,
+`subject`, `title`, `detail`, `action`.** `severity` is exactly one of
+`critical`, `warning`, `hint` - those three words, lower case, and no others.
+That is what a monitor branches on, and it is the only way to separate critical
+from warning, because the exit code cannot: `1` means "warning OR critical", so
+a check that must fire only on critical has to read the field.
+
+```bash
+lsdsk findings --format json |
+  python3 -c 'import json,sys; d=json.load(sys.stdin);
+  sys.exit(any(f["severity"] == "critical" for f in d["data"]["findings"]))'
+```
+
+**A monitor must read `data.privileged` too, or it reports clean on a blind
+run.** Unprivileged, no SMART is read, so no wear or counter finding is ever
+raised and the check above passes on a machine nobody looked inside.
+`data.privileged` and `data.devices_accessible` are both booleans in the same
+payload: treat `privileged` false as "unknown", never as "healthy".
+
+**In a Python program, skip the subprocess.** `lsdsk.adapters.hw.snapshot`
+gives an inventory and `lsdsk.domain.diagnostics.diagnose` gives the findings as
+objects, with the same rules the CLI runs:
+
+```python
+from pathlib import Path
+
+from lsdsk.adapters.hw import snapshot
+from lsdsk.domain.diagnostics import diagnose
+
+inventory = snapshot.load(Path("capture.json"))  # or snapshot.collect() for this machine
+findings = diagnose(inventory)  # each has .severity, .subject, .title, .detail, .action
+```
+
+`diagnose` returns a tuple and takes two more keyword arguments the CLI fills
+in: `thresholds`, and `history` for the trend rules. Omit them and you get the
+SHIPPED defaults with no history, which is not what the same machine's `lsdsk`
+would report if its configuration deploys different thresholds.
+
+The package's own `__all__` holds `get_config` and `print_info`, which are the
+configuration loader and the `info` command's printer; neither is what you want
+for hardware. Reading a machine needs privileges exactly as the CLI does, and
+`snapshot.load` needs none. Run `lsdsk --help` and
 `lsdsk <command> --help` for current options rather than trusting a list here.
 
 The global options are `--replay`, `--profile`, `--history-file`,

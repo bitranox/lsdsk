@@ -3,7 +3,11 @@
 All notable changes to this project will be documented in this file following
 the [Keep a Changelog](https://keepachangelog.com/) format.
 
-## [1.0.6] - 2026-08-07
+## [1.0.7] - 2026-08-07
+
+Version 1.0.6 reached the plugin marketplace from the default branch and was
+never published; the bundled skill changed after that, and a marketplace install
+only re-fetches on a version change.
 
 ### Changed
 
@@ -25,6 +29,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- The bundled skill states the machine-readable contract instead of implying it.
+  A finding's five fields are named, `severity` is pinned to exactly `critical`,
+  `warning` or `hint`, and the four envelope keys get their meanings - `ok` says
+  the command finished what it was asked, never that the hardware is healthy. It
+  also says that a monitor has to read `data.privileged`, because an
+  unprivileged run raises no SMART finding at all and a severity check alone
+  reports clean on a machine nobody looked inside. And it documents the
+  in-process path, `snapshot.load` plus `diagnose`, for a caller who does not
+  want a subprocess.
 - Three tests hold the README against the CLI: every registered command is
   named, every global option is named, and no option is documented that the
   program refuses. Documentation drift is silent, and nothing was asking.
