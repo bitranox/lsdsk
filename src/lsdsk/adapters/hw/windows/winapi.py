@@ -91,6 +91,11 @@ DEVICE_PROP_DEVICEDESC = 2
 DEVICE_PROP_FRIENDLYNAME = 14
 DEVICE_PROP_CLASS = 9
 DEVICE_PROP_DRIVER = 11
+# The service that drives the device - stornvme, storahci, iaStorVD. This is
+# the counterpart of the bound kernel module Linux reports, which is what the
+# driver column means. DEVICE_PROP_DRIVER above is the driver's registry key,
+# a GUID and an index, and is not a name anybody would recognise.
+DEVICE_PROP_SERVICE = 6
 DEVICE_PROP_LOCATION_INFO = 15
 # The slot number firmware assigned this device, from ACPI _SUN. It is the only
 # readable pointer to a physical connector on Windows, which cannot read PCI
@@ -556,6 +561,7 @@ __all__ = [
     "DEVICE_PROP_DRIVER",
     "DEVICE_PROP_FRIENDLYNAME",
     "DEVICE_PROP_LOCATION_INFO",
+    "DEVICE_PROP_SERVICE",
     "DEVICE_SEEK_PENALTY_DESCRIPTOR",
     "DEVPROPKEY",
     "DEVPROP_TYPE_STRING",

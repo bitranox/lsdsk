@@ -101,6 +101,10 @@ class _DeviceTree:
         if name:
             entry["name"] = name
 
+        driver = self._string_property(handle, info, api.DEVICE_PROPERTY_FMTID, api.DEVICE_PROP_SERVICE)
+        if driver:
+            entry["driver"] = driver
+
         base = self._uint_property(handle, info, api.PCI_DEVICE_PROPERTY_FMTID, api.PCI_PROP_BASE_CLASS)
         sub = self._uint_property(handle, info, api.PCI_DEVICE_PROPERTY_FMTID, api.PCI_PROP_SUB_CLASS)
         prog = self._uint_property(handle, info, api.PCI_DEVICE_PROPERTY_FMTID, api.PCI_PROP_PROG_IF)
