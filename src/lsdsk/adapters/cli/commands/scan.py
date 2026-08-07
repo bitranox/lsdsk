@@ -365,23 +365,47 @@ def run_default_view(
     settings: HistorySettings | None = None,
     thresholds: Thresholds = DEFAULT_THRESHOLDS,
     display: DisplaySettings | None = None,
+    force_report: bool = False,
 ) -> None:
     """Open the interactive view, or print the page when nothing can be typed at.
 
     A bare ``lsdsk`` still answers "what is wrong with this machine" without
-    being asked for a section. On a terminal it does that interactively, because
-    the whole machine on one page is more than a reader can take in at once. Off
-    a terminal - a pipe, a redirect, a CI log, a subprocess - a full-screen
-    application cannot run and would produce nothing useful, so the page is
-    printed exactly as before.
+    being asked for a section. Where somebody is sitting at it, it does that
+    interactively, because the whole machine on one page is more than a reader
+    can take in at once. Anywhere else - a pipe, a redirect, a CI log, a
+    subprocess - the page is printed exactly as before.
+
+    "Somebody is sitting at it" means both ends are terminals, not just the
+    output one: Textual reads key events from stdin, so ``lsdsk < /dev/null``
+    would otherwise open a full-screen view nobody can quit.
+
+    ``force_report`` exists because that test has a blind spot no test can
+    close, and a caller stuck in it needs a way out that does not depend on
+    being detected. See ``--report``.
 
     The exit code is the findings' either way, so ``lsdsk; echo $?`` means the
     same thing in both, and nothing that scripts this has to care which ran.
 
+    Args:
+        replay: A snapshot to render instead of reading this machine.
+        settings: How counter history behaves for this run.
+        thresholds: The values the rules judge by.
+        display: The values the layout uses.
+        force_report: Print the page whatever the terminal looks like.
+
     Raises:
         SystemExit: Always, carrying the exit code the findings imply.
     """
-    if not sys.stdout.isatty():
+    # BOTH ends, not just stdout: something has to press q.
+    #
+    # This CANNOT tell a person from an automation that allocates a terminal.
+    # Measured in a Jupyter kernel: IPython runs `!cmd` under pexpect, which
+    # gives the child a real pseudo-terminal on both ends, so it is
+    # indistinguishable here from somebody sitting at a shell - and the CI
+    # notebook job hung for 900 seconds waiting for a keypress that had no
+    # keyboard behind it. `script`, expect and pty-allocating job runners look
+    # the same. That is what --report is for.
+    if force_report or not (sys.stdout.isatty() and sys.stdin.isatty()):
         run_default_report(replay, settings=settings, thresholds=thresholds, display=display)
         return
 

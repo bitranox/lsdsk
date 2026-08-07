@@ -23,8 +23,13 @@ That is the whole command. At a terminal it opens an interactive view with a
 page per question; piped or redirected it prints the same machine as one page:
 the mainboard, what is wrong, the controller tree, every disk's identity, wear
 and error counters, every SMART attribute, the PCIe slots, and each finding with
-its reasoning. `lsdsk | cat` gives you that page at a terminal too, and the exit
-code is the findings' either way.
+its reasoning. `lsdsk --report` asks for that page whatever the terminal looks
+like, and the exit code is the findings' either way.
+
+Ask for it explicitly wherever a terminal is allocated but nobody is watching -
+a notebook cell, `script`, expect, a job runner that gives its children a pty.
+lsdsk cannot tell those from somebody sitting at a shell, and a full-screen view
+there waits for a keypress that never comes.
 
 Nothing has to be selected and no subcommand has to be guessed, so
 somebody who does not yet know what is wrong does not have to know what to ask

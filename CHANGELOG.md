@@ -14,8 +14,20 @@ Mostly about what the output looks like and who it is for.
   at once, but a full-screen application cannot run into a pipe, so the switch is
   what the output IS rather than a flag. Every existing pipe, redirect, CI run
   and agent keeps the printed page, and the exit code is the findings' in both,
-  so `lsdsk; echo $?` means one thing regardless. `lsdsk | cat` gives the page at
-  a terminal.
+  so `lsdsk; echo $?` means one thing regardless.
+
+### Added
+
+- `lsdsk --report` prints the whole-machine page whatever the terminal looks
+  like. The switch above reads the terminal, and there is one thing it cannot
+  see: a caller that allocates a pseudo-terminal for a program. IPython runs
+  `!cmd` under pexpect, so a notebook cell presents a terminal on both ends and
+  is indistinguishable from somebody sitting at a shell; `script`, expect and
+  pty-allocating job runners do the same. The interactive view then waits for a
+  keypress that has no keyboard behind it. Detection cannot be made to cover
+  this, so the flag is the way out, and it is what anything unattended should
+  say. Given before a subcommand, where it has no view to choose, it is refused
+  rather than silently ignored.
 - The palette is readable on a light background as well as a dark one. Measured
   as WCAG contrast against four real terminal backgrounds, the previous hint and
   ceiling colour scored 1.7:1 and the warning colour 2.4:1 on a light background,

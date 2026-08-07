@@ -227,14 +227,18 @@ def test_no_help_screen_shows_developer_content(cli_runner: CliRunner, productio
 
 @pytest.mark.os_agnostic
 @pytest.mark.parametrize(
-    ("interactive", "expect"),
+    ("stdout_tty", "stdin_tty", "expect"),
     [
-        pytest.param(True, "tui", id="a terminal gets the interactive view"),
-        pytest.param(False, "report", id="a pipe gets the printed page"),
+        pytest.param(True, True, "tui", id="somebody is sitting at it"),
+        pytest.param(False, False, "report", id="a pipe gets the printed page"),
+        # `lsdsk < /dev/null` at a terminal. Textual reads key events from
+        # stdin, so a redirected stdin leaves a full-screen view nobody can
+        # quit however interactive the output side looks.
+        pytest.param(True, False, "report", id="output is a terminal but nobody can type"),
     ],
 )
 def test_the_default_view_follows_whether_anything_can_be_typed_at(
-    monkeypatch: pytest.MonkeyPatch, interactive: bool, expect: str
+    monkeypatch: pytest.MonkeyPatch, stdout_tty: bool, stdin_tty: bool, expect: str
 ) -> None:
     """A bare ``lsdsk`` opens the TUI on a terminal and prints the page off one.
 
@@ -283,7 +287,8 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
         def run(self) -> None:
             """The real one blocks on the terminal; this test is about which ran."""
 
-    monkeypatch.setattr(_sys.stdout, "isatty", lambda: interactive, raising=False)
+    monkeypatch.setattr(_sys.stdout, "isatty", lambda: stdout_tty, raising=False)
+    monkeypatch.setattr(_sys.stdin, "isatty", lambda: stdin_tty, raising=False)
     monkeypatch.setattr(scan, "run_default_report", note_report)
     monkeypatch.setattr("lsdsk.adapters.tui.LsdskApp", StubApp)
     # analyse and read_history are imported inside the function, so they are
@@ -291,10 +296,63 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
     monkeypatch.setattr("lsdsk.adapters.cli.commands.history.analyse", give_inventory)
     monkeypatch.setattr("lsdsk.adapters.cli.commands.history.read_history", give_history)
 
-    if interactive:
+    if expect == "tui":
         with pytest.raises(SystemExit):
             scan.run_default_view(None)
     else:
         scan.run_default_view(None)
 
     assert called == [expect], f"expected the {expect} path, got {called}"
+
+
+def test_report_prints_the_page_even_when_both_ends_look_interactive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """--report has to win over the terminal test, or it is not an escape hatch.
+
+    The terminal test cannot see the case it is wrong about: IPython's ``!``
+    runs the child under pexpect, so a notebook cell presents a pseudo-terminal
+    on both ends and is indistinguishable from a person at a shell. Both ends
+    are therefore claimed to be terminals HERE, which is exactly the state in
+    which the flag has to still print.
+    """
+    import sys as _sys
+
+    from lsdsk.adapters.cli.commands import scan
+
+    called: list[str] = []
+
+    def note_report(*_args: object, **_kwargs: object) -> None:
+        called.append("report")
+
+    class RefuseToOpen:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("--report opened the interactive view")
+
+    monkeypatch.setattr(_sys.stdout, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(_sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(scan, "run_default_report", note_report)
+    monkeypatch.setattr("lsdsk.adapters.tui.LsdskApp", RefuseToOpen)
+
+    scan.run_default_view(None, force_report=True)
+
+    assert called == ["report"]
+
+
+def test_report_before_a_subcommand_is_refused_rather_than_ignored(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+) -> None:
+    """A flag that does nothing where it was typed must say so.
+
+    --report picks the view a bare ``lsdsk`` uses, so before a subcommand it has
+    nothing to pick. Accepting it silently would tell a reader their choice
+    landed when the subcommand's own output was never in question.
+    """
+    from lsdsk.adapters.cli import cli
+
+    result = cli_runner.invoke(cli, ["--report", "info"], obj=production_factory)
+
+    assert result.exit_code != 0
+    assert "--report" in result.output
+    assert "subcommand" in result.output

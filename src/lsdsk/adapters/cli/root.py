@@ -99,6 +99,13 @@ def _apply_cli_overrides(config: Config, set_overrides: tuple[str, ...]) -> Conf
     help="Judge counters against recorded history without adding this reading to it.",
 )
 @option(
+    "--report",
+    "report",
+    is_flag=True,
+    default=False,
+    help="Print the whole-machine page instead of opening the interactive view.",
+)
+@option(
     "--env-file",
     "env_file",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True),
@@ -118,6 +125,7 @@ def cli(
     replay: Path | None,
     history_file: Path | None,
     no_record: bool,
+    report: bool,
     env_file: str | None,
 ) -> None:
     """Root command storing global flags and syncing shared traceback state.
@@ -163,26 +171,36 @@ def cli(
     )
     apply_traceback_preferences(traceback)
 
-    if ctx.invoked_subcommand is None:
-        # Bare `lsdsk` still answers "what is wrong here" without being asked for
-        # a section, but it does it interactively on a terminal: the whole
-        # machine on one page is more than a reader takes in at once. Off a
-        # terminal the page is printed exactly as before, so every pipe,
-        # redirect and CI log is unchanged. See run_default_view.
-        from .commands.scan import (  # noqa: PLC0415 - deferred, same cycle as _register_commands
-            resolve_history,
-            resolve_tunables,
-            run_default_view,
-        )
+    if ctx.invoked_subcommand is not None:
+        if report:
+            raise click.UsageError("--report picks the view a bare lsdsk uses; it does nothing before a subcommand.")
+        return
 
-        # The tunables have to be resolved here, exactly as every subcommand
-        # does. Without them the default view fell back to the shipped defaults
-        # for both sections, so a configured threshold or layout value was
-        # honoured by `lsdsk findings` and silently ignored by bare `lsdsk` -
-        # the view that exists to be the one you run when you do not yet know
-        # which section to ask for.
-        thresholds, display = resolve_tunables(ctx)
-        run_default_view(replay, settings=resolve_history(ctx), thresholds=thresholds, display=display)
+    # Bare `lsdsk` still answers "what is wrong here" without being asked for
+    # a section, but it does it interactively on a terminal: the whole
+    # machine on one page is more than a reader takes in at once. Off a
+    # terminal the page is printed exactly as before, so every pipe,
+    # redirect and CI log is unchanged. See run_default_view.
+    from .commands.scan import (  # noqa: PLC0415 - deferred, same cycle as _register_commands
+        resolve_history,
+        resolve_tunables,
+        run_default_view,
+    )
+
+    # The tunables have to be resolved here, exactly as every subcommand
+    # does. Without them the default view fell back to the shipped defaults
+    # for both sections, so a configured threshold or layout value was
+    # honoured by `lsdsk findings` and silently ignored by bare `lsdsk` -
+    # the view that exists to be the one you run when you do not yet know
+    # which section to ask for.
+    thresholds, display = resolve_tunables(ctx)
+    run_default_view(
+        replay,
+        settings=resolve_history(ctx),
+        thresholds=thresholds,
+        display=display,
+        force_report=report,
+    )
 
 
 # Deferred import required to break a circular dependency: this module defines

@@ -12,15 +12,35 @@ and Windows, no subprocesses, no network. It runs anywhere `--replay` is all you
 need, macOS included; only reading real hardware is the two.
 
 **Bare `lsdsk` gives a PERSON the interactive view and a PROGRAM the printed
-page.** It looks at whether its output is a terminal: at one it opens the
-full-screen application, because the whole machine on one page is more than a
-reader takes in at once; anywhere else - a pipe, a redirect, a CI log, a
-subprocess - it prints the page exactly as before. The exit code is the
-findings' in both, so `lsdsk; echo $?` means the same thing either way.
+page.** It looks at whether both ends are a terminal: where they are it opens
+the full-screen application, because the whole machine on one page is more than
+a reader takes in at once; where they are not - a pipe, a redirect, a CI log -
+it prints the page. The exit code is the findings' in both, so `lsdsk; echo $?`
+means the same thing either way. `lsdsk --report` asks for the page outright,
+whatever the terminal looks like.
 
-That distinction matters when you TELL somebody to run it. You are a program, so
-you always get the page; the person at a terminal does not. If they want the
-page on screen rather than the application, say `lsdsk | cat`.
+**Being a subprocess does NOT mean you get the page. Put `--report` in anything
+unattended.** Some callers hand their child a pseudo-terminal on both ends, and
+there lsdsk cannot tell a program from a person: it opens the application and
+waits for a keypress nobody can send. Measured in a notebook, where a CI job
+hung on a bare `!lsdsk` for 900 seconds and was killed - IPython runs `!cmd`
+under pexpect, so every notebook frontend does this. `script`, expect and
+pty-allocating job runners allocate the same way, so treat them the same.
+
+So `!lsdsk --report` in a notebook cell, and `--report` in any scheduled or
+unattended job, rather than reasoning about whether that caller counts as a
+terminal. Getting it wrong costs a hang, and getting it needlessly right costs
+nothing.
+
+`--report` chooses the view a BARE `lsdsk` uses, so **any `--report` with a
+subcommand after it - `findings`, `health`, `slots`, any of them, with or
+without further options - is refused with a usage error rather than ignored.**
+A subcommand already prints, so it never needs the flag. Alongside the other
+global options it is fine: `lsdsk --report`,
+`lsdsk --no-record --report --replay file.json`.
+
+That distinction matters when you TELL somebody to run it. If they want the
+page on screen rather than the application, say `lsdsk --report`.
 
 For a TICKET or a handover, still send a snapshot rather than redirected text:
 `lsdsk snapshot -o file.json` captures the raw reading, so the recipient can

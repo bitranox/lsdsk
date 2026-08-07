@@ -6,7 +6,7 @@ against a capture taken on one of those.
 ## From PyPI
 
 ```bash
-uvx lsdsk topology                  # run it once, installing nothing
+uvx lsdsk                           # run it once, installing nothing
 uv tool install lsdsk               # install for everyday use
 lsdsk --version
 ```
@@ -52,7 +52,7 @@ Then, on the target machine:
 ```bash
 uv tool install ./lsdsk-<version>-py3-none-any.whl
 # or, without installing anything permanently:
-uv run --with ./lsdsk-<version>-py3-none-any.whl lsdsk topology
+uv run --with ./lsdsk-<version>-py3-none-any.whl lsdsk
 ```
 
 `pip install ./lsdsk-<version>-py3-none-any.whl` works the same way in a
@@ -75,7 +75,7 @@ root crontab or a systemd timer rather than a user one.
 ```bash
 lsdsk --version                     # prints the version
 lsdsk --help                        # lists every command
-lsdsk topology                      # reads this machine
+lsdsk                               # reads this machine
 ```
 
 ## Uninstalling
