@@ -160,6 +160,7 @@ stand alone. Every command that produces data takes `--format json`; `tui`, `fai
 | `info`                     | Print resolved metadata so users can inspect installation details.    |
 | `logdemo`                  | Run a logging demonstration to preview log output.                    |
 | `record`                   | Record this machine's error counters and print nothing.               |
+| `report`                   | The whole machine on one page, which every section above is part of.  |
 | `slots`                    | Show the mainboard's PCIe ports, what occupies them and what is free. |
 | `smart`                    | Show every disk's SMART attributes against its own thresholds.        |
 | `snapshot`                 | Capture this machine's raw reading for replay elsewhere.              |

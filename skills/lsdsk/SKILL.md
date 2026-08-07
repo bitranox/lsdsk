@@ -16,31 +16,27 @@ page.** It looks at whether both ends are a terminal: where they are it opens
 the full-screen application, because the whole machine on one page is more than
 a reader takes in at once; where they are not - a pipe, a redirect, a CI log -
 it prints the page. The exit code is the findings' in both, so `lsdsk; echo $?`
-means the same thing either way. `lsdsk --report` asks for the page outright,
+means the same thing either way. `lsdsk report` asks for the page by name,
 whatever the terminal looks like.
 
-**Being a subprocess does NOT mean you get the page. Put `--report` in anything
-unattended.** Some callers hand their child a pseudo-terminal on both ends, and
+**Being a subprocess does NOT mean you get the page. Say `lsdsk report` in
+anything unattended.** Some callers hand their child a pseudo-terminal on both ends, and
 there lsdsk cannot tell a program from a person: it opens the application and
 waits for a keypress nobody can send. Measured in a notebook, where a CI job
 hung on a bare `!lsdsk` for 900 seconds and was killed - IPython runs `!cmd`
 under pexpect, so every notebook frontend does this. `script`, expect and
 pty-allocating job runners allocate the same way, so treat them the same.
 
-So `!lsdsk --report` in a notebook cell, and `--report` in any scheduled or
+So `!lsdsk report` in a notebook cell, and `lsdsk report` in any scheduled or
 unattended job, rather than reasoning about whether that caller counts as a
 terminal. Getting it wrong costs a hang, and getting it needlessly right costs
 nothing.
 
-`--report` chooses the view a BARE `lsdsk` uses, so **any `--report` with a
-subcommand after it - `findings`, `health`, `slots`, any of them, with or
-without further options - is refused with a usage error rather than ignored.**
-A subcommand already prints, so it never needs the flag. Alongside the other
-global options it is fine: `lsdsk --report`,
-`lsdsk --no-record --report --replay file.json`.
+`lsdsk report` takes `--replay` like any other command, and the global options
+still come first: `lsdsk --no-record report --replay file.json`.
 
 That distinction matters when you TELL somebody to run it. If they want the
-page on screen rather than the application, say `lsdsk --report`.
+page on screen rather than the application, say `lsdsk report`.
 
 For a TICKET or a handover, still send a snapshot rather than redirected text:
 `lsdsk snapshot -o file.json` captures the raw reading, so the recipient can
@@ -64,7 +60,8 @@ section's envelope, `lsdsk <section> --format json`.
 ## Running it
 
 ```bash
-uvx lsdsk                     # everything on one page. Start here
+uvx lsdsk                     # at a terminal the interactive view, elsewhere the page
+uvx lsdsk report              # everything on one page, by name. Start here
 uvx lsdsk topology            # the problem summary and the disk-to-controller tree
 uvx lsdsk findings            # every finding, with reasoning and a remedy
 uvx lsdsk health              # wear, temperature, hours, error counters

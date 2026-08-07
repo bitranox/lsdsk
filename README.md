@@ -23,8 +23,8 @@ That is the whole command. At a terminal it opens an interactive view with a
 page per question; piped or redirected it prints the same machine as one page:
 the mainboard, what is wrong, the controller tree, every disk's identity, wear
 and error counters, every SMART attribute, the PCIe slots, and each finding with
-its reasoning. `lsdsk --report` asks for that page whatever the terminal looks
-like, and the exit code is the findings' either way.
+its reasoning. `lsdsk report` asks for that page by name, whatever the terminal
+looks like, and the exit code is the findings' either way.
 
 Ask for it explicitly wherever a terminal is allocated but nobody is watching -
 a notebook cell, `script`, expect, a job runner that gives its children a pty.
@@ -177,21 +177,26 @@ because there is nothing to fix.
 
 ## Commands
 
-| Command                    | Shows                                                            |
-|----------------------------|------------------------------------------------------------------|
-| `lsdsk`                    | Everything, on one page. Each command below is one section of it |
-| `lsdsk topology`           | The problem summary and the disk-to-controller tree              |
-| `lsdsk controllers`        | Controllers, PCIe placement, free ports, load                    |
-| `lsdsk disks`              | One row per disk                                                 |
-| `lsdsk health`             | Wear, temperature, hours and error counters                      |
-| `lsdsk smart`              | Every disk's SMART attributes against its thresholds             |
-| `lsdsk findings`           | Every finding with its reasoning and its remedy                  |
-| `lsdsk slots`              | Every PCIe port: capability, occupant, what is free              |
-| `lsdsk trend`              | What each error counter is doing over time, not just its total   |
-| `lsdsk record`             | Store one reading and print nothing, for a timer                 |
-| `lsdsk tui`                | An interactive page per question, `*top` style                   |
-| `lsdsk snapshot -o f.json` | Capture the raw reading                                          |
-| `lsdsk --replay f.json`    | Render a capture from any machine                                |
+| Command                          | Shows                                                              |
+|----------------------------------|--------------------------------------------------------------------|
+| `lsdsk`                          | At a terminal, the interactive view. Anywhere else, the page below |
+| `lsdsk report`                   | Everything on one page. Each command below is one section of it    |
+| `lsdsk topology`                 | The problem summary and the disk-to-controller tree                |
+| `lsdsk controllers`              | Controllers, PCIe placement, free ports, load                      |
+| `lsdsk disks`                    | One row per disk                                                   |
+| `lsdsk health`                   | Wear, temperature, hours and error counters                        |
+| `lsdsk smart`                    | Every disk's SMART attributes against its thresholds               |
+| `lsdsk findings`                 | Every finding with its reasoning and its remedy                    |
+| `lsdsk slots`                    | Every PCIe port: capability, occupant, what is free                |
+| `lsdsk trend`                    | What each error counter is doing over time, not just its total     |
+| `lsdsk record`                   | Store one reading and print nothing, for a timer                   |
+| `lsdsk tui`                      | An interactive page per question, `*top` style                     |
+| `lsdsk snapshot -o f.json`       | Capture the raw reading                                            |
+| `lsdsk --replay f.json`          | Render a capture from any machine                                  |
+| `lsdsk config`                   | The merged configuration, and which layer each value came from     |
+| `lsdsk config-deploy`            | Write the shipped defaults where you can edit them                 |
+| `lsdsk config-generate-examples` | Write commented example files without touching live config         |
+| `lsdsk info`                     | Version, install path and the metadata a bug report needs          |
 
 The interactive view is keyed the way the `*top` family is: `1` to `8` or the
 matching function key switch page, and `q` quits; the footer lists those, so
@@ -201,6 +206,27 @@ The pages carry the same names as the commands, in the same order, so `4` and
 `lsdsk health` are the same view.
 Each page stands alone and shows every disk, so nothing has to be selected to
 see it, and `up` and `down` scroll whichever page is on screen.
+
+Every option below is global: it goes before the command, and it applies to
+whichever command follows.
+
+| Option                           | Does                                                                     |
+|----------------------------------|--------------------------------------------------------------------------|
+| `--replay FILE`                  | Render a capture instead of reading this machine                         |
+| `--history-file F`               | Read and write counter history there instead of the per-user state file  |
+| `--no-record`                    | Judge counters against history without adding this reading to it         |
+| `--profile NAME`                 | Load a named configuration profile                                       |
+| `--set S.K=V`                    | Override one configuration value, repeatable                             |
+| `--env-file FILE`                | Read that `.env` rather than searching upward from the working directory |
+| `--traceback` / `--no-traceback` | Print the Python traceback on an error instead of one line               |
+| `--version`                      | Print the version and exit                                               |
+
+`lsdsk report` answers the one thing the terminal test cannot see. Some callers hand
+their child a pseudo-terminal on both ends - a notebook cell, `script`, `expect`,
+a job runner - and there nothing distinguishes a program from a person, so the
+interactive view opens and waits for a keypress nobody can send. Name the page
+in anything unattended rather than reasoning about whether that caller counts as
+a terminal.
 
 `--format json` gives a machine-readable envelope naming the command that
 produced it, on every command that produces data. Exit codes are `0` for nothing

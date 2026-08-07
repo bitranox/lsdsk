@@ -365,7 +365,6 @@ def run_default_view(
     settings: HistorySettings | None = None,
     thresholds: Thresholds = DEFAULT_THRESHOLDS,
     display: DisplaySettings | None = None,
-    force_report: bool = False,
 ) -> None:
     """Open the interactive view, or print the page when nothing can be typed at.
 
@@ -379,9 +378,9 @@ def run_default_view(
     output one: Textual reads key events from stdin, so ``lsdsk < /dev/null``
     would otherwise open a full-screen view nobody can quit.
 
-    ``force_report`` exists because that test has a blind spot no test can
-    close, and a caller stuck in it needs a way out that does not depend on
-    being detected. See ``--report``.
+    That test has a blind spot no test can close, so a caller stuck in it needs
+    a way out that does not depend on being recognised: `lsdsk report` names the
+    page outright.
 
     The exit code is the findings' either way, so ``lsdsk; echo $?`` means the
     same thing in both, and nothing that scripts this has to care which ran.
@@ -391,7 +390,6 @@ def run_default_view(
         settings: How counter history behaves for this run.
         thresholds: The values the rules judge by.
         display: The values the layout uses.
-        force_report: Print the page whatever the terminal looks like.
 
     Raises:
         SystemExit: Always, carrying the exit code the findings imply.
@@ -404,8 +402,8 @@ def run_default_view(
     # indistinguishable here from somebody sitting at a shell - and the CI
     # notebook job hung for 900 seconds waiting for a keypress that had no
     # keyboard behind it. `script`, expect and pty-allocating job runners look
-    # the same. That is what --report is for.
-    if force_report or not (sys.stdout.isatty() and sys.stdin.isatty()):
+    # the same. That is what `lsdsk report` is for.
+    if not (sys.stdout.isatty() and sys.stdin.isatty()):
         run_default_report(replay, settings=settings, thresholds=thresholds, display=display)
         return
 
@@ -461,6 +459,32 @@ def run_default_report(
         history = read_history(inventory, resolved).history
         console.print(render_full(inventory, findings, width=console.width, history=history, display=laid_out))
         raise SystemExit(exit_code_for(findings))
+
+
+@click.command("report", context_settings=CLICK_CONTEXT_SETTINGS)
+@_REPLAY_OPTION
+@click.pass_context
+def cli_report(ctx: click.Context, replay: Path | None) -> None:
+    """Show the whole machine on one page, which every section below is part of.
+
+    What a bare `lsdsk` prints when its output is not a terminal, asked for by
+    name. That is the point of it: at a terminal a bare `lsdsk` opens the
+    interactive view instead, and some callers cannot be told apart from a
+    person - a notebook cell, `script`, `expect` and pty-allocating job runners
+    all present a terminal on both ends - so anything unattended should name the
+    page rather than rely on being recognised.
+
+    No `--format`: this is every section at once, and the machine-readable form
+    of that is `lsdsk snapshot`, which captures the reading itself.
+    """
+    with lib_log_rich.runtime.bind(job_id="cli-report", extra={"command": "report"}):
+        thresholds, display = resolve_tunables(ctx)
+        run_default_report(
+            effective_replay(ctx, replay),
+            settings=resolve_history(ctx),
+            thresholds=thresholds,
+            display=display,
+        )
 
 
 @click.command("topology", context_settings=CLICK_CONTEXT_SETTINGS)

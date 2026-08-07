@@ -3,6 +3,32 @@
 All notable changes to this project will be documented in this file following
 the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [1.0.6] - 2026-08-07
+
+### Changed
+
+- The whole-machine page is a command, `lsdsk report`, and the `--report` flag
+  that 1.0.4 introduced is gone. Every section of that page was already a
+  subcommand, so the page being a flag was inconsistent on its face, and it
+  needed a rule nothing else here does: a flag that picks a view in one position
+  and is refused in another. The reason recorded for keeping it out of the
+  command list was that a command would duplicate what a bare `lsdsk` already
+  printed - which stopped being true when the interactive view took that
+  position, leaving the page with no name at a terminal at all. Removed rather
+  than kept as an alias because the flag was hours old and published the same
+  day.
+- The README documents every command and every global option, in a reference
+  table rather than only in prose. `--report` had a paragraph and no entry;
+  `config`, `config-deploy`, `config-generate-examples` and `info` had never
+  been listed at all. The commands row for a bare `lsdsk` still described it as
+  the page, which the interactive default had made wrong.
+
+### Added
+
+- Three tests hold the README against the CLI: every registered command is
+  named, every global option is named, and no option is documented that the
+  program refuses. Documentation drift is silent, and nothing was asking.
+
 ## [1.0.5] - 2026-08-07
 
 ### Fixed

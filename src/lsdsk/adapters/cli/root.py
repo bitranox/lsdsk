@@ -99,13 +99,6 @@ def _apply_cli_overrides(config: Config, set_overrides: tuple[str, ...]) -> Conf
     help="Judge counters against recorded history without adding this reading to it.",
 )
 @option(
-    "--report",
-    "report",
-    is_flag=True,
-    default=False,
-    help="Print the whole-machine page instead of opening the interactive view.",
-)
-@option(
     "--env-file",
     "env_file",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True),
@@ -125,7 +118,6 @@ def cli(
     replay: Path | None,
     history_file: Path | None,
     no_record: bool,
-    report: bool,
     env_file: str | None,
 ) -> None:
     """Root command storing global flags and syncing shared traceback state.
@@ -172,8 +164,6 @@ def cli(
     apply_traceback_preferences(traceback)
 
     if ctx.invoked_subcommand is not None:
-        if report:
-            raise click.UsageError("--report picks the view a bare lsdsk uses; it does nothing before a subcommand.")
         return
 
     # Bare `lsdsk` still answers "what is wrong here" without being asked for
@@ -194,13 +184,7 @@ def cli(
     # the view that exists to be the one you run when you do not yet know
     # which section to ask for.
     thresholds, display = resolve_tunables(ctx)
-    run_default_view(
-        replay,
-        settings=resolve_history(ctx),
-        thresholds=thresholds,
-        display=display,
-        force_report=report,
-    )
+    run_default_view(replay, settings=resolve_history(ctx), thresholds=thresholds, display=display)
 
 
 # Deferred import required to break a circular dependency: this module defines
@@ -219,6 +203,7 @@ def _register_commands() -> None:
         cli_info,
         cli_logdemo,
         cli_record,
+        cli_report,
         cli_slots,
         cli_smart,
         cli_snapshot,
@@ -228,6 +213,7 @@ def _register_commands() -> None:
     )
 
     for cmd in (
+        cli_report,
         cli_topology,
         cli_controllers,
         cli_disks,

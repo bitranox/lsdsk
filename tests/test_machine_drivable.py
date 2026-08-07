@@ -305,54 +305,35 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
     assert called == [expect], f"expected the {expect} path, got {called}"
 
 
-def test_report_prints_the_page_even_when_both_ends_look_interactive(
+@pytest.mark.os_agnostic
+def test_the_report_command_prints_the_page_where_a_bare_run_would_not(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """--report has to win over the terminal test, or it is not an escape hatch.
+    """`lsdsk report` prints where a bare run would open the interactive view.
 
-    The terminal test cannot see the case it is wrong about: IPython's ``!``
-    runs the child under pexpect, so a notebook cell presents a pseudo-terminal
-    on both ends and is indistinguishable from a person at a shell. Both ends
-    are therefore claimed to be terminals HERE, which is exactly the state in
-    which the flag has to still print.
+    The terminal test cannot see the case this command exists for: IPython runs
+    `!cmd` under pexpect, so a notebook cell presents a pseudo-terminal on both
+    ends and is indistinguishable from a person at a shell. Both ends are
+    claimed to be terminals here, which is that state, and the command still has
+    to print.
     """
     import sys as _sys
+    from pathlib import Path as _Path
 
-    from lsdsk.adapters.cli.commands import scan
-
-    called: list[str] = []
-
-    def note_report(*_args: object, **_kwargs: object) -> None:
-        called.append("report")
+    from lsdsk.adapters.cli import cli
 
     class RefuseToOpen:
         def __init__(self, *_args: object, **_kwargs: object) -> None:
-            raise AssertionError("--report opened the interactive view")
+            raise AssertionError("`lsdsk report` opened the interactive view")
 
     monkeypatch.setattr(_sys.stdout, "isatty", lambda: True, raising=False)
     monkeypatch.setattr(_sys.stdin, "isatty", lambda: True, raising=False)
-    monkeypatch.setattr(scan, "run_default_report", note_report)
     monkeypatch.setattr("lsdsk.adapters.tui.LsdskApp", RefuseToOpen)
 
-    scan.run_default_view(None, force_report=True)
+    capture = _Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
+    result = cli_runner.invoke(cli, ["report", "--replay", str(capture)], obj=production_factory)
 
-    assert called == ["report"]
-
-
-def test_report_before_a_subcommand_is_refused_rather_than_ignored(
-    cli_runner: CliRunner,
-    production_factory: Callable[[], Any],
-) -> None:
-    """A flag that does nothing where it was typed must say so.
-
-    --report picks the view a bare ``lsdsk`` uses, so before a subcommand it has
-    nothing to pick. Accepting it silently would tell a reader their choice
-    landed when the subcommand's own output was never in question.
-    """
-    from lsdsk.adapters.cli import cli
-
-    result = cli_runner.invoke(cli, ["--report", "info"], obj=production_factory)
-
-    assert result.exit_code != 0
-    assert "--report" in result.output
-    assert "subcommand" in result.output
+    assert result.exit_code in (0, 1), result.output
+    assert "linux-sas-hba" in result.output, "the page did not render"
