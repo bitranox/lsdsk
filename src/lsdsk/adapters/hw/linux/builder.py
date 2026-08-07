@@ -269,6 +269,7 @@ def build_controllers(capture: Mapping[str, Any]) -> tuple[Controller, ...]:
                 firmware=host.get("version_fw"),
                 link=_pcie_link(entry),
                 upstream=_pcie_link(upstream) if upstream else None,
+                upstream_name=_pci_name(upstream, database) if upstream else None,
                 port_count=ports.get(address),
                 ports_used=None,
             )

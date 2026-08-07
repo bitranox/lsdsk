@@ -694,3 +694,38 @@ def test_the_failing_attribute_row_carries_a_text_marker() -> None:
     healthy_line = next(line for line in rendered.splitlines() if "Power_On_Hours" in line)
     assert "!!" in failing_line, "the failing row is indistinguishable without colour"
     assert "!!" not in healthy_line, "the marker is on every row, so it marks nothing"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    "upstream",
+    [
+        pytest.param(None, id="no upstream device at all"),
+        pytest.param(PcieLink(None, None, None, None), id="upstream present, capability unreadable"),
+    ],
+)
+def test_an_unread_port_is_never_treated_as_a_capable_one(upstream: PcieLink | None) -> None:
+    """A device below its own maximum, with the port end unmeasured, is not a fault.
+
+    Measured on a real machine: a Gen5-capable NVMe drive sat in a CPU-attached
+    Gen4 x4 M.2 socket, on a platform that exposes no link properties for PCIe
+    bridges at all. lsdsk took the drive's OWN maximum as the port's capability,
+    concluded the link had negotiated below "what both ends support", and told
+    the owner to reseat a soldered-down drive and check a cable that does not
+    exist.
+
+    The claim to guard is the specific one: nothing may assert what the far end
+    supports when the far end was never read.
+    """
+    gen5_drive_in_an_unread_port = controller(
+        link=PcieLink(current_speed_gtps=16.0, current_width=4, max_speed_gtps=32.0, max_width=4),
+        upstream=upstream,
+    )
+    findings = diagnose_controller_link(gen5_drive_in_an_unread_port, Inventory("probe"))
+
+    assert findings, "a device below its own maximum is still worth reporting"
+    text = " ".join(f"{f.title} {f.detail} {f.action}" for f in findings)
+    assert "both ends" not in text, f"claimed to know the unread end: {text}"
+    for blamed in ("Reseat", "reseat", "cabling", "riser", "BIOS"):
+        assert blamed not in text, f"blamed {blamed!r} for a link whose port was never measured: {text}"
+    assert findings[0].severity is Severity.WARNING, "yellow, not red: nothing here is proven"

@@ -632,6 +632,13 @@ class Controller:
         link: The controller's own PCIe link state and capability.
         upstream: Capability of the bridge it plugs into, which is the ceiling
             the machine can offer it.
+        upstream_name: What the port above it is CALLED, which is not the same
+            thing as what it was measured to do. Carried because a platform can
+            withhold the port's capability registers and still name the port,
+            and a name like "PCIe RC 060 (x4) G4" answers the question the
+            missing registers left open. It is reported, never parsed into a
+            capability: it comes from a driver package rather than the hardware,
+            and only some vendors put the width and generation in it.
         port_count: Total ports or phys, where known.
         ports_used: Ports or phys with something attached.
 
@@ -647,6 +654,7 @@ class Controller:
     firmware: str | None = None
     link: PcieLink = field(default_factory=PcieLink)
     upstream: PcieLink | None = None
+    upstream_name: str | None = None
     port_count: int | None = None
     ports_used: int | None = None
 

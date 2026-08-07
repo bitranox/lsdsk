@@ -139,6 +139,9 @@ def build_controllers(capture: Mapping[str, Any]) -> tuple[Controller, ...]:
                 driver=entry.get("driver"),
                 link=_pcie_link(entry),
                 upstream=_pcie_link(parent) if parent else None,
+                # Windows publishes no link registers for a PCIe bridge, so this
+                # string is the only thing said about the port at all.
+                upstream_name=str(parent.get("name")) if parent and parent.get("name") else None,
             )
         )
     return tuple(controllers)

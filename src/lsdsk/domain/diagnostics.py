@@ -124,11 +124,18 @@ def _achievable_pcie(controller: Controller) -> tuple[float | None, int | None]:
     """
     own_speed = controller.link.max_speed_gtps
     own_width = controller.link.max_width
-    if controller.upstream is None:
-        return own_speed, own_width
-    speeds = [v for v in (own_speed, controller.upstream.max_speed_gtps) if v is not None]
-    widths = [v for v in (own_width, controller.upstream.max_width) if v is not None]
-    return (min(speeds) if speeds else None), (min(widths) if widths else None)
+    upstream = controller.upstream
+    # BOTH ends or nothing. Taking the device's own maximum when the port was not
+    # read makes an unmeasured port look at least as fast as the device, which
+    # turns "not measured" into "the port is fine" and bills the shortfall to a
+    # cable. Measured: a Gen5 drive in a Gen4 socket, on a platform that exposes
+    # no link properties for PCIe bridges at all, was reported as a negotiation
+    # fault with advice to reseat it.
+    if own_speed is None or own_width is None:
+        return None, None
+    if upstream is None or upstream.max_speed_gtps is None or upstream.max_width is None:
+        return None, None
+    return min(own_speed, upstream.max_speed_gtps), min(own_width, upstream.max_width)
 
 
 def _gain_in(slot: PcieSlot, controller: Controller) -> float | None:
@@ -271,10 +278,52 @@ def diagnose_controller_link(controller: Controller, inventory: Inventory) -> li
         ]
 
     own_max = link.max_bandwidth_gbps
-    if achievable is None or own_max is None or achievable >= own_max:
+    if achievable is None:
+        return _unmeasured_port_finding(controller, negotiated, own_max)
+    if own_max is None or achievable >= own_max:
         return []
 
     return [_platform_limited_finding(controller, inventory, achievable, own_max)]
+
+
+def _unmeasured_port_finding(
+    controller: Controller,
+    negotiated: float | None,
+    own_max: float | None,
+) -> list[Finding]:
+    """Report a shortfall that cannot be attributed, because one end was unread.
+
+    A device below its own maximum is worth saying out loud even when the port
+    was never measured - but it is not a fault, because a socket wired a
+    generation below the device produces exactly this reading. Naming a cause
+    here is what once sent somebody to reseat a soldered-down M.2 drive.
+    """
+    link = controller.link
+    if negotiated is None or own_max is None or negotiated >= own_max:
+        return []
+    # The port's name is quoted, never parsed. Some vendors put the width and
+    # generation in it, which answers exactly what the missing registers left
+    # open - but it comes from a driver package, so it is evidence for a reader
+    # to weigh, not a measurement to grade against.
+    named = f' The port is named "{controller.upstream_name}".' if controller.upstream_name else ""
+    return [
+        Finding(
+            severity=Severity.WARNING,
+            subject=controller.address,
+            title=f"{controller.name} runs below its own maximum, and the port was not measured",
+            detail=(
+                f"Running {_format_pcie(link.current_speed_gtps, link.current_width)} "
+                f"({_format_gbytes(negotiated)}) where the device alone could do "
+                f"{_format_pcie(link.max_speed_gtps, link.max_width)} ({_format_gbytes(own_max)}). "
+                "What the port can carry was not readable, so this is not attributable: a socket "
+                f"built one generation below the device reads exactly the same as a fault.{named}"
+            ),
+            action=(
+                "Check what the port is specified for before suspecting the device, the cable or "
+                "the slot. A full-width link at a lower speed is usually the port's ceiling."
+            ),
+        )
+    ]
 
 
 def _platform_limited_finding(
