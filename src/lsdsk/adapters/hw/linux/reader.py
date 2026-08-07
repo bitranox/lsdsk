@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import base64
 import ctypes
-import fcntl
 import mmap
 import os
 from datetime import UTC, datetime
@@ -185,6 +184,11 @@ def ata_passthrough(fd: int, *, command: int, feature: int = 0, lba: int = 0, co
     header.sbp = ctypes.cast(sense, ctypes.c_void_p)
     header.timeout = _IOCTL_TIMEOUT_MS
 
+    # Imported here rather than at module scope because fcntl is Linux-only:
+    # a module-level import makes this whole file unimportable on Windows, and
+    # pytest --doctest-modules imports every module on every runner.
+    import fcntl  # noqa: PLC0415 - platform-only dependency
+
     fcntl.ioctl(fd, SG_IO, header)
     if header.host_status or header.driver_status & 0x0F:
         message = f"SG_IO transport failure: host={header.host_status} driver={header.driver_status}"
@@ -216,6 +220,11 @@ def nvme_admin(fd: int, *, opcode: int, nsid: int, cdw10: int, data_len: int) ->
     command.data_len = data_len
     command.cdw10 = cdw10
     command.timeout_ms = _IOCTL_TIMEOUT_MS
+
+    # Imported here rather than at module scope because fcntl is Linux-only:
+    # a module-level import makes this whole file unimportable on Windows, and
+    # pytest --doctest-modules imports every module on every runner.
+    import fcntl  # noqa: PLC0415 - platform-only dependency
 
     fcntl.ioctl(fd, NVME_IOCTL_ADMIN_CMD, command)
     return bytes(buffer)

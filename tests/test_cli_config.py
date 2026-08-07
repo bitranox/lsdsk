@@ -679,8 +679,7 @@ def test_a_rejected_profile_is_a_clean_argument_error_not_a_traceback(
 def test_a_camel_case_secret_is_redacted_in_both_modes(
     cli_runner: CliRunner,
     production_factory: Callable[[], Any],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    seed_user_config: Callable[[str], Path],
     output_format: str,
 ) -> None:
     """The library's pattern needs an underscore boundary; real keys do not have one.
@@ -693,22 +692,21 @@ def test_a_camel_case_secret_is_redacted_in_both_modes(
     """
     from lsdsk.adapters.cli import cli
 
-    home = tmp_path / "xdg" / "lsdsk"
-    home.mkdir(parents=True)
-    (home / "config.toml").write_text(
+    # Seeded through the fixture rather than by writing an XDG path directly:
+    # only Linux reads XDG, so the direct form made this an os_agnostic test
+    # that could never find its own config on macOS or Windows.
+    seed_user_config(
         "[alerting]\n"
         'SmtpPassword = "hunter2-super-secret"\n'
         'db_pass = "another-secret-value"\n'
         'webhook_Authorization = "Bearer abcdef123456"\n'
         'password = "properly-named-secret"\n'
-        'host = "mail.example.com"\n',
-        encoding="utf-8",
+        'host = "mail.example.com"\n'
     )
     # The loader is cached, so a Config read by an earlier test in this file
     # would be reused and this would silently assert against the wrong file.
     from lsdsk.adapters.config.loader import get_config
 
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     get_config.cache_clear()
     try:
         result = cli_runner.invoke(

@@ -13,6 +13,7 @@ import io
 import json
 import os
 import re
+import sys
 import tempfile
 from dataclasses import fields, replace
 from pathlib import Path
@@ -94,10 +95,8 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     Args:
         item: The test about to run.
     """
-    # sys.platform is read here rather than captured at import time so a test
-    # monkeypatching it cannot change which tests are selected.
-    import sys
-
+    # sys.platform is read at call time rather than captured at import time, so
+    # a test monkeypatching it cannot change which tests are selected.
     for marker, is_supported in PLATFORM_MARKERS.items():
         if marker in item.keywords and not is_supported(sys.platform):
             pytest.skip(f"{marker}: not applicable on {sys.platform}")
@@ -130,6 +129,47 @@ def counter_history_stays_out_of_the_real_store(
     monkeypatch.setenv("XDG_STATE_HOME", str(state))  # Linux
     monkeypatch.setenv("LOCALAPPDATA", str(state))  # Windows
     monkeypatch.setenv("HOME", str(state))  # macOS, and the fallback on both others
+
+
+@pytest.fixture
+def seed_user_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Callable[[str], Path]:
+    """Write a user-level config file where THIS platform's loader looks for it.
+
+    A test that seeds `XDG_CONFIG_HOME` and asserts the file was read is a Linux
+    test wearing an os_agnostic marker: macOS reads
+    ``~/Library/Application Support/<vendor>/<app>`` and Windows reads
+    ``%APPDATA%\\<vendor>\\<app>``, so on those runners the file is never found,
+    the command renders nothing, and the assertion passes or fails for a reason
+    that has nothing to do with what it meant to test.
+
+    The identifiers come from the application's own metadata rather than being
+    written out here, so a rename cannot leave the tests seeding a directory
+    nothing reads.
+    """
+    from lsdsk import __init__conf__
+
+    def _seed(text: str) -> Path:
+        if sys.platform == "darwin":
+            root = tmp_path / "home"
+            support = root / "Library" / "Application Support"
+            path = support / __init__conf__.LAYEREDCONF_VENDOR / __init__conf__.LAYEREDCONF_APP / "config.toml"
+            monkeypatch.setenv("HOME", str(root))
+        elif sys.platform == "win32":
+            root = tmp_path / "appdata"
+            path = root / __init__conf__.LAYEREDCONF_VENDOR / __init__conf__.LAYEREDCONF_APP / "config.toml"
+            monkeypatch.setenv("APPDATA", str(root))
+        else:
+            root = tmp_path / "xdg"
+            path = root / __init__conf__.LAYEREDCONF_SLUG / "config.toml"
+            monkeypatch.setenv("XDG_CONFIG_HOME", str(root))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    return _seed
 
 
 def _load_dotenv() -> None:
