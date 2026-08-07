@@ -3,6 +3,40 @@
 All notable changes to this project will be documented in this file following
 the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [1.0.1] - 2026-08-07
+
+A maintenance release. It behaves exactly as 1.0.0 does: the only change inside
+the package is which line an import sits on, and a sentence in a docstring.
+
+What it really carries is the first green CI run. The outage on release day
+cancelled every job before it executed a step, so 1.0.0 shipped on local
+evidence alone. Running the matrix afterwards found nine failing
+tests across Windows and macOS plus two modules Windows could not import, all
+of them in the tests rather than the tool - which is consistent
+with 1.0.0 installing and running correctly from PyPI throughout.
+
+### Fixed
+
+- The Linux reader module can be imported on a machine without ``fcntl``. It
+  imported that Linux-only module at file scope, so on Windows the module could
+  not be imported at all. No released behaviour depended on it: the snapshot
+  adapter already imported the reader lazily and only on Linux, so the CLI never
+  reached it. It made the module unreachable to tooling, and unimportable by
+  anything that walks the package.
+- The ``read_text_bounded`` docstring no longer shows a path that only a POSIX
+  machine would print.
+
+### Changed
+
+- Tests no longer assume they are running on Linux. Nine failures came from that
+  assumption: POSIX file modes, ``os.geteuid``, ``XDG_CONFIG_HOME``,
+  ``Path.home()``, path separators in comparisons, and a captured pipe decoded
+  with the runner's codepage rather than a stated encoding. The suite now runs on
+  Python 3.11 through 3.14 across Linux, macOS and Windows.
+- Tests no longer read the developer's own counter history or ``.env``. Both made
+  a result depend on the machine it ran on, and one of them silently supplied the
+  secret that another test needed in order to prove anything at all.
+
 ## [1.0.0] - 2026-08-06
 
 First release. Everything below is what it does.
@@ -99,4 +133,5 @@ First release. Everything below is what it does.
   finding, including that a large error count ranks nothing until the rate is
   known, and that a normal run records one reading.
 
+[1.0.1]: https://github.com/bitranox/lsdsk/releases/tag/v1.0.1
 [1.0.0]: https://github.com/bitranox/lsdsk/releases/tag/v1.0.0
