@@ -391,6 +391,14 @@ Python 3.11 or newer, Linux or Windows. It shells out to nothing: no
 network access at any point. Its own Python dependencies are declared in
 `pyproject.toml`.
 
+Turning a controller's numeric identifiers into a name is the one thing it
+cannot read off the hardware, so it ships the PCI name database and uses the
+system's own copy in preference where there is one. That is why a controller
+reads the same on Linux and on Windows, and why it reads in English on a
+machine whose operating system is not: Windows localises its device
+descriptions, and lsdsk does not quote them. See `NOTICE` for that file's
+licence.
+
 ## How it works
 
 Linux reads sysfs and issues `SG_IO` ATA passthrough and NVMe admin ioctls

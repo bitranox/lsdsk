@@ -411,6 +411,27 @@ to act on. It is not parsed into a capability, and a name without numbers in it
 tells you nothing - then send the reader to the board manual with the PCI
 address.
 
+`upstream_name` is not a column. It reaches a human reader only inside this
+finding's text, as `The port is named "..."`, and a program reads it from any
+controller's `--format json`. So a machine with no such finding shows it
+nowhere, and asking a reader to look for a port column sends them hunting for
+something that is not there.
+
+**Two names, two sources, and only one of them follows the operating system's
+language.** A CONTROLLER's name is resolved from its numeric PCI identifiers, so
+it reads the same on every machine and always in English. The `upstream_name`
+above is the exception: it is QUOTED from the platform, so on a German Windows
+it arrives as `PCI-zu-PCI-Bruecke` and on an English one as `PCI-to-PCI Bridge`.
+Nothing is misconfigured when one line is English and the other is not, and the
+quoted name is still worth reading - it is the only statement about that port.
+
+That also means lsdsk and the Windows Device Manager will disagree about what a
+controller is called. Device Manager shows what the driver package calls it,
+which for Microsoft's in-box drivers is a generic label like
+`Standardmaessiger NVM Express-Controller`. lsdsk shows what the silicon is.
+Same device at the same PCI address, named from different sources; match them by
+ADDRESS, never by name, and do not tell anyone their machine is wrong.
+
 **Width decides which way to lean.** A link at FULL width and lower speed is the
 port's ceiling almost every time; seating and cabling faults cost LANES, so they
 show as a width below maximum. Say which of the two you are looking at.

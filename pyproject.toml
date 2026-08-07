@@ -1,6 +1,6 @@
 [project]
 name = "lsdsk"
-version = "1.0.4"
+version = "1.0.5"
 description = "See your disks and controllers, and what is wrong with how they are connected"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -94,6 +94,10 @@ include = [
     "src/lsdsk/py.typed",
     "src/lsdsk/adapters/config/defaultconfig.toml",
     "src/lsdsk/adapters/config/defaultconfig.d/*.toml",
+    # The PCI name database. Without it a machine with no hwdata package - which
+    # is every Windows one - falls back to the operating system's own device
+    # description, and Windows localises that.
+    "src/lsdsk/adapters/hw/decode/pci.ids.gz",
 ]
 
 [tool.ruff]

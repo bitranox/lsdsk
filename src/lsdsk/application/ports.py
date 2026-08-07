@@ -1,4 +1,4 @@
-"""Application ports — callable Protocol definitions for adapter functions.
+"""Application ports - callable Protocol definitions for adapter functions.
 
 Each Protocol class defines a ``__call__`` method whose signature exactly
 matches the corresponding adapter function.  Existing module-level functions

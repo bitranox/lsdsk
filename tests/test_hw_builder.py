@@ -300,3 +300,57 @@ def test_an_unprivileged_capture_reports_no_slot_numbers() -> None:
     assert not inventory.privileged
     assert all(slot.physical_slot_number is None for slot in inventory.slots)
     assert all(slot.connector_present is None for slot in inventory.slots)
+
+
+@pytest.mark.os_agnostic
+def test_a_localised_windows_device_description_does_not_reach_the_output() -> None:
+    """Verify a controller is named from the PCI database, not from Windows.
+
+    Windows localises its own device descriptions, so a German install calls an
+    NVMe controller "Standardmaessiger NVM Express-Controller" and an English
+    one "Standard NVM Express Controller". Quoting either makes the output half
+    English, and makes two identical machines disagree about what is in them.
+    The numeric identifiers say it in one language.
+
+    The description planted here is the real German string, spelled as Windows
+    spells it, so the test fails if that value is ever passed through.
+    """
+    payload = load(WINDOWS_HOST)
+    localised = "Standardmaßiger NVM Express-Controller"
+    payload["pci"]["PCI\\PLANTED"] = {
+        "address": "0000:02:00.0",
+        "name": localised,
+        "vendor": "0x144d",
+        "device": "0xa80a",
+        "class": "0x010802",
+        "driver": "stornvme",
+    }
+
+    inventory = build_from(payload)
+    planted = next(c for c in inventory.controllers if c.address == "0000:02:00.0")
+
+    assert planted.name != localised
+    assert "Standardma" not in planted.name
+    assert "Samsung" in planted.name, planted.name
+    assert "NVMe" in planted.name, planted.name
+
+
+@pytest.mark.os_agnostic
+def test_a_controller_windows_cannot_identify_keeps_the_name_windows_gave_it() -> None:
+    """Verify the database is preferred, not required.
+
+    Where the capture carries no identifiers there is nothing to resolve, and
+    dropping the operating system's description would leave the controller with
+    no name at all rather than with one in the wrong language.
+    """
+    payload = load(WINDOWS_HOST)
+    payload["pci"]["PCI\\PLANTED"] = {
+        "address": "0000:03:00.0",
+        "name": "Some Vendor Storage Controller",
+        "class": "0x010802",
+    }
+
+    inventory = build_from(payload)
+    planted = next(c for c in inventory.controllers if c.address == "0000:03:00.0")
+
+    assert planted.name == "Some Vendor Storage Controller"

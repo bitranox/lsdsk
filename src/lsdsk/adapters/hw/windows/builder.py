@@ -27,6 +27,7 @@ from ....domain.models import (
     PcieLink,
     PcieSlot,
 )
+from ..decode import pciids
 from ..decode.ata_identify import decode_identify
 from ..decode.ata_smart import decode_health
 from ..decode.nvme import decode_identify_controller, decode_smart_log
@@ -122,6 +123,32 @@ def controller_of(instance: str | None, pci: Mapping[str, Mapping[str, Any]]) ->
     return None
 
 
+def _controller_name(entry: Mapping[str, Any], instance: str) -> str:
+    """Name one controller, preferring the language-neutral PCI database.
+
+    Windows' own device description is localised, so on a German install an
+    NVMe controller reads "Standardmaessiger NVM Express-Controller" and the
+    output is half English. The numeric vendor and device identifiers say the
+    same thing in one language, and resolving them is what makes a controller
+    read identically here and on Linux.
+
+    The operating system's description is kept only where the identifiers are
+    missing, which is the case where there is nothing else to say.
+
+    Args:
+        entry: One PCI device from the capture.
+        instance: The device instance path, used when nothing else names it.
+
+    Returns:
+        A name for the controller.
+    """
+    vendor = _to_int(entry.get("vendor"), 16)
+    device = _to_int(entry.get("device"), 16)
+    if vendor is not None and device is not None:
+        return pciids.describe(vendor, device)
+    return str(entry.get("name") or instance)
+
+
 def build_controllers(capture: Mapping[str, Any]) -> tuple[Controller, ...]:
     """Build every storage controller found in a Windows capture."""
     devices: Mapping[str, Mapping[str, Any]] = capture.get("pci", {})
@@ -134,7 +161,7 @@ def build_controllers(capture: Mapping[str, Any]) -> tuple[Controller, ...]:
         controllers.append(
             Controller(
                 address=str(entry.get("address") or instance),
-                name=str(entry.get("name") or instance),
+                name=_controller_name(entry, instance),
                 kind=kind,
                 driver=entry.get("driver"),
                 link=_pcie_link(entry),

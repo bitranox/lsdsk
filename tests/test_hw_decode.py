@@ -284,6 +284,46 @@ def test_when_a_device_is_unknown_describe_falls_back_to_hex() -> None:
 
 
 @pytest.mark.os_agnostic
+def test_a_machine_with_no_system_pci_ids_still_names_its_controllers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The bundled database is what makes a Windows machine name a controller.
+
+    None of the search paths exists on Windows, and before the database shipped
+    with the package that left the operating system's own device description as
+    the only source - which Windows localises. Every path is made unreachable
+    here, which is that machine's state.
+    """
+    from lsdsk.adapters.hw.decode import pciids
+
+    monkeypatch.setattr(pciids, "PCI_IDS_SEARCH_PATHS", ("/definitely/not/here",))
+    pciids.reset_database_cache()
+    try:
+        assert pciids.find_pci_ids(pciids.PCI_IDS_SEARCH_PATHS) is None, "the probe found a file it must not"
+        # A device, not just a vendor: the built-in fallback table holds vendors
+        # only, so a vendor-only assertion passes with no database at all.
+        assert "NVMe" in pciids.describe(0x144D, 0xA80A)
+        assert "AHCI" in pciids.describe(0x8086, 0x7AE2)
+    finally:
+        pciids.reset_database_cache()
+
+
+@pytest.mark.os_agnostic
+def test_the_bundled_database_is_where_the_package_says_it_is() -> None:
+    """A data file that resolves from the checkout can still be missing from the wheel.
+
+    Nothing else in the suite would notice: the tests import from ``src``, where
+    the file always exists. This asserts the path the package declares, so a
+    dropped entry in the wheel's include list fails here rather than on a user's
+    machine.
+    """
+    from lsdsk.adapters.hw.decode import pciids
+
+    assert pciids.BUNDLED_PCI_IDS.name == "pci.ids.gz"
+    assert pciids.read_bundled_pci_ids() is not None, "the bundled database did not decompress"
+
+
+@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("payload", "message"),
     [

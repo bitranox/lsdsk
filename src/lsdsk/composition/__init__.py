@@ -18,7 +18,7 @@ from ..adapters.history.store import read_history, write_history
 # Logging services
 from ..adapters.logging.setup import init_logging
 
-# Static conformance assertions — pyright verifies that each adapter function
+# Static conformance assertions - pyright verifies that each adapter function
 # structurally satisfies its corresponding Protocol at type-check time.
 if TYPE_CHECKING:
     from ..application.ports import (

@@ -1,0 +1,49 @@
+# Third-party material distributed with lsdsk
+
+lsdsk itself is MIT licensed; see LICENSE. It ships one data file that is not
+its own work.
+
+## The PCI ID database
+
+`src/lsdsk/adapters/hw/decode/pci.ids.gz` is a compressed, trimmed copy of
+`pci.ids` from the PCI ID Project, https://pci-ids.ucw.cz/, maintained by
+Albert Pool, Martin Mares and other volunteers.
+
+Upstream offers it under either the GNU General Public License version 2 or
+later, or the 3-clause BSD License. lsdsk redistributes it under the 3-clause
+BSD License. The copy keeps upstream's own comment header, which carries that
+statement and the version date of the snapshot.
+
+It is trimmed to the vendor and device lines lsdsk reads. The subsystem lines
+and the device class section are dropped; no name is altered.
+
+lsdsk uses it to name a controller the same way whatever the machine is. Where
+the operating system ships its own `pci.ids`, that one is preferred, because a
+distribution refreshes it more often than lsdsk is released.
+
+```
+Copyright (c) The PCI ID Project
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+3. Neither the name of the copyright holder nor the names of its contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```

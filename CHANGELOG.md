@@ -3,6 +3,33 @@
 All notable changes to this project will be documented in this file following
 the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [1.0.5] - 2026-08-07
+
+### Fixed
+
+- A controller is named the same whatever the machine reports it. Windows
+  localises its own device descriptions, so a German install showed
+  "Standardmaessiger NVM Express-Controller" beside English column headings, and
+  two machines with identical hardware disagreed about what was in them. The
+  numeric vendor and device identifiers say it in one language, and resolving
+  them is what Linux already did.
+- Our own source carries no typographic characters. Four files had an em-dash in
+  a docstring or a comment, against the project's own ASCII rule.
+
+### Added
+
+- The PCI name database ships with the package, because resolving those
+  identifiers needs one and no Windows machine has a `pci.ids`. It is trimmed to
+  the vendor and device lines this tool reads, which is 210 KB compressed, and
+  where the system has its own copy that one is preferred, since a distribution
+  refreshes it more often than this tool is released. See NOTICE: it is
+  redistributed under the 3-clause BSD License.
+
+The name Windows gives a PCIe PORT is untouched. It is quoted, in quotation
+marks, because Windows publishes no link registers for a bridge and a name like
+"Intel(R) PCIe RC 060 (x4) G4" is the only statement about that port's width and
+generation. Substituting a quotation would discard the one thing it carries.
+
 ## [1.0.4] - 2026-08-07
 
 Mostly about what the output looks like and who it is for.

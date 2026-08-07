@@ -122,7 +122,7 @@ def _get_config(*, profile: str | None = None, start_dir: str | None = None, dot
     multiple modules.
 
     Loads configuration from multiple sources in precedence order:
-    defaults → app → host → user → dotenv → env
+    defaults -> app -> host -> user -> dotenv -> env
 
     The vendor, app, and slug identifiers determine platform-specific paths:
     - Linux: Uses XDG directories with slug

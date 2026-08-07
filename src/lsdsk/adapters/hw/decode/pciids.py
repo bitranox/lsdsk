@@ -1,10 +1,23 @@
 """Resolve numeric PCI vendor and device identifiers to readable names.
 
 This is a lookup, not a reading, and it is the only piece of information the
-tool cannot get from the hardware itself.  It never reaches the network: on
-Linux it reads the system's own ``pci.ids``, on Windows the driver supplies a
-friendly name directly, and where neither exists a small built-in table of
-storage vendors keeps the output readable.
+tool cannot get from the hardware itself.  It never reaches the network: it
+reads the system's own ``pci.ids`` where there is one, falls back to a copy
+bundled with the package, and where a device is in neither, a small built-in
+table of storage vendors keeps the output readable.
+
+The bundled copy is why a controller is named the same on every platform. The
+alternative was the operating system's own device description, which Windows
+localises: on a German install an NVMe controller reads "Standardmaessiger NVM
+Express-Controller", so the output was half English and half not, and two
+machines running the same hardware disagreed about what was in them.
+
+To refresh the bundled copy, rebuild ``pci.ids.gz`` from a current upstream
+``pci.ids``: keep its comment header, which carries the licence and the version
+date, keep every unindented vendor line and every one-tab device line, and drop
+the two-tab subsystem lines and the trailing class section, neither of which
+:func:`parse_pci_ids` reads. Compress with ``mtime=0`` so an unchanged input
+produces a byte-identical file rather than a diff on every rebuild.
 
 System Role:
     Pure adapter-layer lookup over a local data file.
@@ -12,11 +25,16 @@ System Role:
 
 from __future__ import annotations
 
+import gzip
 from functools import lru_cache
 from pathlib import Path
 from typing import NamedTuple
 
 from ...textfile import read_text_bounded
+
+# Ships with the package, so a machine with no hwdata installed - every Windows
+# one - still resolves a controller to the same name Linux gives it.
+BUNDLED_PCI_IDS = Path(__file__).with_name("pci.ids.gz")
 
 # Distributions disagree on where the hwdata package puts this file, so try the
 # places it is actually found rather than assuming one.
@@ -129,15 +147,62 @@ def parse_pci_ids(text: str) -> Database:
     return Database(vendors, devices)
 
 
+def read_bundled_pci_ids(path: Path = BUNDLED_PCI_IDS) -> str | None:
+    """Return the bundled database's text, or ``None`` if it cannot be read.
+
+    Args:
+        path: The compressed database to read.
+
+    Returns:
+        The decompressed contents, or ``None`` when the file is absent or
+        unreadable.
+
+    Example:
+        >>> read_bundled_pci_ids(Path("/definitely/not/here.gz")) is None
+        True
+    """
+    try:
+        return gzip.decompress(path.read_bytes()).decode("utf-8", errors="replace")
+    except (OSError, gzip.BadGzipFile, EOFError):
+        return None
+
+
+def _database_text() -> str | None:
+    """The best available database contents: the system's, else the bundled one.
+
+    The system file wins when there is one, because a distribution's hwdata
+    package is refreshed more often than a release of this tool, so it knows
+    about newer silicon.
+    """
+    # Passed explicitly rather than left to the default argument, which binds
+    # the tuple at definition time: with the default, substituting the search
+    # paths cannot reach this call, and a test that removes every path still
+    # reads the real system file and passes having proved nothing.
+    path = find_pci_ids(PCI_IDS_SEARCH_PATHS)
+    if path is not None:
+        try:
+            return read_text_bounded(path, what="a PCI ID database", errors="replace")
+        except OSError:
+            pass
+    return read_bundled_pci_ids()
+
+
+def reset_database_cache() -> None:
+    """Forget the loaded database so the next lookup reads it again.
+
+    The database is read once and cached, which is right for a process that
+    reports one machine. Anything that changes what would be read - a different
+    set of search paths, a file appearing or going away - has to say so, and
+    without this the only way to say it is to reach into a private cache.
+    """
+    _load_database.cache_clear()
+
+
 @lru_cache(maxsize=1)
 def _load_database() -> Database:
-    """Load and cache the system PCI identifier database."""
-    path = find_pci_ids()
-    if path is None:
-        return Database(dict(FALLBACK_VENDORS), {})
-    try:
-        text = read_text_bounded(path, what="a PCI ID database", errors="replace")
-    except OSError:
+    """Load and cache the PCI identifier database."""
+    text = _database_text()
+    if text is None:
         return Database(dict(FALLBACK_VENDORS), {})
     vendors, devices = parse_pci_ids(text)
     for identifier, name in FALLBACK_VENDORS.items():
@@ -214,6 +279,7 @@ def describe(vendor: int, device: int, database: Database | None = None) -> str:
 
 
 __all__ = [
+    "BUNDLED_PCI_IDS",
     "FALLBACK_VENDORS",
     "PCI_IDS_SEARCH_PATHS",
     "Database",
@@ -222,4 +288,6 @@ __all__ = [
     "lookup_device",
     "lookup_vendor",
     "parse_pci_ids",
+    "read_bundled_pci_ids",
+    "reset_database_cache",
 ]
