@@ -206,3 +206,6 @@ EXECUTION-USER-REVIEW.md
 .remember/
 .data_arch_violations.json
 e2e-coverage.json
+
+# Local article drafts, not part of the project
+docs/artikel/
