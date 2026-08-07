@@ -15,6 +15,7 @@ import pytest
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
     from click.testing import CliRunner
 
@@ -143,24 +144,41 @@ def test_every_structured_mode_actually_emits_the_envelope() -> None:
 
 
 @pytest.mark.os_agnostic
-def test_the_structured_config_never_prints_a_secret() -> None:
+def test_the_structured_config_never_prints_a_secret(tmp_path: Path) -> None:
     """The envelope must not become a way to read .env in full.
 
     The human view redacts through the configuration library. The JSON branch
     builds its own payload, so it has to call the same redaction, and nothing
     else in the suite would notice if it stopped.
+
+    The secret is PLANTED here rather than borrowed from whatever ``.env`` the
+    machine happens to have. Configuration reads ``.env`` from the working
+    directory, so this passed on a developer box carrying real credentials and
+    failed on every CI runner, where no ``.env`` exists, the control fired, and
+    the test correctly reported that it had proved nothing. Planting one also
+    stops the suite reading the developer's own secrets to test redaction.
     """
     from lib_layered_config import REDACTED_PLACEHOLDER
 
+    secret = "not-a-real-secret-planted-by-the-test"
+    (tmp_path / ".env").write_text(f"DEMO_API_TOKEN={secret}\n", encoding="utf-8")
     completed = subprocess.run(
-        [sys.executable, "-m", "lsdsk", "config", "--format", "json"], capture_output=True, text=True, check=False
+        [sys.executable, "-m", "lsdsk", "config", "--format", "json"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
     )
     data = envelope_in(completed.stdout)["data"]
 
     sensitive = [key for key in data if any(word in key.lower() for word in ("token", "secret", "password", "key"))]
     assert sensitive, "the control: no sensitive-looking key was present, so this asserted nothing"
+    assert "demo_api_token" in sensitive, f"the planted key never reached the config: {sorted(data)}"
     for key in sensitive:
         assert data[key] == REDACTED_PLACEHOLDER, f"{key} was not redacted in the structured output"
+    # The placeholder being present does not prove the value is gone: a payload
+    # could carry both. Only its absence from the whole stream proves that.
+    assert secret not in completed.stdout, "the secret's value survived somewhere in the output"
 
 
 # --------------------------------------------------------------------------
