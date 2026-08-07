@@ -177,7 +177,7 @@ def test_a_root_run_uses_the_system_store(monkeypatch: pytest.MonkeyPatch) -> No
     from lsdsk.adapters.history.store import SYSTEM_STORE_DIR, default_history_path
 
     monkeypatch.setattr("sys.platform", "linux")
-    monkeypatch.setattr("os.geteuid", lambda: 0)
+    monkeypatch.setattr("os.geteuid", lambda: 0, raising=False)
     assert default_history_path() == SYSTEM_STORE_DIR / "history.json"
 
 
@@ -187,7 +187,7 @@ def test_a_non_root_run_keeps_the_per_user_store(monkeypatch: pytest.MonkeyPatch
     from lsdsk.adapters.history.store import default_history_path
 
     monkeypatch.setattr("sys.platform", "linux")
-    monkeypatch.setattr("os.geteuid", lambda: 1000)
+    monkeypatch.setattr("os.geteuid", lambda: 1000, raising=False)
     monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
     assert default_history_path() == tmp_path / ".local" / "state" / "lsdsk" / "history.json"
@@ -196,7 +196,7 @@ def test_a_non_root_run_keeps_the_per_user_store(monkeypatch: pytest.MonkeyPatch
 @pytest.mark.os_agnostic
 def test_configuration_still_wins_over_the_root_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.platform", "linux")
-    monkeypatch.setattr("os.geteuid", lambda: 0)
+    monkeypatch.setattr("os.geteuid", lambda: 0, raising=False)
     assert get_history_settings(config_of(path="/srv/h.json")).path == Path("/srv/h.json")
 
 

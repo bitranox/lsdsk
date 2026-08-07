@@ -48,7 +48,11 @@ def test_every_data_producing_command_offers_a_structured_mode() -> None:
         if command in NO_STRUCTURED_MODE:
             continue
         help_text = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [sys.executable, "-m", "lsdsk", command, "--help"], capture_output=True, text=True, check=False
+            [sys.executable, "-m", "lsdsk", command, "--help"],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
         ).stdout
         if "--format" not in help_text:
             missing.append(command)
@@ -132,7 +136,7 @@ def test_every_structured_mode_actually_emits_the_envelope() -> None:
     }
     for command, args in invocations.items():
         completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [sys.executable, "-m", "lsdsk", *args], capture_output=True, text=True, check=False
+            [sys.executable, "-m", "lsdsk", *args], capture_output=True, encoding="utf-8", errors="replace", check=False
         )
         envelope = envelope_in(completed.stdout)
         missing = {"ok", "command", "data", "skipped"} - set(envelope)
@@ -165,7 +169,8 @@ def test_the_structured_config_never_prints_a_secret(tmp_path: Path) -> None:
     completed = subprocess.run(
         [sys.executable, "-m", "lsdsk", "config", "--format", "json"],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         cwd=tmp_path,
     )

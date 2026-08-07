@@ -33,7 +33,9 @@ def modules_on_disk() -> list[str]:
     """
     named = {"src/lsdsk/__init__.py", "src/lsdsk/composition/__init__.py"}
     return sorted(
-        str(path.relative_to(ROOT))
+        # as_posix(), not str(): str() yields backslashes on Windows, so every
+        # comparison against a documented "src/lsdsk/..." path failed there.
+        path.relative_to(ROOT).as_posix()
         for path in SRC.rglob("*.py")
         if path.name != "__init__.py" or str(path.relative_to(ROOT)) in named
     )

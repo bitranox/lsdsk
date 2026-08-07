@@ -71,8 +71,13 @@ def test_saving_creates_the_directory(store: Path) -> None:
     assert store.is_file()
 
 
+@pytest.mark.os_posix
 def test_the_store_is_readable_only_by_its_owner(store: Path) -> None:
-    """It carries every drive's serial number, as the snapshot file does."""
+    """It carries every drive's serial number, as the snapshot file does.
+
+    POSIX-only: Windows has no mode bits for os.chmod to set, and the store
+    is kept private there by living under a per-user LOCALAPPDATA instead.
+    """
     save_history(history_of(sample(1)), store)
     assert stat.S_IMODE(store.stat().st_mode) == HISTORY_FILE_MODE
 
@@ -354,6 +359,10 @@ def test_the_default_path_falls_back_to_local_state(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr("sys.platform", "linux")
     monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
+    # Path.home() is not covered by the sys.platform patch above and reads
+    # USERPROFILE on Windows, so without this the simulated Linux run still
+    # resolved the real Windows home.
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     assert default_history_path() == tmp_path / ".local" / "state" / "lsdsk" / "history.json"
 
 
