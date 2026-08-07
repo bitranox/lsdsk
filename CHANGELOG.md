@@ -3,6 +3,38 @@
 All notable changes to this project will be documented in this file following
 the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [1.0.2] - 2026-08-07
+
+Corrects a false diagnosis. On Windows, a drive that was doing everything right
+could be reported as faulty, with instructions to reseat hardware that is
+soldered down and to check a cable that does not exist.
+
+### Fixed
+
+- A PCIe link is no longer called a fault when only one end of it was measured.
+  Where the port's capability could not be read, the tool took the DEVICE's own
+  maximum as the port's, so any drive faster than its socket looked like a
+  negotiation failure. Reported from a Gen5 NVMe drive in the CPU-attached Gen4
+  x4 M.2 socket of a Raptor Lake board: it was running exactly as fast as that
+  socket allows, and was told to reseat the card, check the riser and cabling,
+  and look for a BIOS slot-speed override. Such a shortfall is now reported as
+  real but unattributable, in yellow, and the remedy no longer names a cause.
+- Windows reports the driver behind each controller. It was never asked for, so
+  every controller showed "-" where Linux shows the bound kernel module. The
+  column now reads stornvme, storahci or iaStorVD, which is the same thing the
+  Linux column means.
+
+### Added
+
+- Controllers carry the name of the port above them, and the structured output
+  exposes it as `upstream_name`. Windows publishes no link registers for PCIe
+  bridges - measured on one board: 8 bridges, none with a link speed, and no
+  registry, WMI or user-mode API that has them - but it does name the port, and
+  a name like "Intel(R) PCIe RC 060 (x4) G4" answers what the missing registers
+  left open. It is quoted, never parsed into a capability: it comes from a
+  driver package rather than from the hardware, and only some vendors put the
+  width and generation in it.
+
 ## [1.0.1] - 2026-08-07
 
 A maintenance release. It behaves exactly as 1.0.0 does: the only change inside
@@ -133,5 +165,6 @@ First release. Everything below is what it does.
   finding, including that a large error count ranks nothing until the rate is
   known, and that a normal run records one reading.
 
+[1.0.2]: https://github.com/bitranox/lsdsk/releases/tag/v1.0.2
 [1.0.1]: https://github.com/bitranox/lsdsk/releases/tag/v1.0.1
 [1.0.0]: https://github.com/bitranox/lsdsk/releases/tag/v1.0.0
