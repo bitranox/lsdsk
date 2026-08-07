@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from lsdsk.adapters.render import theme
 from lsdsk.domain.diagnostics import (
     WEAR_CRITICAL_PERCENT,
     WEAR_WARNING_PERCENT,
@@ -516,18 +517,21 @@ def test_size_formatting(size_bytes: int | None, expected: str) -> None:
     [
         # A drive at its own maximum in a faster port: the drive is marked as
         # occupying a seat it cannot use, and nothing is called a fault.
-        (12.0, 3.0, 3.0, "", "orange3", "green"),
+        # Named by MEANING, never by colour literal: a palette change must not
+        # break a test about which column carries which signal, and a literal
+        # here documents nothing a reader needs.
+        (12.0, 3.0, 3.0, "", theme.STYLE_OPPORTUNITY, theme.STYLE_AT_CAPABILITY),
         # Port and drive matched, running as agreed: nothing to say.
-        (6.0, 6.0, 6.0, "", "", "green"),
+        (6.0, 6.0, 6.0, "", "", theme.STYLE_AT_CAPABILITY),
         # The port is the constraint, so the port carries the warning.
-        (3.0, 6.0, 3.0, "yellow", "", "green"),
+        (3.0, 6.0, 3.0, theme.STYLE_BELOW_CAPABILITY, "", theme.STYLE_AT_CAPABILITY),
         # Both ends could do more than the link achieved: a genuine fault.
-        (6.0, 6.0, 3.0, "", "", "bold red"),
-        (None, 6.0, 6.0, "dim", "dim", "green"),
+        (6.0, 6.0, 3.0, "", "", theme.STYLE_FAILING),
+        (None, 6.0, 6.0, theme.STYLE_UNKNOWN, theme.STYLE_UNKNOWN, theme.STYLE_AT_CAPABILITY),
         # The drive is below its own maximum but the port was never read, so a
         # 3 Gb/s port would explain it entirely. Yellow, because something is
         # off; not red, because red is reserved for a proven fault.
-        (None, 6.0, 3.0, "dim", "dim", "yellow"),
+        (None, 6.0, 3.0, theme.STYLE_UNKNOWN, theme.STYLE_UNKNOWN, theme.STYLE_BELOW_CAPABILITY),
     ],
 )
 def test_speed_column_colours(
@@ -555,9 +559,9 @@ def test_temperature_without_declared_limits_falls_back_to_bands() -> None:
     """Verify a drive declaring no thresholds still gets a sane grading."""
     from lsdsk.adapters.render.theme import format_temperature
 
-    assert format_temperature(30)[1] == "green"
-    assert format_temperature(55)[1] == "yellow"
-    assert format_temperature(65)[1] == "bold red"
+    assert format_temperature(30)[1] == theme.STYLE_AT_CAPABILITY
+    assert format_temperature(55)[1] == theme.STYLE_BELOW_CAPABILITY
+    assert format_temperature(65)[1] == theme.STYLE_FAILING
 
 
 @pytest.mark.os_agnostic

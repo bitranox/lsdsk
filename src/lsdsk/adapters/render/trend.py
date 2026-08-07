@@ -178,7 +178,7 @@ def _table(rows: Sequence[Row], title: str, width: int) -> Table:
         title_justify="left",
         title_style="bold",
         box=None,
-        header_style="dim",
+        header_style=theme.STYLE_HEADER,
         pad_edge=False,
         padding=(0, 1),
     )

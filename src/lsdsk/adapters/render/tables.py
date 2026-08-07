@@ -109,7 +109,7 @@ def _render(title: str, columns: Sequence[Column], rows: Sequence[Row], width: i
         title_justify="left",
         title_style="bold",
         box=None,
-        header_style="dim",
+        header_style=theme.STYLE_HEADER,
         pad_edge=False,
         padding=(0, 1),
     )
@@ -160,16 +160,19 @@ def render_controllers(inventory: Inventory, findings: Sequence[Finding], width:
         rows.append(
             {
                 "marker": (theme.marker_for(severity), theme.style_for(severity)),
-                "address": (controller.address, "bold cyan"),
+                "address": (controller.address, theme.STYLE_IDENTIFIER),
                 "controller": (controller.name, ""),
-                "driver": (controller.driver or "-", "dim"),
-                "firmware": (controller.firmware or "-", "dim"),
+                "driver": (controller.driver or "-", "" if controller.driver else theme.STYLE_UNKNOWN),
+                "firmware": (controller.firmware or "-", "" if controller.firmware else theme.STYLE_UNKNOWN),
                 "running": (running, "" if running == capable else theme.STYLE_BELOW_CAPABILITY),
-                "capable": (capable, "dim"),
+                "capable": (capable, ""),
                 "ports": ("-" if controller.port_count is None else str(controller.port_count), ""),
                 "free": ("-" if controller.ports_free is None else str(controller.ports_free), ""),
                 "disks": (str(len(inventory.disks_on(controller.address))), ""),
-                "load": ("-" if demand is None else f"{demand:.2f} GB/s", "dim"),
+                "load": (
+                    "-" if demand is None else f"{demand:.2f} GB/s",
+                    theme.STYLE_UNKNOWN if demand is None else "",
+                ),
             }
         )
     return _render(f"Controllers on {inventory.hostname}", CONTROLLER_COLUMNS, rows, width)
@@ -200,16 +203,19 @@ def render_disks(inventory: Inventory, findings: Sequence[Finding], width: int =
                 "marker": (theme.marker_for(severity), theme.style_for(severity)),
                 "device": (cells["device"], styles["device"]),
                 "model": (cells["model"], styles["model"]),
-                "wwn": (disk.wwn or "-", "dim"),
-                "serial": (disk.serial or "-", "dim"),
-                "firmware": (disk.firmware or "-", "dim"),
+                "wwn": (disk.wwn or "-", "" if disk.wwn else theme.STYLE_UNKNOWN),
+                "serial": (disk.serial or "-", "" if disk.serial else theme.STYLE_UNKNOWN),
+                "firmware": (disk.firmware or "-", "" if disk.firmware else theme.STYLE_UNKNOWN),
                 "size": (cells["size"], styles["size"]),
                 "kind": (cells["kind"], styles["kind"]),
                 "bus": (cells["bus"], styles["bus"]),
                 "port": (cells["port"], styles["port"]),
                 "disk": (cells["disk"], styles["disk"]),
                 "link": (cells["link"], styles["link"]),
-                "controller": (disk.controller_address or "-", "dim"),
+                "controller": (
+                    disk.controller_address or "-",
+                    theme.STYLE_IDENTIFIER if disk.controller_address else theme.STYLE_UNKNOWN,
+                ),
             }
         )
     return _render(f"Disks on {inventory.hostname}", DISK_COLUMNS, rows, width)

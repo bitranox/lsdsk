@@ -224,3 +224,98 @@ def test_a_refusal_never_reports_an_expectation_that_rounded_to_nothing(
 
     assert must_not_say not in text, f"reported an expectation that rounded away: {text!r}"
     assert text.strip(), "a refusal must still say something"
+
+
+# --------------------------------------------------------------------------
+# The palette has to be READABLE, which is a measurement rather than a taste
+# --------------------------------------------------------------------------
+
+#: Backgrounds this tool actually lands on. Two dark, two light: macOS Terminal
+#: ships white and Solarized light is common, so a palette tuned only for a dark
+#: console is unreadable for half its users.
+_BACKGROUNDS: dict[str, tuple[int, int, int]] = {
+    "Windows Terminal Campbell": (0x0C, 0x0C, 0x0C),
+    "legacy console black": (0x00, 0x00, 0x00),
+    "macOS Terminal white": (0xFF, 0xFF, 0xFF),
+    "Solarized light": (0xFD, 0xF6, 0xE3),
+}
+
+#: WCAG's floor for large text is 3.0 and body text wants 4.5. A saturated hue
+#: cannot reach 4.5 on black AND white at once - sweeping the lightness puts the
+#: ceiling at 4.2 for a colour serving both - so the gate sits at 4.0.
+#:
+#: What that buys and what it does not: it rejects UNREADABLE, not suboptimal.
+#: Verified by mutation - faint scores 1.7 and fails, Campbell cyan scores 3.0
+#: and fails, but the legacy console's #008080 scores 4.1 and PASSES. That
+#: colour is legible, just poorer than the palette in use. Raising the gate to
+#: 4.2 would pin it to today's exact values and fail on any future adjustment,
+#: which is a worse trade than admitting a marginal colour.
+_MIN_CONTRAST = 4.0
+
+
+def _relative_luminance(rgb: tuple[int, int, int]) -> float:
+    def channel(value: int) -> float:
+        v = value / 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+
+    red, green, blue = (channel(v) for v in rgb)
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def _contrast(fore: tuple[int, int, int], back: tuple[int, int, int]) -> float:
+    low, high = sorted((_relative_luminance(fore), _relative_luminance(back)))
+    return (high + 0.05) / (low + 0.05)
+
+
+@pytest.mark.os_agnostic
+def test_every_palette_colour_is_legible_on_every_background() -> None:
+    """No colour may fall below the large-text floor on any real background.
+
+    Measured, because the palette this replaced could not be read: the hint and
+    ceiling colour scored 1.7:1, and the warning and opportunity colours fell to
+    2.4 and 2.6 on a light background. Two causes compounded - the faint
+    attribute, which terminals implement by blending toward the background and
+    which therefore removes the contrast it was being asked to provide, and
+    naming a colour the terminal resolves through its own palette, where cyan
+    ranges from #3A96DD to the legacy console's #008080.
+
+    A colour nobody can read carries no meaning, which makes this the same rule
+    as the one at the top of theme.py rather than a separate concern.
+    """
+    from lsdsk.adapters.render import theme
+
+    palette = {
+        name: value
+        for name, value in vars(theme).items()
+        if name.startswith("STYLE_") and isinstance(value, str) and value.startswith("#")
+    }
+    assert palette, "the control: no hex colours found, so this asserted nothing"
+
+    failures: list[str] = []
+    for name, value in sorted(palette.items()):
+        rgb = (int(value[1:3], 16), int(value[3:5], 16), int(value[5:7], 16))
+        for where, background in _BACKGROUNDS.items():
+            ratio = _contrast(rgb, background)
+            if ratio < _MIN_CONTRAST:
+                failures.append(f"{name} ({value}) is {ratio:.1f}:1 on {where}")
+    assert not failures, "unreadable: " + "; ".join(failures)
+
+
+@pytest.mark.os_agnostic
+def test_nothing_in_the_palette_uses_the_faint_attribute() -> None:
+    """``dim`` buys emphasis by removing contrast, which is the one thing a
+    diagnostic must not spend.
+
+    Kept separate from the contrast test because it cannot be measured the same
+    way: faint is applied by the terminal after the colour is chosen, so a hex
+    value can pass the ratio check and still be rendered unreadable by a ``dim``
+    sitting in front of it.
+    """
+    from lsdsk.adapters.render import theme
+
+    offenders = [
+        name
+        for name, value in vars(theme).items()
+        if name.startswith("STYLE_") and isinstance(value, str) and "dim" in value.split()
+    ]
+    assert not offenders, f"these styles still ask the terminal to reduce contrast: {offenders}"

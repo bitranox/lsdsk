@@ -21,6 +21,7 @@ from rich.console import Group
 from rich.table import Table
 from rich.text import Text
 
+from ... import __init__conf__
 from ...domain.diagnostics import count_by_severity
 from ...domain.enums import Align, BusType, Environment, Severity
 from ...domain.models import pcie_bandwidth_gbps, pcie_generation
@@ -105,13 +106,17 @@ def render_header(inventory: Inventory) -> RenderableType:
     thing.
     """
     line = Text()
-    line.append("lsdsk  ", style="bold")
-    line.append(inventory.hostname, style="bold cyan")
-    line.append(f"   {len(inventory.disks)} disks on {len(inventory.controllers)} controllers", style="dim")
+    # The version rides in the banner because this output gets pasted into
+    # tickets and mails, where the first question asked of a surprising reading
+    # is which build produced it. A reader who has the report should never have
+    # to go back to the machine for that.
+    line.append(f"lsdsk {__init__conf__.version}  ", style="bold")
+    line.append(inventory.hostname, style=theme.STYLE_IDENTIFIER)
+    line.append(f"   {len(inventory.disks)} disks on {len(inventory.controllers)} controllers")
     # The placement hints talk about what "this board" can offer, so naming it
     # turns that advice into something the reader can act on or shop for.
     if inventory.board:
-        line.append(f"   {inventory.board}", style="dim")
+        line.append(f"   {inventory.board}")
 
     caveat = environment_caveat(inventory)
     limitation = privilege_note(inventory)
@@ -262,7 +267,7 @@ def render_verdict(findings: Sequence[Finding], summary_limit: int = SUMMARY_LIM
         )
     if len(findings) > summary_limit:
         remaining = len(findings) - summary_limit
-        table.add_row("", "", Text(f"and {remaining} more, run `lsdsk findings`", style="dim"))
+        table.add_row("", "", Text(f"and {remaining} more, run `lsdsk findings`", style=theme.STYLE_UNKNOWN))
     return table
 
 
@@ -361,8 +366,8 @@ def disk_cell_styles(disk: Disk, port: PcieLink | None = None) -> dict[str, str]
         "device": "bold",
         "model": "",
         "size": "",
-        "kind": "dim",
-        "bus": "dim",
+        "kind": "",
+        "bus": "",
         "port": port_style,
         "disk": drive_style,
         "link": negotiated_style,
@@ -382,12 +387,12 @@ def _controller_line(controller: Controller, severity: Severity | None) -> Text:
     # narrow terminal and stranded itself away from the controller it marks.
     marker = "" if severity is None else theme.SEVERITY_MARKERS[severity]
     line.append(marker.ljust(_MARKER_RESERVE) + " ", style="" if severity is None else theme.SEVERITY_STYLES[severity])
-    line.append(f"{controller.address}  ", style="bold cyan")
+    line.append(f"{controller.address}  ", style=theme.STYLE_IDENTIFIER)
     line.append(controller.name, style="bold")
     if controller.driver:
-        line.append(f"  {controller.driver}", style="dim")
+        line.append(f"  {controller.driver}")
     if controller.firmware:
-        line.append(f"  fw {controller.firmware}", style="dim")
+        line.append(f"  fw {controller.firmware}")
 
     link = controller.link
     running_generation = pcie_generation(link.current_speed_gtps)
@@ -408,7 +413,7 @@ def _controller_line(controller: Controller, severity: Severity | None) -> Text:
 
     ports = controller.ports_free
     if controller.port_count is not None:
-        line.append(f"   {controller.port_count} ports", style="dim")
+        line.append(f"   {controller.port_count} ports")
         if ports:
             line.append(f", {ports} free", style=theme.STYLE_AT_CAPABILITY)
     return line
@@ -426,7 +431,7 @@ def _disk_line(
     cells = disk_cells(disk, port)
     styles = disk_cell_styles(disk, port)
     line = Text()
-    line.append(glyph.ljust(len(GUTTER)), style="dim")
+    line.append(glyph.ljust(len(GUTTER)))
     # The marker LEADS the row, as it already does in every table. Appended at
     # the end it sat past the fitted width, so on a narrow terminal it wrapped
     # onto a line of its own and detached the one mark that says the row is a
@@ -450,7 +455,7 @@ def _header_line(columns: Sequence[Column], widths: dict[str, int]) -> Text:
     # sit one field to the left of the columns it labels.
     line.append(" " * (_MARKER_RESERVE + 1))
     for column in columns:
-        line.append(pad(column.title, widths[column.key], column.align), style="dim")
+        line.append(pad(column.title, widths[column.key], column.align), style=theme.STYLE_HEADER)
         line.append(GAP)
     return line
 
@@ -498,7 +503,7 @@ def render_tree(inventory: Inventory, findings: Sequence[Finding], width: int = 
     orphans = [disk for disk in inventory.disks if disk.node not in attached]
     if orphans:
         lines.append(Text(""))
-        lines.append(Text("not attached to a known controller", style="dim"))
+        lines.append(Text("not attached to a known controller", style=theme.STYLE_UNKNOWN))
         lines.append(_header_line(layout.columns, layout.widths))
         lines.extend(_disk_lines(orphans, findings, layout, inventory))
     return Group(*lines)
@@ -605,14 +610,14 @@ def _slot_row(slot: PcieSlot) -> Row:
     occupant = slot.occupant_description
     needs = "-" if slot.occupant_link is None else _pcie_capability(slot.occupant_link)
     return {
-        "port": (slot.address, "bold cyan"),
-        "slot": (number, "dim"),
-        "capable": (_pcie_capability(slot.link), "dim"),
+        "port": (slot.address, theme.STYLE_IDENTIFIER),
+        "slot": (number, "" if number != "-" else theme.STYLE_UNKNOWN),
+        "capable": (_pcie_capability(slot.link), ""),
         # An empty port trains to nothing, and printing that as "Gen1 x0" reads
         # like a fault rather than an absence.
         "running": (_pcie_text(slot.link) if slot.occupied else "-", ""),
         "occupant": (occupant, "" if slot.occupied else theme.STYLE_UNKNOWN),
-        "needs": (needs, "dim"),
+        "needs": (needs, ""),
         "verdict": slot_verdict(slot),
     }
 
@@ -658,7 +663,7 @@ def _board_line(inventory: Inventory) -> Text:
     """Render the board name and how many of its ports are free."""
     line = Text()
     line.append(inventory.board or "mainboard not named by firmware", style="bold")
-    line.append(f"   {len(inventory.slots)} ports", style="dim")
+    line.append(f"   {len(inventory.slots)} ports")
     free = sum(1 for slot in inventory.slots if not slot.occupied and slot.connector_present is True)
     if free:
         line.append(f"   {free} free", style=theme.STYLE_AT_CAPABILITY)
@@ -730,7 +735,7 @@ def _disk_attributes(disk: Disk, width: int) -> list[RenderableType]:
     if not attributes:
         heading.append(f"  {_no_attributes_reason(disk)}", style=theme.STYLE_UNKNOWN)
         return [heading]
-    heading.append(f"  {len(attributes)} attributes", style="dim")
+    heading.append(f"  {len(attributes)} attributes")
 
     rows = [
         {
@@ -793,7 +798,7 @@ def render_findings(findings: Sequence[Finding]) -> RenderableType:
         heading.append(finding.title, style="bold")
         table.add_row(Text(theme.SEVERITY_MARKERS[finding.severity], style=style), heading)
         if finding.detail:
-            table.add_row("", Text(finding.detail, style="dim"))
+            table.add_row("", Text(finding.detail))
         if finding.action:
             table.add_row("", Text(f"-> {finding.action}"))
     return table

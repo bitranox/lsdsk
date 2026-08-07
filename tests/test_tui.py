@@ -14,6 +14,7 @@ import pytest
 from textual.widgets import Static, TabbedContent
 
 from lsdsk.adapters.hw.snapshot import build_from
+from lsdsk.adapters.render import theme
 from lsdsk.adapters.render.layout import Column, fit, natural_widths, pad
 from lsdsk.adapters.render.report import DISK_COLUMNS, render_tree
 from lsdsk.adapters.tui import LsdskApp
@@ -332,7 +333,13 @@ async def test_a_flagged_row_carries_its_colour(page_key: str, table_id: str) ->
         styles = {str(cell.style) for row in table.rows for cell in table.get_row(row)}
 
         assert styles - {""}, "no cell carried any style, so the page is monochrome"
-        assert any(style in styles for style in ("yellow", "bold red", "orange3")), (
+        severity_styles = {
+            theme.STYLE_BELOW_CAPABILITY,
+            theme.STYLE_FAILING,
+            theme.STYLE_OPPORTUNITY,
+            *theme.SEVERITY_STYLES.values(),
+        }
+        assert any(style in styles for style in severity_styles), (
             f"the fixture has findings, so some cell must carry a severity colour; got {sorted(styles)}"
         )
 

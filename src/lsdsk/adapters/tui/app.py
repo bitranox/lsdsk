@@ -21,6 +21,7 @@ from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.widgets import DataTable, Footer, Header, Static, TabbedContent, TabPane
 
+from ... import __init__conf__
 from ...domain.diagnostics import count_by_severity, diagnose
 from ...domain.enums import CliCommand, Severity
 from ...domain.history import CounterKind, History
@@ -106,7 +107,7 @@ class LsdskApp(App[None]):
         self.inventory = inventory
         self.history: History = history if history is not None else History(hostname=inventory.hostname)
         self.findings: tuple[Finding, ...] = diagnose(inventory, history=history)
-        self.title = "lsdsk"
+        self.title = f"lsdsk {__init__conf__.version}"
         self.sub_title = inventory.hostname
 
     def compose(self) -> ComposeResult:
@@ -167,12 +168,12 @@ class LsdskApp(App[None]):
             capable = _pcie_capable(controller.link)
             table.add_row(
                 _cell(theme.marker_for(severity), marker_style),
-                _cell(controller.address, "bold cyan"),
+                _cell(controller.address, theme.STYLE_IDENTIFIER),
                 _cell(controller.name, marker_style),
-                _cell(controller.driver or "-", "dim"),
-                _cell(controller.firmware or "-", "dim"),
+                _cell(controller.driver or "-", "" if controller.driver else theme.STYLE_UNKNOWN),
+                _cell(controller.firmware or "-", "" if controller.firmware else theme.STYLE_UNKNOWN),
                 _cell(running, "" if running == capable else theme.STYLE_BELOW_CAPABILITY),
-                _cell(capable, "dim"),
+                _cell(capable, ""),
                 _cell(
                     "-" if controller.port_count is None else f"{controller.ports_used or 0}/{controller.port_count}"
                 ),
@@ -186,12 +187,18 @@ class LsdskApp(App[None]):
         for slot in self.inventory.slots:
             verdict, verdict_style = report.slot_verdict(slot)
             table.add_row(
-                _cell(slot.address, "bold cyan"),
-                _cell("-" if slot.physical_slot_number is None else f"#{slot.physical_slot_number}", "dim"),
-                _cell(_pcie_capable(slot.link), "dim"),
+                _cell(slot.address, theme.STYLE_IDENTIFIER),
+                _cell(
+                    "-" if slot.physical_slot_number is None else f"#{slot.physical_slot_number}",
+                    theme.STYLE_UNKNOWN if slot.physical_slot_number is None else "",
+                ),
+                _cell(_pcie_capable(slot.link), ""),
                 _cell(_pcie(slot.link) if slot.occupied else "-"),
                 _cell(slot.occupant_description, "" if slot.occupied else theme.STYLE_UNKNOWN),
-                _cell("-" if slot.occupant_link is None else _pcie_capable(slot.occupant_link), "dim"),
+                _cell(
+                    "-" if slot.occupant_link is None else _pcie_capable(slot.occupant_link),
+                    theme.STYLE_UNKNOWN if slot.occupant_link is None else "",
+                ),
                 _cell(verdict, verdict_style),
             )
 
@@ -207,9 +214,12 @@ class LsdskApp(App[None]):
             table.add_row(
                 _cell(theme.marker_for(severity), theme.style_for(severity)),
                 *(_cell(cells[key], styles.get(key, "")) for key in ("device", "model")),
-                _cell(disk.wwn or "-", "dim"),
+                _cell(disk.wwn or "-", "" if disk.wwn else theme.STYLE_UNKNOWN),
                 *(_cell(cells[key], styles.get(key, "")) for key in ("size", "kind", "bus", "port", "disk", "link")),
-                _cell(disk.controller_address or "-", "dim"),
+                _cell(
+                    disk.controller_address or "-",
+                    theme.STYLE_IDENTIFIER if disk.controller_address else theme.STYLE_UNKNOWN,
+                ),
                 key=disk.node,
             )
 

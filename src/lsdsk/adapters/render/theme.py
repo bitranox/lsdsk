@@ -2,9 +2,11 @@
 
 Two rules hold everywhere here:
 
-Colour only ever carries meaning.  Green is at capability, yellow is below it,
-red is failing, dim is a ceiling nothing can be done about or a value that could
-not be read.  Nothing is coloured for decoration.
+Colour only ever carries meaning.  Green is at capability, amber is below it,
+red is failing, blue is a ceiling nothing can be done about, and grey is a value
+that could not be read.  Nothing is coloured for decoration, and nothing is
+faint: the faint attribute buys emphasis by removing contrast, which costs the
+reader the value itself.
 
 Colour is never the only carrier.  Every severity also has an ASCII marker, so
 the output survives a pipe, a log file, ``NO_COLOR`` and colour blindness.
@@ -42,10 +44,38 @@ SEVERITY_MARKERS: dict[Severity, str] = {
     Severity.HINT: "~",
 }
 
+# The palette is stated in hex rather than as the terminal's named colours, and
+# nothing here uses the faint attribute. Both were measured, because a colour
+# this tool cannot read is a colour that carries no meaning:
+#
+#   dim cyan          contrast 1.7 - 1.8 : 1   on every scheme tried
+#   yellow            contrast 2.4 : 1         on a light background
+#   orange3           contrast 2.6 : 1         on a light background
+#
+# WCAG puts the floor for large text at 3:1 and for body text at 4.5:1, so the
+# old hint colour was roughly half of unreadable. Two causes compounded. The
+# faint attribute (SGR 2) is implemented by blending toward the background, so it
+# removes exactly the contrast the reader needs; and a NAMED colour resolves
+# through the terminal's own palette, where cyan ranges from #3A96DD to the
+# legacy console's #008080 - the tool cannot know which it will get.
+#
+# Each colour below is the most legible member of its hue: the lightness was
+# swept and the variant kept whose WORST contrast across a dark console, a black
+# console, macOS Terminal's white default and Solarized light was highest. That
+# worst case is 4.2:1 for every one of them, which is the ceiling for a saturated
+# hue that has to survive both black and white. Verified by
+# ``test_every_palette_colour_is_legible_on_every_background``.
+STYLE_CRITICAL_COLOUR = "#E12D2D"
+STYLE_WARNING_COLOUR = "#A5660D"
+STYLE_AT_CAPABILITY_COLOUR = "#22874C"
+STYLE_HINT_COLOUR = "#1C7FA0"
+STYLE_OPPORTUNITY_COLOUR = "#C65310"
+STYLE_UNKNOWN_COLOUR = "#6E7687"
+
 SEVERITY_STYLES: dict[Severity, str] = {
-    Severity.CRITICAL: "bold red",
-    Severity.WARNING: "yellow",
-    Severity.HINT: "dim cyan",
+    Severity.CRITICAL: f"bold {STYLE_CRITICAL_COLOUR}",
+    Severity.WARNING: STYLE_WARNING_COLOUR,
+    Severity.HINT: STYLE_HINT_COLOUR,
 }
 
 SEVERITY_LABELS: dict[Severity, str] = {
@@ -55,16 +85,26 @@ SEVERITY_LABELS: dict[Severity, str] = {
 }
 
 # Styles for a measurement compared against what it could be.
-STYLE_AT_CAPABILITY = "green"
-STYLE_BELOW_CAPABILITY = "yellow"
-STYLE_FAILING = "bold red"
-STYLE_UNKNOWN = "dim"
-STYLE_CEILING = "dim cyan"
-STYLE_CAVEAT = "bold yellow"
+STYLE_AT_CAPABILITY = STYLE_AT_CAPABILITY_COLOUR
+STYLE_BELOW_CAPABILITY = STYLE_WARNING_COLOUR
+STYLE_FAILING = f"bold {STYLE_CRITICAL_COLOUR}"
+#: A value that could not be read. Grey rather than faint: the reader still has
+#: to SEE that a dash is there, and the whole point of the dash is that it is
+#: different from a zero.
+STYLE_UNKNOWN = STYLE_UNKNOWN_COLOUR
+STYLE_CEILING = STYLE_HINT_COLOUR
+STYLE_CAVEAT = f"bold {STYLE_WARNING_COLOUR}"
+#: A column header. Bold rather than faint: the headers name every column, so
+#: they are the last thing that should be hard to read.
+STYLE_HEADER = "bold"
+#: An identifier - a PCI address, a device path. Bold WITHOUT a hue, because
+#: colour here would claim a severity the value does not have, and the law of
+#: this file is that colour only ever carries meaning.
+STYLE_IDENTIFIER = "bold"
 # A drive that cannot use the port it occupies is not a fault, so it must not
 # share the colour faults use. Orange reads as "look at this" without reading as
 # "something is broken", which is exactly the difference.
-STYLE_OPPORTUNITY = "orange3"
+STYLE_OPPORTUNITY = STYLE_OPPORTUNITY_COLOUR
 
 # Temperature bands, in Celsius, used only when a drive declares no thresholds
 # of its own. A drive's own limits always win.
@@ -138,16 +178,16 @@ def link_style(negotiated: float | None, port_max: float | None, drive_max: floa
     yellow: an unread port may simply be the slower of the two.
 
     Example:
-        >>> link_style(3.0, 12.0, 3.0)
-        'green'
-        >>> link_style(3.0, 6.0, 6.0)
-        'bold red'
-        >>> link_style(3.0, None, 6.0)
-        'yellow'
-        >>> link_style(6.0, None, 6.0)
-        'green'
-        >>> link_style(None, 6.0, 6.0)
-        'dim'
+        >>> link_style(3.0, 12.0, 3.0) == STYLE_AT_CAPABILITY
+        True
+        >>> link_style(3.0, 6.0, 6.0) == STYLE_FAILING
+        True
+        >>> link_style(3.0, None, 6.0) == STYLE_BELOW_CAPABILITY
+        True
+        >>> link_style(6.0, None, 6.0) == STYLE_AT_CAPABILITY
+        True
+        >>> link_style(None, 6.0, 6.0) == STYLE_UNKNOWN
+        True
     """
     if negotiated is None:
         return STYLE_UNKNOWN
@@ -171,12 +211,12 @@ def port_style(port_max_gbps: float | None, drive_max_gbps: float | None) -> str
     colouring both would say the same thing twice in two colours.
 
     Example:
-        >>> port_style(3.0, 6.0)
-        'yellow'
+        >>> port_style(3.0, 6.0) == STYLE_BELOW_CAPABILITY
+        True
         >>> port_style(12.0, 3.0)
         ''
-        >>> port_style(None, 6.0)
-        'dim'
+        >>> port_style(None, 6.0) == STYLE_UNKNOWN
+        True
     """
     if port_max_gbps is None or drive_max_gbps is None:
         return STYLE_UNKNOWN
@@ -191,14 +231,14 @@ def disk_style(drive_max_gbps: float | None, port_max_gbps: float | None) -> str
     deliberately not the colour a fault gets.
 
     Example:
-        >>> disk_style(3.0, 12.0)
-        'orange3'
+        >>> disk_style(3.0, 12.0) == STYLE_OPPORTUNITY
+        True
         >>> disk_style(6.0, 6.0)
         ''
         >>> disk_style(6.0, 3.0)
         ''
-        >>> disk_style(6.0, None)
-        'dim'
+        >>> disk_style(6.0, None) == STYLE_UNKNOWN
+        True
     """
     if drive_max_gbps is None or port_max_gbps is None:
         return STYLE_UNKNOWN
@@ -284,14 +324,14 @@ def format_temperature(
         The text and the style to render it in.
 
     Example:
-        >>> format_temperature(34)
-        ('34C', 'green')
-        >>> format_temperature(83, warning=82, critical=85)
-        ('83C', 'yellow')
-        >>> format_temperature(86, warning=82, critical=85)
-        ('86C', 'bold red')
-        >>> format_temperature(None)
-        ('-', 'dim')
+        >>> format_temperature(34) == ('34C', STYLE_AT_CAPABILITY)
+        True
+        >>> format_temperature(83, warning=82, critical=85) == ('83C', STYLE_BELOW_CAPABILITY)
+        True
+        >>> format_temperature(86, warning=82, critical=85) == ('86C', STYLE_FAILING)
+        True
+        >>> format_temperature(None) == ('-', STYLE_UNKNOWN)
+        True
     """
     if celsius is None:
         return "-", STYLE_UNKNOWN
@@ -316,14 +356,14 @@ def format_wear(
     """Render wear as a percentage consumed, and style it.
 
     Example:
-        >>> format_wear(1)
-        ('1%', 'green')
-        >>> format_wear(85)
-        ('85%', 'yellow')
-        >>> format_wear(97)
-        ('97%', 'bold red')
-        >>> format_wear(None)
-        ('-', 'dim')
+        >>> format_wear(1) == ('1%', STYLE_AT_CAPABILITY)
+        True
+        >>> format_wear(85) == ('85%', STYLE_BELOW_CAPABILITY)
+        True
+        >>> format_wear(97) == ('97%', STYLE_FAILING)
+        True
+        >>> format_wear(None) == ('-', STYLE_UNKNOWN)
+        True
     """
     if percent_used is None:
         return "-", STYLE_UNKNOWN
@@ -351,8 +391,8 @@ def style_for(severity: Severity | None) -> str:
     """Return the style for a severity, or the neutral style for none.
 
     Example:
-        >>> style_for(Severity.WARNING)
-        'yellow'
+        >>> style_for(Severity.WARNING) == SEVERITY_STYLES[Severity.WARNING]
+        True
         >>> style_for(None)
         ''
     """
