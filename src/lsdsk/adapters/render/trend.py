@@ -104,8 +104,25 @@ def verdict_text(trend: Trend) -> str:
     if trend.verdict is TrendVerdict.QUIET and trend.expected_from_lifetime is not None:
         return f"{word} in {trend.span_hours}h, {trend.expected_from_lifetime:.0f} were due"
     if trend.verdict is TrendVerdict.TOO_CLOSE and trend.expected_from_lifetime is not None:
-        return f"{word}, only {trend.expected_from_lifetime:.1f} were due"
+        return f"{word}, {_why_too_close(trend.expected_from_lifetime, trend.span_hours)}"
     return word
+
+
+def _why_too_close(expected: float, span_hours: int | None) -> str:
+    """Say why the span proves nothing, in terms that survive rounding.
+
+    The expectation is a rate times a span, so it is legitimately fractional and
+    is usually far below one - a drive with a single lifetime CRC error in 42278
+    hours predicts 0.000024 of one across an hour. Printed to a decimal place
+    that becomes "only 0.0 were due", which states that none were due and makes
+    "only" contradict its own number. The two cases also differ: no elapsed time
+    is not a statement about the drive's rate at all.
+    """
+    if not span_hours:
+        return "no power-on hours have passed since the first reading"
+    if expected < 1:
+        return f"this drive's rate would not have produced even one in {span_hours}h"
+    return f"only {expected:.1f} were due"
 
 
 def worth_showing(kind: CounterKind, trend: Trend, wear_floor: int = WEAR_WORTH_PLANNING_PERCENT) -> bool:

@@ -185,3 +185,42 @@ def test_the_default_page_contains_every_section_a_command_can_show() -> None:
         if present * 3 < len(lines) * 2:
             missing.append(f"{name} ({present}/{len(lines)} lines)")
     assert not missing, f"the default page is missing: {', '.join(missing)}"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("span_hours", "expected", "must_not_say"),
+    [
+        pytest.param(0, 0.0, "0.0", id="no hours have passed at all"),
+        pytest.param(1, 1 / 42278, "0.0", id="a real rate too small to round"),
+    ],
+)
+def test_a_refusal_never_reports_an_expectation_that_rounded_to_nothing(
+    span_hours: int, expected: float, must_not_say: str
+) -> None:
+    """ "only 0.0 were due" says the opposite of what it means.
+
+    Both readings come from one machine: an NVMe drive on its first recording,
+    where no power-on hours have elapsed, and a SATA drive with one lifetime CRC
+    error in 42278 hours, whose rate over a one-hour span predicts 0.000024
+    errors. Formatted to one decimal both become "0.0", so the sentence reads
+    "only none were due" and the word "only" contradicts the number after it.
+
+    The verdict must state why it is refusing in terms that survive rounding.
+    """
+    from lsdsk.adapters.render.trend import verdict_text
+    from lsdsk.domain.history import CounterKind, Trend, TrendVerdict
+
+    trend = Trend(
+        kind=CounterKind.CRC_ERRORS,
+        verdict=TrendVerdict.TOO_CLOSE,
+        latest=1,
+        delta=0,
+        span_hours=span_hours,
+        per_hour=None,
+        expected_from_lifetime=expected,
+    )
+    text = verdict_text(trend)
+
+    assert must_not_say not in text, f"reported an expectation that rounded away: {text!r}"
+    assert text.strip(), "a refusal must still say something"
