@@ -3,6 +3,48 @@
 All notable changes to this project will be documented in this file following
 the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [1.0.3] - 2026-08-07
+
+Mostly about what the output looks like and who it is for.
+
+### Changed
+
+- A bare `lsdsk` opens the interactive view at a terminal and prints the page
+  everywhere else. The whole machine on one page is more than a reader takes in
+  at once, but a full-screen application cannot run into a pipe, so the switch is
+  what the output IS rather than a flag. Every existing pipe, redirect, CI run
+  and agent keeps the printed page, and the exit code is the findings' in both,
+  so `lsdsk; echo $?` means one thing regardless. `lsdsk | cat` gives the page at
+  a terminal.
+- The palette is readable on a light background as well as a dark one. Measured
+  as WCAG contrast against four real terminal backgrounds, the previous hint and
+  ceiling colour scored 1.7:1 and the warning colour 2.4:1 on a light background,
+  where the floor for large text is 3.0. Two causes compounded: the faint
+  attribute, which terminals implement by blending toward the background and
+  which therefore removes the contrast it is asked to provide, and naming a
+  colour the terminal resolves through its own palette. Nothing is faint any
+  more, including column headers and whole columns of values that were dimmed
+  wholesale, and every colour is now the most legible member of its hue at
+  4.2:1 worst case.
+- A trend refusal no longer reports an expectation that rounded away. "only 0.0
+  were due" stated that none were due and left "only" contradicting its own
+  number; a drive with one lifetime CRC error in 42278 hours predicts 0.000024 of
+  one across an hour. Zero elapsed time and a real but sub-unit expectation now
+  say what they each mean.
+
+### Added
+
+- The version rides in the report banner and the interactive view's title. This
+  output gets pasted into tickets, where the first question asked of a surprising
+  reading is which build produced it.
+
+### Fixed
+
+- The bundled skill teaches the unmeasured-port finding that 1.0.2 introduced,
+  and no longer tells a Windows user to re-run elevated to reveal a port's
+  capability - the registers are not published there at any privilege, so the
+  second run returns the same dashes.
+
 ## [1.0.2] - 2026-08-07
 
 Corrects a false diagnosis. On Windows, a drive that was doing everything right
@@ -165,6 +207,7 @@ First release. Everything below is what it does.
   finding, including that a large error count ranks nothing until the rate is
   known, and that a normal run records one reading.
 
+[1.0.3]: https://github.com/bitranox/lsdsk/releases/tag/v1.0.3
 [1.0.2]: https://github.com/bitranox/lsdsk/releases/tag/v1.0.2
 [1.0.1]: https://github.com/bitranox/lsdsk/releases/tag/v1.0.1
 [1.0.0]: https://github.com/bitranox/lsdsk/releases/tag/v1.0.0
