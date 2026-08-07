@@ -448,9 +448,11 @@ def _hwmon_temperature(paths: Sequence[str], capture: Mapping[str, Any]) -> int 
 
 
 def _bus_of(node: str, identity: AtaIdentity | None, phy: Mapping[str, str] | None) -> BusType:
-    """Decide which transport a disk speaks."""
-    if node.startswith("nvme"):
-        return BusType.NVME
+    """Decide which transport a disk speaks, among the ones that answer ATA.
+
+    NVMe never reaches here: `build_disks` routes a node by its name, and an
+    nvme one goes to `_build_nvme_disk`, which sets `BusType.NVME` itself.
+    """
     if identity is not None or phy is not None:
         # A drive that answers ATA IDENTIFY is SATA even when it is tunnelled
         # through a SAS expander; a drive that does not is native SAS.

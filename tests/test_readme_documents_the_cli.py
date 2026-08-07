@@ -16,6 +16,7 @@ The command list comes from the group's own registry rather than from parsing
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -48,7 +49,10 @@ def help_of(*args: str) -> str:
         encoding="utf-8",
         errors="replace",
         check=False,
-        env={"COLUMNS": "200", "PATH": "/usr/bin:/bin", "HOME": "/tmp"},
+        # Added to the environment, not substituted for it: a fresh dict drops
+        # SystemRoot on Windows, Winsock then fails, and the child dies with no
+        # output at all - which reads here as "this CLI has no options".
+        env={**os.environ, "COLUMNS": "200"},
     ).stdout
 
 

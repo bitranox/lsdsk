@@ -379,6 +379,26 @@ def disk_cell_styles(disk: Disk, port: PcieLink | None = None) -> dict[str, str]
 _MARKER_RESERVE = max(len(marker) for marker in theme.SEVERITY_MARKERS.values())
 
 
+def disk_row(disk: Disk, port: PcieLink | None = None) -> dict[str, theme.Cell]:
+    """One disk's cells already paired with their styles.
+
+    The text and the styling are computed separately, because the width
+    calculation needs the text alone. Pairing them here rather than at each
+    consumer means a column's text can no longer be married to another
+    column's style by a mistyped key.
+
+    Args:
+        disk: The disk to describe.
+        port: The PCIe port a directly-attached disk sits in, when it is known.
+
+    Returns:
+        Column key to its (text, style) pair.
+    """
+    cells = disk_cells(disk, port)
+    styles = disk_cell_styles(disk, port)
+    return {key: (text, styles.get(key, "")) for key, text in cells.items()}
+
+
 def _controller_line(controller: Controller, severity: Severity | None) -> Text:
     """Render the full-width line that introduces one controller."""
     line = Text()
@@ -428,8 +448,7 @@ def _disk_line(
     port: PcieLink | None = None,
 ) -> Text:
     """Render one padded disk row."""
-    cells = disk_cells(disk, port)
-    styles = disk_cell_styles(disk, port)
+    row = disk_row(disk, port)
     line = Text()
     line.append(glyph.ljust(len(GUTTER)))
     # The marker LEADS the row, as it already does in every table. Appended at
@@ -442,7 +461,8 @@ def _disk_line(
     line.append(marker.ljust(_MARKER_RESERVE) + " ", style="" if severity is None else theme.SEVERITY_STYLES[severity])
     for column in layout.columns:
         width = layout.widths[column.key]
-        line.append(pad(cells.get(column.key, ""), width, column.align), style=styles.get(column.key, ""))
+        text, style = row.get(column.key, ("", ""))
+        line.append(pad(text, width, column.align), style=style)
         line.append(GAP)
     return line
 
@@ -810,6 +830,7 @@ __all__ = [
     "HEALTH_NEEDING_SMART",
     "SUMMARY_LIMIT",
     "disk_cells",
+    "disk_row",
     "render_findings",
     "render_header",
     "render_tree",

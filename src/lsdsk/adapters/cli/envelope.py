@@ -15,11 +15,14 @@ System Role:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
 from . import safe_console
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 class ActionEnvelope(BaseModel):
@@ -28,7 +31,7 @@ class ActionEnvelope(BaseModel):
     Attributes:
         ok: Whether the command did everything it was asked to.
         command: The command that produced this.
-        data: What it did, shaped by the command.
+        data: What it did, already exported.
         skipped: What was not done, and why. Empty when nothing was.
 
     Example:
@@ -42,16 +45,22 @@ class ActionEnvelope(BaseModel):
     skipped: list[str] = []
 
 
-def emit_action(command: str, data: dict[str, Any], skipped: list[str] | None = None) -> None:
+def emit_action(command: str, data: BaseModel | Mapping[str, Any], skipped: list[str] | None = None) -> None:
     """Write an acting command's result as JSON.
 
     Args:
         command: The command emitting this.
-        data: What it did.
+        data: What it did, as the command's own result model. A plain mapping
+            only where the payload is genuinely keyed by data rather than by a
+            known set of fields.
         skipped: What it did not do, and why.
     """
     reasons = skipped or []
-    envelope = ActionEnvelope(ok=not reasons, command=command, data=data, skipped=reasons)
+    # The one export this boundary performs. by_alias so a field renamed to
+    # satisfy Pydantic still lands under the key a caller reads: SnapshotResult
+    # cannot call its field `schema`, and the wire key is the contract.
+    payload = data.model_dump(by_alias=True) if isinstance(data, BaseModel) else dict(data)
+    envelope = ActionEnvelope(ok=not reasons, command=command, data=payload, skipped=reasons)
     safe_console.echo(envelope.model_dump_json(indent=2))
 
 

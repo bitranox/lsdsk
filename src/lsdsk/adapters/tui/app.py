@@ -13,7 +13,7 @@ System Role:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Final
 
 from rich.text import Text
 from textual.app import App, ComposeResult
@@ -59,6 +59,21 @@ def _cell(text: str, style: str = "") -> Text:
     return Text(text, style=style)
 
 
+#: The short label each page carries in the footer, in number-key order. Keyed by
+#: the command rather than by a string, so the page ids cannot drift from
+#: :class:`CliCommand` and a new page without a label fails loudly at import.
+PAGE_LABELS: Final[dict[CliCommand, str]] = {
+    CliCommand.TOPOLOGY: "Topology",
+    CliCommand.CONTROLLERS: "Ctrl",
+    CliCommand.DISKS: "Disks",
+    CliCommand.HEALTH: "Health",
+    CliCommand.SMART: "SMART",
+    CliCommand.FINDINGS: "Findings",
+    CliCommand.SLOTS: "Slots",
+    CliCommand.TREND: "Trend",
+}
+
+
 class LsdskApp(App[None]):
     """The lsdsk terminal application."""
 
@@ -75,14 +90,10 @@ class LsdskApp(App[None]):
     # switches page, q quits, and the footer lists them so nothing has to be
     # learned from a manual. priority=True so a focused table cannot swallow them.
     BINDINGS: ClassVar[list[Binding]] = [  # pyright: ignore[reportIncompatibleVariableOverride] - Textual declares BINDINGS as a wider class variable than the list of Binding it documents
-        Binding("1,f1", "show('topology')", "Topology", priority=True),
-        Binding("2,f2", "show('controllers')", "Ctrl", priority=True),
-        Binding("3,f3", "show('disks')", "Disks", priority=True),
-        Binding("4,f4", "show('health')", "Health", priority=True),
-        Binding("5,f5", "show('smart')", "SMART", priority=True),
-        Binding("6,f6", "show('findings')", "Findings", priority=True),
-        Binding("7,f7", "show('slots')", "Slots", priority=True),
-        Binding("8,f8", "show('trend')", "Trend", priority=True),
+        *(
+            Binding(f"{number},f{number}", f"show('{command.value}')", label, priority=True)
+            for number, (command, label) in enumerate(PAGE_LABELS.items(), start=1)
+        ),
         Binding("tab,right", "next_page", "Next", priority=True, show=False),
         Binding("shift+tab,left", "prev_page", "Prev", priority=True, show=False),
         Binding("r,f9", "rescan", "Rescan", priority=True, show=False),
@@ -208,14 +219,13 @@ class LsdskApp(App[None]):
         table.add_columns(*_DISK_COLUMNS)
         for disk in self.inventory.disks:
             port = self.inventory.port_link_for(disk)
-            cells = report.disk_cells(disk, port)
-            styles = report.disk_cell_styles(disk, port)
+            cells = report.disk_row(disk, port)
             severity = report.worst_severity(self.findings, disk.path)
             table.add_row(
                 _cell(theme.marker_for(severity), theme.style_for(severity)),
-                *(_cell(cells[key], styles.get(key, "")) for key in ("device", "model")),
+                *(_cell(*cells[key]) for key in ("device", "model")),
                 _cell(disk.wwn or "-", "" if disk.wwn else theme.STYLE_UNKNOWN),
-                *(_cell(cells[key], styles.get(key, "")) for key in ("size", "kind", "bus", "port", "disk", "link")),
+                *(_cell(*cells[key]) for key in ("size", "kind", "bus", "port", "disk", "link")),
                 _cell(
                     disk.controller_address or "-",
                     theme.STYLE_IDENTIFIER if disk.controller_address else theme.STYLE_UNKNOWN,
@@ -305,10 +315,17 @@ class LsdskApp(App[None]):
     def action_show(self, pane: str) -> None:
         """Switch to a page by name.
 
+        Textual hands over the raw string from the binding, so this is the edge
+        where it becomes a page. Resolving it through the enum means an id that
+        is not a command raises here, rather than silently activating no tab.
+
         Args:
-            pane: The page identifier.
+            pane: The page identifier, which must be a :class:`CliCommand` value.
+
+        Raises:
+            ValueError: If the identifier names no page.
         """
-        self.query_one(TabbedContent).active = pane
+        self.query_one(TabbedContent).active = CliCommand(pane).value
 
     def action_next_page(self) -> None:
         """Move to the next page, wrapping at the end."""

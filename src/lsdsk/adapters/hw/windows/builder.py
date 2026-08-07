@@ -43,9 +43,6 @@ from ..linux.builder import controller_kind_of, parse_link_rate, parse_pcie_spee
 # familiar PhysicalDrive-style name cannot be recovered, so the path is shown.
 _DISK_INDEX = re.compile(r"PhysicalDrive(\d+)", re.IGNORECASE)
 
-# Bus types that mean the disk speaks ATA and therefore has an IDENTIFY page.
-_ATA_BUSES = {"ata", "sata", "atapi"}
-
 _BUS_TYPES: dict[str, BusType] = {
     "sata": BusType.SATA,
     "ata": BusType.SATA,
@@ -207,9 +204,14 @@ def build_slots(capture: Mapping[str, Any]) -> tuple[PcieSlot, ...]:
     return tuple(slots)
 
 
-def _health_from(record: Mapping[str, Any], entry: Mapping[str, Any], *, nvme: bool) -> Health | None:
-    """Decode whatever health data the capture holds for one disk."""
-    if nvme:
+def _health_from(record: Mapping[str, Any], entry: Mapping[str, Any], *, bus: BusType) -> Health | None:
+    """Decode whatever health data the capture holds for one disk.
+
+    Takes the transport rather than a flag: the caller already knows it, and a
+    bool can only ever say "NVMe or not", so a third transport needing its own
+    decode would fall silently into the ATA branch.
+    """
+    if bus is BusType.NVME:
         identity = None
         identify_blob = _decode_base64(record.get("identify_controller"))
         if identify_blob is not None:
@@ -261,7 +263,7 @@ def build_disks(capture: Mapping[str, Any]) -> tuple[Disk, ...]:
         record: Mapping[str, Any] = entry.get("nvme" if is_nvme else "ata", {})
 
         identity = None
-        if not is_nvme and bus_name in _ATA_BUSES:
+        if bus is BusType.SATA:
             blob = _decode_base64(record.get("identify"))
             if blob is not None:
                 try:
@@ -312,7 +314,7 @@ def build_disks(capture: Mapping[str, Any]) -> tuple[Disk, ...]:
                     port_max_gbps=parse_link_rate(entry.get("port_max")),
                 ),
                 pcie=_pcie_link(endpoint) if is_nvme and endpoint else None,
-                health=_health_from(record, entry, nvme=is_nvme),
+                health=_health_from(record, entry, bus=bus),
             )
         )
     return tuple(disks)

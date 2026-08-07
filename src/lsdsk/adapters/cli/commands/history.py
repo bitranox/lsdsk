@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import lib_log_rich.runtime
 import rich_click as click
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from lsdsk.adapters.history.store import load_history, save_history
 from lsdsk.adapters.hw.snapshot import CaptureEnvelope
@@ -205,6 +205,18 @@ def _capture_stamp(replay: Path | None) -> str | None:
         return None
 
 
+class RecordResult(BaseModel):
+    """What one `record` run stored, and where.
+
+    `recorded` false is not a failure: it means no drive's own clock has moved
+    since the last reading, so there was nothing new to store.
+    """
+
+    recorded: bool
+    store: str
+    drives: int
+
+
 @click.command("record", context_settings=CLICK_CONTEXT_SETTINGS)
 @option(
     "--format",
@@ -248,7 +260,7 @@ def cli_record(ctx: click.Context, replay: Path | None, output_format: str) -> N
         if OutputFormat(output_format.lower()) is OutputFormat.JSON:
             emit_action(
                 "record",
-                {"recorded": wrote, "store": str(settings.path), "drives": len(inventory.disks)},
+                RecordResult(recorded=wrote, store=str(settings.path), drives=len(inventory.disks)),
                 # A run that stored nothing is not a failure: it means no drive's
                 # own clock has advanced since the last reading, so there is
                 # nothing new to say. A caller has to be able to tell that from a

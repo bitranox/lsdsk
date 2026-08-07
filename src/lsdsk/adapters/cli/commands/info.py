@@ -13,6 +13,7 @@ import logging
 
 import lib_log_rich.runtime
 import rich_click as click
+from pydantic import BaseModel
 
 from lsdsk import __init__conf__
 from lsdsk.domain.enums import OutputFormat
@@ -23,6 +24,18 @@ from ..envelope import emit_action
 from ..typed_click import option
 
 logger = logging.getLogger(__name__)
+
+
+class InfoResult(BaseModel):
+    """The package metadata `info` reports, so a caller need parse no table."""
+
+    name: str
+    title: str
+    version: str
+    homepage: str
+    author: str
+    author_email: str
+    shell_command: str
 
 
 @click.command("info", context_settings=CLICK_CONTEXT_SETTINGS)
@@ -44,15 +57,15 @@ def cli_info(ctx: click.Context, output_format: str) -> None:
             # version is installed does not have to parse a padded table.
             emit_action(
                 "info",
-                {
-                    "name": __init__conf__.name,
-                    "title": __init__conf__.title,
-                    "version": __init__conf__.version,
-                    "homepage": __init__conf__.homepage,
-                    "author": __init__conf__.author,
-                    "author_email": __init__conf__.author_email,
-                    "shell_command": __init__conf__.shell_command,
-                },
+                InfoResult(
+                    name=__init__conf__.name,
+                    title=__init__conf__.title,
+                    version=__init__conf__.version,
+                    homepage=__init__conf__.homepage,
+                    author=__init__conf__.author,
+                    author_email=__init__conf__.author_email,
+                    shell_command=__init__conf__.shell_command,
+                ),
             )
         else:
             # Through the services container rather than the module, so a test

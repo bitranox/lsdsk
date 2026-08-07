@@ -25,7 +25,7 @@ from ...domain.history import CounterKind, identity_of, trend_for
 from ..config.tunables import DEFAULT_PIPED_WIDTH
 from . import theme
 from .layout import Column, fit, natural_widths
-from .report import disk_cell_styles, disk_cells, worst_severity
+from .report import disk_row, worst_severity
 
 # A single character, because these columns are already the first to be dropped
 # when the terminal narrows and a word would cost one of them.
@@ -196,22 +196,21 @@ def render_disks(inventory: Inventory, findings: Sequence[Finding], width: int =
         # the tree. Three copies of it disagreed: this one called every NVMe
         # link healthy whatever it negotiated.
         port = inventory.port_link_for(disk)
-        cells = disk_cells(disk, port)
-        styles = disk_cell_styles(disk, port)
+        cells = disk_row(disk, port)
         rows.append(
             {
                 "marker": (theme.marker_for(severity), theme.style_for(severity)),
-                "device": (cells["device"], styles["device"]),
-                "model": (cells["model"], styles["model"]),
+                "device": cells["device"],
+                "model": cells["model"],
                 "wwn": (disk.wwn or "-", "" if disk.wwn else theme.STYLE_UNKNOWN),
                 "serial": (disk.serial or "-", "" if disk.serial else theme.STYLE_UNKNOWN),
                 "firmware": (disk.firmware or "-", "" if disk.firmware else theme.STYLE_UNKNOWN),
-                "size": (cells["size"], styles["size"]),
-                "kind": (cells["kind"], styles["kind"]),
-                "bus": (cells["bus"], styles["bus"]),
-                "port": (cells["port"], styles["port"]),
-                "disk": (cells["disk"], styles["disk"]),
-                "link": (cells["link"], styles["link"]),
+                "size": cells["size"],
+                "kind": cells["kind"],
+                "bus": cells["bus"],
+                "port": cells["port"],
+                "disk": cells["disk"],
+                "link": cells["link"],
                 "controller": (
                     disk.controller_address or "-",
                     theme.STYLE_IDENTIFIER if disk.controller_address else theme.STYLE_UNKNOWN,

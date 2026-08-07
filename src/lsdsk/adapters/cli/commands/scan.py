@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import lib_log_rich.runtime
 import rich_click as click
 from lib_layered_config import Config
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from rich.console import Console
 from rich.text import Text
 
@@ -267,6 +267,18 @@ class ScanData(BaseModel):
     disks: tuple[Disk, ...]
     slots: tuple[PcieSlot, ...]
     findings: tuple[Finding, ...]
+
+
+class SnapshotResult(BaseModel):
+    """Where a capture was written, and which schema version it carries.
+
+    The field is not called ``schema``: that name shadows a BaseModel attribute.
+    The serialisation alias keeps the wire key exactly as it was, because that
+    key is the contract a caller reads.
+    """
+
+    path: str
+    schema_version: int = Field(serialization_alias="schema")
 
 
 class ScanEnvelope(BaseModel):
@@ -700,7 +712,7 @@ def cli_snapshot(ctx: click.Context, output: Path, output_format: str) -> None:
             raise SystemExit(ExitCode.CONFIG_ERROR) from error
         snapshot_adapter.save(capture, output)
         if OutputFormat(output_format.lower()) is OutputFormat.JSON:
-            emit_action("snapshot", {"path": str(output), "schema": snapshot_adapter.SCHEMA_VERSION})
+            emit_action("snapshot", SnapshotResult(path=str(output), schema_version=snapshot_adapter.SCHEMA_VERSION))
         else:
             safe_console.echo(f"Wrote {output}")
         raise SystemExit(ExitCode.SUCCESS)

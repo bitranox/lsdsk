@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 import lib_log_rich.runtime
 import rich_click as click
 from lib_layered_config import Config, generate_examples, redact_mapping
+from pydantic import BaseModel
 
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.overrides import apply_overrides
@@ -35,6 +36,25 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+class DeployResult(BaseModel):
+    """Which configuration files were written, and under which profile.
+
+    An empty `deployed` is the documented outcome when the files already exist,
+    not a failure; the envelope's `skipped` says which of the two it was.
+    """
+
+    deployed: list[str]
+    profile: str | None
+    permissions_set: bool
+
+
+class GenerateExamplesResult(BaseModel):
+    """Which example files were scaffolded, and where."""
+
+    generated: list[str]
+    destination: str
 
 
 @click.command("config", context_settings=CLICK_CONTEXT_SETTINGS)
@@ -368,11 +388,11 @@ def _report_deployment_result(
     if output_format is OutputFormat.JSON:
         emit_action(
             "config-deploy",
-            {
-                "deployed": [str(path) for path in deployed_paths],
-                "profile": profile,
-                "permissions_set": set_permissions,
-            },
+            DeployResult(
+                deployed=[str(path) for path in deployed_paths],
+                profile=profile,
+                permissions_set=set_permissions,
+            ),
             # Writing nothing is the documented outcome when the files already
             # exist, not an error; a caller has to be able to tell it from a
             # deploy that failed, which exits non-zero instead.
@@ -430,7 +450,7 @@ def cli_config_generate_examples(ctx: click.Context, destination: str, force: bo
             if OutputFormat(output_format.lower()) is OutputFormat.JSON:
                 emit_action(
                     "config-generate-examples",
-                    {"generated": [str(p) for p in paths], "destination": str(destination)},
+                    GenerateExamplesResult(generated=[str(p) for p in paths], destination=str(destination)),
                     skipped=[] if paths else ["every example file already exists; --force overwrites"],
                 )
             elif paths:
