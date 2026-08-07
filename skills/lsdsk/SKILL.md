@@ -194,6 +194,14 @@ the run was unprivileged.
 elevating changes nothing. Check what kind of machine you are on before
 arranging access you cannot use.
 
+**On Windows a port's own speed and width are not a privilege question.** Windows
+publishes link registers for PCIe endpoints and none at all for bridges, so a
+port's `capable` and `running` columns stay `-` and `upstream` stays null however
+the run was started. Measured on one board: eight bridges, not one with a link
+speed, and no registry key, WMI class or user-mode API that has them. Never tell
+a Windows user to re-run elevated to reveal a port's capability - they will come
+back with the same `-` and think something is broken.
+
 **An unprivileged run that reports nothing is not a clean bill of health.** It
 never read SMART, so those findings were never raised. That is a blind run, not
 a quiet one.
@@ -299,7 +307,9 @@ uvx lsdsk snapshot -o /var/lib/lsdsk/$(hostname)-$(date +%F).json
 ## Reading a finding
 
 Each disk row carries three speeds: `port` is what the seat can give, `disk` is
-what the drive can do, `link` is what they agreed on. Compare them to find the
+what the drive can do, `link` is what they agreed on. In the structured output
+these are GT/s, and the generation is 2.5=Gen1, 5=Gen2, 8=Gen3, 16=Gen4, 32=Gen5,
+64=Gen6. Compare them to find the
 constraint. An orange `disk` means the drive cannot use its port, a placement
 question rather than a fault; a red `link` means both ends could have gone
 faster, which is a real one. A **yellow `link`** is a shortfall with only ONE end
@@ -317,25 +327,53 @@ is decided by rule, including wear, which crosses from warning to critical at
 its own threshold and not because of anything recorded. Either way read the
 marker on the finding in front of you, which is what set the exit code.
 
-| Finding                                    | Means                                                           | Do                                                                                         |
-|--------------------------------------------|-----------------------------------------------------------------|--------------------------------------------------------------------------------------------|
-| Link below what both ends support          | Cable, backplane slot or connector                              | Reseat, swap cable, try another bay, before suspecting the drive                           |
-| In a slot narrower or slower than it needs | A better slot exists                                            | Move it; check the slot is mechanically long enough or open-ended                          |
-| Capped by the mainboard                    | This port is the limit, not the card                            | Check `lsdsk slots` before proposing hardware. See below                                   |
-| Held back by its controller                | The port is slower than the drive                               | Move to a free faster port, or a better HBA                                                |
-| Drives in the wrong ports                  | A slow drive holds a fast port a faster drive wants             | Swap the two drives over                                                                   |
-| An attribute under the maker's threshold   | The drive's own normalised value reached the limit it publishes | Treat the drive as failing: check the backup and replace it                                |
-| Link never trained                         | The link is down, or negotiated to zero lanes                   | A seating, power or connector fault. Nothing behind it can be read                         |
-| Reports itself as failing                  | The drive's own overall SMART self-assessment says FAILED       | Treat it as failing now: check the backup and replace it                                   |
-| Above its own temperature threshold        | Past the warning or critical limit the drive publishes          | Airflow and drive spacing. The bands are the drive's, not a fixed rule                     |
-| Controller oversubscribed                  | Its drives together want more than its uplink carries           | Spread them over more controllers, or fit a wider-uplink HBA. A free port here is not free |
-| Wear-out                                   | Rated endurance consumed                                        | Plan a replacement, see the thresholds below                                               |
-| Reallocated sectors                        | Media degrading                                                 | Snapshot now, compare later                                                                |
-| Pending sectors                            | Unreadable, awaiting a write                                    | Back up first, then rewrite or replace                                                     |
-| Uncorrectable sectors                      | Data already lost                                               | Replace, restore from backup                                                               |
-| Media errors (NVMe)                        | Unrecovered integrity errors                                    | Snapshot now, compare later                                                                |
-| Interface CRC errors                       | Frames corrupted on the wire, resent                            | Reseat or swap the cable; the drive is not at fault                                        |
-| Mixed firmware                             | Same model, different revisions                                 | Level up at the next window                                                                |
+| Finding                                       | Means                                                           | Do                                                                                         |
+|-----------------------------------------------|-----------------------------------------------------------------|--------------------------------------------------------------------------------------------|
+| Link below what both ends support             | Cable, backplane slot or connector                              | Reseat, swap cable, try another bay, before suspecting the drive                           |
+| Runs below its own maximum, port not measured | ONE end was read. Real shortfall, cause unknown                 | Recommend nothing physical. Read `upstream_name`, then the board manual. See below         |
+| In a slot narrower or slower than it needs    | A better slot exists                                            | Move it; check the slot is mechanically long enough or open-ended                          |
+| Capped by the mainboard                       | This port is the limit, not the card                            | Check `lsdsk slots` before proposing hardware. See below                                   |
+| Held back by its controller                   | The port is slower than the drive                               | Move to a free faster port, or a better HBA                                                |
+| Drives in the wrong ports                     | A slow drive holds a fast port a faster drive wants             | Swap the two drives over                                                                   |
+| An attribute under the maker's threshold      | The drive's own normalised value reached the limit it publishes | Treat the drive as failing: check the backup and replace it                                |
+| Link never trained                            | The link is down, or negotiated to zero lanes                   | A seating, power or connector fault. Nothing behind it can be read                         |
+| Reports itself as failing                     | The drive's own overall SMART self-assessment says FAILED       | Treat it as failing now: check the backup and replace it                                   |
+| Above its own temperature threshold           | Past the warning or critical limit the drive publishes          | Airflow and drive spacing. The bands are the drive's, not a fixed rule                     |
+| Controller oversubscribed                     | Its drives together want more than its uplink carries           | Spread them over more controllers, or fit a wider-uplink HBA. A free port here is not free |
+| Wear-out                                      | Rated endurance consumed                                        | Plan a replacement, see the thresholds below                                               |
+| Reallocated sectors                           | Media degrading                                                 | Snapshot now, compare later                                                                |
+| Pending sectors                               | Unreadable, awaiting a write                                    | Back up first, then rewrite or replace                                                     |
+| Uncorrectable sectors                         | Data already lost                                               | Replace, restore from backup                                                               |
+| Media errors (NVMe)                           | Unrecovered integrity errors                                    | Snapshot now, compare later                                                                |
+| Interface CRC errors                          | Frames corrupted on the wire, resent                            | Reseat or swap the cable; the drive is not at fault                                        |
+| Mixed firmware                                | Same model, different revisions                                 | Level up at the next window                                                                |
+
+### The port was not measured
+
+"runs below its own maximum, and the port was not measured" is a different
+finding from the one below, and confusing the two is how somebody ends up
+reseating a soldered-down drive. It means one end of the link was read and the
+other was not, so the shortfall is real and its cause is unknown. A socket built
+a generation below the device produces this reading exactly as a fault does.
+
+Recommend nothing physical on it. No reseating, no cable, no bay, no slot-speed
+override, and on Windows no elevated re-run - the port's registers are not
+published there at any privilege (see above). Suggesting any of them asserts a
+cause the tool explicitly did not establish.
+
+**Read `upstream_name`, which is how this question usually closes.** It is what
+the port is CALLED, carried because a platform can withhold a port's capability
+and still name it. Many vendors put the width and generation in that name, so
+`Intel(R) PCIe RC 060 (x4) G4` says Gen4 x4 - and a Gen5 drive at Gen4 x4 in a
+Gen4 port is at its ceiling, with nothing wrong. Say where that came from: the
+port's driver names it so, which is weaker than a measurement and strong enough
+to act on. It is not parsed into a capability, and a name without numbers in it
+tells you nothing - then send the reader to the board manual with the PCI
+address.
+
+**Width decides which way to lean.** A link at FULL width and lower speed is the
+port's ceiling almost every time; seating and cabling faults cost LANES, so they
+show as a width below maximum. Say which of the two you are looking at.
 
 ### Capped by the mainboard
 
