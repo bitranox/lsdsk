@@ -99,6 +99,13 @@ def _apply_cli_overrides(config: Config, set_overrides: tuple[str, ...]) -> Conf
     help="Judge counters against recorded history without adding this reading to it.",
 )
 @option(
+    "--expand-virtual",
+    "expand_virtual",
+    is_flag=True,
+    default=False,
+    help="List every kernel-virtual device instead of tallying them in one line.",
+)
+@option(
     "--env-file",
     "env_file",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True),
@@ -118,6 +125,7 @@ def cli(
     replay: Path | None,
     history_file: Path | None,
     no_record: bool,
+    expand_virtual: bool,
     env_file: str | None,
 ) -> None:
     """Root command storing global flags and syncing shared traceback state.
@@ -159,6 +167,7 @@ def cli(
             replay=replay,
             history_file=history_file,
             no_record=no_record,
+            expand_virtual=expand_virtual,
         ),
     )
     apply_traceback_preferences(traceback)

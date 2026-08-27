@@ -54,3 +54,18 @@ wear_row_floor_percent = 10
 # Environment Variable: LSDSK___DISPLAY__TRACEBACK_SUMMARY_LIMIT="500"
 traceback_summary_limit = 500
 traceback_verbose_limit = 10000
+
+# Whether an ordinary run lists every kernel-virtual block device.
+#
+# Default: false. A zram, loop or zvol node has no controller, no link and no
+# counters, so it appears as a tally under the topology tree and as a caption
+# under the disk table rather than as a row per device: a host with forty zvols
+# would otherwise push its real drives off the screen. The devices are always
+# counted, never hidden, and the JSON envelope carries every one of them
+# whatever this is set to.
+#
+# Set it to true on a machine whose zvols or loop mounts are the thing you came
+# to look at; `--expand-virtual` does the same for one run.
+#
+# Environment Variable: LSDSK___DISPLAY__EXPAND_VIRTUAL="false"
+expand_virtual = false

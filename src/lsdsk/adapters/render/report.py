@@ -113,6 +113,10 @@ def render_header(inventory: Inventory) -> RenderableType:
     line.append(f"lsdsk {__init__conf__.version}  ", style="bold")
     line.append(inventory.hostname, style=theme.STYLE_IDENTIFIER)
     line.append(f"   {len(inventory.disks)} disks on {len(inventory.controllers)} controllers")
+    # Counted apart rather than added in: a zram or a zvol is not a drive, and a
+    # count that folds them in overstates what the machine has to diagnose.
+    if inventory.virtual_disks:
+        line.append(f"   {len(inventory.virtual_disks)} virtual", style=theme.STYLE_UNKNOWN)
     # The placement hints talk about what "this board" can offer, so naming it
     # turns that advice into something the reader can act on or shop for.
     if inventory.board:
@@ -480,21 +484,74 @@ def _header_line(columns: Sequence[Column], widths: dict[str, int]) -> Text:
     return line
 
 
-def render_tree(inventory: Inventory, findings: Sequence[Finding], width: int = DEFAULT_WIDTH) -> RenderableType:
+# What the reader is told when the virtual devices are folded away, in one
+# place so the tree and the disk table cannot describe the same machine
+# differently.
+VIRTUAL_HEADING = "kernel-virtual devices, with no controller and no counters"
+_EXPAND_FLAG = "--expand-virtual"
+
+
+def _family_of(node: str) -> str:
+    """Group a device node by its family for the summary line.
+
+    Reading a name is fine HERE and nowhere else in this feature: the device has
+    already been classified by the kernel, and this only decides how to spell a
+    tally. A node whose name groups oddly costs a reader nothing.
+    """
+    return node.rstrip("0123456789") or node
+
+
+def virtual_note(disks: Sequence[Disk]) -> str:
+    """One line saying what was left out and how to see it.
+
+    Args:
+        disks: The kernel-virtual devices, which may be none.
+
+    Returns:
+        The summary sentence, or an empty string when there is nothing to say.
+
+    Example:
+        >>> from lsdsk.domain.models import Disk
+        >>> virtual_note([Disk("zram0", "/dev/zram0", "zram"), Disk("loop0", "/dev/loop0", "loop")])
+        '2 not listed: 1 loop, 1 zram   (--expand-virtual lists them)'
+        >>> virtual_note([])
+        ''
+    """
+    if not disks:
+        return ""
+    counts: dict[str, int] = {}
+    for disk in disks:
+        family = _family_of(disk.node)
+        counts[family] = counts.get(family, 0) + 1
+    tally = ", ".join(f"{count} {family}" for family, count in sorted(counts.items()))
+    return f"{len(disks)} not listed: {tally}   ({_EXPAND_FLAG} lists them)"
+
+
+def render_tree(
+    inventory: Inventory,
+    findings: Sequence[Finding],
+    width: int = DEFAULT_WIDTH,
+    *,
+    expand_virtual: bool = False,
+) -> RenderableType:
     """Render the topology as one globally aligned tree.
 
     Args:
         inventory: The machine.
         findings: The findings, used to mark affected rows.
         width: Terminal width, which decides how many columns fit.
+        expand_virtual: List every kernel-virtual device rather than tallying
+            them. They are folded away by default because a host with forty
+            zvols would otherwise bury the drives this view exists to show.
 
     Returns:
         A renderable tree.
     """
-    if not inventory.disks and not inventory.controllers:
+    if not inventory.disks and not inventory.controllers and not inventory.virtual_disks:
         return Text("No storage controllers or disks found.", style=theme.STYLE_UNKNOWN)
 
-    rows = [disk_cells(disk, inventory.port_link_for(disk)) for disk in inventory.disks]
+    drawn = (*inventory.disks, *inventory.virtual_disks) if expand_virtual else inventory.disks
+    rows = [disk_cells(disk, inventory.port_link_for(disk)) for disk in drawn]
     # The severity marker is appended after the fitted columns, so the columns
     # have to be fitted to a width that leaves room for it. Without the
     # reservation a flagged row lands exactly on the terminal width and the
@@ -526,7 +583,27 @@ def render_tree(inventory: Inventory, findings: Sequence[Finding], width: int = 
         lines.append(Text("not attached to a known controller", style=theme.STYLE_UNKNOWN))
         lines.append(_header_line(layout.columns, layout.widths))
         lines.extend(_disk_lines(orphans, findings, layout, inventory))
+    lines.extend(_virtual_lines(inventory, findings, layout, expand_virtual=expand_virtual))
     return Group(*lines)
+
+
+def _virtual_lines(
+    inventory: Inventory,
+    findings: Sequence[Finding],
+    layout: Layout,
+    *,
+    expand_virtual: bool,
+) -> list[RenderableType]:
+    """The kernel-virtual group: a tally, or the devices themselves."""
+    if not inventory.virtual_disks:
+        return []
+    lines: list[RenderableType] = [Text(""), Text(VIRTUAL_HEADING, style=theme.STYLE_UNKNOWN)]
+    if not expand_virtual:
+        lines.append(Text(f"   {virtual_note(inventory.virtual_disks)}", style=theme.STYLE_UNKNOWN))
+        return lines
+    lines.append(_header_line(layout.columns, layout.widths))
+    lines.extend(_disk_lines(inventory.virtual_disks, findings, layout, inventory))
+    return lines
 
 
 def _disk_lines(
@@ -829,11 +906,13 @@ __all__ = [
     "DISK_COLUMNS",
     "HEALTH_NEEDING_SMART",
     "SUMMARY_LIMIT",
+    "VIRTUAL_HEADING",
     "disk_cells",
     "disk_row",
     "render_findings",
     "render_header",
     "render_tree",
     "render_verdict",
+    "virtual_note",
     "worst_severity",
 ]

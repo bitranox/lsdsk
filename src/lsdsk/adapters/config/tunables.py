@@ -40,6 +40,11 @@ DEFAULT_WEAR_ROW_FLOOR_PERCENT = 10
 # Generic temperature bands, used only for a drive that publishes no thresholds
 # of its own. A drive's own figures always win.
 
+# Whether an ordinary run lists every kernel-virtual device or tallies them.
+# Off by default: a host with forty zvols would otherwise bury the drives the
+# view exists to show.
+DEFAULT_EXPAND_VIRTUAL = False
+
 # Characters of traceback kept in the short and the --traceback forms.
 DEFAULT_TRACEBACK_SUMMARY_LIMIT = 500
 DEFAULT_TRACEBACK_VERBOSE_LIMIT = 10_000
@@ -52,6 +57,8 @@ class DisplaySettings(BaseModel):
         piped_width: Assumed width when output is not a terminal.
         summary_limit: Findings named in the verdict line before "and N more".
         wear_row_floor_percent: Wear below which the trend view stays quiet.
+        expand_virtual: Whether the tree and the disk table list every
+            kernel-virtual device rather than tallying them in one line.
         traceback_summary_limit: Characters kept in a short traceback.
         traceback_verbose_limit: Characters kept under ``--traceback``.
 
@@ -65,6 +72,7 @@ class DisplaySettings(BaseModel):
     piped_width: int = DEFAULT_PIPED_WIDTH
     summary_limit: int = DEFAULT_SUMMARY_LIMIT
     wear_row_floor_percent: int = DEFAULT_WEAR_ROW_FLOOR_PERCENT
+    expand_virtual: bool = DEFAULT_EXPAND_VIRTUAL
     traceback_summary_limit: int = DEFAULT_TRACEBACK_SUMMARY_LIMIT
     traceback_verbose_limit: int = DEFAULT_TRACEBACK_VERBOSE_LIMIT
 
@@ -94,6 +102,16 @@ def positive_float(raw: object, default: float) -> float:
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         return default
     return float(raw) if raw > 0 else default
+
+
+def flag(raw: object, *, default: bool) -> bool:
+    """Read a switch, falling back rather than failing the run.
+
+    A string is not accepted as a truthy value: TOML has a real boolean, and
+    taking ``"false"`` for true is the kind of quiet inversion that makes a
+    setting look ignored.
+    """
+    return raw if isinstance(raw, bool) else default
 
 
 def get_thresholds(config: Config) -> Thresholds:
@@ -151,12 +169,14 @@ def get_display_settings(config: Config) -> DisplaySettings:
         piped_width=positive_int(table.get("piped_width"), DEFAULT_PIPED_WIDTH),
         summary_limit=positive_int(table.get("summary_limit"), DEFAULT_SUMMARY_LIMIT),
         wear_row_floor_percent=positive_int(table.get("wear_row_floor_percent"), DEFAULT_WEAR_ROW_FLOOR_PERCENT),
+        expand_virtual=flag(table.get("expand_virtual"), default=DEFAULT_EXPAND_VIRTUAL),
         traceback_summary_limit=positive_int(table.get("traceback_summary_limit"), DEFAULT_TRACEBACK_SUMMARY_LIMIT),
         traceback_verbose_limit=positive_int(table.get("traceback_verbose_limit"), DEFAULT_TRACEBACK_VERBOSE_LIMIT),
     )
 
 
 __all__ = [
+    "DEFAULT_EXPAND_VIRTUAL",
     "DEFAULT_PIPED_WIDTH",
     "DEFAULT_SUMMARY_LIMIT",
     "DEFAULT_TRACEBACK_SUMMARY_LIMIT",
@@ -165,6 +185,7 @@ __all__ = [
     "DISPLAY_SECTION",
     "THRESHOLDS_SECTION",
     "DisplaySettings",
+    "flag",
     "get_display_settings",
     "get_thresholds",
     "positive_float",

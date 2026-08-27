@@ -12,6 +12,16 @@
     }
   },
   "block": {
+    "loop0": {
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
     "nvme0n1": {
       "device": {
         "model": "Samsung SSD 990 PRO 4TB",
@@ -82,6 +92,26 @@
         "vpd_pg89": "AIkCOAAAAABsaW51eCAgIGxpYmF0YSAgICAgICAgICAzLjAwNIBAAAEAAAAAAAAAAQAAAAAAAADsAAAAQAD/PzfIEAAAAAAAPwAAAAAAAABFRjRSNlg0NzBXQVJUQSBLICAgIAAAAAAAAFZTMFRCMlE2YVNzbW51IGdTUyBENzggMFZFIE8wNUcwIEIgICAgICAgICAgICAgIAGAAUAALwBAAAIAAgcA/z8QAD8AEPz7AAEB////DwAABwADAHgAeAB4AHgAME8AAAAAAAAAAAAAHwAOhcYAbAVkAPwJXgBrdAF9Y0FpdAG8Y0F/QAIABAAAAP7/AAAAAAAAAAAAAAAAAAAwYDg6AAAAAAAACAAAQAAAAlCPUxFVDnAAAAAAAAAAAAAAAAAAAB5AHEAAAAAAAAAAAAAAAAAAACkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwABACAgICAgICAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD0AAAAAAABAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAA/xEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAApf8=",
         "vpd_pgb1": "ALEAPAABAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
       }
+    },
+    "zd0": {
+      "queue": {
+        "discard_granularity": "16384",
+        "logical_block_size": "512",
+        "physical_block_size": "16384",
+        "rotational": "0"
+      },
+      "size": "8192",
+      "virtual": true
+    },
+    "zram0": {
+      "queue": {
+        "discard_granularity": "4096",
+        "logical_block_size": "4096",
+        "physical_block_size": "4096",
+        "rotational": "0"
+      },
+      "size": "16777216",
+      "virtual": true
     }
   },
   "classes": {

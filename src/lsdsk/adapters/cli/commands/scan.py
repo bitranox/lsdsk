@@ -66,6 +66,13 @@ _REPLAY_OPTION = option(
     default=None,
     help="Render a snapshot captured earlier instead of reading this machine.",
 )
+_EXPAND_VIRTUAL_OPTION = option(
+    "--expand-virtual",
+    "expand_virtual",
+    is_flag=True,
+    default=False,
+    help="List every kernel-virtual device instead of tallying them in one line.",
+)
 _FORMAT_OPTION = option(
     "--format",
     "output_format",
@@ -202,11 +209,36 @@ def resolve_tunables(ctx: click.Context) -> Tunables:
         The thresholds the rules weigh against and the display settings.
     """
     try:
-        config = get_cli_context(ctx).config
+        cli_context = get_cli_context(ctx)
     except RuntimeError:
         # Invoked directly in a test, without the root group having run.
-        config = Config({}, {})
-    return Tunables(get_thresholds(config), get_display_settings(config))
+        config, expand_virtual = Config({}, {}), False
+    else:
+        config, expand_virtual = cli_context.config, cli_context.expand_virtual
+    display = get_display_settings(config)
+    # A global --expand-virtual lands on the same key the file sets, so one
+    # object answers "does this run list them" whichever source said so.
+    if expand_virtual:
+        display = display.model_copy(update={"expand_virtual": True})
+    return Tunables(get_thresholds(config), display)
+
+
+def effective_expand_virtual(ctx: click.Context, expand_virtual: bool) -> bool:
+    """Whether this run lists every kernel-virtual device.
+
+    Three sources can ask for it and any one is enough: the subcommand's own
+    flag, the same flag before the subcommand, and the configuration key. The
+    subcommand flag exists because the tally names ``--expand-virtual``, and a
+    reader who types what they were just told must not meet "no such option".
+
+    Args:
+        ctx: The Click context, which carries the global flag and the config.
+        expand_virtual: The subcommand's own option value.
+
+    Returns:
+        Whether to list them.
+    """
+    return expand_virtual or resolve_tunables(ctx).display.expand_virtual
 
 
 def analyse_run(
@@ -265,6 +297,7 @@ class ScanData(BaseModel):
     devices_accessible: bool
     controllers: tuple[Controller, ...]
     disks: tuple[Disk, ...]
+    virtual_disks: tuple[Disk, ...]
     slots: tuple[PcieSlot, ...]
     findings: tuple[Finding, ...]
 
@@ -333,6 +366,9 @@ def build_envelope(
             devices_accessible=inventory.devices_accessible,
             controllers=inventory.controllers,
             disks=inventory.disks,
+            # Always present and never tallied: the tally is a screen-space
+            # decision, and a program parsing this needs the whole machine.
+            virtual_disks=inventory.virtual_disks,
             slots=inventory.slots,
             findings=tuple(findings),
         ),
@@ -422,12 +458,13 @@ def run_default_view(
     from .history import analyse, read_history  # noqa: PLC0415 - deferred: history imports this module
 
     resolved = settings if settings is not None else get_history_settings(Config({}, {}))
+    laid_out = display if display is not None else DisplaySettings()
     with lib_log_rich.runtime.bind(job_id="cli-tui", extra={"command": "tui"}):
         inventory, findings = analyse(replay, OutputFormat.HUMAN, resolved, thresholds)
         from lsdsk.adapters.tui import LsdskApp  # noqa: PLC0415 - keeps textual off the fast path
 
         history = read_history(inventory, resolved).history
-        LsdskApp(inventory, history).run()
+        LsdskApp(inventory, history, expand_virtual=laid_out.expand_virtual).run()
         raise SystemExit(exit_code_for(findings))
 
 
@@ -502,8 +539,9 @@ def cli_report(ctx: click.Context, replay: Path | None) -> None:
 @click.command("topology", context_settings=CLICK_CONTEXT_SETTINGS)
 @_REPLAY_OPTION
 @_FORMAT_OPTION
+@_EXPAND_VIRTUAL_OPTION
 @click.pass_context
-def cli_topology(ctx: click.Context, replay: Path | None, output_format: str) -> None:
+def cli_topology(ctx: click.Context, replay: Path | None, output_format: str, expand_virtual: bool) -> None:
     """Show the problem summary and the disk-to-controller tree.
 
     This is one section of the page a bare `lsdsk` renders, not that whole page.
@@ -521,7 +559,14 @@ def cli_topology(ctx: click.Context, replay: Path | None, output_format: str) ->
             console.print()
             console.print(report.render_verdict(findings, display.summary_limit))
             console.print()
-            console.print(report.render_tree(inventory, findings, width=console.width))
+            console.print(
+                report.render_tree(
+                    inventory,
+                    findings,
+                    width=console.width,
+                    expand_virtual=effective_expand_virtual(ctx, expand_virtual),
+                )
+            )
         raise SystemExit(exit_code_for(findings))
 
 
@@ -604,8 +649,9 @@ def cli_slots(ctx: click.Context, replay: Path | None, output_format: str) -> No
 @click.command("disks", context_settings=CLICK_CONTEXT_SETTINGS)
 @_REPLAY_OPTION
 @_FORMAT_OPTION
+@_EXPAND_VIRTUAL_OPTION
 @click.pass_context
-def cli_disks(ctx: click.Context, replay: Path | None, output_format: str) -> None:
+def cli_disks(ctx: click.Context, replay: Path | None, output_format: str, expand_virtual: bool) -> None:
     """List every disk with its identity and its interface speed."""
     with lib_log_rich.runtime.bind(job_id="cli-disks", extra={"command": CliCommand.DISKS.value}):
         inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), OutputFormat(output_format.lower()))
@@ -616,7 +662,14 @@ def cli_disks(ctx: click.Context, replay: Path | None, output_format: str) -> No
             from lsdsk.adapters.render.tables import render_disks  # noqa: PLC0415 - keeps the import graph flat
 
             console = console_for_output(display.piped_width)
-            console.print(render_disks(inventory, findings, width=console.width))
+            console.print(
+                render_disks(
+                    inventory,
+                    findings,
+                    width=console.width,
+                    expand_virtual=effective_expand_virtual(ctx, expand_virtual),
+                )
+            )
         raise SystemExit(exit_code_for(findings))
 
 
@@ -656,8 +709,9 @@ def cli_health(ctx: click.Context, replay: Path | None, output_format: str) -> N
 
 @click.command("tui", context_settings=CLICK_CONTEXT_SETTINGS)
 @_REPLAY_OPTION
+@_EXPAND_VIRTUAL_OPTION
 @click.pass_context
-def cli_tui(ctx: click.Context, replay: Path | None) -> None:
+def cli_tui(ctx: click.Context, replay: Path | None, expand_virtual: bool) -> None:
     """Open the interactive view, with a page per question."""
     with lib_log_rich.runtime.bind(job_id="cli-tui", extra={"command": "tui"}):
         inventory = load_inventory(effective_replay(ctx, replay))
@@ -669,7 +723,7 @@ def cli_tui(ctx: click.Context, replay: Path | None) -> None:
         from .history import read_history  # noqa: PLC0415 - deferred: history imports this module
 
         history = read_history(inventory, resolve_history(ctx)).history
-        LsdskApp(inventory, history).run()
+        LsdskApp(inventory, history, expand_virtual=effective_expand_virtual(ctx, expand_virtual)).run()
         raise SystemExit(ExitCode.SUCCESS)
 
 

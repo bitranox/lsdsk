@@ -49,6 +49,7 @@ class CLIContext:
     replay: Path | None = None
     history_file: Path | None = None
     no_record: bool = False
+    expand_virtual: bool = False
 
 
 def store_cli_context(ctx: click.Context, context: CLIContext) -> None:

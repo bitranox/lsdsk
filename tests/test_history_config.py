@@ -296,12 +296,22 @@ def test_every_thresholds_key_in_the_shipped_file_is_read(
 
 @pytest.mark.os_agnostic
 def test_every_display_key_in_the_shipped_file_is_read() -> None:
+    """A documented key nothing reads is a lie in the config file.
+
+    Each key is probed with a value of its OWN type that differs from the
+    shipped default. A single value for every key cannot do this: the parsers
+    reject a value of the wrong type on purpose, so probing a boolean key with
+    a number reads as "not read" when the key is read and the probe is wrong.
+    """
     from lsdsk.adapters.config.tunables import DisplaySettings, get_display_settings
 
-    probe = dict.fromkeys(DisplaySettings.model_fields, 77)
+    probe: dict[str, object] = {
+        name: (not field.default) if field.annotation is bool else 77
+        for name, field in DisplaySettings.model_fields.items()
+    }
     got = get_display_settings(Config({"display": probe}, {}))
     for name in DisplaySettings.model_fields:
-        assert getattr(got, name) == 77, f"[display].{name} is not read"
+        assert getattr(got, name) == probe[name], f"[display].{name} is not read"
 
 
 @pytest.mark.os_agnostic

@@ -71,6 +71,7 @@ PROBES: dict[str, tuple[str, str, dict[str, str]]] = {
     "piped_width": ("60", "400", {}),
     "summary_limit": ("1", "1000", {}),
     "wear_row_floor_percent": ("0", "100", {}),
+    "expand_virtual": ("false", "true", {}),
     "traceback_summary_limit": ("10", "100000", {}),
     "traceback_verbose_limit": ("10", "100000", {}),
     "max_samples_per_drive": ("2", "100000", {}),

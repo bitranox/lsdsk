@@ -614,20 +614,28 @@ def build_disks(capture: Mapping[str, Any]) -> tuple[Disk, ...]:
 def build_virtual_disks(capture: Mapping[str, Any]) -> tuple[Disk, ...]:
     """Build every kernel-virtual block device found in a capture.
 
-    The transport is set here rather than inferred. Left to `_bus_of`, a device
-    with no ATA identity and no phy comes out ``unknown``, which claims the
-    transport could not be read; nothing failed to be read, and the kernel
-    already said there is no transport at all.
+    Two values are set here rather than inferred, because the general mapping
+    reads them as measurements and for these devices they are not.
+
+    The transport: left to `_bus_of`, a device with no ATA identity and no phy
+    comes out ``unknown``, which claims it could not be read. Nothing failed to
+    be read; the kernel already said there is no transport at all.
+
+    The media: ``queue/rotational`` is 0 for loop, zd and zram alike, which the
+    ordinary mapping turns into SSD. It is a default the kernel fills in for a
+    device with no media, so believing it made a zvol on a pool of spinning
+    disks report solid state.
 
     Args:
         capture: A Linux sysfs capture.
 
     Returns:
-        Kernel-virtual devices in node order, each on ``BusType.VIRTUAL``.
+        Kernel-virtual devices in node order, each on ``BusType.VIRTUAL`` and
+        with no claim about its media.
     """
     blocks: Mapping[str, Mapping[str, Any]] = capture.get("block", {})
     return tuple(
-        replace(_build_one(node, block, capture), bus=BusType.VIRTUAL)
+        replace(_build_one(node, block, capture), bus=BusType.VIRTUAL, kind=DiskKind.UNKNOWN)
         for node, block in sorted(blocks.items())
         if _is_kernel_virtual(block)
     )

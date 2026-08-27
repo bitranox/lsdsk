@@ -105,7 +105,13 @@ class LsdskApp(App[None]):
     #: a page and its command are one view under one name.
     PAGES: ClassVar[tuple[str, ...]] = tuple(command.value for command in CliCommand)
 
-    def __init__(self, inventory: Inventory, history: History | None = None) -> None:
+    def __init__(
+        self,
+        inventory: Inventory,
+        history: History | None = None,
+        *,
+        expand_virtual: bool = False,
+    ) -> None:
         """Build the app around one already-collected inventory.
 
         Args:
@@ -113,9 +119,13 @@ class LsdskApp(App[None]):
             history: Counter samples recorded on earlier runs. Without them the
                 trend page explains that there is nothing to compare yet, and
                 every other page reads exactly as it did before.
+            expand_virtual: List every kernel-virtual device rather than
+                tallying them. Carried so a page and the command of the same
+                name show the same devices; they are one view under one name.
         """
         super().__init__()
         self.inventory = inventory
+        self.expand_virtual = expand_virtual
         self.history: History = history if history is not None else History(hostname=inventory.hostname)
         self.findings: tuple[Finding, ...] = diagnose(inventory, history=history)
         self.title = f"lsdsk {__init__conf__.version}"
@@ -127,7 +137,10 @@ class LsdskApp(App[None]):
         yield Static(self.verdict_line(), id="verdict")
         with TabbedContent(initial=CliCommand.TOPOLOGY.value):
             with TabPane("Topology", id=CliCommand.TOPOLOGY.value), VerticalScroll():
-                yield Static(report.render_tree(self.inventory, self.findings), id="tree")
+                yield Static(
+                    report.render_tree(self.inventory, self.findings, expand_virtual=self.expand_virtual),
+                    id="tree",
+                )
             with TabPane("Controllers", id=CliCommand.CONTROLLERS.value):
                 yield DataTable[str](id="controller-table", zebra_stripes=True, cursor_type="row")
             with TabPane("Disks", id=CliCommand.DISKS.value):
@@ -217,7 +230,8 @@ class LsdskApp(App[None]):
         """Populate the disk page."""
         table = rows_of(self.query_one("#disk-table"))
         table.add_columns(*_DISK_COLUMNS)
-        for disk in self.inventory.disks:
+        listed = (*self.inventory.disks, *self.inventory.virtual_disks) if self.expand_virtual else self.inventory.disks
+        for disk in listed:
             port = self.inventory.port_link_for(disk)
             cells = report.disk_row(disk, port)
             severity = report.worst_severity(self.findings, disk.path)
@@ -353,7 +367,9 @@ class LsdskApp(App[None]):
         self.findings = diagnose(self.inventory, history=self.history)
         self.query_one("#verdict", Static).update(self.verdict_line())
         self.query_one("#findings-body", Static).update(report.render_findings(self.findings))
-        self.query_one("#tree", Static).update(report.render_tree(self.inventory, self.findings))
+        self.query_one("#tree", Static).update(
+            report.render_tree(self.inventory, self.findings, expand_virtual=self.expand_virtual)
+        )
         self.query_one("#smart-body", Static).update(report.render_smart(self.inventory))
         self.query_one("#trend-body", Static).update(render_trend(self.inventory, self.history))
         for table_id in ("#controller-table", "#disk-table", "#health-table", "#slot-table"):

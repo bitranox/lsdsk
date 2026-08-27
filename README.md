@@ -208,13 +208,16 @@ Each page stands alone and shows every disk, so nothing has to be selected to
 see it, and `up` and `down` scroll whichever page is on screen.
 
 Every option below is global: it goes before the command, and it applies to
-whichever command follows.
+whichever command follows. `--expand-virtual` is also accepted after `topology`,
+`disks` and `tui`, because that is what the line tallying those devices tells
+you to type.
 
 | Option                           | Does                                                                     |
 |----------------------------------|--------------------------------------------------------------------------|
 | `--replay FILE`                  | Render a capture instead of reading this machine                         |
 | `--history-file F`               | Read and write counter history there instead of the per-user state file  |
 | `--no-record`                    | Judge counters against history without adding this reading to it         |
+| `--expand-virtual`               | List every kernel-virtual device instead of tallying them in one line    |
 | `--profile NAME`                 | Load a named configuration profile                                       |
 | `--set S.K=V`                    | Override one configuration value, repeatable                             |
 | `--env-file FILE`                | Read that `.env` rather than searching upward from the working directory |

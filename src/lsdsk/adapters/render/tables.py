@@ -25,7 +25,7 @@ from ...domain.history import CounterKind, identity_of, trend_for
 from ..config.tunables import DEFAULT_PIPED_WIDTH
 from . import theme
 from .layout import Column, fit, natural_widths
-from .report import disk_row, worst_severity
+from .report import disk_row, virtual_note, worst_severity
 
 # A single character, because these columns are already the first to be dropped
 # when the terminal narrows and a word would cost one of them.
@@ -98,8 +98,12 @@ HEALTH_COLUMNS: tuple[Column, ...] = (
 )
 
 
-def _render(title: str, columns: Sequence[Column], rows: Sequence[Row], width: int) -> Table:
-    """Build a table from styled rows, keeping only the columns that fit."""
+def _render(title: str, columns: Sequence[Column], rows: Sequence[Row], width: int, caption: str = "") -> Table:
+    """Build a table from styled rows, keeping only the columns that fit.
+
+    A caption goes under the table rather than into a row: a row would claim to
+    be a device and would carry a value in every column it does not have.
+    """
     plain = [{key: value[0] for key, value in row.items()} for row in rows]
     widths = natural_widths(columns, plain)
     chosen = fit(columns, widths, width)
@@ -108,6 +112,9 @@ def _render(title: str, columns: Sequence[Column], rows: Sequence[Row], width: i
         title=title,
         title_justify="left",
         title_style="bold",
+        caption=caption or None,
+        caption_justify="left",
+        caption_style=theme.STYLE_UNKNOWN,
         box=None,
         header_style=theme.STYLE_HEADER,
         pad_edge=False,
@@ -178,19 +185,29 @@ def render_controllers(inventory: Inventory, findings: Sequence[Finding], width:
     return _render(f"Controllers on {inventory.hostname}", CONTROLLER_COLUMNS, rows, width)
 
 
-def render_disks(inventory: Inventory, findings: Sequence[Finding], width: int = DEFAULT_WIDTH) -> Table:
+def render_disks(
+    inventory: Inventory,
+    findings: Sequence[Finding],
+    width: int = DEFAULT_WIDTH,
+    *,
+    expand_virtual: bool = False,
+) -> Table:
     """Render one row per disk, with identity and interface speeds.
 
     Args:
         inventory: The machine.
         findings: The findings, used to mark affected rows.
         width: Terminal width, which decides how many columns fit.
+        expand_virtual: Give every kernel-virtual device a row of its own.
+            Folded into a caption otherwise, on the same rule the tree uses, so
+            the two views cannot describe one machine differently.
 
     Returns:
         A table of disks.
     """
     rows: list[Row] = []
-    for disk in inventory.disks:
+    listed = (*inventory.disks, *inventory.virtual_disks) if expand_virtual else inventory.disks
+    for disk in listed:
         severity = worst_severity(findings, disk.path)
         # One rule for what a disk row says and how it is coloured, shared with
         # the tree. Three copies of it disagreed: this one called every NVMe
@@ -217,7 +234,8 @@ def render_disks(inventory: Inventory, findings: Sequence[Finding], width: int =
                 ),
             }
         )
-    return _render(f"Disks on {inventory.hostname}", DISK_COLUMNS, rows, width)
+    caption = "" if expand_virtual else virtual_note(inventory.virtual_disks)
+    return _render(f"Disks on {inventory.hostname}", DISK_COLUMNS, rows, width, caption)
 
 
 def render_health(
