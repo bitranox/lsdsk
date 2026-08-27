@@ -34,7 +34,25 @@ if TYPE_CHECKING:
 
 # Column sets per page, kept here so a page's shape is readable in one place.
 _CONTROLLER_COLUMNS = ("", "address", "controller", "driver", "firmware", "running", "capable", "ports", "disks")
-_DISK_COLUMNS = ("", "device", "model", "wwn", "size", "kind", "bus", "port", "disk", "link", "controller")
+# The same columns `lsdsk disks` prints, in the same order: a page and the
+# command of one name are one view, and a drive is identified by model, serial
+# and firmware together. Naming only the model left the page unable to answer
+# the question its own mixed-firmware finding raises.
+_DISK_COLUMNS = (
+    "",
+    "device",
+    "model",
+    "wwn",
+    "serial",
+    "firmware",
+    "size",
+    "kind",
+    "bus",
+    "port",
+    "disk",
+    "link",
+    "controller",
+)
 _HEALTH_COLUMNS = ("", "device", "temp", "worn", "hours", "written", "realloc", "pending", "uncorr", "crc", "media")
 _SLOT_COLUMNS = ("port", "slot", "capable", "running", "occupant", "needs", "verdict")
 
@@ -239,6 +257,8 @@ class LsdskApp(App[None]):
                 _cell(theme.marker_for(severity), theme.style_for(severity)),
                 *(_cell(*cells[key]) for key in ("device", "model")),
                 _cell(disk.wwn or "-", "" if disk.wwn else theme.STYLE_UNKNOWN),
+                _cell(disk.serial or "-", "" if disk.serial else theme.STYLE_UNKNOWN),
+                _cell(disk.firmware or "-", "" if disk.firmware else theme.STYLE_UNKNOWN),
                 *(_cell(*cells[key]) for key in ("size", "kind", "bus", "port", "disk", "link")),
                 _cell(
                     disk.controller_address or "-",

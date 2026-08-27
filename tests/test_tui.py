@@ -17,6 +17,7 @@ from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import theme
 from lsdsk.adapters.render.layout import Column, fit, natural_widths, pad
 from lsdsk.adapters.render.report import DISK_COLUMNS, render_tree
+from lsdsk.adapters.render.tables import DISK_COLUMNS as PRINTED_DISK_COLUMNS
 from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.enums import Align
@@ -436,3 +437,51 @@ async def test_every_bound_key_reaches_its_own_action() -> None:
         await pilot.pause()
         assert app.findings is not before, "f9 did not reach the rescan action"
         assert app.query_one(TabbedContent).active == "smart", "rescan should not move the page"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
+class TestTheDiskPageIdentifiesADrive:
+    """The page and `lsdsk disks` are one view, so they carry the same identity.
+
+    A drive is identified by model, serial and firmware together: two disks of
+    one model differ by serial, and a firmware revision is what a mixed-firmware
+    finding sends the reader to check. The page named the model and neither of
+    the other two, so it could not answer the question its own finding raises.
+    """
+
+    async def _cells(self, node: str) -> list[str]:
+        """Press the key a reader presses, then read the row that appeared."""
+        machine = inventory()
+        app = LsdskApp(machine)
+        async with app.run_test(size=(200, 60)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            return [str(cell) for cell in rows_of(app.query_one("#disk-table")).get_row(node)]
+
+    async def test_the_firmware_revision_is_on_the_row(self) -> None:
+        disk = next(d for d in inventory().disks if d.firmware)
+        assert disk.firmware in await self._cells(disk.node)
+
+    async def test_the_serial_is_on_the_row(self) -> None:
+        disk = next(d for d in inventory().disks if d.serial)
+        assert disk.serial in await self._cells(disk.node)
+
+
+@pytest.mark.os_agnostic
+def test_the_disk_page_carries_the_same_columns_as_the_printed_table() -> None:
+    """`lsdsk disks` and page 3 are one view under one name, so prove it.
+
+    Stated in CLAUDE.md and true of nothing until this ran: the page was built
+    from its own tuple, so it silently lost `serial` and `firmware` at 1.0.0 and
+    nothing noticed for a whole minor series. Comparing the two lists is the
+    only thing that catches the next column added to one and not the other -
+    `test_every_page_name_is_a_command_enum_member` cannot, because it compares
+    the page NAMES against the enum they are built from.
+    """
+    from lsdsk.adapters.tui.app import _DISK_COLUMNS
+
+    printed = tuple(column.key for column in PRINTED_DISK_COLUMNS)
+    # The leading empty label is the severity marker's column, which the printed
+    # table renders as a fixed gutter rather than as one of its own columns.
+    assert tuple(name for name in _DISK_COLUMNS if name) == printed
