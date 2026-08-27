@@ -5,8 +5,11 @@ letting one into the inventory produces a disk that can never answer any of the
 questions this tool asks. The reader filtered those by NAME PREFIX, and the list
 was written from the names known at the time.
 
-These run on every platform: the reader is importable anywhere and `read_block`
-takes its sysfs root as an argument, so a temporary tree stands in for `/sys`.
+The reader is importable anywhere, so the name test below runs everywhere. The
+two that stand a temporary tree in for `/sys` are `os_posix`: they need symlinks,
+which Windows restricts, and they describe a Linux sysfs layout that no Windows
+machine has. The tree also avoids colons in its path segments, which Windows
+rejects outright.
 """
 
 from __future__ import annotations
@@ -39,11 +42,12 @@ def _make_block_device(sysfs: Path, device_path: str, node: str, *, physical: bo
 def sysfs(tmp_path: Path) -> Path:
     """A sysfs tree holding one real disk and one kernel-virtual block device."""
     root = tmp_path / "sys"
-    _make_block_device(root, "devices/pci0000:00/0000:00:17.0/ata5/host4/block", "sda", physical=True)
+    _make_block_device(root, "devices/pci0000_00/0000_00_17_0/ata5/host4/block", "sda", physical=True)
     _make_block_device(root, "devices/virtual/block", "zram0", physical=False)
     return root
 
 
+@pytest.mark.os_posix
 class TestOnlyRealHardwareIsADisk:
     """The inventory holds disks, so a RAM-backed device must not reach it."""
 
