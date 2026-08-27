@@ -1,6 +1,6 @@
 [project]
 name = "lsdsk"
-version = "1.0.7"
+version = "1.0.8"
 description = "See your disks and controllers, and what is wrong with how they are connected"
 readme = "README.md"
 requires-python = ">=3.11"

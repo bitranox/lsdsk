@@ -3,6 +3,28 @@
 All notable changes to this project will be documented in this file following
 the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [Unreleased]
+
+## [1.0.8] 2026-08-27 19:53:27
+
+### Fixed
+
+- The console adapter no longer asks click for the stream it is about to write
+  to. click 8.5.0 deprecated `get_text_stream` (removal in 9.0) and routed it
+  through a module `__getattr__`, so its type reads as unknown and the strict
+  type gate failed at every call site. `echo` hands `file=` and `err=` to click
+  unchanged now, and reads the encoding it judges the ASCII fallback against
+  from `sys.stdout` or `sys.stderr`, which is where click resolves its own
+  default target from. Those are the same stream wherever it matters: click
+  returns `sys.stdout` untouched unless it is misconfigured to ascii, and on a
+  Windows console it returns a `utf-16-le` writer while `sys.stdout` is already
+  utf-8 under PEP 528, so both accept the glyph.
+
+### Added
+
+- Tests for `echo`'s default target. Every existing case passed an explicit
+  `file`, so the branch this had to rewrite had no coverage at all.
+
 ## [1.0.7] - 2026-08-07
 
 Version 1.0.6 reached the plugin marketplace from the default branch and was
