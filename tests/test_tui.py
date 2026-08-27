@@ -19,6 +19,7 @@ from lsdsk.adapters.render.layout import Column, fit, natural_widths, pad
 from lsdsk.adapters.render.report import DISK_COLUMNS, render_tree
 from lsdsk.adapters.render.tables import DISK_COLUMNS as PRINTED_DISK_COLUMNS
 from lsdsk.adapters.tui import LsdskApp
+from lsdsk.adapters.tui.app import DISK_COLUMNS as TUI_DISK_COLUMNS
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.enums import Align
 from lsdsk.domain.models import Inventory
@@ -459,29 +460,33 @@ class TestTheDiskPageIdentifiesADrive:
             await pilot.pause()
             return [str(cell) for cell in rows_of(app.query_one("#disk-table")).get_row(node)]
 
-    async def test_the_firmware_revision_is_on_the_row(self) -> None:
-        disk = next(d for d in inventory().disks if d.firmware)
-        assert disk.firmware in await self._cells(disk.node)
+    async def test_the_firmware_revision_is_under_the_firmware_column(self) -> None:
+        """Under its own heading, not merely somewhere on the row.
 
-    async def test_the_serial_is_on_the_row(self) -> None:
+        The labels are derived from the printed table but the cells are still
+        added in their own order beside them, so a value landing one column off
+        is what remains possible here.
+        """
+        disk = next(d for d in inventory().disks if d.firmware)
+        cells = await self._cells(disk.node)
+        assert cells[TUI_DISK_COLUMNS.index("firmware")] == disk.firmware
+
+    async def test_the_serial_is_under_the_serial_column(self) -> None:
         disk = next(d for d in inventory().disks if d.serial)
-        assert disk.serial in await self._cells(disk.node)
+        cells = await self._cells(disk.node)
+        assert cells[TUI_DISK_COLUMNS.index("serial")] == disk.serial
 
 
 @pytest.mark.os_agnostic
 def test_the_disk_page_carries_the_same_columns_as_the_printed_table() -> None:
     """`lsdsk disks` and page 3 are one view under one name, so prove it.
 
-    Stated in CLAUDE.md and true of nothing until this ran: the page was built
-    from its own tuple, so it silently lost `serial` and `firmware` at 1.0.0 and
-    nothing noticed for a whole minor series. Comparing the two lists is the
-    only thing that catches the next column added to one and not the other -
-    `test_every_page_name_is_a_command_enum_member` cannot, because it compares
-    the page NAMES against the enum they are built from.
+    The page takes the printed table's columns rather than restating them, so
+    this cannot drift by a column being added to one list. What it still holds
+    is the derivation itself: replacing it with a literal tuple, which is how
+    `serial` and `firmware` went missing at 1.0.0, fails here.
     """
-    from lsdsk.adapters.tui.app import _DISK_COLUMNS
-
-    printed = tuple(column.key for column in PRINTED_DISK_COLUMNS)
+    printed = tuple(column.title for column in PRINTED_DISK_COLUMNS)
     # The leading empty label is the severity marker's column, which the printed
     # table renders as a fixed gutter rather than as one of its own columns.
-    assert tuple(name for name in _DISK_COLUMNS if name) == printed
+    assert tuple(name for name in TUI_DISK_COLUMNS if name) == printed

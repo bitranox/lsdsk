@@ -34,25 +34,12 @@ if TYPE_CHECKING:
 
 # Column sets per page, kept here so a page's shape is readable in one place.
 _CONTROLLER_COLUMNS = ("", "address", "controller", "driver", "firmware", "running", "capable", "ports", "disks")
-# The same columns `lsdsk disks` prints, in the same order: a page and the
-# command of one name are one view, and a drive is identified by model, serial
-# and firmware together. Naming only the model left the page unable to answer
-# the question its own mixed-firmware finding raises.
-_DISK_COLUMNS = (
-    "",
-    "device",
-    "model",
-    "wwn",
-    "serial",
-    "firmware",
-    "size",
-    "kind",
-    "bus",
-    "port",
-    "disk",
-    "link",
-    "controller",
-)
+# Taken from the printed table rather than restated, because a page and the
+# command of one name are one view. Restating it is how the page came to name a
+# drive by model alone: its own tuple was written without `serial` and
+# `firmware`, and nothing compared the two lists. The leading empty label is the
+# severity marker, which the printed table draws as a fixed gutter instead.
+DISK_COLUMNS = ("", *(column.title for column in tables.DISK_COLUMNS))
 _HEALTH_COLUMNS = ("", "device", "temp", "worn", "hours", "written", "realloc", "pending", "uncorr", "crc", "media")
 _SLOT_COLUMNS = ("port", "slot", "capable", "running", "occupant", "needs", "verdict")
 
@@ -247,7 +234,7 @@ class LsdskApp(App[None]):
     def _fill_disks(self) -> None:
         """Populate the disk page."""
         table = rows_of(self.query_one("#disk-table"))
-        table.add_columns(*_DISK_COLUMNS)
+        table.add_columns(*DISK_COLUMNS)
         listed = (*self.inventory.disks, *self.inventory.virtual_disks) if self.expand_virtual else self.inventory.disks
         for disk in listed:
             port = self.inventory.port_link_for(disk)
