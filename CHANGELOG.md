@@ -28,6 +28,23 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   the example says so. CI never saw it: its runners have no such directory, and
   the doctest is only reached on the Python versions `make test-all` covers.
 
+- A RAM-backed block device is no longer read as a disk. `zram0` reached the
+  inventory on every Proxmox host here as a disk on a bus called `unknown` that
+  reports no counters and never can, because the reader decided what was
+  physical from a list of NAME PREFIXES and `zram` matches none of them (`ram`
+  does not). It asks the kernel now: a device with no physical parent resolves
+  under `/sys/devices/virtual`, which is a fact read from the system rather than
+  an inference from something being absent, and it covers the next such device
+  without anyone adding its name. Verified against real sysfs on a host: every
+  real drive answers no, every `loop`, `zd` and `zram` answers yes.
+- The real-hardware test suite ships a build the host cannot serve from cache.
+  `uv run --reinstall --with <wheel>` keys uv's unpacked archive on the wheel's
+  name and version, neither of which changes between builds of one version, so a
+  re-run silently exercised the PREVIOUS build. Measured: a byte-identical wheel
+  containing this fix loaded a module without it, and the suite reported the bug
+  still present after it had been fixed. `--no-cache` is the only thing that
+  reaches it; `--reinstall` and `uv cache clean lsdsk` do not.
+
 ### Added
 
 - Tests for `echo`'s default target. Every existing case passed an explicit

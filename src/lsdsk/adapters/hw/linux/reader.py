@@ -537,13 +537,42 @@ def read_classes(root: Path = Path("/sys/class")) -> dict[str, dict[str, dict[st
     return classes
 
 
+def _is_kernel_virtual(node: Path, root: Path) -> bool:
+    """Whether the kernel places this block device under its virtual tree.
+
+    The name cannot answer this. :func:`is_physical_disk` knows the prefixes
+    that were listed when it was written, and `zram` matches none of them, so a
+    RAM-backed device reached the inventory as a disk on a bus called `unknown`
+    that reports no counters and never can. Extending the list would fix that
+    one name and leave the next one to be found the same way.
+
+    The kernel already answers it: a device with no physical parent resolves
+    under ``/sys/devices/virtual``, while a real one resolves under its PCI
+    path. That is a positive fact read from the system rather than an inference
+    from something being absent.
+
+    Args:
+        node: A ``/sys/block`` entry, which is a symlink into ``/sys/devices``.
+        root: The ``/sys/block`` directory, whose parent is the sysfs root.
+
+    Returns:
+        ``True`` when the device resolves under the sysfs virtual tree.
+    """
+    try:
+        return node.resolve().is_relative_to((root.parent / "devices" / "virtual").resolve())
+    except OSError:
+        # An unresolvable link says nothing either way, and calling it virtual
+        # on that basis would hide a real disk.
+        return False
+
+
 def read_block(root: Path = Path("/sys/block")) -> dict[str, dict[str, Any]]:
     """Read every physical disk's sysfs attributes and VPD pages."""
     disks: dict[str, dict[str, Any]] = {}
     if not root.is_dir():
         return disks
     for node in sorted(root.iterdir()):
-        if not is_physical_disk(node.name):
+        if not is_physical_disk(node.name) or _is_kernel_virtual(node, root):
             continue
         entry: dict[str, Any] = {"size": _read_text(node / "size")}
         # The stable identifier lives at block level for NVMe and at device level

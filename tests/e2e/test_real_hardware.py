@@ -174,16 +174,23 @@ def test_the_contract_holds_on_real_hardware(wheel: Path, host: str, user: str, 
         home = f"C:\\Users\\{user}"
         destination = f"{user}@{host}:{home}\\"
         command = (
-            f'"C:\\Program Files\\uv\\uv.exe" run --no-project --python 3.12 --reinstall '
+            f'"C:\\Program Files\\uv\\uv.exe" run --no-cache --no-project --python 3.12 --reinstall '
             f"--with {home}\\{wheel.name} python {home}\\hostprobe.py lsdsk"
         )
     else:
         destination = f"{user}@{host}:/tmp/"
         command = (
-            f"cd /tmp && uv run --no-project --python 3.13 --reinstall "
+            f"cd /tmp && uv run --no-cache --no-project --python 3.13 --reinstall "
             f"--with /tmp/{wheel.name} python /tmp/hostprobe.py lsdsk"
         )
 
+    # --no-cache, and NOT because a fresh resolve is tidier. The wheel's name and
+    # version do not change between builds of the same version, and uv keys its
+    # unpacked archive on that, so a second run serves the FIRST run's code from
+    # ~/.cache/uv/archive-v0 however much the source changed. --reinstall does not
+    # reach it, and neither does `uv cache clean lsdsk`. Measured on proxmox01: a
+    # byte-identical wheel containing the fix loaded a module without it, and the
+    # suite reported the bug still present after it had been fixed.
     copied = subprocess.run(  # noqa: S603 - argv list, no shell
         [str(SCP_BIN), "-i", str(KEY), *SSH_OPTIONS, "-q", str(wheel), str(PROBE), destination],
         capture_output=True,
