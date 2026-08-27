@@ -5,6 +5,19 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.1.1] 2026-08-28
+
+### Fixed
+
+- The interactive disk page now carries the drive's serial and firmware. A
+  drive is identified by model, serial and firmware together - two disks of one
+  model differ by serial, and a firmware revision is what a mixed-firmware
+  finding sends the reader to check - and the page named only the model, so it
+  could not answer the question its own finding raises. The page was built from
+  its own column tuple rather than from the printed table's, so it never had
+  either: the tuple was written that way at 1.0.0 and nothing compared the two.
+  A test compares them now.
+
 ## [1.1.0] 2026-08-27
 
 ### Changed
