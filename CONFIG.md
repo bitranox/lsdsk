@@ -69,7 +69,7 @@ Configuration is loaded and merged in the following order (lowest to highest pre
 
 ### Global Options
 
-These options apply to all commands and must be specified **before** the command name:
+These options apply to all commands and go **before** the command name:
 
 | Option                    | Description                                                               |
 |---------------------------|---------------------------------------------------------------------------|
@@ -77,8 +77,17 @@ These options apply to all commands and must be specified **before** the command
 | `--profile NAME`          | Load configuration from a named profile (e.g., `production`, `test`).     |
 | `--set SECTION.KEY=VALUE` | Override a configuration setting. Can be repeated for multiple overrides. |
 | `--env-file PATH`         | Explicit `.env` file path. Skips the default upward directory search.     |
+| `--replay FILE`           | Render a capture taken earlier instead of reading this machine.           |
+| `--history-file FILE`     | Read and write counter history there rather than the per-user state file. |
+| `--no-record`             | Judge counters against recorded history without adding this reading.      |
+| `--expand-virtual`        | List every kernel-virtual device rather than tallying them in one line.   |
 | `--traceback`             | Show full Python traceback on errors (useful for debugging).              |
 | `--no-traceback`          | Hide traceback, show only error message (default).                        |
+
+`--replay` and `--expand-virtual` are also accepted **after** a command that
+honours them, and the command's own value wins. `--expand-virtual` is there
+because the line tallying the folded-away devices names it, and a reader who
+types what they were just told must not meet "no such option".
 
 **Example usage:**
 
@@ -374,8 +383,16 @@ itself.
 | `piped_width`             | `120`   | Width used when output is not a terminal               |
 | `summary_limit`           | `6`     | Findings named in the verdict line before "and N more" |
 | `wear_row_floor_percent`  | `10`    | Wear below this is not given a row in `lsdsk trend`    |
+| `expand_virtual`          | `false` | List kernel-virtual devices instead of tallying them   |
 | `traceback_summary_limit` | `500`   | Characters kept in a short traceback                   |
 | `traceback_verbose_limit` | `10000` | And under `--traceback`                                |
+
+A kernel-virtual device is one the kernel provides with no hardware behind it:
+zram, a loop mount, a ZFS zvol, a device-mapper node. It has no controller, no
+link and no counters, so it is counted and named rather than listed. It is never
+hidden: the header counts them, the tree and the disk table say how many were
+left out, and the JSON envelope carries every one of them under `virtual_disks`
+whatever this key is set to.
 
 ### `[history]` - the counter store
 

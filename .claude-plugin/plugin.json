@@ -1,7 +1,7 @@
 {
   "name": "lsdsk",
   "description": "See which disks hang off which controller, whether each one runs at the speed it could, and how worn it is. Ships the lsdsk skill: install via uvx, read the topology tree and the problem summary, interpret every finding class, and tell an actionable fault from a mainboard ceiling that only a different board would lift.",
-  "version": "1.0.8",
+  "version": "1.1.0",
   "author": {
     "name": "bitranox"
   },

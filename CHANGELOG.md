@@ -5,6 +5,46 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.1.0] 2026-08-27
+
+### Changed
+
+- Kernel-virtual block devices are shown rather than dropped. 1.0.8 stopped
+  them at read time, which fixed the RAM disk that was failing every check but
+  made hardware the machine really has vanish from its own inventory. They are
+  kept and labelled now: `Inventory.disks` stays the physical drives every rule
+  and every reading is about, and the new `Inventory.virtual_disks` carries
+  zram, loop, zvol and device-mapper nodes on `BusType.VIRTUAL`.
+
+- The topology tree and the disk table end with a tally of them - "12 not
+  listed: 8 loop, 3 zd, 1 zram" - and `--expand-virtual` gives each one a row.
+  Folded away by default because a Proxmox host has more of these than drives,
+  and forty zvols would push the real drives off the view that exists to show
+  them. Both views take that sentence from one function, so they cannot
+  describe one machine differently, and the header counts the devices apart
+  from the drives rather than adding them in.
+
+- `--expand-virtual` is accepted before the command like every global option,
+  and also after `topology`, `disks` and `tui`, because the tally names it. It
+  lands on the new `display.expand_virtual` key, so a file, the global flag and
+  a subcommand flag are one setting.
+
+- The JSON envelope gained `data.virtual_disks`, always populated whatever the
+  display setting says. The tally is a screen-space decision; a program parsing
+  the output needs the whole machine.
+
+### Fixed
+
+- An optical drive is no longer hidden. The retired name-prefix list excluded
+  `sr`, which is real hardware occupying a real AHCI port, so the port count
+  was short by one on any machine that has one.
+
+- A virtual device no longer reports a media kind it was never told. The
+  builder mapped `queue/rotational`, which reads 0 for loop, zd and zram alike
+  because it is a default the kernel fills in for a device with no media, so a
+  zvol on a pool of spinning disks reported solid state.
+
+
 ## [1.0.8] 2026-08-27 19:53:27
 
 ### Fixed
