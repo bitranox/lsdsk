@@ -83,7 +83,9 @@ class BusType(StrEnum):
         SAS: Native Serial Attached SCSI.
         NVME: NVM Express over PCIe.
         USB: USB mass storage or UAS.
-        VIRTUAL: A hypervisor-provided disk with no real physical link.
+        VIRTUAL: A device with no physical link, because there is no
+            hardware behind it: a hypervisor's disk, or one the kernel
+            provides itself such as zram, loop or a zvol.
         UNKNOWN: Could not be determined.
 
     Example:

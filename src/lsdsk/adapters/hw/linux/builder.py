@@ -580,21 +580,57 @@ def _stable_identifier(block: Mapping[str, Any], device: Mapping[str, Any]) -> s
     return None
 
 
+def _is_kernel_virtual(block: Mapping[str, Any]) -> bool:
+    """Whether the reader found this device under the kernel's virtual tree.
+
+    The reader answers this from where sysfs puts the device, so the builder
+    only has to carry the answer. Reading it from the node name here would
+    reintroduce the guess the reader exists to avoid.
+    """
+    return block.get("virtual") is True
+
+
+def _build_one(node: str, block: Mapping[str, Any], capture: Mapping[str, Any]) -> Disk:
+    """Build one disk, routed by whether its node is an NVMe namespace."""
+    builder = _build_nvme_disk if node.startswith("nvme") else _build_ata_disk
+    return builder(node, block, capture)
+
+
 def build_disks(capture: Mapping[str, Any]) -> tuple[Disk, ...]:
-    """Build every disk found in a capture.
+    """Build every physical disk found in a capture.
 
     Args:
         capture: A Linux sysfs capture.
 
     Returns:
-        Disks in node order.
+        Disks in node order, kernel-virtual devices excluded.
     """
     blocks: Mapping[str, Mapping[str, Any]] = capture.get("block", {})
-    disks: list[Disk] = []
-    for node, block in sorted(blocks.items()):
-        builder = _build_nvme_disk if node.startswith("nvme") else _build_ata_disk
-        disks.append(builder(node, block, capture))
-    return tuple(disks)
+    return tuple(
+        _build_one(node, block, capture) for node, block in sorted(blocks.items()) if not _is_kernel_virtual(block)
+    )
+
+
+def build_virtual_disks(capture: Mapping[str, Any]) -> tuple[Disk, ...]:
+    """Build every kernel-virtual block device found in a capture.
+
+    The transport is set here rather than inferred. Left to `_bus_of`, a device
+    with no ATA identity and no phy comes out ``unknown``, which claims the
+    transport could not be read; nothing failed to be read, and the kernel
+    already said there is no transport at all.
+
+    Args:
+        capture: A Linux sysfs capture.
+
+    Returns:
+        Kernel-virtual devices in node order, each on ``BusType.VIRTUAL``.
+    """
+    blocks: Mapping[str, Mapping[str, Any]] = capture.get("block", {})
+    return tuple(
+        replace(_build_one(node, block, capture), bus=BusType.VIRTUAL)
+        for node, block in sorted(blocks.items())
+        if _is_kernel_virtual(block)
+    )
 
 
 def build_inventory(capture: Mapping[str, Any]) -> Inventory:
@@ -630,6 +666,7 @@ def build_inventory(capture: Mapping[str, Any]) -> Inventory:
             replace(controller, ports_used=used.get(controller.address, 0)) for controller in controllers
         ),
         disks=disks,
+        virtual_disks=build_virtual_disks(capture),
         slots=build_slots(capture),
         privileged=capture.get("euid") == 0,
         environment=environment,
@@ -644,6 +681,7 @@ __all__ = [
     "build_disks",
     "build_inventory",
     "build_slots",
+    "build_virtual_disks",
     "controller_address_of",
     "controller_kind_of",
     "parse_link_rate",

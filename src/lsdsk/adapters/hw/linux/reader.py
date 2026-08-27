@@ -66,9 +66,6 @@ NVME_ALL_NAMESPACES = 0xFFFFFFFF
 _SECTOR_BYTES = 512
 _IOCTL_TIMEOUT_MS = 10_000
 
-# Block devices that are not physical disks.
-_VIRTUAL_PREFIXES = ("loop", "zd", "ram", "dm-", "md", "sr", "fd", "nbd")
-
 # A sysfs child directory named like a PCI address, "0000:03:00.0", carries two colons.
 _PCI_ADDRESS_COLONS = 2
 
@@ -321,25 +318,6 @@ BLOCK_DEVICE_ATTRS = ("vendor", "model", "rev", "wwid", "sas_address", "state", 
 VPD_BLOBS = ("vpd_pg89", "vpd_pg80", "vpd_pg83", "vpd_pgb1", "inquiry")
 
 
-def is_physical_disk(name: str) -> bool:
-    """Whether a block device name refers to real hardware.
-
-    Args:
-        name: A ``/sys/block`` entry name.
-
-    Returns:
-        ``True`` for real disks, ``False`` for loop, ZFS volumes, ram and
-        device-mapper nodes.
-
-    Example:
-        >>> is_physical_disk("sda"), is_physical_disk("nvme0n1")
-        (True, True)
-        >>> is_physical_disk("zd1024"), is_physical_disk("loop0")
-        (False, False)
-    """
-    return not name.startswith(_VIRTUAL_PREFIXES)
-
-
 # Offsets and identifiers within PCI configuration space.
 _CONFIG_CAPABILITY_POINTER = 0x34
 _CAPABILITY_ID_PCI_EXPRESS = 0x10
@@ -540,16 +518,16 @@ def read_classes(root: Path = Path("/sys/class")) -> dict[str, dict[str, dict[st
 def _is_kernel_virtual(node: Path, root: Path) -> bool:
     """Whether the kernel places this block device under its virtual tree.
 
-    The name cannot answer this. :func:`is_physical_disk` knows the prefixes
-    that were listed when it was written, and `zram` matches none of them, so a
-    RAM-backed device reached the inventory as a disk on a bus called `unknown`
-    that reports no counters and never can. Extending the list would fix that
-    one name and leave the next one to be found the same way.
+    The name cannot answer this, in either direction. A prefix list written
+    from the names known at the time called `zram` physical, so a RAM-backed
+    device reached the inventory as a disk on a bus called `unknown` that
+    reports no counters and never can; the same list called `sr` virtual, so an
+    optical drive that does occupy an AHCI port was hidden from the port count.
 
     The kernel already answers it: a device with no physical parent resolves
     under ``/sys/devices/virtual``, while a real one resolves under its PCI
     path. That is a positive fact read from the system rather than an inference
-    from something being absent.
+    from a name.
 
     Args:
         node: A ``/sys/block`` entry, which is a symlink into ``/sys/devices``.
@@ -567,14 +545,21 @@ def _is_kernel_virtual(node: Path, root: Path) -> bool:
 
 
 def read_block(root: Path = Path("/sys/block")) -> dict[str, dict[str, Any]]:
-    """Read every physical disk's sysfs attributes and VPD pages."""
+    """Read every block device's sysfs attributes and VPD pages.
+
+    Kernel-virtual devices are kept and flagged rather than dropped. Dropping
+    them made a device the machine really has disappear from its inventory,
+    which reads as absent hardware rather than as hardware with nothing to
+    report; the builder gives them ``BusType.VIRTUAL`` and every rule that
+    needs a physical link then passes over them by class instead of by name.
+    """
     disks: dict[str, dict[str, Any]] = {}
     if not root.is_dir():
         return disks
     for node in sorted(root.iterdir()):
-        if not is_physical_disk(node.name) or _is_kernel_virtual(node, root):
-            continue
         entry: dict[str, Any] = {"size": _read_text(node / "size")}
+        if _is_kernel_virtual(node, root):
+            entry["virtual"] = True
         # The stable identifier lives at block level for NVMe and at device level
         # for SCSI and SATA, and both are readable without any privilege.
         for name in ("wwid", "uuid"):
@@ -785,7 +770,6 @@ __all__ = [
     "NvmePassthruCommand",
     "SgIoHeader",
     "ata_passthrough",
-    "is_physical_disk",
     "nvme_admin",
     "read_ahci_capabilities",
     "read_block",

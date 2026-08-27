@@ -764,7 +764,13 @@ class Inventory:
     Attributes:
         hostname: Machine the scan came from.
         controllers: Storage controllers, in PCI address order.
-        disks: Physical disks, in node order.
+        disks: Physical disks, in node order. Every rule, reading and counter
+            in this tool is about these and only these.
+        virtual_disks: Block devices the kernel provides without hardware
+            behind them, in node order. They are carried so a machine's
+            inventory does not silently omit part of itself, and kept out of
+            ``disks`` because a device with no link and no SMART cannot answer
+            any question asked of a drive.
         slots: Every PCIe bridge and root port, for placement advice.
         privileged: Whether the scan had the rights to read SMART data.
         environment: Whether this is bare metal, a guest, or a container.
@@ -782,6 +788,7 @@ class Inventory:
     hostname: str
     controllers: tuple[Controller, ...] = ()
     disks: tuple[Disk, ...] = ()
+    virtual_disks: tuple[Disk, ...] = ()
     slots: tuple[PcieSlot, ...] = ()
     privileged: bool = False
     environment: Environment = Environment.UNKNOWN
