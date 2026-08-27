@@ -20,6 +20,14 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   Windows console it returns a `utf-16-le` writer while `sys.stdout` is already
   utf-8 under PEP 528, so both accept the glyph.
 
+- `load_history`'s doctest no longer asks whether `/nonexistent/history.json`
+  exists. On a Debian or Ubuntu box `/nonexistent` is the `nobody` account's
+  home at mode 0700, so the stat raises `PermissionError` instead of answering
+  no, and `Path.exists()` only stopped propagating that in Python 3.14. The
+  example uses a directory it creates, so the missing file is missing because
+  the example says so. CI never saw it: its runners have no such directory, and
+  the doctest is only reached on the Python versions `make test-all` covers.
+
 ### Added
 
 - Tests for `echo`'s default target. Every existing case passed an explicit

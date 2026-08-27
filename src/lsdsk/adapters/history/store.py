@@ -187,7 +187,14 @@ def load_history(path: Path, *, hostname: str) -> History:
             newer lsdsk, or belongs to a different machine.
 
     Example:
-        >>> load_history(Path("/nonexistent/history.json"), hostname="box").series
+        A directory the test owns, so the missing file is missing because this
+        example says so. A fixed path like ``/nonexistent`` is not absent
+        everywhere: on a Debian or Ubuntu box it is the ``nobody`` account's
+        home, mode 0700, so the stat raises rather than answering no.
+
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as directory:
+        ...     load_history(Path(directory) / "history.json", hostname="box").series
         ()
     """
     if not path.exists():
