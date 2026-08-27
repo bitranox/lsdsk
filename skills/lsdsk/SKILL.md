@@ -94,6 +94,41 @@ doubt, `lsdsk <command> --help` lists what that command takes.
 vehicles the traceback and logging tests drive through the real entry point.
 Never reach for them to answer a question about hardware.
 
+## Devices with no hardware behind them
+
+A zram swap device, a loop mount, a ZFS zvol, a device-mapper or mdraid node:
+the kernel provides these itself, so they have no controller, no link and no
+SMART. lsdsk reads them, says so, and does not judge them - no rule fires on one
+and no finding names one, because there is nothing to compare against.
+
+It decides by asking the kernel where the device sits, never by its name. A
+device with no hardware parent resolves under `/sys/devices/virtual`; a real one
+resolves under its PCI path. So an optical drive, named `sr0`, is ordinary
+hardware occupying a real port and is counted as one.
+
+They are folded away rather than listed, because a Proxmox host has more of them
+than drives. The topology tree and the disk table each end with a line saying
+how many and of what:
+
+```text
+kernel-virtual devices, with no controller and no counters
+   12 not listed: 8 loop, 3 zd, 1 zram   (--expand-virtual lists them)
+```
+
+`--expand-virtual` gives each one a row, before or after `topology`, `disks` and
+`tui`. To make that the default on a host whose zvols are the point, set the
+configuration key - `lsdsk --set display.expand_virtual=true disks` for one run,
+or `expand_virtual = true` under `[display]` in the deployed
+`config.d/70-display.toml` to keep it:
+
+```bash
+uvx lsdsk config-deploy --target user     # then edit ~/.config/lsdsk/config.d/70-display.toml
+```
+
+**This setting changes the screen and nothing else.** The devices are always
+read, always counted in the header, and always present in `--format json`. A
+program never has to ask for them.
+
 `--format json` gives a machine-readable envelope on every command that
 produces data, including `info`, `snapshot`, `record` and all three
 `config` commands. `tui`, `fail` and `logdemo` have none, having no data to structure.
@@ -119,6 +154,42 @@ lsdsk findings --format json |
   python3 -c 'import json,sys; d=json.load(sys.stdin);
   sys.exit(any(f["severity"] == "critical" for f in d["data"]["findings"]))'
 ```
+
+**A disk, inside `data.disks`, carries `node`, `path`, `model`, `serial`,
+`firmware`, `wwn`, `size_bytes`, `kind`, `bus`, `controller_address`, `link`,
+`pcie` and `health`.** Every one but `node`, `path`, `model` and `bus` may be
+`null`, which means it was not read rather than that it is zero. `bus` is one of
+`sata`, `sas`, `nvme`, `usb`, `virtual`, `unknown`; `kind` is `ssd`, `hdd` or
+`unknown`. `link` is an object of `negotiated_gbps`, `drive_max_gbps` and
+`port_max_gbps`, and a speed rule only fires when both ends are known.
+
+**`data.virtual_disks` is a second list of the same shape**, holding the devices
+with no hardware behind them. It is always populated, whatever `--expand-virtual`
+or `display.expand_virtual` says, and `data.disks` never contains one - which is
+what a check for "nothing without a transport among the real drives" reads:
+
+```bash
+lsdsk disks --format json |
+  python3 -c 'import json,sys; d=json.load(sys.stdin)["data"];
+  sys.exit(any(x["bus"] == "virtual" for x in d["disks"]))'
+```
+
+That check is Linux-only, deliberately. On Windows `bus` is `virtual` for a
+HYPERVISOR disk, which is the machine's real storage, so the same line would
+fail on a healthy guest. It is `data.virtual_disks`, not the bus value, that
+means "provided by the kernel with nothing behind it" - so the check that holds
+on either platform asserts the two lists stay disjoint:
+
+```bash
+lsdsk disks --format json |
+  python3 -c 'import json,sys; d=json.load(sys.stdin)["data"];
+  v={x["node"] for x in d["virtual_disks"]};
+  sys.exit(any(x["node"] in v for x in d["disks"]))'
+```
+
+**`snapshot` is the exception to all of this.** With `-o` it writes the raw
+reading - the bytes the platform gave, for `--replay` - which is a different
+document from the envelope above and is not a list of disks.
 
 **A monitor must read `data.privileged` too, or it reports clean on a blind
 run.** Unprivileged, no SMART is read, so no wear or counter finding is ever
@@ -152,11 +223,12 @@ for hardware. Reading a machine needs privileges exactly as the CLI does, and
 `lsdsk <command> --help` for current options rather than trusting a list here.
 
 The global options are `--replay`, `--profile`, `--history-file`,
-`--no-record`, `--traceback`, `--env-file`, `--version` and
+`--no-record`, `--expand-virtual`, `--traceback`, `--env-file`, `--version` and
 `--set SECTION.KEY=VALUE`, the last being how you move a judgement for one run.
-`--replay` also works after any subcommand and `--profile` after the `config`
-commands, as above; every other global option is refused after the subcommand
-with exit `2`.
+Three also work after the subcommand: `--replay` on any command that reads a
+machine, `--profile` on the `config` commands, and `--expand-virtual` on
+`topology`, `disks` and `tui`. Every other global option is refused after the
+subcommand with exit `2`.
 
 The figures the rules turn on are all `[thresholds]` keys, so none of them is
 fixed: `wear_warning_percent` 80, `wear_critical_percent` 95,
