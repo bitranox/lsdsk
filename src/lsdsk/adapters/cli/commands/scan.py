@@ -464,7 +464,7 @@ def run_default_view(
         from lsdsk.adapters.tui import LsdskApp  # noqa: PLC0415 - keeps textual off the fast path
 
         history = read_history(inventory, resolved).history
-        LsdskApp(inventory, history, expand_virtual=laid_out.expand_virtual).run()
+        LsdskApp(inventory, history, display=laid_out).run()
         raise SystemExit(exit_code_for(findings))
 
 
@@ -668,6 +668,7 @@ def cli_disks(ctx: click.Context, replay: Path | None, output_format: str, expan
                     findings,
                     width=console.width,
                     expand_virtual=effective_expand_virtual(ctx, expand_virtual),
+                    wwn_width=display.wwn_width,
                 )
             )
         raise SystemExit(exit_code_for(findings))
@@ -723,7 +724,13 @@ def cli_tui(ctx: click.Context, replay: Path | None, expand_virtual: bool) -> No
         from .history import read_history  # noqa: PLC0415 - deferred: history imports this module
 
         history = read_history(inventory, resolve_history(ctx)).history
-        LsdskApp(inventory, history, expand_virtual=effective_expand_virtual(ctx, expand_virtual)).run()
+        # The whole section, not one field: a page reads the same settings the
+        # printed command of its name reads, and the subcommand flag lands on
+        # the same key the file sets rather than beside it.
+        display = resolve_tunables(ctx).display.model_copy(
+            update={"expand_virtual": effective_expand_virtual(ctx, expand_virtual)}
+        )
+        LsdskApp(inventory, history, display=display).run()
         raise SystemExit(ExitCode.SUCCESS)
 
 

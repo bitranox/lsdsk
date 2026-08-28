@@ -384,6 +384,7 @@ itself.
 | `summary_limit`           | `6`     | Findings named in the verdict line before "and N more" |
 | `wear_row_floor_percent`  | `10`    | Wear below this is not given a row in `lsdsk trend`    |
 | `expand_virtual`          | `false` | List kernel-virtual devices instead of tallying them   |
+| `wwn_width`               | `24`    | Most characters the wwn column is given in either view |
 | `traceback_summary_limit` | `500`   | Characters kept in a short traceback                   |
 | `traceback_verbose_limit` | `10000` | And under `--traceback`                                |
 

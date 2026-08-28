@@ -69,6 +69,7 @@ PROBES: dict[str, tuple[str, str, dict[str, str]]] = {
     # needs both the gate lowered and a seeded history (see SEEDED).
     "wear_projection_min_points": ("1", "100000000", {"thresholds.wear_warning_percent": "1"}),
     "piped_width": ("60", "400", {}),
+    "wwn_width": ("8", "400", {}),
     "summary_limit": ("1", "1000", {}),
     "wear_row_floor_percent": ("0", "100", {}),
     "expand_virtual": ("false", "true", {}),
@@ -249,6 +250,7 @@ def test_the_probe_can_actually_detect_a_change() -> None:
 #: still a broken key.
 SHARED_BY: dict[str, tuple[tuple[str, ...], ...]] = {
     "summary_limit": ((), ("topology",)),
+    "wwn_width": ((), ("disks",)),
 }
 
 

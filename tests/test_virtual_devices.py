@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from lsdsk.adapters import cli as cli_mod
+from lsdsk.adapters.config.tunables import DisplaySettings
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import report, tables
 from lsdsk.adapters.tui import LsdskApp
@@ -246,7 +247,7 @@ class TestTheTuiAgreesWithThePrintedPage:
 
     async def test_the_disk_page_lists_them_when_expanded(self) -> None:
         machine = build_from(_capture())
-        app = LsdskApp(machine, expand_virtual=True)
+        app = LsdskApp(machine, display=DisplaySettings(expand_virtual=True))
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.press("3")
             await pilot.pause()

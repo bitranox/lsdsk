@@ -45,6 +45,11 @@ DEFAULT_WEAR_ROW_FLOOR_PERCENT = 10
 # view exists to show.
 DEFAULT_EXPAND_VIRTUAL = False
 
+# Most characters the wwn column is ever given. An NVMe WWN runs to a hundred
+# characters where a SATA one is twenty, so without a ceiling the single longest
+# identifier on the machine sets the width of the column for every row.
+DEFAULT_WWN_WIDTH = 24
+
 # Characters of traceback kept in the short and the --traceback forms.
 DEFAULT_TRACEBACK_SUMMARY_LIMIT = 500
 DEFAULT_TRACEBACK_VERBOSE_LIMIT = 10_000
@@ -59,6 +64,7 @@ class DisplaySettings(BaseModel):
         wear_row_floor_percent: Wear below which the trend view stays quiet.
         expand_virtual: Whether the tree and the disk table list every
             kernel-virtual device rather than tallying them in one line.
+        wwn_width: Most characters the wwn column is given in either view.
         traceback_summary_limit: Characters kept in a short traceback.
         traceback_verbose_limit: Characters kept under ``--traceback``.
 
@@ -73,6 +79,7 @@ class DisplaySettings(BaseModel):
     summary_limit: int = DEFAULT_SUMMARY_LIMIT
     wear_row_floor_percent: int = DEFAULT_WEAR_ROW_FLOOR_PERCENT
     expand_virtual: bool = DEFAULT_EXPAND_VIRTUAL
+    wwn_width: int = DEFAULT_WWN_WIDTH
     traceback_summary_limit: int = DEFAULT_TRACEBACK_SUMMARY_LIMIT
     traceback_verbose_limit: int = DEFAULT_TRACEBACK_VERBOSE_LIMIT
 
@@ -170,6 +177,7 @@ def get_display_settings(config: Config) -> DisplaySettings:
         summary_limit=positive_int(table.get("summary_limit"), DEFAULT_SUMMARY_LIMIT),
         wear_row_floor_percent=positive_int(table.get("wear_row_floor_percent"), DEFAULT_WEAR_ROW_FLOOR_PERCENT),
         expand_virtual=flag(table.get("expand_virtual"), default=DEFAULT_EXPAND_VIRTUAL),
+        wwn_width=positive_int(table.get("wwn_width"), DEFAULT_WWN_WIDTH),
         traceback_summary_limit=positive_int(table.get("traceback_summary_limit"), DEFAULT_TRACEBACK_SUMMARY_LIMIT),
         traceback_verbose_limit=positive_int(table.get("traceback_verbose_limit"), DEFAULT_TRACEBACK_VERBOSE_LIMIT),
     )
@@ -182,6 +190,7 @@ __all__ = [
     "DEFAULT_TRACEBACK_SUMMARY_LIMIT",
     "DEFAULT_TRACEBACK_VERBOSE_LIMIT",
     "DEFAULT_WEAR_ROW_FLOOR_PERCENT",
+    "DEFAULT_WWN_WIDTH",
     "DISPLAY_SECTION",
     "THRESHOLDS_SECTION",
     "DisplaySettings",

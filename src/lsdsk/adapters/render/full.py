@@ -94,7 +94,9 @@ def render_full(
         blank,
         tables.render_controllers(inventory, findings, width=width),
         blank,
-        tables.render_disks(inventory, findings, width=width, expand_virtual=laid_out.expand_virtual),
+        tables.render_disks(
+            inventory, findings, width=width, expand_virtual=laid_out.expand_virtual, wwn_width=laid_out.wwn_width
+        ),
         blank,
         tables.render_health(inventory, findings, width=width, history=history),
         *_legend(tables.counter_legend(inventory, history)),

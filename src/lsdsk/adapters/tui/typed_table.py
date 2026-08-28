@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
     from rich.text import Text
     from textual.widget import Widget
+    from textual.widgets import DataTable
 
 
 class RowTable(Protocol):
@@ -62,4 +63,29 @@ def rows_of(table: Widget) -> RowTable:
     return cast("RowTable", table)
 
 
-__all__ = ["RowTable", "rows_of"]
+class RowEvent(Protocol):
+    """The part of a ``DataTable`` row event this application reads."""
+
+    @property
+    def data_table(self) -> Widget: ...
+
+
+def raising_table_id(event: DataTable.RowHighlighted) -> str | None:
+    """Which table raised a row event.
+
+    ``RowHighlighted.data_table`` is declared unsubscripted, so reading it
+    yields ``DataTable[Unknown]`` and a strict checker rejects the access
+    itself. Casting the attribute cannot help, because reading it to cast it is
+    the unknown access; the EVENT is cast instead, to a protocol that declares
+    the one member wanted, and only the widget identity is taken off it.
+
+    Args:
+        event: The row event.
+
+    Returns:
+        The ``id`` of the table that raised it, or ``None`` if it has none.
+    """
+    return cast("RowEvent", event).data_table.id
+
+
+__all__ = ["RowEvent", "RowTable", "raising_table_id", "rows_of"]

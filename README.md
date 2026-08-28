@@ -305,7 +305,8 @@ Every value the tool judges or lays out by is a configuration key: `[thresholds]
 carries the wear bands, the CRC significance floor, the firmware-mismatch count
 and the quiet-evidence figure, and `[display]` carries the assumed width when
 output is piped, the summary cap, the temperature bands used for drives that
-publish none of their own, and the traceback limits. What is deliberately *not*
+publish none of their own, the ceiling on the wwn column, and the traceback
+limits. What is deliberately *not*
 configurable is anything a specification fixes: register offsets, IOCTL codes,
 the Kelvin offset, the 512-byte sector. Those are not choices, and a file that
 could change them would break decoding rather than tune it. Turning recording off never stops history being *read*, so

@@ -6,18 +6,23 @@ app is driven at several real sizes rather than looked at once at one size.
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from typing import Any
 
 import pytest
+from rich.console import Console
+from textual.containers import HorizontalScroll
 from textual.widgets import Static, TabbedContent
 
+from lsdsk.adapters.config.tunables import DEFAULT_WWN_WIDTH, DisplaySettings
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import theme
-from lsdsk.adapters.render.layout import Column, fit, natural_widths, pad
+from lsdsk.adapters.render.layout import ELLIPSIS, Column, fit, natural_widths, pad
 from lsdsk.adapters.render.report import DISK_COLUMNS, render_tree
 from lsdsk.adapters.render.tables import DISK_COLUMNS as PRINTED_DISK_COLUMNS
+from lsdsk.adapters.render.tables import render_disks
 from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui.app import DISK_COLUMNS as TUI_DISK_COLUMNS
 from lsdsk.adapters.tui.typed_table import rows_of
@@ -32,7 +37,19 @@ TERMINAL_SIZES = ((80, 24), (120, 40), (200, 60))
 
 def inventory() -> Inventory:
     """Build the inventory every test in this module uses."""
-    with FIXTURE.open(encoding="utf-8") as handle:
+    return inventory_from(FIXTURE.name)
+
+
+def inventory_from(name: str) -> Inventory:
+    """Build an inventory from a named capture beside the module's own.
+
+    Args:
+        name: File name under ``tests/fixtures/hw``.
+
+    Returns:
+        The machine that capture holds.
+    """
+    with (FIXTURE.parent / name).open(encoding="utf-8") as handle:
         payload: dict[str, Any] = json.load(handle)
     return build_from(payload)
 
@@ -490,3 +507,217 @@ def test_the_disk_page_carries_the_same_columns_as_the_printed_table() -> None:
     # The leading empty label is the severity marker's column, which the printed
     # table renders as a fixed gutter rather than as one of its own columns.
     assert tuple(name for name in TUI_DISK_COLUMNS if name) == printed
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
+class TestTheDiskPageKeepsALongIdentifierReachable:
+    """A WWN that will not fit is cut, marked, and still readable in full.
+
+    An NVMe WWN runs to a hundred characters where the SATA ones beside it run
+    to twenty, so one drive was setting the width of the column for every row
+    and pushing the nine columns after it off the page. The column is capped
+    now, which means the page has to answer where the rest of the value went:
+    the strip under the table carries the whole of the drive under the cursor,
+    and grows a scroll control exactly when there is something past its edge.
+    """
+
+    @staticmethod
+    def _wwn_cell(app: LsdskApp, node: str) -> str:
+        """The wwn cell of one row, read under its own heading."""
+        row = rows_of(app.query_one("#disk-table")).get_row(node)
+        return str(row[TUI_DISK_COLUMNS.index("wwn")])
+
+    @staticmethod
+    def _strip(app: LsdskApp) -> HorizontalScroll:
+        return app.query_one("#wwn-strip", HorizontalScroll)
+
+    @staticmethod
+    def _shown(app: LsdskApp) -> str:
+        return str(app.query_one("#wwn-full", Static).content)
+
+    async def test_a_long_wwn_is_cut_to_the_configured_width_and_marked(self) -> None:
+        """Cut, and saying so. A value that reads as whole when it is not sends
+        somebody looking for a drive by an identifier missing its tail."""
+        machine = inventory()
+        disk = next(d for d in machine.disks if d.wwn and len(d.wwn) > DEFAULT_WWN_WIDTH)
+        assert disk.wwn is not None
+        app = LsdskApp(machine)
+        async with app.run_test(size=(200, 60)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            cell = self._wwn_cell(app, disk.node)
+        assert len(cell) == DEFAULT_WWN_WIDTH
+        assert cell.endswith(ELLIPSIS)
+        assert cell[:-1] == disk.wwn[: DEFAULT_WWN_WIDTH - 1]
+
+    async def test_a_wwn_that_fits_is_left_exactly_as_the_drive_reports_it(self) -> None:
+        """The cap is a ceiling, not a haircut: nothing shortens a value that fits."""
+        machine = inventory()
+        disk = next(d for d in machine.disks if d.wwn and len(d.wwn) <= DEFAULT_WWN_WIDTH)
+        assert disk.wwn is not None
+        app = LsdskApp(machine)
+        async with app.run_test(size=(200, 60)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            cell = self._wwn_cell(app, disk.node)
+        assert cell == disk.wwn
+        assert ELLIPSIS not in cell
+
+    async def test_the_strip_carries_the_whole_identifier_of_the_row_the_cursor_is_on(self) -> None:
+        """Uncut, or the cap would have hidden the value with no way back to it.
+
+        Also the guard on which table the handler listens to: every page's table
+        raises the same event and at mount they all raise it in turn, the slot
+        table last, so without that check the strip settles on a dash.
+        """
+        machine = inventory()
+        disk = next(d for d in machine.disks if d.wwn and len(d.wwn) > DEFAULT_WWN_WIDTH)
+        assert disk.wwn is not None
+        app = LsdskApp(machine)
+        async with app.run_test(size=(200, 60)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            assert self._shown(app) == disk.wwn
+
+    async def test_moving_the_cursor_winds_the_strip_back_to_the_start(self) -> None:
+        """A value scrolled into must not leave the next one showing its middle.
+
+        Driven at a width where EVERY row overflows, which is the only way this
+        can fail: moving to a value that fits makes Textual clamp the offset by
+        itself, so a walk down the shipped widths would pass with the rewind
+        deleted and prove nothing.
+        """
+        machine = inventory()
+        listed = list(machine.disks)
+        narrow = DisplaySettings(wwn_width=12)
+        assert all(d.wwn and len(d.wwn) > narrow.wwn_width for d in listed[:2]), "both rows must overflow"
+        app = LsdskApp(machine, display=narrow)
+        async with app.run_test(size=(200, 60)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            await pilot.press(".")
+            await pilot.pause()
+            assert self._strip(app).scroll_x > 0, "the first row must be scrolled before the move means anything"
+            await pilot.press("down")
+            await pilot.pause()
+            assert self._shown(app) == listed[1].wwn
+            assert self._strip(app).scroll_x == 0
+
+    async def test_the_scroll_control_appears_only_when_the_identifier_was_cut(self) -> None:
+        """One machine carries both cases, so one walk proves both directions."""
+        machine = inventory()
+        app = LsdskApp(machine)
+        async with app.run_test(size=(200, 60)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            assert self._strip(app).show_horizontal_scrollbar, "a cut value must offer its remainder"
+            await pilot.press("down")
+            await pilot.pause()
+            assert not self._strip(app).show_horizontal_scrollbar, "a whole value must offer nothing"
+
+    async def test_a_board_of_short_identifiers_never_shows_the_scroll_control(self) -> None:
+        """The negative control: five NVMe drives whose WWNs all fit.
+
+        Without a machine on which the answer must be no, a test that only ever
+        looks at the long-WWN capture cannot tell "appears when needed" from
+        "always appears".
+        """
+        machine = inventory_from("linux-nvme-board.json")
+        assert machine.disks, "the control needs drives to be a control"
+        assert all(d.wwn and len(d.wwn) <= DEFAULT_WWN_WIDTH for d in machine.disks)
+        whole = {d.wwn for d in machine.disks}
+        app = LsdskApp(machine)
+        async with app.run_test(size=(200, 60)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            for _ in machine.disks:
+                assert not self._strip(app).show_horizontal_scrollbar
+                assert self._shown(app) in whole, "the strip must name the drive the cursor is on"
+                await pilot.press("down")
+                await pilot.pause()
+
+    async def test_a_drive_with_no_wwn_reads_the_same_dash_the_cell_does(self) -> None:
+        """The strip answers for every drive, including one with nothing to say."""
+        machine = inventory_from("windows-ahci.json")
+        disk = next(d for d in machine.disks if d.wwn is None)
+        app = LsdskApp(machine)
+        async with app.run_test(size=(200, 60)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            assert self._shown(app) == "-"
+            assert self._wwn_cell(app, disk.node) == "-"
+            assert not self._strip(app).show_horizontal_scrollbar
+
+    async def test_the_scroll_keys_reach_the_strip(self) -> None:
+        """Press the keys a reader presses.
+
+        Calling the action would prove the action works and never that a key
+        reaches it, which is how this app once shipped a page whose only route
+        in was bound away.  `left` and `right` are taken by page switching with
+        priority, so the strip's own scroll keys can never fire.
+        """
+        machine = inventory()
+        app = LsdskApp(machine)
+        async with app.run_test(size=(200, 60)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            assert self._strip(app).scroll_x == 0
+            await pilot.press(".")
+            await pilot.pause()
+            moved = self._strip(app).scroll_x
+            assert moved > 0, "the forward key must move the strip"
+            await pilot.press(",")
+            await pilot.pause()
+            assert self._strip(app).scroll_x < moved, "the back key must move it back"
+
+    async def test_a_configured_width_reaches_both_the_cell_and_the_strip(self) -> None:
+        """One key, both halves. A width honoured by one of them would put the
+        control on values the column did not cut, or leave cut ones without."""
+        machine = inventory()
+        disk = next(d for d in machine.disks if d.wwn and len(d.wwn) > DEFAULT_WWN_WIDTH)
+        app = LsdskApp(machine, display=DisplaySettings(wwn_width=12))
+        async with app.run_test(size=(200, 60)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            assert len(self._wwn_cell(app, disk.node)) == 12
+            assert self._strip(app).size.width == 12
+
+    async def test_both_views_cut_the_identifier_at_the_same_place(self) -> None:
+        """`lsdsk disks` and page 3 are one view under one name.
+
+        They mark the cut with their own renderer's character, so what has to
+        agree is where the cut falls and that neither claims the whole value.
+        """
+        machine = inventory()
+        disk = next(d for d in machine.disks if d.wwn and len(d.wwn) > DEFAULT_WWN_WIDTH)
+        assert disk.wwn is not None
+        buffer = io.StringIO()
+        Console(file=buffer, width=400, no_color=True).print(render_disks(machine, (), width=400))
+        printed = buffer.getvalue()
+        app = LsdskApp(machine)
+        async with app.run_test(size=(200, 60)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            cell = self._wwn_cell(app, disk.node)
+        kept = disk.wwn[: DEFAULT_WWN_WIDTH - 1]
+        assert kept in printed, "the printed table must keep what the page keeps"
+        assert cell.startswith(kept)
+        assert disk.wwn not in printed, "no width may let the printed table run to a hundred columns"
+        assert disk.wwn not in cell
+
+    async def test_the_scroll_keys_are_offered_only_on_the_page_that_has_a_strip(self) -> None:
+        """Read from the collection the footer draws, per page.
+
+        Textual reads ``False`` from ``check_action`` as hidden and ``None`` as
+        shown-but-greyed, which is the opposite way round from what the names
+        suggest; written the other way round this gate offered the keys on all
+        eight pages while looking correct.
+        """
+        app = LsdskApp(inventory())
+        async with app.run_test(size=(120, 40)) as pilot:
+            for key, offered in (("1", False), ("3", True), ("5", False)):
+                await pilot.press(key)
+                await pilot.pause()
+                actions = {active.binding.action for active in app.screen.active_bindings.values()}
+                assert ("wwn_right" in actions) is offered, f"page {key} should offer the keys: {offered}"

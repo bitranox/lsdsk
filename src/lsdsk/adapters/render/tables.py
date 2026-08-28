@@ -14,6 +14,7 @@ System Role:
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from rich.table import Table
@@ -22,7 +23,7 @@ from rich.text import Text
 from ...domain.diagnostics import attached_demand_gbytes
 from ...domain.enums import Align
 from ...domain.history import CounterKind, identity_of, trend_for
-from ..config.tunables import DEFAULT_PIPED_WIDTH
+from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_WWN_WIDTH
 from . import theme
 from .layout import Column, fit, natural_widths
 from .report import disk_row, virtual_note, worst_severity
@@ -71,7 +72,7 @@ CONTROLLER_COLUMNS: tuple[Column, ...] = (
 DISK_COLUMNS: tuple[Column, ...] = (
     Column("device", "device", priority=0),
     Column("model", "model", priority=0, flexible=True, min_width=14),
-    Column("wwn", "wwn", priority=3, flexible=True, min_width=12),
+    Column("wwn", "wwn", priority=3, flexible=True, min_width=12, max_width=DEFAULT_WWN_WIDTH),
     Column("serial", "serial", priority=5, flexible=True, min_width=8),
     Column("firmware", "firmware", priority=6),
     Column("size", "size", align=Align.RIGHT, priority=4),
@@ -185,12 +186,29 @@ def render_controllers(inventory: Inventory, findings: Sequence[Finding], width:
     return _render(f"Controllers on {inventory.hostname}", CONTROLLER_COLUMNS, rows, width)
 
 
+def disk_columns(wwn_width: int = DEFAULT_WWN_WIDTH) -> tuple[Column, ...]:
+    """The disk columns with the wwn ceiling set to a configured width.
+
+    Args:
+        wwn_width: Most characters the wwn column may take.
+
+    Returns:
+        :data:`DISK_COLUMNS` with that one ceiling replaced.
+
+    Example:
+        >>> next(column.max_width for column in disk_columns(30) if column.key == "wwn")
+        30
+    """
+    return tuple(replace(column, max_width=wwn_width) if column.key == "wwn" else column for column in DISK_COLUMNS)
+
+
 def render_disks(
     inventory: Inventory,
     findings: Sequence[Finding],
     width: int = DEFAULT_WIDTH,
     *,
     expand_virtual: bool = False,
+    wwn_width: int = DEFAULT_WWN_WIDTH,
 ) -> Table:
     """Render one row per disk, with identity and interface speeds.
 
@@ -201,6 +219,10 @@ def render_disks(
         expand_virtual: Give every kernel-virtual device a row of its own.
             Folded into a caption otherwise, on the same rule the tree uses, so
             the two views cannot describe one machine differently.
+        wwn_width: Most characters the wwn column may take, however wide the
+            terminal is. One NVMe identifier is five times the length of the
+            SATA ones beside it and would otherwise set the column's width for
+            every row.
 
     Returns:
         A table of disks.
@@ -235,7 +257,7 @@ def render_disks(
             }
         )
     caption = "" if expand_virtual else virtual_note(inventory.virtual_disks)
-    return _render(f"Disks on {inventory.hostname}", DISK_COLUMNS, rows, width, caption)
+    return _render(f"Disks on {inventory.hostname}", disk_columns(wwn_width), rows, width, caption)
 
 
 def render_health(
@@ -382,6 +404,7 @@ __all__ = [
     "HEALTH_COLUMNS",
     "counter_cell",
     "counter_text",
+    "disk_columns",
     "render_controllers",
     "render_disks",
     "render_health",

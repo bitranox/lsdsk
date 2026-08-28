@@ -69,3 +69,19 @@ traceback_verbose_limit = 10000
 #
 # Environment Variable: LSDSK___DISPLAY__EXPAND_VIRTUAL="false"
 expand_virtual = false
+
+# Most characters the wwn column is ever given, in the printed table and on the
+# interactive disk page alike.
+#
+# Default: 24. A SATA or SAS WWN is twenty characters; an NVMe one runs to a
+# hundred. Without a ceiling that single drive sets the width of the column for
+# every row, so the machine with the most identifying information is the one
+# whose page becomes unreadable. A value cut here is marked, never silently
+# shortened, and the interactive page keeps the whole of it reachable in a
+# scrollable strip under the table.
+#
+# Raise it on a wide terminal to read more of an NVMe identifier in place;
+# lower it to buy width for the columns beside it.
+#
+# Environment Variable: LSDSK___DISPLAY__WWN_WIDTH="24"
+wwn_width = 24

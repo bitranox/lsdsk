@@ -44,6 +44,12 @@ class Column:
         priority: Lower numbers survive longer as the terminal narrows.
         flexible: Whether this column gives up space before others are dropped.
         min_width: Smallest useful width for a flexible column.
+        max_width: Most characters this column is ever given, however wide the
+            terminal is and however long its longest value.  ``None`` lets the
+            content decide.  A single NVMe WWN is five times the length of every
+            SATA one beside it, so without a ceiling that one drive sets the
+            width of the whole column and pushes the rest of the row off the
+            page.
     """
 
     key: str
@@ -52,6 +58,7 @@ class Column:
     priority: int = 0
     flexible: bool = False
     min_width: int = 8
+    max_width: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,17 +101,23 @@ def natural_widths(columns: Sequence[Column], rows: Iterable[dict[str, str]]) ->
         rows: Every row that will be rendered, so widths hold for all of them.
 
     Returns:
-        The widest content per column, header included.
+        The widest content per column, header included, with any column that
+        declares a ``max_width`` held at that ceiling.
 
     Example:
         >>> cols = [Column("a", "aa"), Column("b", "b")]
         >>> natural_widths(cols, [{"a": "x", "b": "yyyy"}])
         {'a': 2, 'b': 4}
+        >>> natural_widths([Column("b", "b", max_width=2)], [{"b": "yyyy"}])
+        {'b': 2}
     """
     widths = {column.key: len(column.title) for column in columns}
     for row in rows:
         for column in columns:
             widths[column.key] = max(widths[column.key], len(row.get(column.key, "")))
+    for column in columns:
+        if column.max_width is not None:
+            widths[column.key] = min(widths[column.key], column.max_width)
     return widths
 
 
@@ -157,6 +170,37 @@ def _shrink_one(columns: Sequence[Column], widths: dict[str, int]) -> bool:
     return True
 
 
+def clip(value: str, width: int) -> str:
+    """Shorten a value to a width, marking that something was cut.
+
+    Kept apart from :func:`pad` because a caller that lays its own cells out
+    needs the truncation without the padding.  Two callers, one rule: a value
+    that reads as complete when it is not sends somebody looking for a drive by
+    an identifier that is missing its tail.
+
+    Args:
+        value: The text to fit.
+        width: The most characters to keep, marker included.
+
+    Returns:
+        ``value`` unchanged when it fits, otherwise ``width`` characters ending
+        in :data:`ELLIPSIS`.
+
+    Example:
+        >>> clip("abc", 5)
+        'abc'
+        >>> clip("abcde", 5)
+        'abcde'
+        >>> clip("abcdefgh", 5)
+        'abcd>'
+        >>> clip("abc", 0)
+        ''
+    """
+    if len(value) <= width:
+        return value
+    return value[: max(width - 1, 0)] + ELLIPSIS if width else ""
+
+
 def pad(value: str, width: int, align: Align) -> str:
     """Fit one cell to a width, truncating with an ellipsis when it overflows.
 
@@ -176,9 +220,8 @@ def pad(value: str, width: int, align: Align) -> str:
         >>> pad("abcdefgh", 5, Align.LEFT)
         'abcd>'
     """
-    if len(value) > width:
-        value = value[: max(width - 1, 0)] + ELLIPSIS if width else ""
+    value = clip(value, width)
     return value.rjust(width) if align is Align.RIGHT else value.ljust(width)
 
 
-__all__ = ["ELLIPSIS", "GAP", "GUTTER", "Column", "fit", "natural_widths", "pad"]
+__all__ = ["ELLIPSIS", "GAP", "GUTTER", "Column", "clip", "fit", "natural_widths", "pad"]
