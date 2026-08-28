@@ -5,6 +5,36 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.0] 2026-08-28
+
+### Added
+
+- The `wwn` column is held to `display.wwn_width` characters, 24 by default, in
+  the printed table and on the interactive disk page alike. An NVMe WWN runs to
+  a hundred characters where the SATA ones beside it run to twenty, so on a
+  machine with one NVMe drive that single identifier set the width of the column
+  for every row: the page pushed nine columns off the screen, and the printed
+  table spent a hundred columns on one row and left the other ten as gutter.
+- A cut value stays readable in full on the disk page, in a strip under the
+  table carrying the whole identifier of the row the cursor is on. The strip is
+  exactly as wide as the column, which is what makes its scroll control appear
+  on the values the column had to cut and on no others. `,` and `.` move it.
+- `lsdsk disks --full-wwn` prints the whole identifier instead, laying the table
+  out wider than the terminal rather than buying the width from the columns
+  beside it, so the row runs off the side and a pager scrolls it. Raising the
+  ceiling alone would not do this: the fitter shrinks a flexible column to its
+  minimum long before it drops anything, and the renderer then compresses every
+  column again to reach the terminal width.
+
+### Changed
+
+- Every printed table now marks a cut cell the same way the topology tree
+  always has, with an ASCII `>` rather than an ellipsis character, so one drive
+  reads the same in every view and the mark survives a cp1252 console.
+
+The JSON envelope is unchanged and carries every WWN in full, whatever the
+human view was asked for.
+
 ## [1.1.1] 2026-08-28
 
 ### Fixed
