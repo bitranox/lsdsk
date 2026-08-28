@@ -5,6 +5,36 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.1] 2026-08-28
+
+### Fixed
+
+- **A finding's severity can now RISE on an existing store, so a job gating on
+  the exit code may newly fail on hardware that has not changed.** That is this
+  release working: a fault that is actively happening is graded as one. On the
+  machine this was found on, `/dev/sdd` moves from warning to critical.
+- The trend view called a counter unmeasurable on exactly the drives whose
+  counters were moving. A reading is recorded when SOME drive's clock has
+  advanced, and a run that records at all stores a row for EVERY drive, so a
+  drive whose own clock stood still collected several rows inside one power-on
+  hour; judging compared only the newest two, which on such a drive is a reading
+  against itself. Measured: 43 rows per drive covering 15 power-on hours, 14 of
+  19 drives holding a duplicated newest pair, and the two counters climbing
+  fastest in the machine, one of them at 5776 CRC errors an hour, both rendered
+  `+0, too soon to say`. Both ends now hold the rule that two rows in one hour
+  carry one hour of information: recording folds a repeated hour into that
+  drive's newest row, keeping the later reading because these counters only
+  climb, and judging compares against the newest reading from a different hour.
+  Where every reading sits in one hour the row behind is still used, so a rise
+  inside a single hour is seen and still refused a rate.
+- Those drives also regain their rising marker on the health page and the
+  sentence naming what a count gained over what span, which had been reaching
+  every drive except the ones that were failing.
+- A refusal measuring a zero-hour span said "no power-on hours have passed since
+  the first reading", which named the wrong thing. The span runs from where the
+  counter last moved, not from when recording began, and a store holding 531
+  power-on hours of readings was being described as its first one.
+
 ## [1.2.0] 2026-08-28
 
 ### Added
