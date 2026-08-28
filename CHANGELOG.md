@@ -31,6 +31,14 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 - Every printed table now marks a cut cell the same way the topology tree
   always has, with an ASCII `>` rather than an ellipsis character, so one drive
   reads the same in every view and the mark survives a cp1252 console.
+- `lsdsk disks` caps the wwn column by default, where a wide terminal
+  previously printed the whole identifier. `--full-wwn` restores it and
+  `display.wwn_width` raises the ceiling.
+- `LsdskApp.__init__` takes `display=`, a `DisplaySettings`, where it took
+  `expand_virtual=`. One object rather than a keyword per value, so a page
+  reads the same settings the printed command of its name reads and a second
+  delivery path cannot leave one of them deaf. A caller constructing the app
+  directly has to change.
 
 The JSON envelope is unchanged and carries every WWN in full, whatever the
 human view was asked for.
