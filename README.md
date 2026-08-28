@@ -274,12 +274,16 @@ Every tool that reads the total alone reports those two identically. lsdsk does
 not, because it keeps its own record:
 
 ```
-device        counter           total  change  over  per hour  verdict
+device        counter           total  change  span  per hour  verdict
 /dev/sdc      interface CRC     99361     +16   16h       1.0  rising
 /dev/sdd      interface CRC   2196127  +16642   15h      1109  rising
 /dev/sde      interface CRC       430      +0   15h         -  too soon to say, only 0.6 were due
 /dev/sdj      interface CRC    462640      +0   16h         -  no new in 16h, 235 were due
 ```
+
+`span` is the window the `change` figure covers, and it is measured per counter
+rather than per drive: it reaches back to where that counter last moved, so one
+drive legitimately shows a different figure on each of its rows.
 
 Rates are per power-on hour of the drive itself rather than per hour of wall
 clock. The drive's own clock is monotonic, ignores clock steps and timezones,

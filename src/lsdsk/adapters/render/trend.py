@@ -69,7 +69,11 @@ TREND_COLUMNS: tuple[Column, ...] = (
     Column("counter", "counter", priority=0),
     Column("total", "total", align=Align.RIGHT, priority=0),
     Column("change", "change", align=Align.RIGHT, priority=1),
-    Column("over", "over", align=Align.RIGHT, priority=1),
+    # "span" rather than "over": the figure is the window the change covers,
+    # measured per counter, so one drive shows a different one on every row.
+    # Headed "over" it was read as the drive's total power-on hours, which made
+    # three rows for one NVMe drive look like three answers to one question.
+    Column("span", "span", align=Align.RIGHT, priority=1),
     Column("rate", "per hour", align=Align.RIGHT, priority=2),
     Column("verdict", "verdict", priority=0, flexible=True, min_width=14),
 )
@@ -162,7 +166,7 @@ def trend_row(device: str, kind: CounterKind, trend: Trend) -> Row:
         "counter": (COUNTER_LABELS[kind], ""),
         "total": ("-" if trend.latest is None else str(trend.latest), ""),
         "change": ("-" if trend.delta is None else f"+{trend.delta}", style if trend.delta else ""),
-        "over": ("-" if trend.span_hours is None else f"{trend.span_hours}h", ""),
+        "span": ("-" if trend.span_hours is None else f"{trend.span_hours}h", ""),
         "rate": ("-" if trend.per_hour is None else format_rate(trend.per_hour), style),
         "verdict": (verdict_text(trend), style),
     }

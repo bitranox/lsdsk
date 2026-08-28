@@ -347,3 +347,51 @@ def test_nothing_in_the_palette_uses_the_faint_attribute() -> None:
         if name.startswith("STYLE_") and isinstance(value, str) and "dim" in value.split()
     ]
     assert not offenders, f"these styles still ask the terminal to reduce contrast: {offenders}"
+
+
+@pytest.mark.os_agnostic
+def test_the_trend_table_names_its_measurement_window_a_span() -> None:
+    """The window column must not read as a property of the drive.
+
+    It carries the span the `change` figure covers, measured per counter, so one
+    drive legitimately shows a different figure on every row. Headed `over` it
+    was read as the drive's total power-on hours, which made three rows for one
+    NVMe drive look like three contradictory answers to the same question.
+    """
+    import io
+    import json
+    from pathlib import Path as _Path
+
+    from rich.console import Console
+
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.trend import render_trend
+    from lsdsk.domain.history import DiskSeries, History, Sample, identity_of
+
+    fixture = _Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
+    machine = build_from(json.loads(fixture.read_text(encoding="utf-8")))
+    tracked = next(disk for disk in machine.disks if identity_of(disk) is not None)
+    identity = identity_of(tracked)
+    assert identity is not None
+    history = History(
+        hostname=machine.hostname,
+        series=(
+            DiskSeries(
+                identity=identity,
+                model=tracked.model,
+                samples=(
+                    Sample(power_on_hours=1000, captured_at="a", crc_errors=100),
+                    Sample(power_on_hours=1010, captured_at="b", crc_errors=300),
+                ),
+            ),
+        ),
+    )
+
+    buffer = io.StringIO()
+    Console(file=buffer, width=200, no_color=True).print(render_trend(machine, history, width=200))
+    rendered = buffer.getvalue()
+    header = next(line for line in rendered.splitlines() if "counter" in line and "verdict" in line)
+
+    assert "span" in header, f"the window column is not named span: {header!r}"
+    assert "over" not in header, f"the window column still reads as a drive property: {header!r}"
+    assert "10h" in rendered, "the measured window stopped being rendered"
