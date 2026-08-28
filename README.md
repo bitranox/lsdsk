@@ -229,9 +229,11 @@ you to type.
 the SATA ones beside it and would otherwise set the column's width for every
 row; a cut value is marked rather than shortened in silence, and on the
 interactive page it stays readable in full in a strip under the table.
-`--full-wwn` prints the whole identifier instead, dropping the other columns to
-make room for it. The JSON envelope always carries every WWN in full, whatever
-the human view was asked for.
+`--full-wwn` prints the whole identifier instead, and lays the table out wider
+than the terminal rather than buying the width from the columns beside it, so
+the row runs off the side and a pager scrolls it (`lsdsk disks --full-wwn |
+less -S`). The JSON envelope always carries every WWN in full, whatever the
+human view was asked for.
 
 `lsdsk report` answers the one thing the terminal test cannot see. Some callers hand
 their child a pseudo-terminal on both ends - a notebook cell, `script`, `expect`,

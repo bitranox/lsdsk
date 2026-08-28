@@ -55,6 +55,13 @@ if TYPE_CHECKING:
 # Width assumed when the output is not going to a terminal.
 DEFAULT_WIDTH = DEFAULT_PIPED_WIDTH
 
+#: Width to lay a table out at when it is meant to overflow the terminal, as
+#: ``--full-wwn`` asks for. Wider than any table this tool builds, so the fitter
+#: drops nothing and Rich compresses nothing. A table is only as wide as its own
+#: columns, so an over-large figure costs no padding; what runs off the side is
+#: then the terminal's business, or the pager's.
+OVERFLOW_WIDTH = 4096
+
 
 CONTROLLER_COLUMNS: tuple[Column, ...] = (
     Column("address", "address", priority=0),
@@ -212,21 +219,13 @@ def disk_columns(wwn_width: int | None = DEFAULT_WWN_WIDTH) -> tuple[Column, ...
         >>> next(column.max_width for column in disk_columns(None) if column.key == "wwn") is None
         True
     """
-    if wwn_width is not None:
-        return tuple(replace(column, max_width=wwn_width) if column.key == "wwn" else column for column in DISK_COLUMNS)
-    # Lifting the ceiling alone would not show the identifier: the fitter shrinks
-    # a flexible column to its minimum long before it drops anything, so at the
-    # shipped width the value would still be cut and the flag would read as
-    # broken. Forcing it into the full table is no better - a hundred-character
-    # column plus eleven others does not fit 120 and Rich compresses every one
-    # of them to gibberish. So asking for the whole identifier asks for the
-    # identifier: the drive it belongs to, and the value, and nothing competing
-    # with it for width.
-    return tuple(
-        replace(column, max_width=None, flexible=False, priority=0)
-        for column in DISK_COLUMNS
-        if column.key in {"device", "wwn"}
-    )
+    # Lifting the ceiling is only half of it: the fitter shrinks a flexible
+    # column to its minimum long before it drops anything, and Rich compresses
+    # every column again to reach the console width, so a ceiling alone leaves
+    # the value cut while the flag reads as though it worked. The other half
+    # belongs to the caller: lay the table out at OVERFLOW_WIDTH and let the row
+    # run off the side of the terminal.
+    return tuple(replace(column, max_width=wwn_width) if column.key == "wwn" else column for column in DISK_COLUMNS)
 
 
 def render_disks(
@@ -430,6 +429,7 @@ __all__ = [
     "CONTROLLER_COLUMNS",
     "DISK_COLUMNS",
     "HEALTH_COLUMNS",
+    "OVERFLOW_WIDTH",
     "counter_cell",
     "counter_text",
     "disk_columns",

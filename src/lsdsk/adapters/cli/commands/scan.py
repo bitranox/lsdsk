@@ -71,7 +71,7 @@ _FULL_WWN_OPTION = option(
     "full_wwn",
     is_flag=True,
     default=False,
-    help="Print each drive's whole WWN, dropping the other columns to make room for it.",
+    help="Print each drive's whole WWN, letting the row overflow the terminal.",
 )
 
 _EXPAND_VIRTUAL_OPTION = option(
@@ -670,14 +670,23 @@ def cli_disks(
         if OutputFormat(output_format.lower()) is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.DISKS)
         else:
-            from lsdsk.adapters.render.tables import render_disks  # noqa: PLC0415 - keeps the import graph flat
+            from lsdsk.adapters.render.tables import (  # noqa: PLC0415 - keeps the import graph flat
+                OVERFLOW_WIDTH,
+                render_disks,
+            )
 
-            console = console_for_output(display.piped_width)
+            # --full-wwn asks for the whole identifier, and the only way to give
+            # it is to stop fitting: laid out at the terminal's width the fitter
+            # shrinks the column and Rich compresses the rest, so the flag would
+            # read as though it had worked while changing nothing. Laid out
+            # wider than any terminal, the row simply runs off the side, which
+            # is what a pager is for.
+            console = console_for_output(OVERFLOW_WIDTH if full_wwn else display.piped_width)
             console.print(
                 render_disks(
                     inventory,
                     findings,
-                    width=console.width,
+                    width=OVERFLOW_WIDTH if full_wwn else console.width,
                     expand_virtual=effective_expand_virtual(ctx, expand_virtual),
                     wwn_width=None if full_wwn else display.wwn_width,
                 )

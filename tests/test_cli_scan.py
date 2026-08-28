@@ -222,9 +222,13 @@ def test_the_full_wwn_flag_prints_the_whole_identifier(
     """The escape hatch from the column cap, at the SHIPPED width.
 
     Lifting the ceiling alone does not do this: the fitter shrinks the column to
-    its minimum long before it drops anything, so a flag that only raised the
+    its minimum long before it drops anything, and Rich then compresses every
+    column again to reach the console width, so a flag that only raised the
     ceiling would be a no-op on any ordinary terminal while reading as if it had
     worked. Driven without a width override for exactly that reason.
+
+    The row is meant to run off the side rather than to buy its width from the
+    columns beside it, so the rest of the row has to survive intact.
     """
     from lsdsk.adapters.hw.snapshot import load
 
@@ -240,6 +244,12 @@ def test_the_full_wwn_flag_prints_the_whole_identifier(
     assert disk.wwn not in capped.output, "the default must still cut it"
     assert disk.wwn in full.output, "--full-wwn must print the whole identifier"
     assert disk.path in full.output, "and say which drive it belongs to"
+    # Overflowing, not trading: the columns beside it stay whole and uncut.
+    assert disk.serial is not None
+    assert disk.serial in full.output, "the other columns must survive the overflow"
+    assert disk.controller_address is not None
+    assert disk.controller_address in full.output, "including the last one on the row"
+    assert max(len(line) for line in full.output.splitlines()) > 120, "the row must overflow, not fit"
 
 
 @pytest.mark.os_agnostic
