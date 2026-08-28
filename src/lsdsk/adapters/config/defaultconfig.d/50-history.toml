@@ -10,7 +10,9 @@
 #
 # A reading is stored only when some drive's own power-on hours have advanced
 # past what was last recorded for it: two runs inside the same power-on hour
-# cannot produce a rate, so the second would add a row and no information.
+# cannot produce a rate, so the second would add a row and no information. A run
+# that does store covers every drive, so a drive whose own clock has not moved
+# updates its newest row in place rather than gaining a second one for the hour.
 #
 # Nothing is ever recorded when replaying a snapshot (those samples belong to
 # whichever machine produced it) or when --format json is asked for (a command

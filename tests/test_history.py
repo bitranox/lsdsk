@@ -358,3 +358,61 @@ def test_a_unique_serial_is_still_recorded() -> None:
     stored = record(History(hostname="box"), [first, second], "t")
     assert len(stored.series) == 2, "unique drives stopped being recorded"
     assert untracked_disks([first, second]) == ()
+
+
+# --------------------------------------------------------------------------
+# One row per drive per power-on hour
+# --------------------------------------------------------------------------
+
+
+def crc_disk(hours: int, errors: int) -> Disk:
+    """A trackable drive carrying one CRC count on its own clock."""
+    return Disk(
+        node="sdx",
+        path="/dev/sdx",
+        model="Drive A",
+        wwn="naa.1",
+        health=Health(power_on_hours=hours, crc_errors=errors),
+    )
+
+
+def test_repeated_readings_in_one_hour_do_not_mask_a_rise() -> None:
+    """A drive is judged against its newest reading from a different hour.
+
+    The rate limit asks whether ANY drive's clock advanced and then stores a row
+    for EVERY drive, so a drive whose own clock stood still collects several rows
+    inside one hour.  Comparing only the last two then compares a reading with
+    itself, and the counter climbing fastest in the machine reports as quiet.
+    Measured on a real store: a drive gaining 5776 CRC errors per power-on hour
+    was rendered "+0, too soon to say".
+    """
+    samples = [crc_sample(1000, 100), crc_sample(1004, 136), *(crc_sample(1008, 172) for _ in range(5))]
+    trend = trend_for(series_of(*samples), CounterKind.CRC_ERRORS)
+    assert trend.verdict is TrendVerdict.RISING, "a repeated newest reading hid a live fault"
+    assert trend.delta == 36
+    assert trend.span_hours == 4, "the span was measured against a reading from the same hour"
+    assert trend.per_hour == pytest.approx(9.0)
+
+
+@pytest.mark.os_agnostic
+def test_a_second_reading_in_the_same_power_on_hour_replaces_the_row_it_would_repeat() -> None:
+    """Two readings inside one power-on hour hold one hour of information.
+
+    Storing the second as its own row spends the sample cap on nothing and
+    leaves the newest two rows unable to produce a rate.
+    """
+    history = record(History(hostname="box"), [crc_disk(1000, 100)], T0)
+    history = record(history, [crc_disk(1000, 140)], T1)
+
+    samples = history.series[0].samples
+    assert len(samples) == 1, "a reading carrying no new hour was stored as a second row"
+    assert samples[0].crc_errors == 140, "the row kept the stale count instead of the newest reading"
+
+
+@pytest.mark.os_agnostic
+def test_a_reading_in_a_later_power_on_hour_is_appended() -> None:
+    """The control: replacing must not swallow a reading that does carry an hour."""
+    history = record(History(hostname="box"), [crc_disk(1000, 100)], T0)
+    history = record(history, [crc_disk(1001, 140)], T1)
+
+    assert len(history.series[0].samples) == 2, "a genuinely new hour stopped being recorded"

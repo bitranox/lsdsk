@@ -510,13 +510,34 @@ def record(
         if identity is None or sample is None or identity in colliding:
             continue
         previous = existing.get(identity)
-        samples = (*previous.samples, sample) if previous is not None else (sample,)
+        samples = _fold_in(() if previous is None else previous.samples, sample)
         if cap is not None:
             samples = thin(samples, cap)
         if identity not in existing:
             order.append(identity)
         existing[identity] = DiskSeries(identity=identity, model=disk.model, samples=samples)
     return History(hostname=history.hostname, series=tuple(existing[identity] for identity in order))
+
+
+def _fold_in(samples: tuple[Sample, ...], sample: Sample) -> tuple[Sample, ...]:
+    """Add one reading, replacing the newest where it repeats that drive's hour.
+
+    :func:`has_new_readings` asks whether ANY drive's clock advanced, so a run
+    that records at all records every drive, including those whose own clock
+    stood still. Kept as its own row, such a reading spends a slot of the sample
+    cap on no information and leaves the newest pair unable to produce a span.
+
+    The later reading wins the hour rather than the earlier one: these counters
+    only climb, so it is the one true at the end of the hour it belongs to.
+
+    Example:
+        >>> rows = (Sample(power_on_hours=9, captured_at="a", crc_errors=1),)
+        >>> _fold_in(rows, Sample(power_on_hours=9, captured_at="b", crc_errors=4))[-1].crc_errors
+        4
+    """
+    if samples and samples[-1].power_on_hours == sample.power_on_hours:
+        return (*samples[:-1], sample)
+    return (*samples, sample)
 
 
 def has_new_readings(history: History, disks: Sequence[Disk]) -> bool:
@@ -590,6 +611,30 @@ def untracked_disks(disks: Sequence[Disk]) -> tuple[str, ...]:
     return tuple(reasons)
 
 
+def _previous_reading(usable: list[Sample]) -> Sample:
+    """The newest earlier reading that can carry a span.
+
+    Readings from the latest one's own power-on hour are stepped over. Two
+    readings inside one hour hold one hour of information, so judging against the
+    row directly behind can compare a reading with itself and report the counter
+    climbing fastest in the machine as quiet.
+
+    Where every reading sits in that one hour there is nothing better to compare
+    against, so the row behind is used and the zero-hour span it produces is what
+    refuses to rate it.
+
+    Example:
+        >>> rows = [Sample(power_on_hours=h, captured_at="t") for h in (1000, 1004, 1008, 1008)]
+        >>> _previous_reading(rows).power_on_hours
+        1004
+    """
+    latest = usable[-1]
+    for candidate in reversed(usable[:-1]):
+        if candidate.power_on_hours != latest.power_on_hours:
+            return candidate
+    return usable[-2]
+
+
 def _rising(kind: CounterKind, previous: Sample, latest: Sample, delta: int, thresholds: Thresholds) -> Trend:
     """Rate a counter that provably gained since the previous sample."""
     span = latest.power_on_hours - previous.power_on_hours
@@ -633,7 +678,7 @@ def trend_for(series: DiskSeries, kind: CounterKind, thresholds: Thresholds = DE
         latest_only = usable[-1].counter(kind) if usable else None
         return _unknown(kind, TrendVerdict.FIRST_SAMPLE, latest_only)
 
-    latest, previous = usable[-1], usable[-2]
+    latest, previous = usable[-1], _previous_reading(usable)
     latest_value, previous_value = latest.counter(kind), previous.counter(kind)
     if latest_value is None or previous_value is None:  # pragma: no cover - guarded by `usable`
         return _unknown(kind, TrendVerdict.FIRST_SAMPLE, latest_value)

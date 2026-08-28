@@ -226,6 +226,34 @@ def test_a_refusal_never_reports_an_expectation_that_rounded_to_nothing(
     assert text.strip(), "a refusal must still say something"
 
 
+@pytest.mark.os_agnostic
+def test_a_zero_hour_refusal_blames_the_counter_and_not_the_first_reading() -> None:
+    """A span is measured from where the counter last moved, not from recording.
+
+    So zero hours means the counter moved within this power-on hour, and saying
+    it means recording only just began is false wherever it matters most.
+    Measured on a real machine: a drive whose store held 43 readings across 531
+    power-on hours, and whose CRC count was climbing, was refused with "no
+    power-on hours have passed since the first reading".
+    """
+    from lsdsk.adapters.render.trend import verdict_text
+    from lsdsk.domain.history import CounterKind, Trend, TrendVerdict
+
+    trend = Trend(
+        kind=CounterKind.CRC_ERRORS,
+        verdict=TrendVerdict.TOO_CLOSE,
+        latest=101588,
+        delta=0,
+        span_hours=0,
+        per_hour=None,
+        expected_from_lifetime=0.0,
+    )
+    text = verdict_text(trend)
+
+    assert "first reading" not in text, f"a zero span was blamed on when recording began: {text!r}"
+    assert text.strip(), "a refusal must still say something"
+
+
 # --------------------------------------------------------------------------
 # The palette has to be READABLE, which is a measurement rather than a taste
 # --------------------------------------------------------------------------

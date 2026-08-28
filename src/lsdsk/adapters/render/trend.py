@@ -119,7 +119,7 @@ def _why_too_close(expected: float, span_hours: int | None) -> str:
     is not a statement about the drive's rate at all.
     """
     if not span_hours:
-        return "no power-on hours have passed since the first reading"
+        return "no power-on hours have passed since this counter last moved"
     if expected < 1:
         return f"this drive's rate would not have produced even one in {span_hours}h"
     return f"only {expected:.1f} were due"

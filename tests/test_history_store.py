@@ -319,7 +319,14 @@ def test_recording_appends_a_sample_per_tracked_drive() -> None:
     history = record(History(hostname="box"), disks, T0)
     assert len(history.series) == 2
     assert history.for_identity("naa.1") is not None
-    later = record(history, disks, T0)
+    # Each drive's own clock advances, because a reading that repeats a drive's
+    # hour replaces that row rather than adding one: see test_history.py's
+    # test_a_second_reading_in_the_same_power_on_hour_replaces_the_row_it_would_repeat.
+    moved = (
+        Disk(node="sda", path="/dev/sda", model="X", wwn="naa.1", health=Health(power_on_hours=11, crc_errors=1)),
+        Disk(node="sdb", path="/dev/sdb", model="Y", wwn="naa.2", health=Health(power_on_hours=21)),
+    )
+    later = record(history, moved, T0)
     assert len(later.series) == 2
     assert len(later.series[0].samples) == 2
 
