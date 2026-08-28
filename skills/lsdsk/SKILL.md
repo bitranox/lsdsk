@@ -280,9 +280,14 @@ privilege level and read the header for `-` columns rather than trusting `0`.
 
 **An ELEVATED run writes to disk.** Reading the counters needs root, so an
 unelevated run records nothing at all and its store never appears. A run that
-can read them stores one reading per run, owner readable only, capped per
-drive, and only when some drive's own clock has moved on since the last one.
-That is what makes `lsdsk trend` possible.
+can read them records every drive it read, owner readable only and capped per
+drive (`history.max_samples_per_drive`), and only when some drive's own clock -
+its power-on hours - has moved on since the last one. That covers the drives
+whose own clock stood still too, and such a drive has its newest row REPLACED
+rather than gaining one: two readings inside one power-on hour hold one hour of
+information. So the store does not grow a row per drive per run, and a drive's
+newest row is always its latest reading. That is what makes `lsdsk trend`
+possible.
 
 **Where it lives depends on who is running.** A root run on Linux or macOS uses
 `/var/lib/lsdsk/history.json`; anyone else gets the per-user state directory:
@@ -404,7 +409,7 @@ uvx lsdsk trend
 ```
 
 ```
-device        counter           total  change  over  per hour  verdict
+device        counter           total  change  span  per hour  verdict
 /dev/sdd      interface CRC   2196127  +16642   15h      1109  rising
 /dev/sdj      interface CRC    462640      +0   16h         -  no new in 16h, 235 were due
 /dev/sde      interface CRC       430      +0   15h         -  too soon to say, only 0.6 were due
