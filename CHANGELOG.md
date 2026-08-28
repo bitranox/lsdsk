@@ -5,6 +5,22 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.3] 2026-08-28
+
+### Fixed
+
+- The shipped Claude Code skill still printed the trend table's old `over`
+  header in its rendered example, so a reader who parses that table by column
+  was told to key on a header 1.2.2 no longer emits. Both documents that print
+  the table now derive their header from `TREND_COLUMNS` in a test, the README
+  included, so an example cannot name a column the renderer does not.
+- That skill also described what an elevated run records without saying what
+  1.2.1 changed: a run that records covers every drive it read, and a drive
+  whose own power-on hour has not advanced has its newest row replaced rather
+  than gaining one. It read as though a run stores one reading in total rather
+  than one per drive, and it named a per-drive cap without naming the key that
+  sets it.
+
 ## [1.2.2] 2026-08-28
 
 ### Changed
