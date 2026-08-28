@@ -25,7 +25,7 @@ from ...domain.enums import Align
 from ...domain.history import CounterKind, identity_of, trend_for
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_WWN_WIDTH
 from . import theme
-from .layout import Column, fit, natural_widths
+from .layout import Column, clip, fit, natural_widths
 from .report import disk_row, virtual_note, worst_severity
 
 # A single character, because these columns are already the first to be dropped
@@ -125,15 +125,25 @@ def _render(title: str, columns: Sequence[Column], rows: Sequence[Row], width: i
     for column in chosen:
         justify = Align.RIGHT.value if column.align is Align.RIGHT else Align.LEFT.value
         table.add_column(
-            column.title,
+            clip(column.title, widths[column.key]),
             justify=justify,
             no_wrap=True,
+            # The cells are cut above rather than here, so a cut carries the
+            # same ASCII mark the tree gives it and one drive reads the same in
+            # every view; the real ellipsis character does not survive a cp1252
+            # console, which is a place this tool runs. Rich's own ellipsis
+            # stays as the fallback because it MARKS: were a value ever to reach
+            # this point uncut, "crop" would shorten it in silence, which is the
+            # single failure this whole column is arranged to avoid.
             overflow="ellipsis",
             max_width=widths[column.key],
         )
     for row in rows:
         marker_text, marker_style = row.get("marker", ("", ""))
-        cells = [Text(*row.get(column.key, ("-", theme.STYLE_UNKNOWN))) for column in chosen]
+        cells = [
+            Text(clip(text, widths[column.key]), style=style)
+            for column, (text, style) in ((c, row.get(c.key, ("-", theme.STYLE_UNKNOWN))) for c in chosen)
+        ]
         table.add_row(Text(marker_text, style=marker_style), *cells)
     return table
 
@@ -186,11 +196,12 @@ def render_controllers(inventory: Inventory, findings: Sequence[Finding], width:
     return _render(f"Controllers on {inventory.hostname}", CONTROLLER_COLUMNS, rows, width)
 
 
-def disk_columns(wwn_width: int = DEFAULT_WWN_WIDTH) -> tuple[Column, ...]:
+def disk_columns(wwn_width: int | None = DEFAULT_WWN_WIDTH) -> tuple[Column, ...]:
     """The disk columns with the wwn ceiling set to a configured width.
 
     Args:
-        wwn_width: Most characters the wwn column may take.
+        wwn_width: Most characters the wwn column may take, or ``None`` to let
+            the identifier itself decide, as ``--full-wwn`` asks for.
 
     Returns:
         :data:`DISK_COLUMNS` with that one ceiling replaced.
@@ -198,8 +209,24 @@ def disk_columns(wwn_width: int = DEFAULT_WWN_WIDTH) -> tuple[Column, ...]:
     Example:
         >>> next(column.max_width for column in disk_columns(30) if column.key == "wwn")
         30
+        >>> next(column.max_width for column in disk_columns(None) if column.key == "wwn") is None
+        True
     """
-    return tuple(replace(column, max_width=wwn_width) if column.key == "wwn" else column for column in DISK_COLUMNS)
+    if wwn_width is not None:
+        return tuple(replace(column, max_width=wwn_width) if column.key == "wwn" else column for column in DISK_COLUMNS)
+    # Lifting the ceiling alone would not show the identifier: the fitter shrinks
+    # a flexible column to its minimum long before it drops anything, so at the
+    # shipped width the value would still be cut and the flag would read as
+    # broken. Forcing it into the full table is no better - a hundred-character
+    # column plus eleven others does not fit 120 and Rich compresses every one
+    # of them to gibberish. So asking for the whole identifier asks for the
+    # identifier: the drive it belongs to, and the value, and nothing competing
+    # with it for width.
+    return tuple(
+        replace(column, max_width=None, flexible=False, priority=0)
+        for column in DISK_COLUMNS
+        if column.key in {"device", "wwn"}
+    )
 
 
 def render_disks(
@@ -208,7 +235,7 @@ def render_disks(
     width: int = DEFAULT_WIDTH,
     *,
     expand_virtual: bool = False,
-    wwn_width: int = DEFAULT_WWN_WIDTH,
+    wwn_width: int | None = DEFAULT_WWN_WIDTH,
 ) -> Table:
     """Render one row per disk, with identity and interface speeds.
 
@@ -222,7 +249,8 @@ def render_disks(
         wwn_width: Most characters the wwn column may take, however wide the
             terminal is. One NVMe identifier is five times the length of the
             SATA ones beside it and would otherwise set the column's width for
-            every row.
+            every row. ``None`` lifts the ceiling, which is what ``--full-wwn``
+            asks for.
 
     Returns:
         A table of disks.

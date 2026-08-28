@@ -212,3 +212,48 @@ def test_when_the_controller_view_runs_it_shows_placement(
     assert "HBA 9500-16i" in result.output
     assert "3.0 x8" in result.output
     assert "0000:03:00.0" in result.output
+
+
+@pytest.mark.os_agnostic
+def test_the_full_wwn_flag_prints_the_whole_identifier(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+) -> None:
+    """The escape hatch from the column cap, at the SHIPPED width.
+
+    Lifting the ceiling alone does not do this: the fitter shrinks the column to
+    its minimum long before it drops anything, so a flag that only raised the
+    ceiling would be a no-op on any ordinary terminal while reading as if it had
+    worked. Driven without a width override for exactly that reason.
+    """
+    from lsdsk.adapters.hw.snapshot import load
+
+    machine = load(LINUX_SNAPSHOT)
+    disk = next(d for d in machine.disks if d.wwn and len(d.wwn) > 24)
+    assert disk.wwn is not None
+
+    capped = cli_runner.invoke(cli_mod.cli, ["disks", "--replay", str(LINUX_SNAPSHOT)], obj=production_factory)
+    full = cli_runner.invoke(
+        cli_mod.cli, ["disks", "--full-wwn", "--replay", str(LINUX_SNAPSHOT)], obj=production_factory
+    )
+
+    assert disk.wwn not in capped.output, "the default must still cut it"
+    assert disk.wwn in full.output, "--full-wwn must print the whole identifier"
+    assert disk.path in full.output, "and say which drive it belongs to"
+
+
+@pytest.mark.os_agnostic
+def test_the_full_wwn_flag_leaves_the_json_envelope_alone(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+) -> None:
+    """The envelope always carried every WWN in full, so the flag changes nothing.
+
+    A machine-readable mode that a display flag could reshape would make every
+    parser depend on how the human view happened to be asked for.
+    """
+    argv = ["disks", "--replay", str(LINUX_SNAPSHOT), "--format", "json"]
+    plain = cli_runner.invoke(cli_mod.cli, argv, obj=production_factory)
+    flagged = cli_runner.invoke(cli_mod.cli, [*argv, "--full-wwn"], obj=production_factory)
+
+    assert json.loads(plain.stdout) == json.loads(flagged.stdout)

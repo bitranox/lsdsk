@@ -19,7 +19,7 @@ from textual.widgets import Static, TabbedContent
 from lsdsk.adapters.config.tunables import DEFAULT_WWN_WIDTH, DisplaySettings
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import theme
-from lsdsk.adapters.render.layout import ELLIPSIS, Column, fit, natural_widths, pad
+from lsdsk.adapters.render.layout import ELLIPSIS, Column, clip, fit, natural_widths, pad
 from lsdsk.adapters.render.report import DISK_COLUMNS, render_tree
 from lsdsk.adapters.render.tables import DISK_COLUMNS as PRINTED_DISK_COLUMNS
 from lsdsk.adapters.render.tables import render_disks
@@ -700,9 +700,10 @@ class TestTheDiskPageKeepsALongIdentifierReachable:
             await pilot.press("3")
             await pilot.pause()
             cell = self._wwn_cell(app, disk.node)
-        kept = disk.wwn[: DEFAULT_WWN_WIDTH - 1]
-        assert kept in printed, "the printed table must keep what the page keeps"
-        assert cell.startswith(kept)
+        cut = clip(disk.wwn, DEFAULT_WWN_WIDTH)
+        assert cell == cut, "the page must cut where the shared rule cuts"
+        assert cut in printed, "and the printed table must produce the identical string, marker included"
+        assert "\u2026" not in printed, "including the mark: one renderer's own ellipsis is not the other's"
         assert disk.wwn not in printed, "no width may let the printed table run to a hundred columns"
         assert disk.wwn not in cell
 

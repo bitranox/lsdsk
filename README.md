@@ -224,6 +224,15 @@ you to type.
 | `--traceback` / `--no-traceback` | Print the Python traceback on an error instead of one line               |
 | `--version`                      | Print the version and exit                                               |
 
+`lsdsk disks` takes one option of its own. The `wwn` column is held to
+`display.wwn_width` characters, because an NVMe WWN is five times the length of
+the SATA ones beside it and would otherwise set the column's width for every
+row; a cut value is marked rather than shortened in silence, and on the
+interactive page it stays readable in full in a strip under the table.
+`--full-wwn` prints the whole identifier instead, dropping the other columns to
+make room for it. The JSON envelope always carries every WWN in full, whatever
+the human view was asked for.
+
 `lsdsk report` answers the one thing the terminal test cannot see. Some callers hand
 their child a pseudo-terminal on both ends - a notebook cell, `script`, `expect`,
 a job runner - and there nothing distinguishes a program from a person, so the

@@ -66,6 +66,14 @@ _REPLAY_OPTION = option(
     default=None,
     help="Render a snapshot captured earlier instead of reading this machine.",
 )
+_FULL_WWN_OPTION = option(
+    "--full-wwn",
+    "full_wwn",
+    is_flag=True,
+    default=False,
+    help="Print each drive's whole WWN, dropping the other columns to make room for it.",
+)
+
 _EXPAND_VIRTUAL_OPTION = option(
     "--expand-virtual",
     "expand_virtual",
@@ -650,8 +658,11 @@ def cli_slots(ctx: click.Context, replay: Path | None, output_format: str) -> No
 @_REPLAY_OPTION
 @_FORMAT_OPTION
 @_EXPAND_VIRTUAL_OPTION
+@_FULL_WWN_OPTION
 @click.pass_context
-def cli_disks(ctx: click.Context, replay: Path | None, output_format: str, expand_virtual: bool) -> None:
+def cli_disks(
+    ctx: click.Context, replay: Path | None, output_format: str, expand_virtual: bool, *, full_wwn: bool
+) -> None:
     """List every disk with its identity and its interface speed."""
     with lib_log_rich.runtime.bind(job_id="cli-disks", extra={"command": CliCommand.DISKS.value}):
         inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), OutputFormat(output_format.lower()))
@@ -668,7 +679,7 @@ def cli_disks(ctx: click.Context, replay: Path | None, output_format: str, expan
                     findings,
                     width=console.width,
                     expand_virtual=effective_expand_virtual(ctx, expand_virtual),
-                    wwn_width=display.wwn_width,
+                    wwn_width=None if full_wwn else display.wwn_width,
                 )
             )
         raise SystemExit(exit_code_for(findings))
