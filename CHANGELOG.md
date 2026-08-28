@@ -5,6 +5,28 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.2] 2026-08-28
+
+### Changed
+
+- The trend view's `over` column is now called `span`. It carries the window the
+  `change` figure covers, measured per counter, so one drive legitimately shows
+  a different figure on every row; headed `over` it read as a property of the
+  drive, and three rows for one NVMe drive at 531h, 78h and 6h looked like three
+  contradictory answers to what its power-on hours were rather than one answer
+  each for media errors, the error log and wear. The new name is the same four
+  characters, so the column keeps its width on a table that gives up columns as
+  the terminal narrows. The interactive Trend page renders through the same
+  function and follows automatically.
+
+### Fixed
+
+- The trend table had no test of any kind: nothing referenced `render_trend`,
+  `TREND_COLUMNS` or `trend_row`, so its headers and rows could drift unnoticed.
+  It is now rendered in a test that reads the header off the real output.
+- The README's trend example showed four different spans without saying why they
+  differ, which is the misreading the rename exists to prevent. It now says.
+
 ## [1.2.1] 2026-08-28
 
 ### Fixed
