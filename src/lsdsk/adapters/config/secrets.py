@@ -21,10 +21,26 @@ System Role:
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, cast
+from collections.abc import Mapping, Sequence
+from datetime import date, datetime, time
+from typing import TypeAlias
 
-if TYPE_CHECKING:
-    from collections.abc import Sequence
+#: Anything a loaded configuration can hold. The scalars are what a TOML or JSON
+#: document yields once parsed, date and time included because TOML defines them;
+#: the two containers are the ones this module descends into. Written out rather
+#: than left as ``Any``, the recursion is what the type checker follows, so a
+#: walk that returns the wrong shape is caught here instead of at whichever
+#: caller later prints it. The self-references are quoted because the alias is
+#: evaluated as it is bound, when the name does not exist yet.
+#:
+#: The containers are the ABCs rather than ``dict`` and ``list`` because both of
+#: those are INVARIANT in their contents: an ordinary ``{"auth": {"token": "T"}}``
+#: infers as ``dict[str, dict[str, str]]``, which is not assignable to a
+#: ``dict[str, ConfigValue]`` parameter however plainly it is one. ``Mapping``
+#: and ``Sequence`` are covariant, so a caller can pass the literal it has.
+ConfigValue: TypeAlias = (
+    str | int | float | bool | datetime | date | time | Sequence["ConfigValue"] | Mapping[str, "ConfigValue"] | None
+)
 
 #: Words that make a key worth hiding wherever they appear, matched on word
 #: boundaries that include camelCase humps so ``dbPassword`` and ``db_password``
@@ -82,29 +98,35 @@ def is_sensitive_name(key: str) -> bool:
     return len(words) > 1 and any(word in _SENSITIVE_IN_COMPANY for word in words)
 
 
-def _redact_entry(key: Any, value: Any) -> Any:
+def _redact_entry(key: str, value: ConfigValue) -> ConfigValue:
     """Hide one entry's value, or descend into it.
 
     A sensitive-looking name over a MAPPING is a section, not a secret: a table
     called ``auth`` legitimately holds a username and a host beside its token,
     and blanking the whole table hides the readable half for nothing. Only a
     scalar is replaced.
+
+    A SEQUENCE is the other way round. A list under such a name holds several of
+    the same secret rather than a section's mixed contents, so the key goes on
+    governing every item in it, however deeply the lists nest. Dropping the key
+    at the first list printed ``api_keys`` in full while redacting ``api_key``
+    beside it.
     """
-    if isinstance(value, (dict, list, tuple)):
+    if isinstance(value, dict):
         return redact_secrets(value)
-    if isinstance(key, str) and is_sensitive_name(key):
-        return REDACTED
-    return value
+    if isinstance(value, (list, tuple)):
+        return [_redact_entry(key, item) for item in value]
+    return REDACTED if is_sensitive_name(key) else value
 
 
-def redact_secrets(value: Any) -> Any:
+def redact_secrets(data: Mapping[str, ConfigValue]) -> dict[str, ConfigValue]:
     """Replace every value under a sensitive-looking key, at any depth.
 
     Walks mappings and sequences alike, because a token is just as exposed
     sitting in a list as it is at the top level.
 
     Args:
-        value: A configuration mapping, or any part of one.
+        data: A configuration mapping, or any mapping inside one.
 
     Returns:
         The same shape with sensitive values replaced.
@@ -112,13 +134,10 @@ def redact_secrets(value: Any) -> Any:
     Example:
         >>> redact_secrets({"alerting": {"SmtpPassword": "hunter2", "host": "mail"}})
         {'alerting': {'SmtpPassword': '***REDACTED***', 'host': 'mail'}}
+        >>> redact_secrets({"api_key": ["AKIA", "AKIB"]})
+        {'api_key': ['***REDACTED***', '***REDACTED***']}
     """
-    if isinstance(value, dict):
-        mapping = cast("dict[str, Any]", value)
-        return {key: _redact_entry(key, item) for key, item in mapping.items()}
-    if isinstance(value, (list, tuple)):
-        return [redact_secrets(item) for item in cast("Sequence[Any]", value)]
-    return value
+    return {key: _redact_entry(key, value) for key, value in data.items()}
 
 
 __all__ = ["REDACTED", "is_sensitive_name", "redact_secrets"]

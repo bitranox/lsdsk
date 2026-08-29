@@ -5,6 +5,30 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`lsdsk config` printed a list of secrets in full.** The second redaction
+  pass hid a scalar under a sensitive-looking key and dropped that key on its
+  way into a list or tuple, so nothing inside one was ever judged: `password`
+  holding one secret was replaced and the same name holding several was
+  printed. The key now governs every item beneath it, however deeply the lists
+  nest, while a table under such a name still keeps its readable half, because
+  a section named `auth` legitimately holds a username and a host beside its
+  token.
+
+### Changed
+
+- The redaction walk is typed by a recursive `ConfigValue` rather than `Any`,
+  so the shapes it returns are checked rather than assumed, and the two casts
+  it needed are gone. The alias uses `Mapping` and `Sequence` rather than
+  `dict` and `list` because those are invariant in their contents: an ordinary
+  nested literal is not assignable to a `dict[str, ConfigValue]` parameter
+  however plainly it is one.
+- Two limits of that pass are now pinned by tests rather than left to be
+  discovered: a name written as one squashed word (`privatekey`) and a plural
+  (`tokens`, `api_keys`, `passwords`) are not recognised as sensitive, because
+  matching is against whole words from a fixed set.
+
 ## [1.2.3] 2026-08-28
 
 ### Fixed
