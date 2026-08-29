@@ -91,11 +91,31 @@ def is_sensitive_name(key: str) -> bool:
         [False, False, False, False]
         >>> [is_sensitive_name(name) for name in ("api_key", "db_pass")]
         [True, True]
+        >>> [is_sensitive_name(name) for name in ("tokens", "api_keys", "keys", "hosts")]
+        [True, True, False, False]
     """
     words = [word.lower() for word in _SPLIT.split(key) if word]
-    if any(word in _ALWAYS_SENSITIVE for word in words):
+    if any(_names_a_secret(word, _ALWAYS_SENSITIVE) for word in words):
         return True
-    return len(words) > 1 and any(word in _SENSITIVE_IN_COMPANY for word in words)
+    return len(words) > 1 and any(_names_a_secret(word, _SENSITIVE_IN_COMPANY) for word in words)
+
+
+def _names_a_secret(word: str, vocabulary: frozenset[str]) -> bool:
+    """Whether one word is in a vocabulary, in the singular or the plural.
+
+    A configuration file writes the plural precisely when the key holds several
+    of the thing, so ``tokens`` is as much a secret as ``token`` and used to be
+    missed. The trailing ``s`` is tried IN ADDITION to the word itself and never
+    instead of it: folding first would turn ``pass`` into ``pas`` and lose a
+    match the exact form already had.
+
+    Example:
+        >>> _names_a_secret("tokens", _ALWAYS_SENSITIVE)
+        True
+        >>> [_names_a_secret(word, _SENSITIVE_IN_COMPANY) for word in ("pass", "keys", "hosts")]
+        [True, True, False]
+    """
+    return word in vocabulary or (word.endswith("s") and word[:-1] in vocabulary)
 
 
 def _redact_entry(key: str, value: ConfigValue) -> ConfigValue:

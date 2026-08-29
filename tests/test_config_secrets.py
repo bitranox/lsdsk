@@ -69,21 +69,40 @@ def test_names_a_reader_would_expect_to_be_hidden(name: str) -> None:
 
 
 @pytest.mark.os_agnostic
-@pytest.mark.parametrize("name", ["privatekey", "apikey", "accesstoken", "api_keys", "tokens", "passwords", "secrets"])
-def test_names_this_pass_does_not_hide(name: str) -> None:
-    """Two limits of matching whole words against a fixed set, pinned so they are known.
+@pytest.mark.parametrize("name", ["passwords", "tokens", "secrets", "api_keys", "SmtpPasswords"])
+def test_a_plural_is_hidden_like_its_singular(name: str) -> None:
+    """A plural of a secret is a secret.
 
-    A SQUASHED name splits into one word that equals no sensitive word, so
-    `private_key` and `PrivateKey` match while `privatekey` does not. A PLURAL
-    is a different word from its singular, so `token` matches and `tokens` does
-    not. Both are reachable: either spelling is one somebody writes in a real
-    configuration file.
+    `token` matched and `tokens` did not, which is the spelling a configuration
+    file uses precisely when it holds several. The plural is judged by trying
+    the word without its trailing `s` IN ADDITION to the word itself, never
+    instead of it: folding first turns `pass` into `pas` and loses the match it
+    already had.
+    """
+    assert is_sensitive_name(name)
 
-    Neither is fixed here because both fixes reach further than they look. A
-    substring test catches `privatekey` and also blanks any ordinary name
-    containing a sensitive word, and stripping a trailing `s` changes what a
-    security guard hides on names nobody has enumerated yet. Pinned rather than
-    left to be discovered as a surprise.
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("name", ["privatekey", "apikey", "accesstoken"])
+def test_a_squashed_spelling_is_a_known_limit(name: str) -> None:
+    """Matching is by word, so a name written as one squashed word is missed.
+
+    `private_key` and `PrivateKey` both split into words and match; `privatekey`
+    splits into one word that equals no sensitive word. Widening this to a
+    substring test would catch them and would also blank any ordinary name that
+    happens to contain one, so the limit is pinned here rather than left to be
+    discovered as a surprise.
+    """
+    assert not is_sensitive_name(name)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("name", ["hosts", "columns", "status", "address", "process", "keys", "flags"])
+def test_an_ordinary_plural_is_still_ordinary(name: str) -> None:
+    """The trailing-`s` rule must not widen what counts as a secret.
+
+    `keys` is the case that decides it: bare `key` means a secret only in
+    company, so its plural must too, and a mapping's `keys` stays readable.
     """
     assert not is_sensitive_name(name)
 

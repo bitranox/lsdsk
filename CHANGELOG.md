@@ -24,10 +24,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   `dict` and `list` because those are invariant in their contents: an ordinary
   nested literal is not assignable to a `dict[str, ConfigValue]` parameter
   however plainly it is one.
-- Two limits of that pass are now pinned by tests rather than left to be
-  discovered: a name written as one squashed word (`privatekey`) and a plural
-  (`tokens`, `api_keys`, `passwords`) are not recognised as sensitive, because
-  matching is against whole words from a fixed set.
+- **A plural is now hidden like its singular.** `token` was recognised and
+  `tokens` was not, which is the spelling a configuration file uses precisely
+  when it holds several. A word is tried without its trailing `s` in addition
+  to the word itself, never instead of it, because folding first turns `pass`
+  into `pas` and loses a match it already had. What only means a secret in
+  company still does: `api_keys` is hidden and a bare `keys` is not.
+- One limit remains, and is now pinned by a test rather than left to be
+  discovered: a name written as one squashed word (`privatekey`, `apikey`) is
+  not recognised, because matching is against whole words. Widening that to a
+  substring test would also blank any ordinary name containing a sensitive
+  word, which hides the configuration a reader came to see.
 
 ## [1.2.3] 2026-08-28
 
