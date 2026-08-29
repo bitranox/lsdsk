@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.4] 2026-08-29
+
 ### Fixed
 
 - **`lsdsk config` printed a list of secrets in full.** The second redaction
