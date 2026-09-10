@@ -772,6 +772,9 @@ def cli_snapshot(ctx: click.Context, output: Path, output_format: str) -> None:
     runs the same decoding and diagnosis a live run does.  That makes it a
     reproducible bug report as well as a way to inspect a server from your desk.
 
+    A capture holds every drive's serial number and this machine's hostname,
+    so treat it as identifying data before attaching it anywhere public.
+
     Refuses rather than ignores a global ``--replay``. This command always reads
     the machine it runs on, so honouring the flag would mean re-serialising
     somebody else's capture, and ignoring it wrote THIS machine's reading into a
@@ -796,6 +799,13 @@ def cli_snapshot(ctx: click.Context, output: Path, output_format: str) -> None:
             emit_action("snapshot", SnapshotResult(path=str(output), schema_version=snapshot_adapter.SCHEMA_VERSION))
         else:
             safe_console.echo(f"Wrote {output}")
+        # On stderr in both modes, so stdout stays exactly what a script parses:
+        # the path line in human mode, the envelope in JSON mode.
+        safe_console.echo(
+            f"Note: {output} holds every drive's serial number and this machine's hostname. "
+            "Treat it as identifying data before sharing it.",
+            err=True,
+        )
         raise SystemExit(ExitCode.SUCCESS)
 
 
