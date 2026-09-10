@@ -5,6 +5,25 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`lsdsk config` names the command line as the source of a `--set` value.**
+  An override replaced the value but kept the provenance of the layer it
+  replaced, so `lsdsk --set display.wwn_width=8 config` printed 8 under the
+  shipped default file's path, and following that answer led to a file holding
+  24. The library's merge shares the original provenance map by design; the
+  override path now rebuilds it, recording `cli` with no path for exactly the
+  keys `--set` supplied.
+
+### Changed
+
+- **`snapshot` says what a capture carries.** Its help, and a line on stderr
+  after the file is written, now name the drive serial numbers and the hostname
+  a capture holds. The command describes a capture as a bug report and nothing
+  said the file identifies the machine. The line goes to stderr in both output
+  modes, so the `Wrote <path>` line and the JSON envelope a script parses are
+  unchanged.
+
 ## [1.2.7] 2026-09-10 20:08:28
 
 ### Changed
