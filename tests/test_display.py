@@ -142,6 +142,11 @@ def test_the_default_page_contains_every_section_a_command_can_show() -> None:
     Each section is identified by a line taken from its own renderer rather than
     by a literal typed here, so rewording a heading does not fail this and a
     deleted section cannot pass it.
+
+    The page is rendered WITH a history, because the trend section is the eighth
+    section and without samples it renders an explanation instead of rows. Called
+    with no history this test could not see ``render_trend`` disappear from
+    ``render_full``, which is how the prose came to say seven sections.
     """
     import io
     import json
@@ -152,19 +157,38 @@ def test_the_default_page_contains_every_section_a_command_can_show() -> None:
     from lsdsk.adapters.hw.snapshot import build_from
     from lsdsk.adapters.render import report, tables
     from lsdsk.adapters.render.full import render_full
+    from lsdsk.adapters.render.trend import render_trend
     from lsdsk.domain.diagnostics import diagnose
+    from lsdsk.domain.history import DiskSeries, History, Sample, identity_of
 
     fixture = _Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
     machine = build_from(json.loads(fixture.read_text(encoding="utf-8")))
     findings = diagnose(machine)
     width = 200
 
+    tracked = next(disk for disk in machine.disks if identity_of(disk) is not None)
+    identity = identity_of(tracked)
+    assert identity is not None
+    history = History(
+        hostname=machine.hostname,
+        series=(
+            DiskSeries(
+                identity=identity,
+                model=tracked.model,
+                samples=(
+                    Sample(power_on_hours=1000, captured_at="a", crc_errors=100),
+                    Sample(power_on_hours=1010, captured_at="b", crc_errors=300),
+                ),
+            ),
+        ),
+    )
+
     def rendered(renderable: object) -> str:
         buffer = io.StringIO()
         Console(file=buffer, width=width, no_color=True).print(renderable)
         return buffer.getvalue()
 
-    page = rendered(render_full(machine, findings, width=width))
+    page = rendered(render_full(machine, findings, width=width, history=history))
     sections = {
         "topology tree": report.render_tree(machine, findings, width=width),
         "controllers": tables.render_controllers(machine, findings, width=width),
@@ -172,6 +196,7 @@ def test_the_default_page_contains_every_section_a_command_can_show() -> None:
         "health": tables.render_health(machine, findings, width=width),
         "smart": report.render_smart(machine, width=width),
         "slots": report.render_slots(machine, width=width),
+        "trend": render_trend(machine, history, width=width),
         "findings": report.render_findings(findings),
     }
     missing: list[str] = []
