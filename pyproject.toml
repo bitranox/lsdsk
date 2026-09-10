@@ -103,10 +103,6 @@ include = [
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-# old/ holds the shell-scraping predecessor this tool replaces, kept only as a
-# reference while the rewrite lands. It is not shipped and is deleted once the
-# rewrite is complete, so it is not worth holding to the project's standards.
-extend-exclude = ["old"]
 
 [tool.ruff.lint]
 select = [
