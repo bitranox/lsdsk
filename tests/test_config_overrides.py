@@ -373,3 +373,87 @@ def test_configuration_reaches_the_bare_default_view(
 
     assert outputs[0] != outputs[1], f"{override} changed nothing in the default view"
     assert any(marker in text for text in outputs), f"neither run rendered the {marker!r} section at all"
+
+
+# --------------------------------------------------------------------------
+# An override answers for itself when asked where a value came from
+# --------------------------------------------------------------------------
+
+
+def _layer_reported_for(output: str, key: str) -> str:
+    """Return the layer named in the provenance comment nearest above ``key``.
+
+    The human view wraps long paths across lines, so the comment is found by
+    scanning backwards for the marker rather than by a fixed offset.
+    """
+    lines = output.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip().startswith(f"{key} ="):
+            for candidate in reversed(lines[:index]):
+                if "# layer:" in candidate:
+                    return candidate.split("# layer:", 1)[1].split()[0]
+            break
+    msg = f"no provenance comment found above {key!r} in:\n{output}"
+    raise AssertionError(msg)
+
+
+@pytest.mark.os_agnostic
+def test_an_override_carries_its_own_provenance() -> None:
+    """It reported the layer it replaced, so the value and its source disagreed.
+
+    ``Config.with_overrides`` returns ``Config(merged, self._meta)``, keeping
+    the original provenance by design. The merged value was the CLI's and its
+    recorded origin was still the file that had been overridden, so a reader
+    who opened that file found the old value.
+    """
+    cfg = Config(
+        {"display": {"wwn_width": 24}},
+        {"display.wwn_width": {"layer": "defaults", "path": "/shipped/70-display.toml", "key": "display.wwn_width"}},
+    )
+
+    result = apply_overrides(cfg, ("display.wwn_width=8",))
+
+    assert result["display"]["wwn_width"] == 8
+    origin = result.origin("display.wwn_width")
+    assert origin is not None
+    assert origin["layer"] == "cli", f"an override reported layer {origin['layer']!r}"
+    assert origin["path"] is None, "an override comes from no file, so it names none"
+
+
+@pytest.mark.os_agnostic
+def test_an_override_leaves_every_other_key_s_provenance_alone() -> None:
+    """Relabelling the overridden key must not relabel its neighbours."""
+    cfg = Config(
+        {"display": {"wwn_width": 24, "piped_width": 120}},
+        {
+            "display.wwn_width": {"layer": "defaults", "path": "/shipped/70.toml", "key": "display.wwn_width"},
+            "display.piped_width": {"layer": "user", "path": "/home/u/70.toml", "key": "display.piped_width"},
+        },
+    )
+
+    result = apply_overrides(cfg, ("display.wwn_width=8",))
+
+    untouched = result.origin("display.piped_width")
+    assert untouched is not None
+    assert untouched["layer"] == "user"
+    assert untouched["path"] == "/home/u/70.toml"
+
+
+@pytest.mark.os_agnostic
+def test_lsdsk_config_names_the_cli_as_the_source_of_an_override(
+    cli_runner: CliRunner, production_factory: Callable[[], Any]
+) -> None:
+    """This is where a reader stands when asking where a value came from.
+
+    ``lsdsk --set display.wwn_width=8 config`` printed the value 8 under the
+    shipped default file's path, so following the answer led to a file holding
+    24.
+    """
+    from lsdsk.adapters.cli import cli
+
+    result = cli_runner.invoke(
+        cli, ["--set", "display.wwn_width=8", "config", "--section", "display"], obj=production_factory
+    )
+
+    assert "wwn_width = 8" in result.output, result.output
+    assert _layer_reported_for(result.output, "wwn_width") == "cli"

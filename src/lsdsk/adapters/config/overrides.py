@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 import orjson
+from lib_layered_config import Config
 
 if TYPE_CHECKING:
-    from lib_layered_config import Config
+    from lib_layered_config.domain.config import SourceInfo
+
+CLI_LAYER = "cli"
+"""Provenance layer recorded for a value that came from ``--set``.
+
+It is not one of the library's file layers because it names no file: the
+value was typed on the command line and there is nothing to open.
+"""
 
 CoercedValue = str | int | float | bool | None | list[object] | dict[str, object]
 """Union of types that :func:`coerce_value` can produce."""
@@ -145,6 +154,49 @@ def _nest_override(target: dict[str, dict[str, object]], override: ConfigOverrid
     node[override.key_path[-1]] = override.value
 
 
+def _dotted_keys(data: Mapping[str, object], prefix: str = "") -> Iterator[str]:
+    """Yield every leaf key of a nested mapping in dotted form.
+
+    Args:
+        data: The nested mapping to walk.
+        prefix: Dotted path accumulated by the caller, ending in a dot.
+
+    Yields:
+        One dotted path per leaf value.
+
+    Example:
+        >>> sorted(_dotted_keys({"a": {"b": 1, "c": {"d": 2}}}))
+        ['a.b', 'a.c.d']
+    """
+    for key, value in data.items():
+        path = f"{prefix}{key}"
+        if isinstance(value, Mapping):
+            yield from _dotted_keys(cast("Mapping[str, object]", value), f"{path}.")
+        else:
+            yield path
+
+
+def _provenance_naming_the_cli(config: Config, merged: Config, overridden: frozenset[str]) -> dict[str, SourceInfo]:
+    """Copy a Config's provenance, relabelling the keys an override replaced.
+
+    Args:
+        config: The Config the values came from, holding the original map.
+        merged: The Config after the merge, walked for the full key set.
+        overridden: Dotted keys that ``--set`` supplied.
+
+    Returns:
+        A provenance map naming the CLI for overridden keys and the original
+        source for every other one.
+    """
+    provenance: dict[str, SourceInfo] = {}
+    for dotted in _dotted_keys(merged.as_dict()):
+        if dotted in overridden:
+            provenance[dotted] = {"layer": CLI_LAYER, "path": None, "key": dotted}
+        elif (origin := config.origin(dotted)) is not None:
+            provenance[dotted] = origin
+    return provenance
+
+
 def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
     """Deep-merge CLI overrides into a Config instance.
 
@@ -168,6 +220,8 @@ def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
         >>> result = apply_overrides(cfg, ("s.k=2",))
         >>> result["s"]["k"]
         2
+        >>> result.origin("s.k")["layer"]
+        'cli'
         >>> apply_overrides(cfg, ()) is cfg
         True
     """
@@ -175,14 +229,22 @@ def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
         return config
 
     overrides: dict[str, dict[str, object]] = {}
+    overridden: set[str] = set()
     for raw in raw_overrides:
         parsed = parse_override(raw)
         _nest_override(overrides, parsed)
+        overridden.add(".".join((parsed.section, *parsed.key_path)))
 
-    return config.with_overrides(overrides)
+    # Rebuilt rather than returned straight from with_overrides, which shares
+    # the original provenance map by design: the merged value is the CLI's and
+    # its recorded origin still named the file it replaced, so `lsdsk config`
+    # sent a reader to a file holding the old value.
+    merged = config.with_overrides(overrides)
+    return Config(merged.as_dict(), _provenance_naming_the_cli(config, merged, frozenset(overridden)))
 
 
 __all__ = [
+    "CLI_LAYER",
     "CoercedValue",
     "ConfigOverride",
     "apply_overrides",
