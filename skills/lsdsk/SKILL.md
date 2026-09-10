@@ -84,10 +84,13 @@ uvx lsdsk --replay m.json     # render a capture from any machine
 means the same thing, so `lsdsk --replay m.json health` and
 `lsdsk health --replay m.json` are the same run; give both and the command's own
 wins. `snapshot` is the exception: it captures the machine it runs on and
-refuses `--replay` outright, as below. `--profile` behaves the same way on the
-`config` commands. `--history-file` and `--no-record` exist only before the
-command, so `lsdsk --history-file h.json record` is right and
-`lsdsk record --history-file h.json` is the usage error that exits `2`. When in
+refuses `--replay` outright, as below. `--profile` is accepted after `config` and
+`config-deploy`, but `config-generate-examples` takes it only before the command
+and exits `2` otherwise. `--history-file` and `--no-record` exist only before the
+command, so `lsdsk --history-file /var/lib/lsdsk/history.json record` is right and
+`lsdsk record --history-file ...` is the usage error that exits `2`. Give that
+path in full: a bare filename writes the store into whatever directory you
+happened to be in. When in
 doubt, `lsdsk <command> --help` lists what that command takes.
 
 `fail` and `logdemo` also exist. They are not diagnostic commands: they are the
@@ -131,7 +134,9 @@ program never has to ask for them.
 
 `--format json` gives a machine-readable envelope on every command that
 produces data, including `info`, `snapshot`, `record` and all three
-`config` commands. `tui`, `fail` and `logdemo` have none, having no data to structure.
+`config` commands. `tui`, `fail` and `logdemo` have none, having no data to
+structure, and `report` has none deliberately: it is the whole page, whose
+machine-readable form is `snapshot`.
 It carries `ok`, `command`, `data` and `skipped`,
 so a caller can tell a complete answer from a partial one.
 
@@ -151,9 +156,14 @@ a check that must fire only on critical has to read the field.
 
 ```bash
 lsdsk findings --format json |
-  python3 -c 'import json,sys; d=json.load(sys.stdin);
-  sys.exit(any(f["severity"] == "critical" for f in d["data"]["findings"]))'
+python3 -c 'import json,sys
+d = json.load(sys.stdin)
+sys.exit(any(f["severity"] == "critical" for f in d["data"]["findings"]))'
 ```
+
+Keep every continuation line at column 0. An indented one inside `python3 -c` is
+an `IndentationError`, which exits `1` - the same code these checks use for
+"found", so the monitor reports a critical on a machine that has none.
 
 **A disk, inside `data.disks`, carries `node`, `path`, `model`, `serial`,
 `firmware`, `wwn`, `size_bytes`, `kind`, `bus`, `controller_address`, `link`,
@@ -170,8 +180,9 @@ what a check for "nothing without a transport among the real drives" reads:
 
 ```bash
 lsdsk disks --format json |
-  python3 -c 'import json,sys; d=json.load(sys.stdin)["data"];
-  sys.exit(any(x["bus"] == "virtual" for x in d["disks"]))'
+python3 -c 'import json,sys
+d = json.load(sys.stdin)["data"]
+sys.exit(any(x["bus"] == "virtual" for x in d["disks"]))'
 ```
 
 That check is Linux-only, deliberately. On Windows `bus` is `virtual` for a
@@ -182,9 +193,10 @@ on either platform asserts the two lists stay disjoint:
 
 ```bash
 lsdsk disks --format json |
-  python3 -c 'import json,sys; d=json.load(sys.stdin)["data"];
-  v={x["node"] for x in d["virtual_disks"]};
-  sys.exit(any(x["node"] in v for x in d["disks"]))'
+python3 -c 'import json,sys
+d = json.load(sys.stdin)["data"]
+virtual = {x["node"] for x in d["virtual_disks"]}
+sys.exit(any(x["node"] in virtual for x in d["disks"]))'
 ```
 
 **`snapshot` is the exception to all of this.** With `-o` it writes the raw
@@ -242,7 +254,7 @@ editing the deployed `config.d/60-thresholds.toml`.
 Exit codes: `0` nothing actionable, `1` a warning or critical. Hints never set a
 non-zero code; a hint is a ceiling, not a fault.
 
-**Only the eight reporting commands and bare `lsdsk` set `0`/`1` from findings.**
+**Only the eight section commands, `report` and bare `lsdsk` set `0`/`1` from findings.**
 `record`, `snapshot` and the `config-*` commands exit `0` on success whatever
 the hardware says, so never alert on their code. And `1` is also what an
 internal error leaves, so read stderr before treating it as a finding;
@@ -412,7 +424,7 @@ uvx lsdsk trend
 device        counter           total  change  span  per hour  verdict
 /dev/sdd      interface CRC   2196127  +16642   15h      1109  rising
 /dev/sdj      interface CRC    462640      +0   16h         -  no new in 16h, 235 were due
-/dev/sde      interface CRC       430      +0   15h         -  too soon to say, only 0.6 were due
+/dev/sde      interface CRC       430      +0   15h         -  too soon to say, this drive's rate would not have produced even one in 15h
 ```
 
 Those two top rows are the same drive model on one host with comparable totals.
@@ -438,13 +450,16 @@ can be fixed now, rank by the rate, not by the total.
 **Read the refusals as refusals.** `too soon to say` is not `no new`. Silence
 counts only where the drive's own lifetime rate says errors were due in that
 span, which is what the `were due` figure is: 235 expected and none seen is
-evidence, 0.6 expected and none seen is nothing. Do not upgrade a `too soon to
-say` into an all-clear.
+evidence, while a rate that would not have produced even one is nothing. Below
+one expected the row says exactly that in words instead of a figure, because
+"only 0.0 were due" would contradict its own number. Do not upgrade a `too soon
+to say` into an all-clear.
 
 There is deliberately no fixed waiting period to quote, because the right one
 differs per drive: a drive erroring a thousand times an hour proves itself quiet
-within hours, and one at 0.04 an hour would need months. Quote the `were due`
-figure instead of inventing a window.
+within hours, and one at 0.04 an hour would need months. Quote the row's own
+`were due` figure, or its sentence where the expectation is below one, instead of
+inventing a window.
 
 `counter reset` means the current total is BELOW what was recorded, which a
 drive's own counter cannot do. The drive was swapped in that bay, its identity
@@ -471,10 +486,13 @@ uvx lsdsk snapshot -o /var/lib/lsdsk/$(hostname)-$(date +%F).json
 ## Reading a finding
 
 Each disk row carries three speeds: `port` is what the seat can give, `disk` is
-what the drive can do, `link` is what they agreed on. In the structured output
-these are GT/s, and the generation is 2.5=Gen1, 5=Gen2, 8=Gen3, 16=Gen4, 32=Gen5,
-64=Gen6. Compare them to find the
-constraint. An orange `disk` means the drive cannot use its port, a placement
+what the drive can do, `link` is what they agreed on. The structured output
+splits them by transport: a SATA or SAS drive carries `link.negotiated_gbps`,
+`link.drive_max_gbps` and `link.port_max_gbps` in Gbit/s with `pcie` null, while
+an NVMe drive leaves that triple null and carries `pcie` instead, whose
+`current_speed_gtps` and `max_speed_gtps` are GT/s where 2.5=Gen1, 5=Gen2,
+8=Gen3, 16=Gen4, 32=Gen5, 64=Gen6. Reading a SATA 6.0 as GT/s yields a
+generation that does not exist. Compare them to find the constraint. An orange `disk` means the drive cannot use its port, a placement
 question rather than a fault; a red `link` means both ends could have gone
 faster, which is a real one. A **yellow `link`** is a shortfall with only ONE end
 measured: real, but not yet attributable, so establish what the port can carry
@@ -600,9 +618,10 @@ handful can come from a single hotplug; a persistent or rising count cannot.
 
 The size of the count does not rank two drives. Check `lsdsk trend` before
 recommending physical work on either: the bigger number is often the older,
-finished fault. Where the record proves a count is still climbing, the finding
-already reads CRITICAL and carries the rate; where it proves the count is dead,
-the finding is downgraded to a hint and says so.
+finished fault. Where the record proves a count is still climbing, the finding carries the rate
+and is raised one step - so a count below `crc_errors_significant`, which starts
+as a hint, reads as a warning rather than a critical; where the record proves the
+count is dead, the finding is downgraded to a hint and says so.
 
 ### Reallocated sectors and media errors
 
@@ -626,7 +645,8 @@ when you justify a replacement.
 
 Device names move between reboots, so a work order should quote the `wwn`
 column, which is what the drive itself publishes: `naa.` for SATA and SAS,
-`eui.` or a namespace `uuid.` for NVMe. It stays with the drive into whatever
+`eui.` or a namespace `uuid.` for NVMe, and for an NVMe drive that offers
+neither, the kernel's `nvme.<vendor>-<serial>-<model>-<nsid>` fallback. It stays with the drive into whatever
 bay it lands in.
 
 ## Finding room, and what could move where

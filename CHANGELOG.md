@@ -5,6 +5,39 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.5] 2026-09-10 17:20:36
+
+### Fixed
+
+- **The skill's three monitoring snippets always reported a fault.** Each ran a
+  `python3 -c` program whose continuation line was indented, which is an
+  `IndentationError` and exits `1` - the same code the checks use for "a
+  critical was found". A monitor built from them alerted on every machine,
+  including one whose findings were hints only.
+- **`report` was documented as taking `--format json`** in four places. It does
+  not, deliberately: the machine-readable form of the whole page is
+  `lsdsk snapshot`.
+- Corrected the documented severity of a climbing CRC count (a count below the
+  significance floor starts as a hint and history raises it one step, so it
+  reads as a warning, not a critical), the structured speed fields for SATA and
+  SAS drives (Gbit/s under `link`, with `pcie` null, rather than PCIe GT/s), the
+  wear thresholds the sector and media counters are judged against, and the
+  third `wwn` form an NVMe drive can publish.
+
+### Changed
+
+- Documentation corrections across README, CONFIG, INSTALL, DEVELOPMENT,
+  CONTRIBUTING, SECURITY, the module reference, ADR 0001 and the AI stance,
+  each re-verified against the running tool. Notably: an override file must
+  live in a layer's `config.d/`, since a file beside `config.toml` is read by
+  nothing; `uv sync` alone installs no development tools, because `dev` is an
+  extra; and `make release` tags the committed version rather than bumping it.
+- Two claims are now held by tests rather than only stated. The marketplace
+  manifest's version is pinned to `pyproject.toml`, so a release cannot ship a
+  stale one that no install re-fetches, and the default page's completeness
+  guard now covers its eighth section.
+
+
 ## [1.2.4] 2026-08-29
 
 ### Fixed
