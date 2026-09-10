@@ -42,6 +42,9 @@ For a TICKET or a handover, still send a snapshot rather than redirected text:
 `lsdsk snapshot -o file.json` captures the raw reading, so the recipient can
 replay every section at any width and any privilege question is settled by the
 capture itself. A `lsdsk > report.txt` is a picture of one moment at one width.
+A snapshot names the machine and every drive in it, so check who can read the
+ticket before attaching one; `lsdsk snapshot` says the same on stderr when it
+writes the file.
 
 The page is the whole report: mainboard, problem summary, controller tree,
 the controller table, disk identities, wear and error counters, SMART
@@ -477,7 +480,9 @@ elevated records nothing at all.
 
 A snapshot is still how you inspect a server from your desk or attach a
 reproducible state to a bug report, and `lsdsk record --replay` folds one into
-the history. Snapshots and the history store both contain drive serial numbers.
+the history. Snapshots and the history store both contain every drive's serial
+number and the machine's hostname, so either one identifies the machine it came
+from.
 
 ```bash
 uvx lsdsk snapshot -o /var/lib/lsdsk/$(hostname)-$(date +%F).json

@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.8] 2026-09-11 00:50:18
+
 ### Fixed
 
 - **`lsdsk config` names the command line as the source of a `--set` value.**
@@ -23,6 +25,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   said the file identifies the machine. The line goes to stderr in both output
   modes, so the `Wrote <path>` line and the JSON envelope a script parses are
   unchanged.
+- **The shipped skill says a snapshot and the history store carry the
+  hostname.** It named drive serial numbers alone, and the passage that tells
+  a reader to attach a snapshot to a ticket said nothing about what the file
+  identifies. Both now do, matching what `snapshot --help` and its write-time
+  notice say.
 
 ## [1.2.7] 2026-09-10 20:08:28
 
