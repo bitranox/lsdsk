@@ -5,6 +5,30 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.7] 2026-09-10 20:08:28
+
+### Changed
+
+- **The shipped skill can now overturn a finding, not only fill in what lsdsk
+  cannot measure.** It offered published documentation as a supplement only, so
+  a reader had no way to disbelieve a figure the tool did report. The
+  arbitration now has a direction: a measured throughput above a reported
+  ceiling refutes it, because a ceiling cannot be exceeded, while a published
+  figure below the reading settles nothing, since that is what a downtrained or
+  shared link looks like.
+- **The oversubscription finding has a section of its own.** Its two remedies
+  are put in order, moving a drive onto a controller the machine already has
+  before fitting an HBA, and three readings mark an uplink figure as a register
+  default rather than a data path. The discriminator is a second integrated
+  function on the same silicon publishing the identical floor, not the floor
+  value alone, because a dead link reads the same.
+- **A controller row does not say whether the silicon is a card or soldered to
+  the board**, so the shipped remedy naming a card is a template rather than an
+  observation, with the two readings that usually settle it.
+- **The controllers table's columns are defined**: `running` and `capable` are
+  the controller's own PCIe link, and `load` is a capability sum of the attached
+  drives' negotiated links rather than a measurement of traffic.
+
 ## [1.2.6] 2026-09-10 18:22:35
 
 ### Fixed

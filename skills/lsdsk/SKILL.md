@@ -598,6 +598,69 @@ fix is never a new controller, which is already faster than the board.
 Run `lsdsk slots` before answering. It is the only view that shows whether a
 faster port exists and what is sitting in it.
 
+### Controller oversubscribed
+
+The finding offers two remedies and they are not equal. Look in `lsdsk
+controllers` for a controller whose `load` is below what its `running` link
+carries, because moving one drive onto hardware the machine already has costs
+nothing, and a wider-uplink HBA is the last resort rather than the alternative.
+A free port on an oversubscribed controller is not free.
+
+**Having room in the uplink is not having somewhere to plug in.** A controller
+showing no drives has spare bandwidth and may still have no port you can reach:
+`ports` and `free` read `-` when the firmware did not publish the count, which
+is unknown rather than zero. Confirm the destination in `lsdsk slots`, or name
+the controller as a candidate and ask what is physically free, rather than
+telling somebody to move a cable onto it.
+
+**Check the uplink figure against something outside the tool before you relay
+it.** The ceiling comes from what the controller's own PCIe link registers
+publish, and some devices publish that register pair without having a link to
+describe. The error only goes one way: the figure reads far too low, which turns
+a working machine into a hardware recommendation.
+
+Three readings say the figure is a register default rather than a data path, and
+one of them is enough to stop:
+
+- **The user measures more than the ceiling.** Ask for one throughput figure
+  before recommending anything. A real ceiling cannot be exceeded. When you
+  cannot get it in the same exchange, answer on the other two readings, give the
+  command that would settle it, and say which answer each result would give.
+- **`running` equals `capable` at the PCIe floor.** `1.0 x1` in both columns is
+  the lowest value the pair can hold. Devices that negotiated a real link report
+  a `capable` above their `running` wherever the two differ, so a device pinned
+  at the floor in both has not negotiated anything.
+- **A second function on the same silicon publishes the identical floor.** Run
+  `lsdsk slots` and read the ports sharing the controller's upstream. A SATA and
+  a USB controller both at `Gen1 x1`, while the NVMe ports beside them publish
+  Gen3, Gen4 and Gen5, is the discriminator. Those two are functions integrated
+  into one chip; the others are ports that carry traffic. The floor value alone
+  is not the discriminator, because a genuinely dead link reads the same.
+
+**`lsdsk slots` lists PORTS, so its addresses are not the addresses in `lsdsk
+controllers` and you have to join the two yourself.** Each row is a port, named
+by the port's own address, with the device behind it in `occupant`. Ports on one
+switch share a bus, so `0000:08:` in the port column is the group to read
+together. Do not match a controller to a row by eye: the occupant name comes
+from the platform, so on Windows the row for a controller lsdsk calls an AMD 600
+Series part reads `Standard SATA AHCI Controller`. `lsdsk slots --format json`
+carries `occupant_address` on every port, and that IS the address in the
+controllers table. Join on it.
+
+That pattern is a desktop chipset used as a PCIe switch, which is how a
+multi-drive expansion card is usually built. The card presents the chipset's
+downstream ports, passes real links through to the M.2 sockets it wires, and
+publishes the floor on the SATA and USB functions integrated into the chip. Its
+real uplink is on the card's spec page, not in the register.
+
+**A controller row does not say whether it is a card or an onboard function, so
+do not pass on "replace this card" as though it did.** Two readings in the same
+output usually settle it. The banner names the board, and a chipset generation
+that board cannot carry is on a card: a 600 Series SATA controller on a 500
+Series board is not the board's own. `lsdsk slots` places it, by showing which
+upstream it sits behind. When neither answers, ask what is plugged in rather
+than naming a part for somebody to buy.
+
 ### Wear
 
 Warning at 80% of rated endurance consumed, critical at 95%. Below 80% is not
@@ -654,6 +717,12 @@ bay it lands in.
 `lsdsk controllers` counts ports used against total per controller and what the
 attached drives demand. Free ports on a controller whose uplink is oversubscribed
 are not really free.
+
+`running` and `capable` are the CONTROLLER's own PCIe link, negotiated and
+maximum, never a drive's. `load` sums what the attached drives could pull at the
+links they negotiated, so it is a capability total and not a measurement of
+traffic: three SATA drives read 1.80 GB/s whether they are busy or idle. `load`
+above what `running` carries is what raises the oversubscription finding.
 
 A `-` in that count is not zero, and the reason differs by controller. A SAS HBA
 always answers, because it publishes a phy per lane - though a phy is not a
@@ -746,9 +815,20 @@ was unreachable, and hand over the URL so the reader can open it themselves.
 machine and which you read from a manual, and cite the source. They fail
 differently: a measurement is true of this box and a manual is true of the model,
 so a board revision, a BIOS option or a populated shared slot makes them
-disagree. When they do, lsdsk is describing what is actually there. Prefer the
-vendor's own page over a review or a retailer listing, and say so when you had to
-settle for one of those.
+disagree. When they do, lsdsk is usually describing what is actually there.
+
+**Usually, not always: a specification or an independent measurement can REFUTE
+a finding, not only supplement one.** lsdsk reports what a device PUBLISHES, and
+a register that describes nothing is published exactly like one that describes a
+link. So the arbitration has a direction. A ceiling cannot be exceeded, which
+makes a measured throughput ABOVE one proof that the ceiling is not the path:
+one number from the user, or one figure from a review of the same part, settles
+it against the tool. A specification BELOW what lsdsk reports settles nothing on
+its own, because that is what a downtrained or shared link looks like.
+
+Reach for that test before relaying any finding whose remedy is to buy
+something. Prefer the vendor's own page over a review or a retailer listing, and
+say so when you had to settle for one of those.
 
 ## What it cannot tell you, so do not assert it
 
@@ -759,6 +839,12 @@ exist. Never infer the form factor from the width, because an x4 port is as
 likely one as the other. `lsdsk slots` reports the board's own slot number
 instead: match that against the mainboard manual, which is also how you turn a
 PCI address into a slot you can point at.
+
+**It cannot tell a card from an onboard function.** Nothing in a controller row
+says whether the silicon is soldered to the board or sits on something
+removable, so a remedy naming a card is a template rather than an observation.
+See the oversubscription finding above for the two readings that usually settle
+it.
 
 It reads hardware, not configuration or physical layout. It does not know the
 RAID or ZFS layout, which pool a disk belongs to, whether a drive is a boot
