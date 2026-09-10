@@ -1,0 +1,15 @@
+# Open work
+
+Standing backlog. One item per line, edited in place - never rewritten wholesale.
+Rank in tens. `USER:` outranks `FOUND:`; within an origin, bigger `size` goes first.
+Closing an item is `- [x]` plus `| closed: <reason>`; the line stays.
+
+Host names, key paths and hardware specifics stay OUT of this file - it is tracked in a
+public repo. Those live in `handover.md`, which is gitignored.
+
+- [x] (2026-09-10) [10] FOUND: committed hardware captures carried identifying data the scrub had not reached | size: 4 captures plus a ruling on what was already published | closed: 2026-09-10, rescrubbed and pinned by `tests/test_fixture_serials.py`, which decodes every copy and fails when one disagrees. The user ruled to scrub forward and accept the already-published copies rather than rewrite history: a force-push would silently freeze every marketplace install, the same data is in 13 published sdists, and deleting those burns their filenames permanently.
+- [ ] (2026-09-10) [20] FOUND: 69 documentation findings (60 confirmed, 9 likely) across 11 documents, all evidenced | size: 69 findings, biggest groups are 19 in the contributor set, 13 in CONFIG.md, 8 each in README.md and the shipped skill | open: audit delivered, no fix applied | next: work the P1 systemic pair first (the `trend` section and `report` having no `--format`), which clears roughly a third
+- [ ] (2026-09-10) [30] FOUND: the default-page completeness test does not cover the trend section, so deleting it from `render_full` leaves the suite green | size: one test, plus deciding whether `render_full` should be called with history in it | open: found during the audit, is a code defect rather than a doc one | next: add the trend entry to the `sections` dict in `tests/test_display.py` and prove it RED by removing `render_trend` from `render_full`
+- [ ] (2026-08-28?) [40] FOUND: one SATA SSD on a fleet storage host saturates its device-to-host error counter while its seven pool-mates stay near zero | size: one drive swap plus a resilver, and reconciling two counter sources first | open: diagnosed and measured, never acted on; first raised before 2026-08-29, exact date unknown | next: reconcile the host-side phy counters against the per-drive ones on a host that is actually doing I/O - detail and measurements are in `handover.md`
+- [ ] (2026-09-10) [50] FOUND: nothing at the point of use says a snapshot carries drive serials and the hostname | size: the `snapshot` docstring plus a line in README.md and CONFIG.md | open: only `skills/lsdsk/SKILL.md:465` says it, and `snapshot --help` is where somebody stands before pasting one into a bug report | next: put the decision to the user, then add the sentence where the command is invoked
+- [ ] (2026-09-10) [60] FOUND: `[tool.ruff] extend-exclude = ["old"]` excludes a directory the repo no longer has, and its comment describes it as still present | size: one line of pyproject plus its three-line comment | open: found while checking the gate's scope; harmless but it documents a tree that is gone | next: confirm no `old/` exists, drop the key and the comment, re-run the gate
