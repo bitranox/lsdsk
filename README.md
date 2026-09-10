@@ -16,7 +16,7 @@ See which disks hang off which controller, whether each one runs at the speed it
 could, and how worn it is.
 
 ```bash
-uvx lsdsk
+uvx lsdsk@latest
 ```
 
 That is the whole command. At a terminal it opens an interactive view with a
@@ -429,7 +429,7 @@ looked-up figures apart from the measured ones.
 ## Install
 
 ```bash
-uvx lsdsk              # run without installing
+uvx lsdsk@latest       # run without installing
 uv tool install lsdsk  # install for repeated use
 pip install lsdsk
 ```

@@ -9,7 +9,7 @@ against a capture taken on one of those.
 `lsdsk` with nothing else set up first:
 
 ```bash
-uvx lsdsk                           # run it once, installing nothing
+uvx lsdsk@latest                    # run it once, installing nothing
 uv tool install lsdsk               # keep it on the PATH
 ```
 
