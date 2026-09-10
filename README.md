@@ -12,8 +12,28 @@
 [![Maintainability](https://qlty.sh/gh/bitranox/projects/lsdsk/maintainability.svg)](https://qlty.sh/gh/bitranox/projects/lsdsk)
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
-See which disks hang off which controller, whether each one runs at the speed it
-could, and how worn it is.
+Ten drives, three controllers, a chipset and a riser between them and the CPU. The machine
+boots fine, and nothing on it tells you that one card negotiated x1 in an x8 slot, that two
+SSDs share a link narrower than either of them alone, or that the free port you were about
+to fill hangs off an uplink that is already full. A storage server rarely fails outright. It
+runs at a fraction of what it cost, quietly, for years, and the parts that would explain it
+are spread across sysfs, a set of ioctls and the mainboard manual.
+
+lsdsk is the quick look before you buy or blame anything: where every drive hangs, what each
+link negotiated against what it could have done, which slots are free and what they are
+worth, and where the bottleneck actually is rather than where it is easiest to see.
+
+Groups disks by the controller they hang off, grades every link against what both ends could
+do, reads SMART wear and error counters, and reports what is worth acting on. Linux and
+Windows, no subprocesses, no network.
+
+The command below needs `uv` and nothing else; if it is not installed yet,
+[INSTALL.md](INSTALL.md#easiest-install-and-run-with-uv) has the one-line installer for Linux,
+macOS and Windows.
+
+For full information run it as root or Administrator (`sudo`). Without that, SMART wear, the
+error counters, PCIe connector detection and a SATA controller's port count read as `-`, and the
+header says so. [INSTALL.md](INSTALL.md#what-needs-root) has the list.
 
 ```bash
 uvx lsdsk@latest
@@ -72,6 +92,80 @@ the seat can give, `disk` is what the drive can do, and `link` is what the two
 of them actually agreed on. An orange `disk` means the drive cannot use the port
 it occupies, which is a placement question. A red `link` means both ends could
 have gone faster and did not, which is a fault.
+
+## The eight pages
+
+The same machine as above, one page at a time. Number keys switch between them, `Tab` cycles,
+and every page is also a subcommand, so `lsdsk health` prints exactly what page 4 shows.
+
+These were taken with a counter history recorded, which is why the problem counts differ from the
+plain run above: with a second reading to compare against, history can raise a finding by one step.
+
+### 1 Topology
+
+![Topology](docs/screenshots/1-topology.png)
+
+What is wrong comes first, then the machine itself: each controller with the link it negotiated
+against the link it could have run, and the drives hanging under it. Stopping after this page
+still leaves nothing actionable unseen.
+
+### 2 Controllers
+
+![Controllers](docs/screenshots/2-controllers.png)
+
+One row per controller: driver and firmware, running against capable, how many ports it has and
+how many are free, and what the drives on it would pull together. That last column is what turns
+a free port into an honest answer rather than a tempting one.
+
+### 3 Disks
+
+![Disks](docs/screenshots/3-disks.png)
+
+One row per drive, with the identity you need to order a replacement: model, WWN, serial and
+firmware, then size, bus and the three speeds. `port` is what the seat can give, `disk` what the
+drive can do, `link` what the two of them agreed on.
+
+### 4 Health
+
+![Health](docs/screenshots/4-health.png)
+
+Wear, temperature, power-on hours and bytes written, beside the counters that decide whether a
+drive is dying or merely badly cabled: reallocated, pending, uncorrectable, interface CRC and
+media errors.
+
+### 5 SMART
+
+![SMART attributes](docs/screenshots/5-smart.png)
+
+Every attribute of every drive, with value, worst and threshold beside the raw number, because a
+raw count means nothing without the threshold the drive itself judges it against. NVMe drives
+publish a fixed health log instead of an attribute table, and the page says so rather than
+leaving a gap.
+
+### 6 Findings
+
+![Findings](docs/screenshots/6-findings.png)
+
+Each finding with its reasoning underneath and a remedy: what was measured, what it means, and
+what to do about it. This is where a CRC count is named as the cable rather than the drive.
+
+### 7 Slots
+
+![Slots](docs/screenshots/7-slots.png)
+
+Every PCIe port: what it can carry, what it is running, what occupies it, what that occupant
+needs, and a verdict. `FREE` is an empty port, `full` means the occupant uses what the port
+offers, and a spare figure is bandwidth nobody is using.
+
+### 8 Trend
+
+![Counter trends](docs/screenshots/8-trend.png)
+
+What each counter is DOING rather than what it totals: the change since the last reading, the
+span it was measured over, a rate per hour, and a verdict. Two drives here read `rising`. One
+reads `no new in 16h, 235 were due`, a counter that has stopped climbing, which is only sayable
+because the drive's own lifetime rate says how many were expected. The rest say `too soon to say`,
+the honest answer until enough of the drive's own clock has passed.
 
 ## Why this exists
 
