@@ -5,6 +5,20 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.6] 2026-09-10 18:22:35
+
+### Fixed
+
+- **A controller's ceiling is what its link can carry, not what it happens to
+  be carrying.** A PCIe link drops to 2.5 GT/s while the device behind it is
+  idle and retrains when work arrives, so reading the resting figure reported a
+  controller as oversubscribed on hardware that has no bottleneck at all.
+  Measured on one machine minutes apart: the same graphics card read x4 at
+  8.0 GT/s with its core at 1265 MHz, and x4 at 2.5 GT/s with it at 151 MHz. A
+  link that is genuinely stuck below what both ends support is a different
+  fault, and the controller-link rule already names it with the remedy that
+  fits.
+
 ## [1.2.5] 2026-09-10 17:20:36
 
 ### Fixed

@@ -280,8 +280,15 @@ def test_a_card_at_its_own_width_is_not_told_to_find_a_wider_slot() -> None:
 
 @pytest.mark.os_agnostic
 def test_a_card_below_its_own_width_may_be_told_to_move() -> None:
-    """Verify the slot remedy survives where the card really could go wider."""
-    narrowed = controller(link=PcieLink(5.0, 1, 8.0, 8), name="Wide HBA")
+    """Verify the slot remedy survives where the card really could go wider.
+
+    The port is given explicitly, because that is what makes the remedy right:
+    a x8-capable card is held to x1 by the socket it sits in, so a wider socket
+    is the thing that would change. Without a port to blame, a card running
+    below its own width is a link fault rather than a slot choice, and
+    ``diagnose_controller_link`` is the rule that owns it.
+    """
+    narrowed = controller(link=PcieLink(5.0, 1, 8.0, 8), upstream=PcieLink(5.0, 1, 5.0, 1), name="Wide HBA")
     drives = tuple(disk(node, link=InterfaceLink(6.0, 6.0, 6.0)) for node in ("sde", "sdf"))
     machine = Inventory("h", controllers=(narrowed,), disks=drives)
 
@@ -290,6 +297,23 @@ def test_a_card_below_its_own_width_may_be_told_to_move() -> None:
     assert len(findings) == 1
     assert findings[0].action is not None
     assert "move this card to a wider slot" in findings[0].action
+
+
+@pytest.mark.os_agnostic
+def test_an_idle_link_that_has_downtrained_is_not_read_as_the_ceiling() -> None:
+    """Verify the ceiling comes from what the link can do, not from what it is doing.
+
+    A PCIe link drops to 2.5 GT/s while the device behind it is idle and
+    retrains when work arrives. Measured on one machine minutes apart: the same
+    graphics card read x4 at 8.0 GT/s with its core at 1265 MHz and x4 at
+    2.5 GT/s with it at 151 MHz. Reading the idle figure as the ceiling invents
+    a bottleneck that disappears the moment anything uses it.
+    """
+    resting = controller(link=PcieLink(2.5, 4, 8.0, 4), upstream=PcieLink(2.5, 4, 8.0, 4), name="Idle HBA")
+    drives = tuple(disk(node, link=InterfaceLink(6.0, 6.0, 6.0)) for node in ("sde", "sdf", "sdg"))
+    machine = Inventory("h", controllers=(resting,), disks=drives)
+
+    assert diagnose_controller_oversubscription(resting, machine) == []
 
 
 @pytest.mark.os_agnostic

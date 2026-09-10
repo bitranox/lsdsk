@@ -979,6 +979,13 @@ def diagnose_firmware_consistency(
 def diagnose_controller_oversubscription(controller: Controller, inventory: Inventory) -> list[Finding]:
     """Report a controller whose drives can outrun its uplink.
 
+    The ceiling is what the link CAN carry, never what it happens to be
+    carrying. A PCIe link drops to 2.5 GT/s while the device behind it is idle
+    and retrains when work arrives, so reading the resting figure invents a
+    bottleneck that disappears the moment anything uses it. A link that is
+    genuinely stuck below what both ends support is a different fault, and
+    ``diagnose_controller_link`` already names it with the remedy that fits.
+
     Args:
         controller: The controller to examine.
         inventory: The machine it belongs to.
@@ -986,7 +993,7 @@ def diagnose_controller_oversubscription(controller: Controller, inventory: Inve
     Returns:
         A finding when the attached drives exceed the uplink, otherwise empty.
     """
-    uplink = controller.link.current_bandwidth_gbps
+    uplink = controller.achievable_bandwidth_gbps
     demand = attached_demand_gbytes(controller, inventory)
     if uplink is None or demand is None or demand <= uplink:
         return []
@@ -1007,7 +1014,7 @@ def diagnose_controller_oversubscription(controller: Controller, inventory: Inve
             subject=controller.address,
             title=f"{controller.name} is oversubscribed by the drives on it",
             detail=(
-                f"{count} drives can pull about {_format_gbytes(demand)} together, but the uplink carries "
+                f"{count} drives can pull about {_format_gbytes(demand)} together, but the uplink can carry "
                 f"{_format_gbytes(uplink)}."
             ),
             action=action,
