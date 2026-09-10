@@ -3,16 +3,33 @@
 Python 3.11 or newer, on Linux or Windows. Any other platform runs `--replay`
 against a capture taken on one of those.
 
-## From PyPI
+## Easiest: install and run with uv
+
+`uv` fetches the right Python and the tool itself, so one line gets a working
+`lsdsk` with nothing else set up first:
 
 ```bash
 uvx lsdsk                           # run it once, installing nothing
-uv tool install lsdsk               # install for everyday use
+uv tool install lsdsk               # keep it on the PATH
+```
+
+If you do not have `uv` yet, its homepage carries the one-line installer for
+Linux, macOS and Windows: <https://docs.astral.sh/uv/getting-started/installation/>
+(project home: <https://docs.astral.sh/uv/>).
+
+The rest of this page covers the other routes: pipx and pip, a checkout, and a
+wheel on a machine that has neither.
+
+## From PyPI without uv
+
+```bash
+pipx install lsdsk                  # isolated, on the PATH
+pip install lsdsk                   # inside a virtual environment
 lsdsk --version
 ```
 
-`uv tool upgrade lsdsk` moves it to the current release. If you prefer pipx,
-`pipx install lsdsk`; inside a virtual environment, `pip install lsdsk`.
+`uv tool upgrade lsdsk` moves a uv install to the current release, and
+`pipx upgrade lsdsk` does the same for a pipx one.
 
 Installation registers one console script, `lsdsk`.
 
