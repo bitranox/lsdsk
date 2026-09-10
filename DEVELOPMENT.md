@@ -99,10 +99,16 @@ lsdsk snapshot -o /tmp/capture.json
 ```
 
 then rename it, rewrite its `hostname` field, and replace the serials before
-committing. The serial appears three times in a capture - in the JSON field,
-in the ATA IDENTIFY or NVMe Identify blob, and in the SCSI VPD page 0x89 that
-the unprivileged Linux path reads - so scrubbing only the JSON field leaves the
-real one embedded and makes the fixture disagree with itself.
+committing. A capture records the same serial in up to eight places, including
+two that hide it from any text search: the NVMe subsystem NQN embeds it in a
+name string, and the sysfs `wwid` embeds it as hex. Scrubbing only the JSON
+field, or only the locations you can see, leaves the real one embedded and makes
+the fixture disagree with itself.
+
+Rather than work from a list, run `pytest tests/test_fixture_serials.py`: it
+decodes every location and fails naming each one whose serial differs from what
+the tool reports for that drive. That is the check to satisfy before committing
+a capture.
 
 Assert on bounded ranges rather than exact values for anything that changes on
 its own: power-on hours and wear only climb, and an exact assertion breaks the
