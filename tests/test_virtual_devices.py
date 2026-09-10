@@ -88,6 +88,47 @@ class TestTheInventoryKeepsThemApart:
         assert buses == {BusType.VIRTUAL}
 
 
+def _windows_capture_with_a_virtual_bus() -> dict[str, Any]:
+    """A real Windows disk whose transport reports as `virtual`.
+
+    Windows says `virtual` for a Hyper-V disk and for a Storage Spaces volume,
+    and that IS the machine's storage: it has a size, SMART and a place in the
+    tree. The bus value is a transport name, never a statement that the device
+    is not there.
+    """
+    fixture = Path(__file__).parent / "fixtures" / "hw" / "windows-ahci.json"
+    capture: dict[str, Any] = json.loads(fixture.read_text(encoding="utf-8"))
+    disks = capture["disks"]
+    first = next(iter(disks))
+    disks[first]["device"]["bus_type"] = "virtual"
+    return capture
+
+
+@pytest.mark.os_agnostic
+class TestABusValueNeverDecidesMembership:
+    """The counterpart of the tests above, and the direction that had no test.
+
+    Everything else here holds that a kernel-virtual device stays out of the
+    physical list. This holds the converse: a device the kernel put in the
+    physical list stays there whatever its bus says. Collapsing on `disk.bus`
+    would fold a virtual machine's system disk away, leaving the tool reporting
+    that the machine it is running on has no storage.
+    """
+
+    def test_a_disk_on_the_virtual_bus_is_still_a_disk(self) -> None:
+        inventory = build_from(_windows_capture_with_a_virtual_bus())
+        assert [disk.node for disk in inventory.disks], "the machine's only disk was folded away"
+
+    def test_it_is_not_carried_as_a_virtual_device(self) -> None:
+        inventory = build_from(_windows_capture_with_a_virtual_bus())
+        assert not inventory.virtual_disks
+
+    def test_its_bus_is_reported_as_given(self) -> None:
+        """The transport is still named: it is data, not a reason to hide it."""
+        inventory = build_from(_windows_capture_with_a_virtual_bus())
+        assert BusType.VIRTUAL in {disk.bus for disk in inventory.disks}
+
+
 @pytest.mark.os_agnostic
 class TestNoRuleJudgesAVirtualDevice:
     """A device with no link and no SMART must raise nothing, ever."""

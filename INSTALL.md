@@ -44,9 +44,10 @@ uv sync                      # or: python -m venv .venv && .venv/bin/pip install
 .venv/bin/lsdsk --version
 ```
 
-`uv sync` creates `.venv` and installs the project with its development extras.
-The console script lands at `.venv/bin/lsdsk` (`\.venv\Scripts\lsdsk.exe` on
-Windows).
+`uv sync` creates `.venv` and installs the project. `dev` is an extra rather
+than a dependency group, so the test and lint tools come only with
+`uv sync --extra dev`. The console script lands at `.venv/bin/lsdsk`
+(`.venv\Scripts\lsdsk.exe` on Windows).
 
 To put it on your PATH for everyday use:
 

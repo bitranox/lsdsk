@@ -129,12 +129,16 @@ domain -> application -> adapters -> composition. Run `lint-imports` to check.
 Two splits inside the adapters carry most of the design:
 
 - **Decoding is separate from transport.** Linux and Windows obtain the same binary structures
-  over different transports, so `adapters/hw/decode/` is pure `bytes` in, domain values out, and
-  is exercised on every CI runner regardless of platform.
+  over different transports, so `adapters/hw/decode/` is exercised on every CI runner regardless
+  of platform. Its structure decoders are pure `bytes` in, domain values out; `pciids.py` is the
+  exception, taking numeric ids and reading a vendor database from the filesystem, the system
+  `pci.ids` if there is one and the bundled copy otherwise.
 - **Each platform splits again into `reader` and `builder`.** The reader is impure and touches
   sysfs or Win32; the builder is pure and turns a reading into domain objects. That is why the
-  Linux mapping is tested on Windows and the Windows mapping on Linux, and why `--replay` renders
-  exactly what a live run would.
+  Linux mapping is tested on Windows and the Windows mapping on Linux. A replayed Linux capture
+  renders what a live run would because the reader records the resolved `pci_names` into the
+  capture; a Windows capture does not carry them, so its builder resolves device names against
+  whatever `pci.ids` the replaying host has.
 
 The domain layer is frozen dataclasses rather than Pydantic, because it has no serialization
 concern. Pydantic sits at the two boundaries that do: `CaptureEnvelope` validating a replayed
@@ -142,31 +146,31 @@ snapshot on the way in, and `ScanEnvelope` producing the JSON on the way out.
 
 ## CLI commands
 
-Seven of these are sections of the default report, which a bare `lsdsk` prints in full:
-`topology`, `controllers`, `disks`, `health`, `smart`, `findings` and `slots`. The rest
-stand alone. Every command that produces data takes `--format json`; `tui`, `fail` and
-`logdemo` do not, having none to structure.
+Eight of these are sections of the default report, which a bare `lsdsk` prints in full:
+`topology`, `controllers`, `disks`, `health`, `smart`, `slots`, `trend` and `findings`. The rest
+stand alone. Every command that produces data takes `--format json` except `report`, whose
+machine-readable form is `lsdsk snapshot`; `tui`, `fail` and `logdemo` have no data to structure.
 
-| Command                    | Purpose                                                               |
-|----------------------------|-----------------------------------------------------------------------|
-| `config`                   | Display the current merged configuration from all sources.            |
-| `config-deploy`            | Deploy default configuration to system or user directories.           |
-| `config-generate-examples` | Generate example configuration files in a target directory.           |
-| `controllers`              | List storage controllers, their PCIe placement and their free ports.  |
-| `disks`                    | List every disk with its identity and its interface speed.            |
-| `fail`                     | Trigger the intentional failure helper to test error handling.        |
-| `findings`                 | Explain every problem and improvement in full.                        |
-| `health`                   | Show wear, temperature, hours and error counters for every disk.      |
-| `info`                     | Print resolved metadata so users can inspect installation details.    |
-| `logdemo`                  | Run a logging demonstration to preview log output.                    |
-| `record`                   | Record this machine's error counters and print nothing.               |
-| `report`                   | The whole machine on one page, which every section above is part of.  |
-| `slots`                    | Show the mainboard's PCIe ports, what occupies them and what is free. |
-| `smart`                    | Show every disk's SMART attributes against its own thresholds.        |
-| `snapshot`                 | Capture this machine's raw reading for replay elsewhere.              |
-| `topology`                 | Show the problem summary and the disk-to-controller tree.             |
-| `trend`                    | Show what each error counter is doing over time, not just its total.  |
-| `tui`                      | Open the interactive view, with a page per question.                  |
+| Command                    | Purpose                                                                   |
+|----------------------------|---------------------------------------------------------------------------|
+| `config`                   | Display the current merged configuration from all sources.                |
+| `config-deploy`            | Deploy default configuration to system or user directories.               |
+| `config-generate-examples` | Generate example configuration files in a target directory.               |
+| `controllers`              | List storage controllers, their PCIe placement and their free ports.      |
+| `disks`                    | List every disk with its identity and its interface speed.                |
+| `fail`                     | Trigger the intentional failure helper to test error handling.            |
+| `findings`                 | Explain every problem and improvement in full.                            |
+| `health`                   | Show wear, temperature, hours and error counters for every disk.          |
+| `info`                     | Print resolved metadata so users can inspect installation details.        |
+| `logdemo`                  | Run a logging demonstration to preview log output.                        |
+| `record`                   | Record this machine's error counters, printing only with `--format json`. |
+| `report`                   | The whole machine on one page, which every section above is part of.      |
+| `slots`                    | Show the mainboard's PCIe ports, what occupies them and what is free.     |
+| `smart`                    | Show every disk's SMART attributes against its own thresholds.            |
+| `snapshot`                 | Capture this machine's raw reading for replay elsewhere.                  |
+| `topology`                 | Show the problem summary and the disk-to-controller tree.                 |
+| `trend`                    | Show what each error counter is doing over time, not just its total.      |
+| `tui`                      | Open the interactive view, with a page per question.                      |
 
 ## Exit codes
 
@@ -174,15 +178,16 @@ A scan command answers a question, so its code says what the answer was: `0` not
 actionable, `1` a warning or a critical. A hint never sets a non-zero code, because it
 describes a ceiling rather than a fault. Anything above `1` means the command did not run.
 
-| Code | Name                | Raised when                                                                          |
-|------|---------------------|--------------------------------------------------------------------------------------|
-| 0    | `SUCCESS`           | The command ran and found nothing actionable                                         |
-| 1    | `GENERAL_ERROR`     | A scan found a warning or a critical, or an action failed                            |
-| 13   | `PERMISSION_DENIED` | A deployment target or a device needs privilege this run does not have               |
-| 22   | `INVALID_ARGUMENT`  | A named configuration section does not exist, or a `--profile` name was rejected     |
-| 78   | `CONFIG_ERROR`      | A file is not a snapshot this version reads, or this platform has no hardware reader |
+| Code | Name                | Raised when                                                                                            |
+|------|---------------------|--------------------------------------------------------------------------------------------------------|
+| 0    | `SUCCESS`           | The command ran and found nothing actionable                                                           |
+| 1    | `GENERAL_ERROR`     | A scan found a warning or a critical, or an action failed                                              |
+| 13   | `PERMISSION_DENIED` | A deployment target or a device needs privilege this run does not have                                 |
+| 22   | `INVALID_ARGUMENT`  | A named configuration section or `--profile` was rejected, or `snapshot` was given a global `--replay` |
+| 78   | `CONFIG_ERROR`      | A file is not a snapshot this version reads, or this platform has no hardware reader                   |
 
-Two more a caller will see are not in the enum, because lsdsk does not raise them:
+Two more a caller will see are named in the enum (`SIGNAL_INT`, `BROKEN_PIPE`, `SIGNAL_TERM`)
+but are never raised by lsdsk itself:
 
 | Code            | Source  | Meaning                                                                                       |
 |-----------------|---------|-----------------------------------------------------------------------------------------------|

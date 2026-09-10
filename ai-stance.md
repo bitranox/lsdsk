@@ -62,7 +62,7 @@ Code we couldn't defend on a whiteboard.
 
 Whether or not a model was in the loop, the work still has to hold up. So every project we ship goes through roughly the same routine.
 
-A human reads the change before it merges. It gets exercised, by tests or by hand, depending on what's appropriate. It's documented well enough that intended behaviour can be checked against actual behaviour. The discussion around the change happens out in the open in commits, pull requests and issues, so the reasoning lives next to the result.
+A human reads the change before it merges. It gets exercised, by tests or by hand, depending on what's appropriate. It's documented well enough that intended behaviour can be checked against actual behaviour. The reasoning for a change is written where the change is: in the commit message, in the changelog, and in the design notes under `docs/`, plus whatever issue or pull request it went through.
 
 If something we ship is wrong, insecure or poorly designed, we'd rather you say so publicly than be polite about it. The point of working in the open is that mistakes are in the open too.
 
@@ -72,7 +72,7 @@ You don't have to take any of this on faith.
 
 - The source is available. Read it.
 - The history is available too. Decisions and reversals show up over time.
-- Issues and pull requests show the reasoning, not just the result.
+- Commit messages and the design notes carry the reasoning, not just the result, and so do any issues and pull requests the change went through.
 - Tests live in the repository. Run them.
 
 If something doesn't line up, open an issue. That's what they're for.

@@ -111,13 +111,17 @@ lsdsk --traceback config-deploy --target user
 
 Display the merged configuration from all sources (defaults -> app -> host -> user -> .env -> env vars).
 
+Values whose key reads as a secret (token, key, secret, password) print as
+`***REDACTED***`. The redaction is on the printed output only, so it changes
+nothing about the value the tool uses.
+
 #### Options Reference
 
-| Option           | Required | Description                                                     |
-|------------------|:--------:|-----------------------------------------------------------------|
-| `--format`       | No       | Output format: `human` (default) or `json`.                     |
-| `--section NAME` | No       | Show only a specific section (e.g., `lib_log_rich`, `logging`). |
-| `--profile NAME` | No       | Load configuration for a specific profile.                      |
+| Option           | Required | Description                                                                   |
+|------------------|:--------:|-------------------------------------------------------------------------------|
+| `--format`       | No       | Output format: `human` (default) or `json`.                                   |
+| `--section NAME` | No       | Show only a specific section (e.g., `display`, `thresholds`, `lib_log_rich`). |
+| `--profile NAME` | No       | Load configuration for a specific profile.                                    |
 
 #### Examples
 
@@ -146,6 +150,7 @@ Deploy bundled default configuration to platform-specific directories.
 
 | Option             | Required | Description                                                                       |
 |--------------------|:--------:|-----------------------------------------------------------------------------------|
+| `--format`         | No       | Output format: `human` (default) or `json`.                                       |
 | `--target`         | Yes      | Target layer: `app`, `host`, or `user`. Can be specified multiple times.          |
 | `--force`          | No       | Overwrite existing configuration files. Without this, existing files are skipped. |
 | `--profile NAME`   | No       | Deploy to a profile-specific subdirectory (e.g., `profile/production/`).          |
@@ -266,12 +271,13 @@ enabled = true
 
 ### Generate Example Configuration Files
 
-Create example TOML files showing all available options with default values and documentation comments. Useful for learning the configuration structure or creating initial configuration files.
+Create example TOML files showing the layout of a configuration tree, with documentation comments. They carry a generic placeholder section rather than lsdsk's own `[thresholds]`, `[display]` and `[history]` keys, so use them to learn where files go; for the keys themselves see the shipped defaults or the tables below.
 
 #### Options Reference
 
 | Option              | Required | Description                                                         |
 |---------------------|:--------:|---------------------------------------------------------------------|
+| `--format`          | No       | Output format: `human` (default) or `json`.                         |
 | `--destination DIR` | Yes      | Directory to write example files.                                   |
 | `--force`           | No       | Overwrite existing files. Without this, existing files are skipped. |
 
@@ -290,17 +296,24 @@ lsdsk config-generate-examples --destination .
 
 #### Generated Files
 
-| File              | Description                                                 |
-|-------------------|-------------------------------------------------------------|
-| `config.toml`     | Main configuration file with all sections                   |
-| `config.d/*.toml` | Modular configuration files (logging, layered-config, etc.) |
+| File                                   | Description                                         |
+|----------------------------------------|-----------------------------------------------------|
+| `.env.example`                         | Environment-variable form of the same settings      |
+| `xdg/lsdsk/config.toml`                | A system layer's main file                          |
+| `xdg/lsdsk/hosts/your-hostname.toml`   | Where a per-host file goes, named after the machine |
+| `home/lsdsk/config.toml`               | A user layer's main file                            |
+| `home/lsdsk/config.d/10-override.toml` | An override file, which outranks `config.toml`      |
 
-Each file contains commented documentation explaining available options and their default values.
+The `xdg/` and `home/` directories mirror the layers they stand for, so the tree
+shows which file belongs where. Each carries commented documentation.
 
 ### Runtime Overrides
 
 Use `--set` to override configuration values without modifying files. This option:
-- Has the **highest precedence** (overrides all other sources including environment variables)
+- Has the **highest precedence** among configuration layers, including the
+  prefixed environment variables described under Environment Variables below.
+  The native `LOG_*` variables are read by `lib_log_rich` itself rather than
+  merged, so they still decide logging behaviour whatever `--set` says
 - Can be **repeated** to set multiple values
 - Must appear **before** the command name
 
@@ -320,11 +333,11 @@ lsdsk --set lib_log_rich.console_level=DEBUG config
 # Override multiple values
 lsdsk --set lib_log_rich.console_level=DEBUG --set lib_log_rich.console_format_preset=short config
 
-# Override nested values
-lsdsk --set lib_log_rich.console_level=DEBUG config
+# Override a nested value
+lsdsk --set lib_layered_config.default_permissions.app_file=0o600 config
 
 # Override with JSON arrays/objects (use single quotes around the value)
-lsdsk --set lib_log_rich.queue_enabled=false config
+lsdsk --set lib_log_rich.scrub_patterns='{"totp": "(?i)totp"}' config
 
 # Combine with profile
 lsdsk --profile production --set lib_log_rich.console_level=DEBUG config
@@ -368,7 +381,7 @@ These decide severity, and therefore the exit code.
 | `wear_critical_percent`      | `95`    | And before it is called critical                                                  |
 | `crc_errors_significant`     | `100`   | Below this an interface CRC count is a hint rather than a warning                 |
 | `mixed_firmware_threshold`   | `2`     | Distinct firmware revisions of one model before it is reported                    |
-| `wear_projection_min_points` | `2`     | Recorded readings needed before a wear rate is projected to 100%                  |
+| `wear_projection_min_points` | `2`     | Percentage points of measured wear movement before a wear-out date is projected   |
 | `quiet_expected_min`         | `10.0`  | Errors the drive's own rate must have predicted before silence counts as evidence |
 | `min_span_hours`             | `1`     | Power-on hours between two readings before a rate is computed at all              |
 
@@ -382,7 +395,7 @@ itself.
 |---------------------------|---------|--------------------------------------------------------|
 | `piped_width`             | `120`   | Width used when output is not a terminal               |
 | `summary_limit`           | `6`     | Findings named in the verdict line before "and N more" |
-| `wear_row_floor_percent`  | `10`    | Wear below this is not given a row in `lsdsk trend`    |
+| `wear_row_floor_percent`  | `10`    | Wear below this gets no trend row, in either view      |
 | `expand_virtual`          | `false` | List kernel-virtual devices instead of tallying them   |
 | `wwn_width`               | `24`    | Most characters the wwn column is given in either view |
 | `traceback_summary_limit` | `500`   | Characters kept in a short traceback                   |
@@ -529,28 +542,32 @@ The `defaultconfig.toml` and files in `defaultconfig.d/` (bundled with the packa
 
 ## Customization Best Practices
 
-**Do NOT modify deployed configuration files directly.** These files may be overwritten during package updates.
+**Do NOT modify deployed configuration files directly.** `lsdsk config-deploy --force` rewrites them, so an edit made in place is lost the next time anyone runs it.
 
 Instead, create your own override files in the appropriate layer directory using a high-numbered prefix:
 
 ```bash
 # User-level customization (Linux)
-~/.config/lsdsk/999-myconfig.toml
+~/.config/lsdsk/config.d/999-myconfig.toml
 
 # User-level customization (macOS)
-~/Library/Application Support/bitranox/lsdsk/999-myconfig.toml
+~/Library/Application Support/bitranox/lsdsk/config.d/999-myconfig.toml
 
 # User-level customization (Windows)
-%APPDATA%\bitranox\lsdsk\999-myconfig.toml
+%APPDATA%\bitranox\lsdsk\config.d\999-myconfig.toml
 
 # System-wide customization (Linux)
-/etc/xdg/lsdsk/999-myconfig.toml
+/etc/xdg/lsdsk/config.d/999-myconfig.toml
 ```
 
 **Why this works:**
-- Files in each layer directory are loaded in alphabetical order
-- Higher-numbered files (e.g., `999-`) load last and override earlier values
-- Your custom file won't be touched by updates that regenerate `config.toml`
+- A layer reads `config.toml` and the files in its `config.d/` directory, and
+  nothing else. A file dropped beside `config.toml` rather than inside
+  `config.d/` is silently ignored, which looks exactly like a setting that does
+  not work
+- Inside `config.d/` files load in alphabetical order, so a high number loads last
+- Everything in `config.d/` outranks that layer's `config.toml`
+- Your custom file is not touched by `config-deploy`, which writes `config.toml`
 
 **Example `999-myconfig.toml`:**
 

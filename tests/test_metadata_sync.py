@@ -7,6 +7,7 @@ actual project metadata.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ import rtoml
 from lsdsk import __init__conf__
 
 _PYPROJECT_PATH = Path(__file__).parent.parent / "pyproject.toml"
+_PLUGIN_MANIFEST_PATH = Path(__file__).parent.parent / ".claude-plugin" / "plugin.json"
 
 
 def _read_project_name() -> str:
@@ -77,4 +79,23 @@ def test_name_matches_project_name() -> None:
     # but __init__conf__.name should match the canonical form
     assert __init__conf__.name.replace("-", "_") == project_name.replace("-", "_"), (
         f"__init__conf__.name '{__init__conf__.name}' does not match project name '{project_name}'"
+    )
+
+
+@pytest.mark.os_agnostic
+def test_plugin_manifest_version_matches_pyproject_toml() -> None:
+    """The marketplace manifest must carry the version pyproject declares.
+
+    This repository is also a Claude Code marketplace, and an install re-fetches
+    only when the manifest's version changes. A manifest left behind therefore
+    fails silently in the worst way: the release goes out, every existing install
+    keeps the old skill, and nothing reports an error. Nothing else in the suite
+    reads this file, so without this the two can drift a whole release apart.
+    """
+    pyproject_version = rtoml.load(_PYPROJECT_PATH)["project"]["version"]
+    manifest_version = json.loads(_PLUGIN_MANIFEST_PATH.read_text(encoding="utf-8"))["version"]
+
+    assert manifest_version == pyproject_version, (
+        f".claude-plugin/plugin.json version {manifest_version!r} does not match "
+        f"pyproject.toml version {pyproject_version!r}"
     )

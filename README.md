@@ -56,13 +56,13 @@ Topology on linux-sas-hba
       device        model                       size  kind  bus   port     disk     link     temp  worn
 |- ~  /dev/sda      Samsung SSD 870 EVO 4TB     3.6T  SSD   SATA  12G      6G       6G        36C    1%
 |- ~  /dev/sdb      Samsung SSD 870 EVO 500GB   466G  SSD   SATA  12G      6G       6G        30C    2%
-'- !! /dev/sdd      Samsung SSD 870 EVO 4TB     3.6T  SSD   SATA  12G      6G       6G        37C    1%
+|- !  /dev/sdd      Samsung SSD 870 EVO 4TB     3.6T  SSD   SATA  12G      6G       6G        37C    1%
 
 Controllers on linux-sas-hba        ...
 Disks on linux-sas-hba              ...
 Disk health on linux-sas-hba        ...
 SMART attributes on linux-sas-hba   ...
-PCIe slots on linux-sas-hba         ...
+mainboard not named by firmware     13 ports   2 free   ...
 Counter trends on linux-sas-hba     ...
 Findings on linux-sas-hba           ...
 ```
@@ -159,8 +159,9 @@ before you quote any of its numbers at your manager.
 - A controller capped by the mainboard, with the PCIe generation that would lift
   it and whether the attached drives can even use the difference.
 - A drive held back by a slower port than it supports.
-- Wear-out, reallocated, pending and uncorrectable sectors, and NVMe media
-  errors, each against the drive's own declared thresholds.
+- Wear-out against configurable bands, and reallocated, pending and
+  uncorrectable sectors and NVMe media errors on any count above zero, since a
+  drive reporting one of those has already lost media.
 - Temperature against the limits the drive itself publishes, not a guess.
 - Identical models running mismatched firmware.
 - Where there is room for another drive, and whether that controller has the
@@ -196,7 +197,7 @@ because there is nothing to fix.
 | `lsdsk config`                   | The merged configuration, and which layer each value came from     |
 | `lsdsk config-deploy`            | Write the shipped defaults where you can edit them                 |
 | `lsdsk config-generate-examples` | Write commented example files without touching live config         |
-| `lsdsk info`                     | Version, install path and the metadata a bug report needs          |
+| `lsdsk info`                     | Version, homepage and the metadata a bug report needs              |
 
 The interactive view is keyed the way the `*top` family is: `1` to `8` or the
 matching function key switch page, and `q` quits; the footer lists those, so
@@ -243,7 +244,8 @@ in anything unattended rather than reasoning about whether that caller counts as
 a terminal.
 
 `--format json` gives a machine-readable envelope naming the command that
-produced it, on every command that produces data. Exit codes are `0` for nothing
+produced it, on every command that produces data except `report`, whose
+machine-readable form is `lsdsk snapshot`. Exit codes are `0` for nothing
 actionable and `1` when a warning or critical was found, so it drops straight
 into a monitoring check. Errors use sysexits conventions rather than a single
 code: `13` when something needs privilege this run lacks, `22` for a
@@ -277,7 +279,7 @@ not, because it keeps its own record:
 device        counter           total  change  span  per hour  verdict
 /dev/sdc      interface CRC     99361     +16   16h       1.0  rising
 /dev/sdd      interface CRC   2196127  +16642   15h      1109  rising
-/dev/sde      interface CRC       430      +0   15h         -  too soon to say, only 0.6 were due
+/dev/sde      interface CRC       430      +0   15h         -  too soon to say, this drive's rate would not have produced even one in 15h
 /dev/sdj      interface CRC    462640      +0   16h         -  no new in 16h, 235 were due
 ```
 
@@ -314,14 +316,15 @@ setting there is a `[history]` section with `enabled`, `path` and
 each came from. As root the store defaults to `/var/lib/lsdsk/history.json`,
 because what it records is a property of the machine rather than of whoever
 typed the command; a non-root run keeps a per-user path, since it could not
-write there anyway. The first run that records names the file, once.
+write there anyway. The first reporting run that records names the file,
+once; `lsdsk record` writes silently unless asked for `--format json`.
 
 Every value the tool judges or lays out by is a configuration key: `[thresholds]`
 carries the wear bands, the CRC significance floor, the firmware-mismatch count
 and the quiet-evidence figure, and `[display]` carries the assumed width when
-output is piped, the summary cap, the temperature bands used for drives that
-publish none of their own, the ceiling on the wwn column, and the traceback
-limits. What is deliberately *not*
+output is piped, the summary cap, the wear floor a trend row must clear, whether
+kernel-virtual devices are listed, the ceiling on the wwn column, and the
+traceback limits. What is deliberately *not*
 configurable is anything a specification fixes: register offsets, IOCTL codes,
 the Kelvin offset, the 512-byte sector. Those are not choices, and a file that
 could change them would break decoding rather than tune it. Turning recording off never stops history being *read*, so

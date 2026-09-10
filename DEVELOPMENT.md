@@ -3,7 +3,7 @@
 ## Setting up
 
 ```bash
-uv sync                      # creates .venv with the dev extras
+uv sync --extra dev          # creates .venv with the dev tools
 .venv/bin/lsdsk --version
 ```
 
@@ -29,7 +29,7 @@ The ones you will use most:
 |------------------------|------------------------------------------------------------------------|
 | `make test`            | The gate: format, lint, type-check, import contracts, security, pytest |
 | `make testintegration` | Only the tests marked `integration`, which need real machines          |
-| `make test-all`        | The gate on every declared Python version                              |
+| `make test-all`        | pytest and pyright on every declared Python version, not the full gate |
 | `make run`             | Run the CLI through bmk                                                |
 | `make build`           | Build the wheel and sdist into `dist/`                                 |
 | `make push`            | Run the gate, then commit and push                                     |
@@ -137,14 +137,16 @@ redistribute.
 | `default_release_public.yml` | Publishing a release  |
 | `codeql.yml`                 | Weekly, plus pushes   |
 
-Releasing goes through bmk (`make release` / `make ship`), which bumps the
-version, tags `vX.Y.Z` and publishes. Publishing authenticates either with a
+Releasing goes through bmk (`make release` / `make ship`), which tags `vX.Y.Z`
+at the version already in `pyproject.toml` and publishes it. Neither bumps: that
+is the separate `make bump-patch` / `bump-minor` / `bump-major` family, and
+bumping first would tag the new number and skip publishing the committed one. Publishing authenticates either with a
 `PYPI_API_TOKEN` secret or, when that secret is absent, through a PyPI Trusted
 Publisher using the workflow's OIDC identity.
 
 The version lives in `pyproject.toml` and is mirrored in `__init__conf__.py` and
-`.claude-plugin/plugin.json`; `tests/test_metadata_sync.py` fails when they
-disagree.
+`.claude-plugin/plugin.json`; `tests/test_metadata_sync.py` fails when either
+copy disagrees with it.
 
 ## This repository is also a Claude Code marketplace
 
