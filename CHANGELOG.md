@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.11] 2026-09-11 16:22:19
+
 ### Fixed
 
 - **The capped-by-the-mainboard hint judges a port by what it would give the
