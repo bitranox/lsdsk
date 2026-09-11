@@ -5,6 +5,14 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **The skill's finding table no longer offers an HBA as an equal remedy for an
+  oversubscribed controller.** The row now says the uplink figure can be a
+  register default, points the reader to the section that says to check that
+  figure first, and puts moving a drive onto a controller already fitted ahead of
+  buying an HBA, as that section does.
+
 ## [1.2.8] 2026-09-11 00:50:18
 
 ### Fixed
