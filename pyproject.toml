@@ -223,15 +223,12 @@ omit = [
     "*/adapters/hw/linux/reader.py",
 ]
 parallel = false
-# Use a temp directory for the coverage database to avoid SQLite locking
-# issues on network-mounted filesystems. The {envtmpdir} placeholder is
-# not supported by coverage.py, so we use an environment variable with
-# fallback to a cross-platform temp location via the pytest_configure
-# hook in tests/conftest.py. CI also sets COVERAGE_FILE via workflow env.
-#
-# For local development, the pytest hook automatically redirects to
-# tempfile.gettempdir() before pytest-cov creates its Coverage() object.
-# This static fallback catches edge cases where coverage is run directly.
+# The coverage database lives outside the checkout, because SQLite needs file
+# locking that a network-mounted tree does not reliably give it. It is one path
+# for the whole machine, so every run that leaves COVERAGE_FILE unset shares it:
+# pytest-cov erases it when a run starts and combines the data files beside it
+# when a run ends. bmk and CI each point COVERAGE_FILE at a directory of their
+# own; set it the same way before running pytest --cov beside another run.
 data_file = "/tmp/.coverage.lsdsk"
 source = ["src/lsdsk"]
 

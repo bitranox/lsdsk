@@ -11,10 +11,8 @@ from __future__ import annotations
 import contextlib
 import io
 import json
-import os
 import re
 import sys
-import tempfile
 from dataclasses import fields, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -31,46 +29,6 @@ if TYPE_CHECKING:
 
 
 from lsdsk.composition import AppServices, build_production
-
-_COVERAGE_BASENAME = ".coverage.lsdsk"
-
-
-def _purge_stale_coverage_files(cov_path: Path) -> None:
-    """Delete leftover SQLite database and journal files from crashed runs.
-
-    A prior crash can leave ``-journal``, ``-wal``, or ``-shm`` sidecar
-    files next to the coverage database.  SQLite interprets those as an
-    incomplete transaction and may raise ``database is locked`` on the
-    next open.
-
-    Note:
-        We use an explicit suffix list rather than glob (``cov_path.parent.glob(f"{cov_path.name}*")``)
-        because glob could match unrelated files sharing the same prefix. The SQLite WAL-mode
-        sidecar suffixes are well-documented and stable across versions.
-    """
-    for suffix in ("", "-journal", "-wal", "-shm"):
-        with contextlib.suppress(FileNotFoundError):
-            Path(str(cov_path) + suffix).unlink()
-
-
-def pytest_configure(config: pytest.Config) -> None:
-    """Redirect the coverage database to a **local** temp directory.
-
-    coverage.py stores trace data in a SQLite database.  SQLite requires
-    POSIX file-locking semantics that network mounts (SMB / NFS) do not
-    reliably provide, and stale journal files from a previous crash can
-    trigger *"database is locked"* on Python 3.14's free-threaded build.
-
-    This hook runs **before** ``pytest-cov``'s ``pytest_sessionstart``
-    creates the ``Coverage()`` object, so the ``COVERAGE_FILE`` value is
-    picked up regardless of how pytest is invoked (CI, ``make test``,
-    bare ``pytest --cov``).
-    """
-    if "COVERAGE_FILE" not in os.environ:
-        cov_path = Path(tempfile.gettempdir()) / _COVERAGE_BASENAME
-        _purge_stale_coverage_files(cov_path)
-        os.environ["COVERAGE_FILE"] = str(cov_path)
-
 
 # Which platforms each os_* marker declares its test valid on. A marker that is
 # only registered in pyproject silences the unknown-marker warning and skips
