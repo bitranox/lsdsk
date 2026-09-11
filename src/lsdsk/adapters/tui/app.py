@@ -307,7 +307,11 @@ class LsdskApp(App[None]):
         leave the next, shorter one showing the blank space past it.
         """
         self.query_one("#wwn-full", Static).update(Text(value or "-", style="" if value else theme.STYLE_UNKNOWN))
-        self.query_one("#wwn-strip", HorizontalScroll).scroll_to(x=0, animate=False)
+        # Immediate, not Textual's default of after the next refresh. Offset 0 is
+        # valid whatever the new identifier's width, so there is nothing to wait
+        # for, and waiting costs a frame: the update that lays out the new text
+        # paints it still scrolled and only then runs the queued rewind.
+        self.query_one("#wwn-strip", HorizontalScroll).scroll_to(x=0, animate=False, immediate=True)
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         """Follow the disk page's cursor with the whole WWN of the row it is on.

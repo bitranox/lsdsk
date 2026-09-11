@@ -25,6 +25,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   register default rather than a ceiling. A switch is proven by a bridge recorded
   above its bus, so ports directly on a root complex, which are independent
   slots, are judged as before.
+- **Moving the cursor off a row whose WWN was scrolled no longer paints one frame
+  of the next identifier still scrolled.** The strip's rewind was queued until
+  after the next refresh, which laid out and painted the new identifier at the
+  old offset first; it now applies at once. The same window is what made one TUI
+  test fail at random on a slow CI runner.
 
 ## [1.2.8] 2026-09-11 00:50:18
 

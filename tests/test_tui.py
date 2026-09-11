@@ -604,6 +604,40 @@ class TestTheDiskPageKeepsALongIdentifierReachable:
             assert self._shown(app) == listed[1].wwn
             assert self._strip(app).scroll_x == 0
 
+    async def test_the_next_identifier_is_laid_out_already_wound_back(self) -> None:
+        """No frame shows the next identifier still scrolled.
+
+        The strip is watched at the moment its content width changes, which is
+        the layout that paints the new identifier. A rewind queued until after a
+        refresh has not run at that moment, so the offset read there is the one
+        the previous row was left at. The rewind test beside this one only sees
+        that when it reads the offset between that paint and the queued rewind,
+        which a slow runner does now and then; this one sees it every time.
+        """
+        machine = inventory()
+        listed = list(machine.disks)
+        narrow = DisplaySettings(wwn_width=12)
+        assert all(d.wwn and len(d.wwn) > narrow.wwn_width for d in listed[:2]), "both rows must overflow"
+        app = LsdskApp(machine, display=narrow)
+        offsets: list[float] = []
+        async with app.run_test(size=(200, 60)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            await pilot.press(".")
+            await pilot.pause()
+            strip = self._strip(app)
+            assert strip.scroll_x > 0, "the first row must be scrolled before the move means anything"
+
+            def record(_size: object) -> None:
+                offsets.append(strip.scroll_x)
+
+            app.watch(strip, "virtual_size", record, init=False)
+            await pilot.press("down")
+            await pilot.pause()
+            assert self._shown(app) == listed[1].wwn
+        assert offsets, "the move must lay the strip out again, or nothing was watched"
+        assert offsets == [0] * len(offsets)
+
     async def test_the_scroll_control_appears_only_when_the_identifier_was_cut(self) -> None:
         """One machine carries both cases, so one walk proves both directions."""
         machine = inventory()
