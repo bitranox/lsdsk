@@ -39,7 +39,7 @@ from ..linux.builder import controller_kind_of, parse_pcie_speed
 from .capture import HealthBlobs
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from ..decode.nvme import NvmeIdentity
     from .capture import DiskEntry, PciEntry, WindowsCapture
@@ -64,30 +64,43 @@ def _class_code(entry: PciEntry) -> int | None:
     return parse_int(entry.class_code, 16)
 
 
-def controller_of(instance: str | None, pci: Mapping[str, PciEntry]) -> str | None:
-    """Walk up the device tree until a PCI device is found.
+def controller_of(ancestry: Sequence[str], pci: Mapping[str, PciEntry]) -> str | None:
+    """Return the nearest PCI device above a disk, which is the controller it hangs off.
+
+    A disk's parent is a PCI device only when the controller's own driver
+    presents the disk. Behind a USB bridge the parent is the mass-storage device,
+    above that sits a hub, and only above those the host controller, so the whole
+    ancestry is searched rather than the parent alone. That is the answer Linux
+    gives by walking a disk's sysfs path.
 
     Args:
-        instance: The instance identifier to start from.
+        ancestry: The instance identifiers above the disk, nearest first.
         pci: Every captured PCI device, keyed by instance identifier.
 
     Returns:
-        The controller's instance identifier, or ``None``.
+        The controller's instance identifier, or ``None`` when no PCI device is
+        above the disk, as for a disk a software bus driver presents.
 
     Example:
         >>> from lsdsk.adapters.hw.windows.capture import PciEntry
-        >>> controller_of("PCI\\\\VEN_8086&DEV_A182\\\\3", {"PCI\\\\VEN_8086&DEV_A182\\\\3": PciEntry()})
-        'PCI\\\\VEN_8086&DEV_A182\\\\3'
+        >>> pci = {"PCI\\\\VEN_8086&DEV_7AE0\\\\3": PciEntry()}
+        >>> controller_of(["USBSTOR\\\\DISK\\\\1", "USB\\\\ROOT_HUB30\\\\4", "PCI\\\\VEN_8086&DEV_7AE0\\\\3"], pci)
+        'PCI\\\\VEN_8086&DEV_7AE0\\\\3'
+        >>> controller_of(["ROOT\\\\VHDMP\\\\0000"], pci) is None
+        True
     """
-    seen: set[str] = set()
-    current = instance
-    while current and current not in seen:
-        seen.add(current)
-        if current in pci:
-            return current
-        entry = pci.get(current)
-        current = None if entry is None else entry.parent
-    return None
+    return next((instance for instance in ancestry if instance in pci), None)
+
+
+def _ancestry_of(entry: DiskEntry) -> tuple[str, ...]:
+    """Return the instance identifiers above a disk, nearest first.
+
+    A capture taken before the reader recorded the whole ancestry holds only the
+    parent, which is then all there is to search.
+    """
+    if entry.ancestors:
+        return entry.ancestors
+    return (entry.parent,) if entry.parent else ()
 
 
 def _controller_name(entry: PciEntry, instance: str) -> str:
@@ -239,7 +252,7 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
                 except ValueError:
                     nvme_identity = None
 
-        controller_instance = controller_of(entry.parent, pci)
+        controller_instance = controller_of(_ancestry_of(entry), pci)
         endpoint = pci.get(controller_instance) if controller_instance else None
         controller = controller_instance if endpoint is None else endpoint.address or controller_instance
         rotating = entry.rotating

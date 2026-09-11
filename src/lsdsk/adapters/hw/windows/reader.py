@@ -47,6 +47,10 @@ _NVME_IDENTIFY_LENGTH = 4096
 _NVME_SMART_LOG_LENGTH = 512
 _NVME_SMART_LOG_ID = 0x02
 
+# A device tree is a handful of levels deep. The bound only stops a malformed
+# tree from being walked forever.
+_MAX_TREE_DEPTH = 64
+
 
 def is_elevated() -> bool:
     """Whether this process can issue passthrough commands.
@@ -174,6 +178,28 @@ class _DeviceTree:
             return None
         return self._instance_id(parent.value)
 
+    def _ancestor_instances(self, devinst: int) -> list[str]:
+        """Return the instance identifiers above a device, nearest first, up to the root.
+
+        The whole chain is recorded rather than the parent alone, because the
+        controller a disk hangs off is often not its parent: behind a USB bridge
+        the parent is the mass-storage device and the host controller sits two
+        levels higher. Which ancestor is the controller is the builder's decision,
+        so this records the tree and decides nothing.
+        """
+        found: list[str] = []
+        current = devinst
+        for _ in range(_MAX_TREE_DEPTH):
+            parent = wintypes.DWORD()
+            if self.cfgmgr32.CM_Get_Parent(ctypes.byref(parent), current, 0) != 0:
+                return found
+            instance = self._instance_id(parent.value)
+            if instance is None:
+                return found
+            found.append(instance)
+            current = parent.value
+        return found
+
     def _child_instances(self, devinst: int) -> list[str]:
         """Return the instance identifiers of a device's children."""
         child = wintypes.DWORD()
@@ -247,15 +273,15 @@ class _DeviceTree:
             return None
         return raw.decode("utf-16-le", errors="replace").rstrip("\x00").strip() or None
 
-    def disk_interfaces(self) -> list[tuple[str, str | None]]:
-        """Return every disk's interface path and its parent instance."""
+    def disk_interfaces(self) -> list[tuple[str, list[str]]]:
+        """Return every disk's interface path and the instances above it, nearest first."""
         guid = api.parse_guid(api.GUID_DEVINTERFACE_DISK)
         handle = self.setupapi.SetupDiGetClassDevsW(
             ctypes.byref(guid), None, None, api.DIGCF_PRESENT | api.DIGCF_DEVICEINTERFACE
         )
         if handle == api.INVALID_HANDLE_VALUE:
             return []
-        found: list[tuple[str, str | None]] = []
+        found: list[tuple[str, list[str]]] = []
         try:
             interface = api.SP_DEVICE_INTERFACE_DATA()
             interface.cbSize = ctypes.sizeof(api.SP_DEVICE_INTERFACE_DATA)
@@ -266,7 +292,7 @@ class _DeviceTree:
                 index += 1
                 path, devinst = self._interface_detail(handle, interface)
                 if path:
-                    found.append((path, None if devinst is None else self._parent_instance(devinst)))
+                    found.append((path, [] if devinst is None else self._ancestor_instances(devinst)))
             return found
         finally:
             self.setupapi.SetupDiDestroyDeviceInfoList(handle)
@@ -520,9 +546,11 @@ def _temperature(kernel32: api.WinLibrary, handle: int) -> dict[str, int]:
     return values
 
 
-def read_disk(kernel32: api.WinLibrary, path: str, parent: str | None) -> dict[str, Any]:
-    """Read one disk: identity, geometry, health blobs and its controller."""
-    entry: dict[str, Any] = {"path": path, "parent": parent}
+def read_disk(kernel32: api.WinLibrary, path: str, ancestors: list[str]) -> dict[str, Any]:
+    """Read one disk: identity, geometry, health blobs and the devices above it."""
+    # The parent is kept beside the ancestry, because an older lsdsk replaying
+    # this capture reads only the parent.
+    entry: dict[str, Any] = {"path": path, "parent": ancestors[0] if ancestors else None, "ancestors": ancestors}
     handle, passthrough = _open_device(kernel32, path)
     if handle is None:
         entry["error"] = "could not open the device"
@@ -627,8 +655,8 @@ def read_system() -> dict[str, Any]:
     tree = _DeviceTree()
     pci = tree.enumerate_pci()
     disks: dict[str, dict[str, Any]] = {}
-    for path, parent in tree.disk_interfaces():
-        record = read_disk(tree.kernel32, path, parent)
+    for path, ancestors in tree.disk_interfaces():
+        record = read_disk(tree.kernel32, path, ancestors)
         disks[path] = record
 
     return {

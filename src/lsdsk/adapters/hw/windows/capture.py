@@ -143,6 +143,9 @@ class DiskEntry(CaptureModel):
 
     Attributes:
         parent: The instance identifier of the device the disk hangs off.
+        ancestors: The instance identifiers above the disk, nearest first, as far
+            up the device tree as it goes. A capture taken before the reader
+            recorded them holds only ``parent``.
         node: The PhysicalDrive name the reader asked Windows for.
         device: The storage descriptor's identity strings.
         size_bytes: The disk's length.
@@ -153,6 +156,7 @@ class DiskEntry(CaptureModel):
     """
 
     parent: str | None = None
+    ancestors: tuple[str, ...] = ()
     node: str | None = None
     device: StorageDescriptor = StorageDescriptor()
     size_bytes: int | None = None

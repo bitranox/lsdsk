@@ -27,6 +27,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   "The 1 attached drives need about ..." in the capped-by-the-mainboard hint,
   and the trend view said "1 drives are on record" for a single recorded drive.
   Each now speaks of the drive.
+- **A Windows disk behind a USB bridge is attributed to the controller above
+  it.** The reader recorded only the device a disk hangs off, which for a USB
+  disk is its mass-storage device rather than the host controller, so such a
+  disk had no controller where the same disk on Linux names one. The reader now
+  records every device above a disk and the builder takes the nearest PCI one;
+  a snapshot taken before still reads its parent as it did.
 
 ## [1.2.9] 2026-09-11 03:00:00
 

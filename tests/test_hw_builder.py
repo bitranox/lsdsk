@@ -183,6 +183,59 @@ def test_when_a_windows_capture_is_built_it_maps_disks_to_controllers() -> None:
 
 
 @pytest.mark.os_agnostic
+def test_a_windows_disk_behind_a_usb_bridge_maps_to_the_host_controller_above_it() -> None:
+    """Verify a disk whose parent is not a PCI device is walked up to the one that is.
+
+    A USB disk hangs off its mass-storage device, which hangs off a hub, which
+    hangs off the host controller, and only the last of those is a PCI device.
+    Reading the parent alone left such a disk with no controller at all, where
+    Linux, walking the sysfs path, names the host controller.
+    """
+    payload = load(WINDOWS_HOST)
+    host_controller = "PCI\\VEN_8086&DEV_7AE0&SUBSYS_00000000&REV_11\\3&11583659&0&A0"
+    payload["pci"][host_controller] = {
+        "class": "0x0c0330",
+        "vendor": "0x8086",
+        "device": "0x7ae0",
+        "address": "0000:00:14.0",
+    }
+    mass_storage = "USBSTOR\\DISK&VEN_GENERIC&PROD_FLASH_DISK&REV_8.07\\7&2A6D0F4B&0"
+    disk = next(iter(payload["disks"].values()))
+    disk["device"]["bus_type"] = "usb"
+    disk["parent"] = mass_storage
+    disk["ancestors"] = [
+        mass_storage,
+        "USB\\VID_058F&PID_6387\\6&1B6C1E5&0&3",
+        "USB\\ROOT_HUB30\\5&3A1C2F&0&0",
+        host_controller,
+    ]
+
+    inventory = build_from(payload)
+
+    assert inventory.disks[0].controller_address == "0000:00:14.0"
+
+
+@pytest.mark.os_agnostic
+def test_a_windows_disk_with_no_pci_device_above_it_has_no_controller() -> None:
+    """Verify a disk whose whole ancestry is software is not attributed to a PCI device.
+
+    A mounted virtual disk hangs off a root-enumerated bus driver, so there is no
+    controller to name, and picking the nearest PCI device in the capture would
+    invent one.
+    """
+    payload = load(WINDOWS_HOST)
+    virtual_adapter = "SCSI\\DISK&VEN_MSFT&PROD_VIRTUAL_DISK\\2&1F4ADFFE&0&000001"
+    disk = next(iter(payload["disks"].values()))
+    disk["device"]["bus_type"] = "file-backed virtual"
+    disk["parent"] = virtual_adapter
+    disk["ancestors"] = [virtual_adapter, "ROOT\\VHDMP\\0000", "HTREE\\ROOT\\0"]
+
+    inventory = build_from(payload)
+
+    assert inventory.disks[0].controller_address is None
+
+
+@pytest.mark.os_agnostic
 def test_when_windows_reports_a_temperature_it_reaches_the_model() -> None:
     """Verify the Windows temperature query feeds the same health model."""
     inventory = build_from(load(WINDOWS_HOST))
