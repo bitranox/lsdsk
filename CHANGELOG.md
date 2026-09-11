@@ -5,6 +5,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The capped-by-the-mainboard hint judges a port by what it would give the
+  card.** A port was ranked by its own capability, so a PCIe 3.0 x16 port counted
+  as faster for a PCIe 4.0 x4 drive it can only give PCIe 3.0 x4, the speed of one
+  port could pair with the width of another, and freeing it was promised to take
+  the drive to its own maximum. Now freeing a port quotes what that port would
+  deliver, and where no port gives more the hint names a board of the card's own
+  generation, not the next one up, or the port the card needs where the board
+  already has that generation.
+
 ## [1.2.10] 2026-09-11 14:54:30
 
 ### Changed

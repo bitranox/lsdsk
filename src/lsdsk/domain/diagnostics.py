@@ -100,8 +100,8 @@ def _format_pcie(speed_gtps: float | None, width: int | None) -> str:
     return f"PCIe {generation}.0 x{width}"
 
 
-def _board_best_pcie(controller: Controller, inventory: Inventory) -> tuple[float | None, int | None]:
-    """Return the fastest port capability anywhere on this board.
+def _board_generation(controller: Controller, inventory: Inventory) -> int | None:
+    """Return the highest PCIe generation any port on this board supports.
 
     Capability only. Whether a port is a usable connector, and whether anything
     already occupies it, are separate questions answered elsewhere: a port that
@@ -110,20 +110,40 @@ def _board_best_pcie(controller: Controller, inventory: Inventory) -> tuple[floa
     advised buying a PCIe 4.0 board for a machine that was already PCIe 5.0.
     """
     speeds = [slot.link.max_speed_gtps for slot in inventory.slots if slot.link.max_speed_gtps is not None]
-    widths = [slot.link.max_width for slot in inventory.slots if slot.link.max_width is not None]
-    if controller.upstream is not None:
-        if controller.upstream.max_speed_gtps is not None:
-            speeds.append(controller.upstream.max_speed_gtps)
-        if controller.upstream.max_width is not None:
-            widths.append(controller.upstream.max_width)
-    return (max(speeds) if speeds else None), (max(widths) if widths else None)
+    if controller.upstream is not None and controller.upstream.max_speed_gtps is not None:
+        speeds.append(controller.upstream.max_speed_gtps)
+    return pcie_generation(max(speeds)) if speeds else None
+
+
+def _best_port_for(controller: Controller, inventory: Inventory) -> tuple[PcieSlot, float] | None:
+    """Return the port on this board that would give this controller the most, with what it would give.
+
+    Every port counts, occupied or not, for the reason :func:`_board_generation`
+    gives. Each is judged by what it would give THIS controller, the lower of the
+    two ends on speed and on width, never by its own capability: a PCIe 3.0 x16
+    port gives a PCIe 4.0 x4 card PCIe 3.0 x4, so ranking ports by their own lanes
+    calls a port faster that the card cannot use, and the fastest speed of one
+    port beside the widest width of another describes a port the board does not
+    have. Where two ports would give the same, the more capable one is named,
+    since it says more about what the board is.
+    """
+    best: tuple[PcieSlot, float] | None = None
+    for slot in inventory.slots:
+        if controller.address in (slot.address, slot.occupant_address):
+            continue
+        gain = _gain_in(slot, controller)
+        if gain is None:
+            continue
+        if best is None or (gain, slot.capability_gbps or 0.0) > (best[1], best[0].capability_gbps or 0.0):
+            best = (slot, gain)
+    return best
 
 
 def _achievable_pcie(controller: Controller) -> tuple[float | None, int | None]:
     """Return what the port this controller currently sits in can give it.
 
-    This is the *current* seat, not the board's ceiling. See
-    :func:`_board_best_pcie` for the latter; the two differ whenever a faster
+    This is the *current* seat, not the best the board can offer. See
+    :func:`_best_port_for` for the latter; the two differ whenever a faster
     port exists but is occupied.
     """
     own_speed = controller.link.max_speed_gtps
@@ -379,30 +399,28 @@ def _platform_limited_finding(
         unneeded = f"{controller.name} could swap into a faster slot, though nothing on it needs one today"
         return _graded_by_the_drives(controller, inventory, achievable, advice=advice, unneeded_title=unneeded)
 
-    board_speed, board_width = _board_best_pcie(controller, inventory)
-    board_best = pcie_bandwidth_gbps(board_speed, board_width)
-    board_has_faster = board_best is not None and board_best > achievable
-
-    if board_has_faster:
+    best = _best_port_for(controller, inventory)
+    if best is not None and best[1] > achievable:
+        port, gain = best
+        port_pcie = _format_pcie(port.link.max_speed_gtps, port.link.max_width)
         detail = (
             f"The card is {_format_pcie(controller.link.max_speed_gtps, controller.link.max_width)} capable; "
             f"the port it sits in gives it {_format_pcie(achievable_speed, achievable_width)}, short on "
-            f"{shortfall}. This board has faster ports "
-            f"({_format_pcie(board_speed, board_width)}) but none of them is free or swappable. "
+            f"{shortfall}. This board has faster ports ({port_pcie}) but none of them is free or swappable. "
             f"{_headroom_sentence(controller, inventory, achievable)}"
         )
         action = (
-            f"Freeing a {_format_pcie(board_speed, board_width)} port would take this link to "
-            f"{_format_gbytes(own_max)}; the board itself does not need replacing."
+            f"Freeing a {port_pcie} port would take this link to {_format_gbytes(gain)}; "
+            "the board itself does not need replacing."
         )
     else:
         detail = (
             f"The card is {_format_pcie(controller.link.max_speed_gtps, controller.link.max_width)} capable; "
-            f"the fastest port on this board is {_format_pcie(achievable_speed, achievable_width)}, short on "
-            f"{shortfall}, and no free or swappable slot does better. "
+            f"the port it sits in gives it {_format_pcie(achievable_speed, achievable_width)}, short on "
+            f"{shortfall}, and no port on this board would give it more. "
             f"{_headroom_sentence(controller, inventory, achievable)}"
         )
-        action = _upgrade_sentence(controller, achievable, own_max)
+        action = _upgrade_sentence(controller, inventory, achievable, own_max)
 
     return Finding(
         severity=Severity.HINT,
@@ -525,16 +543,27 @@ def _headroom_sentence(controller: Controller, inventory: Inventory, achievable:
     return f"{wanted} about {_format_gbytes(demand)}, at or beyond this link."
 
 
-def _upgrade_sentence(controller: Controller, achievable: float, own_max: float) -> str:
-    """Say which platform upgrade would lift the cap, and by how much."""
+def _upgrade_sentence(controller: Controller, inventory: Inventory, achievable: float, own_max: float) -> str:
+    """Say which upgrade would lift the cap, and by how much.
+
+    A board is named only where no port on this one reaches the card's own
+    generation, and it is named at that generation, because that is the one
+    that delivers the figure quoted. Where the board has the generation but no
+    port that gives this card more, the card needs one port with both its speed
+    and its width, and that is what is named: a newer board or a wider slot
+    alone points at ports this board already has.
+    """
     own_generation = pcie_generation(controller.link.max_speed_gtps)
-    board_generation = pcie_generation(_achievable_pcie(controller)[0])
+    board_generation = _board_generation(controller, inventory)
     if board_generation is not None and own_generation is not None and own_generation > board_generation:
         return (
-            f"A PCIe {board_generation + 1}.0 board would take this link from {_format_gbytes(achievable)} "
+            f"A PCIe {own_generation}.0 board would take this link from {_format_gbytes(achievable)} "
             f"to {_format_gbytes(own_max)}."
         )
-    return f"A wider slot would take this link to {_format_gbytes(own_max)}."
+    return (
+        f"A {_format_pcie(controller.link.max_speed_gtps, controller.link.max_width)} port would take this link "
+        f"from {_format_gbytes(achievable)} to {_format_gbytes(own_max)}."
+    )
 
 
 def diagnose_disk_link(disk: Disk, inventory: Inventory) -> list[Finding]:

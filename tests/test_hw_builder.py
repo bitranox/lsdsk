@@ -151,6 +151,34 @@ def test_when_a_gen4_card_sits_in_a_gen3_board_it_is_a_hint_not_a_warning() -> N
 
 
 @pytest.mark.os_agnostic
+def test_a_drive_is_not_told_its_board_has_faster_ports_it_cannot_use() -> None:
+    """Verify the capture in which a wide PCIe 3.0 port was called faster for a PCIe 4.0 x4 drive.
+
+    The drive at 0000:02:00.0 can do PCIe 4.0 x4 and no port on this board runs
+    PCIe 4.0, so the remedy is a board, never freeing one of its PCIe 3.0 ports.
+    """
+    findings = diagnose(build_from(load("linux-minimal")))
+    capped = [f for f in findings if f.subject == "0000:02:00.0" and "capped by the mainboard" in f.title]
+
+    assert len(capped) == 1
+    assert "faster ports" not in capped[0].detail
+    assert capped[0].action is not None
+    assert "Freeing" not in capped[0].action
+    assert "A PCIe 4.0 board would take this link" in capped[0].action
+
+
+@pytest.mark.os_agnostic
+def test_a_port_the_drive_could_really_use_is_still_named() -> None:
+    """Verify judging ports per card keeps a real one: an occupied PCIe 5.0 x8 port gives this drive 7.88 GB/s."""
+    findings = diagnose(build_from(load("linux-nvme-board")))
+    capped = [f for f in findings if f.subject == "0000:11:00.0" and "capped by the mainboard" in f.title]
+
+    assert len(capped) == 1
+    assert capped[0].action is not None
+    assert "Freeing a PCIe 5.0 x8 port would take this link to 7.88 GB/s" in capped[0].action
+
+
+@pytest.mark.os_agnostic
 def test_when_drives_report_errors_they_become_findings() -> None:
     """Verify real error counters on real drives are surfaced."""
     inventory = build_from(load("linux-sas-hba"))

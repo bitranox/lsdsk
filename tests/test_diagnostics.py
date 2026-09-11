@@ -364,6 +364,84 @@ def test_when_the_board_really_has_nothing_faster_the_upgrade_stands() -> None:
 
 
 @pytest.mark.os_agnostic
+def test_a_wider_port_is_not_faster_for_a_card_that_cannot_use_the_width() -> None:
+    """Verify a port is judged by what it would give this card, never by its own lane count.
+
+    A PCIe 3.0 port gives a PCIe 4.0 x4 card PCIe 3.0 x4 however many lanes it has.
+    Ranking ports by their own capability called a PCIe 3.0 x16 port faster and
+    promised the card 7.88 GB/s from freeing one, which moves a card for nothing.
+    """
+    capped = controller(link=PcieLink(8.0, 4, 16.0, 4), upstream=PcieLink(8.0, 4, 8.0, 4), name="NVMe")
+    wide_but_slow = PcieSlot("0000:00:02.0", PcieLink(8.0, 16, 8.0, 16), occupied=True, connector_present=True)
+    machine = Inventory("h", controllers=(capped,), slots=(wide_but_slow,))
+
+    finding = diagnose_controller_link(capped, machine)[0]
+
+    assert "capped by the mainboard" in finding.title
+    assert "faster ports" not in finding.detail
+    assert "fastest port on this board" not in finding.detail
+    assert finding.action is not None
+    assert "Freeing" not in finding.action
+    assert "A PCIe 4.0 board would take this link from 3.94 GB/s to 7.88 GB/s." in finding.action
+
+
+@pytest.mark.os_agnostic
+def test_the_best_port_named_is_one_real_port_not_the_best_speed_beside_the_best_width() -> None:
+    """Verify the speed and the width a remedy names come from one port.
+
+    The fastest speed of one port and the widest width of another describe a port
+    the board does not have: a PCIe 4.0 x1 port beside a PCIe 3.0 x16 one read as a
+    PCIe 4.0 x16 port. Neither gives a PCIe 4.0 x4 card more than the PCIe 3.0 x4 it
+    has, and the board already runs PCIe 4.0, so a newer board is not the remedy
+    either: the card needs one port with both.
+    """
+    capped = controller(link=PcieLink(8.0, 4, 16.0, 4), upstream=PcieLink(8.0, 4, 8.0, 4), name="NVMe")
+    fast_but_narrow = PcieSlot("0000:00:1c.0", PcieLink(16.0, 1, 16.0, 1), occupied=True, connector_present=True)
+    wide_but_slow = PcieSlot("0000:00:02.0", PcieLink(8.0, 16, 8.0, 16), occupied=True, connector_present=True)
+    machine = Inventory("h", controllers=(capped,), slots=(fast_but_narrow, wide_but_slow))
+
+    finding = diagnose_controller_link(capped, machine)[0]
+
+    assert "PCIe 4.0 x16" not in finding.detail
+    assert finding.action is not None
+    assert "Freeing" not in finding.action
+    assert "PCIe 4.0 board" not in finding.action
+    assert "A PCIe 4.0 x4 port would take this link from 3.94 GB/s to 7.88 GB/s." in finding.action
+
+
+@pytest.mark.os_agnostic
+def test_freeing_a_faster_port_promises_what_that_port_gives_this_card() -> None:
+    """Verify the figure for freeing a port is what the port gives, not the card's own maximum.
+
+    A PCIe 5.0 x4 card in a PCIe 3.0 x4 seat gains from a PCIe 4.0 x4 port, up to
+    PCIe 4.0 x4. Quoting the card's maximum promises twice what the move delivers.
+    """
+    capped = controller(link=PcieLink(8.0, 4, 32.0, 4), upstream=PcieLink(8.0, 4, 8.0, 4), name="NVMe")
+    faster_but_taken = PcieSlot("0000:00:06.0", PcieLink(16.0, 4, 16.0, 4), occupied=True, connector_present=True)
+    machine = Inventory("h", controllers=(capped,), slots=(faster_but_taken,))
+
+    finding = diagnose_controller_link(capped, machine)[0]
+
+    assert finding.action is not None
+    assert "Freeing a PCIe 4.0 x4 port would take this link to 7.88 GB/s" in finding.action
+
+
+@pytest.mark.os_agnostic
+def test_a_board_upgrade_names_the_generation_that_reaches_the_figure_it_quotes() -> None:
+    """Verify the board generation named is the one that delivers the quoted figure.
+
+    A PCIe 5.0 x4 card on a PCIe 3.0 board reaches 15.75 GB/s only on PCIe 5.0, and a
+    PCIe 4.0 board gives it half that. Naming the next generation up with the card's
+    own maximum promised a PCIe 4.0 board the PCIe 5.0 figure.
+    """
+    capped = controller(link=PcieLink(8.0, 4, 32.0, 4), upstream=PcieLink(8.0, 4, 8.0, 4), name="NVMe")
+
+    finding = diagnose_controller_link(capped, Inventory("h", controllers=(capped,)))[0]
+
+    assert finding.action == "A PCIe 5.0 board would take this link from 3.94 GB/s to 15.75 GB/s."
+
+
+@pytest.mark.os_agnostic
 def test_one_drive_with_room_to_spare_is_not_counted_as_plural() -> None:
     """Verify the capped-card hint speaks of the drive when one drive is attached and fits."""
     capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
