@@ -14,9 +14,7 @@ System Role:
 
 from __future__ import annotations
 
-import binascii
 import re
-from base64 import b64decode
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -33,6 +31,7 @@ from ....domain.models import (
 from ..decode import pciids
 from ..decode.ata_identify import decode_identify
 from ..decode.ata_smart import decode_health
+from ..decode.captured import decode_base64, parse_int
 from ..decode.nvme import decode_identify_controller, decode_smart_log
 from ..decode.text import device_text
 from ..decode.virtualization import board_name, classify
@@ -50,39 +49,19 @@ if TYPE_CHECKING:
 _DISK_INDEX = re.compile(r"PhysicalDrive(\d+)", re.IGNORECASE)
 
 
-def _to_int(text: str | None, base: int = 10) -> int | None:
-    """Parse an integer, returning ``None`` for anything unparsable."""
-    if text is None:
-        return None
-    try:
-        return int(text, base)
-    except ValueError:
-        return None
-
-
-def _decode_base64(value: str | None) -> bytes | None:
-    """Decode a base64 blob from a capture, tolerating a malformed entry."""
-    if value is None:
-        return None
-    try:
-        return b64decode(value, validate=True)
-    except (binascii.Error, ValueError):
-        return None
-
-
 def _pcie_link(entry: PciEntry) -> PcieLink:
     """Build a PCIe link from one captured device's properties."""
     return PcieLink(
         current_speed_gtps=parse_pcie_speed(entry.current_link_speed),
-        current_width=_to_int(entry.current_link_width),
+        current_width=parse_int(entry.current_link_width),
         max_speed_gtps=parse_pcie_speed(entry.max_link_speed),
-        max_width=_to_int(entry.max_link_width),
+        max_width=parse_int(entry.max_link_width),
     )
 
 
 def _class_code(entry: PciEntry) -> int | None:
     """Return the PCI class triple as an integer."""
-    return _to_int(entry.class_code, 16)
+    return parse_int(entry.class_code, 16)
 
 
 def controller_of(instance: str | None, pci: Mapping[str, PciEntry]) -> str | None:
@@ -130,8 +109,8 @@ def _controller_name(entry: PciEntry, instance: str) -> str:
     Returns:
         A name for the controller.
     """
-    vendor = _to_int(entry.vendor, 16)
-    device = _to_int(entry.device, 16)
+    vendor = parse_int(entry.vendor, 16)
+    device = parse_int(entry.device, 16)
     if vendor is not None and device is not None:
         return pciids.describe(vendor, device)
     return entry.name or instance
@@ -206,17 +185,17 @@ def _health_from(
     caller decoded too, so one blob is decoded once.
     """
     if bus is BusType.NVME:
-        log_blob = _decode_base64(record.smart_log)
+        log_blob = decode_base64(record.smart_log)
         if log_blob is not None:
             try:
                 return decode_smart_log(log_blob, nvme_identity)
             except ValueError:
                 return None
     else:
-        data = _decode_base64(record.smart_data)
+        data = decode_base64(record.smart_data)
         if data is not None:
             try:
-                return decode_health(data, _decode_base64(record.smart_thresholds))
+                return decode_health(data, decode_base64(record.smart_thresholds))
             except ValueError:
                 return None
 
@@ -244,7 +223,7 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
 
         identity = None
         if bus is BusType.SATA:
-            blob = _decode_base64(record.identify)
+            blob = decode_base64(record.identify)
             if blob is not None:
                 try:
                     identity = decode_identify(blob)
@@ -253,7 +232,7 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
 
         nvme_identity = None
         if is_nvme:
-            blob = _decode_base64(record.identify_controller)
+            blob = decode_base64(record.identify_controller)
             if blob is not None:
                 try:
                     nvme_identity = decode_identify_controller(blob)

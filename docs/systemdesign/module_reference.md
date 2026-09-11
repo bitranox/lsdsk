@@ -25,6 +25,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/hw/decode/ahci.py` - Decode the AHCI host controller capability registers.
 - `src/lsdsk/adapters/hw/decode/ata_identify.py` - Decode the 512-byte ATA IDENTIFY DEVICE response.
 - `src/lsdsk/adapters/hw/decode/ata_smart.py` - Decode the 512-byte ATA SMART READ DATA and THRESHOLDS structures.
+- `src/lsdsk/adapters/hw/decode/captured.py` - Parse the integers and base64 blobs a capture records as text, for both platform builders.
 - `src/lsdsk/adapters/hw/decode/nvme.py` - Decode NVMe Identify Controller and the SMART/Health log page.
 - `src/lsdsk/adapters/hw/decode/pciids.py` - Resolve numeric PCI vendor and device identifiers to readable names.
 - `src/lsdsk/adapters/hw/decode/text.py` - Strip control characters from a string the hardware chose.

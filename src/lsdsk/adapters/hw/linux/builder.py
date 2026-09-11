@@ -12,9 +12,7 @@ System Role:
 
 from __future__ import annotations
 
-import binascii
 import re
-from base64 import b64decode
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -32,6 +30,7 @@ from ..decode import pciids
 from ..decode.ahci import decode_capabilities
 from ..decode.ata_identify import AtaIdentity, decode_identify, decode_vpd_ata_information
 from ..decode.ata_smart import decode_health
+from ..decode.captured import decode_base64, parse_int
 from ..decode.nvme import decode_identify_controller, decode_smart_log
 from ..decode.pciids import Database
 from ..decode.text import device_text
@@ -66,16 +65,6 @@ _MILLIDEGREE = 1000
 # Sysfs block sizes are always counted in 512-byte units regardless of the
 # drive's real sector size.
 _SYSFS_SECTOR_BYTES = 512
-
-
-def _to_int(text: str | None, base: int = 10) -> int | None:
-    """Parse an integer, returning ``None`` for anything unparsable."""
-    if text is None:
-        return None
-    try:
-        return int(text, base)
-    except ValueError:
-        return None
 
 
 def parse_pcie_speed(text: str | None) -> float | None:
@@ -157,15 +146,15 @@ def _pcie_link(entry: PciEntry) -> PcieLink:
     """Build a PCIe link from one sysfs PCI device's attributes."""
     return PcieLink(
         current_speed_gtps=parse_pcie_speed(entry.current_link_speed),
-        current_width=_to_int(entry.current_link_width),
+        current_width=parse_int(entry.current_link_width),
         max_speed_gtps=parse_pcie_speed(entry.max_link_speed),
-        max_width=_to_int(entry.max_link_width),
+        max_width=parse_int(entry.max_link_width),
     )
 
 
 def _class_code(entry: PciEntry) -> int | None:
     """Return the PCI class triple as an integer."""
-    return _to_int(entry.class_code, 16)
+    return parse_int(entry.class_code, 16)
 
 
 def controller_kind_of(class_code: int | None) -> ControllerKind:
@@ -296,7 +285,7 @@ def _pci_database(capture: LinuxCapture) -> pciids.Database | None:
     devices: dict[tuple[int, int], str] = {}
     for key, value in capture.pci_names.items():
         vendor_text, _, device_text = key.partition(":")
-        vendor, device = _to_int(vendor_text, 16), _to_int(device_text, 16)
+        vendor, device = parse_int(vendor_text, 16), parse_int(device_text, 16)
         if vendor is not None and device is not None:
             devices[(vendor, device)] = value
     return Database({}, devices)
@@ -304,8 +293,8 @@ def _pci_database(capture: LinuxCapture) -> pciids.Database | None:
 
 def _pci_name(entry: PciEntry, database: pciids.Database | None) -> str:
     """Return a readable name for one PCI device."""
-    vendor = _to_int(entry.vendor, 16)
-    device = _to_int(entry.device, 16)
+    vendor = parse_int(entry.vendor, 16)
+    device = parse_int(entry.device, 16)
     if vendor is None or device is None:
         return "Unknown controller"
     return pciids.describe(vendor, device, database)
@@ -376,7 +365,7 @@ def _ata_identity(block: BlockEntry, ata: AtaBlobs) -> AtaIdentity | None:
         (block.vpd.vpd_pg89, decode_vpd_ata_information),
     )
     for raw, decode in sources:
-        payload = _decode_base64(raw)
+        payload = decode_base64(raw)
         if not payload:
             continue
         try:
@@ -384,16 +373,6 @@ def _ata_identity(block: BlockEntry, ata: AtaBlobs) -> AtaIdentity | None:
         except ValueError:
             continue
     return None
-
-
-def _decode_base64(value: str | None) -> bytes | None:
-    """Decode a base64 blob from a capture, tolerating a malformed entry."""
-    if value is None:
-        return None
-    try:
-        return b64decode(value, validate=True)
-    except (binascii.Error, ValueError):
-        return None
 
 
 def _sata_link(
@@ -436,7 +415,7 @@ def _hwmon_temperature(paths: Sequence[str], capture: LinuxCapture) -> int | Non
     for entry in capture.classes.hwmon.values():
         if entry.path not in wanted:
             continue
-        raw = _to_int(entry.temp1_input)
+        raw = parse_int(entry.temp1_input)
         if raw is not None:
             return round(raw / _MILLIDEGREE)
     return None
@@ -458,7 +437,7 @@ def _bus_of(identity: AtaIdentity | None, phy: SasPhyEntry | None) -> BusType:
 
 def _size_bytes(block: BlockEntry, identity: AtaIdentity | None) -> int | None:
     """Return a disk's capacity, preferring the kernel's own figure."""
-    sectors = _to_int(block.size)
+    sectors = parse_int(block.size)
     if sectors is not None:
         return sectors * _SYSFS_SECTOR_BYTES
     return identity.size_bytes if identity else None
@@ -468,7 +447,7 @@ def _build_nvme_disk(node: str, block: BlockEntry, capture: LinuxCapture) -> Dis
     """Build one NVMe disk from a capture."""
     record = capture.nvme.get(node, NvmeBlobs())
     identity = None
-    controller_blob = _decode_base64(record.identify_controller)
+    controller_blob = decode_base64(record.identify_controller)
     if controller_blob is not None:
         try:
             identity = decode_identify_controller(controller_blob)
@@ -476,7 +455,7 @@ def _build_nvme_disk(node: str, block: BlockEntry, capture: LinuxCapture) -> Dis
             identity = None
 
     health: Health | None = None
-    log_blob = _decode_base64(record.smart_log)
+    log_blob = decode_base64(record.smart_log)
     if log_blob is not None:
         try:
             health = decode_smart_log(log_blob, identity)
@@ -528,10 +507,10 @@ def _build_ata_disk(node: str, block: BlockEntry, capture: LinuxCapture) -> Disk
     ata_link = _ata_link_for(device_path, capture)
 
     health: Health | None = None
-    data = _decode_base64(ata.smart_data)
+    data = decode_base64(ata.smart_data)
     if data is not None:
         try:
-            health = decode_health(data, _decode_base64(ata.smart_thresholds))
+            health = decode_health(data, decode_base64(ata.smart_thresholds))
         except ValueError:
             health = None
 
