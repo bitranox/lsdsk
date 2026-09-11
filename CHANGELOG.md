@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.10] 2026-09-11 14:54:30
+
 ### Changed
 
 - **Moving or swapping a card is a warning only when the drives on it would
@@ -67,6 +69,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   logical drive, was left out of the demand, so the hint said nothing was
   attached or let the drives that were read stand for all of them. It now says
   what was not read.
+- **The test suite no longer deletes other runs' coverage data.** Its setup
+  removed the coverage database in the system temp directory at the start of
+  every pytest session run without `COVERAGE_FILE`, so a plain pytest run left
+  an earlier coverage run with no data to report. The redirect the same setup
+  claimed to apply never reached pytest-cov, which creates its database before
+  any conftest is imported, so both are gone.
 
 ## [1.2.9] 2026-09-11 03:00:00
 
