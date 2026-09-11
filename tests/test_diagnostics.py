@@ -70,6 +70,24 @@ def disk(node: str = "sda", *, link: InterfaceLink | None = None, health: Health
     )
 
 
+def enough_drives_to_fill(bandwidth_gbps: float) -> tuple[Disk, ...]:
+    """SATA drives whose links together pull at least the given bandwidth."""
+    return tuple(disk(f"sd{index}") for index in range(int(bandwidth_gbps / 0.6) + 1))
+
+
+def resting_nvme(node: str) -> Disk:
+    """An NVMe drive behind a tri-mode HBA, idling at 2.5 GT/s on a link that carries PCIe 4.0 x4."""
+    return Disk(
+        node,
+        f"/dev/{node}",
+        "NVMe drive",
+        kind=DiskKind.SSD,
+        bus=BusType.NVME,
+        controller_address="0000:03:00.0",
+        pcie=PcieLink(2.5, 4, 16.0, 4),
+    )
+
+
 @pytest.mark.os_agnostic
 def test_when_a_link_never_trained_it_is_critical() -> None:
     """Verify a device present at width zero is the most urgent case."""
@@ -105,11 +123,12 @@ def test_when_a_link_is_at_the_machine_ceiling_nothing_is_reported() -> None:
 
 @pytest.mark.os_agnostic
 def test_when_a_faster_free_slot_exists_the_finding_names_it() -> None:
-    """Verify a real free slot turns the ceiling into an actionable move."""
+    """Verify a real free slot turns the ceiling into an actionable move when the drives fill this one."""
     capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
     better = PcieSlot("0000:00:02.0", PcieLink(16.0, 16, 16.0, 16), occupied=False, connector_present=True)
+    machine = Inventory("h", controllers=(capped,), disks=enough_drives_to_fill(7.88), slots=(better,))
 
-    findings = diagnose_controller_link(capped, Inventory("h", controllers=(capped,), slots=(better,)))
+    findings = diagnose_controller_link(capped, machine)
 
     assert findings[0].severity is Severity.WARNING
     assert findings[0].action is not None
@@ -148,11 +167,104 @@ def test_when_a_wasteful_card_holds_a_faster_slot_a_swap_is_proposed() -> None:
         occupant_link=PcieLink(2.5, 1, 2.5, 1),
     )
 
-    findings = diagnose_controller_link(capped, Inventory("h", controllers=(capped,), slots=(nic_slot,)))
+    machine = Inventory("h", controllers=(capped,), disks=enough_drives_to_fill(7.88), slots=(nic_slot,))
+
+    findings = diagnose_controller_link(capped, machine)
 
     assert findings[0].severity is Severity.WARNING
     assert findings[0].action is not None
     assert "Swap" in findings[0].action
+
+
+@pytest.mark.os_agnostic
+def test_a_faster_free_slot_the_drives_would_not_notice_is_only_a_hint() -> None:
+    """Verify a move is not a warning when the drives on the card fit the slot it is in.
+
+    Two SATA drives pull about 1.2 GB/s and a PCIe 3.0 x8 slot carries 7.88 GB/s,
+    so a PCIe 4.0 slot changes nothing they could feel. The faster slot is still
+    named, for the day more drives are added.
+    """
+    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    better = PcieSlot("0000:00:02.0", PcieLink(16.0, 16, 16.0, 16), occupied=False, connector_present=True)
+    machine = Inventory("h", controllers=(capped,), disks=(disk("sda"), disk("sdb")), slots=(better,))
+
+    finding = diagnose_controller_link(capped, machine)[0]
+
+    assert finding.severity is Severity.HINT
+    assert "nothing on it needs one today" in finding.title
+    assert "not the bottleneck today" in finding.detail
+    assert finding.action is not None
+    assert "0000:00:02.0" in finding.action
+
+
+@pytest.mark.os_agnostic
+def test_a_card_with_nothing_attached_is_not_warned_to_move() -> None:
+    """Verify an empty controller is not sent to a faster slot as if something waited on it."""
+    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    better = PcieSlot("0000:00:02.0", PcieLink(16.0, 16, 16.0, 16), occupied=False, connector_present=True)
+    machine = Inventory("h", controllers=(capped,), slots=(better,))
+
+    finding = diagnose_controller_link(capped, machine)[0]
+
+    assert finding.severity is Severity.HINT
+    assert "Nothing is attached to it yet." in finding.detail
+
+
+@pytest.mark.os_agnostic
+def test_a_swap_the_drives_would_not_notice_is_only_a_hint() -> None:
+    """Verify a swap is graded by the drives too, since it opens two slots rather than one."""
+    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    nic_slot = PcieSlot(
+        "0000:00:02.0",
+        PcieLink(16.0, 16, 16.0, 16),
+        occupied=True,
+        connector_present=True,
+        occupant_address="0000:02:00.0",
+        occupant_class=0x020000,
+        occupant_name="Gigabit Network Connection",
+        occupant_link=PcieLink(2.5, 1, 2.5, 1),
+    )
+    machine = Inventory("h", controllers=(capped,), disks=(disk("sda"), disk("sdb")), slots=(nic_slot,))
+
+    finding = diagnose_controller_link(capped, machine)[0]
+
+    assert finding.severity is Severity.HINT
+    assert "could swap into a faster slot" in finding.title
+    assert finding.action is not None
+    assert "Swap" in finding.action
+
+
+@pytest.mark.os_agnostic
+def test_a_drive_resting_at_a_low_link_is_judged_by_what_it_can_pull() -> None:
+    """Verify an idle PCIe drive counts at what its link can carry, not at the speed it rests at.
+
+    Two NVMe drives resting at 2.5 GT/s x4 read about 2 GB/s together, which
+    would call the move unneeded. At what their links carry they want about
+    15.75 GB/s, far past the 7.88 GB/s the card's slot gives, and a drive retrains
+    to that the moment work arrives.
+    """
+    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    better = PcieSlot("0000:00:02.0", PcieLink(16.0, 16, 16.0, 16), occupied=False, connector_present=True)
+    drives = (resting_nvme("nvme0n1"), resting_nvme("nvme1n1"))
+    machine = Inventory("h", controllers=(capped,), disks=drives, slots=(better,))
+
+    finding = diagnose_controller_link(capped, machine)[0]
+
+    assert finding.severity is Severity.WARNING
+
+
+@pytest.mark.os_agnostic
+def test_the_capped_hint_judges_a_resting_drive_by_what_it_can_pull() -> None:
+    """Verify the capped-by-the-mainboard hint does not call a link spare because its drives are idle."""
+    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    drives = (resting_nvme("nvme0n1"), resting_nvme("nvme1n1"))
+    machine = Inventory("h", controllers=(capped,), disks=drives)
+
+    finding = diagnose_controller_link(capped, machine)[0]
+
+    assert "capped by the mainboard" in finding.title
+    assert "not the bottleneck" not in finding.detail
+    assert "already want about" in finding.detail
 
 
 @pytest.mark.os_agnostic

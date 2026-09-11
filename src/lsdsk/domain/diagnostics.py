@@ -9,7 +9,10 @@ fault when the machine could actually do better.  Every speed rule therefore
 weighs three numbers, what the device can do, what the other end can do, and
 what was negotiated, and only calls it a warning when something on this machine
 can be changed.  Where the platform is the ceiling, the finding says which
-upgrade would lift it and whether the attached load would even notice.
+upgrade would lift it and whether the attached load would even notice.  A
+faster slot is weighed the same way: moving or swapping a card is a warning
+only when the drives on it could use the difference, and a hint naming the
+slot otherwise.
 
 System Role:
     The analytical core.  Renderers and the CLI consume its output; nothing
@@ -339,7 +342,7 @@ def _platform_limited_finding(
 
     move = _free_slot_for(controller, inventory)
     if move is not None:
-        return Finding(
+        advice = Finding(
             severity=Severity.WARNING,
             subject=controller.address,
             title=f"{controller.name} is in a slot narrower or slower than it needs",
@@ -353,10 +356,12 @@ def _platform_limited_finding(
                 "Check the slot is mechanically long enough or open-ended first."
             ),
         )
+        unneeded = f"{controller.name} has a faster slot free, though nothing on it needs one today"
+        return _graded_by_the_drives(controller, inventory, achievable, advice=advice, unneeded_title=unneeded)
 
     swap = _swap_slot_for(controller, inventory)
     if swap is not None:
-        return Finding(
+        advice = Finding(
             severity=Severity.WARNING,
             subject=controller.address,
             title=f"{controller.name} is in a slot narrower or slower than it needs",
@@ -371,6 +376,8 @@ def _platform_limited_finding(
                 f"the {swap.occupant_description} into {controller.address}."
             ),
         )
+        unneeded = f"{controller.name} could swap into a faster slot, though nothing on it needs one today"
+        return _graded_by_the_drives(controller, inventory, achievable, advice=advice, unneeded_title=unneeded)
 
     board_speed, board_width = _board_best_pcie(controller, inventory)
     board_best = pcie_bandwidth_gbps(board_speed, board_width)
@@ -406,6 +413,75 @@ def _platform_limited_finding(
     )
 
 
+def _graded_by_the_drives(
+    controller: Controller,
+    inventory: Inventory,
+    achievable: float,
+    *,
+    advice: Finding,
+    unneeded_title: str,
+) -> Finding:
+    """Keep a move or a swap a warning only where the drives on the controller would notice it.
+
+    A faster seat is worth opening the machine for when what is attached can use
+    it. Where the drives fit the slot the controller already has, the same advice
+    becomes a hint that says so and keeps the faster slot named for when more
+    drives are added.
+    """
+    if _drives_would_notice(controller, inventory, achievable):
+        return advice
+    return replace(
+        advice,
+        severity=Severity.HINT,
+        title=unneeded_title,
+        detail=f"{advice.detail} {_headroom_sentence(controller, inventory, achievable)}",
+        action=f"Only once more drives are added. {advice.action}",
+    )
+
+
+def _peak_demand_gbytes(disk: Disk) -> float | None:
+    """Return the most one disk can pull, in GB/s, which is what a faster seat is judged by.
+
+    A PCIe drive's running link can drop while it is idle and retrain when work
+    arrives, so what its link can carry is read rather than the figure it rests
+    at: judged by the resting figure, a drive that fills its link under load
+    reads as one that would not notice a faster one. A serial link does not idle
+    down that way, so a SATA or SAS drive's negotiated rate is its peak.
+
+    Example:
+        >>> from lsdsk.domain.models import Disk, PcieLink
+        >>> resting = Disk("nvme0n1", "/dev/nvme0n1", "m", pcie=PcieLink(2.5, 4, 8.0, 4))
+        >>> _format_gbytes(_peak_demand_gbytes(resting))
+        '3.94 GB/s'
+    """
+    if disk.pcie is not None:
+        return disk.pcie.max_bandwidth_gbps
+    return interface_demand_gbytes(disk)
+
+
+def _attached_peak_gbytes(controller: Controller, inventory: Inventory) -> float | None:
+    """Sum the most the disks on one controller can pull, in GB/s, or ``None`` when none is known."""
+    peaks = [peak for disk in inventory.disks_on(controller.address) if (peak := _peak_demand_gbytes(disk))]
+    return round(sum(peaks), 3) if peaks else None
+
+
+def _drives_would_notice(controller: Controller, inventory: Inventory, achievable: float) -> bool:
+    """Whether the drives on a controller could use more than the seat it sits in gives.
+
+    Nothing attached can use nothing. A drive whose link was not read cannot be
+    shown to fit, so it counts as one that would notice: calling a move unneeded
+    on a reading nobody took would bury advice that may be real.
+    """
+    disks = inventory.disks_on(controller.address)
+    if not disks:
+        return False
+    peaks = [_peak_demand_gbytes(disk) for disk in disks]
+    known = [peak for peak in peaks if peak is not None]
+    if len(known) < len(peaks):
+        return True
+    return sum(known) >= achievable
+
+
 def _slot_shortfall(controller: Controller) -> str:
     """Name the dimension in which a controller's slot falls short."""
     if controller.upstream is None:
@@ -414,8 +490,8 @@ def _slot_shortfall(controller: Controller) -> str:
 
 
 def _headroom_sentence(controller: Controller, inventory: Inventory, achievable: float) -> str:
-    """Say whether the attached drives can actually feel the cap."""
-    demand = attached_demand_gbytes(controller, inventory)
+    """Say whether the attached drives can actually feel the cap, judged by the most they can pull."""
+    demand = _attached_peak_gbytes(controller, inventory)
     if demand is None:
         return "Nothing is attached to it yet."
     count = len(inventory.disks_on(controller.address))

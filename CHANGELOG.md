@@ -5,6 +5,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **Moving or swapping a card is a warning only when the drives on it would
+  notice.** A controller in a slower slot than it supports was told to move
+  whatever it carried, two hard disks that could never use the difference
+  included. Where the attached drives fit the slot the controller already has,
+  the finding is now a hint that still names the faster slot for when more
+  drives are added. A PCIe drive is weighed by what its link can carry rather
+  than the speed it rests at while idle, which also corrects the
+  capped-by-the-mainboard hint's sentence about whether the drives feel the cap.
+
 ### Fixed
 
 - **A replay whose sections have the wrong shape is refused as a bad file.**
