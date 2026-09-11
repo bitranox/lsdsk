@@ -15,6 +15,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   deliver, and where no port gives more the hint names a board of the card's own
   generation, not the next one up, or the port the card needs where the board
   already has that generation.
+- **An NVMe drive with several namespaces is counted as one drive.** Each
+  namespace is its own block device carrying the drive's PCIe link, so the
+  oversubscription check added a drive's link up once per namespace and could
+  warn that a drive with two namespaces was oversubscribed by itself, and the
+  capped-by-the-mainboard hint said such a drive wanted twice what it can pull.
+  The load column of the controllers table summed the same way. Namespaces now
+  fold into their drive where they share a controller and a serial number;
+  drives whose serial was not read, or that only share a tri-mode HBA, still
+  count separately.
 
 ## [1.2.10] 2026-09-11 14:54:30
 

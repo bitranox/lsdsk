@@ -927,6 +927,40 @@ class Inventory:
         """
         return tuple(disk for disk in self.disks if disk.controller_address == controller_address)
 
+    def drives_on(self, controller_address: str) -> tuple[Disk, ...]:
+        """Return one disk per physical drive attached to one controller.
+
+        An NVMe drive publishes each namespace as its own block device, and every
+        one carries the controller's serial number and PCIe link, so counting
+        disks counts that drive once per namespace and sums its link against
+        itself. Namespaces fold together where they share a controller and a
+        serial number. A disk whose serial was not read is kept, because nothing
+        shows it is a namespace of another, and drives behind one tri-mode HBA
+        share a controller but never a serial.
+
+        Args:
+            controller_address: PCI address to match.
+
+        Returns:
+            One disk per drive, its first namespace standing for it, in inventory order.
+
+        Example:
+            >>> first = Disk("nvme0n1", "/dev/nvme0n1", "m", serial="S1", bus=BusType.NVME, controller_address="a")
+            >>> second = Disk("nvme0n2", "/dev/nvme0n2", "m", serial="S1", bus=BusType.NVME, controller_address="a")
+            >>> [d.node for d in Inventory("h", disks=(first, second)).drives_on("a")]
+            ['nvme0n1']
+        """
+        seen: set[str] = set()
+        drives: list[Disk] = []
+        for disk in self.disks_on(controller_address):
+            serial = disk.serial if disk.bus is BusType.NVME else None
+            if serial and serial in seen:
+                continue
+            if serial:
+                seen.add(serial)
+            drives.append(disk)
+        return tuple(drives)
+
 
 __all__ = [
     "Controller",

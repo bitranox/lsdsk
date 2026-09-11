@@ -9,7 +9,9 @@ readers from the builders.
 
 from __future__ import annotations
 
+import copy
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -176,6 +178,51 @@ def test_a_port_the_drive_could_really_use_is_still_named() -> None:
     assert len(capped) == 1
     assert capped[0].action is not None
     assert "Freeing a PCIe 5.0 x8 port would take this link to 7.88 GB/s" in capped[0].action
+
+
+def with_a_second_namespace(capture: dict[str, Any]) -> dict[str, Any]:
+    """Give every NVMe drive in a Linux capture a second namespace.
+
+    A namespace is its own block device under the same controller: it shares the
+    controller's device path, identify data and SMART log, and has its own identifier.
+    """
+    grown = copy.deepcopy(capture)
+    for node in [name for name in capture["block"] if re.fullmatch(r"nvme\d+n1", name)]:
+        twin = f"{node[:-1]}2"
+        block = copy.deepcopy(capture["block"][node])
+        block["wwid"] = f"{block.get('wwid')}.ns2"
+        grown["block"][twin] = block
+        if node in capture["nvme"]:
+            grown["nvme"][twin] = copy.deepcopy(capture["nvme"][node])
+    return grown
+
+
+def controller_findings(capture: dict[str, Any]) -> list[tuple[str, str, str, str, str | None]]:
+    """Every finding about a controller in one capture, in full."""
+    inventory = build_from(capture)
+    addresses = {controller.address for controller in inventory.controllers}
+    return [
+        (finding.severity.value, finding.subject, finding.title, finding.detail, finding.action)
+        for finding in diagnose(inventory)
+        if finding.subject in addresses
+    ]
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", ["linux-minimal", "linux-nvme-board"])
+def test_a_second_namespace_is_not_a_second_drive(host: str) -> None:
+    """Verify a drive split into two namespaces is judged exactly like the same drive in one.
+
+    Each namespace is its own block device carrying its controller's PCIe link, so
+    summing block devices counted a drive once per namespace: its link weighed
+    against itself read as oversubscribed, and a capped drive was said to want
+    twice what it can pull.
+    """
+    single = load(host)
+    grown = with_a_second_namespace(single)
+
+    assert len(build_from(grown).disks) > len(build_from(single).disks), "no namespace was added"
+    assert controller_findings(grown) == controller_findings(single)
 
 
 @pytest.mark.os_agnostic

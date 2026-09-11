@@ -88,6 +88,20 @@ def resting_nvme(node: str) -> Disk:
     )
 
 
+def namespace(node: str, *, serial: str | None = "S1", link: PcieLink | None = None) -> Disk:
+    """One namespace of an NVMe drive that is its own controller, shared by every namespace of it."""
+    return Disk(
+        node,
+        f"/dev/{node}",
+        "NVMe drive",
+        serial=serial,
+        kind=DiskKind.SSD,
+        bus=BusType.NVME,
+        controller_address="0000:02:00.0",
+        pcie=link or PcieLink(16.0, 4, 16.0, 4),
+    )
+
+
 @pytest.mark.os_agnostic
 def test_when_a_link_never_trained_it_is_critical() -> None:
     """Verify a device present at width zero is the most urgent case."""
@@ -742,6 +756,51 @@ def test_attached_demand_sums_only_the_disks_on_that_controller() -> None:
 
     assert attached_demand_gbytes(hba, machine) == 0.6
     assert attached_demand_gbytes(other, machine) == 0.6
+
+
+@pytest.mark.os_agnostic
+def test_a_drive_split_into_namespaces_is_not_oversubscribed_by_itself() -> None:
+    """Verify the namespaces of one NVMe drive count as the one drive they are.
+
+    Every namespace is its own block device carrying the controller's link, so
+    summing block devices weighed the drive's link against itself and called a
+    drive with two namespaces oversubscribed by the drives on it.
+    """
+    drive = controller("0000:02:00.0", link=PcieLink(16.0, 4, 16.0, 4), upstream=PcieLink(16.0, 4, 16.0, 4))
+    machine = Inventory("h", controllers=(drive,), disks=(namespace("nvme0n1"), namespace("nvme0n2")))
+
+    assert diagnose_controller_oversubscription(drive, machine) == []
+    assert attached_demand_gbytes(drive, machine) == interface_demand_gbytes(namespace("nvme0n1"))
+
+
+@pytest.mark.os_agnostic
+def test_a_capped_drive_split_into_namespaces_wants_what_one_drive_can_pull() -> None:
+    """Verify the capped hint speaks of one drive and its own figure, however many namespaces it has."""
+    drive = controller("0000:02:00.0", link=PcieLink(8.0, 4, 16.0, 4), upstream=PcieLink(8.0, 4, 8.0, 4))
+    halves = tuple(namespace(node, link=PcieLink(8.0, 4, 16.0, 4)) for node in ("nvme0n1", "nvme0n2"))
+    machine = Inventory("h", controllers=(drive,), disks=halves)
+
+    finding = diagnose_controller_link(drive, machine)[0]
+
+    assert "The attached drive already wants about 7.88 GB/s" in finding.detail
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("serials", [("S1", "S2"), (None, None)], ids=["different serials", "serials not read"])
+def test_drives_that_only_share_a_controller_are_still_counted_apart(serials: tuple[str | None, str | None]) -> None:
+    """Verify only namespaces fold together.
+
+    Drives behind one tri-mode HBA share a controller and nothing else, and a
+    drive whose serial was not read cannot be shown to be a namespace of another:
+    folding either in would hide demand that is really there.
+    """
+    hba = controller("0000:02:00.0", link=PcieLink(16.0, 16, 16.0, 16), upstream=PcieLink(16.0, 16, 16.0, 16))
+    drives = tuple(namespace(f"nvme{index}n1", serial=serial) for index, serial in enumerate(serials))
+    machine = Inventory("h", controllers=(hba,), disks=drives)
+
+    one = interface_demand_gbytes(drives[0])
+    assert one is not None
+    assert attached_demand_gbytes(hba, machine) == pytest.approx(2 * one)
 
 
 @pytest.mark.os_agnostic

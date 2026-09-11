@@ -247,7 +247,7 @@ def _lower_int(left: int | None, right: int | None) -> int | None:
 
 
 def attached_demand_gbytes(controller: Controller, inventory: Inventory) -> float | None:
-    """Sum what the disks on one controller can pull, in GB/s.
+    """Sum what the drives on one controller can pull, in GB/s, counting an NVMe drive once per drive.
 
     Args:
         controller: The controller to total up.
@@ -256,7 +256,7 @@ def attached_demand_gbytes(controller: Controller, inventory: Inventory) -> floa
     Returns:
         Aggregate demand in GB/s, or ``None`` when nothing is attached.
     """
-    demands = [demand for disk in inventory.disks_on(controller.address) if (demand := interface_demand_gbytes(disk))]
+    demands = [demand for disk in inventory.drives_on(controller.address) if (demand := interface_demand_gbytes(disk))]
     return round(sum(demands), 3) if demands else None
 
 
@@ -479,7 +479,7 @@ def _peak_demand_gbytes(disk: Disk) -> float | None:
 
 def _drive_peaks(controller: Controller, inventory: Inventory) -> tuple[list[float], int]:
     """Return the peak demand of each attached drive whose link was read, and how many were not read."""
-    peaks = [_peak_demand_gbytes(disk) for disk in inventory.disks_on(controller.address)]
+    peaks = [_peak_demand_gbytes(disk) for disk in inventory.drives_on(controller.address)]
     known = [peak for peak in peaks if peak]
     return known, len(peaks) - len(known)
 
@@ -1274,7 +1274,7 @@ def _register_default_finding(
 ) -> Finding:
     """Build the hint that stands in for an oversubscription warning resting on the PCIe floor."""
     link = controller.link
-    wanted = _demand_clause(len(inventory.disks_on(controller.address)), demand)
+    wanted = _demand_clause(len(inventory.drives_on(controller.address)), demand)
     return Finding(
         severity=Severity.HINT,
         subject=controller.address,
@@ -1325,7 +1325,7 @@ def diagnose_controller_oversubscription(controller: Controller, inventory: Inve
     twin = _floor_twin(controller, inventory)
     if twin is not None:
         return [_register_default_finding(controller, inventory, twin=twin, demand=demand)]
-    count = len(inventory.disks_on(controller.address))
+    count = len(inventory.drives_on(controller.address))
     # A wider slot only helps a card that is running below its own maximum. A
     # part that is natively x1 gains nothing from a x16 connector, and sending
     # somebody to open the machine for it wastes the trip.
