@@ -40,7 +40,7 @@ from lsdsk.adapters.hw import snapshot as snapshot_adapter
 from lsdsk.adapters.render import report, theme
 from lsdsk.adapters.render.tables import counter_legend
 from lsdsk.domain.diagnostics import count_by_severity
-from lsdsk.domain.enums import CliCommand, Environment, OutputFormat, Severity
+from lsdsk.domain.enums import ActionCommand, CliCommand, Environment, OutputFormat, Severity
 from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.models import Controller, Disk, Finding, Inventory, PcieSlot
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
@@ -84,7 +84,7 @@ _EXPAND_VIRTUAL_OPTION = option(
 _FORMAT_OPTION = option(
     "--format",
     "output_format",
-    type=click.Choice([choice.value for choice in OutputFormat], case_sensitive=False),
+    type=click.Choice(OutputFormat, case_sensitive=False),
     default=OutputFormat.HUMAN.value,
     show_default=True,
     help="Human-readable output, or JSON for another program to consume.",
@@ -549,17 +549,17 @@ def cli_report(ctx: click.Context, replay: Path | None) -> None:
 @_FORMAT_OPTION
 @_EXPAND_VIRTUAL_OPTION
 @click.pass_context
-def cli_topology(ctx: click.Context, replay: Path | None, output_format: str, expand_virtual: bool) -> None:
+def cli_topology(ctx: click.Context, replay: Path | None, output_format: OutputFormat, expand_virtual: bool) -> None:
     """Show the problem summary and the disk-to-controller tree.
 
     This is one section of the page a bare `lsdsk` renders, not that whole page.
     """
     with lib_log_rich.runtime.bind(job_id="cli-topology", extra={"command": CliCommand.TOPOLOGY.value}):
-        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), OutputFormat(output_format.lower()))
+        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
         logger.debug("Scanned %d disks on %d controllers", len(inventory.disks), len(inventory.controllers))
 
-        if OutputFormat(output_format.lower()) is OutputFormat.JSON:
+        if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.TOPOLOGY)
         else:
             console = console_for_output(display.piped_width)
@@ -582,12 +582,12 @@ def cli_topology(ctx: click.Context, replay: Path | None, output_format: str, ex
 @_REPLAY_OPTION
 @_FORMAT_OPTION
 @click.pass_context
-def cli_smart(ctx: click.Context, replay: Path | None, output_format: str) -> None:
+def cli_smart(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Show every disk's SMART attributes against its own thresholds."""
     with lib_log_rich.runtime.bind(job_id="cli-smart", extra={"command": CliCommand.SMART.value}):
-        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), OutputFormat(output_format.lower()))
+        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
-        if OutputFormat(output_format.lower()) is OutputFormat.JSON:
+        if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.SMART)
         else:
             from lsdsk.adapters.render.report import render_smart  # noqa: PLC0415 - keeps the import graph flat
@@ -601,12 +601,12 @@ def cli_smart(ctx: click.Context, replay: Path | None, output_format: str) -> No
 @_REPLAY_OPTION
 @_FORMAT_OPTION
 @click.pass_context
-def cli_findings(ctx: click.Context, replay: Path | None, output_format: str) -> None:
+def cli_findings(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Explain every problem and improvement in full."""
     with lib_log_rich.runtime.bind(job_id="cli-findings", extra={"command": CliCommand.FINDINGS.value}):
-        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), OutputFormat(output_format.lower()))
+        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
-        if OutputFormat(output_format.lower()) is OutputFormat.JSON:
+        if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.FINDINGS)
         else:
             console = console_for_output(display.piped_width)
@@ -620,12 +620,12 @@ def cli_findings(ctx: click.Context, replay: Path | None, output_format: str) ->
 @_REPLAY_OPTION
 @_FORMAT_OPTION
 @click.pass_context
-def cli_controllers(ctx: click.Context, replay: Path | None, output_format: str) -> None:
+def cli_controllers(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """List storage controllers, their PCIe placement and their free ports."""
     with lib_log_rich.runtime.bind(job_id="cli-controllers", extra={"command": CliCommand.CONTROLLERS.value}):
-        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), OutputFormat(output_format.lower()))
+        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
-        if OutputFormat(output_format.lower()) is OutputFormat.JSON:
+        if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.CONTROLLERS)
         else:
             from lsdsk.adapters.render.tables import render_controllers  # noqa: PLC0415 - keeps the import graph flat
@@ -639,12 +639,12 @@ def cli_controllers(ctx: click.Context, replay: Path | None, output_format: str)
 @_REPLAY_OPTION
 @_FORMAT_OPTION
 @click.pass_context
-def cli_slots(ctx: click.Context, replay: Path | None, output_format: str) -> None:
+def cli_slots(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Show the mainboard's PCIe ports, what occupies them and what is free."""
     with lib_log_rich.runtime.bind(job_id="cli-slots", extra={"command": CliCommand.SLOTS.value}):
-        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), OutputFormat(output_format.lower()))
+        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
-        if OutputFormat(output_format.lower()) is OutputFormat.JSON:
+        if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.SLOTS)
         else:
             from lsdsk.adapters.render.report import render_slots  # noqa: PLC0415 - keeps the import graph flat
@@ -661,13 +661,13 @@ def cli_slots(ctx: click.Context, replay: Path | None, output_format: str) -> No
 @_FULL_WWN_OPTION
 @click.pass_context
 def cli_disks(
-    ctx: click.Context, replay: Path | None, output_format: str, expand_virtual: bool, *, full_wwn: bool
+    ctx: click.Context, replay: Path | None, output_format: OutputFormat, expand_virtual: bool, *, full_wwn: bool
 ) -> None:
     """List every disk with its identity and its interface speed."""
     with lib_log_rich.runtime.bind(job_id="cli-disks", extra={"command": CliCommand.DISKS.value}):
-        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), OutputFormat(output_format.lower()))
+        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
-        if OutputFormat(output_format.lower()) is OutputFormat.JSON:
+        if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.DISKS)
         else:
             from lsdsk.adapters.render.tables import (  # noqa: PLC0415 - keeps the import graph flat
@@ -698,12 +698,12 @@ def cli_disks(
 @_REPLAY_OPTION
 @_FORMAT_OPTION
 @click.pass_context
-def cli_health(ctx: click.Context, replay: Path | None, output_format: str) -> None:
+def cli_health(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Show wear, temperature, hours and error counters for every disk."""
     with lib_log_rich.runtime.bind(job_id="cli-health", extra={"command": CliCommand.HEALTH.value}):
-        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), OutputFormat(output_format.lower()))
+        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
-        if OutputFormat(output_format.lower()) is OutputFormat.JSON:
+        if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.HEALTH)
         else:
             from lsdsk.adapters.render.tables import render_health  # noqa: PLC0415 - keeps the import graph flat
@@ -765,7 +765,7 @@ def cli_tui(ctx: click.Context, replay: Path | None, expand_virtual: bool) -> No
     help="Where to write the snapshot.",
 )
 @click.pass_context
-def cli_snapshot(ctx: click.Context, output: Path, output_format: str) -> None:
+def cli_snapshot(ctx: click.Context, output: Path, output_format: OutputFormat) -> None:
     """Capture this machine's raw reading for replay elsewhere.
 
     The snapshot holds the reading, not the rendered result, so replaying it
@@ -781,7 +781,7 @@ def cli_snapshot(ctx: click.Context, output: Path, output_format: str) -> None:
     file the caller believed held the other one - mislabelled data, silently, at
     exit 0. Copying a capture is a job for ``cp``.
     """
-    with lib_log_rich.runtime.bind(job_id="cli-snapshot", extra={"command": "snapshot"}):
+    with lib_log_rich.runtime.bind(job_id="cli-snapshot", extra={"command": ActionCommand.SNAPSHOT.value}):
         if effective_replay(ctx, None) is not None:
             safe_console.echo(
                 "Error: snapshot always captures the machine it runs on, so --replay does not apply. "
@@ -795,8 +795,10 @@ def cli_snapshot(ctx: click.Context, output: Path, output_format: str) -> None:
             safe_console.echo(f"Error: {error}", err=True)
             raise SystemExit(ExitCode.CONFIG_ERROR) from error
         snapshot_adapter.save(capture, output)
-        if OutputFormat(output_format.lower()) is OutputFormat.JSON:
-            emit_action("snapshot", SnapshotResult(path=str(output), schema_version=snapshot_adapter.SCHEMA_VERSION))
+        if output_format is OutputFormat.JSON:
+            emit_action(
+                ActionCommand.SNAPSHOT, SnapshotResult(path=str(output), schema_version=snapshot_adapter.SCHEMA_VERSION)
+            )
         else:
             safe_console.echo(f"Wrote {output}")
         # On stderr in both modes, so stdout stays exactly what a script parses:

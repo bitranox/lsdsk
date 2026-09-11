@@ -230,7 +230,30 @@ class CliCommand(StrEnum):
     TREND = "trend"
 
 
+class ActionCommand(StrEnum):
+    """A command name, as it appears in the acting-command envelope.
+
+    ``ActionEnvelope.command`` names which acting command produced a result, the
+    same way :class:`CliCommand` names a report page. Kept as a separate enum
+    rather than folded into ``CliCommand``: that one names the report pages the
+    TUI builds one screen per member for, and an acting command - one that does
+    something rather than reports on the machine - has no page to claim.
+
+    Example:
+        >>> f"{ActionCommand.SNAPSHOT}"
+        'snapshot'
+    """
+
+    CONFIG = "config"
+    CONFIG_DEPLOY = "config-deploy"
+    CONFIG_GENERATE_EXAMPLES = "config-generate-examples"
+    INFO = "info"
+    RECORD = "record"
+    SNAPSHOT = "snapshot"
+
+
 __all__ = [
+    "ActionCommand",
     "Align",
     "BusType",
     "CliCommand",

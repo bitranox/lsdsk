@@ -22,7 +22,7 @@ from lsdsk import __init__conf__
 from lsdsk.adapters.config.overrides import apply_overrides
 from lsdsk.adapters.config.permissions import get_permission_defaults
 from lsdsk.adapters.config.secrets import redact_secrets
-from lsdsk.domain.enums import DeployTarget, OutputFormat
+from lsdsk.domain.enums import ActionCommand, DeployTarget, OutputFormat
 from lsdsk.domain.errors import ConfigurationError
 
 from .. import safe_console
@@ -61,7 +61,7 @@ class GenerateExamplesResult(BaseModel):
 @option(
     "--format",
     "output_format",
-    type=click.Choice([f.value for f in OutputFormat], case_sensitive=False),
+    type=click.Choice(OutputFormat, case_sensitive=False),
     default=OutputFormat.HUMAN.value,
     help="Output format (human-readable or JSON)",
 )
@@ -78,7 +78,7 @@ class GenerateExamplesResult(BaseModel):
     help="Override profile from root command (e.g., 'production', 'test')",
 )
 @click.pass_context
-def cli_config(ctx: click.Context, output_format: str, section: str | None, profile: str | None) -> None:
+def cli_config(ctx: click.Context, output_format: OutputFormat, section: str | None, profile: str | None) -> None:
     """Display the current merged configuration from all sources.
 
     Shows configuration loaded from defaults, application/user config files,
@@ -89,26 +89,25 @@ def cli_config(ctx: click.Context, output_format: str, section: str | None, prof
     """
     cli_ctx = get_cli_context(ctx)
     effective_config, effective_profile = _resolve_config(cli_ctx, profile)
-    fmt = OutputFormat(output_format.lower())
 
-    extra = {"command": "config", "format": fmt.value, "profile": effective_profile}
+    extra = {"command": ActionCommand.CONFIG.value, "format": output_format.value, "profile": effective_profile}
     with lib_log_rich.runtime.bind(job_id="cli-config", extra=extra):
         logger.info(
             "Displaying configuration",
-            extra={"format": fmt.value, "section": section, "profile": effective_profile},
+            extra={"format": output_format.value, "section": section, "profile": effective_profile},
         )
-        if fmt is OutputFormat.JSON:
+        if output_format is OutputFormat.JSON:
             try:
                 data = _redacted_config_data(effective_config, section)
             except ValueError as exc:
                 safe_console.echo(f"\nError: {exc}", err=True)
                 raise SystemExit(ExitCode.INVALID_ARGUMENT) from exc
-            emit_action("config", data)
+            emit_action(ActionCommand.CONFIG, data)
             return
         safe_console.echo()
         try:
             cli_ctx.services.display_config(
-                effective_config, output_format=fmt, section=section, profile=effective_profile
+                effective_config, output_format=output_format, section=section, profile=effective_profile
             )
         except ValueError as exc:
             safe_console.echo(f"\nError: {exc}", err=True)
@@ -210,7 +209,7 @@ def _parse_octal_mode(ctx: click.Context, param: click.Parameter, value: str | N
 @option(
     "--format",
     "output_format",
-    type=click.Choice([choice.value for choice in OutputFormat], case_sensitive=False),
+    type=click.Choice(OutputFormat, case_sensitive=False),
     default=OutputFormat.HUMAN.value,
     show_default=True,
     help="Human-readable output, or JSON for another program to consume.",
@@ -259,7 +258,7 @@ def _parse_octal_mode(ctx: click.Context, param: click.Parameter, value: str | N
 def cli_config_deploy(
     ctx: click.Context,
     *,
-    output_format: str = OutputFormat.HUMAN.value,
+    output_format: OutputFormat = OutputFormat.HUMAN,
     targets: tuple[str, ...],
     force: bool,
     profile: str | None,
@@ -288,7 +287,12 @@ def cli_config_deploy(
     deploy_targets = tuple(DeployTarget(t.lower()) for t in targets)
     target_values = tuple(t.value for t in deploy_targets)
 
-    extra = {"command": "config-deploy", "targets": target_values, "force": force, "profile": effective_profile}
+    extra = {
+        "command": ActionCommand.CONFIG_DEPLOY.value,
+        "targets": target_values,
+        "force": force,
+        "profile": effective_profile,
+    }
     with lib_log_rich.runtime.bind(job_id="cli-config-deploy", extra=extra):
         logger.info(
             "Deploying configuration",
@@ -302,7 +306,7 @@ def cli_config_deploy(
             set_permissions=set_permissions,
             dir_mode=dir_mode,
             file_mode=file_mode,
-            output_format=OutputFormat(output_format.lower()),
+            output_format=output_format,
         )
 
 
@@ -387,7 +391,7 @@ def _report_deployment_result(
     """
     if output_format is OutputFormat.JSON:
         emit_action(
-            "config-deploy",
+            ActionCommand.CONFIG_DEPLOY,
             DeployResult(
                 deployed=[str(path) for path in deployed_paths],
                 profile=profile,
@@ -417,7 +421,7 @@ def _report_deployment_result(
 @option(
     "--format",
     "output_format",
-    type=click.Choice([choice.value for choice in OutputFormat], case_sensitive=False),
+    type=click.Choice(OutputFormat, case_sensitive=False),
     default=OutputFormat.HUMAN.value,
     show_default=True,
     help="Human-readable output, or JSON for another program to consume.",
@@ -425,7 +429,9 @@ def _report_deployment_result(
 @option("--destination", type=click.Path(file_okay=False), required=True, help="Directory to write example files")
 @option("--force", is_flag=True, default=False, help="Overwrite existing files")
 @click.pass_context
-def cli_config_generate_examples(ctx: click.Context, destination: str, force: bool, output_format: str) -> None:
+def cli_config_generate_examples(
+    ctx: click.Context, destination: str, force: bool, output_format: OutputFormat
+) -> None:
     """Generate example configuration files in a target directory.
 
     Creates example TOML configuration files showing all available options
@@ -436,7 +442,7 @@ def cli_config_generate_examples(ctx: click.Context, destination: str, force: bo
     By default, existing files are not overwritten. Use --force to overwrite.
 
     """
-    extra = {"command": "config-generate-examples", "destination": destination, "force": force}
+    extra = {"command": ActionCommand.CONFIG_GENERATE_EXAMPLES.value, "destination": destination, "force": force}
     with lib_log_rich.runtime.bind(job_id="cli-config-generate-examples", extra=extra):
         logger.info("Generating example configuration files", extra={"destination": destination, "force": force})
         try:
@@ -447,9 +453,9 @@ def cli_config_generate_examples(ctx: click.Context, destination: str, force: bo
                 app=__init__conf__.LAYEREDCONF_APP,
                 force=force,
             )
-            if OutputFormat(output_format.lower()) is OutputFormat.JSON:
+            if output_format is OutputFormat.JSON:
                 emit_action(
-                    "config-generate-examples",
+                    ActionCommand.CONFIG_GENERATE_EXAMPLES,
                     GenerateExamplesResult(generated=[str(p) for p in paths], destination=str(destination)),
                     skipped=[] if paths else ["every example file already exists; --force overwrites"],
                 )

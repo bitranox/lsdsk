@@ -176,12 +176,17 @@ def _dotted_keys(data: Mapping[str, object], prefix: str = "") -> Iterator[str]:
             yield path
 
 
-def _provenance_naming_the_cli(config: Config, merged: Config, overridden: frozenset[str]) -> dict[str, SourceInfo]:
+def _provenance_naming_the_cli(
+    config: Config, merged_as_dict: Mapping[str, object], overridden: frozenset[str]
+) -> dict[str, SourceInfo]:
     """Copy a Config's provenance, relabelling the keys an override replaced.
 
     Args:
         config: The Config the values came from, holding the original map.
-        merged: The Config after the merge, walked for the full key set.
+        merged_as_dict: The merged Config's own mapping, walked for the full
+            key set. Passed in already computed, because the caller needs the
+            same mapping to build the merged ``Config`` and calling
+            ``as_dict()`` a second time here recomputed it for nothing.
         overridden: Dotted keys that ``--set`` supplied.
 
     Returns:
@@ -189,7 +194,7 @@ def _provenance_naming_the_cli(config: Config, merged: Config, overridden: froze
         source for every other one.
     """
     provenance: dict[str, SourceInfo] = {}
-    for dotted in _dotted_keys(merged.as_dict()):
+    for dotted in _dotted_keys(merged_as_dict):
         if dotted in overridden:
             provenance[dotted] = {"layer": CLI_LAYER, "path": None, "key": dotted}
         elif (origin := config.origin(dotted)) is not None:
@@ -240,7 +245,8 @@ def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
     # its recorded origin still named the file it replaced, so `lsdsk config`
     # sent a reader to a file holding the old value.
     merged = config.with_overrides(overrides)
-    return Config(merged.as_dict(), _provenance_naming_the_cli(config, merged, frozenset(overridden)))
+    merged_as_dict = merged.as_dict()
+    return Config(merged_as_dict, _provenance_naming_the_cli(config, merged_as_dict, frozenset(overridden)))
 
 
 __all__ = [

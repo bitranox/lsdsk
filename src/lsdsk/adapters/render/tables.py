@@ -27,6 +27,7 @@ from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_WWN_WIDTH
 from . import theme
 from .layout import Column, clip, fit, natural_widths
 from .report import disk_row, virtual_note, worst_severity
+from .rows import MarkedRow
 
 # A single character, because these columns are already the first to be dropped
 # when the terminal narrows and a word would cost one of them.
@@ -106,13 +107,13 @@ HEALTH_COLUMNS: tuple[Column, ...] = (
 )
 
 
-def _render(title: str, columns: Sequence[Column], rows: Sequence[Row], width: int, caption: str = "") -> Table:
+def _render(title: str, columns: Sequence[Column], rows: Sequence[MarkedRow], width: int, caption: str = "") -> Table:
     """Build a table from styled rows, keeping only the columns that fit.
 
     A caption goes under the table rather than into a row: a row would claim to
     be a device and would carry a value in every column it does not have.
     """
-    plain = [{key: value[0] for key, value in row.items()} for row in rows]
+    plain = [{key: value[0] for key, value in row.cells.items()} for row in rows]
     widths = natural_widths(columns, plain)
     chosen = fit(columns, widths, width)
 
@@ -146,10 +147,10 @@ def _render(title: str, columns: Sequence[Column], rows: Sequence[Row], width: i
             max_width=widths[column.key],
         )
     for row in rows:
-        marker_text, marker_style = row.get("marker", ("", ""))
+        marker_text, marker_style = row.marker
         cells = [
             Text(clip(text, widths[column.key]), style=style)
-            for column, (text, style) in ((c, row.get(c.key, ("-", theme.STYLE_UNKNOWN))) for c in chosen)
+            for column, (text, style) in ((c, row.cells.get(c.key, ("-", theme.STYLE_UNKNOWN))) for c in chosen)
         ]
         table.add_row(Text(marker_text, style=marker_style), *cells)
     return table
@@ -176,29 +177,31 @@ def render_controllers(inventory: Inventory, findings: Sequence[Finding], width:
     Returns:
         A table of controllers.
     """
-    rows: list[Row] = []
+    rows: list[MarkedRow] = []
     for controller in inventory.controllers:
         severity = worst_severity(findings, controller.address)
         demand = attached_demand_gbytes(controller, inventory)
         running = _pcie_text(controller.link)
         capable = _pcie_capability_text(controller.link)
         rows.append(
-            {
-                "marker": (theme.marker_for(severity), theme.style_for(severity)),
-                "address": (controller.address, theme.STYLE_IDENTIFIER),
-                "controller": (controller.name, ""),
-                "driver": (controller.driver or "-", "" if controller.driver else theme.STYLE_UNKNOWN),
-                "firmware": (controller.firmware or "-", "" if controller.firmware else theme.STYLE_UNKNOWN),
-                "running": (running, "" if running == capable else theme.STYLE_BELOW_CAPABILITY),
-                "capable": (capable, ""),
-                "ports": ("-" if controller.port_count is None else str(controller.port_count), ""),
-                "free": ("-" if controller.ports_free is None else str(controller.ports_free), ""),
-                "disks": (str(len(inventory.disks_on(controller.address))), ""),
-                "load": (
-                    "-" if demand is None else f"{demand:.2f} GB/s",
-                    theme.STYLE_UNKNOWN if demand is None else "",
-                ),
-            }
+            MarkedRow(
+                marker=(theme.marker_for(severity), theme.style_for(severity)),
+                cells={
+                    "address": (controller.address, theme.STYLE_IDENTIFIER),
+                    "controller": (controller.name, ""),
+                    "driver": (controller.driver or "-", "" if controller.driver else theme.STYLE_UNKNOWN),
+                    "firmware": (controller.firmware or "-", "" if controller.firmware else theme.STYLE_UNKNOWN),
+                    "running": (running, "" if running == capable else theme.STYLE_BELOW_CAPABILITY),
+                    "capable": (capable, ""),
+                    "ports": ("-" if controller.port_count is None else str(controller.port_count), ""),
+                    "free": ("-" if controller.ports_free is None else str(controller.ports_free), ""),
+                    "disks": (str(len(inventory.disks_on(controller.address))), ""),
+                    "load": (
+                        "-" if demand is None else f"{demand:.2f} GB/s",
+                        theme.STYLE_UNKNOWN if demand is None else "",
+                    ),
+                },
+            )
         )
     return _render(f"Controllers on {inventory.hostname}", CONTROLLER_COLUMNS, rows, width)
 
@@ -228,6 +231,42 @@ def disk_columns(wwn_width: int | None = DEFAULT_WWN_WIDTH) -> tuple[Column, ...
     return tuple(replace(column, max_width=wwn_width) if column.key == "wwn" else column for column in DISK_COLUMNS)
 
 
+def disk_table_row(disk: Disk, port: PcieLink | None = None) -> Row:
+    """One disk's cells for every key in :data:`DISK_COLUMNS`, already styled.
+
+    Built once here rather than assembled separately by the printed table and
+    the TUI disk page: both need the same twelve columns, and picking most of
+    them out of :func:`report.disk_row` by hand while adding the rest inline is
+    how the two views drifted apart before.
+
+    Args:
+        disk: The disk to describe.
+        port: The PCIe port a directly-attached disk sits in, when it is known.
+
+    Returns:
+        Column key to its (text, style) pair, covering every key
+        :data:`DISK_COLUMNS` names.
+    """
+    shared = disk_row(disk, port)
+    return {
+        "device": shared["device"],
+        "model": shared["model"],
+        "wwn": (disk.wwn or "-", "" if disk.wwn else theme.STYLE_UNKNOWN),
+        "serial": (disk.serial or "-", "" if disk.serial else theme.STYLE_UNKNOWN),
+        "firmware": (disk.firmware or "-", "" if disk.firmware else theme.STYLE_UNKNOWN),
+        "size": shared["size"],
+        "kind": shared["kind"],
+        "bus": shared["bus"],
+        "port": shared["port"],
+        "disk": shared["disk"],
+        "link": shared["link"],
+        "controller": (
+            disk.controller_address or "-",
+            theme.STYLE_IDENTIFIER if disk.controller_address else theme.STYLE_UNKNOWN,
+        ),
+    }
+
+
 def render_disks(
     inventory: Inventory,
     findings: Sequence[Finding],
@@ -254,7 +293,7 @@ def render_disks(
     Returns:
         A table of disks.
     """
-    rows: list[Row] = []
+    rows: list[MarkedRow] = []
     listed = (*inventory.disks, *inventory.virtual_disks) if expand_virtual else inventory.disks
     for disk in listed:
         severity = worst_severity(findings, disk.path)
@@ -262,26 +301,11 @@ def render_disks(
         # the tree. Three copies of it disagreed: this one called every NVMe
         # link healthy whatever it negotiated.
         port = inventory.port_link_for(disk)
-        cells = disk_row(disk, port)
         rows.append(
-            {
-                "marker": (theme.marker_for(severity), theme.style_for(severity)),
-                "device": cells["device"],
-                "model": cells["model"],
-                "wwn": (disk.wwn or "-", "" if disk.wwn else theme.STYLE_UNKNOWN),
-                "serial": (disk.serial or "-", "" if disk.serial else theme.STYLE_UNKNOWN),
-                "firmware": (disk.firmware or "-", "" if disk.firmware else theme.STYLE_UNKNOWN),
-                "size": cells["size"],
-                "kind": cells["kind"],
-                "bus": cells["bus"],
-                "port": cells["port"],
-                "disk": cells["disk"],
-                "link": cells["link"],
-                "controller": (
-                    disk.controller_address or "-",
-                    theme.STYLE_IDENTIFIER if disk.controller_address else theme.STYLE_UNKNOWN,
-                ),
-            }
+            MarkedRow(
+                marker=(theme.marker_for(severity), theme.style_for(severity)),
+                cells=disk_table_row(disk, port),
+            )
         )
     caption = "" if expand_virtual else virtual_note(inventory.virtual_disks)
     return _render(f"Disks on {inventory.hostname}", disk_columns(wwn_width), rows, width, caption)
@@ -306,7 +330,7 @@ def render_health(
     Returns:
         A table of health readings.
     """
-    rows: list[Row] = []
+    rows: list[MarkedRow] = []
     for disk in inventory.disks:
         severity = worst_severity(findings, disk.path)
         health = disk.health
@@ -319,35 +343,37 @@ def render_health(
         wear = theme.format_wear(None if health is None else health.percent_used)
         written = "-" if health is None or health.bytes_written is None else theme.format_size(health.bytes_written)
         rows.append(
-            {
-                "marker": (theme.marker_for(severity), theme.style_for(severity)),
-                "device": (disk.path, "bold"),
-                "model": (disk.model, ""),
-                "temp": temperature,
-                "worn": wear,
-                "hours": (counter_text(None if health is None else health.power_on_hours), ""),
-                "written": (written, ""),
-                "realloc": counter_cell(
-                    None if health is None else health.reallocated_sectors,
-                    trend_of(series, CounterKind.REALLOCATED_SECTORS),
-                ),
-                "pending": counter_cell(
-                    None if health is None else health.pending_sectors,
-                    trend_of(series, CounterKind.PENDING_SECTORS),
-                ),
-                "uncorr": counter_cell(
-                    None if health is None else health.uncorrectable_sectors,
-                    trend_of(series, CounterKind.UNCORRECTABLE_SECTORS),
-                ),
-                "crc": counter_cell(
-                    None if health is None else health.crc_errors,
-                    trend_of(series, CounterKind.CRC_ERRORS),
-                ),
-                "media": counter_cell(
-                    None if health is None else health.media_errors,
-                    trend_of(series, CounterKind.MEDIA_ERRORS),
-                ),
-            }
+            MarkedRow(
+                marker=(theme.marker_for(severity), theme.style_for(severity)),
+                cells={
+                    "device": (disk.path, "bold"),
+                    "model": (disk.model, ""),
+                    "temp": temperature,
+                    "worn": wear,
+                    "hours": (counter_text(None if health is None else health.power_on_hours), ""),
+                    "written": (written, ""),
+                    "realloc": counter_cell(
+                        None if health is None else health.reallocated_sectors,
+                        trend_of(series, CounterKind.REALLOCATED_SECTORS),
+                    ),
+                    "pending": counter_cell(
+                        None if health is None else health.pending_sectors,
+                        trend_of(series, CounterKind.PENDING_SECTORS),
+                    ),
+                    "uncorr": counter_cell(
+                        None if health is None else health.uncorrectable_sectors,
+                        trend_of(series, CounterKind.UNCORRECTABLE_SECTORS),
+                    ),
+                    "crc": counter_cell(
+                        None if health is None else health.crc_errors,
+                        trend_of(series, CounterKind.CRC_ERRORS),
+                    ),
+                    "media": counter_cell(
+                        None if health is None else health.media_errors,
+                        trend_of(series, CounterKind.MEDIA_ERRORS),
+                    ),
+                },
+            )
         )
     return _render(f"Disk health on {inventory.hostname}", HEALTH_COLUMNS, rows, width)
 
@@ -433,6 +459,7 @@ __all__ = [
     "counter_cell",
     "counter_text",
     "disk_columns",
+    "disk_table_row",
     "render_controllers",
     "render_disks",
     "render_health",

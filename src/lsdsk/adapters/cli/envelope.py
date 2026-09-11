@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
+from lsdsk.domain.enums import ActionCommand
+
 from . import safe_console
 
 if TYPE_CHECKING:
@@ -35,17 +37,17 @@ class ActionEnvelope(BaseModel):
         skipped: What was not done, and why. Empty when nothing was.
 
     Example:
-        >>> ActionEnvelope(ok=True, command="snapshot", data={"path": "/tmp/x"}).ok
+        >>> ActionEnvelope(ok=True, command=ActionCommand.SNAPSHOT, data={"path": "/tmp/x"}).ok
         True
     """
 
     ok: bool
-    command: str
+    command: ActionCommand
     data: dict[str, Any]
     skipped: list[str] = []
 
 
-def emit_action(command: str, data: BaseModel | Mapping[str, Any], skipped: list[str] | None = None) -> None:
+def emit_action(command: ActionCommand, data: BaseModel | Mapping[str, Any], skipped: list[str] | None = None) -> None:
     """Write an acting command's result as JSON.
 
     Args:

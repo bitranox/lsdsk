@@ -16,7 +16,7 @@ import rich_click as click
 from pydantic import BaseModel
 
 from lsdsk import __init__conf__
-from lsdsk.domain.enums import OutputFormat
+from lsdsk.domain.enums import ActionCommand, OutputFormat
 
 from ..constants import CLICK_CONTEXT_SETTINGS
 from ..context import get_cli_context
@@ -42,21 +42,21 @@ class InfoResult(BaseModel):
 @option(
     "--format",
     "output_format",
-    type=click.Choice([choice.value for choice in OutputFormat], case_sensitive=False),
+    type=click.Choice(OutputFormat, case_sensitive=False),
     default=OutputFormat.HUMAN.value,
     show_default=True,
     help="Human-readable output, or JSON for another program to consume.",
 )
 @click.pass_context
-def cli_info(ctx: click.Context, output_format: str) -> None:
+def cli_info(ctx: click.Context, output_format: OutputFormat) -> None:
     """Print resolved metadata so users can inspect installation details."""
-    with lib_log_rich.runtime.bind(job_id="cli-info", extra={"command": "info"}):
+    with lib_log_rich.runtime.bind(job_id="cli-info", extra={"command": ActionCommand.INFO.value}):
         logger.info("Displaying package information")
-        if OutputFormat(output_format.lower()) is OutputFormat.JSON:
+        if output_format is OutputFormat.JSON:
             # The same fields the human form prints, so a caller asking which
             # version is installed does not have to parse a padded table.
             emit_action(
-                "info",
+                ActionCommand.INFO,
                 InfoResult(
                     name=__init__conf__.name,
                     title=__init__conf__.title,

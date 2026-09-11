@@ -26,7 +26,7 @@ from lsdsk.adapters.history.store import load_history, save_history
 from lsdsk.adapters.hw.snapshot import CaptureEnvelope
 from lsdsk.adapters.textfile import read_text_bounded
 from lsdsk.domain.diagnostics import diagnose
-from lsdsk.domain.enums import CliCommand, OutputFormat
+from lsdsk.domain.enums import ActionCommand, CliCommand, OutputFormat
 from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.history import History, has_new_readings, record
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
@@ -221,7 +221,7 @@ class RecordResult(BaseModel):
 @option(
     "--format",
     "output_format",
-    type=click.Choice([choice.value for choice in OutputFormat], case_sensitive=False),
+    type=click.Choice(OutputFormat, case_sensitive=False),
     default=OutputFormat.HUMAN.value,
     show_default=True,
     help="Human-readable output, or JSON for another program to consume.",
@@ -234,7 +234,7 @@ class RecordResult(BaseModel):
     help="Fold a snapshot captured earlier into the history instead of reading this machine.",
 )
 @click.pass_context
-def cli_record(ctx: click.Context, replay: Path | None, output_format: str) -> None:
+def cli_record(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Record this machine's error counters, printing nothing unless asked.
 
     Meant for a timer, so the human form is silent. `--format json` emits the
@@ -248,7 +248,7 @@ def cli_record(ctx: click.Context, replay: Path | None, output_format: str) -> N
     # is an acting command. It does emit an envelope, through emit_action.
     with lib_log_rich.runtime.bind(
         job_id="cli-record",
-        extra={"command": "record"},
+        extra={"command": ActionCommand.RECORD.value},
     ):
         # Resolve once: a bare ``replay`` here would honour ``record --replay`` and
         # silently drop the root group's ``--replay``, sampling this machine into
@@ -257,9 +257,9 @@ def cli_record(ctx: click.Context, replay: Path | None, output_format: str) -> N
         inventory = load_inventory(target)
         read = read_history(inventory, settings)
         wrote = record_reading(inventory, read, settings, captured_at=_capture_stamp(target), announce=False)
-        if OutputFormat(output_format.lower()) is OutputFormat.JSON:
+        if output_format is OutputFormat.JSON:
             emit_action(
-                "record",
+                ActionCommand.RECORD,
                 RecordResult(recorded=wrote, store=str(settings.path), drives=len(inventory.disks)),
                 # A run that stored nothing is not a failure: it means no drive's
                 # own clock has advanced since the last reading, so there is
@@ -281,13 +281,13 @@ def cli_record(ctx: click.Context, replay: Path | None, output_format: str) -> N
 @option(
     "--format",
     "output_format",
-    type=click.Choice([choice.value for choice in OutputFormat], case_sensitive=False),
+    type=click.Choice(OutputFormat, case_sensitive=False),
     default=OutputFormat.HUMAN.value,
     show_default=True,
     help="Human-readable output, or JSON for another program to consume.",
 )
 @click.pass_context
-def cli_trend(ctx: click.Context, replay: Path | None, output_format: str) -> None:
+def cli_trend(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Show what each error counter is doing over time, not just its total.
 
     A counter is a lifetime total the drive keeps in its own non-volatile
@@ -295,12 +295,11 @@ def cli_trend(ctx: click.Context, replay: Path | None, output_format: str) -> No
     happened. This says whether it is still happening.
     """
     with lib_log_rich.runtime.bind(job_id="cli-trend", extra={"command": CliCommand.TREND.value}):
-        chosen = OutputFormat(output_format.lower())
         settings = resolve_history(ctx)
         thresholds, display = resolve_tunables(ctx)
         target = effective_replay(ctx, replay)
-        inventory, findings = analyse(target, chosen, settings, thresholds)
-        if chosen is OutputFormat.JSON:
+        inventory, findings = analyse(target, output_format, settings, thresholds)
+        if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.TREND)
         else:
             from lsdsk.adapters.render.trend import render_trend  # noqa: PLC0415 - keeps the import graph flat

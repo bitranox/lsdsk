@@ -32,6 +32,8 @@ from .typed_table import raising_table_id, rows_of
 
 if TYPE_CHECKING:
     from ...domain.models import Finding, Inventory, PcieLink
+    from ..render.layout import Column
+    from ..render.rows import Row
 
 # Column sets per page, kept here so a page's shape is readable in one place.
 _CONTROLLER_COLUMNS = ("", "address", "controller", "driver", "firmware", "running", "capable", "ports", "disks")
@@ -63,6 +65,20 @@ def _cell(text: str, style: str = "") -> Text:
     which silently drops every severity signal the render layer computed.
     """
     return Text(text, style=style)
+
+
+def _disk_cell(cells: Row, column: Column) -> Text:
+    """One disk-page cell, cut to its column's ceiling when it has one.
+
+    The wwn column is the only one with a ceiling today, but nothing here names
+    it: a value is clipped because its own column carries a ``max_width``, not
+    because of which key it happens to be, so a second column gaining a ceiling
+    would be cut here without this function changing at all.
+    """
+    text, style = cells.get(column.key, ("-", theme.STYLE_UNKNOWN))
+    if column.max_width is not None:
+        text = layout.clip(text, column.max_width)
+    return _cell(text, style)
 
 
 #: The short label each page carries in the footer, in number-key order. Keyed by
@@ -269,6 +285,9 @@ class LsdskApp(App[None]):
         width = self.display_settings.wwn_width
         self.query_one("#wwn-strip", HorizontalScroll).styles.width = width
         self._wwn_of = {}
+        # The wwn ceiling lives on the column, exactly as the printed table
+        # reads it, so the two views cannot cut a wwn in two different places.
+        columns = tables.disk_columns(width)
         listed = (
             (*self.inventory.disks, *self.inventory.virtual_disks)
             if self.display_settings.expand_virtual
@@ -276,19 +295,11 @@ class LsdskApp(App[None]):
         )
         for disk in listed:
             port = self.inventory.port_link_for(disk)
-            cells = report.disk_row(disk, port)
+            cells = tables.disk_table_row(disk, port)
             severity = report.worst_severity(self.findings, disk.path)
             table.add_row(
                 _cell(theme.marker_for(severity), theme.style_for(severity)),
-                *(_cell(*cells[key]) for key in ("device", "model")),
-                _cell(layout.clip(disk.wwn or "-", width), "" if disk.wwn else theme.STYLE_UNKNOWN),
-                _cell(disk.serial or "-", "" if disk.serial else theme.STYLE_UNKNOWN),
-                _cell(disk.firmware or "-", "" if disk.firmware else theme.STYLE_UNKNOWN),
-                *(_cell(*cells[key]) for key in ("size", "kind", "bus", "port", "disk", "link")),
-                _cell(
-                    disk.controller_address or "-",
-                    theme.STYLE_IDENTIFIER if disk.controller_address else theme.STYLE_UNKNOWN,
-                ),
+                *(_disk_cell(cells, column) for column in columns),
                 key=disk.node,
             )
             self._wwn_of[disk.node] = disk.wwn
