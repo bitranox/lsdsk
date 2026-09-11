@@ -13,6 +13,19 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   figure first, and puts moving a drive onto a controller already fitted ahead of
   buying an HBA, as that section does.
 
+### Fixed
+
+- **lsdsk no longer tells the owner of a PCIe expansion card to replace working
+  hardware.** A SATA controller integrated into a desktop chipset used as a PCIe
+  switch publishes the PCIe floor, 2.5 GT/s x1, as both its running and capable
+  link, and lsdsk read that register as a 0.25 GB/s ceiling and called the
+  controller oversubscribed. When the controller's link reads the floor in both,
+  another function on the same switch reads the identical floor, and a third
+  device there has a real link, it now reports a hint that the figure is a
+  register default rather than a ceiling. A switch is proven by a bridge recorded
+  above its bus, so ports directly on a root complex, which are independent
+  slots, are judged as before.
+
 ## [1.2.8] 2026-09-11 00:50:18
 
 ### Fixed

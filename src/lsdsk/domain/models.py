@@ -32,6 +32,14 @@ _PCIE_LANE_GBPS: dict[float, float] = {
 # Marketing generation number for a PCIe signalling rate.
 _PCIE_GENERATION: dict[float, int] = {2.5: 1, 5.0: 2, 8.0: 3, 16.0: 4, 32.0: 5, 64.0: 6}
 
+# The lowest link the PCIe specification allows: one lane at the first
+# generation's rate. The specification fixes it, so it is never a setting. A
+# device that negotiated nothing above it can still publish it as both its
+# running and its capable link, which is what a function integrated into switch
+# silicon does, so that pair is a register default as often as a measurement.
+_PCIE_FLOOR_SPEED_GTPS = 2.5
+_PCIE_FLOOR_WIDTH = 1
+
 # PCI base class codes, enough to say what is sitting in a slot.
 _PCI_CLASS_STORAGE = 0x01
 _PCI_CLASS_DISPLAY = 0x03
@@ -202,6 +210,52 @@ class PcieLink:
             True
         """
         return self.current_width == 0
+
+    @property
+    def is_at_floor(self) -> bool:
+        """Whether this end reads the PCIe floor as both its running and its capable link.
+
+        Both halves are required. A link resting at 2.5 GT/s while its device is
+        idle still publishes a higher capability, so only the pair pinned at the
+        floor describes a device that shows nothing above it.
+
+        Example:
+            >>> PcieLink(2.5, 1, 2.5, 1).is_at_floor
+            True
+            >>> PcieLink(2.5, 1, 8.0, 4).is_at_floor
+            False
+            >>> PcieLink().is_at_floor
+            False
+        """
+        return (
+            self.current_speed_gtps == _PCIE_FLOOR_SPEED_GTPS
+            and self.max_speed_gtps == _PCIE_FLOOR_SPEED_GTPS
+            and self.current_width == _PCIE_FLOOR_WIDTH
+            and self.max_width == _PCIE_FLOOR_WIDTH
+        )
+
+    @property
+    def is_above_floor(self) -> bool:
+        """Whether this end publishes a capability beyond the PCIe floor.
+
+        Asked of the capability rather than the negotiated link, because a
+        device resting at a low speed has still shown it can carry more. An
+        unread capability is above nothing.
+
+        Example:
+            >>> PcieLink(16.0, 2, 16.0, 4).is_above_floor
+            True
+            >>> PcieLink(2.5, 4, 2.5, 4).is_above_floor
+            True
+            >>> PcieLink(2.5, 1, 2.5, 1).is_above_floor
+            False
+            >>> PcieLink().is_above_floor
+            False
+        """
+        speed, width = self.max_speed_gtps, self.max_width
+        if speed is None or width is None:
+            return False
+        return speed > _PCIE_FLOOR_SPEED_GTPS or width > _PCIE_FLOOR_WIDTH
 
     def shortfall_against(self, ceiling: PcieLink) -> str | None:
         """Name which dimension falls short of another link's capability.

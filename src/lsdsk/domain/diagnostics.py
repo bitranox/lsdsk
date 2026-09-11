@@ -29,6 +29,7 @@ from .models import (
     Finding,
     Inventory,
     PcieSlot,
+    pci_class_name,
     pcie_bandwidth_gbps,
     pcie_generation,
 )
@@ -976,6 +977,136 @@ def diagnose_firmware_consistency(
     return findings
 
 
+def _bus_of(address: str) -> str | None:
+    """Return the domain and bus of a PCI address, which every port of one switch shares.
+
+    Example:
+        >>> _bus_of("0000:08:0d.0")
+        '0000:08'
+        >>> _bus_of("unparsed") is None
+        True
+    """
+    bus, separator, _ = address.rpartition(":")
+    return bus if separator and bus else None
+
+
+def _bus_is_behind_a_bridge(bus: str, inventory: Inventory) -> bool:
+    """Whether a bus is the secondary bus of a bridge this scan recorded.
+
+    Port records exist only for bridges, and each names as its occupant the
+    first device on the bus below it, so a record whose occupant sits on this
+    bus is the bridge the bus hangs behind: the upstream port of a switch, or a
+    root port above a multi-function device. A root bus has no such record,
+    because nothing above a root complex is a bridge. The bus number cannot
+    stand in for this test, since a machine with more than one root complex
+    numbers its root buses other than 00.
+
+    Example:
+        >>> from lsdsk.domain.models import PcieLink
+        >>> upstream = PcieSlot("0000:07:00.0", PcieLink(), occupied=True, occupant_address="0000:08:00.0")
+        >>> _bus_is_behind_a_bridge("0000:08", Inventory("h", slots=(upstream,)))
+        True
+        >>> _bus_is_behind_a_bridge("0000:00", Inventory("h", slots=(upstream,)))
+        False
+    """
+    return any(_bus_of(slot.occupant_address or "") == bus for slot in inventory.slots)
+
+
+def _ports_beside(controller: Controller, inventory: Inventory) -> tuple[PcieSlot, ...]:
+    """Return the other ports on the switch whose downstream port holds this controller.
+
+    Ports of one switch share a bus, so the bus of the port this controller
+    occupies names the group, but only once that bus is shown to hang behind a
+    bridge. Ports on a root bus share a number and nothing else: each is an
+    independent slot, so a reading beside one says nothing about another. Empty
+    when no port holds the controller, which is every scan that read no port
+    records, and when nothing proves its port is behind a bridge.
+    """
+    own_port = next((slot for slot in inventory.slots if slot.occupant_address == controller.address), None)
+    if own_port is None:
+        return ()
+    bus = _bus_of(own_port.address)
+    if bus is None or not _bus_is_behind_a_bridge(bus, inventory):
+        return ()
+    return tuple(
+        slot
+        for slot in inventory.slots
+        if slot.address != own_port.address
+        and slot.occupant_address != controller.address
+        and _bus_of(slot.address) == bus
+    )
+
+
+def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None:
+    """Find the port that shows a controller's floor link to be a register default.
+
+    A desktop chipset used as a PCIe switch publishes 2.5 GT/s x1, as both
+    running and capable, on the SATA and USB functions built into the chip,
+    whatever its real uplink is. Measured: a review of one such expansion card
+    put about 1.7 GB/s through four SATA drives, where reading the register as
+    a ceiling claimed 0.25 GB/s and told the owner to replace the card.
+
+    The floor value alone cannot settle it, because a dead or downtrained link
+    reads the same. Three readings together can, all on one switch: the
+    controller at the floor, a second device at the identical floor, and another
+    publishing a real link, which shows the switch passes real links on rather
+    than being narrow everywhere. Where every device reads the floor, nothing
+    tells the two cases apart, and ports on a root bus are independent slots
+    rather than one switch, so neither case is excused.
+
+    Args:
+        controller: The controller whose link is in question.
+        inventory: The machine, whose port records place it on a switch.
+
+    Returns:
+        The port holding the second device at the floor, which is the evidence
+        a reader can check, or ``None`` when any of the three readings is
+        missing or the controller's port is not provably behind a bridge,
+        including a scan that read no port records at all.
+    """
+    if not controller.link.is_at_floor:
+        return None
+    beside = _ports_beside(controller, inventory)
+    twin = next((slot for slot in beside if slot.occupant_link is not None and slot.occupant_link.is_at_floor), None)
+    passes_real_links = any(slot.occupant_link is not None and slot.occupant_link.is_above_floor for slot in beside)
+    return twin if passes_real_links else None
+
+
+def _register_default_finding(
+    controller: Controller,
+    inventory: Inventory,
+    *,
+    twin: PcieSlot,
+    demand: float,
+) -> Finding:
+    """Build the hint that stands in for an oversubscription warning resting on the PCIe floor."""
+    link = controller.link
+    count = len(inventory.disks_on(controller.address))
+    wanted = (
+        f"{count} drives can pull about {_format_gbytes(demand)} together"
+        if count > 1
+        else f"The drive can pull about {_format_gbytes(demand)}"
+    )
+    return Finding(
+        severity=Severity.HINT,
+        subject=controller.address,
+        title=f"{controller.name} publishes the PCIe floor as its link, which is not a ceiling",
+        detail=(
+            f"{wanted}, and the link reads {_format_pcie(link.max_speed_gtps, link.max_width)} "
+            f"({_format_gbytes(link.max_bandwidth_gbps)}) as both running and capable, the lowest the PCIe "
+            f"specification allows. The {pci_class_name(twin.occupant_class)} at "
+            f"{twin.occupant_address or twin.address} on the same switch publishes the identical floor while "
+            "another device there reports a real link, which is how functions integrated into the switch "
+            "silicon read: the register holds the floor rather than describing a link, so it says nothing "
+            "about what the drives can get through."
+        ),
+        action=(
+            "Check the specification of the card or board this controller belongs to for its real uplink, "
+            "rather than replacing hardware on this figure."
+        ),
+    )
+
+
 def diagnose_controller_oversubscription(controller: Controller, inventory: Inventory) -> list[Finding]:
     """Report a controller whose drives can outrun its uplink.
 
@@ -986,17 +1117,26 @@ def diagnose_controller_oversubscription(controller: Controller, inventory: Inve
     genuinely stuck below what both ends support is a different fault, and
     ``diagnose_controller_link`` already names it with the remedy that fits.
 
+    An uplink figure that is the PCIe floor, published by a function integrated
+    into switch silicon, is not a ceiling either. Where the ports around the
+    controller show that, the warning gives way to a hint that sends the reader
+    to the specification rather than to a replacement.
+
     Args:
         controller: The controller to examine.
         inventory: The machine it belongs to.
 
     Returns:
-        A finding when the attached drives exceed the uplink, otherwise empty.
+        A finding when the attached drives exceed the uplink figure, otherwise
+        empty: the warning, or the hint where that figure is a register default.
     """
     uplink = controller.achievable_bandwidth_gbps
     demand = attached_demand_gbytes(controller, inventory)
     if uplink is None or demand is None or demand <= uplink:
         return []
+    twin = _floor_twin(controller, inventory)
+    if twin is not None:
+        return [_register_default_finding(controller, inventory, twin=twin, demand=demand)]
     count = len(inventory.disks_on(controller.address))
     # A wider slot only helps a card that is running below its own maximum. A
     # part that is natively x1 gains nothing from a x16 connector, and sending
