@@ -332,6 +332,11 @@ class PcieSlot:
             read, which is any unprivileged run. It is the only readable datum
             tying a port to something a person can point at: no source gives the
             form factor, so an M.2 socket cannot be told from a card slot.
+        vendor: PCI vendor identifier of the port itself, which on a switch is
+            the switch maker's.
+        occupant_vendor: PCI vendor identifier of whatever sits in it. Matching
+            the port's, it marks a function built into the switch rather than a
+            part plugged in behind it.
 
     Example:
         >>> port = PcieSlot("0000:00:03.0", PcieLink(8.0, 8, 8.0, 8), connector_present=True)
@@ -352,6 +357,8 @@ class PcieSlot:
     occupant_name: str | None = None
     occupant_link: PcieLink | None = None
     physical_slot_number: int | None = None
+    vendor: int | None = None
+    occupant_vendor: int | None = None
 
     @property
     def is_move_target(self) -> bool:

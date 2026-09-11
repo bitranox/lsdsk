@@ -182,6 +182,8 @@ def build_slots(capture: WindowsCapture) -> tuple[PcieSlot, ...]:
                 occupant_name=None if occupant is None else occupant.name,
                 occupant_link=None if occupant is None else _pcie_link(occupant),
                 physical_slot_number=entry.slot_number,
+                vendor=parse_int(entry.vendor, 16),
+                occupant_vendor=None if occupant is None else parse_int(occupant.vendor, 16),
             )
         )
     return tuple(slots)

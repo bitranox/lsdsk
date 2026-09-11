@@ -12,9 +12,11 @@ The floor value alone decides nothing, because a dead or downtrained link reads
 the same. What separates the two is a second function on the same switch
 publishing the identical floor while another device there reports a real link,
 and the switch itself has to be proved: ports on a root bus share a bus number
-but are independent slots. Every test after the first removes one leg of that
-and requires the warning to stand exactly as it did before the pattern was
-recognised.
+but are independent slots. Both functions also have to be the switch maker's
+own, carrying the vendor of the ports they sit behind, because a separate part
+genuinely linked at 2.5 GT/s x1 publishes exactly the same floor. Every test
+after the first removes one leg of that and requires the warning to stand
+exactly as it did before the pattern was recognised.
 """
 
 from __future__ import annotations
@@ -34,17 +36,35 @@ _USB = 0x0C0330
 _NVME = 0x010802
 _DISPLAY = 0x030000
 _BRIDGE = 0x060400
+_NETWORK = 0x020000
+
+# Vendor identifiers. The switch in these tests is a desktop chipset, so its
+# ports and the functions built into it carry the chipset maker's identifier;
+# the others are makers of separate parts that genuinely link at 2.5 GT/s x1.
+_CHIPSET_MAKER = 0x1022
+_NETWORK_PART_MAKER = 0x10EC
+_SATA_PART_MAKER = 0x1095
+_CARD_READER_MAKER = 0x197B
 
 _FLOOR = PcieLink(2.5, 1, 2.5, 1)
 _SATA_ADDRESS = "0000:11:00.0"
 _REPLACE_THE_CARD = "replace this card"
 
 
-def _port(address: str, *, occupant: str, link: PcieLink, occupant_class: int) -> PcieSlot:
+def _port(
+    address: str,
+    *,
+    occupant: str,
+    link: PcieLink,
+    occupant_class: int,
+    vendor: int | None = _CHIPSET_MAKER,
+    occupant_vendor: int | None = _CHIPSET_MAKER,
+) -> PcieSlot:
     """A switch port with a device behind it whose own link was read.
 
     The port's own capability is left unread, which is what Windows reports for
-    every bridge, so nothing here can lean on a measured port.
+    every bridge, so nothing here can lean on a measured port. Both vendors
+    default to the chipset's, which is how a function built into it reads.
     """
     return PcieSlot(
         address,
@@ -53,6 +73,8 @@ def _port(address: str, *, occupant: str, link: PcieLink, occupant_class: int) -
         occupant_address=occupant,
         occupant_class=occupant_class,
         occupant_link=link,
+        vendor=vendor,
+        occupant_vendor=occupant_vendor,
     )
 
 
@@ -109,9 +131,16 @@ def _drives(negotiated_gbps: float = 6.0) -> tuple[Disk, ...]:
     )
 
 
-def _machine(sata: Controller, *neighbours: PcieSlot, negotiated_gbps: float = 6.0) -> Inventory:
+def _machine(
+    sata: Controller,
+    *neighbours: PcieSlot,
+    negotiated_gbps: float = 6.0,
+    controller_vendor: int | None = _CHIPSET_MAKER,
+) -> Inventory:
     """A machine where the controller sits in switch port 0000:08:0d.0, beside the given ports."""
-    own_port = _port("0000:08:0d.0", occupant=sata.address, link=sata.link, occupant_class=_AHCI)
+    own_port = _port(
+        "0000:08:0d.0", occupant=sata.address, link=sata.link, occupant_class=_AHCI, occupant_vendor=controller_vendor
+    )
     return Inventory(
         "h",
         controllers=(sata,),
@@ -255,6 +284,86 @@ def test_a_floor_link_with_no_slot_data_is_judged_as_before() -> None:
     assert len(findings) == 1
     assert findings[0].severity is Severity.WARNING
     assert _REPLACE_THE_CARD in (findings[0].action or "")
+
+
+@pytest.mark.os_agnostic
+def test_a_separate_part_at_the_floor_is_not_read_as_a_second_function() -> None:
+    """A part genuinely linked at 2.5 GT/s x1 reads the same floor, so it is not a twin.
+
+    Network and FireWire controllers measured on real boards each publish exactly
+    2.5 GT/s x1 as running and capable on a working link. Behind a chipset switch,
+    one of those beside a SATA card that is genuinely Gen1 x1 completes every
+    other leg of the pattern, and the card's real bottleneck would hide behind a
+    hint. The part carries its own maker's identifier, not the switch's.
+    """
+    sata = _sata_controller()
+    network_part = _port(
+        "0000:08:0c.0",
+        occupant="0000:10:00.0",
+        link=_FLOOR,
+        occupant_class=_NETWORK,
+        occupant_vendor=_NETWORK_PART_MAKER,
+    )
+    machine = _machine(sata, network_part, _NVME_WITH_A_REAL_LINK)
+
+    _assert_judged_as_before(sata, machine)
+
+
+@pytest.mark.os_agnostic
+def test_a_card_plugged_into_the_switch_is_not_read_as_its_function() -> None:
+    """A SATA card from another maker sits behind a switch port without being built into the switch."""
+    sata = _sata_controller()
+    machine = _machine(sata, _USB_AT_THE_FLOOR, _NVME_WITH_A_REAL_LINK, controller_vendor=_SATA_PART_MAKER)
+
+    _assert_judged_as_before(sata, machine)
+
+
+@pytest.mark.os_agnostic
+def test_two_parts_from_one_maker_are_not_functions_of_someone_elses_switch() -> None:
+    """A SATA controller and a card reader from one maker agree with each other and not with the switch.
+
+    Boards solder such pairs behind a chipset switch, both at 2.5 GT/s x1, so
+    matching each other proves nothing: only the switch maker's own identifier
+    on both marks functions of the switch.
+    """
+    sata = _sata_controller()
+    card_reader = _port(
+        "0000:08:0c.0",
+        occupant="0000:10:00.0",
+        link=_FLOOR,
+        occupant_class=0x080501,
+        occupant_vendor=_CARD_READER_MAKER,
+    )
+    machine = _machine(sata, card_reader, _NVME_WITH_A_REAL_LINK, controller_vendor=_CARD_READER_MAKER)
+
+    _assert_judged_as_before(sata, machine)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("controller_vendor", "twin_vendor", "port_vendor"),
+    [
+        pytest.param(None, _CHIPSET_MAKER, _CHIPSET_MAKER, id="the controller's vendor was not read"),
+        pytest.param(_CHIPSET_MAKER, None, _CHIPSET_MAKER, id="the twin's vendor was not read"),
+        pytest.param(_CHIPSET_MAKER, _CHIPSET_MAKER, None, id="the twin's port vendor was not read"),
+    ],
+)
+def test_a_vendor_that_was_not_read_proves_nothing(
+    controller_vendor: int | None, twin_vendor: int | None, port_vendor: int | None
+) -> None:
+    """An unread identifier is no evidence of a shared maker, so the warning stands."""
+    sata = _sata_controller()
+    twin = _port(
+        "0000:08:0c.0",
+        occupant="0000:10:00.0",
+        link=_FLOOR,
+        occupant_class=_USB,
+        vendor=port_vendor,
+        occupant_vendor=twin_vendor,
+    )
+    machine = _machine(sata, twin, _NVME_WITH_A_REAL_LINK, controller_vendor=controller_vendor)
+
+    _assert_judged_as_before(sata, machine)
 
 
 @pytest.mark.os_agnostic

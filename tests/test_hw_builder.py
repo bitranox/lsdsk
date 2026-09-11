@@ -236,6 +236,28 @@ def test_a_windows_disk_with_no_pci_device_above_it_has_no_controller() -> None:
 
 
 @pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", (*LINUX_HOSTS, WINDOWS_HOST))
+def test_every_port_carries_the_maker_of_itself_and_of_what_sits_in_it(host: str) -> None:
+    """Verify both vendor identifiers reach each port, matched against the capture itself.
+
+    They are what tells a function built into a switch from a part plugged in
+    behind it, so they are compared with the raw reading rather than merely
+    required to be present.
+    """
+    payload = load(host)
+    raw = {entry.get("address") or key: entry for key, entry in payload["pci"].items()}
+
+    slots = build_from(payload).slots
+
+    assert slots, "the capture produced no ports, so nothing below was checked"
+    for slot in slots:
+        assert slot.vendor == int(raw[slot.address]["vendor"], 16), slot.address
+        if slot.occupant_address is not None and slot.occupant_address in raw:
+            assert slot.occupant_vendor == int(raw[slot.occupant_address]["vendor"], 16), slot.address
+    assert any(slot.occupant_vendor is not None for slot in slots), "no occupant vendor was compared"
+
+
+@pytest.mark.os_agnostic
 def test_when_windows_reports_a_temperature_it_reaches_the_model() -> None:
     """Verify the Windows temperature query feeds the same health model."""
     inventory = build_from(load(WINDOWS_HOST))

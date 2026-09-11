@@ -44,6 +44,14 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   disk had no controller where the same disk on Linux names one. The reader now
   records every device above a disk and the builder takes the nearest PCI one;
   a snapshot taken before still reads its parent as it did.
+- **The PCIe-floor hint no longer hides a real bottleneck because a separate
+  device reads the same floor.** It stood in for the oversubscription warning
+  when a second device on the same switch published 2.5 GT/s x1 beside a real
+  link, and a separate part genuinely linked at that speed, such as a network
+  or FireWire controller, satisfied that as well as a function built into the
+  switch. The controller and that second device must now both carry the vendor
+  of the switch ports in front of them, and `lsdsk slots --format json` carries
+  both identifiers for every port so the reading can be checked.
 
 ## [1.2.9] 2026-09-11 03:00:00
 

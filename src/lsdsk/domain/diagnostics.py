@@ -1090,6 +1090,34 @@ def _bus_is_behind_a_bridge(bus: str, inventory: Inventory) -> bool:
     return any(_bus_of(slot.occupant_address or "") == bus for slot in inventory.slots)
 
 
+def _port_holding(controller: Controller, inventory: Inventory) -> PcieSlot | None:
+    """Return the port a controller sits behind, or ``None`` when no port record names it."""
+    return next((slot for slot in inventory.slots if slot.occupant_address == controller.address), None)
+
+
+def _switch_function_maker(port: PcieSlot) -> int | None:
+    """Return the vendor a port shares with what sits behind it, which is how a switch's own function reads.
+
+    A function built into switch silicon carries the switch maker's vendor
+    identifier, as does the internal port in front of it. A separate part behind
+    that port carries its own maker's, so a port whose occupant has another
+    vendor holds a device rather than a function of the switch. An identifier
+    that was not read on either side is no evidence either way.
+
+    Example:
+        >>> from lsdsk.domain.models import PcieLink
+        >>> _switch_function_maker(PcieSlot("a", PcieLink(), vendor=0x1022, occupant_vendor=0x1022))
+        4130
+        >>> _switch_function_maker(PcieSlot("a", PcieLink(), vendor=0x1022, occupant_vendor=0x10EC)) is None
+        True
+        >>> _switch_function_maker(PcieSlot("a", PcieLink(), occupant_vendor=0x1022)) is None
+        True
+    """
+    if port.vendor is None or port.occupant_vendor != port.vendor:
+        return None
+    return port.vendor
+
+
 def _ports_beside(controller: Controller, inventory: Inventory) -> tuple[PcieSlot, ...]:
     """Return the other ports on the switch whose downstream port holds this controller.
 
@@ -1100,7 +1128,7 @@ def _ports_beside(controller: Controller, inventory: Inventory) -> tuple[PcieSlo
     when no port holds the controller, which is every scan that read no port
     records, and when nothing proves its port is behind a bridge.
     """
-    own_port = next((slot for slot in inventory.slots if slot.occupant_address == controller.address), None)
+    own_port = _port_holding(controller, inventory)
     if own_port is None:
         return ()
     bus = _bus_of(own_port.address)
@@ -1132,6 +1160,14 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
     tells the two cases apart, and ports on a root bus are independent slots
     rather than one switch, so neither case is excused.
 
+    The two at the floor must also be functions of the switch itself: each
+    carries the vendor identifier of the port in front of it, and that is the
+    same maker for both. A separate part genuinely linked at 2.5 GT/s x1 reads
+    exactly the same floor - a network controller and a FireWire controller
+    measured on real boards each do - so behind a chipset switch, beside a SATA
+    card that really is Gen1 x1, it would complete the pattern and hide a real
+    bottleneck behind a hint.
+
     Args:
         controller: The controller whose link is in question.
         inventory: The machine, whose port records place it on a switch.
@@ -1139,13 +1175,27 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
     Returns:
         The port holding the second device at the floor, which is the evidence
         a reader can check, or ``None`` when any of the three readings is
-        missing or the controller's port is not provably behind a bridge,
-        including a scan that read no port records at all.
+        missing, when either device at the floor is not the switch maker's own
+        function, or when the controller's port is not provably behind a
+        bridge, including a scan that read no port records at all.
     """
-    if not controller.link.is_at_floor:
+    own_port = _port_holding(controller, inventory)
+    if not controller.link.is_at_floor or own_port is None:
+        return None
+    maker = _switch_function_maker(own_port)
+    if maker is None:
         return None
     beside = _ports_beside(controller, inventory)
-    twin = next((slot for slot in beside if slot.occupant_link is not None and slot.occupant_link.is_at_floor), None)
+    twin = next(
+        (
+            slot
+            for slot in beside
+            if slot.occupant_link is not None
+            and slot.occupant_link.is_at_floor
+            and _switch_function_maker(slot) == maker
+        ),
+        None,
+    )
     passes_real_links = any(slot.occupant_link is not None and slot.occupant_link.is_above_floor for slot in beside)
     return twin if passes_real_links else None
 
@@ -1182,10 +1232,10 @@ def _register_default_finding(
             f"{wanted}, and the link reads {_format_pcie(link.max_speed_gtps, link.max_width)} "
             f"({_format_gbytes(link.max_bandwidth_gbps)}) as both running and capable, the lowest the PCIe "
             f"specification allows. The {pci_class_name(twin.occupant_class)} at "
-            f"{twin.occupant_address or twin.address} on the same switch publishes the identical floor while "
-            "another device there reports a real link, which is how functions integrated into the switch "
-            "silicon read: the register holds the floor rather than describing a link, so it says nothing "
-            "about what the drives can get through."
+            f"{twin.occupant_address or twin.address} on the same switch publishes the identical floor, both "
+            "carry the vendor of the switch ports in front of them, and another device there reports a real "
+            "link, which is how functions integrated into the switch silicon read: the register holds the floor "
+            "rather than describing a link, so it says nothing about what the drives can get through."
         ),
         action=(
             "Check the specification of the card or board this controller belongs to for its real uplink, "
