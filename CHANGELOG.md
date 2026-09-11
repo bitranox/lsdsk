@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.9] 2026-09-11 03:00:00
+
 ### Changed
 
 - **The skill's finding table no longer offers an HBA as an equal remedy for an
@@ -12,6 +14,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   register default, points the reader to the section that says to check that
   figure first, and puts moving a drive onto a controller already fitted ahead of
   buying an HBA, as that section does.
+- **The skill knows the floor hint and what proves a switch.** Its finding table
+  gains a row for a controller publishing the PCIe floor, the oversubscription
+  section says when lsdsk recognises that pattern itself and when the check stays
+  the reader's, and reading ports that share a bus as one switch now requires a
+  bridge recorded above that bus, since ports directly on a root bus are
+  independent slots.
 
 ### Fixed
 
