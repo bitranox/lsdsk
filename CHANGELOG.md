@@ -5,6 +5,24 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A replay whose sections have the wrong shape is refused as a bad file.**
+  Only a snapshot's outer keys were checked, so a wrong-shaped section - text
+  where the block devices, the PCI devices, the sysfs classes or the Windows
+  disks belong - reached a builder and failed there with a traceback under the
+  wrong exit code, and a value of the wrong type, such as a numeric board name,
+  was dropped without a word. Every section a builder reads is now typed where
+  the reading enters, for a live run and a replay alike, and a file that does
+  not fit is refused with the configuration exit code and the place it went
+  wrong.
+- **A board vendor that begins with a comma no longer crashes a scan.** Joining
+  the vendor to the board name took the vendor's first word, and a vendor such
+  as ", Inc." has none.
+- **A hypervisor flag held as the text "false" no longer marks a machine as a
+  virtual machine.** The flag was tested for truthiness, and any non-empty text
+  is true.
+
 ## [1.2.9] 2026-09-11 03:00:00
 
 ### Changed

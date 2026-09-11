@@ -23,7 +23,7 @@ import rich_click as click
 from pydantic import BaseModel, ValidationError
 
 from lsdsk.adapters.history.store import load_history, save_history
-from lsdsk.adapters.hw.snapshot import CaptureEnvelope
+from lsdsk.adapters.hw.capture import CaptureEnvelope
 from lsdsk.adapters.textfile import read_text_bounded
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import ActionCommand, CliCommand, OutputFormat

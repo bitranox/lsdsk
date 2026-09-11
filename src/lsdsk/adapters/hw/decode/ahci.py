@@ -94,37 +94,11 @@ def decode_capabilities(capability: int, ports_implemented: int) -> AhciCapabili
     )
 
 
-def capabilities_from_capture(raw: object) -> AhciCapabilities | None:
-    """Rebuild what a reader recorded for one controller.
-
-    Args:
-        raw: The ``ahci`` mapping a reader stored, if any.
-
-    Returns:
-        The capabilities, or ``None`` when the controller has none recorded.
-
-    Example:
-        >>> capabilities_from_capture({"capability": 0xE730FF45, "ports_implemented": 3})
-        AhciCapabilities(interface_speed_gbps=6.0, ports_implemented=2, ports_declared=6)
-        >>> capabilities_from_capture(None) is None
-        True
-    """
-    if not isinstance(raw, dict):
-        return None
-    values: dict[str, object] = {str(key): value for key, value in raw.items()}  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType] - a capture is JSON, so its mappings are Any
-    capability = values.get("capability")
-    implemented = values.get("ports_implemented")
-    if not isinstance(capability, int) or not isinstance(implemented, int):
-        return None
-    return decode_capabilities(capability, implemented)
-
-
 __all__ = [
     "CAPABILITY_OFFSET",
     "INTERFACE_SPEEDS",
     "PORTS_IMPLEMENTED_OFFSET",
     "REGISTER_SPAN",
     "AhciCapabilities",
-    "capabilities_from_capture",
     "decode_capabilities",
 ]

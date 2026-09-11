@@ -16,8 +16,8 @@ import pytest
 from lsdsk.adapters.hw.decode.virtualization import (
     VirtualizationEvidence,
     classify,
-    evidence_from_capture,
 )
+from lsdsk.adapters.hw.linux.capture import LinuxCapture
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render.report import HEALTH_NEEDING_SMART, environment_caveat, privilege_note
 from lsdsk.domain.diagnostics import diagnose
@@ -92,10 +92,11 @@ def test_a_container_showing_host_dmi_is_still_a_container() -> None:
 @pytest.mark.os_agnostic
 def test_evidence_survives_a_snapshot_round_trip() -> None:
     """Verify a capture carries the evidence so a replay reaches the same verdict."""
+    header: dict[str, object] = {"schema": 2, "platform": "linux", "hostname": "h", "kernel": "6.1.0", "pci": {}}
     raw = {"container_marker": "lxc", "dmi_vendor": "QEMU", "hypervisor_flag": True}
 
-    assert classify(evidence_from_capture(raw))[0] is Environment.CONTAINER
-    assert evidence_from_capture({}).container_marker == ""
+    assert classify(LinuxCapture.model_validate({**header, "environment": raw}).environment)[0] is Environment.CONTAINER
+    assert LinuxCapture.model_validate(header).environment.container_marker == ""
 
 
 @pytest.mark.os_agnostic
@@ -201,6 +202,34 @@ def test_in_a_container_physical_findings_are_kept() -> None:
     assert contained.environment is Environment.CONTAINER
     assert contained.readings_are_physical
     assert len(inside) == len(bare), "a container must not lose findings the host would report"
+
+
+@pytest.mark.os_agnostic
+def test_a_hypervisor_flag_written_as_text_false_is_not_a_guest() -> None:
+    """Verify the flag is parsed as a boolean rather than tested for truthiness.
+
+    ``bool("false")`` is True, so a capture holding the flag as text turned bare
+    metal into a virtual machine, and every physical link rule was dropped for it.
+    """
+    payload = capture()
+    payload["environment"] = {"dmi_vendor": "ASUSTeK COMPUTER INC.", "hypervisor_flag": "false"}
+
+    assert build_from(payload).environment is Environment.BARE_METAL
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("vendor", [", Inc.", ","])
+def test_a_board_vendor_starting_with_a_comma_does_not_crash(vendor: str) -> None:
+    """Verify the vendor-repeat check survives a vendor with no word before its comma.
+
+    The check takes the first word of the text before the vendor's first comma. A
+    vendor starting with a comma has no such word, and indexing the empty split
+    raised IndexError out of the builder, on a live run as well as a replay.
+    """
+    payload = capture()
+    payload["environment"] = {"dmi_board_vendor": vendor, "dmi_board_name": "X570"}
+
+    assert build_from(payload).board == f"{vendor} X570".strip()
 
 
 @pytest.mark.os_agnostic

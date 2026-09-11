@@ -40,8 +40,11 @@ _PCI_PATH = "/sys/devices/pci0000:00/0000:00:17.0/ata5/host4/target4:0:0/4:0:0:0
 def _capture() -> dict[str, Any]:
     """A Linux capture holding one real disk and two kernel-virtual devices."""
     return {
+        "schema": 2,
         "platform": "linux",
         "hostname": "example",
+        "kernel": "6.1.0",
+        "pci": {},
         "block": {
             "sda": {
                 "size": "1024",

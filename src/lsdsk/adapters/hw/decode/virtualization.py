@@ -20,13 +20,10 @@ System Role:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, NamedTuple
+from dataclasses import dataclass
+from typing import NamedTuple
 
 from ....domain.enums import Environment
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
 
 # Container runtimes, matched against the ``container=`` variable in PID 1's
 # environment and against control-group paths.
@@ -121,6 +118,10 @@ def container_markers_in_mounts(mountinfo: str) -> str:
 class VirtualizationEvidence:
     """The raw strings a platform reader gathers for classification.
 
+    A capture's ``environment`` section is parsed straight into this, for a live
+    run and a replay alike, so a value of the wrong type is refused where the
+    reading enters rather than guessed at here.
+
     Attributes:
         container_marker: The ``container=`` value from PID 1's environment, or
             a runtime name found another way.
@@ -128,6 +129,8 @@ class VirtualizationEvidence:
         cgroup: PID 1's control-group path.
         dmi_vendor: System vendor from DMI.
         dmi_product: Product name from DMI.
+        dmi_board_vendor: Baseboard vendor from DMI.
+        dmi_board_name: Baseboard model from DMI, the name somebody would shop for.
         hypervisor_flag: Whether the CPU reports running under a hypervisor.
         hypervisor_type: The Xen-style hypervisor type file, when present.
         mount_markers: Mount table entries that name a container filesystem,
@@ -141,9 +144,10 @@ class VirtualizationEvidence:
     mount_markers: str = ""
     dmi_vendor: str = ""
     dmi_product: str = ""
+    dmi_board_vendor: str = ""
+    dmi_board_name: str = ""
     hypervisor_flag: bool = False
     hypervisor_type: str = ""
-    extra: tuple[str, ...] = field(default_factory=tuple)
 
 
 def _match(haystack: str, markers: dict[str, str]) -> str | None:
@@ -222,42 +226,8 @@ def classify(evidence: VirtualizationEvidence) -> Classification:
     return Classification(Environment.UNKNOWN, "")
 
 
-def evidence_from_capture(raw: Mapping[str, object]) -> VirtualizationEvidence:
-    """Rebuild the evidence a reader recorded in a capture.
-
-    Args:
-        raw: The ``environment`` mapping a reader stored.
-
-    Returns:
-        The evidence, with anything missing left empty.
-
-    Example:
-        >>> evidence_from_capture({"container_marker": "lxc"}).container_marker
-        'lxc'
-        >>> evidence_from_capture({}).dmi_vendor
-        ''
-    """
-
-    def text(key: str) -> str:
-        value = raw.get(key)
-        return value if isinstance(value, str) else ""
-
-    files = raw.get("container_files")
-    names = tuple(str(item) for item in files) if isinstance(files, list) else ()  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType] - a capture is JSON, so its lists are Any
-    return VirtualizationEvidence(
-        container_marker=text("container_marker"),
-        container_files=names,
-        cgroup=text("cgroup"),
-        dmi_vendor=text("dmi_vendor"),
-        dmi_product=text("dmi_product"),
-        hypervisor_flag=bool(raw.get("hypervisor_flag", False)),
-        hypervisor_type=text("hypervisor_type"),
-        mount_markers=text("mount_markers"),
-    )
-
-
-def board_name_from_capture(raw: object) -> str:
-    """Name the mainboard from a captured DMI reading.
+def board_name(evidence: VirtualizationEvidence) -> str:
+    """Name the mainboard from the DMI strings a reader recorded.
 
     The baseboard fields carry the model somebody would shop for; the system
     product name is often only an internal code ("MS-7D27" where the board is
@@ -265,36 +235,33 @@ def board_name_from_capture(raw: object) -> str:
     already repeat the vendor, which many boards do.
 
     Args:
-        raw: The ``environment`` mapping a reader stored.
+        evidence: What a reader gathered.
 
     Returns:
         The board name, or an empty string when DMI carried none.
 
     Example:
-        >>> board_name_from_capture(
-        ...     {"dmi_board_vendor": "Micro-Star International Co., Ltd.",
-        ...      "dmi_board_name": "MEG Z690 ACE (MS-7D27)"})
+        >>> board_name(VirtualizationEvidence(
+        ...     dmi_board_vendor="Micro-Star International Co., Ltd.", dmi_board_name="MEG Z690 ACE (MS-7D27)"))
         'Micro-Star International Co., Ltd. MEG Z690 ACE (MS-7D27)'
-        >>> board_name_from_capture({"dmi_board_name": "PRIME B450M"})
+        >>> board_name(VirtualizationEvidence(dmi_board_name="PRIME B450M"))
         'PRIME B450M'
-        >>> board_name_from_capture({"dmi_board_vendor": "ASUS", "dmi_board_name": "ASUS X570"})
+        >>> board_name(VirtualizationEvidence(dmi_board_vendor="ASUS", dmi_board_name="ASUS X570"))
         'ASUS X570'
-        >>> board_name_from_capture(None)
+        >>> board_name(VirtualizationEvidence())
         ''
     """
-    if not isinstance(raw, dict):
-        return ""
-    values: dict[str, object] = {str(key): value for key, value in raw.items()}  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType] - a capture is JSON, so its mappings are Any
-    vendor = values.get("dmi_board_vendor")
-    model = values.get("dmi_board_name")
-    vendor_text = vendor.strip() if isinstance(vendor, str) else ""
-    model_text = model.strip() if isinstance(model, str) else ""
+    vendor_text = evidence.dmi_board_vendor.strip()
+    model_text = evidence.dmi_board_name.strip()
     if not model_text:
         return vendor_text
-    first_word = vendor_text.split(",")[0].split()[0] if vendor_text else ""
+    # A vendor such as ", Inc." has no word before its first comma, and then
+    # there is nothing the model could be repeating.
+    leading = vendor_text.split(",")[0].split()
+    first_word = leading[0] if leading else ""
     if first_word and first_word.lower() in model_text.lower():
         return model_text
     return f"{vendor_text} {model_text}".strip()
 
 
-__all__ = ["VirtualizationEvidence", "board_name_from_capture", "classify", "evidence_from_capture"]
+__all__ = ["VirtualizationEvidence", "board_name", "classify", "container_markers_in_mounts"]

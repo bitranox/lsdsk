@@ -33,16 +33,19 @@ module exists that is not listed here, or a listed path does not exist.
 ### Adapters - hardware, Linux
 
 - `src/lsdsk/adapters/hw/linux/builder.py` - Turn a captured Linux sysfs reading into the domain inventory.
+- `src/lsdsk/adapters/hw/linux/capture.py` - The typed shape of a Linux reading.
 - `src/lsdsk/adapters/hw/linux/reader.py` - Read storage topology and device blobs from a live Linux system.
 
 ### Adapters - hardware, Windows
 
 - `src/lsdsk/adapters/hw/windows/builder.py` - Turn a captured Windows reading into the domain inventory.
+- `src/lsdsk/adapters/hw/windows/capture.py` - The typed shape of a Windows reading.
 - `src/lsdsk/adapters/hw/windows/reader.py` - Read storage topology and device blobs from a live Windows system.
 - `src/lsdsk/adapters/hw/windows/winapi.py` - Win32 structures and bindings used to read storage hardware.
 
 ### Adapters - hardware, shared
 
+- `src/lsdsk/adapters/hw/capture.py` - What every capture carries, whichever platform wrote it.
 - `src/lsdsk/adapters/hw/snapshot.py` - Capture a machine's storage subsystem to JSON, and replay it.
 
 ### Adapters - rendering
@@ -50,7 +53,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/render/full.py` - The whole machine on one page.
 - `src/lsdsk/adapters/render/layout.py` - Column layout for the topology tree.
 - `src/lsdsk/adapters/render/report.py` - The default view: a problem summary above an aligned topology tree.
-- `src/lsdsk/adapters/render/rows.py` - The row shape every table renderer builds.
+- `src/lsdsk/adapters/render/rows.py` - The row shapes every table renderer builds.
 - `src/lsdsk/adapters/render/tables.py` - Focused tables for the controller, disk and health views.
 - `src/lsdsk/adapters/render/theme.py` - Formatting and colour vocabulary shared by every view.
 - `src/lsdsk/adapters/render/trend.py` - Render what each watched counter is doing over time.
@@ -134,15 +137,18 @@ Two splits inside the adapters carry most of the design:
   exception, taking numeric ids and reading a vendor database from the filesystem, the system
   `pci.ids` if there is one and the bundled copy otherwise.
 - **Each platform splits again into `reader` and `builder`.** The reader is impure and touches
-  sysfs or Win32; the builder is pure and turns a reading into domain objects. That is why the
+  sysfs or Win32; the builder is pure and turns a reading into domain objects. Between them a
+  `capture` module types the reading once, for a live run and a replay alike, so the builder
+  reads attributes rather than keys and a wrong-shaped replay is refused as a bad file. That is why the
   Linux mapping is tested on Windows and the Windows mapping on Linux. A replayed Linux capture
   renders what a live run would because the reader records the resolved `pci_names` into the
   capture; a Windows capture does not carry them, so its builder resolves device names against
   whatever `pci.ids` the replaying host has.
 
 The domain layer is frozen dataclasses rather than Pydantic, because it has no serialization
-concern. Pydantic sits at the two boundaries that do: `CaptureEnvelope` validating a replayed
-snapshot on the way in, and `ScanEnvelope` producing the JSON on the way out.
+concern. Pydantic sits at the two boundaries that do: the capture models (`CaptureEnvelope`, and
+`LinuxCapture` and `WindowsCapture` for each platform's reading) typing a reading on the way in,
+and `ScanEnvelope` producing the JSON on the way out.
 
 ## CLI commands
 

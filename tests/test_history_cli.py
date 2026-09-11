@@ -239,7 +239,8 @@ def test_captures_written_before_the_timestamp_existed_still_replay() -> None:
     have broken the whole suite; that it did not is the evidence, and this makes
     the promise explicit rather than incidental.
     """
-    from lsdsk.adapters.hw.snapshot import OLDEST_READABLE_SCHEMA, CaptureEnvelope, load
+    from lsdsk.adapters.hw.capture import CaptureEnvelope
+    from lsdsk.adapters.hw.snapshot import OLDEST_READABLE_SCHEMA, load
 
     payload = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
     assert payload["schema"] == OLDEST_READABLE_SCHEMA

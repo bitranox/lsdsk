@@ -7,8 +7,8 @@ test fixture that exercises production code, and a way to look at a server's
 storage from somewhere else.
 
 System Role:
-    Adapter layer.  Chooses the platform reader, and is the only place that
-    knows a snapshot has a platform at all.
+    Adapter layer.  Chooses the platform reader and the platform model, and is
+    the only place that knows a snapshot has a platform at all.
 """
 
 from __future__ import annotations
@@ -19,14 +19,18 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import Field, TypeAdapter, ValidationError
 
 from ...domain.enums import Platform
 from ...domain.errors import ConfigurationError, UnsupportedPlatformError
 from ..textfile import read_text_bounded
+from .capture import CaptureEnvelope
 from .linux import builder as linux_builder
+from .linux.capture import LinuxCapture
+from .windows import builder as windows_builder
+from .windows.capture import WindowsCapture
 
 if TYPE_CHECKING:
     from ...domain.models import Inventory
@@ -42,39 +46,12 @@ OLDEST_READABLE_SCHEMA = 1
 SNAPSHOT_FILE_MODE = 0o600
 
 
-class CaptureEnvelope(BaseModel):
-    """The fixed outer shape of a snapshot, validated before anything reads it.
-
-    ``--replay`` accepts a file from any machine, so this is a trust boundary and
-    the only one a snapshot crosses. The envelope's own keys are a schema and are
-    checked here; everything beneath them is a map keyed by data the foreign
-    machine chose (a PCI address, a device node, a sysfs class), so those stay
-    mappings and are interpreted by the platform builder.
-
-    Validating only the outer shape is the point. Without it a malformed file
-    fails much later and much deeper, as a ``KeyError`` inside a builder, which
-    reads as a bug in lsdsk rather than as a bad input file.
-
-    Every field below is REQUIRED, and that is the whole guard. Given defaults
-    instead, an empty object validated: replaying any JSON file at all reported a
-    machine called "unknown" with no disks and nothing wrong, exit 0, and blamed
-    the absent readings on privilege. A tool whose first rule is never to report
-    what it did not measure has to refuse the file rather than describe it.
-
-    Example:
-        >>> CaptureEnvelope(schema=1, platform="linux", hostname="example",
-        ...                 kernel="6.1.0", pci={}).platform
-        <Platform.LINUX: 'linux'>
-    """
-
-    model_config = {"extra": "allow"}
-
-    schema_version: int = Field(alias="schema")
-    platform: Platform
-    hostname: str
-    kernel: str
-    pci: dict[str, Any]
-    captured_at: str | None = None
+# One parse for every reading, live or replayed. The platform key picks the
+# model, so a reading naming a platform lsdsk has no model for is refused by the
+# same validation that refuses a wrong-shaped section.
+_CAPTURE: TypeAdapter[LinuxCapture | WindowsCapture] = TypeAdapter(
+    Annotated[LinuxCapture | WindowsCapture, Field(discriminator="platform")]
+)
 
 
 def current_platform() -> str:
@@ -112,31 +89,62 @@ def read_current_machine() -> dict[str, Any]:
     raise UnsupportedPlatformError(message)
 
 
-def build_from(capture: dict[str, Any]) -> Inventory:
+def parse_capture(reading: object) -> LinuxCapture | WindowsCapture:
+    """Type a reading once, with the model for the platform it names.
+
+    A live reading and a replayed one both come through here, so a builder only
+    ever sees a typed capture, and a reading whose sections have the wrong shape
+    is refused before any builder runs.
+
+    Args:
+        reading: A reading as a platform reader produced it or JSON decoded it.
+
+    Returns:
+        The typed capture for the platform the reading names.
+
+    Raises:
+        ValidationError: If the reading names no platform lsdsk has a model for,
+            or a section does not have the shape its model requires.
+
+    Example:
+        >>> reading = {"schema": 2, "platform": "linux", "hostname": "example", "kernel": "6.1.0", "pci": {}}
+        >>> type(parse_capture(reading)).__name__
+        'LinuxCapture'
+    """
+    return _CAPTURE.validate_python(reading)
+
+
+def _inventory_of(capture: LinuxCapture | WindowsCapture) -> Inventory:
+    """Build the inventory with the builder for the capture's own platform."""
+    if isinstance(capture, WindowsCapture):
+        return windows_builder.build_inventory(capture)
+    return linux_builder.build_inventory(capture)
+
+
+def build_from(reading: object) -> Inventory:
     """Turn a reading into an inventory, whichever platform produced it.
 
     Args:
-        capture: A reading, live or loaded from a snapshot.
+        reading: A reading, live or loaded from a snapshot, not yet typed.
 
     Returns:
         The machine as the domain sees it.
 
     Raises:
-        ConfigurationError: If the snapshot names a platform with no builder.
+        ConfigurationError: If the reading names no platform lsdsk has a model
+            for, or a section does not have the shape its model requires.
 
     Example:
-        >>> build_from({"platform": "linux", "hostname": "example"}).hostname
+        >>> reading = {"schema": 2, "platform": "linux", "hostname": "example", "kernel": "6.1.0", "pci": {}}
+        >>> build_from(reading).hostname
         'example'
     """
-    platform = str(capture.get("platform", Platform.LINUX))
-    if platform.startswith(Platform.LINUX):
-        return linux_builder.build_inventory(capture)
-    if platform == Platform.WINDOWS:
-        from .windows.builder import build_inventory as build_windows  # noqa: PLC0415 - platform module
-
-        return build_windows(capture)
-    message = f"This snapshot came from {platform!r}, which lsdsk cannot interpret."
-    raise ConfigurationError(message)
+    try:
+        capture = parse_capture(reading)
+    except ValidationError as error:
+        message = f"This reading is not one lsdsk understands: {error}"
+        raise ConfigurationError(message) from error
+    return _inventory_of(capture)
 
 
 def collect() -> Inventory:
@@ -227,6 +235,11 @@ def _write_in_place(path: Path, body: str) -> None:
         path.chmod(SNAPSHOT_FILE_MODE)
 
 
+def _not_a_snapshot(path: Path, error: ValidationError) -> ConfigurationError:
+    """The refusal for a file whose content is not a snapshot this version reads."""
+    return ConfigurationError(f"{path} is not a snapshot lsdsk understands: {error}")
+
+
 def load(path: Path) -> Inventory:
     """Read a snapshot file and turn it into an inventory.
 
@@ -260,15 +273,18 @@ def load(path: Path) -> Inventory:
     try:
         envelope = CaptureEnvelope.model_validate(capture)
     except ValidationError as error:
-        message = f"{path} is not a snapshot lsdsk understands: {error}"
-        raise ConfigurationError(message) from error
+        raise _not_a_snapshot(path, error) from error
     if not OLDEST_READABLE_SCHEMA <= envelope.schema_version <= SCHEMA_VERSION:
         message = (
             f"{path} is a schema {envelope.schema_version!r} snapshot; "
             f"this version of lsdsk reads schema {OLDEST_READABLE_SCHEMA} to {SCHEMA_VERSION}."
         )
         raise ConfigurationError(message)
-    return build_from(capture)
+    try:
+        typed = parse_capture(capture)
+    except ValidationError as error:
+        raise _not_a_snapshot(path, error) from error
+    return _inventory_of(typed)
 
 
 __all__ = [
@@ -278,6 +294,7 @@ __all__ = [
     "collect",
     "current_platform",
     "load",
+    "parse_capture",
     "read_current_machine",
     "save",
 ]

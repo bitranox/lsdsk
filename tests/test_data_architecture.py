@@ -13,7 +13,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lsdsk.adapters.hw.snapshot import CaptureEnvelope, load
+from lsdsk.adapters.hw.capture import CaptureEnvelope
+from lsdsk.adapters.hw.snapshot import load
 from lsdsk.domain.enums import CliCommand, Platform
 from lsdsk.domain.errors import ConfigurationError
 
@@ -67,6 +68,62 @@ def test_a_malformed_snapshot_is_rejected_at_the_boundary(tmp_path: Path) -> Non
         load(wrong_type)
 
 
+_LINUX_HEADER: dict[str, object] = {"schema": 2, "platform": "linux", "hostname": "h", "kernel": "6.1.0", "pci": {}}
+_WINDOWS_HEADER: dict[str, object] = {"schema": 2, "platform": "win32", "hostname": "h", "kernel": "10.0", "pci": {}}
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    "capture",
+    [
+        pytest.param({**_LINUX_HEADER, "classes": "x"}, id="linux-classes-not-a-mapping"),
+        pytest.param({**_LINUX_HEADER, "classes": {"scsi_host": "x"}}, id="linux-class-not-a-mapping"),
+        pytest.param({**_LINUX_HEADER, "block": "x"}, id="linux-block-not-a-mapping"),
+        pytest.param({**_LINUX_HEADER, "block": {"sda": "x"}}, id="linux-block-entry-not-a-mapping"),
+        pytest.param({**_LINUX_HEADER, "pci": {"0000:00:1f.2": "x"}}, id="linux-pci-entry-not-a-mapping"),
+        pytest.param({**_LINUX_HEADER, "pci_names": "x"}, id="linux-pci-names-not-a-mapping"),
+        pytest.param({**_LINUX_HEADER, "environment": "x"}, id="environment-is-text"),
+        pytest.param({**_LINUX_HEADER, "environment": ["x"]}, id="environment-is-a-list"),
+        pytest.param({**_LINUX_HEADER, "environment": {"dmi_board_name": 42}}, id="board-name-is-a-number"),
+        pytest.param({**_WINDOWS_HEADER, "disks": "x"}, id="windows-disks-not-a-mapping"),
+        pytest.param({**_WINDOWS_HEADER, "disks": {"PhysicalDrive0": "x"}}, id="windows-disk-entry-not-a-mapping"),
+        pytest.param({**_WINDOWS_HEADER, "pci": {"PCI\\VEN_8086": "x"}}, id="windows-pci-entry-not-a-mapping"),
+    ],
+)
+def test_a_wrong_shaped_section_is_refused_as_a_bad_file(tmp_path: Path, capture: dict[str, object]) -> None:
+    """Verify every section a builder reads is checked where the file enters.
+
+    The outer keys are not the whole contract: each section a builder reads has
+    a shape too. Checked only at the outer keys, a wrong-shaped section reached a
+    builder, which either died there with an AttributeError - a traceback under
+    the wrong exit code, reading as a bug in lsdsk rather than a bad file - or
+    dropped the value without a word.
+    """
+    snapshot = tmp_path / "malformed.json"
+    snapshot.write_text(json.dumps(capture), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="not a snapshot lsdsk understands"):
+        load(snapshot)
+
+
+@pytest.mark.os_agnostic
+def test_a_wrong_shaped_section_exits_with_the_configuration_code(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+) -> None:
+    """Verify the refusal reaches the command line as a bad input, not a crash."""
+    from lsdsk.adapters.cli import cli
+    from lsdsk.adapters.cli.exit_codes import ExitCode
+
+    snapshot = tmp_path / "malformed.json"
+    snapshot.write_text(json.dumps({**_LINUX_HEADER, "block": {"sda": "x"}}), encoding="utf-8")
+
+    result = cli_runner.invoke(cli, ["topology", "--replay", str(snapshot)], obj=production_factory)
+
+    assert result.exit_code == ExitCode.CONFIG_ERROR
+
+
 @pytest.mark.os_agnostic
 def test_a_real_snapshot_still_loads() -> None:
     """Verify the new validation does not reject what the reader writes."""
@@ -75,11 +132,11 @@ def test_a_real_snapshot_still_loads() -> None:
 
 @pytest.mark.os_agnostic
 def test_the_envelope_accepts_keys_it_does_not_model() -> None:
-    """Verify the outer model validates without freezing the capture's contents.
+    """Verify a key no model names passes through rather than failing the snapshot.
 
-    Only the envelope's own keys are a schema. Everything below is keyed by data
-    the foreign machine chose, so an unmodelled key must pass through rather than
-    fail a snapshot that a newer reader wrote.
+    A newer reader may record more than this version models. Refusing its
+    snapshot for that would break replay across versions for no gain, so an
+    unmodelled key is ignored while a modelled one must still hold its type.
     """
     envelope = CaptureEnvelope.model_validate(
         {
