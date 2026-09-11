@@ -15,6 +15,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   drives are added. A PCIe drive is weighed by what its link can carry rather
   than the speed it rests at while idle, which also corrects the
   capped-by-the-mainboard hint's sentence about whether the drives feel the cap.
+- **The skill covers the graded move and swap advice and the vendor check behind
+  the floor hint.** Its finding table gains rows for a faster slot or a swap the
+  drives on a controller would not notice, the move row now means the drives
+  would use the faster slot, and the floor section says both devices at the
+  floor must carry the vendor of the switch ports in front of them, naming the
+  JSON fields that show it.
 
 ### Fixed
 

@@ -249,7 +249,9 @@ before you quote any of its numbers at your manager.
 - Two drives in the wrong ports: a slow one holding a fast seat that a faster
   drive is waiting for.
 - A controller in a slot narrower or slower than it needs, naming the free slot
-  to move it to, or a card that would lose nothing by swapping places with it.
+  to move it to, or a card that would lose nothing by swapping places with it: a
+  warning when the drives on it would use the faster slot, a hint when they fit
+  the one it has.
 - A controller capped by the mainboard, with the PCIe generation that would lift
   it and whether the attached drives can even use the difference.
 - A drive held back by a slower port than it supports.

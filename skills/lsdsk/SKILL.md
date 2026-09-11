@@ -514,27 +514,36 @@ is decided by rule, including wear, which crosses from warning to critical at
 its own threshold and not because of anything recorded. Either way read the
 marker on the finding in front of you, which is what set the exit code.
 
-| Finding                                       | Means                                                                                    | Do                                                                                                              |
-|-----------------------------------------------|------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
-| Link below what both ends support             | Cable, backplane slot or connector                                                       | Reseat, swap cable, try another bay, before suspecting the drive                                                |
-| Runs below its own maximum, port not measured | ONE end was read. Real shortfall, cause unknown                                          | Recommend nothing physical. Read `upstream_name`, then the board manual. See below                              |
-| In a slot narrower or slower than it needs    | A better slot exists                                                                     | Move it; check the slot is mechanically long enough or open-ended                                               |
-| Capped by the mainboard                       | This port is the limit, not the card                                                     | Check `lsdsk slots` before proposing hardware. See below                                                        |
-| Held back by its controller                   | The port is slower than the drive                                                        | Move to a free faster port, or a better HBA                                                                     |
-| Drives in the wrong ports                     | A slow drive holds a fast port a faster drive wants                                      | Swap the two drives over                                                                                        |
-| An attribute under the maker's threshold      | The drive's own normalised value reached the limit it publishes                          | Treat the drive as failing: check the backup and replace it                                                     |
-| Link never trained                            | The link is down, or negotiated to zero lanes                                            | A seating, power or connector fault. Nothing behind it can be read                                              |
-| Reports itself as failing                     | The drive's own overall SMART self-assessment says FAILED                                | Treat it as failing now: check the backup and replace it                                                        |
-| Above its own temperature threshold           | Past the warning or critical limit the drive publishes                                   | Airflow and drive spacing. The bands are the drive's, not a fixed rule                                          |
-| Controller oversubscribed                     | Its drives' links add up to more than the uplink figure, which can be a register default | Check that figure before relaying it, and move a drive to a controller already fitted before any HBA. See below |
-| Publishes the PCIe floor as its link          | An integrated function's register default, so not a ceiling                              | Check the card's or board's specification for the real uplink; replace nothing on this figure. See below        |
-| Wear-out                                      | Rated endurance consumed                                                                 | Plan a replacement, see the thresholds below                                                                    |
-| Reallocated sectors                           | Media degrading                                                                          | Snapshot now, compare later                                                                                     |
-| Pending sectors                               | Unreadable, awaiting a write                                                             | Back up first, then rewrite or replace                                                                          |
-| Uncorrectable sectors                         | Data already lost                                                                        | Replace, restore from backup                                                                                    |
-| Media errors (NVMe)                           | Unrecovered integrity errors                                                             | Snapshot now, compare later                                                                                     |
-| Interface CRC errors                          | Frames corrupted on the wire, resent                                                     | Reseat or swap the cable; the drive is not at fault                                                             |
-| Mixed firmware                                | Same model, different revisions                                                          | Level up at the next window                                                                                     |
+| Finding                                                             | Means                                                                                    | Do                                                                                                              |
+|---------------------------------------------------------------------|------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
+| Link below what both ends support                                   | Cable, backplane slot or connector                                                       | Reseat, swap cable, try another bay, before suspecting the drive                                                |
+| Runs below its own maximum, port not measured                       | ONE end was read. Real shortfall, cause unknown                                          | Recommend nothing physical. Read `upstream_name`, then the board manual. See below                              |
+| In a slot narrower or slower than it needs                          | A better slot exists, and the drives on it would use it                                  | Move it; check the slot is mechanically long enough or open-ended                                               |
+| Has a faster slot free, though nothing on it needs one today        | A better slot exists, and the drives on it fit the one it has                            | Move nothing yet. The detail says what the drives pull; the slot is named for when more are added               |
+| Could swap into a faster slot, though nothing on it needs one today | A swap would help, and the drives on it fit the slot it has                              | Swap nothing yet. The swap is named for when more drives are added                                              |
+| Capped by the mainboard                                             | This port is the limit, not the card                                                     | Check `lsdsk slots` before proposing hardware. See below                                                        |
+| Held back by its controller                                         | The port is slower than the drive                                                        | Move to a free faster port, or a better HBA                                                                     |
+| Drives in the wrong ports                                           | A slow drive holds a fast port a faster drive wants                                      | Swap the two drives over                                                                                        |
+| An attribute under the maker's threshold                            | The drive's own normalised value reached the limit it publishes                          | Treat the drive as failing: check the backup and replace it                                                     |
+| Link never trained                                                  | The link is down, or negotiated to zero lanes                                            | A seating, power or connector fault. Nothing behind it can be read                                              |
+| Reports itself as failing                                           | The drive's own overall SMART self-assessment says FAILED                                | Treat it as failing now: check the backup and replace it                                                        |
+| Above its own temperature threshold                                 | Past the warning or critical limit the drive publishes                                   | Airflow and drive spacing. The bands are the drive's, not a fixed rule                                          |
+| Controller oversubscribed                                           | Its drives' links add up to more than the uplink figure, which can be a register default | Check that figure before relaying it, and move a drive to a controller already fitted before any HBA. See below |
+| Publishes the PCIe floor as its link                                | An integrated function's register default, so not a ceiling                              | Check the card's or board's specification for the real uplink; replace nothing on this figure. See below        |
+| Wear-out                                                            | Rated endurance consumed                                                                 | Plan a replacement, see the thresholds below                                                                    |
+| Reallocated sectors                                                 | Media degrading                                                                          | Snapshot now, compare later                                                                                     |
+| Pending sectors                                                     | Unreadable, awaiting a write                                                             | Back up first, then rewrite or replace                                                                          |
+| Uncorrectable sectors                                               | Data already lost                                                                        | Replace, restore from backup                                                                                    |
+| Media errors (NVMe)                                                 | Unrecovered integrity errors                                                             | Snapshot now, compare later                                                                                     |
+| Interface CRC errors                                                | Frames corrupted on the wire, resent                                                     | Reseat or swap the cable; the drive is not at fault                                                             |
+| Mixed firmware                                                      | Same model, different revisions                                                          | Level up at the next window                                                                                     |
+
+**A faster slot is graded by the drives on the controller.** lsdsk reports a move
+or a swap as a warning only when the attached drives would use the faster slot,
+and as a hint that still names the slot when they fit the one the controller
+already has, so an empty controller or a pair of hard disks never reads as
+urgent. A PCIe drive counts at what its link can carry, not at the speed it
+rests at while idle.
 
 ### The port was not measured
 
@@ -641,7 +650,12 @@ one of them is enough to stop:
   a USB controller both at `Gen1 x1`, while the NVMe ports beside them publish
   Gen3, Gen4 and Gen5, is the discriminator. Those two are functions integrated
   into one chip; the others are ports that carry traffic. The floor value alone
-  is not the discriminator, because a genuinely dead link reads the same.
+  is not the discriminator, because a genuinely dead link reads the same. Nor is
+  a second device at the floor on its own: a separate part, such as an onboard
+  network controller, genuinely links at `Gen1 x1`. `lsdsk slots --format json`
+  carries `vendor` and `occupant_vendor` on every port, and a function built into
+  the switch has the same identifier as the port in front of it, where a separate
+  part has its own maker's.
 
 **`lsdsk slots` lists PORTS, so its addresses are not the addresses in `lsdsk
 controllers` and you have to join the two yourself.** Each row is a port, named
@@ -662,10 +676,12 @@ publishes the floor on the SATA and USB functions integrated into the chip. Its
 real uplink is on the card's spec page, not in the register.
 
 **lsdsk recognises the second and third readings itself** when the controller sits behind a switch: its own
-link reads the floor in both columns, another function on that switch reads the identical floor, and a
-third device there has a real link. It then reports the controller as publishing the PCIe floor, a hint,
-instead of calling it oversubscribed. Where it cannot tell (no slot data, every link on the switch at the floor, or a controller that sits on a root port rather than behind a switch) it still raises the
-oversubscription warning, and the check above is yours to make.
+link reads the floor in both columns, another function on that switch reads the identical floor, both carry
+the vendor identifier of the switch ports in front of them, and a third device there has a real link. It
+then reports the controller as publishing the PCIe floor, a hint, instead of calling it oversubscribed.
+Where it cannot tell (no slot data, every link on the switch at the floor, a controller that sits on a root
+port rather than behind a switch, or a device at the floor whose vendor is not the switch's) it still raises
+the oversubscription warning, and the check above is yours to make.
 
 **A controller row does not say whether it is a card or an onboard function, so
 do not pass on "replace this card" as though it did.** Two readings in the same
