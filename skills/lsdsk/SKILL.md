@@ -527,6 +527,7 @@ marker on the finding in front of you, which is what set the exit code.
 | Reports itself as failing                     | The drive's own overall SMART self-assessment says FAILED                                | Treat it as failing now: check the backup and replace it                                                        |
 | Above its own temperature threshold           | Past the warning or critical limit the drive publishes                                   | Airflow and drive spacing. The bands are the drive's, not a fixed rule                                          |
 | Controller oversubscribed                     | Its drives' links add up to more than the uplink figure, which can be a register default | Check that figure before relaying it, and move a drive to a controller already fitted before any HBA. See below |
+| Publishes the PCIe floor as its link          | An integrated function's register default, so not a ceiling                              | Check the card's or board's specification for the real uplink; replace nothing on this figure. See below        |
 | Wear-out                                      | Rated endurance consumed                                                                 | Plan a replacement, see the thresholds below                                                                    |
 | Reallocated sectors                           | Media degrading                                                                          | Snapshot now, compare later                                                                                     |
 | Pending sectors                               | Unreadable, awaiting a write                                                             | Back up first, then rewrite or replace                                                                          |
@@ -646,7 +647,9 @@ one of them is enough to stop:
 controllers` and you have to join the two yourself.** Each row is a port, named
 by the port's own address, with the device behind it in `occupant`. Ports on one
 switch share a bus, so `0000:08:` in the port column is the group to read
-together. Do not match a controller to a row by eye: the occupant name comes
+together, but only when another row's occupant sits on that bus, because that
+row is the bridge the bus hangs behind. Ports directly on a root bus share a
+number too and are still independent slots. Do not match a controller to a row by eye: the occupant name comes
 from the platform, so on Windows the row for a controller lsdsk calls an AMD 600
 Series part reads `Standard SATA AHCI Controller`. `lsdsk slots --format json`
 carries `occupant_address` on every port, and that IS the address in the
@@ -657,6 +660,12 @@ multi-drive expansion card is usually built. The card presents the chipset's
 downstream ports, passes real links through to the M.2 sockets it wires, and
 publishes the floor on the SATA and USB functions integrated into the chip. Its
 real uplink is on the card's spec page, not in the register.
+
+**lsdsk recognises the second and third readings itself** when the controller sits behind a switch: its own
+link reads the floor in both columns, another function on that switch reads the identical floor, and a
+third device there has a real link. It then reports the controller as publishing the PCIe floor, a hint,
+instead of calling it oversubscribed. Where it cannot tell (no slot data, every link on the switch at the floor, or a controller that sits on a root port rather than behind a switch) it still raises the
+oversubscription warning, and the check above is yours to make.
 
 **A controller row does not say whether it is a card or an onboard function, so
 do not pass on "replace this card" as though it did.** Two readings in the same
