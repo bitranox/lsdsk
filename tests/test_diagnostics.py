@@ -222,6 +222,29 @@ def test_when_the_board_really_has_nothing_faster_the_upgrade_stands() -> None:
 
 
 @pytest.mark.os_agnostic
+def test_one_drive_with_room_to_spare_is_not_counted_as_plural() -> None:
+    """Verify the capped-card hint speaks of the drive when one drive is attached and fits."""
+    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    machine = Inventory("h", controllers=(capped,), disks=(disk(),))
+
+    finding = diagnose_controller_link(capped, machine)[0]
+
+    assert "1 attached drives" not in finding.detail
+    assert "The attached drive needs about 0.60 GB/s" in finding.detail
+
+
+@pytest.mark.os_agnostic
+def test_one_drive_that_fills_the_link_is_not_counted_as_plural() -> None:
+    """Verify the capped-card hint speaks of the drive when one drive already fills the link."""
+    capped = controller(link=PcieLink(5.0, 1, 8.0, 1), upstream=PcieLink(5.0, 1, 5.0, 1))
+    machine = Inventory("h", controllers=(capped,), disks=(disk(),))
+
+    finding = diagnose_controller_link(capped, machine)[0]
+
+    assert "The attached drive already wants about 0.60 GB/s" in finding.detail
+
+
+@pytest.mark.os_agnostic
 def test_when_drives_outrun_the_uplink_it_is_oversubscribed() -> None:
     """Verify a controller whose drives exceed its uplink is reported."""
     narrow = controller(link=PcieLink(5.0, 1, 5.0, 1))
@@ -242,6 +265,19 @@ def test_when_the_uplink_is_ample_nothing_is_reported() -> None:
     machine = Inventory("h", controllers=(wide,), disks=(disk(),))
 
     assert diagnose_controller_oversubscription(wide, machine) == []
+
+
+@pytest.mark.os_agnostic
+def test_one_drive_that_outruns_its_uplink_is_not_counted_as_plural() -> None:
+    """Verify the warning speaks of the drive, not of "1 drives", when only one is attached."""
+    narrow = controller(link=PcieLink(5.0, 1, 5.0, 1))
+    machine = Inventory("h", controllers=(narrow,), disks=(disk(),))
+
+    findings = diagnose_controller_oversubscription(narrow, machine)
+
+    assert len(findings) == 1
+    assert "1 drives" not in findings[0].detail
+    assert findings[0].detail.startswith("The drive can pull about 0.60 GB/s")
 
 
 @pytest.mark.os_agnostic

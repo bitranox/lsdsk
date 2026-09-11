@@ -375,6 +375,41 @@ def test_nothing_in_the_palette_uses_the_faint_attribute() -> None:
 
 
 @pytest.mark.os_agnostic
+def test_one_drive_on_record_and_not_attached_is_not_counted_as_plural() -> None:
+    """Verify the empty trend view speaks of one recorded drive as one."""
+    import io
+    import json
+    from pathlib import Path as _Path
+
+    from rich.console import Console
+
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.trend import render_trend
+    from lsdsk.domain.history import DiskSeries, History, Sample
+
+    fixture = _Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
+    machine = build_from(json.loads(fixture.read_text(encoding="utf-8")))
+    assert machine.privileged, "the fixture must be a privileged capture, or the view explains that instead"
+    history = History(
+        hostname=machine.hostname,
+        series=(
+            DiskSeries(
+                identity="naa.0000000000000000",
+                model="A drive that is no longer attached",
+                samples=(Sample(power_on_hours=1000, captured_at="a", crc_errors=0),),
+            ),
+        ),
+    )
+
+    buffer = io.StringIO()
+    Console(file=buffer, width=200, no_color=True).print(render_trend(machine, history, width=200))
+    rendered = " ".join(buffer.getvalue().split())
+
+    assert "1 drives" not in rendered
+    assert "1 drive is on record, but it is not attached now." in rendered
+
+
+@pytest.mark.os_agnostic
 def test_the_trend_table_names_its_measurement_window_a_span() -> None:
     """The window column must not read as a property of the drive.
 

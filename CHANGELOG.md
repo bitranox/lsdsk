@@ -22,6 +22,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 - **A hypervisor flag held as the text "false" no longer marks a machine as a
   virtual machine.** The flag was tested for truthiness, and any non-empty text
   is true.
+- **A single drive is counted as one.** A controller with one drive on it read
+  "1 drives can pull about ... together" in the oversubscription warning and
+  "The 1 attached drives need about ..." in the capped-by-the-mainboard hint,
+  and the trend view said "1 drives are on record" for a single recorded drive.
+  Each now speaks of the drive.
 
 ## [1.2.9] 2026-09-11 03:00:00
 

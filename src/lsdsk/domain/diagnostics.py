@@ -418,13 +418,15 @@ def _headroom_sentence(controller: Controller, inventory: Inventory, achievable:
     demand = attached_demand_gbytes(controller, inventory)
     if demand is None:
         return "Nothing is attached to it yet."
+    count = len(inventory.disks_on(controller.address))
     if demand < achievable:
+        needed = f"The {count} attached drives need" if count > 1 else "The attached drive needs"
         return (
-            f"The {len(inventory.disks_on(controller.address))} attached drives need about "
-            f"{_format_gbytes(demand)}, so this link is not the bottleneck today; revisit if more "
+            f"{needed} about {_format_gbytes(demand)}, so this link is not the bottleneck today; revisit if more "
             "drives are added."
         )
-    return f"The attached drives already want about {_format_gbytes(demand)}, at or beyond this link."
+    wanted = "The attached drives already want" if count > 1 else "The attached drive already wants"
+    return f"{wanted} about {_format_gbytes(demand)}, at or beyond this link."
 
 
 def _upgrade_sentence(controller: Controller, achievable: float, own_max: float) -> str:
@@ -1072,6 +1074,20 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
     return twin if passes_real_links else None
 
 
+def _demand_clause(count: int, demand: float) -> str:
+    """Open a sentence with what the attached drives can pull, in the number they come in.
+
+    Example:
+        >>> _demand_clause(3, 1.8)
+        '3 drives can pull about 1.80 GB/s together'
+        >>> _demand_clause(1, 0.6)
+        'The drive can pull about 0.60 GB/s'
+    """
+    if count > 1:
+        return f"{count} drives can pull about {_format_gbytes(demand)} together"
+    return f"The drive can pull about {_format_gbytes(demand)}"
+
+
 def _register_default_finding(
     controller: Controller,
     inventory: Inventory,
@@ -1081,12 +1097,7 @@ def _register_default_finding(
 ) -> Finding:
     """Build the hint that stands in for an oversubscription warning resting on the PCIe floor."""
     link = controller.link
-    count = len(inventory.disks_on(controller.address))
-    wanted = (
-        f"{count} drives can pull about {_format_gbytes(demand)} together"
-        if count > 1
-        else f"The drive can pull about {_format_gbytes(demand)}"
-    )
+    wanted = _demand_clause(len(inventory.disks_on(controller.address)), demand)
     return Finding(
         severity=Severity.HINT,
         subject=controller.address,
@@ -1153,10 +1164,7 @@ def diagnose_controller_oversubscription(controller: Controller, inventory: Inve
             severity=Severity.WARNING,
             subject=controller.address,
             title=f"{controller.name} is oversubscribed by the drives on it",
-            detail=(
-                f"{count} drives can pull about {_format_gbytes(demand)} together, but the uplink can carry "
-                f"{_format_gbytes(uplink)}."
-            ),
+            detail=f"{_demand_clause(count, demand)}, but the uplink can carry {_format_gbytes(uplink)}.",
             action=action,
         )
     ]

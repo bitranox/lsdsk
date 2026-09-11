@@ -254,10 +254,13 @@ def _nothing_yet(inventory: Inventory, history: History) -> str:
         )
     tracked = sum(1 for disk in inventory.disks if _series_for(disk, history) is not None)
     if not tracked:
-        return (
-            f"{len(history.series)} drives are on record, but none of them is attached now. "
-            "A drive is tracked by its world-wide name, so this is a different set of disks."
+        recorded = len(history.series)
+        on_record = (
+            f"{recorded} drives are on record, but none of them is attached now."
+            if recorded > 1
+            else "1 drive is on record, but it is not attached now."
         )
+        return f"{on_record} A drive is tracked by its world-wide name, so this is a different set of disks."
     drives = "drive" if tracked == 1 else "drives"
     return (
         f"{tracked} {drives} on record and no error counter has moved: nothing to report, "
