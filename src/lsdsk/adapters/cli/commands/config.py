@@ -217,7 +217,7 @@ def _parse_octal_mode(ctx: click.Context, param: click.Parameter, value: str | N
 @option(
     "--target",
     "targets",
-    type=click.Choice([t.value for t in DeployTarget], case_sensitive=False),
+    type=click.Choice(DeployTarget, case_sensitive=False),
     multiple=True,
     required=True,
     help="Target configuration layer(s) to deploy to (can specify multiple)",
@@ -259,7 +259,7 @@ def cli_config_deploy(
     ctx: click.Context,
     *,
     output_format: OutputFormat = OutputFormat.HUMAN,
-    targets: tuple[str, ...],
+    targets: tuple[DeployTarget, ...],
     force: bool,
     profile: str | None,
     set_permissions: bool | None,
@@ -284,8 +284,7 @@ def cli_config_deploy(
     """
     cli_ctx = get_cli_context(ctx)
     effective_profile = _get_effective_profile(cli_ctx, profile)
-    deploy_targets = tuple(DeployTarget(t.lower()) for t in targets)
-    target_values = tuple(t.value for t in deploy_targets)
+    target_values = tuple(t.value for t in targets)
 
     extra = {
         "command": ActionCommand.CONFIG_DEPLOY.value,
@@ -300,7 +299,7 @@ def cli_config_deploy(
         )
         _execute_deploy(
             cli_ctx,
-            targets=deploy_targets,
+            targets=targets,
             force=force,
             profile=effective_profile,
             set_permissions=set_permissions,
