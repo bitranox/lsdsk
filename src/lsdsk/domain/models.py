@@ -235,24 +235,26 @@ class PcieLink:
         )
 
     @property
-    def is_above_floor(self) -> bool:
-        """Whether this end publishes a capability beyond the PCIe floor.
+    def is_running_above_floor(self) -> bool:
+        """Whether this end negotiated a link beyond the PCIe floor.
 
-        Asked of the capability rather than the negotiated link, because a
-        device resting at a low speed has still shown it can carry more. An
-        unread capability is above nothing.
+        Asked of the running link rather than the capability. A device resting at
+        a low speed usually keeps the width it trained, so it still reads above
+        the floor, while a device capable of more that trained at 2.5 GT/s x1
+        shows nothing a switch passed on, which is what a switch narrow
+        everywhere produces. An unread link is above nothing.
 
         Example:
-            >>> PcieLink(16.0, 2, 16.0, 4).is_above_floor
+            >>> PcieLink(16.0, 2, 16.0, 4).is_running_above_floor
             True
-            >>> PcieLink(2.5, 4, 2.5, 4).is_above_floor
+            >>> PcieLink(2.5, 4, 16.0, 4).is_running_above_floor
             True
-            >>> PcieLink(2.5, 1, 2.5, 1).is_above_floor
+            >>> PcieLink(2.5, 1, 16.0, 4).is_running_above_floor
             False
-            >>> PcieLink().is_above_floor
+            >>> PcieLink().is_running_above_floor
             False
         """
-        speed, width = self.max_speed_gtps, self.max_width
+        speed, width = self.current_speed_gtps, self.current_width
         if speed is None or width is None:
             return False
         return speed > _PCIE_FLOOR_SPEED_GTPS or width > _PCIE_FLOOR_WIDTH

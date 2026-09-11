@@ -216,6 +216,30 @@ def test_a_windows_disk_behind_a_usb_bridge_maps_to_the_host_controller_above_it
 
 
 @pytest.mark.os_agnostic
+def test_a_windows_disk_maps_to_the_nearest_pci_device_when_several_are_above_it() -> None:
+    """Verify the controller is the nearest PCI ancestor, not a port or bridge further up.
+
+    A live reading records the whole chain to the root, so an NVMe or AHCI disk's
+    ancestry holds its controller and then the PCI port above it; taking the wrong
+    end would give the disk the port's address and the port's empty link.
+    """
+    payload = load(WINDOWS_HOST)
+    disk = next(iter(payload["disks"].values()))
+    controller = disk["parent"]
+    own_address = payload["pci"][controller]["address"]
+    port = next(
+        key
+        for key, entry in payload["pci"].items()
+        if key != controller and entry.get("address") and entry["address"] != own_address
+    )
+    disk["ancestors"] = [controller, port, "ACPI\\PNP0A08\\0", "HTREE\\ROOT\\0"]
+
+    inventory = build_from(payload)
+
+    assert inventory.disks[0].controller_address == own_address
+
+
+@pytest.mark.os_agnostic
 def test_a_windows_disk_with_no_pci_device_above_it_has_no_controller() -> None:
     """Verify a disk whose whole ancestry is software is not attributed to a PCI device.
 

@@ -58,6 +58,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   switch. The controller and that second device must now both carry the vendor
   of the switch ports in front of them, and `lsdsk slots --format json` carries
   both identifiers for every port so the reading can be checked.
+- **The PCIe-floor hint needs a device on the switch actually running a real
+  link.** A drive capable of PCIe 4.0 x4 that trained at 2.5 GT/s x1 counted as
+  one, although with it every device on the switch runs at the floor, which is
+  what a switch narrow everywhere produces.
+- **The capped-by-the-mainboard hint no longer calls a controller empty when a
+  drive's link was not read.** A drive whose rate is not read, such as a RAID
+  logical drive, was left out of the demand, so the hint said nothing was
+  attached or let the drives that were read stand for all of them. It now says
+  what was not read.
 
 ## [1.2.9] 2026-09-11 03:00:00
 

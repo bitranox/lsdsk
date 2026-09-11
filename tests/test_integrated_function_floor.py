@@ -14,9 +14,10 @@ publishing the identical floor while another device there reports a real link,
 and the switch itself has to be proved: ports on a root bus share a bus number
 but are independent slots. Both functions also have to be the switch maker's
 own, carrying the vendor of the ports they sit behind, because a separate part
-genuinely linked at 2.5 GT/s x1 publishes exactly the same floor. Every test
-after the first removes one leg of that and requires the warning to stand
-exactly as it did before the pattern was recognised.
+genuinely linked at 2.5 GT/s x1 publishes exactly the same floor. Most tests
+after the first remove one leg of that and require the warning to stand exactly
+as it did before the pattern was recognised; the last two pin the edges, where
+there is no slot data to read or no warning to replace.
 """
 
 from __future__ import annotations
@@ -362,6 +363,44 @@ def test_a_vendor_that_was_not_read_proves_nothing(
         occupant_vendor=twin_vendor,
     )
     machine = _machine(sata, twin, _NVME_WITH_A_REAL_LINK, controller_vendor=controller_vendor)
+
+    _assert_judged_as_before(sata, machine)
+
+
+@pytest.mark.os_agnostic
+def test_a_neighbour_capable_of_more_but_trained_at_the_floor_is_not_a_real_link() -> None:
+    """A drive that can do PCIe 4.0 x4 but trained at 2.5 GT/s x1 shows nothing the switch passes on.
+
+    With it, every device on the switch runs at the floor, which is what a switch
+    that is narrow everywhere produces, so the switch cannot be told apart from
+    one whose floor readings are register defaults.
+    """
+    sata = _sata_controller()
+    trained_at_the_floor = _port(
+        "0000:08:00.0",
+        occupant="0000:09:00.0",
+        link=PcieLink(2.5, 1, 16.0, 4),
+        occupant_class=_NVME,
+        occupant_vendor=0x144D,
+    )
+    machine = _machine(sata, _USB_AT_THE_FLOOR, trained_at_the_floor)
+
+    _assert_judged_as_before(sata, machine)
+
+
+@pytest.mark.os_agnostic
+def test_a_function_built_into_another_makers_chip_is_not_a_twin() -> None:
+    """The twin must be a function of the controller's own switch maker, not of some other chip."""
+    sata = _sata_controller()
+    another_chip = _port(
+        "0000:08:0c.0",
+        occupant="0000:10:00.0",
+        link=_FLOOR,
+        occupant_class=_USB,
+        vendor=_CARD_READER_MAKER,
+        occupant_vendor=_CARD_READER_MAKER,
+    )
+    machine = _machine(sata, another_chip, _NVME_WITH_A_REAL_LINK)
 
     _assert_judged_as_before(sata, machine)
 

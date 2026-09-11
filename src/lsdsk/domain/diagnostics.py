@@ -459,10 +459,26 @@ def _peak_demand_gbytes(disk: Disk) -> float | None:
     return interface_demand_gbytes(disk)
 
 
-def _attached_peak_gbytes(controller: Controller, inventory: Inventory) -> float | None:
-    """Sum the most the disks on one controller can pull, in GB/s, or ``None`` when none is known."""
-    peaks = [peak for disk in inventory.disks_on(controller.address) if (peak := _peak_demand_gbytes(disk))]
-    return round(sum(peaks), 3) if peaks else None
+def _drive_peaks(controller: Controller, inventory: Inventory) -> tuple[list[float], int]:
+    """Return the peak demand of each attached drive whose link was read, and how many were not read."""
+    peaks = [_peak_demand_gbytes(disk) for disk in inventory.disks_on(controller.address)]
+    known = [peak for peak in peaks if peak]
+    return known, len(peaks) - len(known)
+
+
+def _unread_demand_sentence(unread: int, count: int) -> str:
+    """Say that what some attached drives can pull was not read, so whether they feel a cap is unknown.
+
+    Example:
+        >>> _unread_demand_sentence(1, 1)
+        'What the attached drive can pull was not read, so whether it feels this cap is not known.'
+        >>> _unread_demand_sentence(1, 2)
+        'What 1 of the 2 attached drives can pull was not read, so whether they feel this cap is not known.'
+    """
+    if count == 1:
+        return "What the attached drive can pull was not read, so whether it feels this cap is not known."
+    which = f"the {count} attached drives" if unread == count else f"{unread} of the {count} attached drives"
+    return f"What {which} can pull was not read, so whether they feel this cap is not known."
 
 
 def _drives_would_notice(controller: Controller, inventory: Inventory, achievable: float) -> bool:
@@ -472,14 +488,10 @@ def _drives_would_notice(controller: Controller, inventory: Inventory, achievabl
     shown to fit, so it counts as one that would notice: calling a move unneeded
     on a reading nobody took would bury advice that may be real.
     """
-    disks = inventory.disks_on(controller.address)
-    if not disks:
-        return False
-    peaks = [_peak_demand_gbytes(disk) for disk in disks]
-    known = [peak for peak in peaks if peak is not None]
-    if len(known) < len(peaks):
+    known, unread = _drive_peaks(controller, inventory)
+    if unread:
         return True
-    return sum(known) >= achievable
+    return bool(known) and sum(known) >= achievable
 
 
 def _slot_shortfall(controller: Controller) -> str:
@@ -490,11 +502,19 @@ def _slot_shortfall(controller: Controller) -> str:
 
 
 def _headroom_sentence(controller: Controller, inventory: Inventory, achievable: float) -> str:
-    """Say whether the attached drives can actually feel the cap, judged by the most they can pull."""
-    demand = _attached_peak_gbytes(controller, inventory)
-    if demand is None:
+    """Say whether the attached drives can actually feel the cap, judged by the most they can pull.
+
+    A drive whose link was not read is named as unknown rather than left out:
+    leaving it out calls a controller with a drive on it empty, or lets the
+    drives that were read stand for all of them.
+    """
+    known, unread = _drive_peaks(controller, inventory)
+    count = len(known) + unread
+    if not count:
         return "Nothing is attached to it yet."
-    count = len(inventory.disks_on(controller.address))
+    if unread:
+        return _unread_demand_sentence(unread, count)
+    demand = round(sum(known), 3)
     if demand < achievable:
         needed = f"The {count} attached drives need" if count > 1 else "The attached drive needs"
         return (
@@ -1155,7 +1175,7 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
     The floor value alone cannot settle it, because a dead or downtrained link
     reads the same. Three readings together can, all on one switch: the
     controller at the floor, a second device at the identical floor, and another
-    publishing a real link, which shows the switch passes real links on rather
+    running a link above the floor, which shows the switch passes real links on rather
     than being narrow everywhere. Where every device reads the floor, nothing
     tells the two cases apart, and ports on a root bus are independent slots
     rather than one switch, so neither case is excused.
@@ -1196,7 +1216,9 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
         ),
         None,
     )
-    passes_real_links = any(slot.occupant_link is not None and slot.occupant_link.is_above_floor for slot in beside)
+    passes_real_links = any(
+        slot.occupant_link is not None and slot.occupant_link.is_running_above_floor for slot in beside
+    )
     return twin if passes_real_links else None
 
 

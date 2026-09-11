@@ -254,6 +254,36 @@ def test_a_drive_resting_at_a_low_link_is_judged_by_what_it_can_pull() -> None:
 
 
 @pytest.mark.os_agnostic
+def test_a_drive_whose_link_was_not_read_is_not_reported_as_nothing_attached() -> None:
+    """Verify the capped hint says the demand is unknown rather than that no drive is attached.
+
+    A RAID logical drive carries no identity, phy or ATA link, so its rate is not
+    read; saying nothing is attached describes a machine with a drive in it wrongly.
+    """
+    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    logical = Disk("sda", "/dev/sda", "Logical Volume", controller_address="0000:03:00.0")
+    machine = Inventory("h", controllers=(capped,), disks=(logical,))
+
+    finding = diagnose_controller_link(capped, machine)[0]
+
+    assert "Nothing is attached" not in finding.detail
+    assert "was not read" in finding.detail
+
+
+@pytest.mark.os_agnostic
+def test_a_drive_whose_link_was_not_read_is_not_left_out_of_the_demand() -> None:
+    """Verify an unread drive beside a read one does not make the read drive's figure the whole demand."""
+    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    logical = Disk("sda", "/dev/sda", "Logical Volume", controller_address="0000:03:00.0")
+    machine = Inventory("h", controllers=(capped,), disks=(logical, disk("sdb")))
+
+    finding = diagnose_controller_link(capped, machine)[0]
+
+    assert "not the bottleneck" not in finding.detail
+    assert "1 of the 2 attached drives" in finding.detail
+
+
+@pytest.mark.os_agnostic
 def test_the_capped_hint_judges_a_resting_drive_by_what_it_can_pull() -> None:
     """Verify the capped-by-the-mainboard hint does not call a link spare because its drives are idle."""
     capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
