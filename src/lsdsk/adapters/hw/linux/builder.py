@@ -269,6 +269,8 @@ def build_controllers(capture: LinuxCapture) -> tuple[Controller, ...]:
                 link=_pcie_link(entry),
                 upstream=None if upstream is None else _pcie_link(upstream),
                 upstream_name=None if upstream is None else _pci_name(upstream, database),
+                upstream_address=parent,
+                vendor=parse_int(entry.vendor, 16),
                 port_count=ports.get(address),
                 ports_used=None,
             )

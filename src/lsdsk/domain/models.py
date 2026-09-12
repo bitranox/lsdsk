@@ -802,6 +802,17 @@ class Controller:
             missing registers left open. It is reported, never parsed into a
             capability: it comes from a driver package rather than the hardware,
             and only some vendors put the width and generation in it.
+        upstream_address: PCI address of the port above it. Carried because a
+            port record names only ONE of the devices behind it, so a
+            controller sharing its port cannot be found by asking which port
+            names it: the join has to run from this side. Without it a
+            controller that is not the device representing its port is on no
+            port at all as far as every placement rule is concerned.
+        vendor: PCI vendor identifier of the controller itself. Matching the
+            vendor of the port above it, it marks a function built into switch
+            silicon rather than a part plugged in behind it. Read from the
+            controller rather than from its port's occupant, because that
+            occupant may be a sibling.
         port_count: Total ports or phys, where known.
         ports_used: Ports or phys with something attached.
 
@@ -818,6 +829,8 @@ class Controller:
     link: PcieLink = field(default_factory=PcieLink)
     upstream: PcieLink | None = None
     upstream_name: str | None = None
+    upstream_address: str | None = None
+    vendor: int | None = None
     port_count: int | None = None
     ports_used: int | None = None
 

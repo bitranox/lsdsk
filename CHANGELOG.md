@@ -5,6 +5,41 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A controller that shares its PCIe port with another device is found on that
+  port.** A port record names ONE of the devices behind it, so the join that
+  asked which port names this controller found nothing whenever a sibling
+  represented the port, and every placement rule then treated the controller as
+  sitting on no port at all. The join now runs from the controller, which
+  carries the address of the port above it. Measured consequence on a hand-built
+  case through the real rules: the integrated-function floor HINT reverted to
+  the oversubscription WARNING whose action tells the owner of a working card to
+  replace it, which is the outcome that rule exists to prevent. Across the five
+  committed captures exactly one controller's port resolution moves - the AHCI
+  controller carrying the Windows capture's only disk, previously on no port -
+  and no finding changes, because that platform publishes no bridge link data
+  for a rule to act on.
+- **A port is described by the device hardest to displace, and says how many it
+  holds.** Both builders kept the first of a full child list, so a port holding
+  several devices described itself by whichever the firmware listed first and
+  reported holding one: on the committed Windows capture, the bridge leading to
+  the machine's only disk claimed to hold a memory balloon. A display device now
+  wins outright, else the widest capability, else the lowest address; an
+  unreadable capability ranks last so an unmeasured device never outranks a
+  measured one. 11 ports across the five captures hold more than one device, and
+  each of them previously reported holding exactly one.
+- **The switch-function vendor test reads the controller's own vendor.** It
+  compared the port's vendor with its OCCUPANT's, which is a sibling whenever
+  one represents the port.
+- **The fixture serial guard reads a Windows capture.** It enumerated drives
+  from the Linux `block` and `nvme` sections, so a Windows capture yielded no
+  locations and the agreement check passed having inspected it not at all, while
+  the anti-vacuity test beside it summed across every fixture against a floor
+  the Linux captures meet alone. The floor is now asserted per fixture, the
+  Windows layout is read, and a Windows control plants a serial and requires the
+  check to name it.
+
 ## [1.2.12] 2026-09-12 02:09:28
 
 ### Fixed

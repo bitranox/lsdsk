@@ -49,6 +49,7 @@ _CARD_READER_MAKER = 0x197B
 
 _FLOOR = PcieLink(2.5, 1, 2.5, 1)
 _SATA_ADDRESS = "0000:11:00.0"
+_OWN_PORT_ADDRESS = "0000:08:0d.0"
 _REPLACE_THE_CARD = "replace this card"
 
 
@@ -105,14 +106,21 @@ _A_SWITCH_ELSEWHERE = (
 )
 
 
-def _sata_controller(link: PcieLink = _FLOOR) -> Controller:
-    """The SATA function under test, with the bridge above it unread."""
+def _sata_controller(link: PcieLink = _FLOOR, *, vendor: int | None = _CHIPSET_MAKER) -> Controller:
+    """The SATA function under test, with the bridge above it unread.
+
+    It carries its OWN vendor and the address of the port above it. Both used to
+    be inferred from that port's occupant record, which only works while the
+    controller is the device that port describes.
+    """
     return Controller(
         address=_SATA_ADDRESS,
         name="Chipset SATA Controller",
         kind=ControllerKind.AHCI,
         link=link,
         upstream=PcieLink(),
+        upstream_address=_OWN_PORT_ADDRESS,
+        vendor=vendor,
     )
 
 
@@ -132,15 +140,19 @@ def _drives(negotiated_gbps: float = 6.0) -> tuple[Disk, ...]:
     )
 
 
-def _machine(
-    sata: Controller,
-    *neighbours: PcieSlot,
-    negotiated_gbps: float = 6.0,
-    controller_vendor: int | None = _CHIPSET_MAKER,
-) -> Inventory:
-    """A machine where the controller sits in switch port 0000:08:0d.0, beside the given ports."""
+def _machine(sata: Controller, *neighbours: PcieSlot, negotiated_gbps: float = 6.0) -> Inventory:
+    """A machine where the controller sits in switch port 0000:08:0d.0, beside the given ports.
+
+    The port's occupant record agrees with the controller, which is the ordinary
+    case. What the rule reads about the controller is the controller's own
+    vendor, so a test that varies the maker passes it to :func:`_sata_controller`.
+    """
     own_port = _port(
-        "0000:08:0d.0", occupant=sata.address, link=sata.link, occupant_class=_AHCI, occupant_vendor=controller_vendor
+        _OWN_PORT_ADDRESS,
+        occupant=sata.address,
+        link=sata.link,
+        occupant_class=_AHCI,
+        occupant_vendor=sata.vendor,
     )
     return Inventory(
         "h",
@@ -313,8 +325,8 @@ def test_a_separate_part_at_the_floor_is_not_read_as_a_second_function() -> None
 @pytest.mark.os_agnostic
 def test_a_card_plugged_into_the_switch_is_not_read_as_its_function() -> None:
     """A SATA card from another maker sits behind a switch port without being built into the switch."""
-    sata = _sata_controller()
-    machine = _machine(sata, _USB_AT_THE_FLOOR, _NVME_WITH_A_REAL_LINK, controller_vendor=_SATA_PART_MAKER)
+    sata = _sata_controller(vendor=_SATA_PART_MAKER)
+    machine = _machine(sata, _USB_AT_THE_FLOOR, _NVME_WITH_A_REAL_LINK)
 
     _assert_judged_as_before(sata, machine)
 
@@ -327,7 +339,7 @@ def test_two_parts_from_one_maker_are_not_functions_of_someone_elses_switch() ->
     matching each other proves nothing: only the switch maker's own identifier
     on both marks functions of the switch.
     """
-    sata = _sata_controller()
+    sata = _sata_controller(vendor=_CARD_READER_MAKER)
     card_reader = _port(
         "0000:08:0c.0",
         occupant="0000:10:00.0",
@@ -335,7 +347,7 @@ def test_two_parts_from_one_maker_are_not_functions_of_someone_elses_switch() ->
         occupant_class=0x080501,
         occupant_vendor=_CARD_READER_MAKER,
     )
-    machine = _machine(sata, card_reader, _NVME_WITH_A_REAL_LINK, controller_vendor=_CARD_READER_MAKER)
+    machine = _machine(sata, card_reader, _NVME_WITH_A_REAL_LINK)
 
     _assert_judged_as_before(sata, machine)
 
@@ -353,7 +365,7 @@ def test_a_vendor_that_was_not_read_proves_nothing(
     controller_vendor: int | None, twin_vendor: int | None, port_vendor: int | None
 ) -> None:
     """An unread identifier is no evidence of a shared maker, so the warning stands."""
-    sata = _sata_controller()
+    sata = _sata_controller(vendor=controller_vendor)
     twin = _port(
         "0000:08:0c.0",
         occupant="0000:10:00.0",
@@ -362,7 +374,7 @@ def test_a_vendor_that_was_not_read_proves_nothing(
         vendor=port_vendor,
         occupant_vendor=twin_vendor,
     )
-    machine = _machine(sata, twin, _NVME_WITH_A_REAL_LINK, controller_vendor=controller_vendor)
+    machine = _machine(sata, twin, _NVME_WITH_A_REAL_LINK)
 
     _assert_judged_as_before(sata, machine)
 
@@ -489,3 +501,40 @@ def test_a_port_reading_the_floor_itself_still_marks_a_function_of_the_switch() 
     assert len(findings) == 1, f"expected the register-default hint alone, got {findings}"
     assert findings[0].severity is Severity.HINT
     assert "PCIe floor" in findings[0].title
+
+
+@pytest.mark.os_agnostic
+def test_a_function_sharing_its_port_with_another_device_is_still_a_function_of_the_switch() -> None:
+    """A controller the port record does not name must still be found on that port.
+
+    A port names ONE of the devices behind it, the one hardest to displace, so a
+    controller sharing its port with a more demanding device is named by no port
+    at all. Joined from the port's side, the switch could not be recognised, the
+    hint reverted to the oversubscription warning, and the owner of a working
+    card was told to replace it - the exact outcome this whole module exists to
+    prevent. The join therefore runs from the controller's side.
+    """
+    sata = _sata_controller()
+    # The port is described by a card reader with a real link, which legitimately
+    # outranks the SATA function for the question "what would freeing this cost".
+    shared_port = _port(
+        _OWN_PORT_ADDRESS,
+        occupant="0000:12:00.0",
+        link=PcieLink(5.0, 1, 5.0, 1),
+        occupant_class=0x080501,
+        occupant_vendor=_CHIPSET_MAKER,
+    )
+    machine = Inventory(
+        "h",
+        controllers=(sata,),
+        disks=_drives(),
+        slots=(_SWITCH_UPSTREAM_PORT, shared_port, _USB_AT_THE_FLOOR, _NVME_WITH_A_REAL_LINK),
+    )
+
+    about_it = [finding for finding in diagnose(machine) if finding.subject == sata.address]
+
+    assert not [f for f in about_it if "oversubscribed" in f.title], f"still called oversubscribed: {about_it}"
+    assert len(about_it) == 1, f"expected one hint in place of the warning, got {about_it}"
+    assert about_it[0].severity is Severity.HINT
+    assert "PCIe floor" in about_it[0].title
+    assert _REPLACE_THE_CARD not in (about_it[0].action or "")

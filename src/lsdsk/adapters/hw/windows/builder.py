@@ -151,6 +151,8 @@ def build_controllers(capture: WindowsCapture) -> tuple[Controller, ...]:
                 # Windows publishes no link registers for a PCIe bridge, so this
                 # string is the only thing said about the port at all.
                 upstream_name=None if parent is None else parent.name or None,
+                upstream_address=None if parent is None else parent.address or entry.parent,
+                vendor=parse_int(entry.vendor, 16),
             )
         )
     return tuple(controllers)

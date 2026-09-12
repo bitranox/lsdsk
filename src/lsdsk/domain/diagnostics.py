@@ -129,7 +129,7 @@ def _best_port_for(controller: Controller, inventory: Inventory) -> tuple[PcieSl
     """
     best: tuple[PcieSlot, float] | None = None
     for slot in inventory.slots:
-        if controller.address in (slot.address, slot.occupant_address):
+        if slot.address == controller.upstream_address:
             continue
         gain = _gain_in(slot, controller)
         if gain is None:
@@ -191,11 +191,11 @@ def _best_slot(
     best: PcieSlot | None = None
     best_bandwidth = current
     for slot in inventory.slots:
-        # Skip the port this controller already sits behind, matched by its
-        # occupant rather than by address: a bridge and the card behind it never
-        # share an address, so comparing addresses alone offers a card its own
-        # slot as somewhere better to be.
-        if controller.address in (slot.address, slot.occupant_address):
+        # Skip the port this controller already sits behind, by the address it
+        # records for that port. Matching the port's OCCUPANT instead missed it
+        # whenever a sibling represented the port, and then offered the card the
+        # seat it is already in as somewhere better to be.
+        if slot.address == controller.upstream_address:
             continue
         if not candidates(slot):
             continue
@@ -1140,18 +1140,50 @@ def _bus_is_behind_a_bridge(bus: str, inventory: Inventory) -> bool:
 
 
 def _port_holding(controller: Controller, inventory: Inventory) -> PcieSlot | None:
-    """Return the port a controller sits behind, or ``None`` when no port record names it."""
-    return next((slot for slot in inventory.slots if slot.occupant_address == controller.address), None)
+    """Return the port a controller sits behind, or ``None`` when it names none.
+
+    Joined from the CONTROLLER's side, by the address of the port above it. The
+    port's side cannot answer this: a port record names only one of the devices
+    behind it, so asking which port names this controller finds nothing whenever
+    it shares its port with a device that represents it. Measured on a committed
+    capture, that made the controller carrying the machine's only disk sit on no
+    port at all, and the integrated-function hint it should have earned reverted
+    to a warning telling the owner to replace a working card.
+    """
+    if controller.upstream_address is None:
+        return None
+    return next((slot for slot in inventory.slots if slot.address == controller.upstream_address), None)
+
+
+def _shared_maker(port_vendor: int | None, device_vendor: int | None) -> int | None:
+    """Return the vendor a port shares with a device behind it, or ``None``.
+
+    A function built into switch silicon carries the switch maker's vendor
+    identifier, as does the internal port in front of it. A separate part behind
+    that port carries its own maker's. An identifier that was not read on either
+    side is no evidence either way.
+
+    Example:
+        >>> _shared_maker(0x1022, 0x1022)
+        4130
+        >>> _shared_maker(0x1022, 0x10EC) is None
+        True
+        >>> _shared_maker(None, 0x1022) is None
+        True
+    """
+    if port_vendor is None or device_vendor != port_vendor:
+        return None
+    return port_vendor
 
 
 def _switch_function_maker(port: PcieSlot) -> int | None:
     """Return the vendor a port shares with what sits behind it, which is how a switch's own function reads.
 
-    A function built into switch silicon carries the switch maker's vendor
-    identifier, as does the internal port in front of it. A separate part behind
-    that port carries its own maker's, so a port whose occupant has another
-    vendor holds a device rather than a function of the switch. An identifier
-    that was not read on either side is no evidence either way.
+    About the device the port DESCRIBES, which is the one hardest to displace of
+    however many sit behind it. To ask the same question of a particular
+    controller, compare its own vendor with the port's through
+    :func:`_shared_maker`, because the device describing the port may be a
+    sibling.
 
     Example:
         >>> from lsdsk.domain.models import PcieLink
@@ -1162,9 +1194,7 @@ def _switch_function_maker(port: PcieSlot) -> int | None:
         >>> _switch_function_maker(PcieSlot("a", PcieLink(), occupant_vendor=0x1022)) is None
         True
     """
-    if port.vendor is None or port.occupant_vendor != port.vendor:
-        return None
-    return port.vendor
+    return _shared_maker(port.vendor, port.occupant_vendor)
 
 
 def _port_capability_denies_a_function(port: PcieSlot) -> bool:
@@ -1259,7 +1289,10 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
         return None
     if _port_capability_denies_a_function(own_port):
         return None
-    maker = _switch_function_maker(own_port)
+    # The controller's OWN vendor against its port's, never the port's occupant:
+    # that occupant is whichever device behind the port is hardest to displace,
+    # which need not be this controller.
+    maker = _shared_maker(own_port.vendor, controller.vendor)
     if maker is None:
         return None
     beside = _ports_beside(controller, inventory)
