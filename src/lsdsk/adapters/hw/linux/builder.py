@@ -25,6 +25,7 @@ from ....domain.models import (
     Inventory,
     PcieLink,
     PcieSlot,
+    PciNode,
     PortChild,
     representative_occupant,
 )
@@ -37,6 +38,7 @@ from ..decode.nvme import decode_identify_controller, decode_smart_log
 from ..decode.pciids import Database
 from ..decode.text import device_text
 from ..decode.virtualization import board_name, classify
+from ..fabric import NodeSource, assemble, port_kind_of
 from .capture import AtaBlobs, NvmeBlobs, NvmeClassEntry
 
 if TYPE_CHECKING:
@@ -626,6 +628,41 @@ def build_virtual_disks(capture: LinuxCapture) -> tuple[Disk, ...]:
     )
 
 
+def build_tree(capture: LinuxCapture) -> tuple[PciNode, ...]:
+    """Build the whole PCI fabric as a root-down tree.
+
+    Parentage comes from the sysfs ``path``, which carries a device's entire
+    ancestry, rather than from the ``children`` lists: measured on every
+    committed Linux fixture the two agree, and the path automatically excludes
+    the non-PCI children the reader's address filter admits.
+
+    Args:
+        capture: A Linux reading.
+
+    Returns:
+        Every PCI device as :class:`~lsdsk.domain.models.PciNode` roots and
+        children, in address order.
+    """
+    database = _pci_database(capture)
+    return assemble(
+        tuple(
+            NodeSource(
+                address=address,
+                name=_pci_name(entry, database),
+                class_code=_class_code(entry),
+                vendor=parse_int(entry.vendor, 16),
+                driver=entry.driver,
+                link=_pcie_link(entry),
+                port_kind=port_kind_of(entry.pcie_port_type),
+                connector_present=entry.slot_implemented,
+                physical_slot_number=entry.slot_number,
+                parent=_parent_address(entry.path),
+            )
+            for address, entry in sorted(capture.pci.items())
+        )
+    )
+
+
 def build_inventory(capture: LinuxCapture) -> Inventory:
     """Turn a whole Linux reading into an inventory.
 
@@ -662,6 +699,7 @@ def build_inventory(capture: LinuxCapture) -> Inventory:
         disks=disks,
         virtual_disks=build_virtual_disks(capture),
         slots=build_slots(capture),
+        pci_tree=build_tree(capture),
         privileged=capture.euid == 0,
         environment=environment,
         environment_detail=detail,
@@ -675,6 +713,7 @@ __all__ = [
     "build_disks",
     "build_inventory",
     "build_slots",
+    "build_tree",
     "build_virtual_disks",
     "controller_address_of",
     "controller_kind_of",

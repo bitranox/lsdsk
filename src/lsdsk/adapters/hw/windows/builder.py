@@ -18,7 +18,7 @@ import re
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from ....domain.enums import BusType, ControllerKind, DiskKind
+from ....domain.enums import BusType, ControllerKind, DiskKind, PciPortKind
 from ....domain.models import (
     Controller,
     Disk,
@@ -27,6 +27,7 @@ from ....domain.models import (
     Inventory,
     PcieLink,
     PcieSlot,
+    PciNode,
     PortChild,
     representative_occupant,
 )
@@ -37,6 +38,7 @@ from ..decode.captured import decode_base64, parse_int
 from ..decode.nvme import decode_identify_controller, decode_smart_log
 from ..decode.text import device_text
 from ..decode.virtualization import board_name, classify
+from ..fabric import NodeSource, assemble
 from ..linux.builder import controller_kind_of, parse_pcie_speed
 from .capture import HealthBlobs
 
@@ -321,6 +323,49 @@ def _node_name(entry: DiskEntry, path: str) -> str:
     return f"PhysicalDrive{match.group(1)}" if match else path
 
 
+def build_tree(capture: WindowsCapture) -> tuple[PciNode, ...]:
+    """Build the whole PCI fabric as a root-down tree.
+
+    Parentage comes from the recorded ``parent`` chain, keyed by instance
+    identifier. A parent that is not itself a captured PCI device, such as
+    the ACPI root the whole chain leaves PCI into, hands the device to the
+    synthetic root of its own bus.
+
+    Args:
+        capture: A Windows reading.
+
+    Returns:
+        Every PCI device as :class:`~lsdsk.domain.models.PciNode` roots and
+        children, in address order.
+    """
+    devices = capture.pci
+    return assemble(
+        tuple(
+            NodeSource(
+                address=entry.address or instance,
+                name=_controller_name(entry, instance),
+                class_code=_class_code(entry),
+                vendor=parse_int(entry.vendor, 16),
+                driver=entry.driver,
+                link=_pcie_link(entry),
+                # Windows publishes no PCIe capability port type without a
+                # kernel driver, so every port reads as unknown here.
+                port_kind=PciPortKind.UNKNOWN,
+                # The Slot Implemented bit is likewise unreadable, so a
+                # connector is never claimed.
+                connector_present=None,
+                physical_slot_number=entry.slot_number,
+                parent=None
+                if entry.parent is None
+                else (devices[entry.parent].address or entry.parent)
+                if entry.parent in devices
+                else None,
+            )
+            for instance, entry in sorted(devices.items())
+        )
+    )
+
+
 def build_inventory(capture: WindowsCapture) -> Inventory:
     """Turn a whole Windows reading into an inventory.
 
@@ -356,6 +401,7 @@ def build_inventory(capture: WindowsCapture) -> Inventory:
         ),
         disks=disks,
         slots=build_slots(capture),
+        pci_tree=build_tree(capture),
         privileged=capture.elevated,
         environment=environment,
         environment_detail=detail,

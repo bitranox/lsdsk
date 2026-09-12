@@ -42,7 +42,7 @@ from lsdsk.adapters.render.tables import counter_legend
 from lsdsk.domain.diagnostics import count_by_severity
 from lsdsk.domain.enums import ActionCommand, CliCommand, Environment, OutputFormat, Severity
 from lsdsk.domain.errors import ConfigurationError
-from lsdsk.domain.models import Controller, Disk, Finding, Inventory, PcieSlot
+from lsdsk.domain.models import Controller, Disk, Finding, Inventory, PcieSlot, PciNode
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 
 from .. import safe_console
@@ -297,6 +297,7 @@ class ScanData(BaseModel):
     conversion at this boundary and none before it.
     """
 
+    pci_tree: tuple[PciNode, ...]
     hostname: str
     board: str
     privileged: bool
@@ -364,6 +365,7 @@ def build_envelope(
         skipped=skipped,
         command=command,
         data=ScanData(
+            pci_tree=inventory.pci_tree,
             hostname=inventory.hostname,
             board=inventory.board,
             privileged=inventory.privileged,

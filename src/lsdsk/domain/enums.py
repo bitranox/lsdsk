@@ -145,6 +145,36 @@ class ControllerKind(StrEnum):
     UNKNOWN = "unknown"
 
 
+class PciPortKind(StrEnum):
+    """What kind of PCIe port a bridge is, from its PCIe capability.
+
+    A bridge's port type says where it sits in the fabric: a root port feeds
+    the CPU's own root complex, a switch upstream port feeds a switch's
+    downstream side, and a switch downstream port is what a function built into
+    switch silicon hangs behind. The register is the PCIe capability's port
+    type byte, which a capture records when it could be read.
+
+    Attributes:
+        ROOT: A root port, the CPU's own root complex.
+        SWITCH_UPSTREAM: The upstream side of a PCIe switch.
+        SWITCH_DOWNSTREAM: A switch's downstream port, which is what the
+            internal functions of a chipset used as a switch hang behind.
+        UNKNOWN: The capability was not read, or held a value this tool does
+            not name. A value outside the known set reads as unknown rather
+            than raising, because a live run must not be refused over one odd
+            register.
+
+    Example:
+        >>> f"{PciPortKind.SWITCH_DOWNSTREAM}"
+        'switch-downstream'
+    """
+
+    ROOT = "root"
+    SWITCH_UPSTREAM = "switch-upstream"
+    SWITCH_DOWNSTREAM = "switch-downstream"
+    UNKNOWN = "unknown"
+
+
 class Environment(StrEnum):
     """What kind of machine the readings came from.
 
@@ -262,6 +292,7 @@ __all__ = [
     "DiskKind",
     "Environment",
     "OutputFormat",
+    "PciPortKind",
     "Platform",
     "Severity",
 ]

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from math import inf
 from typing import TYPE_CHECKING, NamedTuple
 
-from .enums import BusType, ControllerKind, DiskKind, Environment, Severity
+from .enums import BusType, ControllerKind, DiskKind, Environment, PciPortKind, Severity
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -48,6 +48,11 @@ _PCIE_FLOOR_WIDTH = 1
 # PCI base class codes, enough to say what is sitting in a slot.
 _PCI_CLASS_STORAGE = 0x01
 _PCI_CLASS_DISPLAY = 0x03
+
+# PCI class PROGRAM value shared by every PCI-to-PCI bridge, root port and
+# switch leg alike: the class triple is 0x0604xx. Compared as a shifted class
+# so a node carrying no class code at all is not a bridge by omission.
+_PCI_BRIDGE_CLASS = 0x0604
 _PCI_CLASS_NAMES: dict[int, str] = {
     0x00: "legacy device",
     0x01: "storage controller",
@@ -553,6 +558,127 @@ class PcieSlot:
 
 
 @dataclass(frozen=True, slots=True)
+class PciNode:
+    """One node of the PCI fabric: a device, a bridge, or a synthetic root.
+
+    This is the whole-machine tree the topology view draws, so unlike
+    :class:`PcieSlot` a node can be any PCI device at all - a graphics card, a
+    USB controller, the host bridge - and not only a port. It exists because a
+    card on a root-complex port and a card three bridges below a chipset used
+    as a PCIe switch render identically today, and the diagnostics rules reason
+    about that difference through bus-number inference because nothing else
+    could express it.
+
+    Attributes:
+        address: PCI address of the device, for example ``0000:03:00.0``, or the
+            root BUS label (``0000:00``, no function digit) for the synthetic
+            root of a bus, which cannot collide with a device address.
+        name: Readable name.
+        class_code: The class triple, or ``None`` when the platform published
+            none. Not defensive: the Windows host bridge genuinely carries
+            no class key.
+        vendor: PCI vendor identifier.
+        driver: Bound driver name.
+        link: The device's own link state and capability.
+        port_kind: What kind of PCIe port this bridge is, when it is one.
+        connector_present: Whether this port ends in a physical slot.
+        physical_slot_number: The board's own number for this connector.
+        parent_address: Address of the node directly above. ``None`` on the
+            synthetic root of a bus, which is exactly what identifies it.
+        children: Addresses of the nodes directly below, in address order.
+
+    Example:
+        >>> root = PciNode("0000:00", "root", children=("0000:00:1c.0",))
+        >>> root.is_root
+        True
+        >>> PciNode("0000:00:1c.0", "bridge", class_code=0x060400).is_bridge
+        True
+    """
+
+    address: str
+    name: str
+    class_code: int | None = None
+    vendor: int | None = None
+    driver: str | None = None
+    link: PcieLink = field(default_factory=PcieLink)
+    port_kind: PciPortKind = PciPortKind.UNKNOWN
+    connector_present: bool | None = None
+    physical_slot_number: int | None = None
+    parent_address: str | None = None
+    children: tuple[str, ...] = ()
+
+    @property
+    def is_root(self) -> bool:
+        """Whether this is the synthetic root of a root bus.
+
+        Carried by ``parent_address is None`` alone rather than by an extra
+        flag, so the two can never disagree.
+
+        Example:
+            >>> PciNode("0000:00", "root").is_root
+            True
+            >>> PciNode("0000:00:1c.0", "bridge", parent_address="0000:00").is_root
+            False
+        """
+        return self.parent_address is None
+
+    @property
+    def is_bridge(self) -> bool:
+        """Whether this node is a PCI bridge, by its class code.
+
+        Example:
+            >>> PciNode("a", "b", class_code=0x060400).is_bridge
+            True
+            >>> PciNode("a", "b", class_code=0x010601).is_bridge
+            False
+            >>> PciNode("a", "b").is_bridge
+            False
+        """
+        return self.class_code is not None and (self.class_code >> 8) == _PCI_BRIDGE_CLASS
+
+    @property
+    def is_port(self) -> bool:
+        """Whether this node is a PCIe port, root or switch leg.
+
+        A bridge class code says the node bridges PCI to PCI; the port kind
+        says which leg of the fabric it is. Either being known makes it a
+        port: the capability is unreadable on Windows, where the class code
+        still is.
+
+        Example:
+            >>> PciNode("a", "b", class_code=0x060400).is_port
+            True
+            >>> PciNode("a", "b", port_kind=PciPortKind.ROOT).is_port
+            True
+            >>> PciNode("a", "b").is_port
+            False
+        """
+        return self.is_bridge or self.port_kind is not PciPortKind.UNKNOWN
+
+    @property
+    def is_storage(self) -> bool:
+        """Whether this node is itself a storage controller.
+
+        Example:
+            >>> PciNode("a", "b", class_code=0x010601).is_storage
+            True
+            >>> PciNode("a", "b", class_code=0x030000).is_storage
+            False
+        """
+        return self.class_code is not None and (self.class_code >> 16) == _PCI_CLASS_STORAGE
+
+    @property
+    def class_name(self) -> str:
+        """A readable name for this node's class.
+
+        Example:
+            >>> PciNode("a", "b", class_code=0x030000).class_name
+            'display controller'
+        """
+        return pci_class_name(self.class_code)
+
+
+@dataclass(frozen=True, slots=True)
 class InterfaceLink:
     """Negotiated versus capable speed of one disk's own interface.
 
@@ -948,6 +1074,10 @@ class Inventory:
             ``disks`` because a device with no link and no SMART cannot answer
             any question asked of a drive.
         slots: Every PCIe bridge and root port, for placement advice.
+        pci_tree: Every PCI device as one root-down tree, for the topology
+            view. Its roots are the machine's root buses, one synthetic node
+            each, so two root complexes stay two trees rather than 82 sibling
+            lines. Empty when the capture carries no PCI devices at all.
         privileged: Whether the scan had the rights to read SMART data.
         environment: Whether this is bare metal, a guest, or a container.
         environment_detail: The runtime or hypervisor, when it could be named.
@@ -966,6 +1096,7 @@ class Inventory:
     disks: tuple[Disk, ...] = ()
     virtual_disks: tuple[Disk, ...] = ()
     slots: tuple[PcieSlot, ...] = ()
+    pci_tree: tuple[PciNode, ...] = ()
     privileged: bool = False
     environment: Environment = Environment.UNKNOWN
     environment_detail: str = ""
@@ -1082,6 +1213,7 @@ __all__ = [
     "Health",
     "InterfaceLink",
     "Inventory",
+    "PciNode",
     "PcieLink",
     "PcieSlot",
     "SmartAttribute",

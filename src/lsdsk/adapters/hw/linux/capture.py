@@ -63,6 +63,10 @@ class PciEntry(CaptureModel):
         slot_implemented: Whether the port ends in a physical connector, read
             from configuration space and therefore only with privilege.
         slot_number: The physical slot number the board assigned the port.
+        pcie_port_type: The PCIe capability's port type byte, which names a
+            root port against a switch's upstream and downstream legs. The
+            reader has always written it; declaring it here stops the parse
+            from discarding it.
     """
 
     class_code: str | None = Field(default=None, alias="class")
@@ -78,6 +82,7 @@ class PciEntry(CaptureModel):
     ahci: AhciRegisters | None = None
     slot_implemented: bool | None = None
     slot_number: int | None = None
+    pcie_port_type: int | None = None
 
 
 class ClassEntry(CaptureModel):
