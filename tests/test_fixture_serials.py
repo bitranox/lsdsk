@@ -95,7 +95,9 @@ def _device(capture: Mapping[str, object], section: str, device: str) -> dict[st
     return _mapping(_mapping(capture.get(section)).get(device))
 
 
-def _records(capture: Mapping[str, object], device: str) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+def _records(
+    capture: Mapping[str, object], device: str
+) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
     """The ata, nvme and block records for one drive, on either platform's layout.
 
     A Linux capture keys top-level ``ata``, ``nvme`` and ``block`` sections by
@@ -160,9 +162,7 @@ def _devices(capture: Mapping[str, object]) -> list[str]:
     every check below scored a Windows capture zero and passed.
     """
     return sorted(
-        set(_mapping(capture.get("block")))
-        | set(_mapping(capture.get("nvme")))
-        | set(_mapping(capture.get("disks")))
+        set(_mapping(capture.get("block"))) | set(_mapping(capture.get("nvme"))) | set(_mapping(capture.get("disks")))
     )
 
 
