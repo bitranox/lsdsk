@@ -95,6 +95,25 @@ def _device(capture: Mapping[str, object], section: str, device: str) -> dict[st
     return _mapping(_mapping(capture.get(section)).get(device))
 
 
+def _records(capture: Mapping[str, object], device: str) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+    """The ata, nvme and block records for one drive, on either platform's layout.
+
+    A Linux capture keys top-level ``ata``, ``nvme`` and ``block`` sections by
+    device name. A Windows capture has none of those: every blob is nested
+    inside its own entry of ``disks``. Reading only the Linux shape is what made
+    a Windows capture yield nothing at all.
+    """
+    disks = _mapping(capture.get("disks"))
+    if device in disks:
+        disk = _mapping(disks.get(device))
+        return _mapping(disk.get("ata")), _mapping(disk.get("nvme")), disk
+    return (
+        _device(capture, "ata", device),
+        _device(capture, "nvme", device),
+        _device(capture, "block", device),
+    )
+
+
 def _blob(source: Mapping[str, object], key: str) -> bytes | None:
     value = source.get(key)
     return base64.b64decode(value) if isinstance(value, str) else None
@@ -102,11 +121,13 @@ def _blob(source: Mapping[str, object], key: str) -> bytes | None:
 
 def _serial_locations(capture: Mapping[str, object], device: str) -> dict[str, str]:
     """Every serial this capture holds for one device, keyed by where it lives."""
-    record = _device(capture, "block", device)
+    ata, nvme, record = _records(capture, device)
     vpd = _mapping(record.get("vpd"))
-    ata = _device(capture, "ata", device)
-    nvme = _device(capture, "nvme", device)
     found: dict[str, str] = {}
+
+    reported = _mapping(record.get("device")).get("serial")
+    if isinstance(reported, str) and reported.strip():
+        found["device/serial"] = reported.strip()
 
     if (identify := _blob(ata, "identify")) is not None:
         found["ata/identify"] = decode_identify(identify).serial
@@ -131,9 +152,23 @@ def _serial_locations(capture: Mapping[str, object], device: str) -> dict[str, s
     return {where: serial for where, serial in found.items() if serial}
 
 
+def _devices(capture: Mapping[str, object]) -> list[str]:
+    """Every drive a capture records, whichever platform wrote it.
+
+    One enumeration, because two copies of it is how a whole platform came to be
+    skipped: the Linux sections were named here and the Windows one was not, so
+    every check below scored a Windows capture zero and passed.
+    """
+    return sorted(
+        set(_mapping(capture.get("block")))
+        | set(_mapping(capture.get("nvme")))
+        | set(_mapping(capture.get("disks")))
+    )
+
+
 def _disagreements(capture: Mapping[str, object]) -> list[str]:
     """Locations whose serial differs from the one the tool reports for that drive."""
-    devices = sorted(set(_mapping(capture.get("block"))) | set(_mapping(capture.get("nvme"))))
+    devices = _devices(capture)
     problems: list[str] = []
     for device in devices:
         locations = _serial_locations(capture, device)
@@ -166,13 +201,31 @@ def test_every_copy_of_a_serial_in_a_fixture_agrees_with_the_drive(fixture: Path
 
 
 @pytest.mark.os_agnostic
+@pytest.mark.parametrize("fixture", _fixtures(), ids=lambda path: path.stem)
+def test_every_fixture_contributes_at_least_one_serial_location(fixture: Path) -> None:
+    """A capture the extractor cannot read scores zero and passes, so require one each.
+
+    The floor below is a SUM across every fixture, which the Linux captures meet
+    on their own - so a capture whose shape this file cannot read at all was
+    invisible to it, and the agreement check above silently inspected nothing.
+    That is an ANY test guarding an EVERY invariant. This asserts it per capture,
+    so a new platform or a changed section name fails here and names the file.
+    """
+    capture = _load(fixture)
+    counts = {device: len(_serial_locations(capture, device)) for device in _devices(capture)}
+    assert sum(counts.values()) >= 1, (
+        f"{fixture.name} yielded no serial locations, so every check over it passes vacuously; "
+        f"devices found: {sorted(counts)}"
+    )
+
+
+@pytest.mark.os_agnostic
 def test_a_fixture_carries_enough_locations_for_the_check_to_mean_something() -> None:
     """A check that finds no locations passes on anything, so require the copies."""
     counts: dict[str, int] = {}
     for path in _fixtures():
         capture = _load(path)
-        devices = sorted(set(_mapping(capture.get("block"))) | set(_mapping(capture.get("nvme"))))
-        counts[path.stem] = sum(len(_serial_locations(capture, device)) for device in devices)
+        counts[path.stem] = sum(len(_serial_locations(capture, device)) for device in _devices(capture))
     assert sum(counts.values()) >= _LOCATIONS_THE_FIXTURES_CARRY, counts
 
 
@@ -195,3 +248,30 @@ def test_the_check_names_a_location_planted_with_another_serial() -> None:
     problems = _disagreements(capture)
 
     assert any("sda vpd_pg80=" in problem for problem in problems), problems
+
+
+@pytest.mark.os_agnostic
+def test_the_check_names_a_planted_serial_on_a_windows_capture_too() -> None:
+    """The Windows branch needs its own control, or only the Linux one is proven.
+
+    A capture whose layout the extractor cannot read scores zero and passes, so
+    the Linux control above says nothing about the Windows path. This plants a
+    different serial in the field Windows reports and requires the check to name
+    it, which is what makes a passing Windows fixture mean anything.
+    """
+    capture = _load(FIXTURES / "windows-ahci.json")
+    disks = _mapping(capture.get("disks"))
+    device = next(iter(sorted(disks)), None)
+    assert device is not None, "the control needs a Windows capture that carries a disk"
+
+    record = _mapping(disks.get(device))
+    assert _blob(_mapping(record.get("ata")), "identify") is not None, (
+        "the control needs a disk whose ATA IDENTIFY is present to disagree with"
+    )
+    record["device"] = {**_mapping(record.get("device")), "serial": _ANOTHER_SERIAL.decode("ascii").strip()}
+    disks[device] = record
+    capture["disks"] = disks
+
+    problems = _disagreements(capture)
+
+    assert any("device/serial=" in problem for problem in problems), problems
