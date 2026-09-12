@@ -5,6 +5,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Added
+
+- **The topology view shows the whole PCI fabric.** Every PCI device - the
+  bridges, the controllers, the unrelated devices beside them - now renders
+  root-down under its own PCI structure, so a card on a root-complex port and
+  one three bridges below a chipset used as a PCIe switch are no longer drawn
+  identically, and a narrower intermediate hop is visible where it happens.
+  The fabric tree travels with the JSON output as `pci_tree`.
+
+## [1.2.13] 2026-09-12 23:30:24
+
 ### Fixed
 
 - **A controller that shares its PCIe port with another device is found on that

@@ -4,6 +4,8 @@ Standing backlog. One item per line, edited in place - never rewritten wholesale
 Rank in tens. `USER:` outranks `FOUND:`; within an origin, bigger `size` goes first.
 Closing an item is `- [x]` plus `| closed: <reason>`; the line stays.
 
+- [ ] (2026-09-12) [0] USER: the PCIe structure in the topology view - the bridges, whether a controller is behind one, and the speeds along the path | size: Phase 1 of the approved plan (domain model, fabric assembly, render tree, density switch, TUI, docs) plus Phase 2 (scrub and commit the reporter's B550 capture as `windows-chipset-switch`) | open: the plan at ~/.claude/plans/what-i-miss-is-gentle-graham.md is approved with settled decisions; Phase 0 defect fixes shipped and pushed as ede342e (CI green); Phase 1 is STARTED and UNCOMMITTED in the working tree - see handover.md for exactly how far it got | next: finish commit (a): add `pci_tree` to ScanData, write builder tests over the committed fixtures, make test, commit
+
 Host names, key paths and hardware specifics stay OUT of this file - it is tracked in a
 public repo. Those live in `handover.md`, which is gitignored.
 
