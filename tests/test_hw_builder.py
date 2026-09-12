@@ -528,3 +528,26 @@ def test_a_controller_windows_cannot_identify_keeps_the_name_windows_gave_it() -
     planted = next(c for c in inventory.controllers if c.address == "0000:03:00.0")
 
     assert planted.name == "Some Vendor Storage Controller"
+
+
+@pytest.mark.os_agnostic
+def test_a_port_records_how_many_devices_sit_behind_it() -> None:
+    """Verify a port holding several devices does not report itself as holding one.
+
+    A port is freed only by removing EVERYTHING behind it, so how many devices
+    that is belongs on the record. Keeping only the platform's first child made
+    a four-device bridge indistinguishable from a single-card slot, and the swap
+    advice built on it described what had to be unplugged by one of the four.
+    """
+    payload = load(WINDOWS_HOST)
+    bridge = "0000:05:01.0"
+    entry = next(item for item in payload["pci"].values() if item.get("address") == bridge)
+    children = entry["children"]
+    assert len(children) > 1, "the capture no longer has a port with several children to count"
+
+    port = next(slot for slot in build_from(payload).slots if slot.address == bridge)
+
+    assert port.occupant_count == len(children), (
+        f"{bridge} holds {len(children)} devices but reports {port.occupant_count}"
+    )
+    assert port.occupied is True

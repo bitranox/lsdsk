@@ -13,8 +13,13 @@ System Role:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import inf
+from typing import TYPE_CHECKING, NamedTuple
 
 from .enums import BusType, ControllerKind, DiskKind, Environment, Severity
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 # Usable bandwidth of one PCIe lane in one direction, in GB/s, per link speed in
 # GT/s.  These are not raw signalling rates: they already account for the line
@@ -321,6 +326,74 @@ class PcieLink:
         return None
 
 
+class PortChild(NamedTuple):
+    """One device behind a port, as much of it as choosing between them needs.
+
+    Attributes:
+        address: PCI address of the device.
+        class_code: Its PCI class triple, or ``None`` where the platform gave none.
+        capability_gbps: What its own link can carry, or ``None`` where the
+            platform published no link registers for it, which is every device
+            on some platforms.
+    """
+
+    address: str
+    class_code: int | None
+    capability_gbps: float | None
+
+
+def representative_occupant(children: Sequence[PortChild]) -> PortChild | None:
+    """The child that decides what a port is, being the one hardest to displace.
+
+    A port is freed only by removing EVERYTHING behind it, so a multi-device
+    port must be described by the device that makes it hardest to free, never by
+    whichever the platform happened to list first. Taking the first child is
+    arbitrary in a way that reads as deliberate: the ordering is the firmware's,
+    and on one real capture it named a memory balloon for the bridge that leads
+    to the machine's only disk.
+
+    A display device wins outright, because a slot holding the graphics card
+    cannot be taken whatever else shares it. Otherwise the widest capability
+    wins, since that is the card that would lose most by being moved. An
+    unreadable capability ranks last rather than first, so an unmeasured device
+    never outranks a measured one. Ties fall to the lowest address purely so the
+    answer is stable across runs.
+
+    Args:
+        children: Every real device behind the port, in any order.
+
+    Returns:
+        The device representing the port, or ``None`` when nothing sits behind it.
+
+    Example:
+        >>> gpu = PortChild("0000:01:00.1", 0x030000, 2.0)
+        >>> hba = PortChild("0000:01:00.0", 0x010700, 8.0)
+        >>> representative_occupant([hba, gpu]).address
+        '0000:01:00.1'
+        >>> nic = PortChild("0000:02:00.0", 0x020000, 0.5)
+        >>> representative_occupant([nic, hba]).address
+        '0000:01:00.0'
+        >>> unread = PortChild("0000:03:00.0", 0x010601, None)
+        >>> representative_occupant([unread, nic]).address
+        '0000:02:00.0'
+        >>> first = PortChild("0000:04:00.0", 0xff0000, None)
+        >>> representative_occupant([unread, first]).address
+        '0000:03:00.0'
+        >>> representative_occupant([]) is None
+        True
+    """
+    if not children:
+        return None
+    return sorted(children, key=_displacement_rank)[0]
+
+
+def _displacement_rank(child: PortChild) -> tuple[int, float, str]:
+    """Sort key ordering children hardest to displace first."""
+    display = child.class_code is not None and (child.class_code >> 16) == _PCI_CLASS_DISPLAY
+    capability = -child.capability_gbps if child.capability_gbps is not None else inf
+    return (0 if display else 1, capability, child.address)
+
+
 @dataclass(frozen=True, slots=True)
 class PcieSlot:
     """A PCIe port, and whether a card could actually be moved into it.
@@ -361,6 +434,10 @@ class PcieSlot:
         occupant_vendor: PCI vendor identifier of whatever sits in it. Matching
             the port's, it marks a function built into the switch rather than a
             part plugged in behind it.
+        occupant_count: How many devices sit behind this port. A port is freed
+            only by removing all of them, so advice about freeing it is wrong in
+            proportion to how far this exceeds one. The other ``occupant_``
+            fields describe whichever of them is hardest to displace.
 
     Example:
         >>> port = PcieSlot("0000:00:03.0", PcieLink(8.0, 8, 8.0, 8), connector_present=True)
@@ -383,6 +460,7 @@ class PcieSlot:
     physical_slot_number: int | None = None
     vendor: int | None = None
     occupant_vendor: int | None = None
+    occupant_count: int = 0
 
     @property
     def is_move_target(self) -> bool:

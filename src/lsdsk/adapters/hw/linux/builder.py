@@ -25,6 +25,8 @@ from ....domain.models import (
     Inventory,
     PcieLink,
     PcieSlot,
+    PortChild,
+    representative_occupant,
 )
 from ..decode import pciids
 from ..decode.ahci import decode_capabilities
@@ -316,21 +318,28 @@ def build_slots(capture: LinuxCapture) -> tuple[PcieSlot, ...]:
         class_code = _class_code(entry)
         if class_code is None or (class_code >> 8) != _BRIDGE_CLASS:
             continue
-        children = entry.children
-        occupant = devices.get(children[0]) if children else None
+        present = [child for child in entry.children if child in devices]
+        chosen = representative_occupant(
+            [
+                PortChild(child, _class_code(devices[child]), _pcie_link(devices[child]).max_bandwidth_gbps)
+                for child in present
+            ]
+        )
+        occupant = devices.get(chosen.address) if chosen is not None else None
         slots.append(
             PcieSlot(
                 address=address,
                 link=_pcie_link(entry),
-                occupied=bool(children),
+                occupied=bool(present),
                 connector_present=entry.slot_implemented,
-                occupant_address=children[0] if children else None,
+                occupant_address=None if chosen is None else chosen.address,
                 occupant_class=None if occupant is None else _class_code(occupant),
                 occupant_name=None if occupant is None else _pci_name(occupant, database),
                 occupant_link=None if occupant is None else _pcie_link(occupant),
                 physical_slot_number=entry.slot_number,
                 vendor=parse_int(entry.vendor, 16),
                 occupant_vendor=None if occupant is None else parse_int(occupant.vendor, 16),
+                occupant_count=len(present),
             )
         )
     return tuple(slots)

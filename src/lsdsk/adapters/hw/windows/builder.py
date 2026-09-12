@@ -27,6 +27,8 @@ from ....domain.models import (
     Inventory,
     PcieLink,
     PcieSlot,
+    PortChild,
+    representative_occupant,
 )
 from ..decode import pciids
 from ..decode.ata_identify import decode_identify
@@ -169,21 +171,30 @@ def build_slots(capture: WindowsCapture) -> tuple[PcieSlot, ...]:
         class_code = _class_code(entry)
         if class_code is None or (class_code >> 8) != 0x0604:  # noqa: PLR2004 - the PCI-to-PCI bridge class
             continue
-        children = entry.children
-        occupant = devices.get(children[0]) if children else None
+        # Keyed by the address the port would report, so the rule's tie-break
+        # falls to the lowest ADDRESS rather than to an instance-id ordering.
+        behind = {(devices[child].address or child): devices[child] for child in entry.children if child in devices}
+        chosen = representative_occupant(
+            [
+                PortChild(address, _class_code(child), _pcie_link(child).max_bandwidth_gbps)
+                for address, child in behind.items()
+            ]
+        )
+        occupant = None if chosen is None else behind[chosen.address]
         slots.append(
             PcieSlot(
                 address=entry.address or instance,
                 link=_pcie_link(entry),
-                occupied=bool(children),
+                occupied=bool(behind),
                 connector_present=None,
-                occupant_address=None if occupant is None else occupant.address or children[0],
+                occupant_address=None if chosen is None else chosen.address,
                 occupant_class=None if occupant is None else _class_code(occupant),
                 occupant_name=None if occupant is None else occupant.name,
                 occupant_link=None if occupant is None else _pcie_link(occupant),
                 physical_slot_number=entry.slot_number,
                 vendor=parse_int(entry.vendor, 16),
                 occupant_vendor=None if occupant is None else parse_int(occupant.vendor, 16),
+                occupant_count=len(behind),
             )
         )
     return tuple(slots)
