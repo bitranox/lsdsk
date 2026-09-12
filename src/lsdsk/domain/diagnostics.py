@@ -1167,6 +1167,32 @@ def _switch_function_maker(port: PcieSlot) -> int | None:
     return port.vendor
 
 
+def _port_capability_denies_a_function(port: PcieSlot) -> bool:
+    """Whether this port's own capability rules out switch silicon behind it.
+
+    The vendor check cannot separate a chipset's built-in SATA function from a
+    genuinely Gen1 x1 card of the same maker plugged into that chipset's switch.
+    The port in front of each can: an INTERNAL port publishes the floor as its
+    own capability, a real downstream port publishes the switch's. Measured in
+    this repository's ``linux-sas-hba`` capture, an Intel network controller at
+    the floor sits behind an Intel port reading 5.0 GT/s x1.
+
+    A port whose capability was not read denies nothing. Windows exposes no
+    bridge capability at all without a kernel driver, so there the vendor check
+    stays the only evidence and this returns ``False`` for every port.
+
+    Example:
+        >>> from lsdsk.domain.models import PcieLink
+        >>> _port_capability_denies_a_function(PcieSlot("a", PcieLink(2.5, 1, 5.0, 1)))
+        True
+        >>> _port_capability_denies_a_function(PcieSlot("a", PcieLink(2.5, 1, 2.5, 1)))
+        False
+        >>> _port_capability_denies_a_function(PcieSlot("a", PcieLink()))
+        False
+    """
+    return port.link.capability_is_known and not port.link.capability_is_at_floor
+
+
 def _ports_beside(controller: Controller, inventory: Inventory) -> tuple[PcieSlot, ...]:
     """Return the other ports on the switch whose downstream port holds this controller.
 
@@ -1231,6 +1257,8 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
     own_port = _port_holding(controller, inventory)
     if not controller.link.is_at_floor or own_port is None:
         return None
+    if _port_capability_denies_a_function(own_port):
+        return None
     maker = _switch_function_maker(own_port)
     if maker is None:
         return None
@@ -1242,6 +1270,7 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
             if slot.occupant_link is not None
             and slot.occupant_link.is_at_floor
             and _switch_function_maker(slot) == maker
+            and not _port_capability_denies_a_function(slot)
         ),
         None,
     )

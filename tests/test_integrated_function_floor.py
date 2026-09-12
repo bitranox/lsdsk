@@ -417,3 +417,75 @@ def test_the_pattern_raises_nothing_where_no_warning_would_have_stood() -> None:
 
     assert diagnose_controller_oversubscription(sata, machine) == []
     assert [finding for finding in diagnose(machine) if finding.subject == sata.address] == []
+
+
+@pytest.mark.os_agnostic
+def test_a_port_capable_of_more_holds_a_part_rather_than_a_function_of_the_switch() -> None:
+    """A read port capability above the floor refutes the pattern the vendor check cannot.
+
+    A function built into switch silicon sits behind an INTERNAL port that publishes the floor
+    as its own capability; a real downstream port passing a link to a separate card publishes
+    the switch's capability instead. So a card that genuinely is Gen1 x1, plugged into a switch
+    of its own maker beside another floor-reading device, completes every other leg of the
+    pattern and must still be called oversubscribed.
+
+    Measured in this repo's own `linux-sas-hba` capture: an Intel network controller at
+    2.5 GT/s x1 sits behind an Intel port reading 5.0 GT/s x1, so the vendor check alone passes
+    on a part that is plainly not a function of the chipset.
+    """
+    sata = _sata_controller()
+    own_port = PcieSlot(
+        "0000:08:0d.0",
+        PcieLink(2.5, 1, 5.0, 1),
+        occupied=True,
+        occupant_address=sata.address,
+        occupant_class=_AHCI,
+        occupant_link=sata.link,
+        vendor=_CHIPSET_MAKER,
+        occupant_vendor=_CHIPSET_MAKER,
+    )
+    machine = Inventory(
+        "h",
+        controllers=(sata,),
+        disks=_drives(),
+        slots=(_SWITCH_UPSTREAM_PORT, own_port, _USB_AT_THE_FLOOR, _NVME_WITH_A_REAL_LINK),
+    )
+
+    findings = diagnose_controller_oversubscription(sata, machine)
+
+    assert len(findings) == 1, f"expected the oversubscription warning alone, got {findings}"
+    assert findings[0].severity is Severity.WARNING
+    assert "oversubscribed" in findings[0].title
+
+
+@pytest.mark.os_agnostic
+def test_a_port_reading_the_floor_itself_still_marks_a_function_of_the_switch() -> None:
+    """The direction that must keep working: an internal port publishes the floor too.
+
+    This is what the reported chipset-as-switch card shows on Linux - its internal ports read
+    PCIe 1.1, 2.5 GT/s x1, with no slot implemented - so a read port capability at the floor
+    is evidence FOR the pattern and the hint must stand.
+    """
+    sata = _sata_controller()
+    own_port = PcieSlot(
+        "0000:08:0d.0",
+        _FLOOR,
+        occupied=True,
+        occupant_address=sata.address,
+        occupant_class=_AHCI,
+        occupant_link=sata.link,
+        vendor=_CHIPSET_MAKER,
+        occupant_vendor=_CHIPSET_MAKER,
+    )
+    machine = Inventory(
+        "h",
+        controllers=(sata,),
+        disks=_drives(),
+        slots=(_SWITCH_UPSTREAM_PORT, own_port, _USB_AT_THE_FLOOR, _NVME_WITH_A_REAL_LINK),
+    )
+
+    findings = diagnose_controller_oversubscription(sata, machine)
+
+    assert len(findings) == 1, f"expected the register-default hint alone, got {findings}"
+    assert findings[0].severity is Severity.HINT
+    assert "PCIe floor" in findings[0].title

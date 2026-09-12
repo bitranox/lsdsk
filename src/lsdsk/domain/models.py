@@ -235,6 +235,28 @@ class PcieLink:
         )
 
     @property
+    def capability_is_at_floor(self) -> bool:
+        """Whether this end can do no more than the PCIe floor, whatever it negotiated.
+
+        Asked of the CAPABILITY alone, unlike :attr:`is_at_floor`, which also
+        requires the running link to sit there. A port in front of a function
+        built into switch silicon publishes the floor as its own capability,
+        while a real downstream port passing a link to a separate card
+        publishes the switch's. So this is what separates the two, and the
+        running link would only confuse it: a real port with nothing plugged in
+        trains to nothing.
+
+        Example:
+            >>> PcieLink(2.5, 1, 2.5, 1).capability_is_at_floor
+            True
+            >>> PcieLink(2.5, 1, 5.0, 1).capability_is_at_floor
+            False
+            >>> PcieLink().capability_is_at_floor
+            False
+        """
+        return self.max_speed_gtps == _PCIE_FLOOR_SPEED_GTPS and self.max_width == _PCIE_FLOOR_WIDTH
+
+    @property
     def is_running_above_floor(self) -> bool:
         """Whether this end negotiated a link beyond the PCIe floor.
 

@@ -5,6 +5,22 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.12] 2026-09-12 02:09:28
+
+### Fixed
+
+- **A port that can do more than the PCIe floor holds a part, not a function of
+  the switch.** A function built into switch silicon sits behind an internal port
+  that publishes the floor as its own capability, while a real downstream port
+  passing a link to a separate card publishes the switch's. So a port capability
+  that was read and reads above the floor now refutes the register-default hint,
+  on the controller's own port and on the twin's, which the vendor check cannot
+  do when a card and the switch share a maker: a card that genuinely is Gen1 x1,
+  plugged into a switch of its own maker beside another floor-reading device,
+  completed every other leg of the pattern and was excused as a register default.
+  A port whose capability was not read refutes nothing, which is every Windows
+  bridge, so judging there is unchanged.
+
 ## [1.2.11] 2026-09-11 16:22:19
 
 ### Fixed
