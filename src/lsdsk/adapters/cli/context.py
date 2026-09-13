@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from lib_layered_config import Config
 
     from lsdsk.composition import AppServices
+    from lsdsk.domain.enums import TreeDensity
 
 
 class TracebackState(NamedTuple):
@@ -50,6 +51,7 @@ class CLIContext:
     history_file: Path | None = None
     no_record: bool = False
     expand_virtual: bool = False
+    tree_density: TreeDensity | None = None
 
 
 def store_cli_context(ctx: click.Context, context: CLIContext) -> None:

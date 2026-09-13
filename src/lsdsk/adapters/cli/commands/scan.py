@@ -40,13 +40,13 @@ from lsdsk.adapters.hw import snapshot as snapshot_adapter
 from lsdsk.adapters.render import report, theme
 from lsdsk.adapters.render.tables import counter_legend
 from lsdsk.domain.diagnostics import count_by_severity
-from lsdsk.domain.enums import ActionCommand, CliCommand, Environment, OutputFormat, Severity
+from lsdsk.domain.enums import ActionCommand, CliCommand, Environment, OutputFormat, Severity, TreeDensity
 from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.models import Controller, Disk, Finding, Inventory, PcieSlot, PciNode
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 
 from .. import safe_console
-from ..constants import CLICK_CONTEXT_SETTINGS
+from ..constants import CLICK_CONTEXT_SETTINGS, TREE_DENSITY_TOKENS
 from ..context import get_cli_context
 from ..envelope import emit_action
 from ..exit_codes import ExitCode
@@ -80,6 +80,15 @@ _EXPAND_VIRTUAL_OPTION = option(
     is_flag=True,
     default=False,
     help="List every kernel-virtual device instead of tallying them in one line.",
+)
+_TREE_DENSITY_OPTION = option(
+    "--tree-density",
+    "tree_density",
+    type=click.Choice(TREE_DENSITY_TOKENS, case_sensitive=False),
+    default=None,
+    help="How much of the PCI fabric the topology shows: every device, the "
+    "bridges and storage with the devices sharing a bridge with them, or "
+    "bridges and storage alone.",
 )
 _FORMAT_OPTION = option(
     "--format",
@@ -550,9 +559,16 @@ def cli_report(ctx: click.Context, replay: Path | None) -> None:
 @_REPLAY_OPTION
 @_FORMAT_OPTION
 @_EXPAND_VIRTUAL_OPTION
+@_TREE_DENSITY_OPTION
 @click.pass_context
-def cli_topology(ctx: click.Context, replay: Path | None, output_format: OutputFormat, expand_virtual: bool) -> None:
-    """Show the problem summary and the disk-to-controller tree.
+def cli_topology(
+    ctx: click.Context,
+    replay: Path | None,
+    output_format: OutputFormat,
+    expand_virtual: bool,
+    tree_density: str | None,
+) -> None:
+    """Show the problem summary and the root-down PCI fabric with its disks.
 
     This is one section of the page a bare `lsdsk` renders, not that whole page.
     """
@@ -564,20 +580,52 @@ def cli_topology(ctx: click.Context, replay: Path | None, output_format: OutputF
         if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.TOPOLOGY)
         else:
+            from lsdsk.adapters.render import tree  # noqa: PLC0415 - same flat-graph reason as its neighbours
+
             console = console_for_output(display.piped_width)
             console.print(report.render_header(inventory))
             console.print()
             console.print(report.render_verdict(findings, display.summary_limit))
             console.print()
             console.print(
-                report.render_tree(
+                tree.render_fabric(
                     inventory,
                     findings,
                     width=console.width,
+                    density=effective_tree_density(ctx, tree_density),
                     expand_virtual=effective_expand_virtual(ctx, expand_virtual),
                 )
             )
         raise SystemExit(exit_code_for(findings))
+
+
+def effective_tree_density(ctx: click.Context, tree_density: str | None) -> TreeDensity:
+    """Resolve which density this run draws the fabric at.
+
+    Three sources, in the same order ``--expand-virtual`` settles in: the
+    subcommand's own ``--tree-density``, the global ``--tree-density`` beside
+    ``--replay``, and the configuration key. Landing on the same key the file
+    sets is what makes one object answer the question whichever source spoke,
+    so ``lsdsk --tree-density storage-only`` and
+    ``display.tree_density = "storage-only"`` name the same setting.
+
+    Args:
+        ctx: The Click context, which carries the merged configuration.
+        tree_density: The subcommand's own option value, or None when unset.
+
+    Returns:
+        The density to draw at.
+    """
+    if tree_density is not None:
+        return TreeDensity(tree_density.casefold())
+    try:
+        global_density = get_cli_context(ctx).tree_density
+    except RuntimeError:
+        # Invoked directly in a test, without the root group having run.
+        global_density = None
+    if global_density is not None:
+        return global_density
+    return resolve_tunables(ctx).display.tree_density
 
 
 @click.command("smart", context_settings=CLICK_CONTEXT_SETTINGS)

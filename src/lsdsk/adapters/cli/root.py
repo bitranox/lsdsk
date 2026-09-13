@@ -16,8 +16,9 @@ import rich_click as click
 
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.overrides import apply_overrides
+from lsdsk.domain.enums import TreeDensity
 
-from .constants import CLICK_CONTEXT_SETTINGS
+from .constants import CLICK_CONTEXT_SETTINGS, TREE_DENSITY_TOKENS
 from .context import CLIContext, apply_traceback_preferences, store_cli_context
 from .typed_click import option, version_option
 
@@ -106,6 +107,13 @@ def _apply_cli_overrides(config: Config, set_overrides: tuple[str, ...]) -> Conf
     help="List every kernel-virtual device instead of tallying them in one line.",
 )
 @option(
+    "--tree-density",
+    "tree_density",
+    type=click.Choice(TREE_DENSITY_TOKENS, case_sensitive=False),
+    default=None,
+    help="How much of the PCI fabric the topology shows.",
+)
+@option(
     "--env-file",
     "env_file",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True),
@@ -126,6 +134,7 @@ def cli(
     history_file: Path | None,
     no_record: bool,
     expand_virtual: bool,
+    tree_density: str | None,
     env_file: str | None,
 ) -> None:
     """Root command storing global flags and syncing shared traceback state.
@@ -168,6 +177,7 @@ def cli(
             history_file=history_file,
             no_record=no_record,
             expand_virtual=expand_virtual,
+            tree_density=None if tree_density is None else TreeDensity(tree_density.casefold()),
         ),
     )
     apply_traceback_preferences(traceback)

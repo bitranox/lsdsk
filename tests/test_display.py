@@ -157,6 +157,7 @@ def test_the_default_page_contains_every_section_a_command_can_show() -> None:
     from lsdsk.adapters.hw.snapshot import build_from
     from lsdsk.adapters.render import report, tables
     from lsdsk.adapters.render.full import render_full
+    from lsdsk.adapters.render.tree import render_fabric
     from lsdsk.adapters.render.trend import render_trend
     from lsdsk.domain.diagnostics import diagnose
     from lsdsk.domain.history import DiskSeries, History, Sample, identity_of
@@ -190,7 +191,7 @@ def test_the_default_page_contains_every_section_a_command_can_show() -> None:
 
     page = rendered(render_full(machine, findings, width=width, history=history))
     sections = {
-        "topology tree": report.render_tree(machine, findings, width=width),
+        "topology tree": render_fabric(machine, findings, width=width),
         "controllers": tables.render_controllers(machine, findings, width=width),
         "disks": tables.render_disks(machine, findings, width=width),
         "health": tables.render_health(machine, findings, width=width),

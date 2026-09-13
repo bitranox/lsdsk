@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel, ConfigDict
 
+from ...domain.enums import TreeDensity
 from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 
 if TYPE_CHECKING:
@@ -50,6 +51,9 @@ DEFAULT_EXPAND_VIRTUAL = False
 # identifier on the machine sets the width of the column for every row.
 DEFAULT_WWN_WIDTH = 24
 
+# How much of the PCI fabric the topology view draws, as the shipped default.
+DEFAULT_TREE_DENSITY = TreeDensity.FULL
+
 # Characters of traceback kept in the short and the --traceback forms.
 DEFAULT_TRACEBACK_SUMMARY_LIMIT = 500
 DEFAULT_TRACEBACK_VERBOSE_LIMIT = 10_000
@@ -65,12 +69,15 @@ class DisplaySettings(BaseModel):
         expand_virtual: Whether the tree and the disk table list every
             kernel-virtual device rather than tallying them in one line.
         wwn_width: Most characters the wwn column is given in either view.
+        tree_density: How much of the PCI fabric the topology view draws.
         traceback_summary_limit: Characters kept in a short traceback.
         traceback_verbose_limit: Characters kept under ``--traceback``.
 
     Example:
         >>> DisplaySettings().piped_width
         120
+        >>> f"{DisplaySettings().tree_density}"
+        'full'
     """
 
     model_config = ConfigDict(frozen=True)
@@ -80,6 +87,7 @@ class DisplaySettings(BaseModel):
     wear_row_floor_percent: int = DEFAULT_WEAR_ROW_FLOOR_PERCENT
     expand_virtual: bool = DEFAULT_EXPAND_VIRTUAL
     wwn_width: int = DEFAULT_WWN_WIDTH
+    tree_density: TreeDensity = DEFAULT_TREE_DENSITY
     traceback_summary_limit: int = DEFAULT_TRACEBACK_SUMMARY_LIMIT
     traceback_verbose_limit: int = DEFAULT_TRACEBACK_VERBOSE_LIMIT
 
@@ -178,9 +186,26 @@ def get_display_settings(config: Config) -> DisplaySettings:
         wear_row_floor_percent=positive_int(table.get("wear_row_floor_percent"), DEFAULT_WEAR_ROW_FLOOR_PERCENT),
         expand_virtual=flag(table.get("expand_virtual"), default=DEFAULT_EXPAND_VIRTUAL),
         wwn_width=positive_int(table.get("wwn_width"), DEFAULT_WWN_WIDTH),
+        tree_density=tree_density_of(table.get("tree_density")),
         traceback_summary_limit=positive_int(table.get("traceback_summary_limit"), DEFAULT_TRACEBACK_SUMMARY_LIMIT),
         traceback_verbose_limit=positive_int(table.get("traceback_verbose_limit"), DEFAULT_TRACEBACK_VERBOSE_LIMIT),
     )
+
+
+def tree_density_of(raw: object) -> TreeDensity:
+    """Read a density name, falling back rather than failing the run.
+
+    A misspelled value in a configuration file must never refuse the whole
+    machine.
+    """
+    if isinstance(raw, TreeDensity):
+        return raw
+    if isinstance(raw, str):
+        try:
+            return TreeDensity(raw.strip().casefold())
+        except ValueError:
+            pass
+    return DEFAULT_TREE_DENSITY
 
 
 __all__ = [
@@ -189,6 +214,7 @@ __all__ = [
     "DEFAULT_SUMMARY_LIMIT",
     "DEFAULT_TRACEBACK_SUMMARY_LIMIT",
     "DEFAULT_TRACEBACK_VERBOSE_LIMIT",
+    "DEFAULT_TREE_DENSITY",
     "DEFAULT_WEAR_ROW_FLOOR_PERCENT",
     "DEFAULT_WWN_WIDTH",
     "DISPLAY_SECTION",
@@ -200,4 +226,5 @@ __all__ = [
     "positive_float",
     "positive_int",
     "section_of",
+    "tree_density_of",
 ]

@@ -48,6 +48,9 @@ _PCIE_FLOOR_WIDTH = 1
 # PCI base class codes, enough to say what is sitting in a slot.
 _PCI_CLASS_STORAGE = 0x01
 _PCI_CLASS_DISPLAY = 0x03
+# The bridge base class: host bridge, ISA bridge, PCI-to-PCI - anything that
+# exists to hold other devices under it.
+_PCI_CLASS_BRIDGE = 0x06
 
 # PCI class PROGRAM value shared by every PCI-to-PCI bridge, root port and
 # switch leg alike: the class triple is 0x0604xx. Compared as a shifted class
@@ -624,7 +627,7 @@ class PciNode:
 
     @property
     def is_bridge(self) -> bool:
-        """Whether this node is a PCI bridge, by its class code.
+        """Whether this node is a PCI-to-PCI bridge, by its class code.
 
         Example:
             >>> PciNode("a", "b", class_code=0x060400).is_bridge
@@ -635,6 +638,26 @@ class PciNode:
             False
         """
         return self.class_code is not None and (self.class_code >> 8) == _PCI_BRIDGE_CLASS
+
+    @property
+    def is_bridge_family(self) -> bool:
+        """Whether this node bridges anything: any class-base-06 device.
+
+        Widening :attr:`is_bridge` to the whole base class, because the reduced
+        topology densities draw "the bridges" as the fabric's structure, and a
+        host bridge or an ISA bridge is structure in exactly the way a
+        PCI-to-PCI one is: measured on linux-sas-hba, ruling these two out
+        under-counts that density by exactly the two devices that carry them.
+
+        Example:
+            >>> PciNode("a", "b", class_code=0x060000).is_bridge_family
+            True
+            >>> PciNode("a", "b", class_code=0x060100).is_bridge_family
+            True
+            >>> PciNode("a", "b", class_code=0x010601).is_bridge_family
+            False
+        """
+        return self.class_code is not None and (self.class_code >> 16) == _PCI_CLASS_BRIDGE
 
     @property
     def is_port(self) -> bool:

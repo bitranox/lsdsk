@@ -58,6 +58,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/render/rows.py` - The row shapes every table renderer builds.
 - `src/lsdsk/adapters/render/tables.py` - Focused tables for the controller, disk and health views.
 - `src/lsdsk/adapters/render/theme.py` - Formatting and colour vocabulary shared by every view.
+- `src/lsdsk/adapters/render/tree.py` - The root-down PCI fabric of the topology view.
 - `src/lsdsk/adapters/render/trend.py` - Render what each watched counter is doing over time.
 
 ### Adapters - interactive

@@ -23,7 +23,7 @@ from textual.widgets import DataTable, Footer, Header, Static, TabbedContent, Ta
 
 from ... import __init__conf__
 from ...domain.diagnostics import count_by_severity, diagnose
-from ...domain.enums import CliCommand, Severity
+from ...domain.enums import CliCommand, Severity, TreeDensity
 from ...domain.history import CounterKind, History
 from ..config.tunables import DisplaySettings
 from ..render import layout, report, tables, theme
@@ -31,6 +31,10 @@ from ..render.trend import render_trend
 from .typed_table import raising_table_id, rows_of
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from rich.console import RenderableType
+
     from ...domain.models import Finding, Inventory, PcieLink
     from ..render.layout import Column
     from ..render.rows import Row
@@ -81,6 +85,29 @@ def _disk_cell(cells: Row, column: Column) -> Text:
     return _cell(text, style)
 
 
+def render_fabric_for(
+    inventory: Inventory,
+    findings: Sequence[Finding],
+    display: DisplaySettings,
+) -> RenderableType:
+    """The topology page's body, from the settings the page is showing.
+
+    One helper rather than three call sites spelling the same arguments,
+    because the density the page cycles with ``d``, the tally the
+    ``--expand-virtual`` flag controls and the inventory are already agreed on
+    here: a page and the printed command of its name are one view, and a
+    second delivery path is how one of them goes deaf.
+    """
+    from ..render import tree  # noqa: PLC0415 - keeps rich render off app import
+
+    return tree.render_fabric(
+        inventory,
+        findings,
+        density=display.tree_density,
+        expand_virtual=display.expand_virtual,
+    )
+
+
 #: The short label each page carries in the footer, in number-key order. Keyed by
 #: the command rather than by a string, so the page ids cannot drift from
 #: :class:`CliCommand` and a new page without a label fails loudly at import.
@@ -123,6 +150,7 @@ class LsdskApp(App[None]):
         Binding("shift+tab,left", "prev_page", "Prev", priority=True, show=False),
         Binding("comma", "wwn_left", "WWN <", priority=True),
         Binding("full_stop", "wwn_right", "WWN >", priority=True),
+        Binding("d", "tree_density", "Density", priority=True),
         Binding("r,f9", "rescan", "Rescan", priority=True, show=False),
         Binding("q,f10,escape", "quit", "Quit", priority=True),
     ]
@@ -175,9 +203,7 @@ class LsdskApp(App[None]):
         with TabbedContent(initial=CliCommand.TOPOLOGY.value):
             with TabPane("Topology", id=CliCommand.TOPOLOGY.value), VerticalScroll():
                 yield Static(
-                    report.render_tree(
-                        self.inventory, self.findings, expand_virtual=self.display_settings.expand_virtual
-                    ),
+                    render_fabric_for(self.inventory, self.findings, self.display_settings),
                     id="tree",
                 )
             with TabPane("Controllers", id=CliCommand.CONTROLLERS.value):
@@ -440,7 +466,32 @@ class LsdskApp(App[None]):
         del parameters
         if action in {"wwn_left", "wwn_right"}:
             return self.query_one(TabbedContent).active == CliCommand.DISKS.value
+        if action == "tree_density":
+            # Gated to the page whose view it changes, the same shape the WWN
+            # keys take: check_action refusing to dispatch an action also
+            # hides it from the footer, so the key reads as topology-only.
+            return self.query_one(TabbedContent).active == CliCommand.TOPOLOGY.value
         return True
+
+    def action_tree_density(self) -> None:
+        """Cycle the fabric's density across full, storage-with-neighbours, storage-only.
+
+        The whole machine on the topology page is what the full density is
+        for, and what four unrelated devices in five bury; cycling is what
+        makes the reduced shapes a keypress away rather than a configuration
+        edit, which is the decision that made the always-every-device tree
+        livable.
+        """
+        members = list(TreeDensity)
+        current = self.display_settings.tree_density
+        position = members.index(current) if current in members else 0
+        next_density = members[(position + 1) % len(members)]
+        self.display_settings = self.display_settings.model_copy(update={"tree_density": next_density})
+        self._refill_tree()
+
+    def _refill_tree(self) -> None:
+        """Redraw only the topology page from the settings now held."""
+        self.query_one("#tree", Static).update(render_fabric_for(self.inventory, self.findings, self.display_settings))
 
     def action_wwn_left(self) -> None:
         """Wind the WWN strip back towards the start of the identifier."""
@@ -496,9 +547,7 @@ class LsdskApp(App[None]):
         self.findings = diagnose(self.inventory, history=self.history)
         self.query_one("#verdict", Static).update(self.verdict_line())
         self.query_one("#findings-body", Static).update(report.render_findings(self.findings))
-        self.query_one("#tree", Static).update(
-            report.render_tree(self.inventory, self.findings, expand_virtual=self.display_settings.expand_virtual)
-        )
+        self.query_one("#tree", Static).update(render_fabric_for(self.inventory, self.findings, self.display_settings))
         self.query_one("#smart-body", Static).update(report.render_smart(self.inventory))
         self.query_one("#trend-body", Static).update(render_trend(self.inventory, self.history))
         for table_id in ("#controller-table", "#disk-table", "#health-table", "#slot-table"):

@@ -302,13 +302,22 @@ def test_every_display_key_in_the_shipped_file_is_read() -> None:
     shipped default. A single value for every key cannot do this: the parsers
     reject a value of the wrong type on purpose, so probing a boolean key with
     a number reads as "not read" when the key is read and the probe is wrong.
+
+    The enums the settings carry are probed by a DIFFERENT member rather than
+    a number, for the same reason in enum form.
     """
     from lsdsk.adapters.config.tunables import DisplaySettings, get_display_settings
+    from lsdsk.domain.enums import TreeDensity
 
-    probe: dict[str, object] = {
-        name: (not field.default) if field.annotation is bool else 77
-        for name, field in DisplaySettings.model_fields.items()
-    }
+    def probe_for(name: str, field: Any) -> object:
+        annotation = field.annotation
+        if annotation is bool:
+            return not field.default
+        if annotation is TreeDensity:
+            return next(member for member in TreeDensity if member is not field.default)
+        return 77
+
+    probe: dict[str, object] = {name: probe_for(name, field) for name, field in DisplaySettings.model_fields.items()}
     got = get_display_settings(Config({"display": probe}, {}))
     for name in DisplaySettings.model_fields:
         assert getattr(got, name) == probe[name], f"[display].{name} is not read"

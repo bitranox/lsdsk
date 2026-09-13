@@ -175,6 +175,34 @@ class PciPortKind(StrEnum):
     UNKNOWN = "unknown"
 
 
+class TreeDensity(StrEnum):
+    """How much of the PCI fabric the topology view draws.
+
+    The full tree answers "what is this machine's PCIe fabric". On real
+    hardware four lines in five are devices unrelated to storage, which can
+    bury the story the view exists to tell, so two reduced shapes are
+    selectable: keeping the devices that share a bridge with storage preserves
+    the neighbours that explain lane sharing, and storage-only is the topology
+    the tool showed before the tree existed.
+
+    On click 8.5 a ``click.Choice`` matches an input against the member NAME
+    as well as the registered tokens, so a StrEnum member is itself accepted
+    whatever its name; the one vocabulary that matters is therefore the tokens
+    the choices register, and those are the VALUES (see
+    ``TREE_DENSITY_TOKENS``), pinned by a test that drives the choice.
+
+    Example:
+        >>> f"{TreeDensity.STORAGE_ONLY}"
+        'storage-only'
+        >>> tuple(d.value for d in TreeDensity)
+        ('full', 'storage-and-siblings', 'storage-only')
+    """
+
+    FULL = "full"
+    STORAGE_AND_SIBLINGS = "storage-and-siblings"
+    STORAGE_ONLY = "storage-only"
+
+
 class Environment(StrEnum):
     """What kind of machine the readings came from.
 
@@ -295,4 +323,5 @@ __all__ = [
     "PciPortKind",
     "Platform",
     "Severity",
+    "TreeDensity",
 ]

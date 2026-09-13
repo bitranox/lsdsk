@@ -73,6 +73,7 @@ PROBES: dict[str, tuple[str, str, dict[str, str]]] = {
     "summary_limit": ("1", "1000", {}),
     "wear_row_floor_percent": ("0", "100", {}),
     "expand_virtual": ("false", "true", {}),
+    "tree_density": ("full", "storage-only", {}),
     "traceback_summary_limit": ("10", "100000", {}),
     "traceback_verbose_limit": ("10", "100000", {}),
     "max_samples_per_drive": ("2", "100000", {}),
@@ -251,6 +252,7 @@ def test_the_probe_can_actually_detect_a_change() -> None:
 SHARED_BY: dict[str, tuple[tuple[str, ...], ...]] = {
     "summary_limit": ((), ("topology",)),
     "wwn_width": ((), ("disks",)),
+    "tree_density": ((), ("topology",)),
 }
 
 

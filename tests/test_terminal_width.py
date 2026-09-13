@@ -67,7 +67,7 @@ def run_on_a_terminal(columns: int, *args: str) -> str:
 
 @pytest.mark.os_posix
 @pytest.mark.parametrize("columns", [40, 60, 80, 100, 120, 200])
-@pytest.mark.parametrize("command", ["health", "trend", "findings", "disks"])
+@pytest.mark.parametrize("command", ["health", "trend", "findings", "disks", "topology"])
 def test_nothing_runs_off_the_side_of_the_terminal(columns: int, command: str) -> None:
     text = run_on_a_terminal(columns, command, "--replay", str(FIXTURE))
     assert text.strip(), "no output, so this proves nothing"

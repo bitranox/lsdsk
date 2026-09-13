@@ -27,7 +27,7 @@ from rich.text import Text
 
 from ...domain.history import History
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DisplaySettings
-from . import report, tables, theme
+from . import report, tables, theme, tree
 from .trend import render_trend
 
 if TYPE_CHECKING:
@@ -90,7 +90,13 @@ def render_full(
         report.render_verdict(findings, laid_out.summary_limit),
         blank,
         _heading(f"Topology on {host}"),
-        report.render_tree(inventory, findings, width=width, expand_virtual=laid_out.expand_virtual),
+        tree.render_fabric(
+            inventory,
+            findings,
+            width=width,
+            density=laid_out.tree_density,
+            expand_virtual=laid_out.expand_virtual,
+        ),
         blank,
         tables.render_controllers(inventory, findings, width=width),
         blank,

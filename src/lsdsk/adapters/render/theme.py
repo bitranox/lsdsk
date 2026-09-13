@@ -18,8 +18,8 @@ System Role:
 
 from __future__ import annotations
 
-from ...domain.enums import BusType, DiskKind, Severity
-from ...domain.models import pcie_generation
+from ...domain.enums import BusType, DiskKind, PciPortKind, Severity
+from ...domain.models import PcieLink, pcie_generation
 
 #: A rendered cell: its text and the style to draw it in. Named once here so the
 #: functions that produce one and the tables that consume it agree by type
@@ -387,6 +387,81 @@ def marker_for(severity: Severity | None) -> str:
     return "" if severity is None else SEVERITY_MARKERS[severity]
 
 
+# What a bridge is called in the fabric view, by its port kind. A port whose
+# type was not read gets no tag rather than a wrong one; the class code still
+# says it is a bridge.
+_PCI_KIND_TAG: dict[PciPortKind, str] = {
+    PciPortKind.ROOT: "root port",
+    PciPortKind.SWITCH_UPSTREAM: "switch port",
+    PciPortKind.SWITCH_DOWNSTREAM: "switch port",
+}
+
+
+def pci_tag(kind: PciPortKind) -> str:
+    """A short noun for what kind of PCIe port a node is.
+
+    Example:
+        >>> pci_tag(PciPortKind.ROOT)
+        'root port'
+        >>> pci_tag(PciPortKind.SWITCH_DOWNSTREAM)
+        'switch port'
+        >>> pci_tag(PciPortKind.UNKNOWN)
+        ''
+    """
+    return _PCI_KIND_TAG.get(kind, "")
+
+
+def hop_link_cells(link: PcieLink) -> tuple[Cell, Cell]:
+    """The capable and running columns for one hop of the fabric.
+
+    Two columns, in the order the slot view uses, so a link nobody measured
+    reads as ``not read`` rather than as a dash: beside a measured figure a
+    dash reads as "nothing there" when it means "not read", and a platform
+    that publishes no bridge registers would print a whole column of them.
+    ``legacy PCI`` is the real case of a device with no PCIe capability at
+    all - a legacy bridge carries no link keys on either platform, and a dash
+    would read as "unmeasured" for what is really not a PCIe device.
+
+    Args:
+        link: The hop's link state and capability.
+
+    Returns:
+        The (capable, running) styled cells. A column whose figure was not
+        read is styled :data:`STYLE_UNKNOWN`; a measured one carries none,
+        because the styles that judge a link (below capability, failing) are
+        the domain's severity verdicts and are carried by a marker on the row,
+        not restated here per column.
+
+    Example:
+        >>> hop_link_cells(PcieLink(8.0, 4, 8.0, 4))
+        (('3.0 x4', ''), ('3.0 x4', ''))
+        >>> hop_link_cells(PcieLink())
+        (('legacy PCI', ''), ('legacy PCI', ''))
+        >>> hop_link_cells(PcieLink(current_speed_gtps=16.0, current_width=2))[1]
+        ('4.0 x2', '')
+        >>> hop_link_cells(PcieLink(current_speed_gtps=16.0, current_width=2))[0] == (NOT_READ, STYLE_UNKNOWN)
+        True
+    """
+    capable = format_pcie_decimal(link.max_speed_gtps, link.max_width)
+    running = format_pcie_decimal(link.current_speed_gtps, link.current_width)
+    if capable == "-" and running == "-":
+        return (_LEGACY_PCI, ""), (_LEGACY_PCI, "")
+    return (
+        (capable if capable != "-" else NOT_READ, STYLE_UNKNOWN if capable == "-" else ""),
+        (running if running != "-" else NOT_READ, STYLE_UNKNOWN if running == "-" else ""),
+    )
+
+
+#: What a column prints when the register behind it was not read: a dash would
+#: read as "nothing there" beside a measured figure, which is the opposite of
+#: the truth.
+NOT_READ = "not read"
+#: The case where there is no PCIe capability at all: a legacy PCI bridge, on
+#: both platforms. ``not read`` would say a register was skipped that this
+#: device has never had.
+_LEGACY_PCI = "legacy PCI"
+
+
 def style_for(severity: Severity | None) -> str:
     """Return the style for a severity, or the neutral style for none.
 
@@ -418,8 +493,10 @@ __all__ = [
     "format_speed",
     "format_temperature",
     "format_wear",
+    "hop_link_cells",
     "link_style",
     "marker_for",
+    "pci_tag",
     "port_style",
     "style_for",
 ]

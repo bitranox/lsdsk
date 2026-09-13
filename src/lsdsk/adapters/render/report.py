@@ -548,6 +548,10 @@ def render_tree(
 ) -> RenderableType:
     """Render the topology as one globally aligned tree.
 
+    Kept name and shape for a capture carrying no PCI devices: the root-down
+    fabric (``render.tree``) is the section a capture with a ``pci`` reading
+    gets, and this is the same section where the fabric does not exist.
+
     Args:
         inventory: The machine.
         findings: The findings, used to mark affected rows.
@@ -559,6 +563,17 @@ def render_tree(
     Returns:
         A renderable tree.
     """
+    return render_controller_disks(inventory, findings, width, expand_virtual=expand_virtual)
+
+
+def render_controller_disks(
+    inventory: Inventory,
+    findings: Sequence[Finding],
+    width: int = DEFAULT_WIDTH,
+    *,
+    expand_virtual: bool = False,
+) -> RenderableType:
+    """The disk-and-controller tree, as the topology section's no-PCI fallback."""
     if not inventory.disks and not inventory.controllers and not inventory.virtual_disks:
         return Text("No storage controllers or disks found.", style=theme.STYLE_UNKNOWN)
 
@@ -921,6 +936,7 @@ __all__ = [
     "VIRTUAL_HEADING",
     "disk_cells",
     "disk_row",
+    "render_controller_disks",
     "render_findings",
     "render_header",
     "render_tree",

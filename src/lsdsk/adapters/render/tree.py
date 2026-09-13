@@ -1,0 +1,419 @@
+"""The root-down PCI fabric of the topology view.
+
+Everything else in the report answers a question about storage. This section
+answers "what is this machine's PCIe fabric": every PCI device - the bridges,
+the controllers, and whatever else the board came with - hangs root-down under
+its own structure, so a card on a root-complex port and one three bridges below
+a chipset used as a PCIe switch are drawn differently, and a narrower hop is
+visible where it happens.
+
+Two measured facts shaped it. Windows publishes no link registers for a
+bridge, so its hops must read ``not read`` rather than a dash: a dash beside a
+measured figure means "nothing there", and unread must not borrow it. And a
+real machine's fabric dwarfs its storage - 45 to 95 devices with 3 to 7
+storage controllers on the committed captures - which is exactly why density
+is a choice rather than a mechanism that hides anything.
+
+Every row is ``[marker | spine | address | capable | running | name]``. The
+spine is one fixed width for the whole section, so the columns after it never
+move at any depth: that is the law this module exists for, the same one the
+disk tables keep. The spine width is bounded, and every structure row's NAME
+is clipped to its budget; headings are prose and keep wrapping, because
+clipping one would cut the flag name off the sentence that names it.
+
+System Role:
+    Adapter layer, presentation.  Consumes the assembled tree and the findings,
+    decides nothing.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from rich.console import Group
+from rich.text import Text
+
+from ...domain.enums import PciPortKind, TreeDensity
+from ..config.tunables import DEFAULT_PIPED_WIDTH
+from . import theme
+from .layout import GAP, Layout, clip, pad
+from .report import (
+    DISK_COLUMNS,
+    VIRTUAL_HEADING,
+    disk_cells,
+    disk_row,
+    render_controller_disks,
+    virtual_note,
+    worst_severity,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from rich.console import RenderableType
+
+    from ...domain.models import Disk, Finding, Inventory, PcieLink, PciNode
+
+# What a bridge is called beside its address, by its port kind. ASCII only,
+# like every marker in the repo. An unread port kind gets no tag rather than a
+# wrong one; the name beside the address still says what the device is.
+_KIND_TAG: dict[PciPortKind, str] = {
+    PciPortKind.ROOT: "root port",
+    PciPortKind.SWITCH_UPSTREAM: "switch port",
+    PciPortKind.SWITCH_DOWNSTREAM: "switch port",
+}
+
+# Spine geometry: two characters per drawn level, one blank before the address
+# column. S = 2K + 1 for the deepest drawn level K, so a four-level fabric fits
+# a spine of 9 where the old tree gutter was 3.
+_SPINE_UNIT = 2
+_MARGIN_BEFORE_COLUMNS = 1
+
+# Row geometry, named so the budget arithmetic reads as the fields it prices.
+_MARKER_WIDTH = 3
+_ADDRESS_WIDTH = 12
+# The hop field holds both "3.0 x4" and "legacy PCI" (10) without squashing.
+_HOP_WIDTH = 10
+_GAP_WIDTH = 2
+#: What the spine may grow past before it is clipped, beyond the marker.
+_SPINE_RESERVE = 4
+#: The widest severity marker, carried into every row's budget so a flagged row
+#: never lands exactly on the terminal width and wraps its marker. Same reason
+#: report.py reserves it before fitting its disk columns.
+_MARKER_RESERVE = 2
+
+_TREE_GAP = "  "
+_TREE_BRANCH = "|-"
+_TREE_LAST = "'-"
+_TREE_PIPE = "| "
+#: The vertical rule stops below an ancestor with no drawn sibling after it.
+_STOP_LEG = "  "
+
+# Width assumed when the caller gives none, as a Textual page does.
+DEFAULT_WIDTH = DEFAULT_PIPED_WIDTH
+
+# What an unread column prints. Deliberately never a dash.
+NOT_READ = "not read"
+#: The case of no PCIe capability at all: a legacy bridge, on both platforms.
+#: ``not read`` would suggest a register was skipped that this device never had.
+LEGACY_PCI = "legacy PCI"
+
+
+def hop_cells(link: PcieLink) -> tuple[str, str]:
+    """(capable, running) for one hop, never a bare dash.
+
+    Example:
+        >>> from lsdsk.domain.models import PcieLink
+        >>> hop_cells(PcieLink(8.0, 4, 8.0, 4))
+        ('3.0 x4', '3.0 x4')
+        >>> hop_cells(PcieLink())
+        ('legacy PCI', 'legacy PCI')
+        >>> hop_cells(PcieLink(current_speed_gtps=16.0, current_width=2))
+        ('not read', '4.0 x2')
+    """
+    capable = theme.format_pcie_decimal(link.max_speed_gtps, link.max_width)
+    running = theme.format_pcie_decimal(link.current_speed_gtps, link.current_width)
+    if capable == "-" and running == "-":
+        return LEGACY_PCI, LEGACY_PCI
+    return (
+        capable if capable != "-" else NOT_READ,
+        running if running != "-" else NOT_READ,
+    )
+
+
+def _spine_width(deepest_level: int) -> int:
+    """Spine width for the deepest drawn level (a root bus is level 0)."""
+    return _SPINE_UNIT * deepest_level + _MARGIN_BEFORE_COLUMNS
+
+
+class _Fabric:
+    """One render call's shared state: the tree, the density, the geometry."""
+
+    def __init__(self, nodes: Sequence[PciNode], width: int, density: TreeDensity) -> None:
+        self.nodes = nodes
+        self.width = width
+        self.density = density
+        self.by_address = {node.address: node for node in nodes if not node.is_root}
+        self.kept = self._kept()
+        self.by_parent = self._grouped(node for node in self.by_address.values() if node.address in self.kept)
+        # A root is drawn when anything under it survived the density.
+        self.roots = [
+            node
+            for node in nodes
+            if node.is_root and any(n.parent_address == node.address for n in self.by_address.values())
+        ]
+        deepest = max((self.level_of(node) for node, _level in self.drawn()), default=0)
+        self.spine = min(_spine_width(deepest), max(width - _MARKER_WIDTH - _SPINE_RESERVE, 1))
+
+    @staticmethod
+    def _grouped(devices: Iterable[PciNode]) -> dict[str | None, list[PciNode]]:
+        grouped: dict[str | None, list[PciNode]] = {}
+        for node in devices:
+            grouped.setdefault(node.parent_address, []).append(node)
+        for group in grouped.values():
+            group.sort(key=lambda item: item.address)
+        return grouped
+
+    def _kept(self) -> set[str]:
+        """The addresses the density keeps.
+
+        FULL keeps everything. The reduced densities are stated as CLASSES,
+        not as a walk: every PCI bridge of any kind (a host bridge, an ISA
+        bridge, a PCI-to-PCI bridge - class base 06) plus storage.
+        STORAGE_AND_SIBLINGS adds the non-storage devices that share a BRIDGE
+        with storage - the neighbours that explain lane sharing. A shared
+        parent that is not a bridge keeps nothing: devices on a root bus share
+        no link, so they are not each other's neighbours there. Reproduced
+        against all four committed captures: 95/20/20, 87/14/14, 45/27/27,
+        27/15/12 device lines.
+        """
+        if self.density is TreeDensity.FULL:
+            return set(self.by_address)
+        bridges = {address for address, node in self.by_address.items() if node.is_bridge_family}
+        storage = {address for address, node in self.by_address.items() if node.is_storage}
+        keep = bridges | storage
+        if self.density is TreeDensity.STORAGE_AND_SIBLINGS:
+            by_parent_all = self._grouped(self.by_address.values())
+            for address in storage:
+                node = self.by_address[address]
+                if node.parent_address in bridges:
+                    shared = [sibling.address for sibling in by_parent_all.get(node.parent_address, ())]
+                    keep.update(shared)
+        return keep
+
+    def drawn(self) -> list[tuple[PciNode, int]]:
+        """Every drawn device with its level, parents before children, address
+        order within a parent."""
+        out: list[tuple[PciNode, int]] = []
+        for root in self.roots:
+            out.extend(self._recurse(root))
+        return out
+
+    def _recurse(self, parent: PciNode) -> Iterable[tuple[PciNode, int]]:
+        for node in self.by_parent.get(parent.address, ()):
+            yield node, self.level_of(node)
+            yield from self._recurse(node)
+
+    def level_of(self, node: PciNode) -> int:
+        """Level of a device: the child of a root bus is level 1."""
+        level = 0
+        parent: str | None = node.parent_address
+        while parent is not None:
+            level += 1
+            above = self.by_address.get(parent)
+            parent = above.parent_address if above is not None else None
+        return level
+
+    def _legs_for(self, node: PciNode) -> list[str]:
+        """One spine element per level above the device, root side first.
+
+        The device's own leg is a branch or a last-turn; each ancestor's leg
+        is a continuing pipe where a drawn sibling follows it, and dead space
+        where the rule stops there.
+        """
+        chain: list[PciNode] = []
+        current: PciNode | None = node
+        while current is not None and current.parent_address is not None:
+            chain.append(current)
+            current = self.by_address.get(current.parent_address)
+        chain.reverse()  # root side first
+        legs: list[str] = []
+        for position, member in enumerate(chain):
+            if position == len(chain) - 1:
+                legs.append(_TREE_LAST if self.by_parent[member.parent_address][-1] is member else _TREE_BRANCH)
+            else:
+                siblings = self.by_parent.get(member.parent_address, [])
+                legs.append(_STOP_LEG if siblings and siblings[-1] is member else _TREE_PIPE)
+        return legs
+
+    def row(self, node: PciNode, findings: Sequence[Finding]) -> Text:
+        """One structure row: marker, spine, address, both hops, name.
+
+        The severity marker leads, exactly as every table's rows lead, so a
+        narrow terminal cannot strand it on a line of its own - the failure
+        test_no_width_strands_a_severity_marker_on_its_own_line exists for.
+        """
+        line = Text()
+        severity = worst_severity(findings, node.address)
+        line.append(theme.marker_for(severity).ljust(_MARKER_WIDTH), style=theme.style_for(severity))
+        line.append("".join(self._legs_for(node)).ljust(max(self.spine - _MARKER_WIDTH, 0)))
+        line.append(node.address.ljust(_ADDRESS_WIDTH), style=theme.STYLE_IDENTIFIER)
+        capable, running = hop_cells(node.link)
+        line.append(f"{capable:<{_HOP_WIDTH}}{_TREE_GAP}{running:<{_HOP_WIDTH}}")
+        tag = _KIND_TAG.get(node.port_kind, "")
+        label = node.name + (f"  ({tag})" if tag else "")
+        line.append(clip(label, self.budget))
+        return line
+
+    @property
+    def budget(self) -> int:
+        """Characters one device's name is given."""
+        return max(
+            self.width - _MARKER_WIDTH - self.spine - _ADDRESS_WIDTH - 2 * _HOP_WIDTH - 3 * _GAP_WIDTH,
+            8,
+        )
+
+    def measure(self, inventory: Inventory) -> Layout:
+        """Fit the disk columns ONCE over every disk drawn anywhere.
+
+        Passed the current level, so the fitting knows the reservation the
+        spine costs it. The reservation is the same on every row: device rows
+        and disk rows alike budget for the fullest spine, which is what keeps
+        two disks on different controllers comparable straight down the page.
+        """
+        rows = [disk_cells(disk, inventory.port_link_for(disk)) for disk in inventory.disks]
+        available = max(self.width - self.spine - _MARKER_WIDTH - _MARKER_RESERVE - 1, 20)
+        return Layout.for_rows(DISK_COLUMNS, rows, available)
+
+    def disk_row(
+        self,
+        disk: Disk,
+        layout: Layout,
+        findings: Sequence[Finding],
+        inventory: Inventory,
+    ) -> Text:
+        """One disk's row under its controller's fabric row.
+
+        Marker, spine left BLANK rather than drawn, then the globally fitted
+        columns. Blank, not a per-level branch glyph: the columns are the
+        comparison the view exists for, and the spine spending no width on
+        decoration under a controller is what keeps those columns as wide as
+        the fabric rows' own allowance permits.
+
+        Matches report._disk_line's field order so the two trees' rows read as
+        one shape: marker, gutter, then columns.
+        """
+        line = Text()
+        severity = worst_severity(findings, disk.path)
+        line.append(theme.marker_for(severity).ljust(_MARKER_WIDTH), style=theme.style_for(severity))
+        line.append(" " * max(self.spine - _MARKER_WIDTH, 0))
+        cells = disk_row(disk, inventory.port_link_for(disk))
+        for column in layout.columns:
+            width = layout.widths[column.key]
+            text, style = cells.get(column.key, ("", ""))
+            line.append(pad(text, width, column.align), style=style)
+            line.append(GAP)
+        return line
+
+
+def render_fabric(
+    inventory: Inventory,
+    findings: Sequence[Finding],
+    width: int = DEFAULT_WIDTH,
+    *,
+    density: TreeDensity = TreeDensity.FULL,
+    expand_virtual: bool = False,
+) -> RenderableType:
+    """The whole topology section: the root-down fabric, the disks on each of
+    its storage controllers, and the kernel-virtual tally behind them.
+
+    Args:
+        inventory: The machine.
+        findings: The findings, used to mark affected rows.
+        width: Width to lay out inside. The piped default when unset, which is
+            the form a terminal-less Textual page renders at before it reflows.
+        density: How much of the fabric to draw.
+        expand_virtual: List every kernel-virtual device rather than tallying
+            them in one line.
+
+    Returns:
+        The fabric section.
+    """
+    if not inventory.pci_tree:
+        # No PCI devices at all, and nothing the disk-and-controller table
+        # would show either: say the machine is empty rather than rendering a
+        # blank section.
+        if not (inventory.disks or inventory.controllers or inventory.virtual_disks):
+            return Text("No storage controllers or disks found.", style=theme.STYLE_UNKNOWN)
+        # A capture with drives but no PCI reading: the disk-and-controller
+        # table is the whole section, so the machine's storage is still shown.
+        return _no_pci_fallback(inventory, findings, width, expand_virtual=expand_virtual)
+    fabric = _Fabric(inventory.pci_tree, width, density)
+    layout = fabric.measure(inventory)
+    out: list[RenderableType] = []
+    if len(fabric.roots) > 1:
+        # Prose heading, not a spent spine level: a synthetic root is parentage,
+        # not hardware, and two root complexes are two bus labels, not two
+        # devices.
+        out.append(Text("root complexes:", style="bold"))
+        out.extend(Text(root.address, style=theme.STYLE_IDENTIFIER) for root in fabric.roots)
+    attached: set[str] = set()
+    for node, _level in fabric.drawn():
+        out.append(fabric.row(node, findings))
+        if node.is_storage and inventory.disks_on(node.address):
+            disks = inventory.disks_on(node.address)
+            attached.update(disk.node for disk in disks)
+            out.append(disk_header_line(fabric, layout))
+            out.extend(fabric.disk_row(disk, layout, findings, inventory) for disk in disks)
+    orphans = [disk for disk in inventory.disks if disk.node not in attached]
+    if orphans:
+        out.append(Text(""))
+        out.append(Text("not attached to a known controller", style=theme.STYLE_UNKNOWN))
+        out.append(disk_header_line(fabric, layout))
+        out.extend(fabric.disk_row(disk, layout, findings, inventory) for disk in orphans)
+    out.extend(_virtual_block(fabric, inventory, findings, layout, expand_virtual=expand_virtual))
+    return Group(*out)
+
+
+def _virtual_block(
+    fabric: _Fabric,
+    inventory: Inventory,
+    findings: Sequence[Finding],
+    layout: Layout,
+    *,
+    expand_virtual: bool,
+) -> list[RenderableType]:
+    """The kernel-virtual group: a tally, or the devices themselves.
+
+    Folded away by default because a host with forty zvols would otherwise
+    bury the drives this view exists to show; the count is always said, never
+    hidden. One function here so this tree and any replay agree with the
+    printed page about the same machine.
+    """
+    if not inventory.virtual_disks:
+        return []
+    lines: list[RenderableType] = [Text(""), Text(VIRTUAL_HEADING, style=theme.STYLE_UNKNOWN)]
+    if not expand_virtual:
+        lines.append(Text(f"   {virtual_note(inventory.virtual_disks)}", style=theme.STYLE_UNKNOWN))
+        return lines
+    lines.append(disk_header_line(fabric, layout))
+    lines.extend(fabric.disk_row(disk, layout, findings, inventory) for disk in inventory.virtual_disks)
+    return lines
+
+
+def _no_pci_fallback(
+    inventory: Inventory,
+    findings: Sequence[Finding],
+    width: int,
+    *,
+    expand_virtual: bool,
+) -> RenderableType:
+    """The old disk-and-controller tree, kept for a capture carrying no PCI.
+
+    A software-only environment can publish drives with no ``pci`` section at
+    all; the machine's storage is never hidden behind a fabric that does not
+    exist, so the previous renderer still runs. Its keep is test-locked by the
+    virtual-device tests that were written against it.
+    """
+    return render_controller_disks(inventory, findings, width, expand_virtual=expand_virtual)
+
+
+def disk_header_line(fabric: _Fabric, layout: Layout) -> Text:
+    """The disk column header, offset by marker and spine like every row.
+
+    Copied from report's own with the gutter widened to the spine: the header
+    has to sit exactly above the cells it labels, which sit spine characters
+    further right than they did in the old tree.
+    """
+    line = Text()
+    line.append(" " * _MARKER_WIDTH)
+    line.append(" " * max(fabric.spine - _MARKER_WIDTH, 0))
+    marker = " " * _MARKER_RESERVE
+    line.append(marker + " ")
+    for column in layout.columns:
+        line.append(pad(column.title, layout.widths[column.key], column.align), style=theme.STYLE_HEADER)
+        line.append(GAP)
+    return line
+
+
+__all__ = ["LEGACY_PCI", "NOT_READ", "hop_cells", "render_fabric"]
