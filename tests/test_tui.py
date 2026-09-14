@@ -112,6 +112,81 @@ async def test_the_smart_page_needs_no_selection_to_reach() -> None:
 
 @pytest.mark.os_agnostic
 @pytest.mark.asyncio
+async def test_the_density_key_cycles_the_fabric_on_the_topology_page() -> None:
+    """Verify pressing `d` redraws the topology at the next density.
+
+    Driven through the key, not the handler, with the rendered ADDRESSES as
+    the observable: on this capture the three densities hold different counts
+    of device lines (members and neighbours included as the density narrows),
+    so a cycle that changed the setting without redrawing, or redrew at the
+    same density, would leave those sets unequal in the direction the test
+    names rather than passing vacuously.
+    """
+    import re
+
+    from lsdsk.domain.enums import TreeDensity
+
+    device_address = re.compile(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]")
+
+    def drawn_addresses() -> set[str]:
+        # A Static holds a Rich renderable, so reading it is a render: a
+        # Console of the page's own width prints it to text, which is what
+        # `str()` could not do and `content` does not promise.
+        buffer = io.StringIO()
+        Console(width=160, file=buffer, no_color=True).print(app.query_one("#tree", Static).content)
+        return {match.group(0) for line in buffer.getvalue().splitlines() if (match := device_address.search(line))}
+
+    app = LsdskApp(inventory())
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.press("d")
+        await pilot.pause()
+
+        assert app.display_settings.tree_density is TreeDensity.STORAGE_AND_SIBLINGS
+        after_one = drawn_addresses()
+        await pilot.press("d")
+        await pilot.pause()
+
+        assert app.display_settings.tree_density is TreeDensity.STORAGE_ONLY
+        after_two = drawn_addresses()
+        assert after_two == after_one, "no neighbour of storage shares a BRIDGE here, so the reduced pair agree"
+        await pilot.press("d")
+        await pilot.pause()
+
+        assert app.display_settings.tree_density is TreeDensity.FULL
+        after_three = drawn_addresses()
+        assert after_three > after_two, "returning to full draws the whole fabric back"
+        await pilot.press("d")
+        await pilot.pause()
+
+        assert app.display_settings.tree_density is TreeDensity.STORAGE_AND_SIBLINGS, "the cycle wraps"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
+async def test_the_density_key_is_gated_to_the_topology_page() -> None:
+    """Verify `d` answers on the page whose view it changes, and only there.
+
+    check_action hiding an action is what keeps its key off the footer AND
+    out of dispatch; a key advertised on all eight pages that answers on one
+    is a key a reader stops believing.
+    """
+    app = LsdskApp(inventory())
+    async with app.run_test(size=(140, 45)) as pilot:
+        await pilot.pause()
+        assert app.check_action("tree_density", ()) is True
+
+        app.action_show("disks")
+        await pilot.pause()
+        assert app.check_action("tree_density", ()) is False
+        before = app.display_settings.tree_density
+        await pilot.press("d")
+        await pilot.pause()
+
+        assert app.display_settings.tree_density is before, "`d` was dispatched on a page it is hidden from"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
 async def test_a_pages_table_takes_the_keyboard_when_it_opens() -> None:
     """Verify a table can be scrolled, which needs focus to leave the tab bar.
 

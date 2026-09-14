@@ -67,7 +67,7 @@ dev = [
   "pip-audit>=2.10.1",
   "import-linter>=2.15",
   "rtoml>=0.13.0",
-  "httpx2>=2.12.0",
+  "httpx2>=2.13.0",
   # Transitive CVE pins
   "click>=8.5.0",                # CVE-2026-7246
   "jaraco-context>=6.1.2",       # CVE-2025-23949

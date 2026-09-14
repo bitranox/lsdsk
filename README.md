@@ -274,26 +274,26 @@ because there is nothing to fix.
 
 ## Commands
 
-| Command                          | Shows                                                              |
-|----------------------------------|--------------------------------------------------------------------|
-| `lsdsk`                          | At a terminal, the interactive view. Anywhere else, the page below |
-| `lsdsk report`                   | Everything on one page. Each command below is one section of it    |
-| `lsdsk topology`                 | The problem summary and the disk-to-controller tree                |
-| `lsdsk controllers`              | Controllers, PCIe placement, free ports, load                      |
-| `lsdsk disks`                    | One row per disk                                                   |
-| `lsdsk health`                   | Wear, temperature, hours and error counters                        |
-| `lsdsk smart`                    | Every disk's SMART attributes against its thresholds               |
-| `lsdsk findings`                 | Every finding with its reasoning and its remedy                    |
-| `lsdsk slots`                    | Every PCIe port: capability, occupant, what is free                |
-| `lsdsk trend`                    | What each error counter is doing over time, not just its total     |
-| `lsdsk record`                   | Store one reading and print nothing, for a timer                   |
-| `lsdsk tui`                      | An interactive page per question, `*top` style                     |
-| `lsdsk snapshot -o f.json`       | Capture the raw reading                                            |
-| `lsdsk --replay f.json`          | Render a capture from any machine                                  |
-| `lsdsk config`                   | The merged configuration, and which layer each value came from     |
-| `lsdsk config-deploy`            | Write the shipped defaults where you can edit them                 |
-| `lsdsk config-generate-examples` | Write commented example files without touching live config         |
-| `lsdsk info`                     | Version, homepage and the metadata a bug report needs              |
+| Command                          | Shows                                                                                              |
+|----------------------------------|----------------------------------------------------------------------------------------------------|
+| `lsdsk`                          | At a terminal, the interactive view. Anywhere else, the page below                                 |
+| `lsdsk report`                   | Everything on one page. Each command below is one section of it                                    |
+| `lsdsk topology`                 | The problem summary, then the whole PCI fabric root-down with each controller's disks nested on it |
+| `lsdsk controllers`              | Controllers, PCIe placement, free ports, load                                                      |
+| `lsdsk disks`                    | One row per disk                                                                                   |
+| `lsdsk health`                   | Wear, temperature, hours and error counters                                                        |
+| `lsdsk smart`                    | Every disk's SMART attributes against its thresholds                                               |
+| `lsdsk findings`                 | Every finding with its reasoning and its remedy                                                    |
+| `lsdsk slots`                    | Every PCIe port: capability, occupant, what is free                                                |
+| `lsdsk trend`                    | What each error counter is doing over time, not just its total                                     |
+| `lsdsk record`                   | Store one reading and print nothing, for a timer                                                   |
+| `lsdsk tui`                      | An interactive page per question, `*top` style                                                     |
+| `lsdsk snapshot -o f.json`       | Capture the raw reading                                                                            |
+| `lsdsk --replay f.json`          | Render a capture from any machine                                                                  |
+| `lsdsk config`                   | The merged configuration, and which layer each value came from                                     |
+| `lsdsk config-deploy`            | Write the shipped defaults where you can edit them                                                 |
+| `lsdsk config-generate-examples` | Write commented example files without touching live config                                         |
+| `lsdsk info`                     | Version, homepage and the metadata a bug report needs                                              |
 
 The interactive view is keyed the way the `*top` family is: `1` to `8` or the
 matching function key switch page, and `q` quits; the footer lists those, so

@@ -177,7 +177,7 @@ machine-readable form is `lsdsk snapshot`; `tui`, `fail` and `logdemo` have no d
 | `slots`                    | Show the mainboard's PCIe ports, what occupies them and what is free.     |
 | `smart`                    | Show every disk's SMART attributes against its own thresholds.            |
 | `snapshot`                 | Capture this machine's raw reading for replay elsewhere.                  |
-| `topology`                 | Show the problem summary and the disk-to-controller tree.                 |
+| `topology`                 | Show the problem summary and the root-down PCI fabric with its disks.     |
 | `trend`                    | Show what each error counter is doing over time, not just its total.      |
 | `tui`                      | Open the interactive view, with a page per question.                      |
 
