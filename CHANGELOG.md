@@ -45,6 +45,23 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   page asked for the section with no width at all and got the piped default of
   120 columns, so names were clipped with room to spare in a wider window and
   columns were fitted for a width a narrower one did not have.
+- **A device row keeps its columns apart, at every depth and every width.** The
+  address field was exactly as wide as a PCI address, so padding it emitted no
+  separator at all and the address ran into the speed beside it on every row of
+  every capture - `0000:00:01.05.0 x8` reads as an address ending in 05 - while
+  the width budget had been paying for three gaps the row never drew. The spine
+  was padded to its own width minus the marker, so the deepest drawn row put its
+  address, hops and name two columns right of every row above it. The disk
+  header kept a marker field this section spends elsewhere, so every value sat
+  three columns left of its own heading. And a row below about 50 columns
+  wrapped onto a second line carrying no address, which reads as another device:
+  the hop columns are now dropped whole when the width cannot hold them, never
+  clipped, because `3.0 x16` cut to `3.0 x1` is not a shorter figure but a
+  different one.
+- **Listing the kernel-virtual devices fits the columns around them.** They were
+  padded into columns measured over the drives alone, so `VIRTUAL` arrived as
+  `VIR>` in a section with twenty columns to spare while the table the old tree
+  draws printed it whole for the same machine at the same width.
 
 ## [1.2.13] 2026-09-12 23:30:24
 

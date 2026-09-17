@@ -287,3 +287,143 @@ def test_the_note_names_what_each_density_draws() -> None:
         assert note.startswith("showing "), note
         assert note != "showing ; " + KEY_HINT + " to change the detail level"
         assert KEY_HINT in note
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", sorted(DENSITY_COUNTS))
+def test_every_column_of_a_device_row_is_separated_from_the_next(host: str) -> None:
+    """Fields are separated by a gap, at every value they can hold.
+
+    The address column was exactly as wide as a PCI address, so padding it to
+    that width emitted nothing at all and the address ran into the speed beside
+    it on every row of every capture: `0000:00:01.05.0 x8` reads as an address
+    that ends in 05. The budget had already been paying for three gaps the row
+    never drew, which is how the arithmetic and the drawing disagreed.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.domain.diagnostics import diagnose
+
+    machine = build_from(_load(host))
+    findings = diagnose(machine)
+    glued: list[str] = []
+    for line in _device_lines(machine, findings, TreeDensity.FULL):
+        match = DeviceLine.search(line)
+        assert match is not None
+        after = line[match.end() :]
+        if after and not after.startswith("  "):
+            glued.append(line)
+    assert not glued, f"{host}: the address touches the next column on {len(glued)} rows, e.g. {glued[0]!r}"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", sorted(DENSITY_COUNTS))
+def test_a_device_row_takes_one_line_at_every_width(host: str) -> None:
+    """One device, one line, at every width from 20 to 200.
+
+    A wrapped row puts a device's name on a line with no address and no marker,
+    which reads as a second device, and the columns the view exists for stop
+    lining up. The guard that claimed this asserted only that no line held a
+    bare severity marker, so the whole invariant was unheld: measured before
+    the fix, every capture wrapped its rows below about 50 columns.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.tree import Fabric
+    from lsdsk.domain.diagnostics import diagnose
+
+    machine = build_from(_load(host))
+    findings = diagnose(machine)
+    for width in range(20, 201):
+        fabric = Fabric(machine.pci_tree, width, TreeDensity.FULL)
+        console = Console(file=io.StringIO(), width=width, no_color=True)
+        for node, _level in fabric.drawn():
+            with console.capture() as capture:
+                console.print(fabric.row(node, findings))
+            drawn = capture.get().rstrip("\n").split("\n")
+            assert len(drawn) == 1, f"{host} at width {width}: {node.address} took {len(drawn)} lines: {drawn}"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", sorted(DENSITY_COUNTS))
+def test_every_device_row_starts_its_columns_at_the_same_place(host: str) -> None:
+    """The spine is one width for the whole section, at every depth.
+
+    It was padded to the spine MINUS the marker, so a row at the deepest drawn
+    level - whose legs are exactly the spine's own width - pushed its address,
+    both hops and its name two characters right of every row above it, and out
+    of line with the disk rows below it. The module's docstring calls this the
+    law it exists for.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.tree import Fabric
+    from lsdsk.domain.diagnostics import diagnose
+
+    machine = build_from(_load(host))
+    findings = diagnose(machine)
+    fabric = Fabric(machine.pci_tree, 200, TreeDensity.FULL)
+
+    offsets = {fabric.row(node, findings).plain.index(node.address) for node, _level in fabric.drawn()}
+
+    assert len(offsets) == 1, f"{host}: the address column sits at {sorted(offsets)} depending on the row's depth"
+
+
+@pytest.mark.os_agnostic
+def test_the_disk_header_sits_above_the_cells_it_labels() -> None:
+    """A column header three characters off its own data is a misread waiting.
+
+    The header kept report.py's separate marker field, which this section
+    spends inside its own marker column, so every value sat three columns left
+    of its heading down the whole table - in the view whose purpose is reading
+    a column straight down the page.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.tree import FabricView, render_fabric
+    from lsdsk.domain.diagnostics import diagnose
+
+    machine = build_from(_load("linux-nvme-board"))
+    findings = diagnose(machine)
+    buffer = io.StringIO()
+    Console(file=buffer, width=160, no_color=True).print(
+        render_fabric(machine, findings, 160, FabricView(density=TreeDensity.FULL))
+    )
+    lines = buffer.getvalue().splitlines()
+
+    header = next(line for line in lines if "device" in line and "model" in line)
+    disk = next(line for line in lines if "/dev/nvme" in line)
+
+    assert header.index("device") == disk.index("/dev/nvme"), f"header {header!r} against row {disk!r}"
+
+
+@pytest.mark.os_agnostic
+def test_listing_the_virtual_devices_fits_the_columns_around_them() -> None:
+    """The columns are fitted over every row the view draws, virtual ones too.
+
+    They were fitted over the drives alone and the virtual rows were then
+    padded into that, so `VIRTUAL` arrived clipped to `VIR>` in a section with
+    twenty columns to spare while the old table printed it whole for the same
+    machine at the same width.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.report import render_controller_disks
+    from lsdsk.adapters.render.tree import FabricView, render_fabric
+    from lsdsk.domain.diagnostics import diagnose
+
+    machine = build_from(_load("linux-minimal"))
+    assert machine.virtual_disks, "the fixture no longer carries kernel-virtual devices"
+    findings = diagnose(machine)
+    view = FabricView(density=TreeDensity.STORAGE_ONLY, expand_virtual=True)
+
+    def rendered(renderable: Any) -> list[str]:
+        buffer = io.StringIO()
+        Console(file=buffer, width=120, no_color=True).print(renderable)
+        return buffer.getvalue().splitlines()
+
+    fabric = rendered(render_fabric(machine, findings, 120, view))
+    old_table = rendered(render_controller_disks(machine, findings, 120, expand_virtual=True))
+    sample = machine.virtual_disks[0].path
+
+    in_fabric = next(line for line in fabric if sample in line)
+    in_table = next(line for line in old_table if sample in line)
+    for cell in ("VIRTUAL",):
+        assert (cell in in_fabric) == (cell in in_table), (
+            f"the two views describe one machine differently: {in_fabric!r} against {in_table!r}"
+        )

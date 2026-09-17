@@ -66,12 +66,13 @@ _ADDRESS_WIDTH = 12
 # The hop field holds both "3.0 x4" and "legacy PCI" (10) without squashing.
 _HOP_WIDTH = 10
 _GAP_WIDTH = 2
-#: What the spine may grow past before it is clipped, beyond the marker.
-_SPINE_RESERVE = 4
-#: The widest severity marker, carried into every row's budget so a flagged row
-#: never lands exactly on the terminal width and wraps its marker. Same reason
-#: report.py reserves it before fitting its disk columns.
-_MARKER_RESERVE = 2
+#: Both hop columns with their gaps: they are drawn together or not at all.
+_HOPS_WIDTH = 2 * (_HOP_WIDTH + _GAP_WIDTH)
+#: Characters a name is worth drawing in. Below this the hops go first, because
+#: a device with no name is not identifiable and a hop is a figure beside one.
+_MIN_NAME_WIDTH = 8
+#: The floor the disk columns are fitted in, whatever the spine costs.
+_MIN_COLUMNS_WIDTH = 20
 
 _TREE_GAP = "  "
 _TREE_BRANCH = "|-"
@@ -144,13 +145,27 @@ def _spine_width(deepest_level: int) -> int:
     return _SPINE_UNIT * deepest_level + _MARGIN_BEFORE_COLUMNS
 
 
-class _Fabric:
-    """One render call's shared state: the tree, the density, the geometry."""
+class Fabric:
+    """One render call's shared state: the tree, the density, the geometry.
 
-    def __init__(self, nodes: Sequence[PciNode], width: int, density: TreeDensity) -> None:
+    Public because a row is where the geometry is observable: the guards that
+    hold the spine to one width and a device to one line ask a single row what
+    it drew, which reading the finished section back as text cannot answer -
+    a wrapped row and two devices look alike there.
+    """
+
+    def __init__(
+        self,
+        nodes: Sequence[PciNode],
+        width: int,
+        density: TreeDensity,
+        *,
+        expand_virtual: bool = False,
+    ) -> None:
         self.nodes = nodes
         self.width = width
         self.density = density
+        self.expand_virtual = expand_virtual
         self.by_address = {node.address: node for node in nodes if not node.is_root}
         self.kept = self._kept()
         self.by_parent = self._grouped(node for node in self.by_address.values() if node.address in self.kept)
@@ -161,7 +176,11 @@ class _Fabric:
             if node.is_root and any(n.parent_address == node.address for n in self.by_address.values())
         ]
         deepest = max((self.level_of(node) for node, _level in self.drawn()), default=0)
-        self.spine = min(_spine_width(deepest), max(width - _MARKER_WIDTH - _SPINE_RESERVE, 1))
+        # One width for the whole section, wide enough for the DEEPEST row's
+        # legs: padding to anything narrower let that row's columns sit two
+        # characters right of every other row's, which is exactly the law this
+        # module exists to keep. Capped so the address still fits beside it.
+        self.spine = min(_spine_width(deepest), max(width - _MARKER_WIDTH - _ADDRESS_WIDTH, 0))
 
     @staticmethod
     def _grouped(devices: Iterable[PciNode]) -> dict[str | None, list[PciNode]]:
@@ -254,25 +273,31 @@ class _Fabric:
         line = Text()
         severity = worst_severity(findings, node.address)
         line.append(theme.marker_for(severity).ljust(_MARKER_WIDTH), style=theme.style_for(severity))
-        line.append("".join(self._legs_for(node)).ljust(max(self.spine - _MARKER_WIDTH, 0)))
+        line.append("".join(self._legs_for(node)).ljust(self.spine)[: self.spine])
+        room = self.width - _MARKER_WIDTH - self.spine
+        if room < _ADDRESS_WIDTH + _GAP_WIDTH:
+            # Below the address there is nothing left to give up, so the
+            # address is cut rather than the row wrapping onto a second line
+            # that carries no address and reads as another device.
+            line.append(clip(node.address, max(room, 1)), style=theme.STYLE_IDENTIFIER)
+            return line
         line.append(node.address.ljust(_ADDRESS_WIDTH), style=theme.STYLE_IDENTIFIER)
-        for text, style in hop_cells(node):
-            # Each cell carries its own style, so an unread figure is dimmed
-            # here exactly as it is in every other table rather than reading at
-            # the same weight as the measurement beside it.
-            line.append(f"{text:<{_HOP_WIDTH}}{_TREE_GAP}", style=style)
+        line.append(_TREE_GAP)
+        room -= _ADDRESS_WIDTH + _GAP_WIDTH
+        if room >= _HOPS_WIDTH + _MIN_NAME_WIDTH:
+            for text, style in hop_cells(node):
+                # Each cell carries its own style, so an unread figure is dimmed
+                # here exactly as it is in every other table rather than reading
+                # at the same weight as the measurement beside it.
+                line.append(f"{text:<{_HOP_WIDTH}}{_TREE_GAP}", style=style)
+            room -= _HOPS_WIDTH
+        # The hops go whole or not at all, never clipped: "3.0 x16" cut to
+        # "3.0 x1" is not a shorter figure, it is a different one. A name cut
+        # short says so with the marker clip() adds, and reads as itself.
         tag = theme.pci_tag(node.port_kind)
         label = node.name + (f"  ({tag})" if tag else "")
-        line.append(clip(label, self.budget))
+        line.append(clip(label, room))
         return line
-
-    @property
-    def budget(self) -> int:
-        """Characters one device's name is given."""
-        return max(
-            self.width - _MARKER_WIDTH - self.spine - _ADDRESS_WIDTH - 2 * _HOP_WIDTH - 3 * _GAP_WIDTH,
-            8,
-        )
 
     def measure(self, inventory: Inventory) -> Layout:
         """Fit the disk columns ONCE over every disk drawn anywhere.
@@ -281,9 +306,16 @@ class _Fabric:
         spine costs it. The reservation is the same on every row: device rows
         and disk rows alike budget for the fullest spine, which is what keeps
         two disks on different controllers comparable straight down the page.
+
+        Fitted over the virtual devices too when they are listed, because they
+        are drawn through this same layout: fitting without them sized the
+        columns for the drives alone and then clipped every virtual row into
+        them, so the same machine read one way here and another in the table
+        the old tree draws.
         """
-        rows = [disk_cells(disk, inventory.port_link_for(disk)) for disk in inventory.disks]
-        available = max(self.width - self.spine - _MARKER_WIDTH - _MARKER_RESERVE - 1, 20)
+        listed = (*inventory.disks, *inventory.virtual_disks) if self.expand_virtual else inventory.disks
+        rows = [disk_cells(disk, inventory.port_link_for(disk)) for disk in listed]
+        available = max(self.width - _MARKER_WIDTH - self.spine, _MIN_COLUMNS_WIDTH)
         return Layout.for_rows(DISK_COLUMNS, rows, available)
 
     def disk_row(
@@ -307,7 +339,7 @@ class _Fabric:
         line = Text()
         severity = worst_severity(findings, disk.path)
         line.append(theme.marker_for(severity).ljust(_MARKER_WIDTH), style=theme.style_for(severity))
-        line.append(" " * max(self.spine - _MARKER_WIDTH, 0))
+        line.append(" " * self.spine)
         cells = disk_row(disk, inventory.port_link_for(disk))
         for column in layout.columns:
             width = layout.widths[column.key]
@@ -379,7 +411,7 @@ def render_fabric(
         # table is the whole section, so the machine's storage is still shown.
         return _no_pci_fallback(inventory, findings, width, expand_virtual=view.expand_virtual)
     density, expand_virtual = view.density, view.expand_virtual
-    fabric = _Fabric(inventory.pci_tree, width, density)
+    fabric = Fabric(inventory.pci_tree, width, density, expand_virtual=expand_virtual)
     layout = fabric.measure(inventory)
     out: list[RenderableType] = [Text(density_note(density, view.how_to_change), style=theme.STYLE_NOTE)]
     if len(fabric.roots) > 1:
@@ -407,7 +439,7 @@ def render_fabric(
 
 
 def _virtual_block(
-    fabric: _Fabric,
+    fabric: Fabric,
     inventory: Inventory,
     findings: Sequence[Finding],
     layout: Layout,
@@ -449,7 +481,7 @@ def _no_pci_fallback(
     return render_controller_disks(inventory, findings, width, expand_virtual=expand_virtual)
 
 
-def disk_header_line(fabric: _Fabric, layout: Layout) -> Text:
+def disk_header_line(fabric: Fabric, layout: Layout) -> Text:
     """The disk column header, offset by marker and spine like every row.
 
     Copied from report's own with the gutter widened to the spine: the header
@@ -457,10 +489,7 @@ def disk_header_line(fabric: _Fabric, layout: Layout) -> Text:
     further right than they did in the old tree.
     """
     line = Text()
-    line.append(" " * _MARKER_WIDTH)
-    line.append(" " * max(fabric.spine - _MARKER_WIDTH, 0))
-    marker = " " * _MARKER_RESERVE
-    line.append(marker + " ")
+    line.append(" " * (_MARKER_WIDTH + fabric.spine))
     for column in layout.columns:
         line.append(pad(column.title, layout.widths[column.key], column.align), style=theme.STYLE_HEADER)
         line.append(GAP)
@@ -510,6 +539,7 @@ __all__ = [
     "DEFAULT_VIEW",
     "KEY_HINT",
     "OPTION_HINT",
+    "Fabric",
     "FabricSection",
     "FabricView",
     "density_note",
