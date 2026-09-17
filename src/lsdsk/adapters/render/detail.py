@@ -227,7 +227,12 @@ def machine_detail(inventory: Inventory) -> Detail:
     return Detail(heading, groups, ())
 
 
-def render_detail(detail: Detail, findings: Sequence[Finding]) -> RenderableType:
+def render_detail(
+    detail: Detail,
+    findings: Sequence[Finding],
+    *,
+    header_style: str = theme.STYLE_HEADER,
+) -> RenderableType:
     """Draw one record: a heading, its groups, then the findings that name it.
 
     No width is threaded in. Every part expands to whatever console renders it,
@@ -239,24 +244,33 @@ def render_detail(detail: Detail, findings: Sequence[Finding]) -> RenderableType
         detail: The record to draw.
         findings: Every finding of the scan, filtered here by the record's own
             scopes rather than by the caller, so no page can pass a shorter list.
+        header_style: How a group's label is drawn. A label IS a header, and a
+            header is the one role whose colour cannot be swapped after the
+            fact, so the view that wants its own says so here.
 
     Returns:
         A Rich renderable.
     """
     gathered = tuple((scope, findings_for(findings, scope.subject)) for scope in detail.scopes)
     total = sum(len(matching) for _scope, matching in gathered)
-    parts: list[RenderableType] = [_heading_line(detail.heading, total), _values_table(detail.groups)]
+    parts: list[RenderableType] = [_heading_line(detail.heading, total), _values_table(detail.groups, header_style)]
     if _anything_unread(detail.groups):
         parts.append(Text(f" {UNREAD_LEGEND}", style=theme.STYLE_UNKNOWN))
     parts.append(_findings_table(gathered))
     return Group(*parts)
 
 
-def _values_table(groups: Sequence[DetailGroup]) -> Table:
-    """The labelled groups, each wrapping under its values rather than its label."""
+def _values_table(groups: Sequence[DetailGroup], header_style: str = theme.STYLE_HEADER) -> Table:
+    """The labelled groups, each wrapping under its values rather than its label.
+
+    The label column is drawn as a HEADER, which is what it is: it names the
+    run of pairs beside it, exactly as a column title names the values under
+    it. Drawn in the quieter unknown grey it read as a value that could not be
+    read, which is the one thing that style is reserved to mean.
+    """
     label_width = max((len(group.label) for group in groups), default=0)
     table = Table(box=None, show_header=False, pad_edge=False, padding=(0, 1), expand=True)
-    table.add_column("label", width=label_width, no_wrap=True, style=theme.STYLE_UNKNOWN)
+    table.add_column("label", width=label_width, no_wrap=True, style=header_style)
     table.add_column("body", overflow="fold", ratio=1)
     for group in groups:
         table.add_row(group.label, _values_text(group.values))

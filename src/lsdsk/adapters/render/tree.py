@@ -30,6 +30,7 @@ System Role:
 
 from __future__ import annotations
 
+from functools import cache
 from typing import TYPE_CHECKING, NamedTuple
 
 from rich.console import Group
@@ -188,7 +189,18 @@ DEVICE_COLUMNS: tuple[Column, ...] = (
     Column("name", "name"),
 )
 
-_HEADER_CELLS: dict[str, theme.Cell] = {column.key: (column.title, theme.STYLE_HEADER) for column in DEVICE_COLUMNS}
+
+@cache
+def _header_cells(style: str) -> Mapping[str, theme.Cell]:
+    """The device column titles, drawn in one style.
+
+    A function of the style rather than a constant, because the interactive
+    view draws a header in its own palette's hue while the printed one draws it
+    bold and hueless, and a header is the one role whose colour cannot be
+    swapped after the fact: in print it is the bare string ``bold``, which an
+    identifier and a note are too.
+    """
+    return {column.key: (column.title, style) for column in DEVICE_COLUMNS}
 
 
 def device_fields(width: int, spine: int) -> tuple[Field, ...]:
@@ -251,7 +263,7 @@ def device_header_line(fabric: Fabric, rules: str = "") -> Text:
     line = Text()
     line.append(" " * _MARKER_WIDTH)
     line.append(rules or " " * fabric.spine)
-    _append_fields(line, fabric.fields, _HEADER_CELLS)
+    _append_fields(line, fabric.fields, _header_cells(fabric.header_style))
     return line
 
 
@@ -276,11 +288,16 @@ class Fabric:
         density: TreeDensity,
         *,
         expand_virtual: bool = False,
+        header_style: str = theme.STYLE_HEADER,
     ) -> None:
         self.nodes = nodes
         self.width = width
         self.density = density
         self.expand_virtual = expand_virtual
+        #: How this render call draws a column header. Carried here rather than
+        #: passed to the two functions that draw one, so every header of one
+        #: section is the same by construction.
+        self.header_style = header_style
         self.by_address = {node.address: node for node in nodes if not node.is_root}
         self.kept = self._kept()
         self.by_parent = self._grouped(node for node in self.by_address.values() if node.address in self.kept)
@@ -548,9 +565,13 @@ class Fabric:
 class FabricView(NamedTuple):
     """How one view draws the fabric.
 
-    The three travel together through every signature that renders it, and the
-    third is what keeps one sentence from becoming two: the note above the tree
-    is written once and each view says how ITS reader asks for another shape.
+    They travel together through every signature that renders it, and
+    ``how_to_change`` is what keeps one sentence from becoming two: the note
+    above the tree is written once and each view says how ITS reader asks for
+    another shape. ``header_style`` is here for the same reason in colour: the
+    interactive view draws a header in its own palette's hue, and a header is
+    the one role whose colour cannot be swapped after the fact, because in
+    print it is the bare string ``bold`` that an identifier and a note are too.
 
     Attributes:
         density: How much of the fabric to draw.
@@ -558,17 +579,21 @@ class FabricView(NamedTuple):
             them in one line.
         how_to_change: What this view's reader types or presses, named in the
             note above the tree.
+        header_style: How this view draws a column header.
 
     Example:
         >>> FabricView().density is DEFAULT_TREE_DENSITY
         True
         >>> FabricView(how_to_change=KEY_HINT).how_to_change
         'press "d"'
+        >>> FabricView().header_style == theme.STYLE_HEADER
+        True
     """
 
     density: TreeDensity = DEFAULT_TREE_DENSITY
     expand_virtual: bool = False
     how_to_change: str = OPTION_HINT
+    header_style: str = theme.STYLE_HEADER
 
 
 #: What a caller that asks for nothing gets: the shipped density, the
@@ -617,7 +642,13 @@ def fabric_lines(
     """
     if not inventory.pci_tree:
         return ()
-    fabric = Fabric(inventory.pci_tree, width, view.density, expand_virtual=view.expand_virtual)
+    fabric = Fabric(
+        inventory.pci_tree,
+        width,
+        view.density,
+        expand_virtual=view.expand_virtual,
+        header_style=view.header_style,
+    )
     layout = fabric.measure(inventory)
     attached: set[str] = set()
     out = [*_fabric_head(inventory, fabric, view)]
@@ -832,7 +863,7 @@ def disk_header_line(fabric: Fabric, layout: Layout, rules: str = "") -> Text:
     line.append(" " * _MARKER_WIDTH)
     line.append(rules or " " * fabric.spine)
     for column in layout.columns:
-        line.append(pad(column.title, layout.widths[column.key], column.align), style=theme.STYLE_HEADER)
+        line.append(pad(column.title, layout.widths[column.key], column.align), style=fabric.header_style)
         line.append(GAP)
     return line
 

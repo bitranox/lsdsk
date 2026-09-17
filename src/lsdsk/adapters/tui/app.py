@@ -36,6 +36,7 @@ from ..config.tunables import DisplaySettings
 from ..render import detail, layout, report, tables, theme
 from ..render.tree import fabric_lines
 from ..render.trend import TREND_COLUMNS, render_trend, trend_rows
+from . import palette as tui_palette
 from .typed_table import raising_table_id, rows_of
 
 if TYPE_CHECKING:
@@ -84,13 +85,18 @@ def _pcie_capable(link: PcieLink) -> str:
 
 
 def _cell(text: str, style: str = "") -> Text:
-    """Render one table cell.
+    """Render one table cell, in the interactive palette.
 
     Cells are Rich text rather than plain strings so a table can carry the same
-    colour the printed report does. A plain string reaches the terminal unstyled,
-    which silently drops every severity signal the render layer computed.
+    meaning the printed report does. A plain string reaches the terminal
+    unstyled, which silently drops every severity signal the render layer
+    computed.
+
+    The colour is swapped here and not upstream: the render layer writes one
+    vocabulary and this is the single door every cell of every page comes
+    through, so a page cannot be drawn in the printed palette by forgetting.
     """
-    return Text(text, style=style)
+    return Text(text, style=tui_palette.restyle(style))
 
 
 def _note() -> Text:
@@ -98,7 +104,7 @@ def _note() -> Text:
     return Text(
         "Rates are per power-on hour of the drive itself, so a machine that "
         "spends most of its time switched off still reports a meaningful figure.",
-        style=theme.STYLE_UNKNOWN,
+        style=tui_palette.restyle(theme.STYLE_UNKNOWN),
     )
 
 
@@ -138,6 +144,7 @@ def fabric_view_for(display: DisplaySettings) -> FabricView:
         density=display.tree_density,
         expand_virtual=display.expand_virtual,
         how_to_change=tree.KEY_HINT,
+        header_style=tui_palette.PALETTE.header_style,
     )
 
 
@@ -250,7 +257,12 @@ class LsdskApp(App[None]):
        long one scrolls inside the panel, so the table above never loses more of
        the window than the record actually uses. The percentage comes from
        display.detail_height_percent at mount. */
-    #detail { height: auto; overflow-y: auto; overflow-x: hidden; padding: 0 1; border-top: solid $panel; }
+    /* Fenced on BOTH sides. With a rule above and nothing below, the record
+       ran straight into the key bar and the two read as one block. */
+    #detail {
+        height: auto; overflow-y: auto; overflow-x: hidden; padding: 0 1;
+        border-top: solid $panel; border-bottom: solid $panel;
+    }
     /* No padding and no border: the section draws its own spine and is laid out
        to the width this leaves, so a character taken here would wrap a row.
        scrollbar-gutter: stable is load-bearing for the same reason and is the
@@ -262,6 +274,19 @@ class LsdskApp(App[None]):
     #tree-lines { height: 1fr; width: 1fr; padding: 0; border: none; background: $surface; }
     #tree-lines { scrollbar-gutter: stable; }
     #tree-fallback { height: 1fr; width: 1fr; }
+    /* Nothing in this view is dimmed. A repeated column header is an option the
+       cursor must skip, so it is disabled, and Textual draws a disabled option
+       at alpha 0.38 - which dimmed the tree's vertical rules for the height of
+       every header they ran through, and the tree looked broken there. Both
+       component classes are named so the two are equal BY CONSTRUCTION rather
+       than by both happening to resolve to the same default. */
+    #tree-lines > .option-list--option { color: $foreground; }
+    #tree-lines > .option-list--option-disabled { color: $foreground; }
+    /* A header is a header wherever it is drawn. The tree draws its own in the
+       palette's hue and the card draws its group labels in it; this is the
+       third place one appears, and it is Textual's to draw, so it is said here
+       rather than in a cell. */
+    DataTable > .datatable--header { color: $lsdsk-header; text-style: bold; }
     """
 
     # Laid out the way the *top family works, because that is the muscle memory
@@ -374,12 +399,12 @@ class LsdskApp(App[None]):
             with TabPane("Health", id=CliCommand.HEALTH.value):
                 yield DataTable[str](id="health-table", zebra_stripes=True, cursor_type="row")
             with TabPane("SMART", id=CliCommand.SMART.value), VerticalScroll():
-                yield Static(report.render_smart(self.inventory), id="smart-body")
+                yield Static(id="smart-body")
             with TabPane("Findings", id=CliCommand.FINDINGS.value), VerticalScroll():
-                yield Static(report.render_findings(self.findings), id="findings-body")
+                yield Static(id="findings-body")
             with TabPane("Slots", id=CliCommand.SLOTS.value), Vertical():
                 yield DataTable[str](id="slot-table", zebra_stripes=True, cursor_type="row")
-                yield Static(report.form_factor_note(), id="slot-note")
+                yield Static(tui_palette.Recoloured(report.form_factor_note()), id="slot-note")
             with TabPane("Trend", id=CliCommand.TREND.value), Vertical():
                 # A table rendered as text until now, which is what it
                 # structurally is: one row per counter of one drive. As a table
@@ -396,6 +421,19 @@ class LsdskApp(App[None]):
             yield Static(id="detail-body")
         yield Footer()
 
+    def get_css_variables(self) -> dict[str, str]:
+        """Publish the interactive palette to the stylesheet.
+
+        A literal hue in the CSS would be a second copy of a value
+        ``tui_palette.PALETTE`` already holds, free to drift from the one every
+        cell is recoloured with - and the contrast gate measures the palette,
+        not the stylesheet, so the drift would be invisible to it.
+
+        Returns:
+            Textual's own variables, plus this app's.
+        """
+        return {**super().get_css_variables(), "lsdsk-header": tui_palette.PALETTE.header}
+
     def on_mount(self) -> None:
         """Fill every table once the widgets exist."""
         # Sized here rather than in the stylesheet for the reason the wwn strip
@@ -406,7 +444,22 @@ class LsdskApp(App[None]):
         self._fill_health()
         self._fill_slots()
         self._fill_trend()
+        self._fill_smart()
+        self._fill_findings()
         self._refill_tree()
+
+    def _fill_smart(self) -> None:
+        """Draw the SMART page, in this view's palette."""
+        self.query_one("#smart-body", Static).update(tui_palette.Recoloured(report.render_smart(self.inventory)))
+
+    def _fill_findings(self) -> None:
+        """Draw the findings page, in this view's palette.
+
+        One place, called at mount and again on a rescan. Written out at BOTH
+        it was written differently: the palette reached the rescan's copy and
+        not the one a reader actually opens the app on.
+        """
+        self.query_one("#findings-body", Static).update(tui_palette.Recoloured(report.render_findings(self.findings)))
 
     def verdict_line(self) -> str:
         """Summarise the findings in one line for the banner.
@@ -500,7 +553,8 @@ class LsdskApp(App[None]):
         The rewind matters: an identifier scrolled to its end would otherwise
         leave the next, shorter one showing the blank space past it.
         """
-        self.query_one("#wwn-full", Static).update(Text(value or "-", style="" if value else theme.STYLE_UNKNOWN))
+        unread = tui_palette.restyle(theme.STYLE_UNKNOWN)
+        self.query_one("#wwn-full", Static).update(Text(value or "-", style="" if value else unread))
         # Immediate, not Textual's default of after the next refresh. Offset 0 is
         # valid whatever the new identifier's width, so there is nothing to wait
         # for, and waiting costs a frame: the update that lays out the new text
@@ -581,11 +635,12 @@ class LsdskApp(App[None]):
         """
         body = self.query_one("#detail-body", Static)
         if record is None:
-            body.update(Text("Nothing selected.", style=theme.STYLE_UNKNOWN))
+            body.update(Text("Nothing selected.", style=tui_palette.restyle(theme.STYLE_UNKNOWN)))
             return
         page = CliCommand(self.query_one(TabbedContent).active)
         ordered = record._replace(groups=detail.order_groups(record.groups, DETAIL_ORDER.get(page, ())))
-        body.update(detail.render_detail(ordered, self.findings))
+        card = detail.render_detail(ordered, self.findings, header_style=tui_palette.PALETTE.header_style)
+        body.update(tui_palette.Recoloured(card))
         # The panel is re-measured by the layout that draws it, so whether the
         # scroll keys apply has to be asked again rather than assumed unchanged.
         self.refresh_bindings()
@@ -610,7 +665,7 @@ class LsdskApp(App[None]):
                 key=f"{row.disk.node}|{row.kind.value}",
             )
         self.query_one("#trend-body", Static).update(
-            render_trend(self.inventory, self.history) if not rows else _note()
+            tui_palette.Recoloured(render_trend(self.inventory, self.history) if not rows else _note())
         )
 
     def _fill_health(self) -> None:
@@ -741,7 +796,7 @@ class LsdskApp(App[None]):
         self._tree_lines = lines
         if not lines:
             self.query_one("#tree", Static).update(
-                render_fabric_for(self.inventory, self.findings, self.display_settings)
+                tui_palette.Recoloured(render_fabric_for(self.inventory, self.findings, self.display_settings))
             )
             return
         # Kept across the redraw, or a resize and a density change would both
@@ -749,7 +804,10 @@ class LsdskApp(App[None]):
         keep = options.highlighted
         options.clear_options()
         options.add_options(
-            [Option(line.text, id=str(index), disabled=line.subject is None) for index, line in enumerate(lines)]
+            [
+                Option(tui_palette.retext(line.text), id=str(index), disabled=line.subject is None)
+                for index, line in enumerate(lines)
+            ]
         )
         if keep is not None and keep < len(lines) and lines[keep].subject is not None:
             options.highlighted = keep
@@ -915,9 +973,9 @@ class LsdskApp(App[None]):
         """
         self.findings = diagnose(self.inventory, history=self.history)
         self.query_one("#verdict", Static).update(self.verdict_line())
-        self.query_one("#findings-body", Static).update(report.render_findings(self.findings))
+        self._fill_findings()
         self._refill_tree()
-        self.query_one("#smart-body", Static).update(report.render_smart(self.inventory))
+        self._fill_smart()
         for table_id in ("#controller-table", "#disk-table", "#health-table", "#slot-table", "#trend-table"):
             rows_of(self.query_one(table_id)).clear(columns=True)
         self._fill_controllers()

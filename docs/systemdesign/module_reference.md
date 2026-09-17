@@ -65,6 +65,7 @@ module exists that is not listed here, or a listed path does not exist.
 ### Adapters - interactive
 
 - `src/lsdsk/adapters/tui/app.py` - The interactive view: one page per question, over a single scan.
+- `src/lsdsk/adapters/tui/palette.py` - The interactive view's palette, and the layer that puts it on the screen.
 - `src/lsdsk/adapters/tui/typed_table.py` - A typed view of the table operations this app uses.
 
 ### Adapters - CLI

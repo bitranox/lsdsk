@@ -18,6 +18,7 @@ System Role:
 
 from __future__ import annotations
 
+from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING, Final
 
 from ...domain.enums import BusType, DiskKind, PciPortKind, Severity
@@ -49,6 +50,7 @@ SEVERITY_MARKERS: dict[Severity, str] = {
     Severity.HINT: "~",
 }
 
+
 # The palette is stated in hex rather than as the terminal's named colours, and
 # nothing here uses the faint attribute. Both were measured, because a colour
 # this tool cannot read is a colour that carries no meaning:
@@ -70,12 +72,82 @@ SEVERITY_MARKERS: dict[Severity, str] = {
 # worst case is 4.2:1 for every one of them, which is the ceiling for a saturated
 # hue that has to survive both black and white. Verified by
 # ``test_every_palette_colour_is_legible_on_every_background``.
-STYLE_CRITICAL_COLOUR = "#E12D2D"
-STYLE_WARNING_COLOUR = "#A5660D"
-STYLE_AT_CAPABILITY_COLOUR = "#22874C"
-STYLE_HINT_COLOUR = "#1C7FA0"
-STYLE_OPPORTUNITY_COLOUR = "#C65310"
-STYLE_UNKNOWN_COLOUR = "#6E7687"
+@dataclass(frozen=True)
+class Palette:
+    """The colours one view draws in, named by what each one MEANS.
+
+    There are two. The printed one below has to stay legible on a black console
+    and a white one at once, which is what caps it at 4.2:1 and why it cannot
+    simply be brightened. The interactive view paints its own background, so it
+    carries its own palette and is measured against that background instead;
+    it lives in ``adapters/tui/palette.py``, because the render layer has no
+    business knowing that a second one exists.
+
+    Naming the roles in one type is what keeps the two in step: a role added
+    here has to be answered by both, and the layer that swaps one for the other
+    is built from the pair rather than from a list somebody maintains.
+
+    Attributes:
+        critical: A proven fault.
+        warning: Below what both ends could manage, or a drive past its own
+            warning threshold.
+        at_capability: A measurement that is as good as the hardware allows.
+        hint: A ceiling nothing can be done about.
+        opportunity: Worth looking at, and explicitly not a fault.
+        unknown: A value that could not be read.
+        header: A column header. EMPTY in print, where a header is bold and
+            takes no hue, because a hue there would claim a severity a heading
+            does not have.
+    """
+
+    critical: str
+    warning: str
+    at_capability: str
+    hint: str
+    opportunity: str
+    unknown: str
+    header: str
+
+    def roles(self) -> dict[str, str]:
+        """Every role that carries a colour, by name; a hueless one is left out.
+
+        Example:
+            >>> "header" in PRINTED.roles()
+            False
+            >>> PRINTED.roles()["critical"] == STYLE_CRITICAL_COLOUR
+            True
+        """
+        return {field.name: getattr(self, field.name) for field in fields(self) if getattr(self, field.name)}
+
+    @property
+    def header_style(self) -> str:
+        """How a column header is drawn: bold, plus this palette's hue if it has one.
+
+        Example:
+            >>> PRINTED.header_style
+            'bold'
+        """
+        return f"bold {self.header}" if self.header else "bold"
+
+
+#: What every printed view draws in. The six hues are the measured ones above;
+#: ``header`` is empty because a printed heading is bold and hueless.
+PRINTED: Final = Palette(
+    critical="#E12D2D",
+    warning="#A5660D",
+    at_capability="#22874C",
+    hint="#1C7FA0",
+    opportunity="#C65310",
+    unknown="#6E7687",
+    header="",
+)
+
+STYLE_CRITICAL_COLOUR = PRINTED.critical
+STYLE_WARNING_COLOUR = PRINTED.warning
+STYLE_AT_CAPABILITY_COLOUR = PRINTED.at_capability
+STYLE_HINT_COLOUR = PRINTED.hint
+STYLE_OPPORTUNITY_COLOUR = PRINTED.opportunity
+STYLE_UNKNOWN_COLOUR = PRINTED.unknown
 
 SEVERITY_STYLES: dict[Severity, str] = {
     Severity.CRITICAL: f"bold {STYLE_CRITICAL_COLOUR}",
@@ -101,7 +173,7 @@ STYLE_CEILING = STYLE_HINT_COLOUR
 STYLE_CAVEAT = f"bold {STYLE_WARNING_COLOUR}"
 #: A column header. Bold rather than faint: the headers name every column, so
 #: they are the last thing that should be hard to read.
-STYLE_HEADER = "bold"
+STYLE_HEADER = PRINTED.header_style
 #: A note the view writes about itself - what it is drawing, and what to type or
 #: press for another shape. Bold with no hue, which renders bright white on a
 #: dark terminal and black on a light one: a literal white would be invisible on
@@ -527,6 +599,7 @@ def style_for(severity: Severity | None) -> str:
 
 
 __all__ = [
+    "PRINTED",
     "SEVERITY_LABELS",
     "SEVERITY_MARKERS",
     "SEVERITY_STYLES",
@@ -540,6 +613,7 @@ __all__ = [
     "TEMPERATURE_HOT",
     "TEMPERATURE_WARM",
     "Cell",
+    "Palette",
     "disk_style",
     "format_size",
     "format_speed",

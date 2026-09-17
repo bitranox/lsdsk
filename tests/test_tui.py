@@ -27,6 +27,7 @@ from lsdsk.adapters.render.tables import render_disks
 from lsdsk.adapters.render.tree import KEY_HINT, FabricView, render_fabric
 from lsdsk.adapters.render.trend import TREND_COLUMNS
 from lsdsk.adapters.tui import LsdskApp
+from lsdsk.adapters.tui import palette as tui_palette
 from lsdsk.adapters.tui.app import DISK_COLUMNS as TUI_DISK_COLUMNS
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.diagnostics import diagnose
@@ -489,11 +490,18 @@ async def test_a_flagged_row_carries_its_colour(page_key: str, table_id: str) ->
         styles = {str(cell.style) for row in table.rows for cell in table.get_row(row)}
 
         assert styles - {""}, "no cell carried any style, so the page is monochrome"
+        # Named as the render layer's roles and then put through this view's
+        # palette, rather than written out in the palette's own values: the
+        # claim is that severity reaches the screen, not what colour it is, and
+        # a literal here would have to be edited every time the palette moves.
         severity_styles = {
-            theme.STYLE_BELOW_CAPABILITY,
-            theme.STYLE_FAILING,
-            theme.STYLE_OPPORTUNITY,
-            *theme.SEVERITY_STYLES.values(),
+            tui_palette.restyle(style)
+            for style in (
+                theme.STYLE_BELOW_CAPABILITY,
+                theme.STYLE_FAILING,
+                theme.STYLE_OPPORTUNITY,
+                *theme.SEVERITY_STYLES.values(),
+            )
         }
         assert any(style in styles for style in severity_styles), (
             f"the fixture has findings, so some cell must carry a severity colour; got {sorted(styles)}"
