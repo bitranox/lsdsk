@@ -201,12 +201,37 @@ STYLE_OPPORTUNITY = STYLE_OPPORTUNITY_COLOUR
 TEMPERATURE_WARM = 50
 TEMPERATURE_HOT = 60
 
-_SIZE_UNITS = ("B", "K", "M", "G", "T", "P")
-_SIZE_STEP = 1024.0
+# A capacity has two honest answers and they differ by 7 percent per step: a
+# drive is SOLD in powers of ten and REPORTS in powers of two. Written with the
+# scale unnamed, the figure is read as whichever the reader expects, so a drive
+# sold as 500 GB rendered `466G` reads as a different drive from the one on the
+# invoice. Both unit lists therefore name their scale, and `format_size_both`
+# writes the pair where there is room for it.
+_BINARY_UNITS = ("B", "KiB", "MiB", "GiB", "TiB", "PiB")
+_DECIMAL_UNITS = ("B", "KB", "MB", "GB", "TB", "PB")
+_BINARY_STEP = 1024.0
+_DECIMAL_STEP = 1000.0
+
+
+def _scaled(size_bytes: int, step: float, units: tuple[str, ...]) -> str:
+    """One capacity on one scale, to the unit that keeps it under three digits."""
+    value = float(size_bytes)
+    for unit in units:
+        if value < step or unit == units[-1]:
+            if unit == units[0]:
+                return f"{int(value)}{unit}"
+            return f"{value:.1f}{unit}" if value < 10 else f"{value:.0f}{unit}"  # noqa: PLR2004 - one decimal below ten
+        value /= step
+    return "-"
 
 
 def format_size(size_bytes: int | None) -> str:
-    """Render a capacity the way a disk listing should.
+    """Render a capacity for a column, on the scale the drive reports in.
+
+    The unit NAMES its scale (``GiB``, not ``G``), because the same drive is
+    two different numbers on the two scales and a column is where a reader
+    compares one drive against another. The pair form is
+    :func:`format_size_both`, for the places with room for it.
 
     Args:
         size_bytes: Capacity in bytes, or ``None``.
@@ -216,22 +241,47 @@ def format_size(size_bytes: int | None) -> str:
 
     Example:
         >>> format_size(4_000_787_030_016)
-        '3.6T'
+        '3.6TiB'
         >>> format_size(500_107_862_016)
-        '466G'
+        '466GiB'
+        >>> format_size(512)
+        '512B'
         >>> format_size(None)
+        '-'
+    """
+    return "-" if size_bytes is None else _scaled(size_bytes, _BINARY_STEP, _BINARY_UNITS)
+
+
+def format_size_both(size_bytes: int | None) -> str:
+    """Render a capacity on both scales, the way the box and the drive say it.
+
+    The decimal figure first, because that is the one a reader arrived with -
+    it is what the drive was sold as and what is printed on its label - and the
+    binary one after it, because that is what every tool on the machine will
+    report. Below a kilobyte the two agree and only one is written, since
+    ``512B/512B`` says nothing twice.
+
+    Args:
+        size_bytes: Capacity in bytes, or ``None``.
+
+    Returns:
+        Both figures, or the single one where they agree.
+
+    Example:
+        >>> format_size_both(500_107_862_016)
+        '500GB/466GiB'
+        >>> format_size_both(4_000_787_030_016)
+        '4.0TB/3.6TiB'
+        >>> format_size_both(512)
+        '512B'
+        >>> format_size_both(None)
         '-'
     """
     if size_bytes is None:
         return "-"
-    value = float(size_bytes)
-    for unit in _SIZE_UNITS:
-        if value < _SIZE_STEP or unit == _SIZE_UNITS[-1]:
-            if unit == "B":
-                return f"{int(value)}{unit}"
-            return f"{value:.1f}{unit}" if value < 10 else f"{value:.0f}{unit}"  # noqa: PLR2004 - one decimal below ten
-        value /= _SIZE_STEP
-    return "-"
+    binary = _scaled(size_bytes, _BINARY_STEP, _BINARY_UNITS)
+    decimal = _scaled(size_bytes, _DECIMAL_STEP, _DECIMAL_UNITS)
+    return binary if binary == decimal else f"{decimal}/{binary}"
 
 
 def format_speed(gbps: float | None) -> str:
@@ -616,6 +666,7 @@ __all__ = [
     "Palette",
     "disk_style",
     "format_size",
+    "format_size_both",
     "format_speed",
     "format_temperature",
     "format_wear",

@@ -142,12 +142,20 @@ def disk_detail(disk: Disk, inventory: Inventory, history: History | None = None
     heading = (
         (disk.path, theme.STYLE_IDENTIFIER),
         row["model"],
-        row["size"],
         row["kind"],
         row["bus"],
     )
+    # The capacity is a LABELLED pair rather than a word in the heading. In the
+    # heading it sat between the model and the media kind with nothing saying
+    # what it was, so a reader looking for the size read the labels below and
+    # did not find one. It is written on both scales here because there is room:
+    # the column above has to choose, this does not.
+    size = (theme.format_size_both(disk.size_bytes), "" if disk.size_bytes else theme.STYLE_UNKNOWN)
     groups = (
-        DetailGroup(IDENTITY, (("serial", row["serial"]), ("firmware", row["firmware"]), ("wwn", row["wwn"]))),
+        DetailGroup(
+            IDENTITY,
+            (("size", size), ("serial", row["serial"]), ("firmware", row["firmware"]), ("wwn", row["wwn"])),
+        ),
         DetailGroup(LINK, _disk_link_values(disk, row)),
         DetailGroup(SEAT, _seat_values(disk, inventory)),
         DetailGroup(HEALTH, _health_values(disk.health)),

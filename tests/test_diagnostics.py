@@ -837,17 +837,47 @@ def test_counting_by_severity_reports_every_level() -> None:
     [
         (None, "-"),
         (512, "512B"),
-        (4096, "4.0K"),
-        (500_107_862_016, "466G"),
-        (4_000_787_030_016, "3.6T"),
-        (20_000_000_000_000_000, "18P"),
+        (4096, "4.0KiB"),
+        (500_107_862_016, "466GiB"),
+        (4_000_787_030_016, "3.6TiB"),
+        (20_000_000_000_000_000, "18PiB"),
     ],
 )
 def test_size_formatting(size_bytes: int | None, expected: str) -> None:
-    """Verify capacities render the way a disk listing should read."""
+    """Verify a capacity names the scale it is written on.
+
+    The unit is ``GiB`` and not ``G`` because the two scales differ by 7 percent
+    per step: a drive sold as 500 GB reports 466 GiB, and written as ``466G``
+    beside its own model name it reads as a different drive from the one on the
+    invoice.
+    """
     from lsdsk.adapters.render.theme import format_size
 
     assert format_size(size_bytes) == expected
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("size_bytes", "expected"),
+    [
+        (None, "-"),
+        # Below a kilobyte the two scales agree, and one figure is written once
+        # rather than twice: "512B/512B" says nothing the first half did not.
+        (512, "512B"),
+        (500_107_862_016, "500GB/466GiB"),
+        (4_000_787_030_016, "4.0TB/3.6TiB"),
+    ],
+)
+def test_size_in_both_scales(size_bytes: int | None, expected: str) -> None:
+    """The decimal figure the drive was sold as, then the binary one it reports.
+
+    Decimal first because that is what the reader arrived with: it is printed on
+    the drive's own label. Binary second because that is what every other tool
+    on the machine will say.
+    """
+    from lsdsk.adapters.render.theme import format_size_both
+
+    assert format_size_both(size_bytes) == expected
 
 
 @pytest.mark.os_agnostic

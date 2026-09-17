@@ -228,3 +228,33 @@ def test_an_empty_socket_shows_no_link_running_in_it_just_as_the_table_does() ->
                 assert running == "-", f"{host} {slot.address}: an empty socket reads as running {running}"
     # Both arms have to occur, or one of the two branches is never tested.
     assert empty_seen and filled_seen, f"the captures cover only one case: {empty_seen} empty, {filled_seen} filled"
+
+
+@pytest.mark.os_agnostic
+def test_the_panel_names_the_capacity_and_writes_it_on_both_scales() -> None:
+    """A reader looking for the size must find it beside a label saying so.
+
+    It used to sit unlabelled in the heading, between the model and the media
+    kind, so someone reading down the labels found serial, firmware and wwn and
+    concluded the panel did not carry the capacity at all.
+
+    Both scales, because the panel has room where a column does not: the same
+    drive is 500GB on its own label and 466GiB to every tool on the machine, and
+    one figure alone is read as whichever the reader expected.
+    """
+    checked = 0
+    for host in CAPTURES:
+        machine = _machine(host)
+        for disk in machine.disks:
+            record = detail.disk_detail(disk, machine)
+            identity = next(group for group in record.groups if group.label == detail.IDENTITY)
+            named = dict(identity.values)
+            assert "size" in named, f"{host} {disk.path}: the panel's identity group names no size"
+            if disk.size_bytes is None:
+                continue
+            drawn = named["size"][0]
+            assert theme.format_size(disk.size_bytes) in drawn, f"{host} {disk.path}: {drawn} omits the binary figure"
+            assert "B/" in drawn or drawn.endswith("B"), f"{host} {disk.path}: {drawn} names no scale"
+            checked += 1
+
+    assert checked, "the control: no capture reported a capacity, so this asserted nothing"

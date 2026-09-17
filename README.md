@@ -76,14 +76,14 @@ linux-sas-hba   2 root complexes (0000:00, 0000:ff)   root ports to PCIe 3.0 x8 
    │     address       capable  running  name
    ├─┬── 0000:00:01.0  3.0 x4   3.0 x4   Intel Corporation ... Root Port 1a  (root port)
    │ └── 0000:05:00.0  3.0 x4   3.0 x4   Samsung Electronics Co Ltd NVMe SSD Controller SM951
-   │     device        model                       size  kind  bus   port     disk     temp  worn
-!  │     /dev/nvme0n1  SAMSUNG MZVPV512HDGL-00000  477G  SSD   NVME  Gen3 x4  Gen3 x4   39C   59%
+   │     device        model                         size  kind  bus   port     disk     temp  worn
+!  │     /dev/nvme0n1  SAMSUNG MZVPV512HDGL-00000  477GiB  SSD   NVME  Gen3 x4  Gen3 x4   39C   59%
    │     address       capable  running  name
    ├─┬── 0000:00:03.0  3.0 x8   3.0 x8   Intel Corporation ... Root Port 3a  (root port)
 ~  │ └── 0000:03:00.0  4.0 x8   3.0 x8   Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS38xx
-   │     device        model                       size  kind  bus   port     disk     temp  worn
-~  │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6T  SSD   SATA  12G      6G        36C    1%
-~  │     /dev/sdb      Samsung SSD 870 EVO 500GB   466G  SSD   SATA  12G      6G        30C    2%
+   │     device        model                         size  kind  bus   port     disk     temp  worn
+~  │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  12G      6G        36C    1%
+~  │     /dev/sdb      Samsung SSD 870 EVO 500GB   466GiB  SSD   SATA  12G      6G        30C    2%
 
 Controllers on linux-sas-hba        ...
 Disks on linux-sas-hba              ...
