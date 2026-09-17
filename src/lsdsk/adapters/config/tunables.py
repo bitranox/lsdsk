@@ -58,6 +58,13 @@ DEFAULT_WWN_WIDTH = 24
 # for the rest.
 DEFAULT_TREE_DENSITY = TreeDensity.STORAGE_ONLY
 
+# The share of the window the interactive view's detail panel may take. A third
+# is what "the whole record of this row" needs for a drive without pushing the
+# table it belongs to off the screen; a reader who wants a quarter changes this
+# one key. The panel is only ever this TALL AT MOST - a short record takes the
+# room it needs and no more.
+DEFAULT_DETAIL_HEIGHT_PERCENT = 33
+
 # Characters of traceback kept in the short and the --traceback forms.
 DEFAULT_TRACEBACK_SUMMARY_LIMIT = 500
 DEFAULT_TRACEBACK_VERBOSE_LIMIT = 10_000
@@ -74,6 +81,8 @@ class DisplaySettings(BaseModel):
             kernel-virtual device rather than tallying them in one line.
         wwn_width: Most characters the wwn column is given in either view.
         tree_density: How much of the PCI fabric the topology view draws.
+        detail_height_percent: Most of the window the interactive view's detail
+            panel may take.
         traceback_summary_limit: Characters kept in a short traceback.
         traceback_verbose_limit: Characters kept under ``--traceback``.
 
@@ -92,6 +101,7 @@ class DisplaySettings(BaseModel):
     expand_virtual: bool = DEFAULT_EXPAND_VIRTUAL
     wwn_width: int = DEFAULT_WWN_WIDTH
     tree_density: TreeDensity = DEFAULT_TREE_DENSITY
+    detail_height_percent: int = DEFAULT_DETAIL_HEIGHT_PERCENT
     traceback_summary_limit: int = DEFAULT_TRACEBACK_SUMMARY_LIMIT
     traceback_verbose_limit: int = DEFAULT_TRACEBACK_VERBOSE_LIMIT
 
@@ -191,6 +201,7 @@ def get_display_settings(config: Config) -> DisplaySettings:
         expand_virtual=flag(table.get("expand_virtual"), default=DEFAULT_EXPAND_VIRTUAL),
         wwn_width=positive_int(table.get("wwn_width"), DEFAULT_WWN_WIDTH),
         tree_density=tree_density_of(table.get("tree_density")),
+        detail_height_percent=positive_int(table.get("detail_height_percent"), DEFAULT_DETAIL_HEIGHT_PERCENT),
         traceback_summary_limit=positive_int(table.get("traceback_summary_limit"), DEFAULT_TRACEBACK_SUMMARY_LIMIT),
         traceback_verbose_limit=positive_int(table.get("traceback_verbose_limit"), DEFAULT_TRACEBACK_VERBOSE_LIMIT),
     )
@@ -213,6 +224,7 @@ def tree_density_of(raw: object) -> TreeDensity:
 
 
 __all__ = [
+    "DEFAULT_DETAIL_HEIGHT_PERCENT",
     "DEFAULT_EXPAND_VIRTUAL",
     "DEFAULT_PIPED_WIDTH",
     "DEFAULT_SUMMARY_LIMIT",

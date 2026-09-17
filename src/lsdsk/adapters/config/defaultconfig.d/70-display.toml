@@ -108,3 +108,19 @@ wwn_width = 24
 # Environment Variable: LSDSK___DISPLAY__TREE_DENSITY="storage-only"
 tree_density = "storage-only"
 
+
+# Most of the interactive window the detail panel under the tables may take.
+#
+# Default: 33, a third. The panel carries the whole record of whatever the
+# cursor is on - every value the row had no column for, then the findings that
+# name it with their reasoning and their remedy - so it needs the room a drive's
+# record takes without pushing the table it belongs to off the screen. Set 25
+# for a quarter. It is a CEILING, not a height: a short record takes the lines
+# it needs and no more, and a long one scrolls inside the panel.
+#
+# The panel is a view of what is already on the page, so it appears only in the
+# interactive view; `lsdsk disks` and the printed page are unchanged by this.
+# Press `i` to hide it and give the whole window back to the table.
+#
+# Environment Variable: LSDSK___DISPLAY__DETAIL_HEIGHT_PERCENT="33"
+detail_height_percent = 33

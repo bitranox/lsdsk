@@ -399,6 +399,7 @@ itself.
 | `expand_virtual`          | `false`        | List kernel-virtual devices instead of tallying them   |
 | `tree_density`            | `storage-only` | How much of the PCI fabric every view draws            |
 | `wwn_width`               | `24`           | Most characters the wwn column is given in either view |
+| `detail_height_percent`   | `33`           | Most of the interactive window the detail panel takes  |
 | `traceback_summary_limit` | `500`          | Characters kept in a short traceback                   |
 | `traceback_verbose_limit` | `10000`        | And under `--traceback`                                |
 
@@ -422,6 +423,14 @@ drawing and how to ask for more. Those are the only spellings
 accepted - the token is the value, case-insensitive. The interactive view cycles
 the same setting with `d` on its topology page, and a capture's whole tree
 travels in the JSON envelope under `pci_tree` whatever the display shows.
+
+`detail_height_percent` caps the detail panel in the interactive view - the box
+under the tables carrying the whole record of whatever the cursor is on: every
+value the row had no column for, then the findings that name it with their
+reasoning and their remedy. It is a CEILING rather than a height, so a short
+record takes the lines it needs and a long one scrolls inside the panel. Set
+`25` for a quarter of the window. Press `i` to hide it and give the table the
+whole screen. It changes nothing a printed command draws.
 
 ### `[history]` - the counter store
 

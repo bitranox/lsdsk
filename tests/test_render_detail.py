@@ -52,7 +52,7 @@ def _drawn(renderable: object, width: int = 118) -> str:
 
 
 def _disk_panel(machine: Inventory, disk: Disk, width: int = 118) -> str:
-    return _drawn(detail.render_detail(detail.disk_detail(disk, machine), diagnose(machine), width), width)
+    return _drawn(detail.render_detail(detail.disk_detail(disk, machine), diagnose(machine)), width)
 
 
 @pytest.mark.os_agnostic
@@ -106,7 +106,7 @@ def test_a_counter_nobody_published_is_a_dash_and_the_panel_says_what_a_dash_mea
     control = detail.machine_detail(machine)
     unread = [name for group in control.groups for name, (text, _style) in group.values if text == "-"]
     assert not unread, f"the control has an unread value after all, so it cannot answer: {unread}"
-    whole = _drawn(detail.render_detail(control, diagnose(machine), 118))
+    whole = _drawn(detail.render_detail(control, diagnose(machine)))
     assert detail.UNREAD_LEGEND not in whole, "the legend prints even where nothing was left unread"
 
 
@@ -182,7 +182,7 @@ def test_a_device_with_no_pcie_capability_says_legacy_rather_than_showing_a_blan
     machine = _machine("linux-sas-hba")
     legacy = [node for node in machine.pci_tree if node.pcie_capability_present is False]
     assert legacy, "the fixture no longer carries a device without a PCIe capability"
-    panel = _drawn(detail.render_detail(detail.node_detail(legacy[0], machine), diagnose(machine), 118))
+    panel = _drawn(detail.render_detail(detail.node_detail(legacy[0], machine), diagnose(machine)))
     assert theme.LEGACY in panel
 
 
@@ -199,4 +199,32 @@ def test_every_record_the_panel_can_show_renders_at_every_width(host: str) -> No
     records += [detail.slot_detail(slot, machine) for slot in machine.slots]
     for record in records:
         for width in (40, 80, 118, 200):
-            assert _drawn(detail.render_detail(record, findings, width), width)
+            assert _drawn(detail.render_detail(record, findings), width)
+
+
+@pytest.mark.os_agnostic
+def test_an_empty_socket_shows_no_link_running_in_it_just_as_the_table_does() -> None:
+    """The slots table dashes a running figure it would otherwise draw as x0.
+
+    A socket with nothing in it still publishes a negotiated speed and width,
+    and ``report.slot_verdict``'s own table refuses to print it. A panel one
+    keypress away printing ``1.0 x0`` there would be two answers about one
+    socket, which is the drift this module exists to prevent.
+    """
+    empty_seen = 0
+    filled_seen = 0
+    for host in CAPTURES:
+        machine = _machine(host)
+        for slot in machine.slots:
+            values = {name: cell for group in detail.slot_detail(slot, machine).groups for name, cell in group.values}
+            running = values["running"][0]
+            if slot.occupied:
+                filled_seen += 1
+                assert running == theme.format_pcie_decimal(slot.link.current_speed_gtps, slot.link.current_width), (
+                    f"{host} {slot.address}"
+                )
+            else:
+                empty_seen += 1
+                assert running == "-", f"{host} {slot.address}: an empty socket reads as running {running}"
+    # Both arms have to occur, or one of the two branches is never tested.
+    assert empty_seen and filled_seen, f"the captures cover only one case: {empty_seen} empty, {filled_seen} filled"

@@ -926,3 +926,173 @@ async def test_the_topology_page_names_the_key_that_changes_the_detail_level() -
 
     assert 'press "d" to change the detail level' in painted, painted[:300]
     assert "--tree-density" not in painted, "the page names the key, not the printed view's option"
+
+
+def _panel_text(app: LsdskApp, width: int = 118) -> str:
+    """What the detail panel currently draws, as text.
+
+    Read off the widget's own renderable rather than off the screen, because the
+    panel is scrollable: the visible rows are a window onto the record, and a
+    test asserting on that window would pass or fail on how tall the terminal is.
+    """
+    buffer = io.StringIO()
+    Console(width=width, file=buffer, no_color=True).print(app.query_one("#detail-body", Static).content)
+    return buffer.getvalue()
+
+
+class TestTheDetailPanelAnswersForTheRowUnderTheCursor:
+    """The box under the tables, and the three ways it could quietly lie."""
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_moving_the_cursor_moves_the_panel_to_the_row_it_landed_on(self) -> None:
+        """Driven by the key a reader presses, never by calling the handler.
+
+        Calling the handler proves the handler works; it cannot prove a reader
+        can reach it, which is how a feature shipped behind a binding that had
+        been bound away.
+        """
+        machine = inventory()
+        app = LsdskApp(machine)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            first = _panel_text(app)
+            await pilot.press("down")
+            await pilot.pause()
+            second = _panel_text(app)
+
+        assert machine.disks[0].path in first.splitlines()[0]
+        assert machine.disks[1].path in second.splitlines()[0]
+        assert first != second, "the cursor moved and the panel did not"
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_one_drive_reads_the_same_on_every_page_that_can_select_it(self) -> None:
+        """The panel is the SUBJECT's record, so only the order may differ.
+
+        Two page-shaped records of one drive would drift exactly as two column
+        lists already did, when the disk page named a drive by model alone for a
+        whole minor series because its own tuple omitted serial and firmware.
+        """
+        app = LsdskApp(inventory())
+        seen: dict[str, list[str]] = {}
+        async with app.run_test(size=(140, 45)) as pilot:
+            for key, page in (("3", "disks"), ("4", "health")):
+                await pilot.press(key)
+                await pilot.pause()
+                seen[page] = sorted(line.strip() for line in _panel_text(app).splitlines() if line.strip())
+
+        assert seen["disks"] == seen["health"], "one drive, two answers"
+        # And the ORDER did change, or the test above would hold for a panel
+        # that ignores the page entirely and proves nothing about ordering.
+        app = LsdskApp(inventory())
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            disks_first = _panel_text(app).splitlines()[1]
+            await pilot.press("4")
+            await pilot.pause()
+            health_first = _panel_text(app).splitlines()[1]
+        assert disks_first != health_first, "the page did not choose what is answered first"
+        assert health_first.startswith("health")
+        assert disks_first.startswith("identity")
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_the_panel_answers_for_the_page_in_front_not_the_table_that_spoke_last(self) -> None:
+        """Every table on screen raises a row event, the slot table last at mount.
+
+        The WWN strip already carries this trap in its own docstring: without a
+        check on which table raised, the panel would settle on the answer the
+        slot page gave to a question the disk page asked.
+        """
+        machine = inventory()
+        app = LsdskApp(machine)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            opened = _panel_text(app)
+
+        assert machine.disks[0].path in opened.splitlines()[0]
+        assert machine.slots[0].address not in opened.splitlines()[0]
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_switching_page_moves_no_cursor_so_the_panel_is_asked_again(self) -> None:
+        """A page switch raises no row event, and the panel must not lag behind."""
+        machine = inventory()
+        app = LsdskApp(machine)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            await pilot.press("2")
+            await pilot.pause()
+            after = _panel_text(app)
+
+        assert machine.controllers[0].address in after.splitlines()[0], after.splitlines()[0]
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("share", [25, 50])
+    async def test_the_panel_never_takes_more_of_the_window_than_it_was_given(self, share: int) -> None:
+        """A ceiling, not a height, and the configured one rather than a literal."""
+        app = LsdskApp(inventory(), display=DisplaySettings(detail_height_percent=share))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            panel = app.query_one("#detail")
+            height = panel.size.height
+            screen = app.screen.size.height
+
+        assert height <= screen * share // 100 + 1, f"{height} rows of {screen} for a {share}% ceiling"
+        assert height > 0, "the panel took no room at all"
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_a_bigger_share_gives_the_panel_more_room(self) -> None:
+        """The control: a ceiling nothing reads would pass the test above."""
+        heights: dict[int, int] = {}
+        for share in (20, 60):
+            app = LsdskApp(inventory(), display=DisplaySettings(detail_height_percent=share))
+            async with app.run_test(size=(140, 45)) as pilot:
+                await pilot.press("4")
+                await pilot.pause()
+                heights[share] = app.query_one("#detail").size.height
+
+        assert heights[60] > heights[20], f"the key moved nothing: {heights}"
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_the_detail_key_hides_the_panel_and_brings_it_back(self) -> None:
+        """Pressed, not called: the binding is what a reader has."""
+        app = LsdskApp(inventory())
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.press("3")
+            await pilot.pause()
+            shown = app.query_one("#detail").display
+            await pilot.press("i")
+            await pilot.pause()
+            hidden = app.query_one("#detail").display
+            await pilot.press("i")
+            await pilot.pause()
+            back = app.query_one("#detail").display
+
+        assert shown and not hidden and back
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_the_scroll_keys_are_offered_only_where_the_record_did_not_fit(self) -> None:
+        """The rule the wwn strip's control already follows, at the panel."""
+        offered: dict[str, bool] = {}
+        for label, share in (("tall", 60), ("short", 10)):
+            app = LsdskApp(inventory(), display=DisplaySettings(detail_height_percent=share))
+            async with app.run_test(size=(140, 45)) as pilot:
+                await pilot.press("4")
+                await pilot.pause()
+                offered[label] = "detail_down" in {
+                    active.binding.action for active in app.screen.active_bindings.values()
+                }
+
+        assert offered["short"], "a record too tall for the panel offers no way to reach the rest"
+        assert not offered["tall"], "the keys are offered where the whole record already fits"

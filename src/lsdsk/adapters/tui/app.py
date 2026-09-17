@@ -26,7 +26,7 @@ from ...domain.diagnostics import count_by_severity, diagnose
 from ...domain.enums import CliCommand, Severity, TreeDensity
 from ...domain.history import CounterKind, History
 from ..config.tunables import DisplaySettings
-from ..render import layout, report, tables, theme
+from ..render import detail, layout, report, tables, theme
 from ..render.trend import render_trend
 from .typed_table import raising_table_id, rows_of
 
@@ -35,7 +35,8 @@ if TYPE_CHECKING:
 
     from rich.console import RenderableType
 
-    from ...domain.models import Finding, Inventory, PcieLink
+    from ...domain.models import Disk, Finding, Inventory, PcieLink
+    from ..render.detail import Detail
     from ..render.layout import Column
     from ..render.rows import Row
 
@@ -130,6 +131,31 @@ PAGE_LABELS: Final[dict[CliCommand, str]] = {
 }
 
 
+#: Which group of the record each page wants read first. The panel's CONTENT is
+#: the subject's and never the page's, so a drive says the same thing wherever it
+#: is selected; what a page chooses is only what is answered at the top, which is
+#: its own question. A label here that names no group at all raises rather than
+#: being ignored - see :func:`detail.order_groups`.
+DETAIL_ORDER: Final[dict[CliCommand, tuple[str, ...]]] = {
+    CliCommand.TOPOLOGY: (detail.LINK, detail.PLACE),
+    CliCommand.CONTROLLERS: (detail.LINK, detail.UPSTREAM, detail.PORTS),
+    CliCommand.DISKS: (detail.IDENTITY, detail.LINK),
+    CliCommand.HEALTH: (detail.HEALTH, detail.COUNTERS),
+    CliCommand.SLOTS: (detail.SLOT, detail.OCCUPANT),
+    CliCommand.TREND: (detail.COUNTERS, detail.HEALTH),
+}
+
+#: Which table on which page puts what under the cursor. One mapping rather than
+#: a chain of ``if`` in the handler, so a page added without an entry shows the
+#: empty panel loudly instead of silently keeping the previous page's answer.
+DETAIL_TABLES: Final[dict[str, CliCommand]] = {
+    "controller-table": CliCommand.CONTROLLERS,
+    "disk-table": CliCommand.DISKS,
+    "health-table": CliCommand.HEALTH,
+    "slot-table": CliCommand.SLOTS,
+}
+
+
 class LsdskApp(App[None]):
     """The lsdsk terminal application."""
 
@@ -142,6 +168,11 @@ class LsdskApp(App[None]):
     #wwn-label { width: auto; padding: 0 1 0 0; }
     #wwn-strip { height: 2; overflow-x: auto; overflow-y: hidden; }
     #wwn-full { width: auto; text-wrap: nowrap; }
+    /* A CEILING, not a height: a short record takes the lines it needs and a
+       long one scrolls inside the panel, so the table above never loses more of
+       the window than the record actually uses. The percentage comes from
+       display.detail_height_percent at mount. */
+    #detail { height: auto; overflow-y: auto; overflow-x: hidden; padding: 0 1; border-top: solid $panel; }
     """
 
     # Laid out the way the *top family works, because that is the muscle memory
@@ -158,6 +189,9 @@ class LsdskApp(App[None]):
         Binding("comma", "wwn_left", "WWN <", priority=True),
         Binding("full_stop", "wwn_right", "WWN >", priority=True),
         Binding("d", "tree_density", "Density", priority=True),
+        Binding("i", "toggle_detail", "Detail", priority=True),
+        Binding("shift+down", "detail_down", "Detail v", priority=True),
+        Binding("shift+up", "detail_up", "Detail ^", priority=True),
         Binding("r,f9", "rescan", "Rescan", priority=True, show=False),
         Binding("q,f10,escape", "quit", "Quit", priority=True),
     ]
@@ -200,6 +234,15 @@ class LsdskApp(App[None]):
         #: the strip to show; reading it back off the cell would only return
         #: what was already cut.
         self._wwn_of: dict[str, str | None] = {}
+        #: Every listed drive by the key its rows carry, so the panel can answer
+        #: for the disk page and the health page from one lookup rather than two
+        #: that could disagree about which drive a row is.
+        self._disk_of: dict[str, Disk] = {}
+        #: Where each table's cursor was left. Recorded for EVERY table, not only
+        #: the visible one, because switching page moves no cursor and raises no
+        #: row event: without this the panel would keep answering for the page
+        #: the reader just left until they pressed an arrow key.
+        self._row_of: dict[str, str | None] = {}
         self.title = f"lsdsk {__init__conf__.version}"
         self.sub_title = inventory.hostname
 
@@ -237,10 +280,18 @@ class LsdskApp(App[None]):
                 yield Static(report.form_factor_note(), id="slot-note")
             with TabPane("Trend", id=CliCommand.TREND.value), VerticalScroll():
                 yield Static(render_trend(self.inventory, self.history), id="trend-body")
+        # Outside the TabbedContent, so it is one widget with one handler rather
+        # than a copy per page free to answer differently, and so it survives a
+        # page switch with the row the reader left it on.
+        with VerticalScroll(id="detail"):
+            yield Static(id="detail-body")
         yield Footer()
 
     def on_mount(self) -> None:
         """Fill every table once the widgets exist."""
+        # Sized here rather than in the stylesheet for the reason the wwn strip
+        # is: a literal in the CSS would be a second copy of a configured number.
+        self.query_one("#detail", VerticalScroll).styles.max_height = f"{self.display_settings.detail_height_percent}%"
         self._fill_controllers()
         self._fill_disks()
         self._fill_health()
@@ -283,6 +334,7 @@ class LsdskApp(App[None]):
                     "-" if controller.port_count is None else f"{controller.ports_used or 0}/{controller.port_count}"
                 ),
                 _cell(str(len(self.inventory.disks_on(controller.address)))),
+                key=controller.address,
             )
 
     def _fill_slots(self) -> None:
@@ -305,6 +357,7 @@ class LsdskApp(App[None]):
                     theme.STYLE_UNKNOWN if slot.occupant_link is None else "",
                 ),
                 _cell(verdict, verdict_style),
+                key=slot.address,
             )
 
     def _fill_disks(self) -> None:
@@ -318,6 +371,7 @@ class LsdskApp(App[None]):
         width = self.display_settings.wwn_width
         self.query_one("#wwn-strip", HorizontalScroll).styles.width = width
         self._wwn_of = {}
+        self._disk_of = {}
         # The wwn ceiling lives on the column, exactly as the printed table
         # reads it, so the two views cannot cut a wwn in two different places.
         columns = tables.disk_columns(width)
@@ -336,6 +390,7 @@ class LsdskApp(App[None]):
                 key=disk.node,
             )
             self._wwn_of[disk.node] = disk.wwn
+            self._disk_of[disk.node] = disk
         # The cursor starts on the first row without raising anything a handler
         # would see on a rescan, so the strip is set from here rather than left
         # holding the previous scan's answer.
@@ -358,19 +413,81 @@ class LsdskApp(App[None]):
         self.query_one("#wwn-strip", HorizontalScroll).scroll_to(x=0, animate=False, immediate=True)
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
-        """Follow the disk page's cursor with the whole WWN of the row it is on.
+        """Follow the cursor: the whole WWN on the disk page, the record on any page.
 
         Args:
             event: The table and row the cursor moved to.
 
         Every page's table raises this, and at mount they all raise it in turn
         with the slot table last, so without the check the strip would settle on
-        an answer the slot page gave to a question the disk page asked.
+        an answer the slot page gave to a question the disk page asked. The
+        panel needs the same guard for a second reason: the cursor of a table
+        the reader cannot see must not replace what is under the one they can.
         """
-        if raising_table_id(event) != "disk-table":
+        table_id = raising_table_id(event) or ""
+        if table_id == "disk-table":
+            node = event.row_key.value
+            self._show_wwn(self._wwn_of.get(node) if node is not None else None)
+        page = DETAIL_TABLES.get(table_id)
+        if page is None:
             return
-        node = event.row_key.value
-        self._show_wwn(self._wwn_of.get(node) if node is not None else None)
+        self._row_of[table_id] = event.row_key.value
+        if page.value == self.query_one(TabbedContent).active:
+            self._show_detail(self._record_for(table_id, event.row_key.value))
+
+    def _refresh_detail(self) -> None:
+        """Ask the page now in front what its cursor is on.
+
+        A page switch moves no cursor and raises no row event, so the panel has
+        to be asked again here or it keeps answering for the page just left.
+        """
+        page = self.query_one(TabbedContent).active
+        for table_id, command in DETAIL_TABLES.items():
+            if command.value == page:
+                self._show_detail(self._record_for(table_id, self._row_of.get(table_id)))
+                return
+        self._show_detail(None)
+
+    def _record_for(self, table_id: str, key: str | None) -> Detail | None:
+        """The record behind one row, or nothing when the row names no subject.
+
+        Args:
+            table_id: Which page's table raised the move.
+            key: The row key, which every table now carries.
+
+        Returns:
+            The record, or ``None``.
+        """
+        if key is None:
+            return None
+        if table_id == "controller-table":
+            controller = next((one for one in self.inventory.controllers if one.address == key), None)
+            return None if controller is None else detail.controller_detail(controller, self.inventory)
+        if table_id == "slot-table":
+            slot = next((one for one in self.inventory.slots if one.address == key), None)
+            return None if slot is None else detail.slot_detail(slot, self.inventory)
+        disk = self._disk_of.get(key)
+        return None if disk is None else detail.disk_detail(disk, self.inventory, self.history)
+
+    def _show_detail(self, record: Detail | None) -> None:
+        """Draw one record in the panel, with the active page's group first.
+
+        Args:
+            record: What the cursor is on, or ``None`` for a row naming nothing.
+
+        The record itself is the subject's and never the page's: only the ORDER
+        changes here, so one drive cannot read two ways on two pages.
+        """
+        body = self.query_one("#detail-body", Static)
+        if record is None:
+            body.update(Text("Nothing selected.", style=theme.STYLE_UNKNOWN))
+            return
+        page = CliCommand(self.query_one(TabbedContent).active)
+        ordered = record._replace(groups=detail.order_groups(record.groups, DETAIL_ORDER.get(page, ())))
+        body.update(detail.render_detail(ordered, self.findings))
+        # The panel is re-measured by the layout that draws it, so whether the
+        # scroll keys apply has to be asked again rather than assumed unchanged.
+        self.refresh_bindings()
 
     def _fill_health(self) -> None:
         """Populate the health page."""
@@ -443,6 +560,7 @@ class LsdskApp(App[None]):
         # The WWN keys belong to one page, so the footer has to be asked again
         # each time the page changes or it keeps offering them everywhere.
         self.refresh_bindings()
+        self._refresh_detail()
         tables = self.query(f"#{pane} DataTable")
         if tables:
             tables.first().focus()
@@ -471,6 +589,12 @@ class LsdskApp(App[None]):
         reader stops believing.
         """
         del parameters
+        if action in {"detail_down", "detail_up"}:
+            # Offered only where there is something to scroll TO, the same rule
+            # the wwn strip's control follows: a key advertised on a panel that
+            # already shows everything is a key that answers nothing.
+            panel = self.query_one("#detail", VerticalScroll)
+            return bool(panel.display) and panel.virtual_size.height > panel.size.height
         if action in {"wwn_left", "wwn_right"}:
             return self.query_one(TabbedContent).active == CliCommand.DISKS.value
         if action == "tree_density":
@@ -505,6 +629,25 @@ class LsdskApp(App[None]):
     def _refill_tree(self) -> None:
         """Redraw only the topology page from the settings now held."""
         self.query_one("#tree", Static).update(render_fabric_for(self.inventory, self.findings, self.display_settings))
+
+    def action_toggle_detail(self) -> None:
+        """Hide the panel, or bring it back, giving the table the whole window.
+
+        ``display`` is Textual's own show/hide property on the widget - the one
+        the app deliberately does NOT use for its settings - so this is the one
+        place that name means what it reads as.
+        """
+        panel = self.query_one("#detail", VerticalScroll)
+        panel.display = not panel.display
+        self.refresh_bindings()
+
+    def action_detail_down(self) -> None:
+        """Move further into a record too tall for the panel."""
+        self.query_one("#detail", VerticalScroll).scroll_page_down(animate=False)
+
+    def action_detail_up(self) -> None:
+        """Move back towards the top of a record too tall for the panel."""
+        self.query_one("#detail", VerticalScroll).scroll_page_up(animate=False)
 
     def action_wwn_left(self) -> None:
         """Wind the WWN strip back towards the start of the identifier."""
@@ -569,6 +712,11 @@ class LsdskApp(App[None]):
         self._fill_disks()
         self._fill_health()
         self._fill_slots()
+        # The panel holds a record built from the PREVIOUS diagnosis, so it is
+        # redrawn like every other page: refreshing the banner and leaving one
+        # view on the first scan's answer is what put two verdicts on one screen
+        # before.
+        self._refresh_detail()
 
 
 __all__ = ["LsdskApp"]

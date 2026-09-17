@@ -89,6 +89,10 @@ UNOBSERVABLE: dict[str, str] = {
     "traceback_verbose_limit": "only reachable on a raising command, which cli_fail covers in test_cli_core",
     "max_samples_per_drive": "bounds a stored series, not a rendered one; covered by test_history_store",
     "enabled": "suppresses the write, which leaves rendering identical by design; covered by test_history_cli",
+    "detail_height_percent": (
+        "caps a panel that exists only in the INTERACTIVE view, which prints nothing this harness can "
+        "digest; covered by test_tui, which drives the real app and measures the panel's height"
+    ),
 }
 
 

@@ -192,7 +192,7 @@ def slot_detail(slot: PcieSlot, inventory: Inventory) -> Detail:
     heading = ((slot.address, theme.STYLE_IDENTIFIER), (slot.occupant_description, ""), (verdict, verdict_style))
     groups = (
         DetailGroup(SLOT, _slot_values(slot)),
-        DetailGroup(LINK, _pcie_values(slot.link)),
+        DetailGroup(LINK, _slot_link_values(slot)),
         DetailGroup(OCCUPANT, _occupant_values(slot)),
     )
     return Detail(heading, groups, (FindingScope(slot.address),))
@@ -227,31 +227,35 @@ def machine_detail(inventory: Inventory) -> Detail:
     return Detail(heading, groups, ())
 
 
-def render_detail(detail: Detail, findings: Sequence[Finding], width: int) -> RenderableType:
+def render_detail(detail: Detail, findings: Sequence[Finding]) -> RenderableType:
     """Draw one record: a heading, its groups, then the findings that name it.
+
+    No width is threaded in. Every part expands to whatever console renders it,
+    so the panel fits the window it lands in and a resize needs nothing: a width
+    passed here would be one a caller measured before the layout ran, which for
+    a window is the one moment it cannot be known.
 
     Args:
         detail: The record to draw.
         findings: Every finding of the scan, filtered here by the record's own
             scopes rather than by the caller, so no page can pass a shorter list.
-        width: Columns the panel has.
 
     Returns:
         A Rich renderable.
     """
     gathered = tuple((scope, findings_for(findings, scope.subject)) for scope in detail.scopes)
     total = sum(len(matching) for _scope, matching in gathered)
-    parts: list[RenderableType] = [_heading_line(detail.heading, total, width), _values_table(detail.groups, width)]
+    parts: list[RenderableType] = [_heading_line(detail.heading, total), _values_table(detail.groups)]
     if _anything_unread(detail.groups):
         parts.append(Text(f" {UNREAD_LEGEND}", style=theme.STYLE_UNKNOWN))
-    parts.append(_findings_table(gathered, width))
+    parts.append(_findings_table(gathered))
     return Group(*parts)
 
 
-def _values_table(groups: Sequence[DetailGroup], width: int) -> Table:
+def _values_table(groups: Sequence[DetailGroup]) -> Table:
     """The labelled groups, each wrapping under its values rather than its label."""
     label_width = max((len(group.label) for group in groups), default=0)
-    table = Table(box=None, show_header=False, pad_edge=False, padding=(0, 1), width=width)
+    table = Table(box=None, show_header=False, pad_edge=False, padding=(0, 1), expand=True)
     table.add_column("label", width=label_width, no_wrap=True, style=theme.STYLE_UNKNOWN)
     table.add_column("body", overflow="fold", ratio=1)
     for group in groups:
@@ -259,14 +263,14 @@ def _values_table(groups: Sequence[DetailGroup], width: int) -> Table:
     return table
 
 
-def _findings_table(gathered: Sequence[tuple[FindingScope, Sequence[Finding]]], width: int) -> Table:
+def _findings_table(gathered: Sequence[tuple[FindingScope, Sequence[Finding]]]) -> Table:
     """Every finding naming this record, each under the scope that found it.
 
     Built as its own marker-and-body table, the shape :func:`render_findings`
     already uses, so a sentence that wraps keeps its indent instead of falling
     back to column zero on its second line.
     """
-    table = Table(box=None, show_header=False, pad_edge=False, padding=(0, 1), width=width)
+    table = Table(box=None, show_header=False, pad_edge=False, padding=(0, 1), expand=True)
     table.add_column("marker", width=2, justify="right", no_wrap=True)
     table.add_column("body", overflow="fold", ratio=1)
     if not any(matching for _scope, matching in gathered):
@@ -293,7 +297,7 @@ def _append_one_finding(table: Table, finding: Finding) -> None:
         table.add_row("", Text(f"-> {finding.action}"))
 
 
-def _heading_line(heading: Sequence[Cell], findings: int, width: int) -> Table:
+def _heading_line(heading: Sequence[Cell], findings: int) -> Table:
     """What is selected on the left, how many findings name it on the right."""
     line = Text()
     for index, (text, style) in enumerate(heading):
@@ -305,7 +309,6 @@ def _heading_line(heading: Sequence[Cell], findings: int, width: int) -> Table:
     grid.add_column("what", ratio=1, overflow="ellipsis", no_wrap=True)
     grid.add_column("count", justify="right", no_wrap=True)
     grid.add_row(line, Text(counted, style=theme.STYLE_UNKNOWN))
-    grid.width = width
     return grid
 
 
@@ -510,6 +513,20 @@ def _slot_values(slot: PcieSlot) -> tuple[tuple[str, Cell], ...]:
         ("occupied", _yes_no(value=slot.occupied)),
         ("vendor", _hex(slot.vendor, 4)),
     )
+
+
+def _slot_link_values(slot: PcieSlot) -> tuple[tuple[str, Cell], ...]:
+    """What the socket can do, and what it IS doing only when something is in it.
+
+    An empty socket still publishes a negotiated speed and width, usually x0,
+    and the slots table draws a dash there rather than that figure. The panel
+    follows it: a reader comparing the two must not be shown a link running in
+    a socket they can see is empty.
+    """
+    values = _pcie_values(slot.link)
+    if slot.occupied:
+        return values
+    return tuple((name, ("-", theme.STYLE_UNKNOWN) if name == "running" else cell) for name, cell in values)
 
 
 def _occupant_values(slot: PcieSlot) -> tuple[tuple[str, Cell], ...]:
