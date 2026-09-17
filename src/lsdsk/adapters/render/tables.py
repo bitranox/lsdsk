@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from ...domain.history import DiskSeries, History, Trend
-    from ...domain.models import Disk, Finding, Inventory, PcieLink
+    from ...domain.models import Controller, Disk, Finding, Inventory, PcieLink
     from .rows import Row
     from .theme import Cell
 
@@ -177,33 +177,48 @@ def render_controllers(inventory: Inventory, findings: Sequence[Finding], width:
     Returns:
         A table of controllers.
     """
-    rows: list[MarkedRow] = []
-    for controller in inventory.controllers:
-        severity = worst_severity(findings, controller.address)
-        demand = attached_demand_gbytes(controller, inventory)
-        running = _pcie_text(controller.link)
-        capable = _pcie_capability_text(controller.link)
-        rows.append(
-            MarkedRow(
-                marker=(theme.marker_for(severity), theme.style_for(severity)),
-                cells={
-                    "address": (controller.address, theme.STYLE_IDENTIFIER),
-                    "controller": (controller.name, ""),
-                    "driver": (controller.driver or "-", "" if controller.driver else theme.STYLE_UNKNOWN),
-                    "firmware": (controller.firmware or "-", "" if controller.firmware else theme.STYLE_UNKNOWN),
-                    "running": (running, "" if running == capable else theme.STYLE_BELOW_CAPABILITY),
-                    "capable": (capable, ""),
-                    "ports": ("-" if controller.port_count is None else str(controller.port_count), ""),
-                    "free": ("-" if controller.ports_free is None else str(controller.ports_free), ""),
-                    "disks": (str(len(inventory.disks_on(controller.address))), ""),
-                    "load": (
-                        "-" if demand is None else f"{demand:.2f} GB/s",
-                        theme.STYLE_UNKNOWN if demand is None else "",
-                    ),
-                },
-            )
-        )
+    rows = [controller_table_row(one, inventory, findings) for one in inventory.controllers]
     return _render(f"Controllers on {inventory.hostname}", CONTROLLER_COLUMNS, rows, width)
+
+
+def controller_table_row(controller: Controller, inventory: Inventory, findings: Sequence[Finding]) -> MarkedRow:
+    """One controller's cells for every key in :data:`CONTROLLER_COLUMNS`, styled.
+
+    Built once here rather than assembled separately by the printed table and
+    the interactive page: both need the same ten columns, and the page that
+    wrote its own list was quietly missing two of them, ``free`` and ``load``,
+    and meant something different by a third.
+
+    Args:
+        controller: The controller to describe.
+        inventory: The machine it sits in, for the drives on it.
+        findings: The findings, for the row's severity marker.
+
+    Returns:
+        The marker and a cell per column key.
+    """
+    demand = attached_demand_gbytes(controller, inventory)
+    severity = worst_severity(findings, controller.address)
+    running = _pcie_text(controller.link)
+    capable = _pcie_capability_text(controller.link)
+    return MarkedRow(
+        marker=(theme.marker_for(severity), theme.style_for(severity)),
+        cells={
+            "address": (controller.address, theme.STYLE_IDENTIFIER),
+            "controller": (controller.name, ""),
+            "driver": (controller.driver or "-", "" if controller.driver else theme.STYLE_UNKNOWN),
+            "firmware": (controller.firmware or "-", "" if controller.firmware else theme.STYLE_UNKNOWN),
+            "running": (running, "" if running == capable else theme.STYLE_BELOW_CAPABILITY),
+            "capable": (capable, ""),
+            "ports": ("-" if controller.port_count is None else str(controller.port_count), ""),
+            "free": ("-" if controller.ports_free is None else str(controller.ports_free), ""),
+            "disks": (str(len(inventory.disks_on(controller.address))), ""),
+            "load": (
+                "-" if demand is None else f"{demand:.2f} GB/s",
+                theme.STYLE_UNKNOWN if demand is None else "",
+            ),
+        },
+    )
 
 
 def disk_columns(wwn_width: int | None = DEFAULT_WWN_WIDTH) -> tuple[Column, ...]:
@@ -330,52 +345,75 @@ def render_health(
     Returns:
         A table of health readings.
     """
-    rows: list[MarkedRow] = []
-    for disk in inventory.disks:
-        severity = worst_severity(findings, disk.path)
-        health = disk.health
-        series = series_for(disk, history)
-        temperature = theme.format_temperature(
-            None if health is None else health.temperature_c,
-            None if health is None else health.temperature_warning_c,
-            None if health is None else health.temperature_critical_c,
-        )
-        wear = theme.format_wear(None if health is None else health.percent_used)
-        written = "-" if health is None or health.bytes_written is None else theme.format_size(health.bytes_written)
-        rows.append(
-            MarkedRow(
-                marker=(theme.marker_for(severity), theme.style_for(severity)),
-                cells={
-                    "device": (disk.path, "bold"),
-                    "model": (disk.model, ""),
-                    "temp": temperature,
-                    "worn": wear,
-                    "hours": (counter_text(None if health is None else health.power_on_hours), ""),
-                    "written": (written, ""),
-                    "realloc": counter_cell(
-                        None if health is None else health.reallocated_sectors,
-                        trend_of(series, CounterKind.REALLOCATED_SECTORS),
-                    ),
-                    "pending": counter_cell(
-                        None if health is None else health.pending_sectors,
-                        trend_of(series, CounterKind.PENDING_SECTORS),
-                    ),
-                    "uncorr": counter_cell(
-                        None if health is None else health.uncorrectable_sectors,
-                        trend_of(series, CounterKind.UNCORRECTABLE_SECTORS),
-                    ),
-                    "crc": counter_cell(
-                        None if health is None else health.crc_errors,
-                        trend_of(series, CounterKind.CRC_ERRORS),
-                    ),
-                    "media": counter_cell(
-                        None if health is None else health.media_errors,
-                        trend_of(series, CounterKind.MEDIA_ERRORS),
-                    ),
-                },
-            )
-        )
+    rows = [health_table_row(disk, inventory, findings, history) for disk in inventory.disks]
     return _render(f"Disk health on {inventory.hostname}", HEALTH_COLUMNS, rows, width)
+
+
+def health_table_row(
+    disk: Disk,
+    inventory: Inventory,
+    findings: Sequence[Finding],
+    history: History | None = None,
+) -> MarkedRow:
+    """One drive's health cells for every key in :data:`HEALTH_COLUMNS`, styled.
+
+    Built once here rather than assembled separately by the printed table and
+    the interactive page: the page that wrote its own list identified a drive by
+    path alone, having quietly dropped ``model``.
+
+    Args:
+        disk: The drive to describe.
+        inventory: The machine, unused today and taken for the shape the other
+            row builders have.
+        findings: The findings, for the row's severity marker.
+        history: Counter samples recorded earlier, which decide whether a count
+            still carries its "rising" mark.
+
+    Returns:
+        The marker and a cell per column key.
+    """
+    del inventory
+    severity = worst_severity(findings, disk.path)
+    health = disk.health
+    series = series_for(disk, history)
+    temperature = theme.format_temperature(
+        None if health is None else health.temperature_c,
+        None if health is None else health.temperature_warning_c,
+        None if health is None else health.temperature_critical_c,
+    )
+    wear = theme.format_wear(None if health is None else health.percent_used)
+    written = "-" if health is None or health.bytes_written is None else theme.format_size(health.bytes_written)
+    return MarkedRow(
+        marker=(theme.marker_for(severity), theme.style_for(severity)),
+        cells={
+            "device": (disk.path, "bold"),
+            "model": (disk.model, ""),
+            "temp": temperature,
+            "worn": wear,
+            "hours": (counter_text(None if health is None else health.power_on_hours), ""),
+            "written": (written, ""),
+            "realloc": counter_cell(
+                None if health is None else health.reallocated_sectors,
+                trend_of(series, CounterKind.REALLOCATED_SECTORS),
+            ),
+            "pending": counter_cell(
+                None if health is None else health.pending_sectors,
+                trend_of(series, CounterKind.PENDING_SECTORS),
+            ),
+            "uncorr": counter_cell(
+                None if health is None else health.uncorrectable_sectors,
+                trend_of(series, CounterKind.UNCORRECTABLE_SECTORS),
+            ),
+            "crc": counter_cell(
+                None if health is None else health.crc_errors,
+                trend_of(series, CounterKind.CRC_ERRORS),
+            ),
+            "media": counter_cell(
+                None if health is None else health.media_errors,
+                trend_of(series, CounterKind.MEDIA_ERRORS),
+            ),
+        },
+    )
 
 
 def counter_text(value: int | None) -> str:
@@ -456,10 +494,12 @@ __all__ = [
     "DISK_COLUMNS",
     "HEALTH_COLUMNS",
     "OVERFLOW_WIDTH",
+    "controller_table_row",
     "counter_cell",
     "counter_text",
     "disk_columns",
     "disk_table_row",
+    "health_table_row",
     "render_controllers",
     "render_disks",
     "render_health",

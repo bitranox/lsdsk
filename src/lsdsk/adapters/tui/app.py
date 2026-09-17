@@ -26,7 +26,7 @@ from textual.widgets.option_list import Option
 from ... import __init__conf__
 from ...domain.diagnostics import count_by_severity, diagnose
 from ...domain.enums import CliCommand, Severity, TreeDensity
-from ...domain.history import CounterKind, History
+from ...domain.history import History
 
 # Imported at runtime, not only for typing: the topology page decides which
 # record to build from what KIND of thing a line is about, and an isinstance
@@ -47,19 +47,26 @@ if TYPE_CHECKING:
     from ...domain.models import Finding, PcieLink
     from ..render.detail import Detail
     from ..render.layout import Column
-    from ..render.rows import Row
+    from ..render.rows import MarkedRow, Row
     from ..render.tree import FabricLine, FabricSubject, FabricView
 
-# Column sets per page, kept here so a page's shape is readable in one place.
-_CONTROLLER_COLUMNS = ("", "address", "controller", "driver", "firmware", "running", "capable", "ports", "disks")
+# Column sets per page. Every one DERIVES from the printed table of the same
+# name rather than restating it, because a page and the command of one name are
+# one view and a second tuple cannot be kept in step by hand. Measured before
+# they did: the controllers page was missing `free` and `load` and meant
+# something else by `ports`, and the health page identified a drive by path
+# alone, having dropped `model` - the same defect the disk page had already
+# been fixed for, still live in two more pages. The leading empty label is the
+# severity marker, which the printed tables draw as a fixed gutter instead.
+CONTROLLER_COLUMNS = ("", *(column.title for column in tables.CONTROLLER_COLUMNS))
 # Taken from the printed table rather than restated, because a page and the
 # command of one name are one view. Restating it is how the page came to name a
 # drive by model alone: its own tuple was written without `serial` and
 # `firmware`, and nothing compared the two lists. The leading empty label is the
 # severity marker, which the printed table draws as a fixed gutter instead.
 DISK_COLUMNS = ("", *(column.title for column in tables.DISK_COLUMNS))
-_HEALTH_COLUMNS = ("", "device", "temp", "worn", "hours", "written", "realloc", "pending", "uncorr", "crc", "media")
-_SLOT_COLUMNS = ("port", "slot", "capable", "running", "occupant", "needs", "verdict")
+HEALTH_COLUMNS = ("", *(column.title for column in tables.HEALTH_COLUMNS))
+SLOT_COLUMNS = tuple(column.title for column in report.SLOT_COLUMNS)
 # Derived from the printed view's own columns rather than restated, for the
 # reason DISK_COLUMNS is: a page and the command of one name are one view, and a
 # second tuple is how the disk page came to name a drive by model alone.
@@ -93,6 +100,15 @@ def _note() -> Text:
         "spends most of its time switched off still reports a meaningful figure.",
         style=theme.STYLE_UNKNOWN,
     )
+
+
+def _marked(row: MarkedRow, columns: Sequence[Column]) -> list[Text]:
+    """A printed table's row as this app's cells: the marker, then each column.
+
+    The one place a MarkedRow becomes a page's row, so a page cannot pick its
+    cells out of the printed row by hand and leave one behind.
+    """
+    return [_cell(*row.marker), *(_cell(*row.cells[column.key]) for column in columns)]
 
 
 def _disk_cell(cells: Row, column: Column) -> Text:
@@ -411,31 +427,15 @@ class LsdskApp(App[None]):
     def _fill_controllers(self) -> None:
         """Populate the controller page."""
         table = rows_of(self.query_one("#controller-table"))
-        table.add_columns(*_CONTROLLER_COLUMNS)
+        table.add_columns(*CONTROLLER_COLUMNS)
         for controller in self.inventory.controllers:
-            severity = report.worst_severity(self.findings, controller.address)
-            marker_style = theme.style_for(severity)
-            running = _pcie(controller.link)
-            capable = _pcie_capable(controller.link)
-            table.add_row(
-                _cell(theme.marker_for(severity), marker_style),
-                _cell(controller.address, theme.STYLE_IDENTIFIER),
-                _cell(controller.name, marker_style),
-                _cell(controller.driver or "-", "" if controller.driver else theme.STYLE_UNKNOWN),
-                _cell(controller.firmware or "-", "" if controller.firmware else theme.STYLE_UNKNOWN),
-                _cell(running, "" if running == capable else theme.STYLE_BELOW_CAPABILITY),
-                _cell(capable, ""),
-                _cell(
-                    "-" if controller.port_count is None else f"{controller.ports_used or 0}/{controller.port_count}"
-                ),
-                _cell(str(len(self.inventory.disks_on(controller.address)))),
-                key=controller.address,
-            )
+            row = tables.controller_table_row(controller, self.inventory, self.findings)
+            table.add_row(*_marked(row, tables.CONTROLLER_COLUMNS), key=controller.address)
 
     def _fill_slots(self) -> None:
         """Populate the mainboard slot page."""
         table = rows_of(self.query_one("#slot-table"))
-        table.add_columns(*_SLOT_COLUMNS)
+        table.add_columns(*SLOT_COLUMNS)
         for slot in self.inventory.slots:
             verdict, verdict_style = report.slot_verdict(slot)
             table.add_row(
@@ -614,61 +614,19 @@ class LsdskApp(App[None]):
         )
 
     def _fill_health(self) -> None:
-        """Populate the health page."""
+        """Populate the health page.
+
+        The cells come from the printed health table's own row builder, so the
+        two views cannot disagree about one drive - including the trend mark on
+        every counter, which the page used to recompute and which decides
+        whether a still-rising count keeps its "+" and a count proved quiet
+        drops out of red.
+        """
         table = rows_of(self.query_one("#health-table"))
-        table.add_columns(*_HEALTH_COLUMNS)
+        table.add_columns(*HEALTH_COLUMNS)
         for disk in self.inventory.disks:
-            health = disk.health
-            # Same series and trend the health TABLE computes. Without it every
-            # counter cell renders with trend=None, so a still-rising count
-            # loses its "+" and a count proved quiet keeps its red, and the page
-            # silently disagrees with `lsdsk health` on the same machine.
-            series = tables.series_for(disk, self.history)
-            severity = report.worst_severity(self.findings, disk.path)
-            temperature = theme.format_temperature(
-                None if health is None else health.temperature_c,
-                None if health is None else health.temperature_warning_c,
-                None if health is None else health.temperature_critical_c,
-            )
-            wear = theme.format_wear(None if health is None else health.percent_used)
-            table.add_row(
-                _cell(theme.marker_for(severity), theme.style_for(severity)),
-                _cell(disk.path, "bold"),
-                _cell(*temperature),
-                _cell(*wear),
-                _cell(tables.counter_text(None if health is None else health.power_on_hours)),
-                _cell(theme.format_size(None if health is None else health.bytes_written)),
-                _cell(
-                    *tables.counter_cell(
-                        None if health is None else health.reallocated_sectors,
-                        tables.trend_of(series, CounterKind.REALLOCATED_SECTORS),
-                    )
-                ),
-                _cell(
-                    *tables.counter_cell(
-                        None if health is None else health.pending_sectors,
-                        tables.trend_of(series, CounterKind.PENDING_SECTORS),
-                    )
-                ),
-                _cell(
-                    *tables.counter_cell(
-                        None if health is None else health.uncorrectable_sectors,
-                        tables.trend_of(series, CounterKind.UNCORRECTABLE_SECTORS),
-                    )
-                ),
-                _cell(
-                    *tables.counter_cell(
-                        None if health is None else health.crc_errors, tables.trend_of(series, CounterKind.CRC_ERRORS)
-                    )
-                ),
-                _cell(
-                    *tables.counter_cell(
-                        None if health is None else health.media_errors,
-                        tables.trend_of(series, CounterKind.MEDIA_ERRORS),
-                    )
-                ),
-                key=disk.node,
-            )
+            row = tables.health_table_row(disk, self.inventory, self.findings, self.history)
+            table.add_row(*_marked(row, tables.HEALTH_COLUMNS), key=disk.node)
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         """Give the newly shown page's table the keyboard.

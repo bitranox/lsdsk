@@ -25,6 +25,7 @@ from lsdsk.adapters.render.report import DISK_COLUMNS, render_tree
 from lsdsk.adapters.render.tables import DISK_COLUMNS as PRINTED_DISK_COLUMNS
 from lsdsk.adapters.render.tables import render_disks
 from lsdsk.adapters.render.tree import KEY_HINT, FabricView, render_fabric
+from lsdsk.adapters.render.trend import TREND_COLUMNS
 from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui.app import DISK_COLUMNS as TUI_DISK_COLUMNS
 from lsdsk.adapters.tui.typed_table import rows_of
@@ -1401,3 +1402,66 @@ class TestTheTrendPageIsATable:
 
         assert not shown, "an empty table is showing where the explanation belongs"
         assert "recorded" in said, said[:200]
+
+
+@pytest.mark.os_agnostic
+def test_every_page_takes_its_columns_from_the_printed_table_of_the_same_name() -> None:
+    """The shape, not the three instances of it.
+
+    A page that writes its own column list has no guard whatever a page-NAME
+    test says, and forgetting a column is silent: the page still renders, still
+    passes, and simply stops answering something. Measured on the code this
+    replaces - the controllers page was missing ``free`` and ``load`` and meant
+    a different thing by ``ports``, and the health page identified a drive by
+    path alone, having dropped ``model``. The disk page had already been fixed
+    for exactly that, and the fix had not been carried to its neighbours.
+
+    Every page is asserted here rather than one per test, so a page added with
+    a hand-written list fails the moment it is added.
+    """
+    from lsdsk.adapters.render import report, tables
+    from lsdsk.adapters.tui import app as page
+
+    marked = {
+        "controllers": (page.CONTROLLER_COLUMNS, tables.CONTROLLER_COLUMNS),
+        "disks": (page.DISK_COLUMNS, tables.DISK_COLUMNS),
+        "health": (page.HEALTH_COLUMNS, tables.HEALTH_COLUMNS),
+    }
+    for name, (drawn, printed) in marked.items():
+        assert drawn == ("", *(column.title for column in printed)), f"the {name} page has its own column list"
+    # Two pages carry no severity gutter, so their titles are the printed set.
+    assert tuple(column.title for column in report.SLOT_COLUMNS) == page.SLOT_COLUMNS
+    assert tuple(column.title for column in TREND_COLUMNS) == page.TREND_PAGE_COLUMNS
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
+async def test_a_controller_row_and_a_health_row_carry_every_value_the_printed_row_does() -> None:
+    """The columns agreeing is not the cells agreeing.
+
+    A page could take the right headings and still fill them from its own
+    arithmetic, which is how the controllers page came to print a port count
+    that meant something different from the printed table's under the same
+    heading.
+    """
+    from lsdsk.adapters.render import tables
+
+    machine = inventory()
+    findings = diagnose(machine)
+    app = LsdskApp(machine)
+    async with app.run_test(size=(200, 45)) as pilot:
+        await pilot.pause()
+        controllers = rows_of(app.query_one("#controller-table"))
+        health = rows_of(app.query_one("#health-table"))
+        drawn_controllers = [controllers.get_row_at(index) for index in range(controllers.row_count)]
+        drawn_health = [health.get_row_at(index) for index in range(health.row_count)]
+
+    for index, controller in enumerate(machine.controllers):
+        printed = tables.controller_table_row(controller, machine, findings)
+        expected = [printed.marker[0], *(printed.cells[column.key][0] for column in tables.CONTROLLER_COLUMNS)]
+        assert [cell.plain for cell in drawn_controllers[index]] == expected, controller.address
+
+    for index, disk in enumerate(machine.disks):
+        printed = tables.health_table_row(disk, machine, findings, app.history)
+        expected = [printed.marker[0], *(printed.cells[column.key][0] for column in tables.HEALTH_COLUMNS)]
+        assert [cell.plain for cell in drawn_health[index]] == expected, disk.path
