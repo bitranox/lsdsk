@@ -72,18 +72,18 @@ lsdsk  linux-sas-hba   19 disks on 5 controllers
 Topology on linux-sas-hba
 showing storage and the bridges above it; --tree-density to change the detail level
 legacy = no PCIe capability
-linux-sas-hba   2 root complexes (0000:00, 0000:ff)   root ports to PCIe 3.0 x8   95 PCI devices
-   │     address       capable  running  name
-   ├─┬── 0000:00:01.0  3.0 x4   3.0 x4   Intel Corporation ... Root Port 1a  (root port)
-   │ └── 0000:05:00.0  3.0 x4   3.0 x4   Samsung Electronics Co Ltd NVMe SSD Controller SM951
-   │     device        model                         size  kind  bus   port     disk     temp  worn
-!  │     /dev/nvme0n1  SAMSUNG MZVPV512HDGL-00000  477GiB  SSD   NVME  Gen3 x4  Gen3 x4   39C   59%
-   │     address       capable  running  name
-   ├─┬── 0000:00:03.0  3.0 x8   3.0 x8   Intel Corporation ... Root Port 3a  (root port)
-~  │ └── 0000:03:00.0  4.0 x8   3.0 x8   Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS38xx
-   │     device        model                         size  kind  bus   port     disk     temp  worn
-~  │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  12G      6G        36C    1%
-~  │     /dev/sdb      Samsung SSD 870 EVO 500GB   466GiB  SSD   SATA  12G      6G        30C    2%
+linux-sas-hba   2 root complexes (0000:00, 0000:ff)   root ports to PCIe 3.0x8   95 PCI devices
+   │     address       capable             running             name
+   ├─┬── 0000:00:01.0  3.0x4 (3.94 GB/s)   3.0x4 (3.94 GB/s)   Intel Corporation ... Root Port 1a  (root port)
+   │ └── 0000:05:00.0  3.0x4 (3.94 GB/s)   3.0x4 (3.94 GB/s)   Samsung Electronics Co Ltd NVMe SSD Controller SM951
+   │     device        model                         size  kind  bus   port                disk                temp  worn
+!  │     /dev/nvme0n1  SAMSUNG MZVPV512HDGL-00000  477GiB  SSD   NVME  Gen3x4 (3.94 GB/s)  Gen3x4 (3.94 GB/s)   39C   59%
+   │     address       capable             running             name
+   ├─┬── 0000:00:03.0  3.0x8 (7.88 GB/s)   3.0x8 (7.88 GB/s)   Intel Corporation ... Root Port 3a  (root port)
+~  │ └── 0000:03:00.0  4.0x8 (15.75 GB/s)  3.0x8 (7.88 GB/s)   Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS38xx
+   │     device        model                         size  kind  bus   port                disk                temp  worn
+~  │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  12G (1.20 GB/s)     6G (0.60 GB/s)       36C    1%
+~  │     /dev/sdb      Samsung SSD 870 EVO 500GB   466GiB  SSD   SATA  12G (1.20 GB/s)     6G (0.60 GB/s)       30C    2%
 
 Controllers on linux-sas-hba        ...
 Disks on linux-sas-hba              ...
@@ -206,11 +206,11 @@ nobody remembers that for eighteen drives at two in the morning. Set the two
 side by side and the remembering stops being your job:
 
 ```
-port  disk  link
-6G    6G    6G    everything agrees, nothing to say
-12G   3G    3G    a 3 Gb/s drive occupying a 12 Gb/s seat
-3G    6G    3G    the port is the limit, the drive could do more
-6G    6G    3G    both ends can do 6 and the link cannot: a fault
+port             disk             link
+6G (0.60 GB/s)   6G (0.60 GB/s)   6G (0.60 GB/s)   everything agrees, nothing to say
+12G (1.20 GB/s)  3G (0.30 GB/s)   3G (0.30 GB/s)   a 3 Gb/s drive occupying a 12 Gb/s seat
+3G (0.30 GB/s)   6G (0.60 GB/s)   3G (0.30 GB/s)   the port is the limit, the drive could do more
+6G (0.60 GB/s)   6G (0.60 GB/s)   3G (0.30 GB/s)   both ends can do 6 and the link cannot: a fault
 ```
 
 Same bytes, off the same drive, from the same commands. What changed is only
@@ -462,11 +462,11 @@ is named with the figure, so a swap is obvious before you open the case.
 
 ```
 MSI MEG Z690 ACE (MS-7D27)   18 ports   3 free
-   port          slot  capable  running  occupant                        needs     verdict
-   0000:00:01.0  #1    Gen5 x8  Gen3 x8  AMD Hawaii XT [Radeon R9 290X]  Gen3 x16  in use (graphics)
-   0000:00:01.1  #2    Gen5 x8  Gen2 x8  Intel 82599ES 10G SFI/SFP+      Gen2 x8   spare 27.50 GB/s
-   0000:00:1d.0  #12   Gen3 x4  Gen3 x4  Samsung 980 PRO 2TB             Gen4 x4   port limits it
-   0000:00:1c.0  #0    Gen3 x1  -        empty                           -         FREE
+   port          slot  capable              running             occupant                        needs               verdict
+   0000:00:01.0  #1    Gen5x8 (31.50 GB/s)  Gen3x8 (7.88 GB/s)  AMD Hawaii XT [Radeon R9 290X]  Gen3x16 (15.76 GB/s)  in use (graphics)
+   0000:00:01.1  #2    Gen5x8 (31.50 GB/s)  Gen2x8 (4.00 GB/s)  Intel 82599ES 10G SFI/SFP+      Gen2x8 (4.00 GB/s)    spare 27.50 GB/s
+   0000:00:1d.0  #12   Gen3x4 (3.94 GB/s)   Gen3x4 (3.94 GB/s)  Samsung 980 PRO 2TB             Gen4x4 (7.88 GB/s)    port limits it
+   0000:00:1c.0  #0    Gen3x1 (0.98 GB/s)   -                   empty                           -                     FREE
 ```
 
 It does not say whether a port is an M.2 socket or a card slot, and that is

@@ -7,6 +7,22 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **A link figure says what it is worth.** Every PCIe and SATA figure drawn in a
+  column carries its own bandwidth - `Gen3x4 (3.94 GB/s)`, `3.0x4 (3.94 GB/s)`,
+  `6G (0.60 GB/s)` - in the disks, controllers and slots tables, in both trees
+  and in the detail panel. A shape alone says nothing about throughput to a
+  reader who does not carry the PCIe lane table in their head, which is the
+  comparison those columns exist to draw.
+
+- **The bandwidth is surrendered before any column is dropped.** A narrow
+  terminal gives up the detail rather than a fact somebody asked for: measured
+  over the committed captures it costs the disks table 33 characters of natural
+  width, and without the surrender `size` came off both disk tables below about
+  120 columns, which is the width every piped and redirected run uses. The
+  fabric's hop pair has two tiers on the same rule, so below about 100 columns
+  the tree draws what it drew before. A link figure is never clipped and a
+  placeholder never gains a number.
+
 - **The interactive view has its own palette.** The printed one has to stay
   legible on a black console and a white one at once, which caps a saturated hue
   near 4.2:1 and is why it could not simply be brightened. The interactive view
@@ -42,6 +58,10 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   The fabric tree travels with the JSON output as `pci_tree`.
 
 ### Changed
+
+- **A link figure is written closed**: `Gen4 x4` is now `Gen4x4` and `3.0 x4` is
+  `3.0x4`, in every column and in a finding's own sentence, so a finding and the
+  table above it do not describe one link in two hands.
 
 - **A capacity names the scale it is written on.** A drive is sold in powers of
   ten and reports in powers of two, and the two differ by about 7 percent per
@@ -121,6 +141,25 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **The detail panel put a capable throughput beside a running link.** A
+  controller's link line ended with a single `carries` figure taken from the
+  MAXIMUM, while the first value on that line was what the link is actually
+  running at, so a reader comparing a downgraded card against its own capability
+  took the number nearest what they were looking at. Each figure carries its own
+  now and the stray third value is gone.
+
+- **A hop column was sized by its figures and not by its own heading.** With the
+  figures a character shorter the column would have been 6 while `capable` is 7,
+  and every value would have sat one character right of the header naming it.
+  The guard that was supposed to hold this measured the figures and never the
+  title; there is a second one for the title now, over every field at every
+  width.
+
+- **The interactive slots page had drifted from the printed slots table.** It
+  spelled out its own cells instead of building them from the table's row
+  builder, and drew the decimal generation where the table drew the marketing
+  one for the identical port. It builds from `report.slot_table_row` now.
+
 - **A hop nobody could read no longer claims the device has no PCIe
   capability.** The hop columns decided between `not read` and `legacy PCI` by
   re-reading the dash they had just formatted, so every bridge on a Windows
@@ -194,6 +233,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   also encoded a SUBTREE rule where the densities are implemented as class
   membership, so wiring it in later on the strength of its name would have moved
   the device counts this repo pins.
+
 
 ## [1.2.13] 2026-09-12 23:30:24
 
