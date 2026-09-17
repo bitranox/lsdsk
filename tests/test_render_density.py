@@ -852,3 +852,73 @@ def test_nothing_drawn_between_two_siblings_breaks_the_rule_between_them(host: s
                 )
                 checked += 1
     assert checked, f"{host} drew nothing between two siblings"
+
+
+@pytest.mark.os_agnostic
+def test_the_printed_tree_and_the_selectable_one_are_built_from_one_list_of_lines() -> None:
+    """One arithmetic, two consumers - the law a row's columns already follow.
+
+    ``render_fabric`` prints these lines and the interactive page makes each one
+    selectable. Built twice they would be two trees, and the second would drift
+    the way a second column list already made the disk page name a drive by
+    model alone. Proved by rendering both and requiring the same bytes, across
+    every capture, every density and several widths, because a difference could
+    appear at one width alone.
+    """
+    from rich.console import Group
+
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.tree import fabric_lines
+    from lsdsk.domain.diagnostics import diagnose
+
+    for host in DENSITY_COUNTS:
+        machine = build_from(_load(host))
+        findings = diagnose(machine)
+        for density in TreeDensity:
+            for width in (60, 80, 120, 200):
+                view = FabricView(density=density)
+                whole = io.StringIO()
+                Console(file=whole, width=width, no_color=True).print(render_fabric(machine, findings, width, view))
+                lines = fabric_lines(machine, findings, width, view)
+                rebuilt = io.StringIO()
+                Console(file=rebuilt, width=width, no_color=True).print(Group(*(line.text for line in lines)))
+                assert whole.getvalue() == rebuilt.getvalue(), f"{host} {density.value} w{width}"
+
+
+@pytest.mark.os_agnostic
+def test_a_line_carries_the_thing_it_is_about_and_a_decorative_one_carries_nothing() -> None:
+    """What may be selected, and what may not, decided where the line is made.
+
+    The board line is the one that is easy to get wrong in the quiet direction:
+    it looks like a heading and it is about the machine, so it carries a subject
+    while the note, the legend and every repeated column header do not.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.tree import fabric_lines
+    from lsdsk.domain.diagnostics import diagnose
+
+    for host in DENSITY_COUNTS:
+        machine = build_from(_load(host))
+        lines = fabric_lines(machine, diagnose(machine), 160, FabricView(density=TreeDensity.FULL))
+        assert lines, host
+        subjects = [line.subject for line in lines]
+        assert subjects.count(machine) == 1, f"{host}: the board line is not about the machine exactly once"
+
+        decorative = [line.text.plain for line in lines if line.subject is None]
+        assert any("--tree-density" in one or 'press "d"' in one for one in decorative), (
+            f"{host}: the density note is selectable"
+        )
+        # The two repeated column headers. Matched on the titles the section's
+        # own constants give them rather than on a literal, so renaming a column
+        # cannot leave this passing over a header it no longer recognises.
+        assert any("address" in one and "capable" in one for one in decorative), (
+            f"{host}: the device column header is selectable"
+        )
+        assert any("device" in one and "model" in one for one in decorative), (
+            f"{host}: the disk column header is selectable"
+        )
+
+        # Every drive listed reaches a subject of its own, which is what lets a
+        # cursor stop on it.
+        drives = {line.subject for line in lines if line.subject in set(machine.disks)}
+        assert len(drives) == len(machine.disks), f"{host}: {len(drives)} of {len(machine.disks)} drives selectable"

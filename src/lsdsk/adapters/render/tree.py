@@ -63,10 +63,18 @@ from .report import (
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
+    from typing import TypeAlias
 
     from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
 
     from ...domain.models import Disk, Finding, Inventory, PciNode
+
+    #: What a drawn line of the fabric can be ABOUT. A device on the fabric, a
+    #: drive under one of them, or - for the board line - the machine itself.
+    #: The union is written out rather than widened to ``object`` because the
+    #: interactive page dispatches on it, and a match that falls through is the
+    #: thing a written-out union makes visible.
+    FabricSubject: TypeAlias = PciNode | Disk | Inventory
 
 # Spine geometry: two characters per drawn level, then the column a row's own
 # turn points down into, then one blank so the leader never touches the address.
@@ -569,6 +577,117 @@ class FabricView(NamedTuple):
 DEFAULT_VIEW = FabricView()
 
 
+class FabricLine(NamedTuple):
+    """One drawn line of the fabric section, and the thing it is about.
+
+    ``subject`` is ``None`` for a line that describes the section rather than a
+    device: the density note, the hop legend, a column header, a blank, the
+    kernel-virtual tally. The board line is NOT one of those - it is about the
+    machine, and its subject is the inventory.
+    """
+
+    text: Text
+    subject: FabricSubject | None
+
+
+def fabric_lines(
+    inventory: Inventory,
+    findings: Sequence[Finding],
+    width: int = DEFAULT_WIDTH,
+    view: FabricView = DEFAULT_VIEW,
+) -> tuple[FabricLine, ...]:
+    """Every line the fabric section draws, each paired with what it is about.
+
+    The one place the section's lines are decided. :func:`render_fabric` prints
+    these and the interactive page makes each one selectable, so the printed
+    tree and the one a reader moves a cursor through cannot become two trees -
+    the law ``device_fields`` and ``_append_fields`` already follow for a row's
+    columns, applied to the section.
+
+    Args:
+        inventory: The machine.
+        findings: The findings, used to mark affected rows.
+        width: Width to lay out inside.
+        view: How this view draws it.
+
+    Returns:
+        The lines, or an empty tuple for a capture carrying no PCI reading at
+        all - that machine's storage is drawn by the old disk-and-controller
+        tree instead, which :func:`render_fabric` still returns whole.
+    """
+    if not inventory.pci_tree:
+        return ()
+    fabric = Fabric(inventory.pci_tree, width, view.density, expand_virtual=view.expand_virtual)
+    layout = fabric.measure(inventory)
+    attached: set[str] = set()
+    out = [*_fabric_head(inventory, fabric, view)]
+    out += _fabric_devices(inventory, findings, fabric, layout, attached)
+    out += _fabric_orphans(inventory, findings, fabric, layout, attached)
+    out += [
+        FabricLine(line, None)
+        for line in _virtual_block(fabric, inventory, findings, layout, expand_virtual=view.expand_virtual)
+    ]
+    return tuple(out)
+
+
+def _fabric_head(inventory: Inventory, fabric: Fabric, view: FabricView) -> list[FabricLine]:
+    """The note, the legend it needs, and the board the whole fabric hangs off."""
+    out = [FabricLine(Text(density_note(view.density, view.how_to_change), style=theme.STYLE_NOTE), None)]
+    legend = fabric.hop_legend()
+    if legend:
+        out.append(FabricLine(Text(legend, style=theme.STYLE_UNKNOWN), None))
+    out.append(FabricLine(board_line(inventory, fabric), inventory))
+    return out
+
+
+def _fabric_devices(
+    inventory: Inventory,
+    findings: Sequence[Finding],
+    fabric: Fabric,
+    layout: Layout,
+    attached: set[str],
+) -> list[FabricLine]:
+    """Every drawn device, with the drives of a storage controller under it."""
+    out: list[FabricLine] = []
+    labelled = False
+    for node, _level in fabric.drawn():
+        if not labelled:
+            # Again after a disk block has come between, for the reason the disk
+            # header already repeats per controller: on a machine with several,
+            # one header at the top ends up twenty lines from its own columns.
+            out.append(FabricLine(device_header_line(fabric, fabric.rules_before(node)), None))
+            labelled = True
+        out.append(FabricLine(fabric.row(node, findings), node))
+        disks = inventory.disks_on(node.address) if node.is_storage else ()
+        if not disks:
+            continue
+        attached.update(disk.node for disk in disks)
+        rules = fabric.rules_under(node)
+        out.append(FabricLine(disk_header_line(fabric, layout, rules), None))
+        out += [FabricLine(fabric.disk_row(disk, layout, findings, inventory, rules), disk) for disk in disks]
+        labelled = False
+    return out
+
+
+def _fabric_orphans(
+    inventory: Inventory,
+    findings: Sequence[Finding],
+    fabric: Fabric,
+    layout: Layout,
+    attached: set[str],
+) -> list[FabricLine]:
+    """Drives the capture could not put on any controller it drew."""
+    orphans = [disk for disk in inventory.disks if disk.node not in attached]
+    if not orphans:
+        return []
+    return [
+        FabricLine(Text(""), None),
+        FabricLine(Text("not attached to a known controller", style=theme.STYLE_UNKNOWN), None),
+        FabricLine(disk_header_line(fabric, layout), None),
+        *(FabricLine(fabric.disk_row(disk, layout, findings, inventory), disk) for disk in orphans),
+    ]
+
+
 def render_fabric(
     inventory: Inventory,
     findings: Sequence[Finding],
@@ -577,6 +696,9 @@ def render_fabric(
 ) -> RenderableType:
     """The whole topology section: the root-down fabric, the disks on each of
     its storage controllers, and the kernel-virtual tally behind them.
+
+    Built from :func:`fabric_lines`, which the interactive page also reads, so
+    the printed tree and the selectable one are one tree.
 
     Args:
         inventory: The machine.
@@ -589,48 +711,17 @@ def render_fabric(
     Returns:
         The fabric section.
     """
-    if not inventory.pci_tree:
-        # No PCI devices at all, and nothing the disk-and-controller table
-        # would show either: say the machine is empty rather than rendering a
-        # blank section.
-        if not (inventory.disks or inventory.controllers or inventory.virtual_disks):
-            return Text("No storage controllers or disks found.", style=theme.STYLE_UNKNOWN)
-        # A capture with drives but no PCI reading: the disk-and-controller
-        # table is the whole section, so the machine's storage is still shown.
-        return _no_pci_fallback(inventory, findings, width, expand_virtual=view.expand_virtual)
-    density, expand_virtual = view.density, view.expand_virtual
-    fabric = Fabric(inventory.pci_tree, width, density, expand_virtual=expand_virtual)
-    layout = fabric.measure(inventory)
-    out: list[RenderableType] = [Text(density_note(density, view.how_to_change), style=theme.STYLE_NOTE)]
-    legend = fabric.hop_legend()
-    if legend:
-        out.append(Text(legend, style=theme.STYLE_UNKNOWN))
-    out.append(board_line(inventory, fabric))
-    attached: set[str] = set()
-    labelled = False
-    for node, _level in fabric.drawn():
-        if not labelled:
-            # Again after a disk block has come between, for the reason the disk
-            # header already repeats per controller: on a machine with several,
-            # one header at the top ends up twenty lines from its own columns.
-            out.append(device_header_line(fabric, fabric.rules_before(node)))
-            labelled = True
-        out.append(fabric.row(node, findings))
-        if node.is_storage and inventory.disks_on(node.address):
-            disks = inventory.disks_on(node.address)
-            attached.update(disk.node for disk in disks)
-            rules = fabric.rules_under(node)
-            out.append(disk_header_line(fabric, layout, rules))
-            out.extend(fabric.disk_row(disk, layout, findings, inventory, rules) for disk in disks)
-            labelled = False
-    orphans = [disk for disk in inventory.disks if disk.node not in attached]
-    if orphans:
-        out.append(Text(""))
-        out.append(Text("not attached to a known controller", style=theme.STYLE_UNKNOWN))
-        out.append(disk_header_line(fabric, layout))
-        out.extend(fabric.disk_row(disk, layout, findings, inventory) for disk in orphans)
-    out.extend(_virtual_block(fabric, inventory, findings, layout, expand_virtual=expand_virtual))
-    return Group(*out)
+    lines = fabric_lines(inventory, findings, width, view)
+    if lines:
+        return Group(*(line.text for line in lines))
+    # No PCI devices at all, and nothing the disk-and-controller table would
+    # show either: say the machine is empty rather than rendering a blank
+    # section.
+    if not (inventory.disks or inventory.controllers or inventory.virtual_disks):
+        return Text("No storage controllers or disks found.", style=theme.STYLE_UNKNOWN)
+    # A capture with drives but no PCI reading: the disk-and-controller table
+    # is the whole section, so the machine's storage is still shown.
+    return _no_pci_fallback(inventory, findings, width, expand_virtual=view.expand_virtual)
 
 
 def board_line(inventory: Inventory, fabric: Fabric) -> Text:
@@ -692,7 +783,7 @@ def _virtual_block(
     layout: Layout,
     *,
     expand_virtual: bool,
-) -> list[RenderableType]:
+) -> list[Text]:
     """The kernel-virtual group: a tally, or the devices themselves.
 
     Folded away by default because a host with forty zvols would otherwise
@@ -702,7 +793,7 @@ def _virtual_block(
     """
     if not inventory.virtual_disks:
         return []
-    lines: list[RenderableType] = [Text(""), Text(VIRTUAL_HEADING, style=theme.STYLE_UNKNOWN)]
+    lines: list[Text] = [Text(""), Text(VIRTUAL_HEADING, style=theme.STYLE_UNKNOWN)]
     if not expand_virtual:
         lines.append(Text(f"   {virtual_note(inventory.virtual_disks)}", style=theme.STYLE_UNKNOWN))
         return lines
@@ -792,6 +883,7 @@ __all__ = [
     "KEY_HINT",
     "OPTION_HINT",
     "Fabric",
+    "FabricLine",
     "FabricSection",
     "FabricView",
     "Field",
@@ -799,6 +891,7 @@ __all__ = [
     "density_note",
     "device_fields",
     "device_header_line",
+    "fabric_lines",
     "hop_cells",
     "render_fabric",
 ]
