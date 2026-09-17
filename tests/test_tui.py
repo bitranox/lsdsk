@@ -13,8 +13,9 @@ from typing import Any
 
 import pytest
 from rich.console import Console
-from textual.containers import HorizontalScroll
-from textual.widgets import Static, TabbedContent
+from rich.text import Text
+from textual.containers import HorizontalScroll, VerticalScroll
+from textual.widgets import OptionList, Static, TabbedContent
 
 from lsdsk.adapters.config.tunables import DEFAULT_WWN_WIDTH, DisplaySettings
 from lsdsk.adapters.hw.snapshot import build_from
@@ -29,7 +30,7 @@ from lsdsk.adapters.tui.app import DISK_COLUMNS as TUI_DISK_COLUMNS
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import Align
-from lsdsk.domain.models import Inventory
+from lsdsk.domain.models import Inventory, PciNode
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
 
@@ -54,6 +55,34 @@ def inventory_from(name: str) -> Inventory:
     with (FIXTURE.parent / name).open(encoding="utf-8") as handle:
         payload: dict[str, Any] = json.load(handle)
     return build_from(payload)
+
+
+def topology_lines(app: LsdskApp) -> list[str]:
+    """What the topology page is actually showing, whichever widget holds it.
+
+    The page carries a list of selectable fabric lines and, beside it for a
+    capture with no PCI reading at all, the old section in a Static; exactly one
+    of the two is displayed. Reading the hidden one gives an empty list, and an
+    empty list is a prefix of everything - which is how the width test below
+    went on passing while the page it measured showed nothing at all.
+
+    Args:
+        app: The running app.
+
+    Returns:
+        One rstripped line per line the page draws, never empty.
+    """
+    from textual.widgets import OptionList
+
+    options = app.query_one("#tree-lines", OptionList)
+    if options.display:
+        prompts = [options.get_option_at_index(index).prompt for index in range(options.option_count)]
+        lines = [prompt.plain.rstrip() if isinstance(prompt, Text) else str(prompt).rstrip() for prompt in prompts]
+    else:
+        page = app.query_one("#tree", Static)
+        lines = [page.render_line(row).text.rstrip() for row in range(page.size.height)]
+    assert lines, "the topology page is showing nothing, so anything asserted about it is vacuous"
+    return lines
 
 
 @pytest.mark.os_agnostic
@@ -131,12 +160,7 @@ async def test_the_density_key_cycles_the_fabric_on_the_topology_page() -> None:
     device_address = re.compile(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]")
 
     def drawn_addresses() -> set[str]:
-        # A Static holds a Rich renderable, so reading it is a render: a
-        # Console of the page's own width prints it to text, which is what
-        # `str()` could not do and `content` does not promise.
-        buffer = io.StringIO()
-        Console(width=160, file=buffer, no_color=True).print(app.query_one("#tree", Static).content)
-        return {match.group(0) for line in buffer.getvalue().splitlines() if (match := device_address.search(line))}
+        return {match.group(0) for line in topology_lines(app) if (match := device_address.search(line))}
 
     members = list(TreeDensity)
     app = LsdskApp(inventory())
@@ -181,9 +205,7 @@ async def test_every_press_of_the_density_key_adds_detail_until_it_wraps() -> No
     device_address = re.compile(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]")
 
     def devices_drawn() -> int:
-        buffer = io.StringIO()
-        Console(width=160, file=buffer, no_color=True).print(app.query_one("#tree", Static).content)
-        return sum(1 for line in buffer.getvalue().splitlines() if device_address.search(line))
+        return sum(1 for line in topology_lines(app) if device_address.search(line))
 
     app = LsdskApp(inventory())
     async with app.run_test(size=(160, 45)) as pilot:
@@ -893,9 +915,10 @@ async def test_the_topology_page_lays_the_fabric_out_at_the_width_it_was_given(w
     async with app.run_test(size=(width, 45)) as pilot:
         await pilot.press("1")
         await pilot.pause()
-        page = app.query_one("#tree", Static)
-        page_width = page.size.width
-        painted = [page.render_line(row).text.rstrip() for row in range(page.size.height)]
+        # The region the options are laid out in, not content_size: the two
+        # differ by the scrollbar gutter, and the page uses the former.
+        page_width = app.query_one("#tree-lines", OptionList).scrollable_content_region.width
+        painted = topology_lines(app)
 
     buffer = io.StringIO()
     Console(file=buffer, width=page_width, no_color=True).print(
@@ -903,9 +926,10 @@ async def test_the_topology_page_lays_the_fabric_out_at_the_width_it_was_given(w
     )
     printed = [line.rstrip() for line in buffer.getvalue().splitlines()]
 
-    assert painted[: len(printed)] == printed[: len(painted)], (
-        f"the page is not laid out at its own {page_width} columns in a {width}-column terminal"
-    )
+    # Compared whole, not prefix against prefix: an empty painted list is a
+    # prefix of every printed one, which is exactly how this assertion passed
+    # while the page it measured had been replaced by a hidden widget.
+    assert painted == printed, f"the page is not laid out at its own {page_width} columns in a {width}-column terminal"
 
 
 @pytest.mark.os_agnostic
@@ -921,8 +945,7 @@ async def test_the_topology_page_names_the_key_that_changes_the_detail_level() -
     async with app.run_test(size=(140, 45)) as pilot:
         await pilot.press("1")
         await pilot.pause()
-        page = app.query_one("#tree", Static)
-        painted = "\n".join(page.render_line(row).text for row in range(page.size.height))
+        painted = "\n".join(topology_lines(app))
 
     assert 'press "d" to change the detail level' in painted, painted[:300]
     assert "--tree-density" not in painted, "the page names the key, not the printed view's option"
@@ -1096,3 +1119,205 @@ class TestTheDetailPanelAnswersForTheRowUnderTheCursor:
 
         assert offered["short"], "a record too tall for the panel offers no way to reach the rest"
         assert not offered["tall"], "the keys are offered where the whole record already fits"
+
+
+def _is_device_row(line: object) -> bool:
+    """Whether a fabric line is one the section promises to keep to one line.
+
+    The device rows and the drive rows. NOT the board line, which carries a
+    subject and is prose, nor the density note or a column header, which carry
+    none.
+    """
+    from lsdsk.domain.models import Disk, PciNode
+
+    subject = getattr(line, "subject", None)
+    return isinstance(subject, (PciNode, Disk))
+
+
+class TestTheTopologyPageCanBeMovedThrough:
+    """The fabric as a list of selectable lines, and the traps that come with it."""
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("width", [50, 60, 80, 100, 140, 200])
+    async def test_a_device_or_a_drive_never_outgrows_the_width_it_was_laid_out_at(self, width: int) -> None:
+        """The section's own law, checked where the list can actually hold it.
+
+        An option wider than its box WRAPS, and measured on textual 8.2.8
+        neither a Rich ``no_wrap`` nor a CSS ``text-wrap: nowrap`` prevents it -
+        only laying the section out at the width the list gives its options
+        does, which is ``scrollable_content_region`` and not ``content_size``:
+        the two differ by the scrollbar's two columns.
+
+        Asserted per ROW rather than by counting rendered rows against options,
+        because the density note and the board line are prose and wrap here
+        exactly as they wrap in the printed view - an aggregate count would have
+        to allow for that and would then allow a wrapped device row too.
+        """
+        app = LsdskApp(inventory())
+        async with app.run_test(size=(width, 45)) as pilot:
+            await pilot.press("1")
+            await pilot.pause()
+            options = app.query_one("#tree-lines", OptionList)
+            laid_out = options.scrollable_content_region.width
+            lines = app.tree_lines
+            too_wide = [line.text.plain for line in lines if _is_device_row(line) and len(line.text.plain) > laid_out]
+
+        assert lines, "the page listed nothing"
+        assert any(_is_device_row(line) for line in lines), "no device row to check at this width"
+        assert not too_wide, f"at {laid_out} columns these wrapped: {too_wide[:2]}"
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_below_the_sections_own_floor_a_row_does_outgrow_the_width(self) -> None:
+        """The control, and the floor written down rather than discovered again.
+
+        Measured on every committed capture: a device or drive row fits from 48
+        columns up and overruns below. The test above would pass vacuously if
+        the rows fitted at every width imaginable, so this pins the other side.
+        """
+        from lsdsk.adapters.render.tree import FabricView, fabric_lines
+
+        machine = inventory()
+        findings = diagnose(machine)
+        fits = [
+            width
+            for width in range(20, 61)
+            if all(
+                len(line.text.plain) <= width
+                for line in fabric_lines(machine, findings, width, FabricView())
+                if _is_device_row(line)
+            )
+        ]
+        assert min(fits) == 48, f"the section's floor moved to {min(fits)}"
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_the_cursor_stops_only_on_lines_that_are_about_something(self) -> None:
+        """Walk the whole page and require every stop to name a device.
+
+        The note, the legend and both repeated column headers are lines about
+        the SECTION; a cursor that lands on one has nothing to put in the panel.
+        """
+        app = LsdskApp(inventory())
+        visited: list[int] = []
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.press("1")
+            await pilot.pause()
+            options = app.query_one("#tree-lines", OptionList)
+            for _step in range(options.option_count + 2):
+                if options.highlighted is not None:
+                    visited.append(options.highlighted)
+                await pilot.press("down")
+                await pilot.pause()
+            lines = app.tree_lines
+
+        assert visited, "the cursor never landed anywhere"
+        decorative = sorted({index for index in visited if lines[index].subject is None})
+        assert not decorative, f"the cursor stopped on lines about nothing: {decorative}"
+        # It must also have reached MORE than the line it opened on, or a cursor
+        # that cannot move at all would satisfy the assertion above.
+        assert len(set(visited)) > 1, "the cursor never moved"
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_the_panel_follows_the_topology_cursor_onto_a_device_and_onto_a_drive(self) -> None:
+        """A fabric line is about a device or a drive, and both must answer."""
+        machine = inventory()
+        app = LsdskApp(machine)
+        seen: list[str] = []
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.press("1")
+            await pilot.pause()
+            for _step in range(8):
+                seen.append(_panel_text(app).splitlines()[0])
+                await pilot.press("down")
+                await pilot.pause()
+
+        assert any(machine.hostname in line for line in seen), "the board line said nothing about the machine"
+        assert any(disk.path in line for line in seen for disk in machine.disks), "no drive was reached"
+        assert any(one.address in line for line in seen for one in machine.controllers), "no controller was reached"
+        assert "Nothing selected." not in seen
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_a_storage_controller_answers_with_its_controller_record_not_its_bare_device_one(self) -> None:
+        """One address, two models, and the reader wants the one with the ports.
+
+        A controller is a ``PciNode`` on the fabric and a ``Controller`` in the
+        inventory; only the second carries the uplink, the port count and what
+        the attached drives demand.
+        """
+        machine = inventory()
+        app = LsdskApp(machine)
+        address = machine.controllers[0].address
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.press("1")
+            await pilot.pause()
+            options = app.query_one("#tree-lines", OptionList)
+            index = next(
+                position
+                for position, line in enumerate(app.tree_lines)
+                if isinstance(line.subject, PciNode) and line.subject.address == address
+            )
+            options.highlighted = index
+            await pilot.pause()
+            panel = _panel_text(app)
+
+        assert "in use" in panel and "uplink carries" in panel, panel[:400]
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_the_density_key_keeps_the_cursor_where_the_reader_left_it(self) -> None:
+        """A redraw that throws the cursor back to the top loses the reader's place."""
+        app = LsdskApp(inventory())
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.press("1")
+            await pilot.pause()
+            for _step in range(3):
+                await pilot.press("down")
+                await pilot.pause()
+            before = app.query_one("#tree-lines", OptionList).highlighted
+            await pilot.press("d")
+            await pilot.pause()
+            after = app.query_one("#tree-lines", OptionList).highlighted
+
+        assert before is not None and before > 0
+        assert after == before, f"the cursor moved from {before} to {after} on a density change"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
+async def test_a_capture_with_no_pci_reading_still_shows_its_drives_on_the_topology_page() -> None:
+    """The branch no committed capture reaches, so it is built here.
+
+    A software-only environment can publish drives with no `pci` section at
+    all. The page's list of fabric lines has nothing to list then, and the old
+    disk-and-controller section takes over in the Static beside it. Without this
+    the machine's storage would be hidden behind a fabric that does not exist -
+    and nothing else in the suite exercises the swap, because every committed
+    capture carries a fabric.
+    """
+    machine = inventory()
+    without_pci = Inventory(
+        hostname=machine.hostname,
+        controllers=machine.controllers,
+        disks=machine.disks,
+        slots=machine.slots,
+        pci_tree=(),
+        privileged=machine.privileged,
+        board=machine.board,
+    )
+    app = LsdskApp(without_pci)
+    async with app.run_test(size=(140, 45)) as pilot:
+        await pilot.press("1")
+        await pilot.pause()
+        # Read INSIDE the run: a widget's display is reset on the way out, so
+        # the same two reads after the block answer about a torn-down screen.
+        listed_shown = app.query_one("#tree-lines", OptionList).display
+        fallback_shown = app.query_one("#tree-fallback", VerticalScroll).display
+        shown = topology_lines(app)
+
+    assert not listed_shown, "the list of fabric lines is showing for a capture that has no fabric"
+    assert fallback_shown, "the section that replaces it is hidden"
+    assert any(disk.path in line for line in shown for disk in without_pci.disks), "the drives are not shown at all"

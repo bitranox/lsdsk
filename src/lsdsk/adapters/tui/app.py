@@ -19,14 +19,22 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, HorizontalScroll, Vertical, VerticalScroll
-from textual.widgets import DataTable, Footer, Header, Static, TabbedContent, TabPane
+from textual.message import Message
+from textual.widgets import DataTable, Footer, Header, OptionList, Static, TabbedContent, TabPane
+from textual.widgets.option_list import Option
 
 from ... import __init__conf__
 from ...domain.diagnostics import count_by_severity, diagnose
 from ...domain.enums import CliCommand, Severity, TreeDensity
 from ...domain.history import CounterKind, History
+
+# Imported at runtime, not only for typing: the topology page decides which
+# record to build from what KIND of thing a line is about, and an isinstance
+# needs the class rather than its name.
+from ...domain.models import Disk, Inventory, PciNode
 from ..config.tunables import DisplaySettings
 from ..render import detail, layout, report, tables, theme
+from ..render.tree import fabric_lines
 from ..render.trend import render_trend
 from .typed_table import raising_table_id, rows_of
 
@@ -34,11 +42,13 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from rich.console import RenderableType
+    from textual import events
 
-    from ...domain.models import Disk, Finding, Inventory, PcieLink
+    from ...domain.models import Finding, PcieLink
     from ..render.detail import Detail
     from ..render.layout import Column
     from ..render.rows import Row
+    from ..render.tree import FabricLine, FabricSubject, FabricView
 
 # Column sets per page, kept here so a page's shape is readable in one place.
 _CONTROLLER_COLUMNS = ("", "address", "controller", "driver", "firmware", "running", "capable", "ports", "disks")
@@ -86,6 +96,22 @@ def _disk_cell(cells: Row, column: Column) -> Text:
     return _cell(text, style)
 
 
+def fabric_view_for(display: DisplaySettings) -> FabricView:
+    """How this app draws the fabric, from the settings the page is showing.
+
+    One place, because the printed section and the selectable list are the same
+    section: a second spelling of these three values is how one of them would
+    start drawing a different tree.
+    """
+    from ..render import tree  # noqa: PLC0415 - keeps rich render off app import
+
+    return tree.FabricView(
+        density=display.tree_density,
+        expand_virtual=display.expand_virtual,
+        how_to_change=tree.KEY_HINT,
+    )
+
+
 def render_fabric_for(
     inventory: Inventory,
     findings: Sequence[Finding],
@@ -105,15 +131,7 @@ def render_fabric_for(
     """
     from ..render import tree  # noqa: PLC0415 - keeps rich render off app import
 
-    return tree.FabricSection(
-        inventory,
-        findings,
-        tree.FabricView(
-            density=display.tree_density,
-            expand_virtual=display.expand_virtual,
-            how_to_change=tree.KEY_HINT,
-        ),
-    )
+    return tree.FabricSection(inventory, findings, fabric_view_for(display))
 
 
 #: The short label each page carries in the footer, in number-key order. Keyed by
@@ -156,6 +174,36 @@ DETAIL_TABLES: Final[dict[str, CliCommand]] = {
 }
 
 
+class FabricList(OptionList):
+    """The topology page's list of fabric lines, which says when it has a width.
+
+    The section has to be laid out at exactly the width this widget gives its
+    options, or a row that uses the whole width wraps onto a second line. That
+    width is known only once the layout has run, and the App cannot see that
+    moment: its own ``Resize`` arrives before its children are placed, so a fill
+    driven from there uses the window's width and overruns by the scrollbar's
+    two columns. The widget is the only thing that knows, so it says.
+    """
+
+    class Resized(Message):
+        """This list has been placed, and its options can be laid out to fit."""
+
+        def __init__(self, width: int) -> None:
+            """Carry the WIDTH rather than the widget.
+
+            The message can be handled after the screen has gone, on the way out
+            of a run, and a handler that reached back for the widget would raise
+            there.
+            """
+            super().__init__()
+            self.width = width
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Tell the app to lay the fabric out again at the width now known."""
+        del event
+        self.post_message(self.Resized(self.scrollable_content_region.width))
+
+
 class LsdskApp(App[None]):
     """The lsdsk terminal application."""
 
@@ -173,6 +221,17 @@ class LsdskApp(App[None]):
        the window than the record actually uses. The percentage comes from
        display.detail_height_percent at mount. */
     #detail { height: auto; overflow-y: auto; overflow-x: hidden; padding: 0 1; border-top: solid $panel; }
+    /* No padding and no border: the section draws its own spine and is laid out
+       to the width this leaves, so a character taken here would wrap a row.
+       scrollbar-gutter: stable is load-bearing for the same reason and is the
+       harder half - without it the fill happens at the full width, the options
+       then overflow, the scrollbar appears and takes two columns, and every row
+       that used all of them wraps. Measured: 45 rendered rows for 38 lines at
+       width 100. Reserving the gutter makes the width the fill is laid out at
+       the width the fill is drawn at, whether the bar is needed or not. */
+    #tree-lines { height: 1fr; width: 1fr; padding: 0; border: none; background: $surface; }
+    #tree-lines { scrollbar-gutter: stable; }
+    #tree-fallback { height: 1fr; width: 1fr; }
     """
 
     # Laid out the way the *top family works, because that is the muscle memory
@@ -243,6 +302,15 @@ class LsdskApp(App[None]):
         #: row event: without this the panel would keep answering for the page
         #: the reader just left until they pressed an arrow key.
         self._row_of: dict[str, str | None] = {}
+        #: The fabric's drawn lines, in the order the topology list holds them,
+        #: so an option index resolves to the device that line is about.
+        self._tree_lines: tuple[FabricLine, ...] = ()
+        #: The width the lines in hand were laid out at, so a resize that did
+        #: not actually change it costs nothing and cannot loop.
+        self._tree_width_used = 0
+        #: Where the topology cursor was left, for the same reason every table's
+        #: row is remembered: coming back to the page raises no highlight.
+        self._tree_highlighted: int | None = None
         self.title = f"lsdsk {__init__conf__.version}"
         self.sub_title = inventory.hostname
 
@@ -251,11 +319,15 @@ class LsdskApp(App[None]):
         yield Header()
         yield Static(self.verdict_line(), id="verdict")
         with TabbedContent(initial=CliCommand.TOPOLOGY.value):
-            with TabPane("Topology", id=CliCommand.TOPOLOGY.value), VerticalScroll():
-                yield Static(
-                    render_fabric_for(self.inventory, self.findings, self.display_settings),
-                    id="tree",
-                )
+            with TabPane("Topology", id=CliCommand.TOPOLOGY.value):
+                # One option per drawn line, so a reader can put the cursor on a
+                # device and the panel can answer for it. The old Static is kept
+                # beside it for the capture that carries no PCI reading at all,
+                # whose section is the disk-and-controller table rather than a
+                # list of fabric lines; exactly one of the two is ever shown.
+                yield FabricList(id="tree-lines")
+                with VerticalScroll(id="tree-fallback"):
+                    yield Static(id="tree")
             with TabPane("Controllers", id=CliCommand.CONTROLLERS.value):
                 yield DataTable[str](id="controller-table", zebra_stripes=True, cursor_type="row")
             with TabPane("Disks", id=CliCommand.DISKS.value), Vertical():
@@ -296,6 +368,7 @@ class LsdskApp(App[None]):
         self._fill_disks()
         self._fill_health()
         self._fill_slots()
+        self._refill_tree()
 
     def verdict_line(self) -> str:
         """Summarise the findings in one line for the banner.
@@ -442,6 +515,10 @@ class LsdskApp(App[None]):
         to be asked again here or it keeps answering for the page just left.
         """
         page = self.query_one(TabbedContent).active
+        if page == CliCommand.TOPOLOGY.value:
+            index = self._tree_highlighted
+            self._show_detail(None if index is None else self._record_of(self._subject_at(index)))
+            return
         for table_id, command in DETAIL_TABLES.items():
             if command.value == page:
                 self._show_detail(self._record_for(table_id, self._row_of.get(table_id)))
@@ -561,16 +638,26 @@ class LsdskApp(App[None]):
         # each time the page changes or it keeps offering them everywhere.
         self.refresh_bindings()
         self._refresh_detail()
-        tables = self.query(f"#{pane} DataTable")
-        if tables:
-            tables.first().focus()
-            return
-        # The long text pages have no table. Focusing their scroll container is
-        # what makes up and down move them; without it the page ignores the
-        # keyboard entirely, which is how findings and SMART behaved.
-        scrolls = self.query(f"#{pane} VerticalScroll")
-        if scrolls:
-            scrolls.first().focus()
+        self._focus_page(pane)
+
+    def _focus_page(self, pane: str) -> None:
+        """Give the keyboard to whatever the page in front is driven by.
+
+        Tried in order: a table, the topology's list of fabric lines, and last
+        the scroll container of a page that is only long text - focusing that is
+        what makes up and down move it, and without it findings and SMART
+        ignored the keyboard entirely.
+
+        A widget that is not DISPLAYED is skipped rather than focused: the
+        topology page carries both the list and the no-PCI fallback and shows
+        one, so focusing the first match found would hand the keyboard to the
+        hidden one on every capture that has a fabric.
+        """
+        for selector in (f"#{pane} DataTable", f"#{pane} OptionList", f"#{pane} VerticalScroll"):
+            shown = [widget for widget in self.query(selector) if widget.display]
+            if shown:
+                shown[0].focus()
+                return
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Offer the WWN scroll keys on the page that has a strip to scroll.
@@ -627,8 +714,129 @@ class LsdskApp(App[None]):
         self._refill_tree()
 
     def _refill_tree(self) -> None:
-        """Redraw only the topology page from the settings now held."""
-        self.query_one("#tree", Static).update(render_fabric_for(self.inventory, self.findings, self.display_settings))
+        """Redraw the topology page from the settings now held.
+
+        The section is laid out at exactly the option list's own content width,
+        which is the only thing that keeps one drawn line to one option: an
+        option wider than its box WRAPS, and measured on textual 8.2.8 neither
+        a Rich ``no_wrap`` nor a CSS ``text-wrap: nowrap`` prevents it. A window
+        knows its width only after the layout runs, so this is called again on
+        every resize rather than sized once.
+
+        A capture with no PCI reading has no lines to list, and gets the old
+        disk-and-controller section in the Static beside the list instead.
+        """
+        self._tree_width_used = self._tree_width()
+        lines = fabric_lines(
+            self.inventory, self.findings, self._tree_width_used, fabric_view_for(self.display_settings)
+        )
+        options = self.query_one("#tree-lines", OptionList)
+        options.display = bool(lines)
+        self.query_one("#tree-fallback", VerticalScroll).display = not lines
+        self._tree_lines = lines
+        if not lines:
+            self.query_one("#tree", Static).update(
+                render_fabric_for(self.inventory, self.findings, self.display_settings)
+            )
+            return
+        # Kept across the redraw, or a resize and a density change would both
+        # throw the reader back to the first device every time.
+        keep = options.highlighted
+        options.clear_options()
+        options.add_options(
+            [Option(line.text, id=str(index), disabled=line.subject is None) for index, line in enumerate(lines)]
+        )
+        if keep is not None and keep < len(lines) and lines[keep].subject is not None:
+            options.highlighted = keep
+            return
+        # Opened, or reopened on a line that is gone: start on the first thing
+        # there is to say something about rather than on nothing, so the panel
+        # below is answering from the moment the page appears.
+        first = next((index for index, line in enumerate(lines) if line.subject is not None), None)
+        if first is not None:
+            options.highlighted = first
+
+    def _tree_width(self) -> int:
+        """Columns the fabric may draw in, as the list will actually offer them.
+
+        ``scrollable_content_region``, never ``content_size``: the two differ by
+        the vertical scrollbar's two columns, which ``content_size`` does not
+        take off. Laid out at the wider figure, every row that used the whole
+        width wrapped - measured as 45 rendered rows for 38 lines at a window of
+        100 - while a wide window hid it because nothing was long enough to
+        reach the edge. The gutter is reserved as stable in the stylesheet so
+        this figure does not change when the bar appears.
+
+        Before the first layout the region is empty, and a zero would lay the
+        section out at its own minimum; the window's width is the best answer
+        available then, and the resize that follows corrects it.
+        """
+        width = self.query_one("#tree-lines", OptionList).scrollable_content_region.width
+        return width if width > 0 else self.size.width
+
+    def on_fabric_list_resized(self, event: FabricList.Resized) -> None:
+        """Lay the fabric out again for the width the list now offers.
+
+        Terminates because the second fill changes no width: the list's region
+        is decided by the layout, not by what is in it, and the scrollbar gutter
+        is reserved whether or not the bar is needed.
+
+        The widget is looked for rather than demanded, because this can arrive
+        after the screen has been torn down.
+        """
+        if not self.query("#tree-lines") or event.width == self._tree_width_used:
+            return
+        self._refill_tree()
+
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
+        """Follow the topology cursor with the record of the device it is on.
+
+        Recorded whether or not the topology page is in front, and DRAWN only
+        when it is: a refill can highlight its first line long after the reader
+        has moved to another page - the list is refilled on the resize that
+        follows the layout - and drawing then would replace the record of the
+        row they are actually looking at. The same rule the tables follow, for
+        the same reason.
+        """
+        if event.option_list.id != "tree-lines":
+            return
+        self._tree_highlighted = event.option_index
+        if self.query_one(TabbedContent).active == CliCommand.TOPOLOGY.value:
+            self._show_detail(self._record_of(self._subject_at(event.option_index)))
+
+    @property
+    def tree_lines(self) -> tuple[FabricLine, ...]:
+        """The fabric lines the topology page is listing, in the list's order.
+
+        Public because the pairing between an option and the thing it is about
+        IS the page's contract: a reader that can only see the drawn text cannot
+        tell a wrapped row from two devices, which is the mistake the section's
+        previous guard made.
+        """
+        return self._tree_lines
+
+    def _subject_at(self, index: int) -> FabricSubject | None:
+        """What the fabric line at one option index is about."""
+        return self._tree_lines[index].subject if 0 <= index < len(self._tree_lines) else None
+
+    def _record_of(self, subject: FabricSubject | None) -> Detail | None:
+        """The record for whatever a fabric line is about.
+
+        A storage controller is on the fabric as a ``PciNode`` and in the
+        inventory as a ``Controller``, and the second holds what a reader of
+        that row wants - its uplink, its ports, what its drives demand - so the
+        address is resolved to the controller where one exists.
+        """
+        if isinstance(subject, Inventory):
+            return detail.machine_detail(subject)
+        if isinstance(subject, Disk):
+            return detail.disk_detail(subject, self.inventory, self.history)
+        if isinstance(subject, PciNode):
+            controller = next((one for one in self.inventory.controllers if one.address == subject.address), None)
+            if controller is not None:
+                return detail.controller_detail(controller, self.inventory)
+            return detail.node_detail(subject, self.inventory)
+        return None
 
     def action_toggle_detail(self) -> None:
         """Hide the panel, or bring it back, giving the table the whole window.
@@ -703,7 +911,7 @@ class LsdskApp(App[None]):
         self.findings = diagnose(self.inventory, history=self.history)
         self.query_one("#verdict", Static).update(self.verdict_line())
         self.query_one("#findings-body", Static).update(report.render_findings(self.findings))
-        self.query_one("#tree", Static).update(render_fabric_for(self.inventory, self.findings, self.display_settings))
+        self._refill_tree()
         self.query_one("#smart-body", Static).update(report.render_smart(self.inventory))
         self.query_one("#trend-body", Static).update(render_trend(self.inventory, self.history))
         for table_id in ("#controller-table", "#disk-table", "#health-table", "#slot-table"):
