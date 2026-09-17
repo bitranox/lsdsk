@@ -62,6 +62,23 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   padded into columns measured over the drives alone, so `VIRTUAL` arrived as
   `VIR>` in a section with twenty columns to spare while the table the old tree
   draws printed it whole for the same machine at the same width.
+- **A drive behind an Intel VMD keeps its place in the fabric.** The sysfs path
+  parser matched a fixed four hex digits with nothing to their left, so on a
+  domain of five - which is what a VMD re-enumerates its drives into - the
+  parent of `10000:e1:00.0` resolved to `0000:e0:06.0`, an address in no
+  capture. Every drive behind such a controller was detached into a phantom root
+  complex of its own, and the same parse feeds a controller's upstream address,
+  so the placement rules lost the port too. Verified byte-identical on all 322
+  device paths of the committed captures.
+- **A device with no PCI address is placed apart rather than on a nameless
+  bus.** Windows publishes no address for some devices and the builder falls
+  back to the instance identifier, which has no bus in it: splitting one on its
+  last colon produced the empty string, so such devices shared a root labelled
+  with nothing and devices from different buses were merged into it.
+- **Two capture entries at one address both reach the tree.** Keying the sources
+  by address collapsed the pair silently, last writer wins, so one device
+  vanished while the survivor was drawn under the other's name - against this
+  module's own rule that the fabric loses nothing a capture carries.
 
 ## [1.2.13] 2026-09-12 23:30:24
 

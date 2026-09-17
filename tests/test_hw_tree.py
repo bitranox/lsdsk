@@ -224,3 +224,102 @@ def test_the_envelope_round_trips_the_tree_through_json() -> None:
     assert [node.parent_address for node in parsed.pci_tree] == [node.parent_address for node in inventory.pci_tree]
     assert [node.children for node in parsed.pci_tree] == [node.children for node in inventory.pci_tree]
     assert parsed.pci_tree[0].is_root
+
+
+# --------------------------------------------------------------------------
+# Untrusted input: a capture can carry an address the assembly did not expect
+# --------------------------------------------------------------------------
+
+
+def _source(address: str, parent: str | None = None, name: str = "device") -> NodeSource:
+    """One device as a builder hands it over, with everything unread."""
+    return NodeSource(
+        address=address,
+        name=name,
+        class_code=None,
+        vendor=None,
+        driver=None,
+        link=PcieLink(),
+        port_kind=PciPortKind.UNKNOWN,
+        connector_present=None,
+        physical_slot_number=None,
+        parent=parent,
+    )
+
+
+@pytest.mark.os_agnostic
+def test_a_domain_wider_than_four_digits_keeps_its_children_under_it() -> None:
+    """An Intel VMD re-enumerates its drives into domain 0x10000.
+
+    The sysfs path parser matched a FIXED four hex digits with nothing to its
+    left, so the parent of `10000:e1:00.0` resolved to `0000:e0:06.0` - the
+    last four digits of a domain that is five - which is in no capture. The
+    drive then attached to a synthetic root of its own, so a storage tool
+    reported a phantom root complex for the very drives it exists to place.
+    """
+    capture = {
+        "schema": 2,
+        "platform": "linux",
+        "hostname": "example",
+        "kernel": "6.1.0",
+        "pci": {
+            "0000:00:0e.0": {
+                "class": "0x010400",
+                "path": "/sys/devices/pci0000:00/0000:00:0e.0",
+            },
+            "10000:e0:06.0": {
+                "class": "0x060400",
+                "path": "/sys/devices/pci0000:00/0000:00:0e.0/pci10000:e0/10000:e0:06.0",
+            },
+            "10000:e1:00.0": {
+                "class": "0x010802",
+                "path": "/sys/devices/pci0000:00/0000:00:0e.0/pci10000:e0/10000:e0:06.0/10000:e1:00.0",
+            },
+        },
+        "block": {},
+    }
+
+    tree = {node.address: node for node in snapshot.build_from(capture).pci_tree}
+
+    assert tree["10000:e1:00.0"].parent_address == "10000:e0:06.0", "the drive left its port"
+    assert tree["10000:e0:06.0"].parent_address == "0000:00:0e.0", "the VMD port left the device it sits on"
+    assert [node.address for node in tree.values() if node.is_root] == ["0000:00"], "a phantom root complex"
+
+
+@pytest.mark.os_agnostic
+def test_a_device_with_no_pci_address_is_placed_apart_rather_than_on_a_bus() -> None:
+    """Windows publishes no address for some devices; the builder falls back
+    to the instance identifier, which has no bus in it to derive.
+
+    Splitting one on its last colon produced the empty string, so every such
+    device shared one root labelled with nothing at all - a blank line in the
+    root-complex list - and devices from different buses were merged into it.
+    """
+    instance = r"PCI\VEN_1AF4&DEV_1000&SUBSYS_00011AF4&REV_00\3&13c0b0c5&0&50"
+    tree = assemble([_source("0000:00:01.0"), _source(instance)])
+
+    roots = [node for node in tree if node.is_root]
+    labels = [node.address for node in roots]
+
+    assert "" not in labels, f"a root labelled with nothing: {labels}"
+    assert all(label.strip() for label in labels), labels
+    placed = {node.parent_address for node in tree if not node.is_root}
+    assert len(placed) == len(roots), f"devices merged into one root: {placed} against {labels}"
+
+
+@pytest.mark.os_agnostic
+def test_two_entries_at_one_address_both_reach_the_tree() -> None:
+    """A capture is untrusted input, and the fabric loses nothing it carries.
+
+    Keying the sources by address collapsed a duplicate silently, last writer
+    wins: on a hand-built pair the second device simply vanished and the first
+    was drawn under the other's name, with nothing in the output saying a
+    device had been dropped.
+    """
+    tree = assemble([_source("0000:06:03.0", name="first"), _source("0000:06:03.0", name="second")])
+
+    devices = [node for node in tree if not node.is_root]
+
+    assert len(devices) == 2, f"a device was dropped: {[node.address for node in devices]}"
+    assert {node.name for node in devices} == {"first", "second"}
+    assert len({node.address for node in devices}) == 2, "two nodes cannot share one address"

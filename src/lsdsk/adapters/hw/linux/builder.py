@@ -47,8 +47,13 @@ if TYPE_CHECKING:
     from ..decode.ahci import AhciCapabilities
     from .capture import AtaLinkEntry, BlockEntry, LinuxCapture, PciEntry, SasPhyEntry, ScsiHostEntry
 
-# A PCI address as it appears inside a sysfs device path.
-_PCI_ADDRESS = re.compile(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]")
+# A PCI address as it appears inside a sysfs device path. The domain is FOUR OR
+# MORE digits and cannot start mid-number: an Intel VMD re-enumerates its drives
+# into domain 0x10000, and a fixed four digits with no left boundary matched the
+# last four of it, so `10000:e1:00.0` reported a parent of `0000:e0:06.0` - an
+# address in no capture, which detached every drive behind the VMD into a
+# phantom root complex of its own.
+_PCI_ADDRESS = re.compile(r"(?<![0-9a-f])[0-9a-f]{4,}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]")
 _SAS_PORT = re.compile(r"/port-(\d+:\d+)/")
 _ATA_PORT = re.compile(r"/ata(\d+)/")
 

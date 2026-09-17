@@ -19,6 +19,7 @@ System Role:
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, NamedTuple
 
 from ...domain.enums import PciPortKind
@@ -103,20 +104,86 @@ class NodeSource(NamedTuple):
     pcie_capability_present: bool | None = None
 
 
+#: A PCI address, as either platform writes one. The domain is four digits or
+#: more, because an Intel VMD re-enumerates its drives into domain 0x10000.
+_PCI_ADDRESS_SHAPE = re.compile(r"^[0-9a-f]{4,}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]$")
+
+#: Where a device whose identifier is not an address goes. Windows publishes no
+#: address for some devices and the builder falls back to the instance
+#: identifier, which carries no bus to derive: splitting one on its last colon
+#: produced the EMPTY string, so every such device shared a root labelled with
+#: nothing and devices from different buses were merged into it.
+UNPLACED_ROOT = "unplaced"
+
+#: What separates a duplicated address from the copy that already took it.
+#: Chosen because it cannot occur in a PCI address, so a reader can never take
+#: the result for one.
+DUPLICATE_MARK = "#"
+
+
 def _root_bus(address: str) -> str:
     """Return the root bus label a device address belongs to.
 
     Args:
-        address: A PCI address, such as ``0000:03:00.0``.
+        address: A PCI address, such as ``0000:03:00.0``, or whatever the
+            platform knows an address-less device by.
 
     Returns:
-        The bus segment, such as ``0000:03``.
+        The bus segment, such as ``0000:03``, or the unplaced root for an
+        identifier that is not an address at all.
 
     Example:
         >>> _root_bus("0000:03:00.0")
         '0000:03'
+        >>> _root_bus("10000:e1:00.0")
+        '10000:e1'
+        >>> _root_bus("0000:03:00.0#2")
+        '0000:03'
+        >>> _root_bus(r"PCI\\VEN_1AF4&DEV_1000\\3&13c0b0c5&0&50")
+        'unplaced'
     """
-    return address.rpartition(":")[0]
+    base = address.partition(DUPLICATE_MARK)[0]
+    if not _PCI_ADDRESS_SHAPE.match(base):
+        return UNPLACED_ROOT
+    return base.rpartition(":")[0]
+
+
+def _keyed_by_address(sources: Sequence[NodeSource]) -> dict[str, NodeSource]:
+    """Key every source by its address, keeping a duplicate rather than dropping it.
+
+    Keying with a comprehension collapsed two devices at one address silently,
+    last writer wins - and a capture is untrusted input, so the device that
+    vanished took its disks' controller with it while the survivor was drawn
+    under the other's name. The second keeps its place under a key carrying a
+    mark no PCI address can hold, so nothing is lost and nothing reads as an
+    address it is not.
+
+    Args:
+        sources: Every device the platform builder describes.
+
+    Returns:
+        The sources by address, in the order given.
+
+    Example:
+        >>> from lsdsk.domain.models import PcieLink
+        >>> pair = [
+        ...     NodeSource("0000:06:03.0", "first", None, None, None,
+        ...                PcieLink(), PciPortKind.UNKNOWN, None, None, None),
+        ...     NodeSource("0000:06:03.0", "second", None, None, None,
+        ...                PcieLink(), PciPortKind.UNKNOWN, None, None, None),
+        ... ]
+        >>> [(key, source.name) for key, source in _keyed_by_address(pair).items()]
+        [('0000:06:03.0', 'first'), ('0000:06:03.0#2', 'second')]
+    """
+    keyed: dict[str, NodeSource] = {}
+    for source in sources:
+        address = source.address
+        copy = 2
+        while address in keyed:
+            address = f"{source.address}{DUPLICATE_MARK}{copy}"
+            copy += 1
+        keyed[address] = source if address == source.address else source._replace(address=address)
+    return keyed
 
 
 def assemble(sources: Sequence[NodeSource]) -> tuple[PciNode, ...]:
@@ -161,7 +228,7 @@ def assemble(sources: Sequence[NodeSource]) -> tuple[PciNode, ...]:
         >>> [(n.address, n.parent_address) for n in cycle if n.address != "0000:02"]
         [('0000:02:00.0', '0000:02:00.1'), ('0000:02:00.1', '0000:02')]
     """
-    by_address = {source.address: source for source in sources}
+    by_address = _keyed_by_address(sources)
     if not by_address:
         return ()
 
