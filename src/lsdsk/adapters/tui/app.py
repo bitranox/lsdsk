@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     from rich.console import RenderableType
     from textual import events
 
-    from ...domain.models import Finding, PcieLink
+    from ...domain.models import Finding
     from ..render.detail import Detail
     from ..render.layout import Column
     from ..render.rows import MarkedRow, Row
@@ -72,16 +72,6 @@ SLOT_COLUMNS = tuple(column.title for column in report.SLOT_COLUMNS)
 # reason DISK_COLUMNS is: a page and the command of one name are one view, and a
 # second tuple is how the disk page came to name a drive by model alone.
 TREND_PAGE_COLUMNS = tuple(column.title for column in TREND_COLUMNS)
-
-
-def _pcie(link: PcieLink) -> str:
-    """Render a PCIe link's running generation and width."""
-    return theme.format_pcie_decimal(link.current_speed_gtps, link.current_width)
-
-
-def _pcie_capable(link: PcieLink) -> str:
-    """Render a PCIe link's best generation and width."""
-    return theme.format_pcie_decimal(link.max_speed_gtps, link.max_width)
 
 
 def _cell(text: str, style: str = "") -> Text:
@@ -482,29 +472,22 @@ class LsdskApp(App[None]):
         table = rows_of(self.query_one("#controller-table"))
         table.add_columns(*CONTROLLER_COLUMNS)
         for controller in self.inventory.controllers:
-            row = tables.controller_table_row(controller, self.inventory, self.findings)
+            row = tables.controller_table_row(controller, self.inventory, self.findings, bandwidth=True)
             table.add_row(*_marked(row, tables.CONTROLLER_COLUMNS), key=controller.address)
 
     def _fill_slots(self) -> None:
         """Populate the mainboard slot page."""
         table = rows_of(self.query_one("#slot-table"))
         table.add_columns(*SLOT_COLUMNS)
+        # Built from the printed view's own row builder rather than spelled out
+        # here. Spelled out, this page had drifted from the table of the same
+        # name: it drew the decimal generation where the table drew the
+        # marketing one for the identical port. A page and the command of one
+        # name are one view, which is the rule the disk page already follows.
         for slot in self.inventory.slots:
-            verdict, verdict_style = report.slot_verdict(slot)
+            cells = report.slot_table_row(slot, bandwidth=True)
             table.add_row(
-                _cell(slot.address, theme.STYLE_IDENTIFIER),
-                _cell(
-                    "-" if slot.physical_slot_number is None else f"#{slot.physical_slot_number}",
-                    theme.STYLE_UNKNOWN if slot.physical_slot_number is None else "",
-                ),
-                _cell(_pcie_capable(slot.link), ""),
-                _cell(_pcie(slot.link) if slot.occupied else "-"),
-                _cell(slot.occupant_description, "" if slot.occupied else theme.STYLE_UNKNOWN),
-                _cell(
-                    "-" if slot.occupant_link is None else _pcie_capable(slot.occupant_link),
-                    theme.STYLE_UNKNOWN if slot.occupant_link is None else "",
-                ),
-                _cell(verdict, verdict_style),
+                *(_cell(*cells[column.key]) for column in report.SLOT_COLUMNS),
                 key=slot.address,
             )
 
@@ -530,7 +513,7 @@ class LsdskApp(App[None]):
         )
         for disk in listed:
             port = self.inventory.port_link_for(disk)
-            cells = tables.disk_table_row(disk, port)
+            cells = tables.disk_table_row(disk, port, bandwidth=True)
             severity = report.worst_severity(self.findings, disk.path)
             table.add_row(
                 _cell(theme.marker_for(severity), theme.style_for(severity)),

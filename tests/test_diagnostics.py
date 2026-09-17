@@ -416,11 +416,11 @@ def test_the_best_port_named_is_one_real_port_not_the_best_speed_beside_the_best
 
     finding = diagnose_controller_link(capped, machine)[0]
 
-    assert "PCIe 4.0 x16" not in finding.detail
+    assert "PCIe 4.0x16" not in finding.detail
     assert finding.action is not None
     assert "Freeing" not in finding.action
     assert "PCIe 4.0 board" not in finding.action
-    assert "A PCIe 4.0 x4 port would take this link from 3.94 GB/s to 7.88 GB/s." in finding.action
+    assert "A PCIe 4.0x4 port would take this link from 3.94 GB/s to 7.88 GB/s." in finding.action
 
 
 @pytest.mark.os_agnostic
@@ -437,7 +437,7 @@ def test_freeing_a_faster_port_promises_what_that_port_gives_this_card() -> None
     finding = diagnose_controller_link(capped, machine)[0]
 
     assert finding.action is not None
-    assert "Freeing a PCIe 4.0 x4 port would take this link to 7.88 GB/s" in finding.action
+    assert "Freeing a PCIe 4.0x4 port would take this link to 7.88 GB/s" in finding.action
 
 
 @pytest.mark.os_agnostic

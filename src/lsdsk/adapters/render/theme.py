@@ -407,32 +407,38 @@ def format_bus(bus: BusType) -> str:
 def format_pcie_generation(speed_gtps: float | None, width: int | None) -> str:
     """Render a PCIe link as a marketing generation and a width.
 
-    The compact form, for a column beside a disk: ``Gen4 x4``.
+    The compact form, for a column beside a disk: ``Gen4x4``. Written closed,
+    with no blank inside it, because it is ONE value in one column: the space
+    invited a reader to take the width for a separate field, and cost a
+    character in every hop column on the page.
 
     Example:
         >>> format_pcie_generation(16.0, 4)
-        'Gen4 x4'
+        'Gen4x4'
         >>> format_pcie_generation(None, 4)
         '-'
     """
     generation = pcie_generation(speed_gtps)
-    return "-" if generation is None or width is None else f"Gen{generation} x{width}"
+    return "-" if generation is None or width is None else f"Gen{generation}x{width}"
 
 
 def format_pcie_decimal(speed_gtps: float | None, width: int | None) -> str:
     """Render a PCIe link the way a specification sheet writes it.
 
-    The spelled-out form, for a controller header where it follows the word
-    PCIe: ``3.0 x8``.
+    The spelled-out form, for a device row that names a generation the way a
+    specification sheet does: ``3.0x8``. Closed like
+    :func:`format_pcie_generation` and for the same reason; the PROSE form that
+    follows the word PCIe keeps its blank and lives in the domain, because a
+    sentence is not a column.
 
     Example:
         >>> format_pcie_decimal(8.0, 8)
-        '3.0 x8'
+        '3.0x8'
         >>> format_pcie_decimal(8.0, None)
         '-'
     """
     generation = pcie_generation(speed_gtps)
-    return "-" if generation is None or width is None else f"{generation}.0 x{width}"
+    return "-" if generation is None or width is None else f"{generation}.0x{width}"
 
 
 def format_temperature(
@@ -544,7 +550,9 @@ def pci_tag(kind: PciPortKind) -> str:
     return _PCI_KIND_TAG.get(kind, "")
 
 
-def hop_link_cells(link: PcieLink, *, capability_present: bool | None = None) -> tuple[Cell, Cell]:
+def hop_link_cells(
+    link: PcieLink, *, capability_present: bool | None = None, bandwidth: bool = False
+) -> tuple[Cell, Cell]:
     """The capable and running columns for one hop of the fabric.
 
     Two columns, in the order the slot view uses, and three different facts in
@@ -567,6 +575,11 @@ def hop_link_cells(link: PcieLink, *, capability_present: bool | None = None) ->
             is a measured absence and prints :data:`LEGACY`; ``True`` and
             ``None`` both leave an unread column reading :data:`NOT_READ`,
             because an unanswered question is not an answer of no.
+        bandwidth: Whether each figure carries what it is worth. The caller
+            decides, because only it knows the width the column was measured
+            for, and a cell that carries more than its column was sized for
+            would be CLIPPED - and half a link figure is a different figure
+            rather than a shorter one.
 
     Returns:
         The (capable, running) styled cells. A column whose figure was not
@@ -577,18 +590,28 @@ def hop_link_cells(link: PcieLink, *, capability_present: bool | None = None) ->
 
     Example:
         >>> hop_link_cells(PcieLink(8.0, 4, 8.0, 4))
-        (('3.0 x4', ''), ('3.0 x4', ''))
+        (('3.0x4', ''), ('3.0x4', ''))
+        >>> hop_link_cells(PcieLink(8.0, 4, 16.0, 4), bandwidth=True)
+        (('4.0x4 (7.88 GB/s)', ''), ('3.0x4 (3.94 GB/s)', ''))
         >>> hop_link_cells(PcieLink(), capability_present=False)
+        (('legacy', ''), ('legacy', ''))
+        >>> hop_link_cells(PcieLink(), capability_present=False, bandwidth=True)
         (('legacy', ''), ('legacy', ''))
         >>> hop_link_cells(PcieLink(), capability_present=None)[0] == (NOT_READ, STYLE_UNKNOWN)
         True
         >>> hop_link_cells(PcieLink(current_speed_gtps=16.0, current_width=2))[1]
-        ('4.0 x2', '')
+        ('4.0x2', '')
         >>> hop_link_cells(PcieLink(current_speed_gtps=16.0, current_width=2))[0] == (NOT_READ, STYLE_UNKNOWN)
         True
     """
     capable = format_pcie_decimal(link.max_speed_gtps, link.max_width)
     running = format_pcie_decimal(link.current_speed_gtps, link.current_width)
+    if bandwidth:
+        # Each figure with ITS OWN throughput: the capable link's from the
+        # maximum, the running link's from what was negotiated. Crossing them
+        # is the defect this whole change exists to fix.
+        capable = with_bandwidth(capable, link.max_bandwidth_gbps)
+        running = with_bandwidth(running, link.current_bandwidth_gbps)
     if capability_present is False:
         return (LEGACY, ""), (LEGACY, "")
     return (
@@ -614,6 +637,69 @@ _HOP_MEANINGS: Final[dict[str, str]] = {
 }
 
 
+#: The placeholders a bandwidth is never put beside. Kept as a set of the
+#: TOKENS a column actually prints, so adding a third symbol to the hop
+#: vocabulary and forgetting it here is one edit rather than a silent decoration
+#: of a value nobody read.
+_NO_BANDWIDTH: Final[frozenset[str]] = frozenset({NOT_READ, LEGACY})
+
+
+def format_bandwidth(gbps: float | None) -> str:
+    """Render a usable bandwidth in BYTES per second.
+
+    One spelling for the whole tool, because a figure written two ways in one
+    view reads as two measurements. Never in bits: the link shapes it stands
+    beside are already a rate, and ``6G`` next to ``0.60 GB/s`` is one link
+    written on two scales eight times apart.
+
+    Example:
+        >>> format_bandwidth(7.876)
+        '7.88 GB/s'
+        >>> format_bandwidth(0.6)
+        '0.60 GB/s'
+        >>> format_bandwidth(None)
+        '-'
+    """
+    return "-" if gbps is None else f"{gbps:.2f} GB/s"
+
+
+def with_bandwidth(figure: str, gbps: float | None) -> str:
+    """Put a link figure's OWN bandwidth beside it.
+
+    Which bandwidth belongs to which figure is the caller's to get right, and
+    it is the whole point: the panel used to end a line with the CAPABLE link's
+    throughput while the first value on it was the RUNNING link, and a reader
+    takes the number next to what they were looking at.
+
+    The figure comes back unchanged when it is a placeholder or the bandwidth is
+    unknown. A dash cannot carry a throughput, and a number after a figure
+    nobody read would be an invention - the blank-implies-fine the link rules
+    refuse.
+
+    Args:
+        figure: The link shape, already formatted.
+        gbps: What THAT shape carries, in GB/s, or ``None``.
+
+    Returns:
+        The figure, with its bandwidth in parentheses where there is one.
+
+    Example:
+        >>> with_bandwidth("Gen3x4", 3.938)
+        'Gen3x4 (3.94 GB/s)'
+        >>> with_bandwidth("6G", 0.6)
+        '6G (0.60 GB/s)'
+        >>> with_bandwidth(NOT_READ, 3.94)
+        '-'
+        >>> with_bandwidth(LEGACY, 3.94)
+        'legacy'
+        >>> with_bandwidth("6G", None)
+        '6G'
+    """
+    if gbps is None or figure in _NO_BANDWIDTH:
+        return figure
+    return f"{figure} ({format_bandwidth(gbps)})"
+
+
 def hop_legend(drawn: Iterable[str]) -> str:
     """Spell out the hop symbols a section actually drew.
 
@@ -625,11 +711,11 @@ def hop_legend(drawn: Iterable[str]) -> str:
         nothing to explain.
 
     Example:
-        >>> hop_legend(["3.0 x4", NOT_READ])
+        >>> hop_legend(["3.0x4", NOT_READ])
         '- = not read'
         >>> hop_legend([NOT_READ, LEGACY])
         '- = not read, legacy = no PCIe capability'
-        >>> hop_legend(["3.0 x4", "1.0 x1"])
+        >>> hop_legend(["3.0x4", "1.0x1"])
         ''
     """
     seen = set(drawn)
@@ -665,6 +751,7 @@ __all__ = [
     "Cell",
     "Palette",
     "disk_style",
+    "format_bandwidth",
     "format_size",
     "format_size_both",
     "format_speed",
@@ -676,4 +763,5 @@ __all__ = [
     "pci_tag",
     "port_style",
     "style_for",
+    "with_bandwidth",
 ]

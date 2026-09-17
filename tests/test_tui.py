@@ -1182,9 +1182,16 @@ class TestTheTopologyPageCanBeMovedThrough:
     async def test_below_the_sections_own_floor_a_row_does_outgrow_the_width(self) -> None:
         """The control, and the floor written down rather than discovered again.
 
-        Measured on every committed capture: a device or drive row fits from 48
-        columns up and overruns below. The test above would pass vacuously if
-        the rows fitted at every width imaginable, so this pins the other side.
+        Measured on every committed capture: a device or drive row fits from 47
+        columns up and overruns below (48 on windows-ahci, whose addresses are
+        longer). The test above would pass vacuously if the rows fitted at every
+        width imaginable, so this pins the other side.
+
+        It was 48 while a link figure carried a blank inside it. Closing the
+        figure bought a character; carrying what the figure is worth costs
+        nothing here, because that detail is surrendered before a row is allowed
+        to outgrow its width - so if this number ever RISES, the surrender has
+        stopped working rather than the rows having grown.
         """
         from lsdsk.adapters.render.tree import FabricView, fabric_lines
 
@@ -1199,7 +1206,7 @@ class TestTheTopologyPageCanBeMovedThrough:
                 if _is_device_row(line)
             )
         ]
-        assert min(fits) == 48, f"the section's floor moved to {min(fits)}"
+        assert min(fits) == 47, f"the section's floor moved to {min(fits)}"
 
     @pytest.mark.os_agnostic
     @pytest.mark.asyncio
@@ -1464,10 +1471,18 @@ async def test_a_controller_row_and_a_health_row_carry_every_value_the_printed_r
         drawn_controllers = [controllers.get_row_at(index) for index in range(controllers.row_count)]
         drawn_health = [health.get_row_at(index) for index in range(health.row_count)]
 
+    differed = 0
     for index, controller in enumerate(machine.controllers):
-        printed = tables.controller_table_row(controller, machine, findings)
+        # The page scrolls horizontally rather than dropping columns, so it never
+        # has to surrender a link figure's bandwidth and always asks for it. The
+        # printed row is built the same way here, or this would compare the two
+        # FORMS rather than the two views.
+        printed = tables.controller_table_row(controller, machine, findings, bandwidth=True)
         expected = [printed.marker[0], *(printed.cells[column.key][0] for column in tables.CONTROLLER_COLUMNS)]
         assert [cell.plain for cell in drawn_controllers[index]] == expected, controller.address
+        plain = tables.controller_table_row(controller, machine, findings)
+        differed += printed.cells["running"][0] != plain.cells["running"][0]
+    assert differed, "no controller here draws a link, so the two forms never differed and this compared nothing"
 
     for index, disk in enumerate(machine.disks):
         printed = tables.health_table_row(disk, machine, findings, app.history)

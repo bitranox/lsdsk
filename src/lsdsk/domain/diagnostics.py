@@ -35,6 +35,7 @@ from .models import (
     pci_class_name,
     pcie_bandwidth_gbps,
     pcie_generation,
+    serial_bandwidth_gbps,
 )
 from .thresholds import DEFAULT_THRESHOLDS
 
@@ -48,11 +49,6 @@ if TYPE_CHECKING:
 # builds from configuration. These names are kept as the documented defaults.
 WEAR_WARNING_PERCENT = DEFAULT_THRESHOLDS.wear_warning_percent
 WEAR_CRITICAL_PERCENT = DEFAULT_THRESHOLDS.wear_critical_percent
-
-# Serial links carry 8 bits of payload in every 10 transmitted below 12 Gb/s and
-# use the same ratio at 12 Gb/s for SAS-3, so usable bytes per second is the
-# signalling rate over ten.
-_SERIAL_ENCODING_DIVISOR = 10.0
 
 CRC_ERRORS_SIGNIFICANT = DEFAULT_THRESHOLDS.crc_errors_significant
 
@@ -75,9 +71,7 @@ def interface_demand_gbytes(disk: Disk) -> float | None:
     """
     if disk.pcie is not None:
         return disk.pcie.current_bandwidth_gbps
-    if disk.link.negotiated_gbps is None:
-        return None
-    return round(disk.link.negotiated_gbps / _SERIAL_ENCODING_DIVISOR, 3)
+    return serial_bandwidth_gbps(disk.link.negotiated_gbps)
 
 
 def _format_gbytes(value: float | None) -> str:
@@ -86,18 +80,23 @@ def _format_gbytes(value: float | None) -> str:
 
 
 def _format_pcie(speed_gtps: float | None, width: int | None) -> str:
-    """Render a PCIe link as a generation and width.
+    """Render a PCIe link as a generation and width, for a sentence.
+
+    Written closed, as the render layer writes it in a column. One spelling for
+    the whole tool: a finding that said ``PCIe 3.0 x8`` while the table above it
+    said ``3.0x8`` would be describing the same link in two hands, and a reader
+    comparing the two has to work out that they agree.
 
     Example:
         >>> _format_pcie(8.0, 8)
-        'PCIe 3.0 x8'
+        'PCIe 3.0x8'
         >>> _format_pcie(None, None)
         'PCIe unknown'
     """
     generation = pcie_generation(speed_gtps)
     if generation is None or width is None:
         return "PCIe unknown"
-    return f"PCIe {generation}.0 x{width}"
+    return f"PCIe {generation}.0x{width}"
 
 
 def _board_generation(controller: Controller, inventory: Inventory) -> int | None:

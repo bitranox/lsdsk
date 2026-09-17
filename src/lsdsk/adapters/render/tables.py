@@ -15,7 +15,7 @@ System Role:
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from rich.table import Table
 from rich.text import Text
@@ -25,7 +25,7 @@ from ...domain.enums import Align
 from ...domain.history import CounterKind, identity_of, trend_for
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_WWN_WIDTH
 from . import theme
-from .layout import Column, clip, fit, natural_widths
+from .layout import Column, Layout, clip
 from .report import disk_row, virtual_note, worst_severity
 from .rows import MarkedRow
 
@@ -107,15 +107,56 @@ HEALTH_COLUMNS: tuple[Column, ...] = (
 )
 
 
-def _render(title: str, columns: Sequence[Column], rows: Sequence[MarkedRow], width: int, caption: str = "") -> Table:
+class TableRows(NamedTuple):
+    """One table's rows, and optionally the same rows written more plainly.
+
+    The two travel together rather than as two parameters, because they are one
+    table drawn two ways and describe the same devices in the same order. Passed
+    separately they could be built from different lists, and the table would
+    then measure one and draw the other.
+
+    Attributes:
+        rich: The rows as the view would like to draw them, with each link
+            figure carrying what it is worth.
+        plain: The same rows without that detail, or ``None`` where the view has
+            no such detail to give up.
+    """
+
+    rich: Sequence[MarkedRow]
+    plain: Sequence[MarkedRow] | None = None
+
+    def texts(self, *, bandwidth: bool) -> list[dict[str, str]]:
+        """The text of every cell of one form, which is what a width is measured against."""
+        rows = self.rich if bandwidth or self.plain is None else self.plain
+        return [{key: value[0] for key, value in row.cells.items()} for row in rows]
+
+
+def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, caption: str = "") -> Table:
     """Build a table from styled rows, keeping only the columns that fit.
 
     A caption goes under the table rather than into a row: a row would claim to
     be a device and would carry a value in every column it does not have.
+
+    Where the rows carry a plain form as well, the table surrenders the link
+    figures' bandwidth at any width where carrying it would cost a column: that
+    detail is an embellishment on a figure, and a column is a fact somebody
+    asked for.
+
+    Args:
+        title: The table's heading.
+        columns: Every column this view could show.
+        rows: The rows, in one or both forms.
+        width: Terminal width.
+        caption: A note under the table.
     """
-    plain = [{key: value[0] for key, value in row.cells.items()} for row in rows]
-    widths = natural_widths(columns, plain)
-    chosen = fit(columns, widths, width)
+    if rows.plain is None:
+        layout = Layout.for_rows(columns, rows.texts(bandwidth=True), width)
+        drawn = rows.rich
+    else:
+        layout = Layout.preferring(columns, rows.texts(bandwidth=True), rows.texts(bandwidth=False), width)
+        drawn = rows.rich if layout.bandwidth else rows.plain
+    widths = layout.widths
+    chosen = layout.columns
 
     table = Table(
         title=title,
@@ -146,7 +187,7 @@ def _render(title: str, columns: Sequence[Column], rows: Sequence[MarkedRow], wi
             overflow="ellipsis",
             max_width=widths[column.key],
         )
-    for row in rows:
+    for row in drawn:
         marker_text, marker_style = row.marker
         cells = [
             Text(clip(text, widths[column.key]), style=style)
@@ -156,14 +197,16 @@ def _render(title: str, columns: Sequence[Column], rows: Sequence[MarkedRow], wi
     return table
 
 
-def _pcie_text(link: PcieLink) -> str:
-    """Render a running PCIe link as generation and width."""
-    return theme.format_pcie_decimal(link.current_speed_gtps, link.current_width)
+def _pcie_text(link: PcieLink, *, bandwidth: bool = False) -> str:
+    """Render a RUNNING PCIe link as generation and width."""
+    figure = theme.format_pcie_decimal(link.current_speed_gtps, link.current_width)
+    return theme.with_bandwidth(figure, link.current_bandwidth_gbps) if bandwidth else figure
 
 
-def _pcie_capability_text(link: PcieLink) -> str:
-    """Render what a PCIe link could do at best."""
-    return theme.format_pcie_decimal(link.max_speed_gtps, link.max_width)
+def _pcie_capability_text(link: PcieLink, *, bandwidth: bool = False) -> str:
+    """Render what a PCIe link could do AT BEST."""
+    figure = theme.format_pcie_decimal(link.max_speed_gtps, link.max_width)
+    return theme.with_bandwidth(figure, link.max_bandwidth_gbps) if bandwidth else figure
 
 
 def render_controllers(inventory: Inventory, findings: Sequence[Finding], width: int = DEFAULT_WIDTH) -> Table:
@@ -177,11 +220,14 @@ def render_controllers(inventory: Inventory, findings: Sequence[Finding], width:
     Returns:
         A table of controllers.
     """
-    rows = [controller_table_row(one, inventory, findings) for one in inventory.controllers]
-    return _render(f"Controllers on {inventory.hostname}", CONTROLLER_COLUMNS, rows, width)
+    rows = [controller_table_row(one, inventory, findings, bandwidth=True) for one in inventory.controllers]
+    plain = [controller_table_row(one, inventory, findings) for one in inventory.controllers]
+    return _render(f"Controllers on {inventory.hostname}", CONTROLLER_COLUMNS, TableRows(rows, plain), width)
 
 
-def controller_table_row(controller: Controller, inventory: Inventory, findings: Sequence[Finding]) -> MarkedRow:
+def controller_table_row(
+    controller: Controller, inventory: Inventory, findings: Sequence[Finding], *, bandwidth: bool = False
+) -> MarkedRow:
     """One controller's cells for every key in :data:`CONTROLLER_COLUMNS`, styled.
 
     Built once here rather than assembled separately by the printed table and
@@ -193,14 +239,15 @@ def controller_table_row(controller: Controller, inventory: Inventory, findings:
         controller: The controller to describe.
         inventory: The machine it sits in, for the drives on it.
         findings: The findings, for the row's severity marker.
+        bandwidth: Whether the two link figures carry what they are worth.
 
     Returns:
         The marker and a cell per column key.
     """
     demand = attached_demand_gbytes(controller, inventory)
     severity = worst_severity(findings, controller.address)
-    running = _pcie_text(controller.link)
-    capable = _pcie_capability_text(controller.link)
+    running = _pcie_text(controller.link, bandwidth=bandwidth)
+    capable = _pcie_capability_text(controller.link, bandwidth=bandwidth)
     return MarkedRow(
         marker=(theme.marker_for(severity), theme.style_for(severity)),
         cells={
@@ -246,7 +293,7 @@ def disk_columns(wwn_width: int | None = DEFAULT_WWN_WIDTH) -> tuple[Column, ...
     return tuple(replace(column, max_width=wwn_width) if column.key == "wwn" else column for column in DISK_COLUMNS)
 
 
-def disk_table_row(disk: Disk, port: PcieLink | None = None) -> Row:
+def disk_table_row(disk: Disk, port: PcieLink | None = None, *, bandwidth: bool = False) -> Row:
     """One disk's cells for every key in :data:`DISK_COLUMNS`, already styled.
 
     Built once here rather than assembled separately by the printed table and
@@ -257,12 +304,13 @@ def disk_table_row(disk: Disk, port: PcieLink | None = None) -> Row:
     Args:
         disk: The disk to describe.
         port: The PCIe port a directly-attached disk sits in, when it is known.
+        bandwidth: Whether the three link figures carry what they are worth.
 
     Returns:
         Column key to its (text, style) pair, covering every key
         :data:`DISK_COLUMNS` names.
     """
-    shared = disk_row(disk, port)
+    shared = disk_row(disk, port, bandwidth=bandwidth)
     return {
         "device": shared["device"],
         "model": shared["model"],
@@ -309,6 +357,7 @@ def render_disks(
         A table of disks.
     """
     rows: list[MarkedRow] = []
+    plain: list[MarkedRow] = []
     listed = (*inventory.disks, *inventory.virtual_disks) if expand_virtual else inventory.disks
     for disk in listed:
         severity = worst_severity(findings, disk.path)
@@ -316,14 +365,11 @@ def render_disks(
         # the tree. Three copies of it disagreed: this one called every NVMe
         # link healthy whatever it negotiated.
         port = inventory.port_link_for(disk)
-        rows.append(
-            MarkedRow(
-                marker=(theme.marker_for(severity), theme.style_for(severity)),
-                cells=disk_table_row(disk, port),
-            )
-        )
+        marker = (theme.marker_for(severity), theme.style_for(severity))
+        rows.append(MarkedRow(marker=marker, cells=disk_table_row(disk, port, bandwidth=True)))
+        plain.append(MarkedRow(marker=marker, cells=disk_table_row(disk, port)))
     caption = "" if expand_virtual else virtual_note(inventory.virtual_disks)
-    return _render(f"Disks on {inventory.hostname}", disk_columns(wwn_width), rows, width, caption)
+    return _render(f"Disks on {inventory.hostname}", disk_columns(wwn_width), TableRows(rows, plain), width, caption)
 
 
 def render_health(
@@ -346,7 +392,7 @@ def render_health(
         A table of health readings.
     """
     rows = [health_table_row(disk, inventory, findings, history) for disk in inventory.disks]
-    return _render(f"Disk health on {inventory.hostname}", HEALTH_COLUMNS, rows, width)
+    return _render(f"Disk health on {inventory.hostname}", HEALTH_COLUMNS, TableRows(rows), width)
 
 
 def health_table_row(

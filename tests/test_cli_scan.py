@@ -210,7 +210,7 @@ def test_when_the_controller_view_runs_it_shows_placement(
     result = cli_runner.invoke(cli_mod.cli, ["controllers", "--replay", str(LINUX_SNAPSHOT)], obj=production_factory)
 
     assert "HBA 9500-16i" in result.output
-    assert "3.0 x8" in result.output
+    assert "3.0x8" in result.output
     assert "0000:03:00.0" in result.output
 
 

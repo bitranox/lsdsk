@@ -86,19 +86,32 @@ _MARGIN_BEFORE_COLUMNS = 2
 # Row geometry, named so the budget arithmetic reads as the fields it prices.
 _MARKER_WIDTH = 3
 _ADDRESS_WIDTH = 12
-#: Width of each hop column, public because it is the claim
+#: Width of each hop column in its NARROW tier, public because it is the claim
 #: ``test_no_hop_figure_is_wider_than_the_column_it_is_drawn_in`` checks.
-# The widest figure the formatter can produce for a shipping generation is
-# "5.0 x16" (7). The two symbols beside it are shorter, so the column is sized
-# by the measurement rather than by the longest word about its absence, which
-# is 3 characters per column back to the device name.
+# Sized by the widest thing DRAWN in it, which is its own title: "capable" is
+# 7, while the widest figure a shipping generation produces is "5.0x16" (6) and
+# "legacy" is 6. Sizing it by the figure alone pushed every value one character
+# right of the header, which is the one law this module exists to keep - and the
+# guard below did not see it, because it measured the figures and never the
+# title. It reads 7 for the same reason it did when the figure was "5.0 x16";
+# the two agreeing was a coincidence, and it is not one now.
 HOP_WIDTH = 7
+#: Width of each hop column in its WIDE tier, where the figure carries what it
+#: is worth. Sized the same way, by the widest a shipping generation produces:
+#: "6.0x16 (121.01 GB/s)" is 20, which is wider than either title.
+HOP_WIDE_WIDTH = 20
 _GAP_WIDTH = 2
 #: Both hop columns with their gaps: they are drawn together or not at all.
 _HOPS_WIDTH = 2 * (HOP_WIDTH + _GAP_WIDTH)
+_HOPS_WIDE_WIDTH = 2 * (HOP_WIDE_WIDTH + _GAP_WIDTH)
 #: Characters a name is worth drawing in. Below this the hops go first, because
 #: a device with no name is not identifiable and a hop is a figure beside one.
 _MIN_NAME_WIDTH = 8
+#: What a name is worth before the hops may take their WIDE tier. The bare
+#: arithmetic would buy the bandwidth at 80 columns and leave the name ten
+#: characters, which identifies no device; the suffix is worth having only once
+#: the row still says what the device IS.
+_MIN_NAME_FOR_WIDE = 24
 #: The floor the disk columns are fitted in, whatever the spine costs.
 _MIN_COLUMNS_WIDTH = 20
 
@@ -143,7 +156,7 @@ def density_note(density: TreeDensity, how_to_change: str = OPTION_HINT) -> str:
     return f"showing {_DENSITY_DRAWN[density]}; {how_to_change} to change the detail level"
 
 
-def hop_cells(node: PciNode) -> tuple[theme.Cell, theme.Cell]:
+def hop_cells(node: PciNode, *, bandwidth: bool = False) -> tuple[theme.Cell, theme.Cell]:
     """(capable, running) for one device's own hop, as a figure or a symbol.
 
     Asked of the NODE rather than of its link, because the difference between
@@ -152,16 +165,29 @@ def hop_cells(node: PciNode) -> tuple[theme.Cell, theme.Cell]:
     in the link itself. Whichever symbol a section draws, it explains in
     :meth:`Fabric.hop_legend`.
 
+    Args:
+        node: The device whose hop to draw.
+        bandwidth: Whether each figure carries what it is worth. Decided by the
+            section from the width its columns were MEASURED at
+            (:attr:`Fabric.hop_bandwidth`), never per row: a cell wider than
+            its column is clipped, and half a link figure is a different figure
+            rather than a shorter one.
+
+    Returns:
+        The (capable, running) cells.
+
     Example:
         >>> from lsdsk.domain.models import PciNode, PcieLink
         >>> hop_cells(PciNode("a", "b", link=PcieLink(8.0, 4, 8.0, 4)))
-        (('3.0 x4', ''), ('3.0 x4', ''))
+        (('3.0x4', ''), ('3.0x4', ''))
+        >>> hop_cells(PciNode("a", "b", link=PcieLink(8.0, 4, 8.0, 4)), bandwidth=True)
+        (('3.0x4 (3.94 GB/s)', ''), ('3.0x4 (3.94 GB/s)', ''))
         >>> hop_cells(PciNode("a", "b", pcie_capability_present=False))[0][0]
         'legacy'
         >>> hop_cells(PciNode("a", "b"))[0][0]
         '-'
     """
-    return theme.hop_link_cells(node.link, capability_present=node.pcie_capability_present)
+    return theme.hop_link_cells(node.link, capability_present=node.pcie_capability_present, bandwidth=bandwidth)
 
 
 class Field(NamedTuple):
@@ -208,11 +234,12 @@ def device_fields(width: int, spine: int) -> tuple[Field, ...]:
 
     Decided once per SECTION rather than per row, because it depends only on
     the width and the spine - which is what lets the header label exactly the
-    columns the rows drew. The hop pair goes whole or not at all: a clipped
-    speed is a different figure rather than a shorter one. Below the address
-    there is nothing left to give up, so the address is cut and ends the row,
-    which beats wrapping onto a line that carries no address and reads as
-    another device.
+    columns the rows drew. The hop pair goes whole or not at all, in one of TWO
+    tiers: a clipped speed is a different figure rather than a shorter one, so a
+    width that cannot hold the figure AND what it is worth gives up the worth
+    rather than cutting either. Below the address there is nothing left to give
+    up, so the address is cut and ends the row, which beats wrapping onto a line
+    that carries no address and reads as another device.
 
     Args:
         width: Width the section is laid out in.
@@ -223,7 +250,9 @@ def device_fields(width: int, spine: int) -> tuple[Field, ...]:
 
     Example:
         >>> [(field.key, field.width) for field in device_fields(200, 9)]
-        [('address', 12), ('capable', 7), ('running', 7), ('name', 156)]
+        [('address', 12), ('capable', 20), ('running', 20), ('name', 130)]
+        >>> [(field.key, field.width) for field in device_fields(80, 9)]
+        [('address', 12), ('capable', 7), ('running', 7), ('name', 36)]
         >>> [field.key for field in device_fields(48, 9)]
         ['address', 'name']
         >>> device_fields(20, 5)
@@ -234,7 +263,10 @@ def device_fields(width: int, spine: int) -> tuple[Field, ...]:
         return (Field("address", max(room, 1)),)
     room -= _ADDRESS_WIDTH + _GAP_WIDTH
     hops: tuple[Field, ...] = ()
-    if room >= _HOPS_WIDTH + _MIN_NAME_WIDTH:
+    if room >= _HOPS_WIDE_WIDTH + _MIN_NAME_FOR_WIDE:
+        hops = (Field("capable", HOP_WIDE_WIDTH), Field("running", HOP_WIDE_WIDTH))
+        room -= _HOPS_WIDE_WIDTH
+    elif room >= _HOPS_WIDTH + _MIN_NAME_WIDTH:
         hops = (Field("capable", HOP_WIDTH), Field("running", HOP_WIDTH))
         room -= _HOPS_WIDTH
     return (Field("address", _ADDRESS_WIDTH), *hops, Field("name", room))
@@ -314,6 +346,18 @@ class Fabric:
         self.spine = min(_spine_width(deepest), max(width - _MARKER_WIDTH - _ADDRESS_WIDTH, 0))
         #: What every row of this section draws, so the header labels the same.
         self.fields = device_fields(self.width, self.spine)
+
+    @property
+    def hop_bandwidth(self) -> bool:
+        """Whether this section's hop figures carry what they are worth.
+
+        READ BACK off the fields the section was measured with, rather than
+        decided a second time from the width. The cell text and the column it is
+        padded into have to be one decision: computed twice they can disagree,
+        and the disagreement shows up as a clipped figure, which is the one
+        thing this column may never contain.
+        """
+        return any(field.key == "capable" and field.width == HOP_WIDE_WIDTH for field in self.fields)
 
     @staticmethod
     def _grouped(devices: Iterable[PciNode]) -> dict[str | None, list[PciNode]]:
@@ -460,7 +504,9 @@ class Fabric:
         so a machine whose every hop was read is not told what a dash means and
         a section that drew one always is.
         """
-        drawn = {text for node, _level in self.drawn() for text, _style in hop_cells(node)}
+        drawn = {
+            text for node, _level in self.drawn() for text, _style in hop_cells(node, bandwidth=self.hop_bandwidth)
+        }
         return theme.hop_legend(drawn)
 
     def row(self, node: PciNode, findings: Sequence[Finding]) -> Text:
@@ -502,7 +548,7 @@ class Fabric:
 
     def _cells(self, node: PciNode) -> dict[str, theme.Cell]:
         """What this device puts in each field, styled."""
-        capable, running = hop_cells(node)
+        capable, running = hop_cells(node, bandwidth=self.hop_bandwidth)
         tag = theme.pci_tag(node.port_kind)
         return {
             "address": (node.address, theme.STYLE_IDENTIFIER),
@@ -526,9 +572,10 @@ class Fabric:
         the old tree draws.
         """
         listed = (*inventory.disks, *inventory.virtual_disks) if self.expand_virtual else inventory.disks
-        rows = [disk_cells(disk, inventory.port_link_for(disk)) for disk in listed]
+        rows = [disk_cells(disk, inventory.port_link_for(disk), bandwidth=True) for disk in listed]
+        plain = [disk_cells(disk, inventory.port_link_for(disk)) for disk in listed]
         available = max(self.width - _MARKER_WIDTH - self.spine, _MIN_COLUMNS_WIDTH)
-        return Layout.for_rows(DISK_COLUMNS, rows, available)
+        return Layout.preferring(DISK_COLUMNS, rows, plain, available)
 
     def disk_row(
         self,
@@ -553,7 +600,7 @@ class Fabric:
         severity = worst_severity(findings, disk.path)
         line.append(theme.marker_for(severity).ljust(_MARKER_WIDTH), style=theme.style_for(severity))
         line.append(rules)
-        cells = disk_row(disk, inventory.port_link_for(disk))
+        cells = disk_row(disk, inventory.port_link_for(disk), bandwidth=layout.bandwidth)
         for column in layout.columns:
             width = layout.widths[column.key]
             text, style = cells.get(column.key, ("", ""))
@@ -910,6 +957,7 @@ class FabricSection:
 __all__ = [
     "DEFAULT_VIEW",
     "DEVICE_COLUMNS",
+    "HOP_WIDE_WIDTH",
     "HOP_WIDTH",
     "KEY_HINT",
     "OPTION_HINT",

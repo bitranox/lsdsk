@@ -319,9 +319,18 @@ def test_an_nvme_row_is_graded_like_any_other_disk() -> None:
     cells = report.disk_cells(drive, port)
     styles = report.disk_cell_styles(drive, port)
 
-    assert cells["port"] == "Gen3 x4", "the port column must show the seat, not the drive"
-    assert cells["disk"] == "Gen4 x4"
-    assert cells["link"] == "Gen3 x4"
+    assert cells["port"] == "Gen3x4", "the port column must show the seat, not the drive"
+    assert cells["disk"] == "Gen4x4"
+    assert cells["link"] == "Gen3x4"
+
+    # The same three figures where the width affords each its own throughput.
+    # The drive is the only one of the three that is not the seat, and it is the
+    # only one worth more: a reader who cannot price a generation off the top of
+    # their head sees the shortfall here as a number.
+    carrying = report.disk_cells(drive, port, bandwidth=True)
+    assert carrying["port"] == "Gen3x4 (3.94 GB/s)"
+    assert carrying["disk"] == "Gen4x4 (7.88 GB/s)"
+    assert carrying["link"] == "Gen3x4 (3.94 GB/s)"
     assert styles["port"] == theme.STYLE_BELOW_CAPABILITY, "the seat is the constraint, so it carries the colour"
     assert styles["link"] == theme.STYLE_AT_CAPABILITY, "the link reached what the pairing allows, so it is not a fault"
 
@@ -340,7 +349,14 @@ def test_every_view_grades_a_disk_the_same_way() -> None:
     inventory = load(Path(__file__).parent / "fixtures" / "hw" / "linux-nvme-board.json")
     findings = diagnose(inventory)
     drive = next(disk for disk in inventory.disks if disk.node == "nvme4n1")
-    expected = report.disk_cells(drive, inventory.port_link_for(drive))
+    # At 200 columns the table can afford each figure's throughput, so THAT is
+    # the form to compare against. Asserted rather than assumed: were the table
+    # to surrender the detail here, the plain form would still be a substring of
+    # nothing on the row and this test would fail loudly instead of comparing
+    # two identical strings and proving nothing.
+    plain = report.disk_cells(drive, inventory.port_link_for(drive))
+    expected = report.disk_cells(drive, inventory.port_link_for(drive), bandwidth=True)
+    assert expected["port"] != plain["port"], "the two forms must differ, or this compares nothing"
 
     table = tables.render_disks(inventory, findings, width=200)
     rendered_columns = [str(column.header) for column in table.columns]

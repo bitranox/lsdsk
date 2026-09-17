@@ -137,7 +137,7 @@ def order_groups(groups: Sequence[DetailGroup], first: Sequence[str]) -> tuple[D
 
 def disk_detail(disk: Disk, inventory: Inventory, history: History | None = None) -> Detail:
     """The whole record of one drive."""
-    row = tables.disk_table_row(disk, inventory.port_link_for(disk))
+    row = tables.disk_table_row(disk, inventory.port_link_for(disk), bandwidth=True)
     series = tables.series_for(disk, history)
     heading = (
         (disk.path, theme.STYLE_IDENTIFIER),
@@ -363,7 +363,17 @@ def _yes_no(*, value: bool | None) -> Cell:
 
 
 def _disk_link_values(disk: Disk, row: dict[str, Cell]) -> tuple[tuple[str, Cell], ...]:
-    """The three figures the disk table draws, plus what they add up to."""
+    """The three figures the disk table draws, plus what the PAIRING could manage.
+
+    The three come from the table's own row builder, so a figure cannot be
+    worded or coloured one way in a row and another here. They arrive carrying
+    their bandwidth because :func:`disk_detail` asks for it: the table gives
+    that detail up on a narrow terminal and the panel never has to.
+
+    ``achievable`` is a different claim from any one of them - the best the two
+    ends could manage together - and it is left on the bits scale the SATA ends
+    beside it use.
+    """
     achievable = (theme.format_speed(disk.link.achievable_gbps), "")
     return (("port", row["port"]), ("drive", row["disk"]), ("negotiated", row["link"]), ("achievable", achievable))
 
@@ -458,14 +468,24 @@ def _of(health: Health | None, field: str) -> int | None:
 
 
 def _pcie_values(link: PcieLink) -> tuple[tuple[str, Cell], ...]:
-    """A PCIe link's two figures and what they carry, styled as the tables style them."""
+    """A PCIe link's two figures, each carrying what IT is worth.
+
+    The panel has no width contest - it wraps rather than dropping columns - so
+    both figures always carry their bandwidth here.
+
+    There is no third ``carries`` value any more. It held the CAPABLE link's
+    throughput and sat at the end of a line whose first value was the RUNNING
+    link, so a reader comparing a downgraded card against its own capability
+    took the number nearest what they were looking at and read the wrong one.
+    Each figure now carries its own, which is the same fact in the seat that
+    says whose it is.
+    """
     running = theme.format_pcie_decimal(link.current_speed_gtps, link.current_width)
     capable = theme.format_pcie_decimal(link.max_speed_gtps, link.max_width)
     style = "" if running == capable else theme.STYLE_BELOW_CAPABILITY
     return (
-        ("running", (running, style)),
-        ("capable", (capable, "")),
-        ("carries", _gbytes(link.max_bandwidth_gbps)),
+        ("running", (theme.with_bandwidth(running, link.current_bandwidth_gbps), style)),
+        ("capable", (theme.with_bandwidth(capable, link.max_bandwidth_gbps), "")),
     )
 
 
@@ -556,7 +576,10 @@ def _occupant_values(slot: PcieSlot) -> tuple[tuple[str, Cell], ...]:
     needs = (
         "-"
         if slot.occupant_link is None
-        else theme.format_pcie_decimal(slot.occupant_link.max_speed_gtps, slot.occupant_link.max_width)
+        else theme.with_bandwidth(
+            theme.format_pcie_decimal(slot.occupant_link.max_speed_gtps, slot.occupant_link.max_width),
+            slot.occupant_link.max_bandwidth_gbps,
+        )
     )
     return (
         ("address", _said(slot.occupant_address)),
@@ -572,9 +595,11 @@ def _gbytes(value: float | None) -> Cell:
 
     Never through :func:`theme.format_speed`, which renders the drive rows one
     line above in bits and suffixes both with a bare ``G``: 6G and 15.75G would
-    read as one scale when they are eight times apart.
+    read as one scale when they are eight times apart. The wording itself comes
+    from :func:`theme.format_bandwidth`, so a figure standing alone here and one
+    in parentheses beside a link are written the same way.
     """
-    return ("-", theme.STYLE_UNKNOWN) if value is None else (f"{value:.2f} GB/s", "")
+    return ("-", theme.STYLE_UNKNOWN) if value is None else (theme.format_bandwidth(value), "")
 
 
 def _hex(value: int | None, digits: int) -> Cell:

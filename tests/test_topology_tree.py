@@ -73,7 +73,7 @@ def test_a_controller_whose_link_was_read_is_unchanged() -> None:
     """Verify the control: a measured link still reads as it did, with no caveat."""
     line = _line_for("0000:03:00.0")
 
-    assert "PCIe 3.0 x8" in line
+    assert "PCIe 3.0x8" in line
     assert "not read" not in line, f"a measured link must carry no caveat: {line!r}"
 
 

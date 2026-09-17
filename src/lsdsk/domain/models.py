@@ -45,6 +45,11 @@ _PCIE_GENERATION: dict[float, int] = {2.5: 1, 5.0: 2, 8.0: 3, 16.0: 4, 32.0: 5, 
 _PCIE_FLOOR_SPEED_GTPS = 2.5
 _PCIE_FLOOR_WIDTH = 1
 
+# Serial links carry 8 bits of payload in every 10 transmitted below 12 Gb/s and
+# use the same ratio at 12 Gb/s for SAS-3, so usable bytes per second is the
+# signalling rate over ten. Fixed by the specification, never a setting.
+_SERIAL_ENCODING_DIVISOR = 10.0
+
 # PCI base class codes, enough to say what is sitting in a slot.
 _PCI_CLASS_STORAGE = 0x01
 _PCI_CLASS_DISPLAY = 0x03
@@ -116,6 +121,32 @@ def pcie_generation(speed_gtps: float | None) -> int | None:
     if speed_gtps is None:
         return None
     return _PCIE_GENERATION.get(speed_gtps)
+
+
+def serial_bandwidth_gbps(gbps: float | None) -> float | None:
+    """Return usable one-direction bandwidth for a SATA or SAS link.
+
+    Lives here beside :func:`pcie_bandwidth_gbps` because it is the same kind of
+    fact - what a signalling rate is worth in bytes once the line code is paid
+    for - and the domain is where this tool keeps those. The render layer asks
+    rather than dividing by ten itself, which is how one number comes to exist
+    in two places and drift.
+
+    Args:
+        gbps: The link's signalling rate in Gb/s.
+
+    Returns:
+        Bandwidth in GB/s, or ``None`` when the rate is unknown.
+
+    Example:
+        >>> serial_bandwidth_gbps(6.0)
+        0.6
+        >>> serial_bandwidth_gbps(1.5)
+        0.15
+        >>> serial_bandwidth_gbps(None) is None
+        True
+    """
+    return None if gbps is None else round(gbps / _SERIAL_ENCODING_DIVISOR, 3)
 
 
 def pcie_bandwidth_gbps(speed_gtps: float | None, width: int | None) -> float | None:
@@ -1240,4 +1271,5 @@ __all__ = [
     "SmartAttribute",
     "pcie_bandwidth_gbps",
     "pcie_generation",
+    "serial_bandwidth_gbps",
 ]

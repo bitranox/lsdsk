@@ -24,7 +24,7 @@ from rich.text import Text
 from ... import __init__conf__
 from ...domain.diagnostics import count_by_severity
 from ...domain.enums import Align, BusType, Environment, Severity
-from ...domain.models import pcie_bandwidth_gbps, pcie_generation
+from ...domain.models import pcie_bandwidth_gbps, pcie_generation, serial_bandwidth_gbps
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_SUMMARY_LIMIT
 from . import theme
 from .layout import GAP, GUTTER, TREE_BRANCH, TREE_LAST, Column, Layout, fit, natural_widths, pad
@@ -298,17 +298,25 @@ def render_verdict(findings: Sequence[Finding], summary_limit: int = SUMMARY_LIM
     return table
 
 
-def _pcie_text(link: PcieLink) -> str:
-    """Render a running PCIe link as a generation and width."""
-    return theme.format_pcie_generation(link.current_speed_gtps, link.current_width)
+def _pcie_text(link: PcieLink, *, bandwidth: bool = False) -> str:
+    """Render a RUNNING PCIe link as a generation and width."""
+    figure = theme.format_pcie_generation(link.current_speed_gtps, link.current_width)
+    return theme.with_bandwidth(figure, link.current_bandwidth_gbps) if bandwidth else figure
 
 
-def _pcie_capability(link: PcieLink) -> str:
-    """Render what a PCIe link could carry at best."""
-    return theme.format_pcie_generation(link.max_speed_gtps, link.max_width)
+def _pcie_capability(link: PcieLink, *, bandwidth: bool = False) -> str:
+    """Render what a PCIe link could carry AT BEST."""
+    figure = theme.format_pcie_generation(link.max_speed_gtps, link.max_width)
+    return theme.with_bandwidth(figure, link.max_bandwidth_gbps) if bandwidth else figure
 
 
-def disk_cells(disk: Disk, port: PcieLink | None = None) -> dict[str, str]:
+def _serial_text(gbps: float | None, *, bandwidth: bool = False) -> str:
+    """Render one end of a SATA or SAS link, and what that rate is worth."""
+    figure = theme.format_speed(gbps)
+    return theme.with_bandwidth(figure, serial_bandwidth_gbps(gbps)) if bandwidth else figure
+
+
+def disk_cells(disk: Disk, port: PcieLink | None = None, *, bandwidth: bool = False) -> dict[str, str]:
     """Build the plain-text cells for one disk, before styling.
 
     Args:
@@ -317,6 +325,10 @@ def disk_cells(disk: Disk, port: PcieLink | None = None) -> dict[str, str]:
             Without it the port column would repeat the drive's own capability,
             which hides the case this tool exists to find: a Gen4 drive in a Gen3
             seat, where the seat is the constraint.
+        bandwidth: Whether each of the three link figures carries what it is
+            worth. Decided by the section from the width its columns were
+            measured at, never here: these cells are measured before they are
+            drawn, and text that did not go into the measurement would be cut.
 
     Returns:
         A cell value per column key.
@@ -327,13 +339,13 @@ def disk_cells(disk: Disk, port: PcieLink | None = None) -> dict[str, str]:
     # instead of being asserted, and a drive at its own maximum in a faster port
     # reads as the placement question it is rather than as a fault.
     if disk.pcie is not None:
-        port_text = _pcie_capability(port) if port is not None else "-"
-        drive_text = _pcie_capability(disk.pcie)
-        link_text = _pcie_text(disk.pcie)
+        port_text = _pcie_capability(port, bandwidth=bandwidth) if port is not None else "-"
+        drive_text = _pcie_capability(disk.pcie, bandwidth=bandwidth)
+        link_text = _pcie_text(disk.pcie, bandwidth=bandwidth)
     else:
-        port_text = theme.format_speed(disk.link.port_max_gbps)
-        drive_text = theme.format_speed(disk.link.drive_max_gbps)
-        link_text = theme.format_speed(disk.link.negotiated_gbps)
+        port_text = _serial_text(disk.link.port_max_gbps, bandwidth=bandwidth)
+        drive_text = _serial_text(disk.link.drive_max_gbps, bandwidth=bandwidth)
+        link_text = _serial_text(disk.link.negotiated_gbps, bandwidth=bandwidth)
 
     health = disk.health
     temp_text, _ = theme.format_temperature(
@@ -406,7 +418,7 @@ def disk_cell_styles(disk: Disk, port: PcieLink | None = None) -> dict[str, str]
 _MARKER_RESERVE = max(len(marker) for marker in theme.SEVERITY_MARKERS.values())
 
 
-def disk_row(disk: Disk, port: PcieLink | None = None) -> dict[str, theme.Cell]:
+def disk_row(disk: Disk, port: PcieLink | None = None, *, bandwidth: bool = False) -> dict[str, theme.Cell]:
     """One disk's cells already paired with their styles.
 
     The text and the styling are computed separately, because the width
@@ -417,11 +429,12 @@ def disk_row(disk: Disk, port: PcieLink | None = None) -> dict[str, theme.Cell]:
     Args:
         disk: The disk to describe.
         port: The PCIe port a directly-attached disk sits in, when it is known.
+        bandwidth: Whether each link figure carries what it is worth.
 
     Returns:
         Column key to its (text, style) pair.
     """
-    cells = disk_cells(disk, port)
+    cells = disk_cells(disk, port, bandwidth=bandwidth)
     styles = disk_cell_styles(disk, port)
     return {key: (text, styles.get(key, "")) for key, text in cells.items()}
 
@@ -487,7 +500,7 @@ def _disk_line(
     port: PcieLink | None = None,
 ) -> Text:
     """Render one padded disk row."""
-    row = disk_row(disk, port)
+    row = disk_row(disk, port, bandwidth=layout.bandwidth)
     line = Text()
     line.append(glyph.ljust(len(GUTTER)))
     # The marker LEADS the row, as it already does in every table. Appended at
@@ -601,7 +614,8 @@ def render_controller_disks(
         return Text("No storage controllers or disks found.", style=theme.STYLE_UNKNOWN)
 
     drawn = (*inventory.disks, *inventory.virtual_disks) if expand_virtual else inventory.disks
-    rows = [disk_cells(disk, inventory.port_link_for(disk)) for disk in drawn]
+    rows = [disk_cells(disk, inventory.port_link_for(disk), bandwidth=True) for disk in drawn]
+    plain = [disk_cells(disk, inventory.port_link_for(disk)) for disk in drawn]
     # The severity marker is appended after the fitted columns, so the columns
     # have to be fitted to a width that leaves room for it. Without the
     # reservation a flagged row lands exactly on the terminal width and the
@@ -609,7 +623,7 @@ def render_controller_disks(
     # row is a problem. Measured at COLUMNS=40 on three real fixtures: every
     # flagged row, and at 42 of 181 widths tested, wherever the fit happened to
     # land on the boundary.
-    layout = Layout.for_rows(DISK_COLUMNS, rows, width - _MARKER_RESERVE - 1)
+    layout = Layout.preferring(DISK_COLUMNS, rows, plain, width - _MARKER_RESERVE - 1)
 
     lines: list[RenderableType] = []
     attached: set[str] = set()
@@ -751,18 +765,30 @@ def _empty_verdict(slot: PcieSlot) -> theme.Cell:
     return "empty, connector unknown", theme.STYLE_UNKNOWN
 
 
-def _slot_row(slot: PcieSlot) -> Row:
-    """Build one styled row for the slot view."""
+def _row_texts(rows: Sequence[Row]) -> list[dict[str, str]]:
+    """The text of every cell, which is what a width is measured against."""
+    return [{key: value[0] for key, value in row.items()} for row in rows]
+
+
+def slot_table_row(slot: PcieSlot, *, bandwidth: bool = False) -> Row:
+    """One port's cells for every key in :data:`SLOT_COLUMNS`, already styled.
+
+    Public and named like :func:`tables.disk_table_row` because the interactive
+    slots page builds its row from THIS rather than spelling the cells out a
+    second time. It used to spell them out, and the two views had drifted: the
+    printed table showed the marketing generation where the page showed the
+    decimal one for the same port, and nothing compared them.
+    """
     number = "-" if slot.physical_slot_number is None else f"#{slot.physical_slot_number}"
     occupant = slot.occupant_description
-    needs = "-" if slot.occupant_link is None else _pcie_capability(slot.occupant_link)
+    needs = "-" if slot.occupant_link is None else _pcie_capability(slot.occupant_link, bandwidth=bandwidth)
     return {
         "port": (slot.address, theme.STYLE_IDENTIFIER),
         "slot": (number, "" if number != "-" else theme.STYLE_UNKNOWN),
-        "capable": (_pcie_capability(slot.link), ""),
+        "capable": (_pcie_capability(slot.link, bandwidth=bandwidth), ""),
         # An empty port trains to nothing, and printing that as "Gen1 x0" reads
         # like a fault rather than an absence.
-        "running": (_pcie_text(slot.link) if slot.occupied else "-", ""),
+        "running": (_pcie_text(slot.link, bandwidth=bandwidth) if slot.occupied else "-", ""),
         "occupant": (occupant, "" if slot.occupied else theme.STYLE_UNKNOWN),
         "needs": (needs, ""),
         "verdict": slot_verdict(slot),
@@ -782,10 +808,12 @@ def render_slots(inventory: Inventory, width: int = DEFAULT_WIDTH) -> Renderable
     Returns:
         The board header, the port table and any caveat below it.
     """
-    rows = [_slot_row(slot) for slot in inventory.slots]
-    plain = [{key: value[0] for key, value in row.items()} for row in rows]
-    widths = natural_widths(SLOT_COLUMNS, plain)
-    chosen = fit(SLOT_COLUMNS, widths, width)
+    rows = [slot_table_row(slot, bandwidth=True) for slot in inventory.slots]
+    bare = [slot_table_row(slot) for slot in inventory.slots]
+    layout = Layout.preferring(SLOT_COLUMNS, _row_texts(rows), _row_texts(bare), width)
+    rows = rows if layout.bandwidth else bare
+    widths = layout.widths
+    chosen = layout.columns
 
     lines: list[RenderableType] = [_board_line(inventory)]
     lines.append(_header_line(chosen, widths))
@@ -955,6 +983,7 @@ __all__ = [
     "DEFAULT_WIDTH",
     "DISK_COLUMNS",
     "HEALTH_NEEDING_SMART",
+    "SLOT_COLUMNS",
     "SUMMARY_LIMIT",
     "VIRTUAL_HEADING",
     "disk_cells",
@@ -965,6 +994,8 @@ __all__ = [
     "render_header",
     "render_tree",
     "render_verdict",
+    "slot_table_row",
+    "slot_verdict",
     "virtual_note",
     "worst_severity",
 ]

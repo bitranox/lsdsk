@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from rich.console import Console
 
-from lsdsk.adapters.render import detail, tables, theme
+from lsdsk.adapters.render import detail, report, tables, theme
 from lsdsk.domain.diagnostics import diagnose
 
 if TYPE_CHECKING:
@@ -139,7 +139,9 @@ def test_the_panel_reads_its_shared_values_off_the_table_row_rather_than_derivin
     for host in CAPTURES:
         machine = _machine(host)
         for disk in machine.disks:
-            row = tables.disk_table_row(disk, machine.port_link_for(disk))
+            # The panel always has room, so it asks for the figures carrying
+            # what they are worth; the comparison is against the same form.
+            row = tables.disk_table_row(disk, machine.port_link_for(disk), bandwidth=True)
             record = detail.disk_detail(disk, machine)
             values = {name: cell for group in record.groups for name, cell in group.values}
             assert values["serial"] == row["serial"], f"{host} {disk.path}"
@@ -220,9 +222,16 @@ def test_an_empty_socket_shows_no_link_running_in_it_just_as_the_table_does() ->
             running = values["running"][0]
             if slot.occupied:
                 filled_seen += 1
-                assert running == theme.format_pcie_decimal(slot.link.current_speed_gtps, slot.link.current_width), (
-                    f"{host} {slot.address}"
-                )
+                # Both VIEWS, not the panel against a formatter neither draws
+                # through. They do not agree on how to spell a generation - the
+                # table writes the marketing form and the panel the decimal one,
+                # which predates this test and is recorded as an open question -
+                # so what is compared is the figure they cannot disagree about:
+                # each must carry the throughput of the link it was handed.
+                carried = theme.format_bandwidth(slot.link.current_bandwidth_gbps)
+                table_running = report.slot_table_row(slot, bandwidth=True)["running"][0]
+                assert carried in running, f"{host} {slot.address}: the panel drew {running!r}"
+                assert carried in table_running, f"{host} {slot.address}: the table drew {table_running!r}"
             else:
                 empty_seen += 1
                 assert running == "-", f"{host} {slot.address}: an empty socket reads as running {running}"

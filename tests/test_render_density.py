@@ -574,7 +574,7 @@ def test_the_tree_starts_at_the_board_that_carries_the_fabric() -> None:
     assert "1 root complex" in board, board
     assert "0000:00" in board, board
     # This board's own root ports publish PCIe 5.0 x8, so the line may say so.
-    assert "5.0 x8" in board, board
+    assert "5.0x8" in board, board
     assert f"{len([node for node in machine.pci_tree if not node.is_root])} PCI devices" in board, board
     assert lines.index(board) < min(index for index, line in enumerate(lines) if DeviceLine.search(line)), (
         "the board line sits below the devices it carries"
@@ -616,33 +616,82 @@ def test_the_top_line_says_only_what_the_capture_carries() -> None:
 
 
 @pytest.mark.os_agnostic
-def test_no_hop_figure_is_wider_than_the_column_it_is_drawn_in() -> None:
-    """The hop column is sized by the widest figure, so that has to be true.
+@pytest.mark.parametrize("bandwidth", [False, True])
+def test_no_hop_figure_is_wider_than_the_column_it_is_drawn_in(*, bandwidth: bool) -> None:
+    """Each hop tier must hold every figure it can be asked to draw.
 
-    It was 10 because `legacy PCI` was; it is 7 because `5.0 x16` is, which is
-    the widest a shipping generation produces. A figure wider than its column
-    would be CLIPPED, and a clipped speed is not a shorter figure but a
-    different one - the reason the row drops the pair whole rather than cutting
-    it. The synthetic link is the generation nobody ships yet, so the day one
-    does, this fails here rather than in somebody's terminal.
+    A figure wider than its column would be CLIPPED, and a clipped speed is not
+    a shorter figure but a different one - the reason the row drops the pair
+    whole, and drops the bandwidth before that, rather than cutting either. The
+    synthetic link is the generation nobody ships yet, so the day one does, this
+    fails here rather than in somebody's terminal.
+
+    Both tiers are checked, because there are two widths now and a change to
+    either is a change to what a row can hold.
     """
     from lsdsk.adapters.hw.snapshot import build_from
     from lsdsk.adapters.render import theme
-    from lsdsk.adapters.render.tree import HOP_WIDTH, hop_cells
+    from lsdsk.adapters.render.tree import HOP_WIDE_WIDTH, HOP_WIDTH, hop_cells
     from lsdsk.domain.models import PcieLink, PciNode
 
+    column = HOP_WIDE_WIDTH if bandwidth else HOP_WIDTH
     widest = 0
     for host in DENSITY_COUNTS:
         machine = build_from(_load(host))
         for node in machine.pci_tree:
-            for text, _style in hop_cells(node):
-                assert len(text) <= HOP_WIDTH, f"{host} {node.address}: {text!r} does not fit {HOP_WIDTH}"
+            for text, _style in hop_cells(node, bandwidth=bandwidth):
+                assert len(text) <= column, f"{host} {node.address}: {text!r} does not fit {column}"
                 widest = max(widest, len(text))
-    assert widest == HOP_WIDTH, f"the column is {HOP_WIDTH} wide and nothing needs more than {widest}"
+    assert widest <= column, f"the column is {column} wide and something needs {widest}"
 
     future = PciNode("a", "b", link=PcieLink(64.0, 16, 64.0, 16), pcie_capability_present=True)
-    assert len(hop_cells(future)[0][0]) <= HOP_WIDTH, "a shipping generation must fit"
-    assert len(theme.NOT_READ) <= HOP_WIDTH and len(theme.LEGACY) <= HOP_WIDTH
+    drawn = hop_cells(future, bandwidth=bandwidth)[0][0]
+    assert len(drawn) <= column, f"a shipping generation must fit: {drawn!r} needs {len(drawn)} of {column}"
+    assert len(theme.NOT_READ) <= column and len(theme.LEGACY) <= column
+
+    # And nothing is WASTED: the column is exactly as wide as the widest thing
+    # drawn in it, which is the widest figure OR its own heading, whichever is
+    # longer. Stated as the max rather than as a number, because which of the two
+    # wins differs between the tiers - the heading decides the narrow one and the
+    # figure the wide one - and a bare literal here would hide that, exactly as
+    # it hid a heading overflowing its column by one.
+    heading = len("capable")
+    assert column == max(len(drawn), heading), (
+        f"the {'wide' if bandwidth else 'narrow'} column is {column} wide, but the widest thing in it "
+        f"is {max(len(drawn), heading)} ({drawn!r} against the heading)"
+    )
+
+
+@pytest.mark.os_agnostic
+def test_no_device_column_is_narrower_than_its_own_heading() -> None:
+    """A column has to hold its title, which is drawn in it like any value.
+
+    Sizing the hop column by the widest FIGURE alone made it 6 while its heading
+    `capable` is 7, and `_append_fields` pads but never truncates - so every
+    value after it sat one character right of the header naming it, which is the
+    one law this module exists to keep. The guard above could not see it: it
+    measured the figures and never the title.
+
+    Asked of every field at every width, so it holds for whatever a later tier
+    or column is called, not only for the pair that produced it.
+    """
+    from lsdsk.adapters.render.tree import DEVICE_COLUMNS, device_fields
+
+    titles = {column.key: column.title for column in DEVICE_COLUMNS}
+    checked = 0
+    for width in range(20, 201):
+        for spine in (2, 5, 9, 15):
+            fields = device_fields(width, spine)
+            # The LAST field is clipped rather than padded, so it is allowed to
+            # be narrower than its own name; every one before it is not.
+            for field in fields[:-1]:
+                title = titles.get(field.key, field.key)
+                checked += 1
+                assert len(title) <= field.width, (
+                    f"at width {width}, spine {spine}: {title!r} does not fit the "
+                    f"{field.width}-wide {field.key} column it heads"
+                )
+    assert checked, "the sweep examined no padded column, so it asserted nothing"
 
 
 @pytest.mark.os_agnostic
@@ -690,8 +739,8 @@ def test_the_header_names_exactly_the_columns_the_rows_draw() -> None:
     at exactly the widths where the column is gone - and a header is read as a
     promise about what sits beneath it.
 
-    Driven on a hand-built device whose link was READ, so the hop text is
-    `3.0 x4` and cannot be confused with anything else on the row. A capture
+    Driven on a hand-built device whose link was READ, so the hop text starts
+    `3.0x4` and cannot be confused with anything else on the row. A capture
     whose hops are all the dash symbol cannot answer this question at all: `-`
     also occurs in the tree glyph `|-`, so "the row drew a hop" would be true
     at every width, which is how this test first passed while proving nothing.
@@ -723,7 +772,9 @@ def test_the_header_names_exactly_the_columns_the_rows_draw() -> None:
         fabric = Fabric(tree, width, TreeDensity.FULL)
         header = device_header_line(fabric)
         node, _level = fabric.drawn()[0]
-        drew_hops = "3.0 x4" in fabric.row(node, ()).plain
+        # Matches BOTH hop tiers: the narrow figure is a prefix of the wide
+        # one, so this asks "did the row draw a hop" without caring which.
+        drew_hops = "3.0x4" in fabric.row(node, ()).plain
         seen[drew_hops] += 1
 
         assert ("capable" in header.plain) == drew_hops, f"at {width}: {header.plain!r}"

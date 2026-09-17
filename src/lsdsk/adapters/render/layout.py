@@ -91,10 +91,17 @@ class Layout:
         columns: The columns that survived fitting, in display order.
         widths: Width per column key. Keyed by whatever columns exist, so a
             mapping rather than a field per column.
+        bandwidth: Whether the widths were measured for rows whose link figures
+            carry what they are worth. Carried HERE, with the widths it was
+            measured against, because the row builder has to produce the same
+            form: asked twice - once to measure and once to draw - the two
+            answers can differ, and the difference is a clipped link figure,
+            which is a different figure rather than a shorter one.
     """
 
     columns: tuple[Column, ...]
     widths: dict[str, int]
+    bandwidth: bool = False
 
     @classmethod
     def for_rows(cls, columns: Sequence[Column], rows: Iterable[dict[str, str]], available: int) -> Layout:
@@ -110,6 +117,60 @@ class Layout:
         """
         widths = natural_widths(columns, rows)
         return cls(tuple(fit(columns, widths, available)), widths)
+
+    @classmethod
+    def preferring(
+        cls,
+        columns: Sequence[Column],
+        rich: Sequence[dict[str, str]],
+        plain: Sequence[dict[str, str]],
+        available: int,
+    ) -> Layout:
+        """Take the fuller rows where the width affords them, the plain ones where it does not.
+
+        A link figure may carry what it is worth, and that detail is the FIRST
+        thing a narrow terminal gives up - before a column is dropped and before
+        a value is cut. It is an embellishment on a figure; a column is a fact
+        the tool was asked for.
+
+        Two conditions, and the second is the one that is easy to miss: the
+        fuller rows are taken only if they cost no column AND if they actually
+        fit. :func:`fit` cannot drop a column of priority 0, so when the
+        undroppable columns alone overrun the width it stops and hands back a
+        set that does NOT fit - which looks like "nothing was lost" while the
+        row runs off the side. ``link`` is priority 0 in every disk table here,
+        so that is not a hypothetical.
+
+        Args:
+            columns: Every column the view could show.
+            rich: The rows with the detail.
+            plain: The same rows without it.
+            available: Terminal width.
+
+        Returns:
+            The layout, carrying on :attr:`bandwidth` which form it chose.
+
+        Example:
+            >>> cols = [Column("a", "a", priority=0), Column("b", "b", priority=0)]
+            >>> full = [{"a": "x", "b": "yyyyyyyyyy"}]
+            >>> bare = [{"a": "x", "b": "y"}]
+            >>> Layout.preferring(cols, full, bare, 100).bandwidth
+            True
+            >>> Layout.preferring(cols, full, bare, 8).bandwidth
+            False
+        """
+        plain_layout = cls.for_rows(columns, plain, available)
+        rich_layout = cls.for_rows(columns, rich, available)
+        kept_the_same = [column.key for column in rich_layout.columns] == [
+            column.key for column in plain_layout.columns
+        ]
+        if kept_the_same and rich_layout.required() <= available:
+            return cls(rich_layout.columns, rich_layout.widths, bandwidth=True)
+        return plain_layout
+
+    def required(self) -> int:
+        """Total width this layout needs, gutter and gaps included."""
+        return _required(self.columns, self.widths)
 
 
 def natural_widths(columns: Sequence[Column], rows: Iterable[dict[str, str]]) -> dict[str, int]:
@@ -243,4 +304,4 @@ def pad(value: str, width: int, align: Align) -> str:
     return value.rjust(width) if align is Align.RIGHT else value.ljust(width)
 
 
-__all__ = ["ELLIPSIS", "GAP", "GUTTER", "Column", "clip", "fit", "natural_widths", "pad"]
+__all__ = ["ELLIPSIS", "GAP", "GUTTER", "Column", "Layout", "clip", "fit", "natural_widths", "pad"]
