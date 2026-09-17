@@ -11,7 +11,7 @@ System Role:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from rich.console import Group
 from rich.table import Table
@@ -172,6 +172,50 @@ def trend_row(device: str, kind: CounterKind, trend: Trend) -> Row:
     }
 
 
+class TrendRow(NamedTuple):
+    """One counter of one drive, its verdict, and the cells that render it.
+
+    The drive is carried, not only its path: the interactive page has to answer
+    "what is this row about" for the detail panel, and a path parsed back out of
+    a rendered cell is a second way of knowing which drive a row is.
+    """
+
+    disk: Disk
+    kind: CounterKind
+    trend: Trend
+    cells: Row
+
+
+def trend_rows(
+    inventory: Inventory,
+    history: History,
+    wear_floor: int = WEAR_WORTH_PLANNING_PERCENT,
+) -> tuple[TrendRow, ...]:
+    """Every counter worth a line, in the order both views draw them.
+
+    One place the rows are decided, so the printed table and the interactive
+    page cannot come to show different counters of the same machine.
+
+    Args:
+        inventory: The machine.
+        history: What has been recorded on earlier runs.
+        wear_floor: Wear below which a quiet drive earns no row.
+
+    Returns:
+        The rows, empty when nothing has been recorded yet.
+    """
+    rows: list[TrendRow] = []
+    for disk in inventory.disks:
+        series = _series_for(disk, history)
+        if series is None:
+            continue
+        for kind in WATCHED:
+            trend = trend_for(series, kind)
+            if worth_showing(kind, trend, wear_floor):
+                rows.append(TrendRow(disk, kind, trend, trend_row(disk.path, kind, trend)))
+    return tuple(rows)
+
+
 def _table(rows: Sequence[Row], title: str, width: int) -> Table:
     """Build the table, keeping only the columns that fit."""
     plain = [{key: value[0] for key, value in row.items()} for row in rows]
@@ -213,16 +257,7 @@ def render_trend(
     Returns:
         The table, or an explanation of why there is nothing to show yet.
     """
-    rows: list[Row] = []
-    for disk in inventory.disks:
-        series = _series_for(disk, history)
-        if series is None:
-            continue
-        for kind in WATCHED:
-            trend = trend_for(series, kind)
-            if worth_showing(kind, trend, wear_floor):
-                rows.append(trend_row(disk.path, kind, trend))
-
+    rows = [row.cells for row in trend_rows(inventory, history, wear_floor)]
     if not rows:
         return Group(Text(_nothing_yet(inventory, history), style=theme.STYLE_UNKNOWN))
     return Group(
@@ -280,9 +315,11 @@ __all__ = [
     "VERDICT_WORDS",
     "WATCHED",
     "WEAR_WORTH_PLANNING_PERCENT",
+    "TrendRow",
     "format_rate",
     "render_trend",
     "trend_row",
+    "trend_rows",
     "verdict_style",
     "verdict_text",
     "worth_showing",

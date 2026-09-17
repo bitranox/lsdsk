@@ -15,7 +15,7 @@ import pytest
 from rich.console import Console
 from rich.text import Text
 from textual.containers import HorizontalScroll, VerticalScroll
-from textual.widgets import OptionList, Static, TabbedContent
+from textual.widgets import DataTable, OptionList, Static, TabbedContent
 
 from lsdsk.adapters.config.tunables import DEFAULT_WWN_WIDTH, DisplaySettings
 from lsdsk.adapters.hw.snapshot import build_from
@@ -30,6 +30,7 @@ from lsdsk.adapters.tui.app import DISK_COLUMNS as TUI_DISK_COLUMNS
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import Align
+from lsdsk.domain.history import DiskSeries, History, Sample, identity_of
 from lsdsk.domain.models import Inventory, PciNode
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
@@ -1321,3 +1322,82 @@ async def test_a_capture_with_no_pci_reading_still_shows_its_drives_on_the_topol
     assert not listed_shown, "the list of fabric lines is showing for a capture that has no fabric"
     assert fallback_shown, "the section that replaces it is hidden"
     assert any(disk.path in line for line in shown for disk in without_pci.disks), "the drives are not shown at all"
+
+
+def _history_with_a_rising_counter(machine: Inventory) -> History:
+    """A recorded past, which no committed capture carries on its own.
+
+    The trend view has nothing to draw without one, so a test that wants rows
+    has to supply the readings. They go through the real ``Sample`` and
+    ``DiskSeries`` the recorder writes, not a double.
+    """
+    disk = next(one for one in machine.disks if identity_of(one))
+    return History(
+        hostname=machine.hostname,
+        series=(
+            DiskSeries(
+                identity=identity_of(disk) or "",
+                model=disk.model,
+                samples=(
+                    Sample(power_on_hours=1000, captured_at="2024-01-01T00:00:00Z", crc_errors=10),
+                    Sample(power_on_hours=2000, captured_at="2024-02-01T00:00:00Z", crc_errors=900),
+                ),
+            ),
+        ),
+    )
+
+
+class TestTheTrendPageIsATable:
+    """It was a table rendered as text; being one is what makes a row selectable."""
+
+    @pytest.mark.os_agnostic
+    def test_it_carries_the_same_columns_as_the_printed_view(self) -> None:
+        """Derived from the printed view's own columns, never a second list.
+
+        A page that copies a list has no guard at all whatever a name test
+        says: that is exactly how the disk page came to identify a drive by
+        model alone, its own tuple written without serial and firmware.
+        """
+        from lsdsk.adapters.render.trend import TREND_COLUMNS as PRINTED
+        from lsdsk.adapters.tui.app import TREND_PAGE_COLUMNS
+
+        assert tuple(column.title for column in PRINTED) == TREND_PAGE_COLUMNS
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_a_row_is_selectable_and_the_panel_answers_for_its_drive(self) -> None:
+        """A trend row is one COUNTER of one drive, and the drive is the subject."""
+        machine = inventory()
+        app = LsdskApp(machine, _history_with_a_rising_counter(machine))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.press("8")
+            await pilot.pause()
+            table = rows_of(app.query_one("#trend-table"))
+            rows = table.row_count
+            panel = _panel_text(app)
+
+        assert rows > 0, "the page listed no counter although a rising one was recorded"
+        assert any(disk.path in panel.splitlines()[0] for disk in machine.disks), panel.splitlines()[0]
+        # The trend page opens on the counters, which is its own question.
+        assert panel.splitlines()[1].startswith("counters"), panel.splitlines()[1]
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_without_a_recorded_past_the_page_explains_itself_instead_of_showing_an_empty_table(self) -> None:
+        """ "Nothing has moved" and "nothing was recorded" are different answers.
+
+        An empty table says neither, so the table is hidden and the explanation
+        the printed view gives takes the whole page.
+        """
+        machine = inventory()
+        app = LsdskApp(machine, History(hostname=machine.hostname))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.press("8")
+            await pilot.pause()
+            shown = app.query_one("#trend-table", DataTable).display
+            buffer = io.StringIO()
+            Console(width=118, file=buffer, no_color=True).print(app.query_one("#trend-body", Static).content)
+            said = buffer.getvalue()
+
+        assert not shown, "an empty table is showing where the explanation belongs"
+        assert "recorded" in said, said[:200]

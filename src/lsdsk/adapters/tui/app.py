@@ -35,7 +35,7 @@ from ...domain.models import Disk, Inventory, PciNode
 from ..config.tunables import DisplaySettings
 from ..render import detail, layout, report, tables, theme
 from ..render.tree import fabric_lines
-from ..render.trend import render_trend
+from ..render.trend import TREND_COLUMNS, render_trend, trend_rows
 from .typed_table import raising_table_id, rows_of
 
 if TYPE_CHECKING:
@@ -60,6 +60,10 @@ _CONTROLLER_COLUMNS = ("", "address", "controller", "driver", "firmware", "runni
 DISK_COLUMNS = ("", *(column.title for column in tables.DISK_COLUMNS))
 _HEALTH_COLUMNS = ("", "device", "temp", "worn", "hours", "written", "realloc", "pending", "uncorr", "crc", "media")
 _SLOT_COLUMNS = ("port", "slot", "capable", "running", "occupant", "needs", "verdict")
+# Derived from the printed view's own columns rather than restated, for the
+# reason DISK_COLUMNS is: a page and the command of one name are one view, and a
+# second tuple is how the disk page came to name a drive by model alone.
+TREND_PAGE_COLUMNS = tuple(column.title for column in TREND_COLUMNS)
 
 
 def _pcie(link: PcieLink) -> str:
@@ -80,6 +84,15 @@ def _cell(text: str, style: str = "") -> Text:
     which silently drops every severity signal the render layer computed.
     """
     return Text(text, style=style)
+
+
+def _note() -> Text:
+    """The sentence under the trend table, which the printed view prints too."""
+    return Text(
+        "Rates are per power-on hour of the drive itself, so a machine that "
+        "spends most of its time switched off still reports a meaningful figure.",
+        style=theme.STYLE_UNKNOWN,
+    )
 
 
 def _disk_cell(cells: Row, column: Column) -> Text:
@@ -171,6 +184,7 @@ DETAIL_TABLES: Final[dict[str, CliCommand]] = {
     "disk-table": CliCommand.DISKS,
     "health-table": CliCommand.HEALTH,
     "slot-table": CliCommand.SLOTS,
+    "trend-table": CliCommand.TREND,
 }
 
 
@@ -350,8 +364,15 @@ class LsdskApp(App[None]):
             with TabPane("Slots", id=CliCommand.SLOTS.value), Vertical():
                 yield DataTable[str](id="slot-table", zebra_stripes=True, cursor_type="row")
                 yield Static(report.form_factor_note(), id="slot-note")
-            with TabPane("Trend", id=CliCommand.TREND.value), VerticalScroll():
-                yield Static(render_trend(self.inventory, self.history), id="trend-body")
+            with TabPane("Trend", id=CliCommand.TREND.value), Vertical():
+                # A table rendered as text until now, which is what it
+                # structurally is: one row per counter of one drive. As a table
+                # its rows can be selected, and the panel can answer for the
+                # drive a row is about.
+                yield DataTable[str](id="trend-table", zebra_stripes=True, cursor_type="row")
+                # The note under it, and the whole section when there is no
+                # history yet: an empty table would say nothing about WHY.
+                yield Static(id="trend-body")
         # Outside the TabbedContent, so it is one widget with one handler rather
         # than a copy per page free to answer differently, and so it survives a
         # page switch with the row the reader left it on.
@@ -368,6 +389,7 @@ class LsdskApp(App[None]):
         self._fill_disks()
         self._fill_health()
         self._fill_slots()
+        self._fill_trend()
         self._refill_tree()
 
     def verdict_line(self) -> str:
@@ -543,7 +565,9 @@ class LsdskApp(App[None]):
         if table_id == "slot-table":
             slot = next((one for one in self.inventory.slots if one.address == key), None)
             return None if slot is None else detail.slot_detail(slot, self.inventory)
-        disk = self._disk_of.get(key)
+        # A trend row is one COUNTER of one drive, so its key names both; the
+        # record is the drive's, because that is what the row is about.
+        disk = self._disk_of.get(key.split("|")[0] if table_id == "trend-table" else key)
         return None if disk is None else detail.disk_detail(disk, self.inventory, self.history)
 
     def _show_detail(self, record: Detail | None) -> None:
@@ -565,6 +589,29 @@ class LsdskApp(App[None]):
         # The panel is re-measured by the layout that draws it, so whether the
         # scroll keys apply has to be asked again rather than assumed unchanged.
         self.refresh_bindings()
+
+    def _fill_trend(self) -> None:
+        """Populate the trend page, or explain why it has nothing to show.
+
+        The rows come from ``trend.trend_rows``, the same list the printed table
+        draws, so the two views cannot end up showing different counters of one
+        machine. Without a recorded past there are no rows at all, and the note
+        under the table becomes the whole section: an empty table would say
+        nothing about WHY it is empty, and "no counter has moved" and "nothing
+        has been recorded yet" are answers a reader must be able to tell apart.
+        """
+        table = rows_of(self.query_one("#trend-table"))
+        table.add_columns(*TREND_PAGE_COLUMNS)
+        rows = trend_rows(self.inventory, self.history)
+        self.query_one("#trend-table", DataTable).display = bool(rows)
+        for row in rows:
+            table.add_row(
+                *(_cell(*row.cells[column.key]) for column in TREND_COLUMNS),
+                key=f"{row.disk.node}|{row.kind.value}",
+            )
+        self.query_one("#trend-body", Static).update(
+            render_trend(self.inventory, self.history) if not rows else _note()
+        )
 
     def _fill_health(self) -> None:
         """Populate the health page."""
@@ -913,13 +960,13 @@ class LsdskApp(App[None]):
         self.query_one("#findings-body", Static).update(report.render_findings(self.findings))
         self._refill_tree()
         self.query_one("#smart-body", Static).update(report.render_smart(self.inventory))
-        self.query_one("#trend-body", Static).update(render_trend(self.inventory, self.history))
-        for table_id in ("#controller-table", "#disk-table", "#health-table", "#slot-table"):
+        for table_id in ("#controller-table", "#disk-table", "#health-table", "#slot-table", "#trend-table"):
             rows_of(self.query_one(table_id)).clear(columns=True)
         self._fill_controllers()
         self._fill_disks()
         self._fill_health()
         self._fill_slots()
+        self._fill_trend()
         # The panel holds a record built from the PREVIOUS diagnosis, so it is
         # redrawn like every other page: refreshing the banner and leaving one
         # view on the first scan's answer is what put two verdicts on one screen
