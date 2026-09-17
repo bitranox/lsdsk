@@ -84,11 +84,18 @@ def test_a_controller_whose_link_was_read_is_unchanged() -> None:
 
 
 def _fabric_lines(host: str, width: int = 200) -> list[str]:
-    from lsdsk.adapters.render.tree import render_fabric
+    """Every line of the fabric at FULL density, whatever the shipped default.
+
+    These tests are about what a row SAYS, so they need every device drawn;
+    the shipped default keeps the least, which would decide which rows exist
+    and turn a wording test into a density test.
+    """
+    from lsdsk.adapters.render.tree import FabricView, render_fabric
+    from lsdsk.domain.enums import TreeDensity
 
     machine = build_from(_load(host))
-    text = _rendered(render_fabric(machine, diagnose(machine), width=width), width=width)
-    return text.splitlines()
+    section = render_fabric(machine, diagnose(machine), width, FabricView(density=TreeDensity.FULL))
+    return _rendered(section, width=width).splitlines()
 
 
 def _fabric_line_for(address: str, host: str) -> str:
@@ -169,17 +176,19 @@ def test_an_unread_hop_is_dimmed_like_every_other_unread_figure() -> None:
     weight as the measured figure beside it while ``theme.hop_link_cells``,
     which styles it, went unused.
     """
+    from rich.style import Style
+
     from lsdsk.adapters.render import theme
-    from lsdsk.adapters.render.tree import _Fabric
+    from lsdsk.adapters.render.tree import FabricView, render_fabric
     from lsdsk.domain.enums import TreeDensity
 
     machine = build_from(_load("windows-ahci"))
-    findings = diagnose(machine)
-    fabric = _Fabric(machine.pci_tree, 200, TreeDensity.FULL)
-    node = next(node for node, _level in fabric.drawn() if node.is_bridge)
+    section = render_fabric(machine, diagnose(machine), 200, FabricView(density=TreeDensity.FULL))
+    console = Console(file=io.StringIO(), width=200, color_system="truecolor")
 
-    row = fabric.row(node, findings)
-    dimmed = [span for span in row.spans if span.style == theme.STYLE_UNKNOWN]
+    unread = [segment for segment in console.render(section) if "not read" in segment.text]
 
-    assert dimmed, f"an unread hop carries no style at all: {row.spans}"
-    assert "not read" in row.plain[dimmed[0].start : dimmed[0].end]
+    assert unread, "the Windows capture no longer draws an unread hop"
+    assert all(segment.style == Style.parse(theme.STYLE_UNKNOWN) for segment in unread), (
+        f"an unread hop is not dimmed: {[segment.style for segment in unread][:3]}"
+    )

@@ -308,7 +308,9 @@ Every option below is global: it goes before the command, and it applies to
 whichever command follows. `--expand-virtual` is also accepted after `topology`,
 `disks` and `tui`, because that is what the line tallying those devices tells
 you to type. `--tree-density` is also accepted after `topology`, and the
-interactive view cycles the same setting with `d` on its topology page.
+interactive view cycles the same setting with `d` on its topology page. Every
+view opens on `storage-only` and says in a line above the tree what it draws and
+how to ask for the rest.
 
 | Option                                                    | Does                                                                     |
 |-----------------------------------------------------------|--------------------------------------------------------------------------|
@@ -316,7 +318,7 @@ interactive view cycles the same setting with `d` on its topology page.
 | `--history-file F`                                        | Read and write counter history there instead of the per-user state file  |
 | `--no-record`                                             | Judge counters against history without adding this reading to it         |
 | `--expand-virtual`                                        | List every kernel-virtual device instead of tallying them in one line    |
-| `--tree-density full\|storage-and-siblings\|storage-only` | How much of the PCI fabric `topology` draws                              |
+| `--tree-density full\|storage-and-siblings\|storage-only` | How much of the PCI fabric every view draws (default `storage-only`)     |
 | `--profile NAME`                                          | Load a named configuration profile                                       |
 | `--set S.K=V`                                             | Override one configuration value, repeatable                             |
 | `--env-file FILE`                                         | Read that `.env` rather than searching upward from the working directory |

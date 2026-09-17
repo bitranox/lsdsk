@@ -14,6 +14,38 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   identically, and a narrower intermediate hop is visible where it happens.
   The fabric tree travels with the JSON output as `pci_tree`.
 
+### Changed
+
+- **Every view opens on the least of the fabric, and says so.** Four device
+  lines in five are unrelated to storage on real hardware, so the shipped
+  `display.tree_density` is now `storage-only` rather than `full`, and each view
+  carries a line above the tree naming what it draws and how to ask for more:
+  the printed views name `--tree-density`, the interactive one names the `d`
+  key. The same rule the kernel-virtual tally follows - folded away, never
+  hidden.
+
+### Fixed
+
+- **A hop nobody could read no longer claims the device has no PCIe
+  capability.** The hop columns decided between `not read` and `legacy PCI` by
+  re-reading the dash they had just formatted, so every bridge on a Windows
+  capture - where the platform publishes no bridge link registers at all - and
+  every half-read register, where the speeds were read and the widths were not,
+  asserted hardware that has no capability. Each platform now answers for
+  itself: Linux publishes a PCIe device's link and nothing for a legacy one, so
+  absence there is a reading; Windows answers neither way for a bridge, so
+  absence there says `not read`. An unread hop is also dimmed now, as every
+  other unread figure in the tool is.
+- **`--tree-density` applies to whichever command follows it.** The global
+  option reached `topology` alone: the bare page, `lsdsk report` and the
+  interactive view's starting density all read the shipped default however the
+  flag was spelled, although README documents every global option as applying
+  to the command that follows.
+- **The interactive topology page lays the fabric out at the width it has.** The
+  page asked for the section with no width at all and got the piped default of
+  120 columns, so names were clipped with room to spare in a wider window and
+  columns were fitted for a width a narrower one did not have.
+
 ## [1.2.13] 2026-09-12 23:30:24
 
 ### Fixed

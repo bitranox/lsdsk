@@ -52,7 +52,11 @@ DEFAULT_EXPAND_VIRTUAL = False
 DEFAULT_WWN_WIDTH = 24
 
 # How much of the PCI fabric the topology view draws, as the shipped default.
-DEFAULT_TREE_DENSITY = TreeDensity.FULL
+# The least of it: on real hardware four device lines in five are unrelated to
+# storage and bury the story this tool exists to tell, so the view opens on
+# storage and the bridges above it and says in a line above the tree how to ask
+# for the rest.
+DEFAULT_TREE_DENSITY = TreeDensity.STORAGE_ONLY
 
 # Characters of traceback kept in the short and the --traceback forms.
 DEFAULT_TRACEBACK_SUMMARY_LIMIT = 500
@@ -77,7 +81,7 @@ class DisplaySettings(BaseModel):
         >>> DisplaySettings().piped_width
         120
         >>> f"{DisplaySettings().tree_density}"
-        'full'
+        'storage-only'
     """
 
     model_config = ConfigDict(frozen=True)

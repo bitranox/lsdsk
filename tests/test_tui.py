@@ -23,7 +23,7 @@ from lsdsk.adapters.render.layout import ELLIPSIS, Column, clip, fit, natural_wi
 from lsdsk.adapters.render.report import DISK_COLUMNS, render_tree
 from lsdsk.adapters.render.tables import DISK_COLUMNS as PRINTED_DISK_COLUMNS
 from lsdsk.adapters.render.tables import render_disks
-from lsdsk.adapters.render.tree import render_fabric
+from lsdsk.adapters.render.tree import KEY_HINT, FabricView, render_fabric
 from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui.app import DISK_COLUMNS as TUI_DISK_COLUMNS
 from lsdsk.adapters.tui.typed_table import rows_of
@@ -138,29 +138,25 @@ async def test_the_density_key_cycles_the_fabric_on_the_topology_page() -> None:
         Console(width=160, file=buffer, no_color=True).print(app.query_one("#tree", Static).content)
         return {match.group(0) for line in buffer.getvalue().splitlines() if (match := device_address.search(line))}
 
+    members = list(TreeDensity)
     app = LsdskApp(inventory())
     async with app.run_test(size=(160, 45)) as pilot:
-        await pilot.press("d")
-        await pilot.pause()
+        # Where the cycle STARTS is the shipped default, which is the least
+        # detail; the key walks the enum from wherever that is, so the test
+        # follows the same order rather than restating one page of it.
+        start = members.index(app.display_settings.tree_density)
+        seen: dict[TreeDensity, set[str]] = {app.display_settings.tree_density: drawn_addresses()}
+        for step in range(1, len(members) + 1):
+            await pilot.press("d")
+            await pilot.pause()
+            expected = members[(start + step) % len(members)]
+            assert app.display_settings.tree_density is expected, f"press {step} did not reach {expected.value}"
+            seen[expected] = drawn_addresses()
 
-        assert app.display_settings.tree_density is TreeDensity.STORAGE_AND_SIBLINGS
-        after_one = drawn_addresses()
-        await pilot.press("d")
-        await pilot.pause()
-
-        assert app.display_settings.tree_density is TreeDensity.STORAGE_ONLY
-        after_two = drawn_addresses()
-        assert after_two == after_one, "no neighbour of storage shares a BRIDGE here, so the reduced pair agree"
-        await pilot.press("d")
-        await pilot.pause()
-
-        assert app.display_settings.tree_density is TreeDensity.FULL
-        after_three = drawn_addresses()
-        assert after_three > after_two, "returning to full draws the whole fabric back"
-        await pilot.press("d")
-        await pilot.pause()
-
-        assert app.display_settings.tree_density is TreeDensity.STORAGE_AND_SIBLINGS, "the cycle wraps"
+    assert seen[TreeDensity.FULL] > seen[TreeDensity.STORAGE_ONLY], "full draws the whole fabric back"
+    assert seen[TreeDensity.STORAGE_AND_SIBLINGS] == seen[TreeDensity.STORAGE_ONLY], (
+        "no neighbour of storage shares a BRIDGE here, so the reduced pair agree"
+    )
 
 
 @pytest.mark.os_agnostic
@@ -862,9 +858,31 @@ async def test_the_topology_page_lays_the_fabric_out_at_the_width_it_was_given(w
         painted = [page.render_line(row).text.rstrip() for row in range(page.size.height)]
 
     buffer = io.StringIO()
-    Console(file=buffer, width=page_width, no_color=True).print(render_fabric(machine, findings, width=page_width))
+    Console(file=buffer, width=page_width, no_color=True).print(
+        render_fabric(machine, findings, page_width, FabricView(how_to_change=KEY_HINT))
+    )
     printed = [line.rstrip() for line in buffer.getvalue().splitlines()]
 
     assert painted[: len(printed)] == printed[: len(painted)], (
         f"the page is not laid out at its own {page_width} columns in a {width}-column terminal"
     )
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
+async def test_the_topology_page_names_the_key_that_changes_the_detail_level() -> None:
+    """The page opens on the least detail, so it has to say how to get more.
+
+    Named as the KEY a reader of this view presses, not as the command-line
+    option the printed view names: one sentence, written once, with each view
+    supplying what its own reader does.
+    """
+    app = LsdskApp(inventory())
+    async with app.run_test(size=(140, 45)) as pilot:
+        await pilot.press("1")
+        await pilot.pause()
+        page = app.query_one("#tree", Static)
+        painted = "\n".join(page.render_line(row).text for row in range(page.size.height))
+
+    assert 'press "d" to change the detail level' in painted, painted[:300]
+    assert "--tree-density" not in painted, "the page names the key, not the printed view's option"

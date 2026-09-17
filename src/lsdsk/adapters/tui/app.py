@@ -107,8 +107,11 @@ def render_fabric_for(
     return tree.FabricSection(
         inventory,
         findings,
-        density=display.tree_density,
-        expand_virtual=display.expand_virtual,
+        tree.FabricView(
+            density=display.tree_density,
+            expand_virtual=display.expand_virtual,
+            how_to_change=tree.KEY_HINT,
+        ),
     )
 
 

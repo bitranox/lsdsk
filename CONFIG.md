@@ -391,16 +391,16 @@ These change what a report looks like. None of them changes severity or the exit
 code: that comes from `[thresholds]` and from the limits a drive publishes about
 itself.
 
-| Key                       | Default | Effect                                                 |
-|---------------------------|---------|--------------------------------------------------------|
-| `piped_width`             | `120`   | Width used when output is not a terminal               |
-| `summary_limit`           | `6`     | Findings named in the verdict line before "and N more" |
-| `wear_row_floor_percent`  | `10`    | Wear below this gets no trend row, in either view      |
-| `expand_virtual`          | `false` | List kernel-virtual devices instead of tallying them   |
-| `tree_density`            | `full`  | How much of the PCI fabric `topology` draws            |
-| `wwn_width`               | `24`    | Most characters the wwn column is given in either view |
-| `traceback_summary_limit` | `500`   | Characters kept in a short traceback                   |
-| `traceback_verbose_limit` | `10000` | And under `--traceback`                                |
+| Key                       | Default        | Effect                                                 |
+|---------------------------|----------------|--------------------------------------------------------|
+| `piped_width`             | `120`          | Width used when output is not a terminal               |
+| `summary_limit`           | `6`            | Findings named in the verdict line before "and N more" |
+| `wear_row_floor_percent`  | `10`           | Wear below this gets no trend row, in either view      |
+| `expand_virtual`          | `false`        | List kernel-virtual devices instead of tallying them   |
+| `tree_density`            | `storage-only` | How much of the PCI fabric every view draws            |
+| `wwn_width`               | `24`           | Most characters the wwn column is given in either view |
+| `traceback_summary_limit` | `500`          | Characters kept in a short traceback                   |
+| `traceback_verbose_limit` | `10000`        | And under `--traceback`                                |
 
 A kernel-virtual device is one the kernel provides with no hardware behind it:
 zram, a loop mount, a ZFS zvol, a device-mapper node. It has no controller, no
@@ -409,11 +409,14 @@ hidden: the header counts them, the tree and the disk table say how many were
 left out, and the JSON envelope carries every one of them under `virtual_disks`
 whatever this key is set to.
 
-`tree_density` picks how much of the PCI fabric `lsdsk topology` draws. `full`
-names every device the board came with, root-down; `storage-and-siblings` keeps
-every bridge and storage controller plus the non-storage devices that share a
-bridge with one; `storage-only` keeps bridges and storage alone, which is what
-the topology showed before the fabric tree existed. Those are the only spellings
+`tree_density` picks how much of the PCI fabric every view draws - `lsdsk
+topology`, the one-page report, and the interactive view alike. `full` names
+every device the board came with, root-down; `storage-and-siblings` keeps every
+bridge and storage controller plus the non-storage devices that share a bridge
+with one; `storage-only`, the shipped default, keeps bridges and storage alone,
+because four device lines in five are unrelated to storage on real hardware. No
+view holds anything back silently: each says in a line above the tree what it is
+drawing and how to ask for more. Those are the only spellings
 accepted - the token is the value, case-insensitive. The interactive view cycles
 the same setting with `d` on its topology page, and a capture's whole tree
 travels in the JSON envelope under `pci_tree` whatever the display shows.

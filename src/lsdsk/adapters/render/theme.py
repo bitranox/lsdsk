@@ -97,6 +97,12 @@ STYLE_CAVEAT = f"bold {STYLE_WARNING_COLOUR}"
 #: A column header. Bold rather than faint: the headers name every column, so
 #: they are the last thing that should be hard to read.
 STYLE_HEADER = "bold"
+#: A note the view writes about itself - what it is drawing, and what to type or
+#: press for another shape. Bold with no hue, which renders bright white on a
+#: dark terminal and black on a light one: a literal white would be invisible on
+#: the white backgrounds this palette was measured against, and a hue here would
+#: claim a severity the sentence does not carry.
+STYLE_NOTE = "bold"
 #: An identifier - a PCI address, a device path. Bold WITHOUT a hue, because
 #: colour here would claim a severity the value does not have, and the law of
 #: this file is that colour only ever carries meaning.

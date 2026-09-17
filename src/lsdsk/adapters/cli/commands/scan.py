@@ -597,9 +597,11 @@ def cli_topology(
                 tree.render_fabric(
                     inventory,
                     findings,
-                    width=console.width,
-                    density=effective_tree_density(ctx, tree_density),
-                    expand_virtual=effective_expand_virtual(ctx, expand_virtual),
+                    console.width,
+                    tree.FabricView(
+                        density=effective_tree_density(ctx, tree_density),
+                        expand_virtual=effective_expand_virtual(ctx, expand_virtual),
+                    ),
                 )
             )
         raise SystemExit(exit_code_for(findings))

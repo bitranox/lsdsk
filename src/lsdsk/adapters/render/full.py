@@ -93,9 +93,8 @@ def render_full(
         tree.render_fabric(
             inventory,
             findings,
-            width=width,
-            density=laid_out.tree_density,
-            expand_virtual=laid_out.expand_virtual,
+            width,
+            tree.FabricView(density=laid_out.tree_density, expand_virtual=laid_out.expand_virtual),
         ),
         blank,
         tables.render_controllers(inventory, findings, width=width),

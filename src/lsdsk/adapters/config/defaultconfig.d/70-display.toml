@@ -88,10 +88,12 @@ wwn_width = 24
 
 # How much of the PCI fabric the topology view draws.
 #
-# Default: full. The full tree answers "what is this machine's PCIe fabric":
-# every bridge, controller and stray device the board came with, root-down. On
-# real hardware four lines in five are unrelated to storage, which can bury
-# the story the view exists to tell, so two reduced shapes exist:
+# Default: storage-only. On real hardware four device lines in five are
+# unrelated to storage and bury the story the view exists to tell, so the view
+# opens on the least of the fabric and names in a line above the tree how to
+# ask for more. The full tree answers "what is this machine's PCIe fabric":
+# every bridge, controller and stray device the board came with, root-down.
+# Three shapes:
 #
 #   "full"                 every PCI device.
 #   "storage-and-siblings" bridges, storage, and the non-storage devices that
@@ -102,6 +104,6 @@ wwn_width = 24
 #
 # The interactive view also cycles these with `d` on its topology page.
 #
-# Environment Variable: LSDSK___DISPLAY__TREE_DENSITY="full"
-tree_density = "full"
+# Environment Variable: LSDSK___DISPLAY__TREE_DENSITY="storage-only"
+tree_density = "storage-only"
 

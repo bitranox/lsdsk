@@ -28,13 +28,13 @@ System Role:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from rich.console import Group
 from rich.text import Text
 
 from ...domain.enums import TreeDensity
-from ..config.tunables import DEFAULT_PIPED_WIDTH
+from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_TREE_DENSITY
 from . import theme
 from .layout import GAP, Layout, clip, pad
 from .report import (
@@ -82,6 +82,41 @@ _STOP_LEG = "  "
 
 # Width assumed when the caller gives none, as a Textual page does.
 DEFAULT_WIDTH = DEFAULT_PIPED_WIDTH
+
+#: What each density draws, in the words a reader of the view would use. Said
+#: rather than left to be inferred, because the default shows the least and a
+#: view that quietly holds devices back is the blank-implies-fine this tool
+#: exists to refuse - the same reason the kernel-virtual tally names its flag.
+_DENSITY_DRAWN: dict[TreeDensity, str] = {
+    TreeDensity.FULL: "every PCI device",
+    TreeDensity.STORAGE_AND_SIBLINGS: "storage and whatever shares a bridge with it",
+    TreeDensity.STORAGE_ONLY: "storage and the bridges above it",
+}
+
+#: How a reader of the printed view changes it, and how a reader of the
+#: interactive one does. Each view supplies its own; the sentence is written
+#: once, so the two cannot describe one setting differently.
+OPTION_HINT = "--tree-density"
+KEY_HINT = 'press "d"'
+
+
+def density_note(density: TreeDensity, how_to_change: str = OPTION_HINT) -> str:
+    """One line: what this view is drawing, and how to ask for more.
+
+    Args:
+        density: The density being drawn.
+        how_to_change: What this reader types or presses.
+
+    Returns:
+        The note, ASCII only like every other line of the section.
+
+    Example:
+        >>> density_note(TreeDensity.STORAGE_ONLY)
+        'showing storage and the bridges above it; --tree-density to change the detail level'
+        >>> density_note(TreeDensity.FULL, KEY_HINT)
+        'showing every PCI device; press "d" to change the detail level'
+    """
+    return f"showing {_DENSITY_DRAWN[density]}; {how_to_change} to change the detail level"
 
 
 def hop_cells(node: PciNode) -> tuple[theme.Cell, theme.Cell]:
@@ -282,13 +317,43 @@ class _Fabric:
         return line
 
 
+class FabricView(NamedTuple):
+    """How one view draws the fabric.
+
+    The three travel together through every signature that renders it, and the
+    third is what keeps one sentence from becoming two: the note above the tree
+    is written once and each view says how ITS reader asks for another shape.
+
+    Attributes:
+        density: How much of the fabric to draw.
+        expand_virtual: List every kernel-virtual device rather than tallying
+            them in one line.
+        how_to_change: What this view's reader types or presses, named in the
+            note above the tree.
+
+    Example:
+        >>> FabricView().density is DEFAULT_TREE_DENSITY
+        True
+        >>> FabricView(how_to_change=KEY_HINT).how_to_change
+        'press "d"'
+    """
+
+    density: TreeDensity = DEFAULT_TREE_DENSITY
+    expand_virtual: bool = False
+    how_to_change: str = OPTION_HINT
+
+
+#: What a caller that asks for nothing gets: the shipped density, the
+#: kernel-virtual devices tallied, and the printed view's option named. One
+#: shared instance because the tuple is immutable.
+DEFAULT_VIEW = FabricView()
+
+
 def render_fabric(
     inventory: Inventory,
     findings: Sequence[Finding],
     width: int = DEFAULT_WIDTH,
-    *,
-    density: TreeDensity = TreeDensity.FULL,
-    expand_virtual: bool = False,
+    view: FabricView = DEFAULT_VIEW,
 ) -> RenderableType:
     """The whole topology section: the root-down fabric, the disks on each of
     its storage controllers, and the kernel-virtual tally behind them.
@@ -298,9 +363,8 @@ def render_fabric(
         findings: The findings, used to mark affected rows.
         width: Width to lay out inside. The piped default when unset, which is
             the form a terminal-less Textual page renders at before it reflows.
-        density: How much of the fabric to draw.
-        expand_virtual: List every kernel-virtual device rather than tallying
-            them in one line.
+        view: How this view draws it - the density, the kernel-virtual tally,
+            and what its reader presses to change them.
 
     Returns:
         The fabric section.
@@ -313,10 +377,11 @@ def render_fabric(
             return Text("No storage controllers or disks found.", style=theme.STYLE_UNKNOWN)
         # A capture with drives but no PCI reading: the disk-and-controller
         # table is the whole section, so the machine's storage is still shown.
-        return _no_pci_fallback(inventory, findings, width, expand_virtual=expand_virtual)
+        return _no_pci_fallback(inventory, findings, width, expand_virtual=view.expand_virtual)
+    density, expand_virtual = view.density, view.expand_virtual
     fabric = _Fabric(inventory.pci_tree, width, density)
     layout = fabric.measure(inventory)
-    out: list[RenderableType] = []
+    out: list[RenderableType] = [Text(density_note(density, view.how_to_change), style=theme.STYLE_NOTE)]
     if len(fabric.roots) > 1:
         # Prose heading, not a spent spine level: a synthetic root is parentage,
         # not hardware, and two root complexes are two bus labels, not two
@@ -430,24 +495,24 @@ class FabricSection:
         self,
         inventory: Inventory,
         findings: Sequence[Finding],
-        *,
-        density: TreeDensity = TreeDensity.FULL,
-        expand_virtual: bool = False,
+        view: FabricView = DEFAULT_VIEW,
     ) -> None:
         self.inventory = inventory
         self.findings = findings
-        self.density = density
-        self.expand_virtual = expand_virtual
+        self.view = view
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         """Render the section at the width the console offers right now."""
-        yield render_fabric(
-            self.inventory,
-            self.findings,
-            width=options.max_width,
-            density=self.density,
-            expand_virtual=self.expand_virtual,
-        )
+        yield render_fabric(self.inventory, self.findings, options.max_width, self.view)
 
 
-__all__ = ["FabricSection", "hop_cells", "render_fabric"]
+__all__ = [
+    "DEFAULT_VIEW",
+    "KEY_HINT",
+    "OPTION_HINT",
+    "FabricSection",
+    "FabricView",
+    "density_note",
+    "hop_cells",
+    "render_fabric",
+]

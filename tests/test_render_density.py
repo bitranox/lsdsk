@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from rich.console import Console
 
+from lsdsk.adapters.render.tree import FabricView, render_fabric
 from lsdsk.domain.enums import TreeDensity
 
 if TYPE_CHECKING:
@@ -156,7 +157,6 @@ def test_the_fabric_fits_its_width_at_every_density(host: str, width: int) -> No
     marker invariant (a wrapped marker strand) at once.
     """
     from lsdsk.adapters.hw.snapshot import build_from
-    from lsdsk.adapters.render.tree import render_fabric
     from lsdsk.domain.diagnostics import diagnose
 
     machine = build_from(_load(host))
@@ -165,7 +165,7 @@ def test_the_fabric_fits_its_width_at_every_density(host: str, width: int) -> No
     for density in tuple(TreeDensity):
         buffer = io.StringIO()
         Console(file=buffer, width=width, no_color=True).print(
-            render_fabric(machine, findings, width=width, density=density)
+            render_fabric(machine, findings, width, FabricView(density=density))
         )
         lines = buffer.getvalue().splitlines()
         stranded = [f"{host} w{width} {density.value}" for line in lines if line.strip() in marker_alone]
@@ -178,10 +178,11 @@ def _load(host: str) -> dict[str, Any]:
 
 
 def _rendered(machine: Any, findings: Any, density: TreeDensity) -> str:
-    from lsdsk.adapters.render.tree import render_fabric
 
     buffer = io.StringIO()
-    Console(file=buffer, width=200, no_color=True).print(render_fabric(machine, findings, width=200, density=density))
+    Console(file=buffer, width=200, no_color=True).print(
+        render_fabric(machine, findings, 200, FabricView(density=density))
+    )
     return buffer.getvalue()
 
 
@@ -219,16 +220,70 @@ def test_the_density_option_reaches_every_view_that_draws_the_fabric(
 
     fixture = str(FIXTURES / "linux-sas-hba.json")
     common = ["--no-record", "--replay", fixture]
-    asked = [*command, "--tree-density", "storage-only"] if scoped else ["--tree-density", "storage-only", *command]
-    full = cli_runner.invoke(cli, [*common, *command], obj=production_factory)
-    reduced = cli_runner.invoke(cli, [*common, *asked], obj=production_factory)
+    asked = [*command, "--tree-density", "full"] if scoped else ["--tree-density", "full", *command]
+    shipped = cli_runner.invoke(cli, [*common, *command], obj=production_factory)
+    asked_for_more = cli_runner.invoke(cli, [*common, *asked], obj=production_factory)
 
-    assert full.output, "the run without the option rendered nothing"
-    assert reduced.output, "the run with the option rendered nothing"
-    drawn_full = [line for line in full.output.splitlines() if DeviceLine.search(line)]
-    drawn_reduced = [line for line in reduced.output.splitlines() if DeviceLine.search(line)]
+    assert shipped.output, "the run without the option rendered nothing"
+    assert asked_for_more.output, "the run with the option rendered nothing"
+    drawn_shipped = [line for line in shipped.output.splitlines() if DeviceLine.search(line)]
+    drawn_full = [line for line in asked_for_more.output.splitlines() if DeviceLine.search(line)]
     where = "after" if scoped else "before"
-    assert len(drawn_reduced) < len(drawn_full), (
+    assert len(drawn_full) > len(drawn_shipped), (
         f"--tree-density {where} {command or ['(no command)']} changed nothing: "
-        f"{len(drawn_reduced)} lines against {len(drawn_full)}"
+        f"{len(drawn_full)} lines against {len(drawn_shipped)}"
     )
+
+
+@pytest.mark.os_agnostic
+def test_the_shipped_default_draws_the_least_of_the_fabric() -> None:
+    """The view opens on the least detail, and every place that says so agrees.
+
+    Four device lines in five are unrelated to storage on real hardware, so the
+    full fabric buries the story the view exists to tell. The constant, the
+    model's default and the shipped configuration file are three statements of
+    one default, and a file disagreeing with the constant is the version a
+    reader would be reading.
+    """
+    import tomllib
+
+    from lsdsk.adapters.config.tunables import DEFAULT_TREE_DENSITY, DisplaySettings
+
+    shipped = (
+        Path(__file__).parents[1] / "src" / "lsdsk" / "adapters" / "config" / "defaultconfig.d" / "70-display.toml"
+    )
+    written = tomllib.loads(shipped.read_text(encoding="utf-8"))["display"]["tree_density"]
+
+    assert DEFAULT_TREE_DENSITY is TreeDensity.STORAGE_ONLY
+    assert DisplaySettings().tree_density is TreeDensity.STORAGE_ONLY
+    assert written == TreeDensity.STORAGE_ONLY.value, f"the shipped file says {written!r}"
+
+
+@pytest.mark.os_agnostic
+def test_the_printed_view_says_what_it_draws_and_names_the_option(
+    cli_runner: CliRunner, production_factory: Callable[[], Any]
+) -> None:
+    """A view that holds devices back has to say so, and say how to see them.
+
+    The same rule the kernel-virtual tally follows: folded away, never hidden.
+    Without the line the default simply shows fewer devices than the machine
+    has, which is the blank-implies-fine this tool exists to refuse.
+    """
+    from lsdsk.adapters.cli import cli
+
+    result = cli_runner.invoke(cli, ["--no-record", "--replay", str(_FIXTURE), "topology"], obj=production_factory)
+
+    assert "showing storage and the bridges above it" in result.output, result.output[:400]
+    assert "--tree-density to change the detail level" in result.output, result.output[:400]
+
+
+@pytest.mark.os_agnostic
+def test_the_note_names_what_each_density_draws() -> None:
+    """Every density has words of its own, so the line can never read blank."""
+    from lsdsk.adapters.render.tree import KEY_HINT, density_note
+
+    for density in TreeDensity:
+        note = density_note(density, KEY_HINT)
+        assert note.startswith("showing "), note
+        assert note != "showing ; " + KEY_HINT + " to change the detail level"
+        assert KEY_HINT in note
