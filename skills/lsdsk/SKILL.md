@@ -561,7 +561,7 @@ cause the tool explicitly did not establish.
 **Read `upstream_name`, which is how this question usually closes.** It is what
 the port is CALLED, carried because a platform can withhold a port's capability
 and still name it. Many vendors put the width and generation in that name, so
-`Intel(R) PCIe RC 060 (x4) G4` says Gen4 x4 - and a Gen5 drive at Gen4 x4 in a
+`Intel(R) PCIe RC 060 (x4) G4` says Gen4x4 - and a Gen5 drive at Gen4x4 in a
 Gen4 port is at its ceiling, with nothing wrong. Say where that came from: the
 port's driver names it so, which is weaker than a measurement and strong enough
 to act on. It is not parsed into a capability, and a name without numbers in it
@@ -641,18 +641,20 @@ one of them is enough to stop:
   before recommending anything. A real ceiling cannot be exceeded. When you
   cannot get it in the same exchange, answer on the other two readings, give the
   command that would settle it, and say which answer each result would give.
-- **`running` equals `capable` at the PCIe floor.** `1.0 x1` in both columns is
-  the lowest value the pair can hold. Devices that negotiated a real link report
+- **`running` equals `capable` at the PCIe floor.** `1.0x1` in both columns is
+  the lowest value the pair can hold. A figure carries what it is worth where
+  the width allows, so the reader may see `1.0x1 (0.25 GB/s)`; match on the
+  figure, which is there either way. Devices that negotiated a real link report
   a `capable` above their `running` wherever the two differ, so a device pinned
   at the floor in both has not negotiated anything.
 - **A second function on the same silicon publishes the identical floor.** Run
   `lsdsk slots` and read the ports sharing the controller's upstream. A SATA and
-  a USB controller both at `Gen1 x1`, while the NVMe ports beside them publish
+  a USB controller both at `Gen1x1`, while the NVMe ports beside them publish
   Gen3, Gen4 and Gen5, is the discriminator. Those two are functions integrated
   into one chip; the others are ports that carry traffic. The floor value alone
   is not the discriminator, because a genuinely dead link reads the same. Nor is
   a second device at the floor on its own: a separate part, such as an onboard
-  network controller, genuinely links at `Gen1 x1`. `lsdsk slots --format json`
+  network controller, genuinely links at `Gen1x1`. `lsdsk slots --format json`
   carries `vendor` and `occupant_vendor` on every port, and a function built into
   the switch has the same identifier as the port in front of it, where a separate
   part has its own maker's.
