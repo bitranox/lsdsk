@@ -18,6 +18,8 @@ System Role:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Final
+
 from ...domain.enums import BusType, DiskKind, PciPortKind, Severity
 from ...domain.models import PcieLink, pcie_generation
 
@@ -25,6 +27,9 @@ from ...domain.models import PcieLink, pcie_generation
 #: functions that produce one and the tables that consume it agree by type
 #: rather than by convention.
 from ...domain.thresholds import DEFAULT_THRESHOLDS
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 #: One rendered table cell: the text, and the style it is drawn in.
 #:
@@ -420,23 +425,26 @@ def pci_tag(kind: PciPortKind) -> str:
 def hop_link_cells(link: PcieLink, *, capability_present: bool | None = None) -> tuple[Cell, Cell]:
     """The capable and running columns for one hop of the fabric.
 
-    Two columns, in the order the slot view uses, so a link nobody measured
-    reads as ``not read`` rather than as a dash: beside a measured figure a
-    dash reads as "nothing there" when it means "not read", and a platform
-    that publishes no bridge registers would print a whole column of them.
-    ``legacy PCI`` is the real case of a device with no PCIe capability at
-    all, and it is said only where a platform MEASURED that absence, which is
-    what ``capability_present`` carries. Deciding it from the rendered dash
-    instead read a fact back out of a string this function had just written:
-    a device whose speeds were read and whose widths were not formats to two
-    dashes and is not a legacy device at all.
+    Two columns, in the order the slot view uses, and three different facts in
+    them: a measured figure, a register nobody published (:data:`NOT_READ`),
+    and a device with no PCIe capability at all (:data:`LEGACY`). The last two
+    are symbols rather than sentences, because a column repeating ``not read``
+    down a whole page carries one bit at the cost of the name beside it, and
+    :func:`hop_legend` is what makes a symbol honest: the section that draws
+    one says what it means.
+
+    Which of the two applies is carried by ``capability_present`` and by
+    nothing in the link, because deciding it from the rendered dash read a
+    fact back out of a string this function had just written - a device whose
+    speeds were read and whose widths were not formats to two dashes and is
+    not a legacy device at all.
 
     Args:
         link: The hop's link state and capability.
         capability_present: Whether the device has a PCIe capability. ``False``
-            is a measured absence and prints ``legacy PCI``; ``True`` and
-            ``None`` both leave an unread column reading ``not read``, because
-            an unanswered question is not an answer of no.
+            is a measured absence and prints :data:`LEGACY`; ``True`` and
+            ``None`` both leave an unread column reading :data:`NOT_READ`,
+            because an unanswered question is not an answer of no.
 
     Returns:
         The (capable, running) styled cells. A column whose figure was not
@@ -449,7 +457,7 @@ def hop_link_cells(link: PcieLink, *, capability_present: bool | None = None) ->
         >>> hop_link_cells(PcieLink(8.0, 4, 8.0, 4))
         (('3.0 x4', ''), ('3.0 x4', ''))
         >>> hop_link_cells(PcieLink(), capability_present=False)
-        (('legacy PCI', ''), ('legacy PCI', ''))
+        (('legacy', ''), ('legacy', ''))
         >>> hop_link_cells(PcieLink(), capability_present=None)[0] == (NOT_READ, STYLE_UNKNOWN)
         True
         >>> hop_link_cells(PcieLink(current_speed_gtps=16.0, current_width=2))[1]
@@ -460,21 +468,50 @@ def hop_link_cells(link: PcieLink, *, capability_present: bool | None = None) ->
     capable = format_pcie_decimal(link.max_speed_gtps, link.max_width)
     running = format_pcie_decimal(link.current_speed_gtps, link.current_width)
     if capability_present is False:
-        return (_LEGACY_PCI, ""), (_LEGACY_PCI, "")
+        return (LEGACY, ""), (LEGACY, "")
     return (
         (capable if capable != "-" else NOT_READ, STYLE_UNKNOWN if capable == "-" else ""),
         (running if running != "-" else NOT_READ, STYLE_UNKNOWN if running == "-" else ""),
     )
 
 
-#: What a column prints when the register behind it was not read: a dash would
-#: read as "nothing there" beside a measured figure, which is the opposite of
-#: the truth.
-NOT_READ = "not read"
-#: The case where there is no PCIe capability at all: a legacy PCI bridge, on
-#: both platforms. ``not read`` would say a register was skipped that this
-#: device has never had.
-_LEGACY_PCI = "legacy PCI"
+#: What a hop column prints when the register behind it was not read, and what
+#: it prints for a device that has no PCIe capability at all. They are SYMBOLS,
+#: short because a column of repeated words carries one bit down a whole page,
+#: and a section that draws either says what it means in :func:`hop_legend`. A
+#: dash alone would read as "nothing there" beside a measured figure, which is
+#: the opposite of the truth; a dash WITH its legend does not.
+NOT_READ = "-"
+LEGACY = "legacy"
+
+#: What each symbol means, keyed by the token the column actually prints, so
+#: the legend cannot explain a word the view does not use.
+_HOP_MEANINGS: Final[dict[str, str]] = {
+    NOT_READ: "not read",
+    LEGACY: "no PCIe capability",
+}
+
+
+def hop_legend(drawn: Iterable[str]) -> str:
+    """Spell out the hop symbols a section actually drew.
+
+    Args:
+        drawn: Every text the section put in a hop column.
+
+    Returns:
+        The legend, or an empty string when every hop was a figure and there is
+        nothing to explain.
+
+    Example:
+        >>> hop_legend(["3.0 x4", NOT_READ])
+        '- = not read'
+        >>> hop_legend([NOT_READ, LEGACY])
+        '- = not read, legacy = no PCIe capability'
+        >>> hop_legend(["3.0 x4", "1.0 x1"])
+        ''
+    """
+    seen = set(drawn)
+    return ", ".join(f"{symbol} = {meaning}" for symbol, meaning in _HOP_MEANINGS.items() if symbol in seen)
 
 
 def style_for(severity: Severity | None) -> str:

@@ -111,14 +111,18 @@ def test_a_bridge_on_a_platform_that_publishes_no_registers_reads_as_unread() ->
     asserts a reading nobody took, which is the same blank-implies-fine the
     tree's own law forbids, wearing a more confident word.
     """
+    from lsdsk.adapters.render import theme
+    from lsdsk.adapters.render.tree import hop_cells
+
     machine = build_from(_load("windows-ahci"))
     bridges = [node for node in machine.pci_tree if node.is_bridge]
     assert bridges, "the Windows fixture no longer carries a bridge"
 
     for bridge in bridges:
-        line = _fabric_line_for(bridge.address, "windows-ahci")
-        assert "not read" in line, f"an unread Windows bridge must say so: {line!r}"
-        assert "legacy PCI" not in line, f"nobody measured that it has no capability: {line!r}"
+        capable, running = hop_cells(bridge)
+        assert capable[0] == theme.NOT_READ, f"{bridge.address} claims a reading: {capable}"
+        assert running[0] == theme.NOT_READ, f"{bridge.address} claims a reading: {running}"
+        assert theme.LEGACY not in (capable[0], running[0]), "nobody measured that it has no capability"
 
 
 @pytest.mark.os_agnostic
@@ -136,10 +140,15 @@ def test_a_linux_device_with_no_pcie_capability_still_reads_as_legacy() -> None:
         if not node.is_root and node.pcie_capability_present is False and node.link.max_speed_gtps is None
     )
 
-    line = _fabric_line_for(legacy.address, "linux-sas-hba")
+    from lsdsk.adapters.render import theme
+    from lsdsk.adapters.render.tree import hop_cells
 
-    assert "legacy PCI" in line, f"a measured absence keeps its own word: {line!r}"
-    assert "not read" not in line, f"nothing here was left unread: {line!r}"
+    capable, running = hop_cells(legacy)
+
+    assert capable[0] == theme.LEGACY, f"a measured absence keeps its own word: {capable}"
+    assert running[0] == theme.LEGACY, f"a measured absence keeps its own word: {running}"
+    assert theme.NOT_READ not in (capable[0], running[0]), "nothing here was left unread"
+    assert legacy.address in _fabric_line_for(legacy.address, "linux-sas-hba"), "the device is drawn at all"
 
 
 @pytest.mark.os_agnostic
@@ -161,11 +170,13 @@ def test_a_half_read_register_never_reads_as_a_device_without_a_capability() -> 
         pcie_capability_present=True,
     )
 
+    from lsdsk.adapters.render import theme
+
     capable, running = hop_cells(half)
 
-    assert "legacy PCI" not in (capable[0], running[0]), f"a read register is not an absent one: {capable} {running}"
-    assert capable[0] == "not read"
-    assert running[0] == "not read"
+    assert theme.LEGACY not in (capable[0], running[0]), f"a read register is not an absent one: {capable} {running}"
+    assert capable[0] == theme.NOT_READ
+    assert running[0] == theme.NOT_READ
 
 
 @pytest.mark.os_agnostic
@@ -186,9 +197,80 @@ def test_an_unread_hop_is_dimmed_like_every_other_unread_figure() -> None:
     section = render_fabric(machine, diagnose(machine), 200, FabricView(density=TreeDensity.FULL))
     console = Console(file=io.StringIO(), width=200, color_system="truecolor")
 
-    unread = [segment for segment in console.render(section) if "not read" in segment.text]
+    unread = [segment for segment in console.render(section) if segment.text.strip() == theme.NOT_READ]
 
     assert unread, "the Windows capture no longer draws an unread hop"
     assert all(segment.style == Style.parse(theme.STYLE_UNKNOWN) for segment in unread), (
         f"an unread hop is not dimmed: {[segment.style for segment in unread][:3]}"
     )
+
+
+@pytest.mark.os_agnostic
+def test_a_section_that_draws_a_symbol_says_what_it_means() -> None:
+    """A dash is quiet, and quiet is only honest if the page says what it means.
+
+    The hop columns carry three different facts in one place - a measured link,
+    a register nobody published, and a device with no PCIe capability - so the
+    two that are not figures are symbols, and a symbol nobody explains is the
+    reader guessing. The legend names exactly the ones the section drew.
+    """
+    from lsdsk.adapters.render import theme
+
+    windows = "\n".join(_fabric_lines("windows-ahci"))
+    linux = "\n".join(_fabric_lines("linux-sas-hba"))
+
+    assert f"{theme.NOT_READ} = not read" in windows, windows[:300]
+    assert f"{theme.LEGACY} = no PCIe capability" not in windows, "no legacy device is drawn on this capture"
+    assert f"{theme.LEGACY} = no PCIe capability" in linux, linux[:300]
+
+
+@pytest.mark.os_agnostic
+def test_a_section_whose_hops_were_all_read_explains_nothing() -> None:
+    """The control: no symbol drawn, no legend printed.
+
+    Without this the legend could be an unconditional line and the test above
+    would pass just the same, which is the shape of a guard that asserts the
+    feature exists rather than that it fires.
+    """
+    from lsdsk.adapters.hw import fabric as fabric_module
+    from lsdsk.adapters.render.tree import FabricView, render_fabric
+    from lsdsk.domain.enums import PciPortKind, TreeDensity
+    from lsdsk.domain.models import Inventory, PcieLink
+
+    measured = PcieLink(8.0, 4, 8.0, 4)
+    tree = fabric_module.assemble(
+        [
+            fabric_module.NodeSource(
+                address="0000:00:01.0",
+                name="a port whose link was read",
+                class_code=0x060400,
+                vendor=None,
+                driver=None,
+                link=measured,
+                port_kind=PciPortKind.ROOT,
+                connector_present=None,
+                physical_slot_number=None,
+                parent=None,
+                pcie_capability_present=True,
+            ),
+            fabric_module.NodeSource(
+                address="0000:01:00.0",
+                name="a controller whose link was read",
+                class_code=0x010802,
+                vendor=None,
+                driver=None,
+                link=measured,
+                port_kind=PciPortKind.UNKNOWN,
+                connector_present=None,
+                physical_slot_number=None,
+                parent="0000:00:01.0",
+                pcie_capability_present=True,
+            ),
+        ]
+    )
+    machine = Inventory("example", pci_tree=tree)
+    text = _rendered(render_fabric(machine, (), 160, FabricView(density=TreeDensity.FULL)), width=160)
+
+    assert "0000:01:00.0" in text, "the fixture drew nothing to judge"
+    assert "= not read" not in text, text
+    assert "= no PCIe capability" not in text, text

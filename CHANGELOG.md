@@ -16,6 +16,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
+- **The hop columns carry symbols, and the section says what they mean.** An
+  unread register is `-` and a device with no PCIe capability is `legacy`, with
+  one line under the note spelling out whichever of the two the section actually
+  drew. `not read` repeated down a whole page carried one bit at the cost of the
+  device name beside it, and the column was 10 characters wide only because
+  `legacy PCI` was; it is 7 now, which is the widest figure a shipping PCIe
+  generation produces, so every device name gains 6. The old
+  disk-and-controller tree keeps its own prose, which says `PCIe link not read`
+  in a sentence rather than in a column.
 - **A reduced density keeps the path to storage, not every bridge on the board.**
   Both reduced shapes kept every class-06 device in the machine, so a view that
   calls itself "storage and the bridges above it" drew the whole bridge skeleton

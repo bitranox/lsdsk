@@ -556,3 +556,33 @@ def test_the_top_line_says_only_what_the_capture_carries() -> None:
 
     windows = top_line("windows-ahci")
     assert "PCIe" not in windows, f"no root port published a link here: {windows!r}"
+
+
+@pytest.mark.os_agnostic
+def test_no_hop_figure_is_wider_than_the_column_it_is_drawn_in() -> None:
+    """The hop column is sized by the widest figure, so that has to be true.
+
+    It was 10 because `legacy PCI` was; it is 7 because `5.0 x16` is, which is
+    the widest a shipping generation produces. A figure wider than its column
+    would be CLIPPED, and a clipped speed is not a shorter figure but a
+    different one - the reason the row drops the pair whole rather than cutting
+    it. The synthetic link is the generation nobody ships yet, so the day one
+    does, this fails here rather than in somebody's terminal.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render import theme
+    from lsdsk.adapters.render.tree import HOP_WIDTH, hop_cells
+    from lsdsk.domain.models import PcieLink, PciNode
+
+    widest = 0
+    for host in DENSITY_COUNTS:
+        machine = build_from(_load(host))
+        for node in machine.pci_tree:
+            for text, _style in hop_cells(node):
+                assert len(text) <= HOP_WIDTH, f"{host} {node.address}: {text!r} does not fit {HOP_WIDTH}"
+                widest = max(widest, len(text))
+    assert widest == HOP_WIDTH, f"the column is {HOP_WIDTH} wide and nothing needs more than {widest}"
+
+    future = PciNode("a", "b", link=PcieLink(64.0, 16, 64.0, 16), pcie_capability_present=True)
+    assert len(hop_cells(future)[0][0]) <= HOP_WIDTH, "a shipping generation must fit"
+    assert len(theme.NOT_READ) <= HOP_WIDTH and len(theme.LEGACY) <= HOP_WIDTH

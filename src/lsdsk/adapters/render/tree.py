@@ -8,11 +8,13 @@ a chipset used as a PCIe switch are drawn differently, and a narrower hop is
 visible where it happens.
 
 Two measured facts shaped it. Windows publishes no link registers for a
-bridge, so its hops must read ``not read`` rather than a dash: a dash beside a
-measured figure means "nothing there", and unread must not borrow it. And a
-real machine's fabric dwarfs its storage - 45 to 95 devices with 3 to 7
-storage controllers on the committed captures - which is exactly why density
-is a choice rather than a mechanism that hides anything.
+bridge, so a hop there is unread rather than absent, and the two read
+differently: the columns carry a symbol for each (:data:`theme.NOT_READ` and
+:data:`theme.LEGACY`) and the section spells out whichever it drew, because a
+dash nobody explains is the blank-implies-fine this tool refuses. And a real
+machine's fabric dwarfs its storage - 45 to 95 devices with 3 to 7 storage
+controllers on the committed captures - which is exactly why density is a
+choice rather than a mechanism that hides anything.
 
 Every row is ``[marker | spine | address | capable | running | name]``. The
 spine is one fixed width for the whole section, so the columns after it never
@@ -63,11 +65,16 @@ _MARGIN_BEFORE_COLUMNS = 1
 # Row geometry, named so the budget arithmetic reads as the fields it prices.
 _MARKER_WIDTH = 3
 _ADDRESS_WIDTH = 12
-# The hop field holds both "3.0 x4" and "legacy PCI" (10) without squashing.
-_HOP_WIDTH = 10
+#: Width of each hop column, public because it is the claim
+#: ``test_no_hop_figure_is_wider_than_the_column_it_is_drawn_in`` checks.
+# The widest figure the formatter can produce for a shipping generation is
+# "5.0 x16" (7). The two symbols beside it are shorter, so the column is sized
+# by the measurement rather than by the longest word about its absence, which
+# is 3 characters per column back to the device name.
+HOP_WIDTH = 7
 _GAP_WIDTH = 2
 #: Both hop columns with their gaps: they are drawn together or not at all.
-_HOPS_WIDTH = 2 * (_HOP_WIDTH + _GAP_WIDTH)
+_HOPS_WIDTH = 2 * (HOP_WIDTH + _GAP_WIDTH)
 #: Characters a name is worth drawing in. Below this the hops go first, because
 #: a device with no name is not identifiable and a hop is a figure beside one.
 _MIN_NAME_WIDTH = 8
@@ -121,21 +128,22 @@ def density_note(density: TreeDensity, how_to_change: str = OPTION_HINT) -> str:
 
 
 def hop_cells(node: PciNode) -> tuple[theme.Cell, theme.Cell]:
-    """(capable, running) for one device's own hop, never a bare dash.
+    """(capable, running) for one device's own hop, as a figure or a symbol.
 
     Asked of the NODE rather than of its link, because the difference between
     a register nobody could read and a device that has none is carried by
     :attr:`~lsdsk.domain.models.PciNode.pcie_capability_present` and by nothing
-    in the link itself.
+    in the link itself. Whichever symbol a section draws, it explains in
+    :meth:`Fabric.hop_legend`.
 
     Example:
         >>> from lsdsk.domain.models import PciNode, PcieLink
         >>> hop_cells(PciNode("a", "b", link=PcieLink(8.0, 4, 8.0, 4)))
         (('3.0 x4', ''), ('3.0 x4', ''))
-        >>> hop_cells(PciNode("a", "b", pcie_capability_present=False))
-        (('legacy PCI', ''), ('legacy PCI', ''))
+        >>> hop_cells(PciNode("a", "b", pcie_capability_present=False))[0][0]
+        'legacy'
         >>> hop_cells(PciNode("a", "b"))[0][0]
-        'not read'
+        '-'
     """
     return theme.hop_link_cells(node.link, capability_present=node.pcie_capability_present)
 
@@ -286,6 +294,16 @@ class Fabric:
                 legs.append(_STOP_LEG if siblings and siblings[-1] is member else _TREE_PIPE)
         return legs
 
+    def hop_legend(self) -> str:
+        """Spell out the hop symbols THIS section drew, or say nothing.
+
+        Collected from the rows rather than from the density or the platform,
+        so a machine whose every hop was read is not told what a dash means and
+        a section that drew one always is.
+        """
+        drawn = {text for node, _level in self.drawn() for text, _style in hop_cells(node)}
+        return theme.hop_legend(drawn)
+
     def row(self, node: PciNode, findings: Sequence[Finding]) -> Text:
         """One structure row: marker, spine, address, both hops, name.
 
@@ -312,7 +330,7 @@ class Fabric:
                 # Each cell carries its own style, so an unread figure is dimmed
                 # here exactly as it is in every other table rather than reading
                 # at the same weight as the measurement beside it.
-                line.append(f"{text:<{_HOP_WIDTH}}{_TREE_GAP}", style=style)
+                line.append(f"{text:<{HOP_WIDTH}}{_TREE_GAP}", style=style)
             room -= _HOPS_WIDTH
         # The hops go whole or not at all, never clipped: "3.0 x16" cut to
         # "3.0 x1" is not a shorter figure, it is a different one. A name cut
@@ -436,10 +454,11 @@ def render_fabric(
     density, expand_virtual = view.density, view.expand_virtual
     fabric = Fabric(inventory.pci_tree, width, density, expand_virtual=expand_virtual)
     layout = fabric.measure(inventory)
-    out: list[RenderableType] = [
-        Text(density_note(density, view.how_to_change), style=theme.STYLE_NOTE),
-        board_line(inventory, fabric),
-    ]
+    out: list[RenderableType] = [Text(density_note(density, view.how_to_change), style=theme.STYLE_NOTE)]
+    legend = fabric.hop_legend()
+    if legend:
+        out.append(Text(legend, style=theme.STYLE_UNKNOWN))
+    out.append(board_line(inventory, fabric))
     attached: set[str] = set()
     for node, _level in fabric.drawn():
         out.append(fabric.row(node, findings))
@@ -609,6 +628,7 @@ class FabricSection:
 
 __all__ = [
     "DEFAULT_VIEW",
+    "HOP_WIDTH",
     "KEY_HINT",
     "OPTION_HINT",
     "Fabric",
