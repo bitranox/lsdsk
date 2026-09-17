@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from rich.console import Group
 from rich.text import Text
 
-from ...domain.enums import TreeDensity
+from ...domain.enums import PciPortKind, TreeDensity
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_TREE_DENSITY
 from . import theme
 from .layout import GAP, Layout, clip, pad
@@ -193,28 +193,31 @@ class Fabric:
     def _kept(self) -> set[str]:
         """The addresses the density keeps.
 
-        FULL keeps everything. The reduced densities are stated as CLASSES,
-        not as a walk: every PCI bridge of any kind (a host bridge, an ISA
-        bridge, a PCI-to-PCI bridge - class base 06) plus storage.
+        FULL keeps everything. A reduced density starts from the STORAGE and
+        keeps the path to it: the bridges that come with it are the ones above
+        a drawn device, added by :meth:`_with_ancestors`, not every class-06
+        device on the board. Keeping them all drew the whole bridge skeleton -
+        a downstream port leading to a graphics card, an LPC bridge, the four
+        legs of a Thunderbolt switch - in a view that calls itself the storage
+        one, and on the reporter's capture 11 of the 26 devices drawn had no
+        storage anywhere below them.
+
         STORAGE_AND_SIBLINGS adds the non-storage devices that share a BRIDGE
         with storage - the neighbours that explain lane sharing. A shared
         parent that is not a bridge keeps nothing: devices on a root bus share
-        no link, so they are not each other's neighbours there. Reproduced
-        against all four committed captures: 95/20/20, 87/14/14, 45/27/27,
-        27/15/12 device lines.
+        no link, so they are not each other's neighbours there.
         """
         if self.density is TreeDensity.FULL:
             return set(self.by_address)
-        bridges = {address for address, node in self.by_address.items() if node.is_bridge_family}
         storage = {address for address, node in self.by_address.items() if node.is_storage}
-        keep = bridges | storage
+        keep = set(storage)
         if self.density is TreeDensity.STORAGE_AND_SIBLINGS:
             by_parent_all = self._grouped(self.by_address.values())
             for address in storage:
-                node = self.by_address[address]
-                if node.parent_address in bridges:
-                    shared = [sibling.address for sibling in by_parent_all.get(node.parent_address, ())]
-                    keep.update(shared)
+                parent = self.by_address[address].parent_address
+                above = self.by_address.get(parent) if parent is not None else None
+                if above is not None and above.is_bridge_family:
+                    keep.update(sibling.address for sibling in by_parent_all.get(parent, ()))
         return self._with_ancestors(keep)
 
     def _with_ancestors(self, keep: set[str]) -> set[str]:
@@ -433,13 +436,10 @@ def render_fabric(
     density, expand_virtual = view.density, view.expand_virtual
     fabric = Fabric(inventory.pci_tree, width, density, expand_virtual=expand_virtual)
     layout = fabric.measure(inventory)
-    out: list[RenderableType] = [Text(density_note(density, view.how_to_change), style=theme.STYLE_NOTE)]
-    if len(fabric.roots) > 1:
-        # Prose heading, not a spent spine level: a synthetic root is parentage,
-        # not hardware, and two root complexes are two bus labels, not two
-        # devices.
-        out.append(Text("root complexes:", style="bold"))
-        out.extend(Text(root.address, style=theme.STYLE_IDENTIFIER) for root in fabric.roots)
+    out: list[RenderableType] = [
+        Text(density_note(density, view.how_to_change), style=theme.STYLE_NOTE),
+        board_line(inventory, fabric),
+    ]
     attached: set[str] = set()
     for node, _level in fabric.drawn():
         out.append(fabric.row(node, findings))
@@ -456,6 +456,58 @@ def render_fabric(
         out.extend(fabric.disk_row(disk, layout, findings, inventory) for disk in orphans)
     out.extend(_virtual_block(fabric, inventory, findings, layout, expand_virtual=expand_virtual))
     return Group(*out)
+
+
+def board_line(inventory: Inventory, fabric: Fabric) -> Text:
+    """The top line of the tree: the board the whole fabric hangs off.
+
+    Every root complex is a port of the processor on this board, so a tree
+    whose first line is a bus label begins one level below the thing that
+    explains it. The line says only what the capture carries: the board where
+    DMI named it and the machine where it did not, the root complexes by their
+    own labels, the best link the board's OWN root ports publish, and how many
+    PCI devices the machine holds. A platform that publishes no bridge
+    registers - which is every Windows machine - gets no PCIe figure rather
+    than a guess, for the same reason an unread hop is not a measured one.
+
+    Args:
+        inventory: The machine.
+        fabric: This render's assembled tree, for the roots it drew.
+
+    Returns:
+        The board line.
+    """
+    line = Text(inventory.board or inventory.hostname, style=theme.STYLE_IDENTIFIER)
+    # Every root complex the MACHINE has, not the ones this density drew: how
+    # much of the fabric is on screen is a display choice, and a board does not
+    # lose a root complex because the view is not showing what hangs off it.
+    roots = [node.address for node in fabric.nodes if node.is_root]
+    if roots:
+        complexes = "root complex" if len(roots) == 1 else "root complexes"
+        line.append(f"   {len(roots)} {complexes} ({', '.join(roots)})")
+    best = _best_root_port(fabric.nodes)
+    if best is not None:
+        line.append(f"   root ports to PCIe {best}")
+    line.append(f"   {sum(1 for node in fabric.nodes if not node.is_root)} PCI devices")
+    return line
+
+
+def _best_root_port(nodes: Sequence[PciNode]) -> str | None:
+    """The best link any root port on this board publishes, as PCIe text.
+
+    Read from the ports the processor itself owns rather than from every
+    bridge, because a switch downstream port describes a card on the board and
+    not the board. ``None`` where no root port published a capability at all.
+    """
+    published = [
+        node.link
+        for node in nodes
+        if node.port_kind is PciPortKind.ROOT and node.link.max_speed_gtps is not None and node.link.max_width
+    ]
+    if not published:
+        return None
+    best = max(published, key=lambda link: (link.max_speed_gtps or 0.0, link.max_width or 0))
+    return theme.format_pcie_decimal(best.max_speed_gtps, best.max_width)
 
 
 def _virtual_block(
@@ -562,6 +614,7 @@ __all__ = [
     "Fabric",
     "FabricSection",
     "FabricView",
+    "board_line",
     "density_note",
     "hop_cells",
     "render_fabric",

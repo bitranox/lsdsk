@@ -16,6 +16,22 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
+- **A reduced density keeps the path to storage, not every bridge on the board.**
+  Both reduced shapes kept every class-06 device in the machine, so a view that
+  calls itself "storage and the bridges above it" drew the whole bridge skeleton
+  - a downstream port leading to a graphics card, an LPC bridge, the four legs of
+  a Thunderbolt switch. Measured on a reporter's capture, 11 of the 26 devices
+  drawn at the default had no storage anywhere below them. The seed is now the
+  storage controllers, plus the devices sharing a bridge with one at
+  `storage-and-siblings`, and the bridges come with them as their ancestors.
+  Device lines on the committed captures: 20 to 9, 14 to 5, 27 to 13, and 12 to 4
+  on the Windows one.
+- **The tree starts at the board that carries the fabric.** Every root complex is
+  a port of the processor on that board, so the list now opens with the board
+  itself - named where DMI named it, the machine where it did not - with its root
+  complexes, the best link its own root ports publish, and how many PCI devices
+  the machine holds. A platform that publishes no bridge registers gets no PCIe
+  figure rather than a guess.
 - **Every view opens on the least of the fabric, and says so.** Four device
   lines in five are unrelated to storage on real hardware, so the shipped
   `display.tree_density` is now `storage-only` rather than `full`, and each view

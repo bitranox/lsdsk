@@ -413,8 +413,10 @@ whatever this key is set to.
 topology`, the one-page report, and the interactive view alike. `full` names
 every device the board came with, root-down; `storage-and-siblings` keeps every
 bridge and storage controller plus the non-storage devices that share a bridge
-with one; `storage-only`, the shipped default, keeps bridges and storage alone,
-because four device lines in five are unrelated to storage on real hardware. No
+with one; `storage-only`, the shipped default, keeps the storage controllers
+and the bridges ABOVE them - the path from the board down to each drive, and
+nothing that leads elsewhere - because four device lines in five are unrelated
+to storage on real hardware. No
 view holds anything back silently: each says in a line above the tree what it is
 drawing and how to ask for more. Those are the only spellings
 accepted - the token is the value, case-insensitive. The interactive view cycles

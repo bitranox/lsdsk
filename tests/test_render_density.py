@@ -31,15 +31,16 @@ _FIXTURE = FIXTURES / "linux-sas-hba.json"
 
 DeviceLine = re.compile(r"(?<![0-9a-f:])0000:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]")
 
-# The measured device-line counts the density rule must reproduce. Every Linux
-# figure makes the two reduced densities IDENTICAL - no non-storage device
-# there shares a bridge with storage - so only the Windows capture separates
-# them, which is why it is the fixture any two-density test must use.
+# The measured device-line counts the density rule must reproduce: storage plus
+# the path above it, never every bridge on the board. Every Linux figure makes
+# the two reduced densities IDENTICAL - no non-storage device there shares a
+# bridge with storage - so only the Windows capture separates them, which is why
+# it is the fixture any two-density test must use.
 DENSITY_COUNTS: dict[str, dict[TreeDensity, int]] = {
-    "linux-sas-hba": {TreeDensity.FULL: 95, TreeDensity.STORAGE_AND_SIBLINGS: 20, TreeDensity.STORAGE_ONLY: 20},
-    "linux-minimal": {TreeDensity.FULL: 87, TreeDensity.STORAGE_AND_SIBLINGS: 14, TreeDensity.STORAGE_ONLY: 14},
-    "linux-nvme-board": {TreeDensity.FULL: 45, TreeDensity.STORAGE_AND_SIBLINGS: 27, TreeDensity.STORAGE_ONLY: 27},
-    "windows-ahci": {TreeDensity.FULL: 27, TreeDensity.STORAGE_AND_SIBLINGS: 15, TreeDensity.STORAGE_ONLY: 12},
+    "linux-sas-hba": {TreeDensity.FULL: 95, TreeDensity.STORAGE_AND_SIBLINGS: 9, TreeDensity.STORAGE_ONLY: 9},
+    "linux-minimal": {TreeDensity.FULL: 87, TreeDensity.STORAGE_AND_SIBLINGS: 5, TreeDensity.STORAGE_ONLY: 5},
+    "linux-nvme-board": {TreeDensity.FULL: 45, TreeDensity.STORAGE_AND_SIBLINGS: 13, TreeDensity.STORAGE_ONLY: 13},
+    "windows-ahci": {TreeDensity.FULL: 27, TreeDensity.STORAGE_AND_SIBLINGS: 7, TreeDensity.STORAGE_ONLY: 4},
 }
 
 
@@ -455,3 +456,103 @@ def test_listing_the_virtual_devices_fits_the_columns_around_them() -> None:
         assert (cell in in_fabric) == (cell in in_table), (
             f"the two views describe one machine differently: {in_fabric!r} against {in_table!r}"
         )
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", sorted(DENSITY_COUNTS))
+def test_a_reduced_density_draws_no_bridge_that_leads_away_from_storage(host: str) -> None:
+    """ "Storage and the bridges above it" means the bridges ABOVE IT.
+
+    Both reduced densities kept every class-06 device in the machine, so the
+    view drew the whole bridge skeleton of the board - downstream ports leading
+    to a GPU, an LPC bridge, a Thunderbolt switch - while calling itself the
+    storage view. Measured on the reporter's capture: 11 of the 26 devices
+    drawn at storage-only had no storage anywhere below them.
+
+    Asserted as the RULE rather than as a count, because the counts were
+    measured from the behaviour and so agreed with it whatever it did.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.tree import Fabric
+
+    machine = build_from(_load(host))
+    nodes = {node.address: node for node in machine.pci_tree}
+
+    def holds_storage(address: str) -> bool:
+        """Whether this node or anything below it is a storage controller."""
+        node = nodes[address]
+        return node.is_storage or any(holds_storage(child) for child in node.children)
+
+    for density in (TreeDensity.STORAGE_AND_SIBLINGS, TreeDensity.STORAGE_ONLY):
+        fabric = Fabric(machine.pci_tree, 200, density)
+        strays = [
+            node.address for node, _level in fabric.drawn() if node.is_bridge_family and not holds_storage(node.address)
+        ]
+        assert not strays, f"{host} {density.value}: bridges leading away from storage: {sorted(strays)[:6]}"
+
+
+@pytest.mark.os_agnostic
+def test_the_tree_starts_at_the_board_that_carries_the_fabric() -> None:
+    """The root of a PCI fabric is the board, so the list starts there.
+
+    Every root complex is a port of the CPU on that board, so a tree whose top
+    line is a bus label starts one level below the thing that explains it. The
+    line names what the capture actually carries and nothing else: the board
+    when DMI named it, the root complexes by label, the best capability the
+    board's own root ports publish, and how many PCI devices the machine holds.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.tree import FabricView, render_fabric
+    from lsdsk.domain.diagnostics import diagnose
+
+    machine = build_from(_load("linux-nvme-board"))
+    buffer = io.StringIO()
+    Console(file=buffer, width=200, no_color=True).print(
+        render_fabric(machine, diagnose(machine), 200, FabricView(density=TreeDensity.STORAGE_ONLY))
+    )
+    lines = [line.rstrip() for line in buffer.getvalue().splitlines() if line.strip()]
+    board = next(line for line in lines if machine.board in line)
+
+    assert machine.board, "the fixture no longer names a board"
+    assert "1 root complex" in board, board
+    assert "0000:00" in board, board
+    # This board's own root ports publish PCIe 5.0 x8, so the line may say so.
+    assert "5.0 x8" in board, board
+    assert f"{len([node for node in machine.pci_tree if not node.is_root])} PCI devices" in board, board
+    assert lines.index(board) < min(index for index, line in enumerate(lines) if DeviceLine.search(line)), (
+        "the board line sits below the devices it carries"
+    )
+
+
+@pytest.mark.os_agnostic
+def test_the_top_line_says_only_what_the_capture_carries() -> None:
+    """Three captures, three different silences, and none of them invented.
+
+    DMI names no board on two of the committed captures, and Windows publishes
+    no link registers for a root port at all, so neither the board nor its
+    capability can be stated there - and a summary line that fills either in
+    would be the tool claiming a reading nobody took.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.tree import FabricView, render_fabric
+    from lsdsk.domain.diagnostics import diagnose
+
+    def top_line(host: str) -> str:
+        machine = build_from(_load(host))
+        buffer = io.StringIO()
+        Console(file=buffer, width=200, no_color=True).print(
+            render_fabric(machine, diagnose(machine), 200, FabricView(density=TreeDensity.STORAGE_ONLY))
+        )
+        lines = [line.rstrip() for line in buffer.getvalue().splitlines() if line.strip()]
+        first_device = min(index for index, line in enumerate(lines) if DeviceLine.search(line))
+        return next(line for line in reversed(lines[:first_device]) if "root complex" in line)
+
+    nameless = top_line("linux-sas-hba")
+    assert "linux-sas-hba" in nameless, f"with no board named, the line names the machine: {nameless!r}"
+
+    two_roots = top_line("linux-minimal")
+    assert "2 root complexes" in two_roots, two_roots
+    assert "0000:00" in two_roots and "0000:ff" in two_roots, two_roots
+
+    windows = top_line("windows-ahci")
+    assert "PCIe" not in windows, f"no root port published a link here: {windows!r}"
