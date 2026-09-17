@@ -7,6 +7,25 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **The interactive view has its own palette.** The printed one has to stay
+  legible on a black console and a white one at once, which caps a saturated hue
+  near 4.2:1 and is why it could not simply be brightened. The interactive view
+  paints its own background, so it carries brighter colours and is measured
+  against that background at the body-text floor of 4.5. The roles are named
+  once in `theme.Palette`; the printed constants derive from `PRINTED`, so no
+  printed output changed. A gate renders all eight pages and fails if any
+  printed colour appears in the picture.
+
+- **A capacity can be written on both scales.** `theme.format_size_both` gives
+  `500GB/466GiB`: the decimal figure the drive was sold as, then the binary one
+  it reports. The detail panel uses it, where there is room for both.
+
+- **The README shows the interface moving.** One recorded pass through the whole
+  view - the cursor landing on a drive and the panel answering for it, the panel
+  hidden and restored, the tree density cycling, then each page in turn - and
+  every still below it is a frame of that same run. `scripts/make_demo.py`
+  builds both, so the pictures can be regenerated rather than going stale.
+
 - **A column header over the device rows.** They were the only column-shaped
   table in the tool with none, so two PCIe figures sat unlabelled on every row
   while the disk table one line below named its ten columns. The header is drawn
@@ -23,6 +42,26 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   The fabric tree travels with the JSON output as `pci_tree`.
 
 ### Changed
+
+- **A capacity names the scale it is written on.** A drive is sold in powers of
+  ten and reports in powers of two, and the two differ by about 7 percent per
+  step, so a drive sold as 500 GB rendered `466G` beside its own model name read
+  as a different drive from the one on the invoice. Every column now writes
+  `466GiB`.
+
+- **The detail panel labels the capacity.** It used to sit unlabelled in the
+  heading between the model and the media kind, so a reader going down the
+  labels found serial, firmware and wwn and concluded the panel did not carry
+  the size at all. It is an identity pair now, on both scales.
+
+- **Nothing in the interactive view is dimmed.** A repeated column header is an
+  option the cursor must skip, so it is disabled, and Textual draws a disabled
+  option at alpha 0.38 - which dimmed the tree's vertical rules for the height
+  of every header they ran through. A skipped line is now drawn exactly like a
+  reachable one.
+
+- **The detail panel is fenced on both sides.** With a rule above it and nothing
+  below, the record ran straight into the key bar and the two read as one block.
 
 - **The detail levels now climb.** `TreeDensity` is declared from least detail
   to most, and the shipped default is its first member. Nothing looks a density
