@@ -58,6 +58,12 @@ ASCII_FALLBACKS: Final[dict[str, str]] = {
     "\u201c": '"',  # left double quotation mark
     "\u201d": '"',  # right double quotation mark
     "…": "...",
+    # The tree's rules. One character each, so a degraded spine keeps its width
+    # and the columns after it do not move on the console the fallback is for.
+    "\u2502": "|",  # box drawings light vertical
+    "\u251c": "|",  # box drawings light vertical and right
+    "\u2514": "'",  # box drawings light up and right
+    "\u2500": "-",  # box drawings light horizontal
 }
 
 #: Encodings that represent every code point, so the check can be skipped.

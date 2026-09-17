@@ -32,6 +32,18 @@ GAP = "  "
 # ellipsis character does not.
 ELLIPSIS = ">"
 
+#: The tree's rules, in one place for both trees that draw them. Box drawing
+#: rather than ASCII because a rule should look like one, and safe on a legacy
+#: console because `safe_console.ASCII_FALLBACKS` maps each glyph to the ASCII
+#: character it replaced - ONE for one, so the spine keeps its width there.
+#: A branch and a last turn are two characters; a continuing rule and the dead
+#: space where a rule stops are the same width, which is what lets a row's legs
+#: be sliced level by level.
+TREE_BRANCH = "\u251c\u2500"
+TREE_LAST = "\u2514\u2500"
+TREE_PIPE = "\u2502 "
+TREE_STOP = "  "
+
 
 @dataclass(frozen=True, slots=True)
 class Column:

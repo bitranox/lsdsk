@@ -684,3 +684,71 @@ def hop_cells_of(node: Any) -> Any:
     from lsdsk.adapters.render.tree import hop_cells
 
     return hop_cells(node)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", ["linux-nvme-board", "windows-ahci"])
+def test_a_disk_block_carries_the_rules_of_the_controller_above_it(host: str) -> None:
+    """The rule stopped at every disk block and resumed on the far side.
+
+    A disk row blanked the whole spine, so a reader following a vertical rule
+    down the page lost it at each block and had to trust that it came back in
+    the right column. The spine is a fixed-width field, so drawing the
+    ancestors' rules there costs no width at all - the columns after it do not
+    move, which is the law this section is built on.
+
+    Read off the RENDERED section rather than from the row builders, because
+    the builders take the rules as an argument and a test that passes them in
+    would be asserting what it had just computed.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.tree import Fabric, FabricView, render_fabric
+    from lsdsk.domain.diagnostics import diagnose
+
+    machine = build_from(_load(host))
+    findings = diagnose(machine)
+    fabric = Fabric(machine.pci_tree, 160, TreeDensity.STORAGE_ONLY)
+    buffer = io.StringIO()
+    Console(file=buffer, width=160, no_color=True).print(
+        render_fabric(machine, findings, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
+    )
+    lines = buffer.getvalue().splitlines()
+
+    checked = 0
+    for node, _level in fabric.drawn():
+        if not (node.is_storage and machine.disks_on(node.address) and fabric.level_of(node) > 1):
+            continue
+        index = next(position for position, line in enumerate(lines) if node.address in line)
+        row = lines[index]
+        marker = row.index(node.address) - fabric.spine
+        above = slice(marker, marker + 2 * (fabric.level_of(node) - 1))
+        block = lines[index + 1 : index + 2 + len(machine.disks_on(node.address))]
+        assert block, f"{host} {node.address}: nothing was drawn under it"
+        for line in block:
+            assert line[above] == row[above], f"{host} {node.address}: {line[above]!r} against {row[above]!r}"
+        checked += 1
+    assert checked, f"{host} drew no nested storage controller with disks"
+
+
+@pytest.mark.os_agnostic
+def test_every_character_the_tree_draws_survives_a_legacy_console() -> None:
+    """The rules are box drawing, and a cp1252 console gets the old picture.
+
+    Nothing stops a box-drawing character reaching a legacy Windows console,
+    and without a fallback entry each one arrives as a literal `?` - measured
+    before this change. The fallback maps one character to one character, so
+    the spine keeps its width there: a wider or narrower substitute would break
+    the fixed-spine law on exactly the console the fallback exists for.
+    """
+    from lsdsk.adapters.cli.safe_console import ASCII_FALLBACKS, encode_safe
+    from lsdsk.adapters.render.layout import TREE_BRANCH, TREE_LAST, TREE_PIPE, TREE_STOP
+
+    glyphs = "".join((TREE_BRANCH, TREE_LAST, TREE_PIPE, TREE_STOP))
+    for character in set(glyphs) - {" "}:
+        assert character in ASCII_FALLBACKS or character.isascii(), f"{character!r} has no ASCII fallback"
+        assert len(ASCII_FALLBACKS.get(character, character)) == 1, f"{character!r} changes width when it degrades"
+
+    degraded = encode_safe(glyphs, "cp1252")
+
+    assert "?" not in degraded, f"a glyph reached a legacy console as a question mark: {degraded!r}"
+    assert len(degraded) == len(glyphs), f"the spine changed width: {degraded!r}"

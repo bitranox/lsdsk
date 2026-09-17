@@ -24,6 +24,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
+- **The tree's rules are box drawing, and they do not break.** A disk row
+  blanked the whole spine, so a reader following a vertical rule down the page
+  lost it at every disk block and had to trust it came back in the right column;
+  the block now carries the rules of the controller above it, which costs no
+  width because the spine is a fixed-width field. The glyphs are box drawing
+  rather than `|-` and `'-`, defined once for both trees and registered in the
+  console's ASCII fallback table one character for one, so a legacy Windows
+  console gets exactly the old picture with its widths intact rather than a page
+  of question marks.
 - **The hop columns carry symbols, and the section says what they mean.** An
   unread register is `-` and a device with no PCIe capability is `legacy`, with
   one line under the note spelling out whichever of the two the section actually

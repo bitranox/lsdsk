@@ -27,7 +27,7 @@ from ...domain.enums import Align, BusType, Environment, Severity
 from ...domain.models import pcie_bandwidth_gbps, pcie_generation
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_SUMMARY_LIMIT
 from . import theme
-from .layout import GAP, GUTTER, Column, Layout, fit, natural_widths, pad
+from .layout import GAP, GUTTER, TREE_BRANCH, TREE_LAST, Column, Layout, fit, natural_widths, pad
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -61,8 +61,6 @@ SUMMARY_LIMIT = DEFAULT_SUMMARY_LIMIT
 # Width assumed when nothing better is known.
 DEFAULT_WIDTH = DEFAULT_PIPED_WIDTH
 
-_TREE_BRANCH = "|-"
-_TREE_LAST = "'-"
 
 # Display order, and the order columns are given up in as space runs out. The
 # device and its link never go: they are the two things the tool is for.
@@ -642,7 +640,7 @@ def _disk_lines(
     """Render every disk under one controller, with tree glyphs."""
     lines: list[Text] = []
     for position, disk in enumerate(disks):
-        glyph = _TREE_LAST if position == len(disks) - 1 else _TREE_BRANCH
+        glyph = TREE_LAST if position == len(disks) - 1 else TREE_BRANCH
         lines.append(
             _disk_line(
                 disk,

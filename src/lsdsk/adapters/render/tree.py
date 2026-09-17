@@ -38,7 +38,7 @@ from rich.text import Text
 from ...domain.enums import PciPortKind, TreeDensity
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_TREE_DENSITY
 from . import theme
-from .layout import GAP, Column, Layout, clip, pad
+from .layout import GAP, TREE_BRANCH, TREE_LAST, TREE_PIPE, TREE_STOP, Column, Layout, clip, pad
 from .report import (
     DISK_COLUMNS,
     VIRTUAL_HEADING,
@@ -82,11 +82,6 @@ _MIN_NAME_WIDTH = 8
 _MIN_COLUMNS_WIDTH = 20
 
 _TREE_GAP = "  "
-_TREE_BRANCH = "|-"
-_TREE_LAST = "'-"
-_TREE_PIPE = "| "
-#: The vertical rule stops below an ancestor with no drawn sibling after it.
-_STOP_LEG = "  "
 
 # Width assumed when the caller gives none, as a Textual page does.
 DEFAULT_WIDTH = DEFAULT_PIPED_WIDTH
@@ -377,11 +372,30 @@ class Fabric:
         legs: list[str] = []
         for position, member in enumerate(chain):
             if position == len(chain) - 1:
-                legs.append(_TREE_LAST if self.by_parent[member.parent_address][-1] is member else _TREE_BRANCH)
+                legs.append(TREE_LAST if self.by_parent[member.parent_address][-1] is member else TREE_BRANCH)
             else:
                 siblings = self.by_parent.get(member.parent_address, [])
-                legs.append(_STOP_LEG if siblings and siblings[-1] is member else _TREE_PIPE)
+                legs.append(TREE_STOP if siblings and siblings[-1] is member else TREE_PIPE)
         return legs
+
+    def rules_under(self, node: PciNode | None) -> str:
+        """The spine a block nested under one device draws.
+
+        Its ancestors' rules unchanged, then a continuing rule in the device's
+        OWN column when a drawn sibling still follows it and dead space when
+        none does - which is what a reader following a rule down the page
+        expects to find on the far side of the block. The spine is a
+        fixed-width field, so this costs no width; blanking it was what broke
+        the rule at every disk block. ``None`` is a block with no device above
+        it - the orphans and the kernel-virtual tally - where there is no rule
+        to continue.
+        """
+        if node is None:
+            return " " * self.spine
+        legs = self._legs_for(node)
+        siblings = self.by_parent.get(node.parent_address, [])
+        below = TREE_STOP if siblings and siblings[-1] is node else TREE_PIPE
+        return "".join([*legs[:-1], below]).ljust(self.spine)[: self.spine]
 
     def hop_legend(self) -> str:
         """Spell out the hop symbols THIS section drew, or say nothing.
@@ -445,14 +459,15 @@ class Fabric:
         layout: Layout,
         findings: Sequence[Finding],
         inventory: Inventory,
+        rules: str = "",
     ) -> Text:
         """One disk's row under its controller's fabric row.
 
-        Marker, spine left BLANK rather than drawn, then the globally fitted
-        columns. Blank, not a per-level branch glyph: the columns are the
-        comparison the view exists for, and the spine spending no width on
-        decoration under a controller is what keeps those columns as wide as
-        the fabric rows' own allowance permits.
+        Marker, the rules of the controller above it, then the globally fitted
+        columns. The rules rather than a blank, because a reader following one
+        down the page lost it at every disk block and had to trust it came back
+        in the right column; and no branch glyph of the disk's own, because the
+        spine is sized for the deepest DEVICE level and a disk sits one deeper.
 
         Matches report._disk_line's field order so the two trees' rows read as
         one shape: marker, gutter, then columns.
@@ -460,7 +475,7 @@ class Fabric:
         line = Text()
         severity = worst_severity(findings, disk.path)
         line.append(theme.marker_for(severity).ljust(_MARKER_WIDTH), style=theme.style_for(severity))
-        line.append(" " * self.spine)
+        line.append(rules)
         cells = disk_row(disk, inventory.port_link_for(disk))
         for column in layout.columns:
             width = layout.widths[column.key]
@@ -552,8 +567,9 @@ def render_fabric(
         if node.is_storage and inventory.disks_on(node.address):
             disks = inventory.disks_on(node.address)
             attached.update(disk.node for disk in disks)
-            out.append(disk_header_line(fabric, layout))
-            out.extend(fabric.disk_row(disk, layout, findings, inventory) for disk in disks)
+            rules = fabric.rules_under(node)
+            out.append(disk_header_line(fabric, layout, rules))
+            out.extend(fabric.disk_row(disk, layout, findings, inventory, rules) for disk in disks)
             labelled = False
     orphans = [disk for disk in inventory.disks if disk.node not in attached]
     if orphans:
@@ -660,15 +676,18 @@ def _no_pci_fallback(
     return render_controller_disks(inventory, findings, width, expand_virtual=expand_virtual)
 
 
-def disk_header_line(fabric: Fabric, layout: Layout) -> Text:
+def disk_header_line(fabric: Fabric, layout: Layout, rules: str = "") -> Text:
     """The disk column header, offset by marker and spine like every row.
 
     Copied from report's own with the gutter widened to the spine: the header
     has to sit exactly above the cells it labels, which sit spine characters
-    further right than they did in the old tree.
+    further right than they did in the old tree. It carries the same rules as
+    the rows below it, so the block is one shape rather than a gap followed by
+    a resumption.
     """
     line = Text()
-    line.append(" " * (_MARKER_WIDTH + fabric.spine))
+    line.append(" " * _MARKER_WIDTH)
+    line.append(rules or " " * fabric.spine)
     for column in layout.columns:
         line.append(pad(column.title, layout.widths[column.key], column.align), style=theme.STYLE_HEADER)
         line.append(GAP)
