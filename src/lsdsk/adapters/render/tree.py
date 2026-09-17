@@ -103,9 +103,9 @@ DEFAULT_WIDTH = DEFAULT_PIPED_WIDTH
 #: view that quietly holds devices back is the blank-implies-fine this tool
 #: exists to refuse - the same reason the kernel-virtual tally names its flag.
 _DENSITY_DRAWN: dict[TreeDensity, str] = {
-    TreeDensity.FULL: "every PCI device",
-    TreeDensity.STORAGE_AND_SIBLINGS: "storage and whatever shares a bridge with it",
     TreeDensity.STORAGE_ONLY: "storage and the bridges above it",
+    TreeDensity.STORAGE_AND_SIBLINGS: "storage and whatever shares a bridge with it",
+    TreeDensity.FULL: "every PCI device",
 }
 
 #: How a reader of the printed view changes it, and how a reader of the

@@ -481,13 +481,19 @@ class LsdskApp(App[None]):
         return True
 
     def action_tree_density(self) -> None:
-        """Cycle the fabric's density across full, storage-with-neighbours, storage-only.
+        """Step to the next density, adding detail each press and wrapping at the top.
 
         The whole machine on the topology page is what the full density is
         for, and what four unrelated devices in five bury; cycling is what
         makes the reduced shapes a keypress away rather than a configuration
         edit, which is the decision that made the always-every-device tree
         livable.
+
+        The climb is the ENUM's, not this function's: ``TreeDensity`` is
+        declared from least detail to most and the shipped default is its
+        first member, so stepping forward from wherever the reader is adds
+        detail until it wraps back to the least. Both halves of that are held
+        by tests, because either one alone leaves the sequence broken.
         """
         members = list(TreeDensity)
         current = self.display_settings.tree_density

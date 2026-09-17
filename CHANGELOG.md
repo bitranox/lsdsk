@@ -24,6 +24,16 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
+- **The detail levels now climb.** `TreeDensity` is declared from least detail
+  to most, and the shipped default is its first member. Nothing looks a density
+  up: the topology page's `d` key steps to the next member and `--help` lists
+  the tokens in the same order, so the declaration is the sequence a reader is
+  walked through. Declared most-first with the default at the far end, the very
+  first press jumped from `storage-only` past `storage-and-siblings` to `full`
+  and only then came back down. Each press now adds detail, `storage-only` ->
+  `storage-and-siblings` -> `full`, and wraps to the least. `--tree-density`
+  accepts exactly what it did before.
+
 - **The tree's rules are box drawing, they turn down into what they carry, and
   they do not break.** A device that carries another says so on its own row with
   a turn into the column its children draw in, and a leader runs from every

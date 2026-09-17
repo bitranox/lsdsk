@@ -161,6 +161,46 @@ async def test_the_density_key_cycles_the_fabric_on_the_topology_page() -> None:
 
 @pytest.mark.os_agnostic
 @pytest.mark.asyncio
+async def test_every_press_of_the_density_key_adds_detail_until_it_wraps() -> None:
+    """The key is what a reader meets, so the climb is asserted at the key.
+
+    The test above takes its expected sequence from ``list(TreeDensity)``, the
+    same list production walks, so it stays green whatever that order is: it
+    proves the press redraws, never that the redraw shows MORE. Here the
+    observable is how many devices each press puts on screen, and the rule is
+    that it never falls until the ring wraps at the end.
+
+    Read from the default rather than from a chosen member, because where the
+    default sits in the ring is half of what was wrong: the first press used
+    to land on the most detailed of the three and the second to fall back.
+    """
+    import re
+
+    from lsdsk.domain.enums import TreeDensity
+
+    device_address = re.compile(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]")
+
+    def devices_drawn() -> int:
+        buffer = io.StringIO()
+        Console(width=160, file=buffer, no_color=True).print(app.query_one("#tree", Static).content)
+        return sum(1 for line in buffer.getvalue().splitlines() if device_address.search(line))
+
+    app = LsdskApp(inventory())
+    async with app.run_test(size=(160, 45)) as pilot:
+        counts = [devices_drawn()]
+        # One short of a full ring: the last press is the wrap back to the
+        # least, which is the one step that is SUPPOSED to fall.
+        for _step in range(len(TreeDensity) - 1):
+            await pilot.press("d")
+            await pilot.pause()
+            counts.append(devices_drawn())
+
+    assert counts == sorted(counts), f"a press took detail away: {counts}"
+    assert counts[-1] > counts[0], f"the ring never reached more detail than it started with: {counts}"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
 async def test_the_density_key_is_gated_to_the_topology_page() -> None:
     """Verify `d` answers on the page whose view it changes, and only there.
 

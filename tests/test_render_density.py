@@ -38,10 +38,10 @@ DeviceLine = re.compile(r"(?<![0-9a-f:])0000:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]")
 # bridge with storage - so only the Windows capture separates them, which is why
 # it is the fixture any two-density test must use.
 DENSITY_COUNTS: dict[str, dict[TreeDensity, int]] = {
-    "linux-sas-hba": {TreeDensity.FULL: 95, TreeDensity.STORAGE_AND_SIBLINGS: 9, TreeDensity.STORAGE_ONLY: 9},
-    "linux-minimal": {TreeDensity.FULL: 87, TreeDensity.STORAGE_AND_SIBLINGS: 5, TreeDensity.STORAGE_ONLY: 5},
-    "linux-nvme-board": {TreeDensity.FULL: 45, TreeDensity.STORAGE_AND_SIBLINGS: 13, TreeDensity.STORAGE_ONLY: 13},
-    "windows-ahci": {TreeDensity.FULL: 27, TreeDensity.STORAGE_AND_SIBLINGS: 7, TreeDensity.STORAGE_ONLY: 4},
+    "linux-sas-hba": {TreeDensity.STORAGE_ONLY: 9, TreeDensity.STORAGE_AND_SIBLINGS: 9, TreeDensity.FULL: 95},
+    "linux-minimal": {TreeDensity.STORAGE_ONLY: 5, TreeDensity.STORAGE_AND_SIBLINGS: 5, TreeDensity.FULL: 87},
+    "linux-nvme-board": {TreeDensity.STORAGE_ONLY: 13, TreeDensity.STORAGE_AND_SIBLINGS: 13, TreeDensity.FULL: 45},
+    "windows-ahci": {TreeDensity.STORAGE_ONLY: 4, TreeDensity.STORAGE_AND_SIBLINGS: 7, TreeDensity.FULL: 27},
 }
 
 
@@ -111,6 +111,62 @@ def test_the_two_reduced_densities_separate_on_the_windows_capture() -> None:
 
     crossed = {match_of(line) for line in only} - {match_of(line) for line in siblings}
     assert not crossed, f"the tighter density dropped nothing: {sorted(crossed)}"
+
+
+@pytest.mark.os_agnostic
+def test_the_densities_are_declared_from_least_detail_to_most() -> None:
+    """The declared order IS the order a reader is walked through.
+
+    Two surfaces read it: the ``d`` key walks ``list(TreeDensity)`` from
+    wherever the current value sits, and ``--help`` lists the tokens. So the
+    member order is not a stylistic choice, it is the sequence somebody
+    experiences, and it has to climb.
+
+    Measured on the drawing rather than on a member list, because a list
+    written here would agree with whatever the enum happens to say. Only
+    ``windows-ahci`` separates the two reduced densities, so it is the only
+    capture that can tell an ascending order from a merely non-decreasing one.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.domain.diagnostics import diagnose
+
+    machine = build_from(_load("windows-ahci"))
+    findings = diagnose(machine)
+    drawn = [(density, len(_device_lines(machine, findings, density))) for density in TreeDensity]
+    counts = [count for _density, count in drawn]
+    assert counts == sorted(counts), f"the densities do not climb: {[(d.value, n) for d, n in drawn]}"
+    # The separation is what makes the assertion above non-vacuous: three equal
+    # counts would sort as trivially ordered and prove nothing.
+    assert len(set(counts)) == len(counts), f"this capture cannot separate the densities: {counts}"
+
+
+@pytest.mark.os_agnostic
+def test_the_shipped_default_is_the_least_detailed_so_the_cycle_climbs_from_it() -> None:
+    """Ascending members only ascend for a reader who starts at the first one.
+
+    The cycle wraps, so where the DEFAULT sits in the ring decides what the
+    first press does. With the least detail declared first and shipped as the
+    default, every press adds detail until it wraps back to the least; with the
+    default anywhere else the first press jumps and the climb is broken. That
+    is exactly the defect this pair replaces: the default was the LAST member,
+    so the first press landed on the most detailed of the three.
+    """
+    from lsdsk.adapters.config.tunables import DEFAULT_TREE_DENSITY
+
+    assert DEFAULT_TREE_DENSITY is next(iter(TreeDensity))
+
+
+@pytest.mark.os_agnostic
+def test_the_cli_lists_the_density_tokens_in_the_order_they_are_declared() -> None:
+    """``--help`` teaches the same climb the key does.
+
+    The tokens were sorted alphabetically, which agreed with the declared
+    order only by accident of these three spellings - rename one and the two
+    surfaces would silently disagree about which end is which.
+    """
+    from lsdsk.adapters.cli.constants import TREE_DENSITY_TOKENS
+
+    assert tuple(density.value for density in TreeDensity) == TREE_DENSITY_TOKENS
 
 
 @pytest.mark.os_agnostic

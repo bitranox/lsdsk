@@ -18,9 +18,11 @@ CLICK_CONTEXT_SETTINGS: Final[dict[str, list[str]]] = {"help_option_names": ["-h
 
 #: The tokens the ``--tree-density`` choices register, in one list so the
 #: option after a subcommand, the global one on the root group and the test
-#: that pins the contract name the same vocabulary. Sorted, so the choice's
-#: metavar lists them deterministically.
-TREE_DENSITY_TOKENS: Final[tuple[str, ...]] = tuple(sorted(str(density) for density in TreeDensity))
+#: that pins the contract name the same vocabulary. In the enum's own order,
+#: which runs from least detail to most, so the metavar teaches the same climb
+#: the interactive ``d`` key walks. It was sorted alphabetically, which agreed
+#: with that order only by accident of these three spellings.
+TREE_DENSITY_TOKENS: Final[tuple[str, ...]] = tuple(str(density) for density in TreeDensity)
 
 __all__ = [
     "CLICK_CONTEXT_SETTINGS",

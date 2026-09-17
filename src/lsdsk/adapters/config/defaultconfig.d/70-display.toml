@@ -93,16 +93,17 @@ wwn_width = 24
 # opens on the least of the fabric and names in a line above the tree how to
 # ask for more. The full tree answers "what is this machine's PCIe fabric":
 # every bridge, controller and stray device the board came with, root-down.
-# Three shapes:
+# Three shapes, least detail first:
 #
-#   "full"                 every PCI device.
+#   "storage-only"         bridges and storage alone; the shape the topology
+#                          showed before the fabric tree existed.
 #   "storage-and-siblings" bridges, storage, and the non-storage devices that
 #                          share a BRIDGE with storage - the neighbours that
 #                          explain lane sharing.
-#   "storage-only"         bridges and storage alone; the shape the topology
-#                          showed before the fabric tree existed.
+#   "full"                 every PCI device.
 #
-# The interactive view also cycles these with `d` on its topology page.
+# The interactive view cycles these with `d` on its topology page, in that
+# order, so each press adds detail until it wraps back to the least.
 #
 # Environment Variable: LSDSK___DISPLAY__TREE_DENSITY="storage-only"
 tree_density = "storage-only"

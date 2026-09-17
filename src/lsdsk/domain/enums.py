@@ -178,12 +178,20 @@ class PciPortKind(StrEnum):
 class TreeDensity(StrEnum):
     """How much of the PCI fabric the topology view draws.
 
+    **Ordered from least detail to most, and that order is load-bearing.**
+    Two surfaces walk the members rather than look one up: the interactive
+    view's ``d`` key steps to the next member, and ``TREE_DENSITY_TOKENS``
+    lists them for ``--help``. So the declaration below is the sequence a
+    reader is actually walked through, and it has to climb. It climbs FROM the
+    shipped default because that default is the first member; put the default
+    anywhere else and the first press jumps to the far end.
+
     The full tree answers "what is this machine's PCIe fabric". On real
     hardware four lines in five are devices unrelated to storage, which can
     bury the story the view exists to tell, so two reduced shapes are
-    selectable: keeping the devices that share a bridge with storage preserves
-    the neighbours that explain lane sharing, and storage-only is the topology
-    the tool showed before the tree existed.
+    selectable: storage-only is the topology the tool showed before the tree
+    existed, and keeping the devices that share a bridge with storage as well
+    preserves the neighbours that explain lane sharing.
 
     On click 8.5 a ``click.Choice`` matches an input against the member NAME
     as well as the registered tokens, so a StrEnum member is itself accepted
@@ -195,12 +203,12 @@ class TreeDensity(StrEnum):
         >>> f"{TreeDensity.STORAGE_ONLY}"
         'storage-only'
         >>> tuple(d.value for d in TreeDensity)
-        ('full', 'storage-and-siblings', 'storage-only')
+        ('storage-only', 'storage-and-siblings', 'full')
     """
 
-    FULL = "full"
-    STORAGE_AND_SIBLINGS = "storage-and-siblings"
     STORAGE_ONLY = "storage-only"
+    STORAGE_AND_SIBLINGS = "storage-and-siblings"
+    FULL = "full"
 
 
 class Environment(StrEnum):

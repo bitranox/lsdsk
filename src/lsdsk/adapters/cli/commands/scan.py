@@ -86,9 +86,9 @@ _TREE_DENSITY_OPTION = option(
     "tree_density",
     type=click.Choice(TREE_DENSITY_TOKENS, case_sensitive=False),
     default=None,
-    help="How much of the PCI fabric the topology shows: every device, the "
-    "bridges and storage with the devices sharing a bridge with them, or "
-    "bridges and storage alone.",
+    help="How much of the PCI fabric the topology shows, least first: "
+    "bridges and storage alone, those plus the devices sharing a bridge "
+    "with them, or every device.",
 )
 _FORMAT_OPTION = option(
     "--format",
