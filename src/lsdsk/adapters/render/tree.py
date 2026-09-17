@@ -169,12 +169,11 @@ class Fabric:
         self.by_address = {node.address: node for node in nodes if not node.is_root}
         self.kept = self._kept()
         self.by_parent = self._grouped(node for node in self.by_address.values() if node.address in self.kept)
-        # A root is drawn when anything under it survived the density.
-        self.roots = [
-            node
-            for node in nodes
-            if node.is_root and any(n.parent_address == node.address for n in self.by_address.values())
-        ]
+        # A root is drawn when something under it SURVIVED the density. Asked
+        # of the kept set rather than of every device, which is always true by
+        # construction - a root bus exists exactly where a device attaches to
+        # one - and so listed a root complex with nothing beneath it.
+        self.roots = [node for node in nodes if node.is_root and self.by_parent.get(node.address)]
         deepest = max((self.level_of(node) for node, _level in self.drawn()), default=0)
         # One width for the whole section, wide enough for the DEEPEST row's
         # legs: padding to anything narrower let that row's columns sit two
@@ -216,7 +215,28 @@ class Fabric:
                 if node.parent_address in bridges:
                     shared = [sibling.address for sibling in by_parent_all.get(node.parent_address, ())]
                     keep.update(shared)
-        return keep
+        return self._with_ancestors(keep)
+
+    def _with_ancestors(self, keep: set[str]) -> set[str]:
+        """Add whatever stands between a kept device and its root bus.
+
+        The density selects by CLASS and the drawing walks DOWN through kept
+        parents, so a kept device whose parent was not kept is selected and
+        never reached - it does not float, it vanishes, which is the failure a
+        view that exists to show hardware can least afford. It happens wherever
+        an intermediate device carries no class code, which is exactly what
+        Windows publishes for its host bridge.
+
+        On the committed captures every ancestor of a kept device is a bridge
+        and already kept, which is why the measured counts do not move.
+        """
+        complete = set(keep)
+        for address in keep:
+            parent = self.by_address[address].parent_address
+            while parent is not None and parent in self.by_address and parent not in complete:
+                complete.add(parent)
+                parent = self.by_address[parent].parent_address
+        return complete
 
     def drawn(self) -> list[tuple[PciNode, int]]:
         """Every drawn device with its level, parents before children, address

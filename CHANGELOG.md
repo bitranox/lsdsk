@@ -79,6 +79,26 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   by address collapsed the pair silently, last writer wins, so one device
   vanished while the survivor was drawn under the other's name - against this
   module's own rule that the fabric loses nothing a capture carries.
+- **A reduced density draws every device it keeps.** The density selects by
+  class and the drawing walks down through kept parents, so a kept device whose
+  parent was not kept was selected and never reached - it vanished rather than
+  floating, which is what happens below any device carrying no class code, and
+  Windows publishes none for its host bridge. Whatever stands between a kept
+  device and its root bus is kept with it, and the guard that claimed to hold
+  this was a tautology over any tree the module can build.
+- **A root complex with nothing beneath it is no longer listed.** The test for
+  it asked whether any device sits on that bus, which is true by construction of
+  every root the assembly makes, instead of asking whether anything survived the
+  density.
+
+### Removed
+
+- **Five fabric helpers and one node property that nothing consumed.**
+  `ports_of`, `subtree_of`, `contains_storage`, `descendant_count`, `walk` and
+  `PciNode.class_name` had no caller in the package or its tests. `contains_storage`
+  also encoded a SUBTREE rule where the densities are implemented as class
+  membership, so wiring it in later on the strength of its name would have moved
+  the device counts this repo pins.
 
 ## [1.2.13] 2026-09-12 23:30:24
 

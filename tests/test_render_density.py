@@ -112,38 +112,75 @@ def test_the_two_reduced_densities_separate_on_the_windows_capture() -> None:
 
 
 @pytest.mark.os_agnostic
-def test_a_reduced_density_never_floats_a_subtree() -> None:
-    """Every drawn device's children are drawn, so no acquired-only bridge floats.
+def test_a_density_draws_every_device_it_keeps() -> None:
+    """What the density SELECTS and what the view DRAWS are one set.
 
-    A subtree with no drawn parent reads as a device on the previous level's
-    bus, which is a lie about where it hangs.
+    The two are computed separately: the density picks by class, and the
+    drawing walks down from the roots through kept parents only. A kept device
+    whose parent was NOT kept is therefore selected and never reached - it does
+    not float, it disappears, which is the worse of the two failures and the
+    one the previous guard could not see. It asserted that a drawn node's
+    parent chain reaches a drawn node or a synthetic root, which is true of any
+    tree this module can build, whatever the density selects.
+
+    A classless intermediate device is how that happens in practice: Windows
+    publishes no class for its host bridge, so the bridge is not kept and a
+    storage controller below it was selected and then dropped.
     """
     from lsdsk.adapters.hw.snapshot import build_from
-    from lsdsk.domain.diagnostics import diagnose
+    from lsdsk.adapters.render.tree import Fabric
 
     for host in DENSITY_COUNTS:
         machine = build_from(_load(host))
-        findings = diagnose(machine)
-        tree = {node.address: node for node in machine.pci_tree}
         for density in tuple(TreeDensity):
-            drawn = _drawn_addresses(machine, findings, density)
-            for address in drawn:
-                node = tree[address]
-                if node.parent_address is None:
-                    continue
-                parent = node.parent_address
-                while parent not in drawn and parent in tree:
-                    # A synthetic ROOT BUS reaches the top of the walk without
-                    # its own device line: it carries its children directly or
-                    # under a heading, so reaching one is not floating. Only a
-                    # lost DEVICE parent is.
-                    ancestor = tree[parent]
-                    if ancestor.parent_address is None:
-                        break
-                    parent = ancestor.parent_address
-                assert parent in drawn or tree[parent].parent_address is None, (
-                    f"{host} {density.value}: {address} lost its parent line"
-                )
+            fabric = Fabric(machine.pci_tree, 200, density)
+            drawn = {node.address for node, _level in fabric.drawn()}
+            lost = fabric.kept - drawn
+            assert not lost, f"{host} {density.value}: kept but never drawn: {sorted(lost)[:5]}"
+
+
+@pytest.mark.os_agnostic
+def test_a_storage_controller_under_a_classless_device_is_still_drawn() -> None:
+    """The case no committed capture carries, built by hand.
+
+    Windows publishes no class code for its host bridge, and the reduced
+    densities keep bridges BY CLASS, so a controller hanging below one was
+    selected by the density and then never reached by the walk: the section
+    rendered empty with no line saying why.
+    """
+    from lsdsk.adapters.hw import fabric as fabric_module
+    from lsdsk.adapters.render.tree import FabricView, render_fabric
+    from lsdsk.domain.enums import PciPortKind
+    from lsdsk.domain.models import Inventory, PcieLink
+
+    def source(address: str, class_code: int | None, parent: str | None) -> Any:
+        return fabric_module.NodeSource(
+            address=address,
+            name=f"device at {address}",
+            class_code=class_code,
+            vendor=None,
+            driver=None,
+            link=PcieLink(),
+            port_kind=PciPortKind.UNKNOWN,
+            connector_present=None,
+            physical_slot_number=None,
+            parent=parent,
+        )
+
+    tree = fabric_module.assemble(
+        [
+            source("0000:00:01.0", None, None),
+            source("0000:01:00.0", 0x010802, "0000:00:01.0"),
+        ]
+    )
+    machine = Inventory("example", pci_tree=tree)
+
+    buffer = io.StringIO()
+    Console(file=buffer, width=120, no_color=True).print(
+        render_fabric(machine, (), 120, FabricView(density=TreeDensity.STORAGE_ONLY))
+    )
+
+    assert "0000:01:00.0" in buffer.getvalue(), f"the controller vanished:\n{buffer.getvalue()}"
 
 
 @pytest.mark.os_agnostic
@@ -188,15 +225,6 @@ def _rendered(machine: Any, findings: Any, density: TreeDensity) -> str:
 
 def _device_lines(machine: Any, findings: Any, density: TreeDensity) -> list[str]:
     return [line for line in _rendered(machine, findings, density).splitlines() if DeviceLine.search(line)]
-
-
-def _drawn_addresses(machine: Any, findings: Any, density: TreeDensity) -> set[str]:
-    found: set[str] = set()
-    for line in _rendered(machine, findings, density).splitlines():
-        match = DeviceLine.search(line)
-        if match is not None:
-            found = {match.group(0), *found}
-    return found
 
 
 @pytest.mark.os_agnostic

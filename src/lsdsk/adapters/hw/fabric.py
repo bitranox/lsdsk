@@ -26,7 +26,7 @@ from ...domain.enums import PciPortKind
 from ...domain.models import PciNode
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Mapping, Sequence
 
     from ...domain.models import PcieLink
 
@@ -312,88 +312,10 @@ def _first_cycle(parents: Mapping[str, str | None]) -> frozenset[str] | None:
         resolved.update(path)
 
 
-def ports_of(nodes: Sequence[PciNode]) -> dict[str, PciNode]:
-    """Return every node that is a PCIe port, keyed by address.
-
-    Args:
-        nodes: The assembled tree.
-
-    Returns:
-        The port nodes of the fabric.
-    """
-    return {node.address: node for node in nodes if node.is_port}
-
-
-def subtree_of(nodes: Sequence[PciNode], address: str) -> tuple[PciNode, ...]:
-    """Return a node and every node below it.
-
-    Args:
-        nodes: The assembled tree.
-
-    Returns:
-        The subtree in address order, or empty when the address is not in
-        the tree.
-    """
-    by_address = {node.address: node for node in nodes}
-    start = by_address.get(address)
-    if start is None:
-        return ()
-    found: dict[str, PciNode] = {address: start}
-    pending = [address]
-    while pending:
-        for child in by_address[pending.pop()].children:
-            if child in by_address and child not in found:
-                found[child] = by_address[child]
-                pending.append(child)
-    return tuple(found[key] for key in sorted(found))
-
-
-def contains_storage(nodes: Sequence[PciNode], address: str) -> bool:
-    """Whether a node's subtree holds a storage controller.
-
-    Args:
-        nodes: The assembled tree.
-        address: The node to judge.
-
-    Returns:
-        True when the node itself or anything below it is storage. False for
-        an address not in the tree, because an unknown node claims nothing.
-    """
-    return any(node.is_storage for node in subtree_of(nodes, address))
-
-
-def descendant_count(nodes: Sequence[PciNode], address: str) -> int:
-    """How many devices sit at or below a node, excluding the node itself.
-
-    Args:
-        nodes: The assembled tree.
-        address: The node to count from.
-
-    Returns:
-        The count of descendants, zero for a leaf or an unknown address.
-    """
-    return max(len(subtree_of(nodes, address)) - 1, 0)
-
-
-def walk(nodes: Sequence[PciNode]) -> Iterable[PciNode]:
-    """Yield every node of the tree in address order.
-
-    Args:
-        nodes: The assembled tree.
-
-    Returns:
-        Every node, roots included.
-    """
-    yield from nodes
-
-
 __all__ = [
+    "DUPLICATE_MARK",
+    "UNPLACED_ROOT",
     "NodeSource",
     "assemble",
-    "contains_storage",
-    "descendant_count",
     "port_kind_of",
-    "ports_of",
-    "subtree_of",
-    "walk",
 ]

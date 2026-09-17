@@ -698,16 +698,6 @@ class PciNode:
         """
         return self.class_code is not None and (self.class_code >> 16) == _PCI_CLASS_STORAGE
 
-    @property
-    def class_name(self) -> str:
-        """A readable name for this node's class.
-
-        Example:
-            >>> PciNode("a", "b", class_code=0x030000).class_name
-            'display controller'
-        """
-        return pci_class_name(self.class_code)
-
 
 @dataclass(frozen=True, slots=True)
 class InterfaceLink:
