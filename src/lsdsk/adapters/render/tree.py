@@ -38,7 +38,7 @@ from rich.text import Text
 from ...domain.enums import PciPortKind, TreeDensity
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_TREE_DENSITY
 from . import theme
-from .layout import GAP, Layout, clip, pad
+from .layout import GAP, Column, Layout, clip, pad
 from .report import (
     DISK_COLUMNS,
     VIRTUAL_HEADING,
@@ -50,7 +50,7 @@ from .report import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
 
@@ -148,6 +148,93 @@ def hop_cells(node: PciNode) -> tuple[theme.Cell, theme.Cell]:
     return theme.hop_link_cells(node.link, capability_present=node.pcie_capability_present)
 
 
+class Field(NamedTuple):
+    """One field of a device row: which column it is, and how wide it is drawn.
+
+    Attributes:
+        key: The column, as :data:`DEVICE_COLUMNS` names it.
+        width: Characters it is given.
+    """
+
+    key: str
+    width: int
+
+
+#: The device row's columns, in the order it draws them, titled in the words
+#: this repo already uses for these figures: `report.SLOT_COLUMNS` and
+#: `tables.CONTROLLER_COLUMNS` both say `address`, `capable` and `running`. The
+#: last is `name` rather than `device`, because the disk table one line below
+#: says `device` for a path like /dev/sda and two headers spelling one word for
+#: two different things is worse than a plainer word.
+DEVICE_COLUMNS: tuple[Column, ...] = (
+    Column("address", "address"),
+    Column("capable", "capable"),
+    Column("running", "running"),
+    Column("name", "name"),
+)
+
+_HEADER_CELLS: dict[str, theme.Cell] = {column.key: (column.title, theme.STYLE_HEADER) for column in DEVICE_COLUMNS}
+
+
+def device_fields(width: int, spine: int) -> tuple[Field, ...]:
+    """Which fields a device row draws at this width, and how wide each is.
+
+    Decided once per SECTION rather than per row, because it depends only on
+    the width and the spine - which is what lets the header label exactly the
+    columns the rows drew. The hop pair goes whole or not at all: a clipped
+    speed is a different figure rather than a shorter one. Below the address
+    there is nothing left to give up, so the address is cut and ends the row,
+    which beats wrapping onto a line that carries no address and reads as
+    another device.
+
+    Args:
+        width: Width the section is laid out in.
+        spine: Width the tree rules occupy, after the marker.
+
+    Returns:
+        The fields, in drawing order, never empty.
+
+    Example:
+        >>> [(field.key, field.width) for field in device_fields(200, 9)]
+        [('address', 12), ('capable', 7), ('running', 7), ('name', 156)]
+        >>> [field.key for field in device_fields(48, 9)]
+        ['address', 'name']
+        >>> device_fields(20, 5)
+        (Field(key='address', width=12),)
+    """
+    room = width - _MARKER_WIDTH - spine
+    if room < _ADDRESS_WIDTH + _GAP_WIDTH:
+        return (Field("address", max(room, 1)),)
+    room -= _ADDRESS_WIDTH + _GAP_WIDTH
+    hops: tuple[Field, ...] = ()
+    if room >= _HOPS_WIDTH + _MIN_NAME_WIDTH:
+        hops = (Field("capable", HOP_WIDTH), Field("running", HOP_WIDTH))
+        room -= _HOPS_WIDTH
+    return (Field("address", _ADDRESS_WIDTH), *hops, Field("name", room))
+
+
+def _append_fields(line: Text, fields: Sequence[Field], cells: Mapping[str, theme.Cell]) -> None:
+    """Draw one row of fields: padded and separated, the last one clipped.
+
+    One loop for the rows and the header, so a title cannot sit a character off
+    the values under it - which is exactly what a second copy of this
+    arithmetic did to the disk header.
+    """
+    for field in fields[:-1]:
+        text, style = cells[field.key]
+        line.append(f"{text:<{field.width}}{_TREE_GAP}", style=style)
+    text, style = cells[fields[-1].key]
+    line.append(clip(text, fields[-1].width), style=style)
+
+
+def device_header_line(fabric: Fabric) -> Text:
+    """The column header over the device rows, offset like one of them."""
+    line = Text()
+    line.append(" " * (_MARKER_WIDTH + fabric.spine))
+    _append_fields(line, fabric.fields, _HEADER_CELLS)
+    return line
+
+
 def _spine_width(deepest_level: int) -> int:
     """Spine width for the deepest drawn level (a root bus is level 0)."""
     return _SPINE_UNIT * deepest_level + _MARGIN_BEFORE_COLUMNS
@@ -188,6 +275,8 @@ class Fabric:
         # characters right of every other row's, which is exactly the law this
         # module exists to keep. Capped so the address still fits beside it.
         self.spine = min(_spine_width(deepest), max(width - _MARKER_WIDTH - _ADDRESS_WIDTH, 0))
+        #: What every row of this section draws, so the header labels the same.
+        self.fields = device_fields(self.width, self.spine)
 
     @staticmethod
     def _grouped(devices: Iterable[PciNode]) -> dict[str | None, list[PciNode]]:
@@ -305,40 +394,31 @@ class Fabric:
         return theme.hop_legend(drawn)
 
     def row(self, node: PciNode, findings: Sequence[Finding]) -> Text:
-        """One structure row: marker, spine, address, both hops, name.
+        """One structure row: marker, spine, then the fields this width holds.
 
         The severity marker leads, exactly as every table's rows lead, so a
         narrow terminal cannot strand it on a line of its own - the failure
         test_no_width_strands_a_severity_marker_on_its_own_line exists for.
+        The fields after the spine are the section's, not this row's, so the
+        header above them labels exactly what every row drew.
         """
-        line = Text()
         severity = worst_severity(findings, node.address)
+        line = Text()
         line.append(theme.marker_for(severity).ljust(_MARKER_WIDTH), style=theme.style_for(severity))
         line.append("".join(self._legs_for(node)).ljust(self.spine)[: self.spine])
-        room = self.width - _MARKER_WIDTH - self.spine
-        if room < _ADDRESS_WIDTH + _GAP_WIDTH:
-            # Below the address there is nothing left to give up, so the
-            # address is cut rather than the row wrapping onto a second line
-            # that carries no address and reads as another device.
-            line.append(clip(node.address, max(room, 1)), style=theme.STYLE_IDENTIFIER)
-            return line
-        line.append(node.address.ljust(_ADDRESS_WIDTH), style=theme.STYLE_IDENTIFIER)
-        line.append(_TREE_GAP)
-        room -= _ADDRESS_WIDTH + _GAP_WIDTH
-        if room >= _HOPS_WIDTH + _MIN_NAME_WIDTH:
-            for text, style in hop_cells(node):
-                # Each cell carries its own style, so an unread figure is dimmed
-                # here exactly as it is in every other table rather than reading
-                # at the same weight as the measurement beside it.
-                line.append(f"{text:<{HOP_WIDTH}}{_TREE_GAP}", style=style)
-            room -= _HOPS_WIDTH
-        # The hops go whole or not at all, never clipped: "3.0 x16" cut to
-        # "3.0 x1" is not a shorter figure, it is a different one. A name cut
-        # short says so with the marker clip() adds, and reads as itself.
-        tag = theme.pci_tag(node.port_kind)
-        label = node.name + (f"  ({tag})" if tag else "")
-        line.append(clip(label, room))
+        _append_fields(line, self.fields, self._cells(node))
         return line
+
+    def _cells(self, node: PciNode) -> dict[str, theme.Cell]:
+        """What this device puts in each field, styled."""
+        capable, running = hop_cells(node)
+        tag = theme.pci_tag(node.port_kind)
+        return {
+            "address": (node.address, theme.STYLE_IDENTIFIER),
+            "capable": capable,
+            "running": running,
+            "name": (node.name + (f"  ({tag})" if tag else ""), ""),
+        }
 
     def measure(self, inventory: Inventory) -> Layout:
         """Fit the disk columns ONCE over every disk drawn anywhere.
@@ -460,13 +540,21 @@ def render_fabric(
         out.append(Text(legend, style=theme.STYLE_UNKNOWN))
     out.append(board_line(inventory, fabric))
     attached: set[str] = set()
+    labelled = False
     for node, _level in fabric.drawn():
+        if not labelled:
+            # Again after a disk block has come between, for the reason the disk
+            # header already repeats per controller: on a machine with several,
+            # one header at the top ends up twenty lines from its own columns.
+            out.append(device_header_line(fabric))
+            labelled = True
         out.append(fabric.row(node, findings))
         if node.is_storage and inventory.disks_on(node.address):
             disks = inventory.disks_on(node.address)
             attached.update(disk.node for disk in disks)
             out.append(disk_header_line(fabric, layout))
             out.extend(fabric.disk_row(disk, layout, findings, inventory) for disk in disks)
+            labelled = False
     orphans = [disk for disk in inventory.disks if disk.node not in attached]
     if orphans:
         out.append(Text(""))
@@ -628,14 +716,18 @@ class FabricSection:
 
 __all__ = [
     "DEFAULT_VIEW",
+    "DEVICE_COLUMNS",
     "HOP_WIDTH",
     "KEY_HINT",
     "OPTION_HINT",
     "Fabric",
     "FabricSection",
     "FabricView",
+    "Field",
     "board_line",
     "density_note",
+    "device_fields",
+    "device_header_line",
     "hop_cells",
     "render_fabric",
 ]

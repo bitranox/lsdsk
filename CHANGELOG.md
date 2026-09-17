@@ -7,6 +7,14 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **A column header over the device rows.** They were the only column-shaped
+  table in the tool with none, so two PCIe figures sat unlabelled on every row
+  while the disk table one line below named its ten columns. The header is drawn
+  from the same field plan as the rows - one arithmetic, two consumers - so it
+  cannot name a column the width made the rows drop, nor sit a character off the
+  values beneath it, and it repeats after a disk block for the reason the disk
+  header already repeats per controller.
+
 - **The topology view shows the whole PCI fabric.** Every PCI device - the
   bridges, the controllers, the unrelated devices beside them - now renders
   root-down under its own PCI structure, so a card on a root-complex port and

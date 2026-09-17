@@ -586,3 +586,101 @@ def test_no_hop_figure_is_wider_than_the_column_it_is_drawn_in() -> None:
     future = PciNode("a", "b", link=PcieLink(64.0, 16, 64.0, 16), pcie_capability_present=True)
     assert len(hop_cells(future)[0][0]) <= HOP_WIDTH, "a shipping generation must fit"
     assert len(theme.NOT_READ) <= HOP_WIDTH and len(theme.LEGACY) <= HOP_WIDTH
+
+
+@pytest.mark.os_agnostic
+def test_the_device_rows_carry_a_header_over_their_own_columns() -> None:
+    """Two unlabelled figures on every row, in the tool's only headerless table.
+
+    Every other column-shaped view in this tool names its columns, including
+    the disk table nested one line below these rows, so `3.0 x4   3.0 x4` was
+    the one place a reader had to know which figure was which.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.tree import Fabric, FabricView, device_header_line, render_fabric
+    from lsdsk.domain.diagnostics import diagnose
+
+    machine = build_from(_load("linux-nvme-board"))
+    findings = diagnose(machine)
+    fabric = Fabric(machine.pci_tree, 160, TreeDensity.STORAGE_ONLY)
+    header = device_header_line(fabric).plain
+    node, _level = fabric.drawn()[0]
+    row = fabric.row(node, findings).plain
+    capable, running = (text for text, _style in hop_cells_of(node))
+
+    assert header.index("address") == row.index(node.address), f"{header!r} against {row!r}"
+    assert header.index("capable") == row.index(capable), f"{header!r} against {row!r}"
+    assert header.index("running") == row.index(running, row.index(capable) + 1), f"{header!r} against {row!r}"
+    assert header.index("name") == row.index(node.name[:8]), f"{header!r} against {row!r}"
+
+    buffer = io.StringIO()
+    Console(file=buffer, width=160, no_color=True).print(
+        render_fabric(machine, findings, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
+    )
+    lines = buffer.getvalue().splitlines()
+    first_device = min(index for index, line in enumerate(lines) if DeviceLine.search(line))
+    assert any("address" in line and "capable" in line for line in lines[:first_device]), (
+        "the header sits below the rows it labels"
+    )
+
+
+@pytest.mark.os_agnostic
+def test_the_header_names_exactly_the_columns_the_rows_draw() -> None:
+    """One arithmetic, two consumers: a header cannot label a dropped column.
+
+    The row drops both hop columns whole when the width cannot hold them, so a
+    header computed separately would keep naming `capable` over the device name
+    at exactly the widths where the column is gone - and a header is read as a
+    promise about what sits beneath it.
+
+    Driven on a hand-built device whose link was READ, so the hop text is
+    `3.0 x4` and cannot be confused with anything else on the row. A capture
+    whose hops are all the dash symbol cannot answer this question at all: `-`
+    also occurs in the tree glyph `|-`, so "the row drew a hop" would be true
+    at every width, which is how this test first passed while proving nothing.
+    """
+    from lsdsk.adapters.hw import fabric as fabric_module
+    from lsdsk.adapters.render.tree import Fabric, device_header_line
+    from lsdsk.domain.enums import PciPortKind
+    from lsdsk.domain.models import PcieLink
+
+    tree = fabric_module.assemble(
+        [
+            fabric_module.NodeSource(
+                address="0000:00:01.0",
+                name="a controller whose link was read",
+                class_code=0x010802,
+                vendor=None,
+                driver=None,
+                link=PcieLink(8.0, 4, 8.0, 4),
+                port_kind=PciPortKind.UNKNOWN,
+                connector_present=None,
+                physical_slot_number=None,
+                parent=None,
+                pcie_capability_present=True,
+            )
+        ]
+    )
+    seen = {True: 0, False: 0}
+    for width in range(20, 201):
+        fabric = Fabric(tree, width, TreeDensity.FULL)
+        header = device_header_line(fabric)
+        node, _level = fabric.drawn()[0]
+        drew_hops = "3.0 x4" in fabric.row(node, ()).plain
+        seen[drew_hops] += 1
+
+        assert ("capable" in header.plain) == drew_hops, f"at {width}: {header.plain!r}"
+        assert ("running" in header.plain) == drew_hops, f"at {width}: {header.plain!r}"
+        console = Console(file=io.StringIO(), width=width, no_color=True)
+        with console.capture() as capture:
+            console.print(header)
+        assert len(capture.get().rstrip("\n").split("\n")) == 1, f"at {width}: the header wrapped"
+
+    assert seen[True] and seen[False], f"the sweep never saw both shapes: {seen}"
+
+
+def hop_cells_of(node: Any) -> Any:
+    """The hop cells of one node, imported where the tests can share it."""
+    from lsdsk.adapters.render.tree import hop_cells
+
+    return hop_cells(node)
