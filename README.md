@@ -108,6 +108,12 @@ and every page is also a subcommand, so `lsdsk health` prints exactly what page 
 These were taken with a counter history recorded, which is why the problem counts differ from the
 plain run above: with a second reading to compare against, history can raise a finding by one step.
 
+One pass through the whole interface, in the order below: the cursor lands on a drive and the panel
+under the table answers for it, `i` hides and restores that panel, `d` cycles how much of the PCI
+fabric is drawn, and then each page in turn. Every still further down is a frame of this same run.
+
+![The lsdsk interactive view: eight pages, the tree density cycling, the detail panel, and a table being scrolled](docs/media/lsdsk-demo.gif)
+
 ### 1 Topology
 
 ![Topology](docs/screenshots/1-topology.png)
