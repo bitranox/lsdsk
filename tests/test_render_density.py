@@ -10,6 +10,7 @@ where the counts below were measured before anything was written.
 from __future__ import annotations
 
 import io
+import itertools
 import json
 import re
 from pathlib import Path
@@ -741,9 +742,9 @@ def test_every_character_the_tree_draws_survives_a_legacy_console() -> None:
     the fixed-spine law on exactly the console the fallback exists for.
     """
     from lsdsk.adapters.cli.safe_console import ASCII_FALLBACKS, encode_safe
-    from lsdsk.adapters.render.layout import TREE_BRANCH, TREE_LAST, TREE_PIPE, TREE_STOP
+    from lsdsk.adapters.render.layout import TREE_BRANCH, TREE_DOWN, TREE_LAST, TREE_LEAD, TREE_PIPE, TREE_STOP
 
-    glyphs = "".join((TREE_BRANCH, TREE_LAST, TREE_PIPE, TREE_STOP))
+    glyphs = "".join((TREE_BRANCH, TREE_DOWN, TREE_LAST, TREE_LEAD, TREE_PIPE, TREE_STOP))
     for character in set(glyphs) - {" "}:
         assert character in ASCII_FALLBACKS or character.isascii(), f"{character!r} has no ASCII fallback"
         assert len(ASCII_FALLBACKS.get(character, character)) == 1, f"{character!r} changes width when it degrades"
@@ -752,3 +753,46 @@ def test_every_character_the_tree_draws_survives_a_legacy_console() -> None:
 
     assert "?" not in degraded, f"a glyph reached a legacy console as a question mark: {degraded!r}"
     assert len(degraded) == len(glyphs), f"the spine changed width: {degraded!r}"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", ["linux-nvme-board", "linux-sas-hba"])
+def test_nothing_drawn_between_two_siblings_breaks_the_rule_between_them(host: str) -> None:
+    """A rule runs from a device to its next sibling, past whatever is between.
+
+    Between two devices at one level the vertical rule in their own column is
+    live, and the section draws other things in that gap: the drives of the
+    first one, its column header, the header repeated for the rows that follow.
+    Each of those blanked the rule and it resumed on the far side, which is
+    exactly what a reader tracking a line down the page cannot follow.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.layout import TREE_BRANCH, TREE_LAST, TREE_PIPE
+    from lsdsk.adapters.render.tree import Fabric, FabricView, render_fabric
+    from lsdsk.domain.diagnostics import diagnose
+
+    machine = build_from(_load(host))
+    findings = diagnose(machine)
+    fabric = Fabric(machine.pci_tree, 160, TreeDensity.STORAGE_ONLY)
+    buffer = io.StringIO()
+    Console(file=buffer, width=160, no_color=True).print(
+        render_fabric(machine, findings, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
+    )
+    lines = buffer.getvalue().splitlines()
+    rules = {TREE_PIPE[0], TREE_BRANCH[0], TREE_LAST[0]}
+
+    def row_of(address: str) -> int:
+        return next(index for index, line in enumerate(lines) if address in line)
+
+    checked = 0
+    for group in fabric.by_parent.values():
+        for node, sibling in itertools.pairwise(group):
+            first, second = row_of(node.address), row_of(sibling.address)
+            column = lines[second].index(TREE_BRANCH[0] if sibling is not group[-1] else TREE_LAST[0])
+            for line in lines[first + 1 : second]:
+                assert len(line) > column and line[column] in rules, (
+                    f"{host}: the rule at column {column} breaks between "
+                    f"{node.address} and {sibling.address}: {line[: column + 1]!r}"
+                )
+                checked += 1
+    assert checked, f"{host} drew nothing between two siblings"

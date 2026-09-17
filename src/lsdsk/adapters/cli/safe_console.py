@@ -64,6 +64,7 @@ ASCII_FALLBACKS: Final[dict[str, str]] = {
     "\u251c": "|",  # box drawings light vertical and right
     "\u2514": "'",  # box drawings light up and right
     "\u2500": "-",  # box drawings light horizontal
+    "\u252c": "+",  # box drawings light down and horizontal
 }
 
 #: Encodings that represent every code point, so the check can be skipped.

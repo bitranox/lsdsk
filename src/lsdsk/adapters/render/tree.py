@@ -38,7 +38,19 @@ from rich.text import Text
 from ...domain.enums import PciPortKind, TreeDensity
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_TREE_DENSITY
 from . import theme
-from .layout import GAP, TREE_BRANCH, TREE_LAST, TREE_PIPE, TREE_STOP, Column, Layout, clip, pad
+from .layout import (
+    GAP,
+    TREE_BRANCH,
+    TREE_DOWN,
+    TREE_LAST,
+    TREE_LEAD,
+    TREE_PIPE,
+    TREE_STOP,
+    Column,
+    Layout,
+    clip,
+    pad,
+)
 from .report import (
     DISK_COLUMNS,
     VIRTUAL_HEADING,
@@ -56,11 +68,11 @@ if TYPE_CHECKING:
 
     from ...domain.models import Disk, Finding, Inventory, PciNode
 
-# Spine geometry: two characters per drawn level, one blank before the address
-# column. S = 2K + 1 for the deepest drawn level K, so a four-level fabric fits
-# a spine of 9 where the old tree gutter was 3.
+# Spine geometry: two characters per drawn level, then the column a row's own
+# turn points down into, then one blank so the leader never touches the address.
+# S = 2K + 2 for the deepest drawn level K.
 _SPINE_UNIT = 2
-_MARGIN_BEFORE_COLUMNS = 1
+_MARGIN_BEFORE_COLUMNS = 2
 
 # Row geometry, named so the budget arithmetic reads as the fields it prices.
 _MARKER_WIDTH = 3
@@ -222,10 +234,15 @@ def _append_fields(line: Text, fields: Sequence[Field], cells: Mapping[str, them
     line.append(clip(text, fields[-1].width), style=style)
 
 
-def device_header_line(fabric: Fabric) -> Text:
-    """The column header over the device rows, offset like one of them."""
+def device_header_line(fabric: Fabric, rules: str = "") -> Text:
+    """The column header over the device rows, offset and ruled like one.
+
+    It carries the rules live at the point it is drawn, so a header repeated
+    between two devices does not break the vertical line running past it.
+    """
     line = Text()
-    line.append(" " * (_MARKER_WIDTH + fabric.spine))
+    line.append(" " * _MARKER_WIDTH)
+    line.append(rules or " " * fabric.spine)
     _append_fields(line, fabric.fields, _HEADER_CELLS)
     return line
 
@@ -395,7 +412,21 @@ class Fabric:
         legs = self._legs_for(node)
         siblings = self.by_parent.get(node.parent_address, [])
         below = TREE_STOP if siblings and siblings[-1] is node else TREE_PIPE
+        # Its ANCESTORS' rules only. The rule ends at the PCIe device itself:
+        # the drives under it are that device's own table rather than another
+        # level of fabric, so nothing continues into their column.
         return "".join([*legs[:-1], below]).ljust(self.spine)[: self.spine]
+
+    def rules_before(self, node: PciNode) -> str:
+        """The rules a line drawn just ABOVE this device carries.
+
+        Its ancestors' rules unchanged, and in the device's own column the
+        rule that leads down into it - because between a device and its next
+        sibling the rule at that column is live, and a header line drawn in
+        between must not break it.
+        """
+        legs = self._legs_for(node)
+        return "".join([*legs[:-1], TREE_PIPE]).ljust(self.spine)[: self.spine]
 
     def hop_legend(self) -> str:
         """Spell out the hop symbols THIS section drew, or say nothing.
@@ -419,9 +450,30 @@ class Fabric:
         severity = worst_severity(findings, node.address)
         line = Text()
         line.append(theme.marker_for(severity).ljust(_MARKER_WIDTH), style=theme.style_for(severity))
-        line.append("".join(self._legs_for(node)).ljust(self.spine)[: self.spine])
+        line.append(self._spine_for(node))
         _append_fields(line, self.fields, self._cells(node))
         return line
+
+    def _spine_for(self, node: PciNode) -> str:
+        """This row's rules: its legs, then a turn or a leader to the columns.
+
+        The turn (:data:`TREE_DOWN`) sits in the first character after the
+        legs, which is exactly the column this device's own children draw their
+        glyph in, so a row says on its own line that a device hangs below it.
+        Only a DEVICE: the drives under a controller are that controller's own
+        table rather than another level of fabric, so the rule ends at the PCIe
+        device and the block below it carries its ancestors' rules alone.
+
+        The rest is a leader to the columns after the spine, which is otherwise
+        blank padding: a shallow row's glyph and its address sat at opposite
+        ends of it with nothing joining them.
+        """
+        legs = "".join(self._legs_for(node))
+        carries = bool(self.by_parent.get(node.address))
+        lead = (TREE_DOWN if carries else TREE_LEAD) + TREE_LEAD * self.spine
+        # One blank at the end, so the leader stops short of the address rather
+        # than running into it.
+        return (legs + lead)[: max(self.spine - 1, 0)].ljust(self.spine)
 
     def _cells(self, node: PciNode) -> dict[str, theme.Cell]:
         """What this device puts in each field, styled."""
@@ -561,7 +613,7 @@ def render_fabric(
             # Again after a disk block has come between, for the reason the disk
             # header already repeats per controller: on a machine with several,
             # one header at the top ends up twenty lines from its own columns.
-            out.append(device_header_line(fabric))
+            out.append(device_header_line(fabric, fabric.rules_before(node)))
             labelled = True
         out.append(fabric.row(node, findings))
         if node.is_storage and inventory.disks_on(node.address):

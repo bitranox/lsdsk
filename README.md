@@ -70,13 +70,20 @@ lsdsk  linux-sas-hba   19 disks on 5 controllers
                   and 7 more, run `lsdsk findings`
 
 Topology on linux-sas-hba
-   0000:00:1f.2  Intel Corporation C600/X79 series chipset 6-Port SATA AHCI Controller  ahci
-
-~  0000:03:00.0  HBA 9500-16i  mpt3sas  fw 23.00.00.00  PCIe 3.0 x8 of 4.0 x8   21 ports, 11 free
-      device        model                       size  kind  bus   port     disk     link     temp  worn
-|- ~  /dev/sda      Samsung SSD 870 EVO 4TB     3.6T  SSD   SATA  12G      6G       6G        36C    1%
-|- ~  /dev/sdb      Samsung SSD 870 EVO 500GB   466G  SSD   SATA  12G      6G       6G        30C    2%
-|- !  /dev/sdd      Samsung SSD 870 EVO 4TB     3.6T  SSD   SATA  12G      6G       6G        37C    1%
+showing storage and the bridges above it; --tree-density to change the detail level
+legacy = no PCIe capability
+linux-sas-hba   2 root complexes (0000:00, 0000:ff)   root ports to PCIe 3.0 x8   95 PCI devices
+        address       capable  running  name
+   ├─   0000:00:01.0  3.0 x4   3.0 x4   Intel Corporation ... PCI Express Root Port 1a  (root port)
+   │ └─ 0000:05:00.0  3.0 x4   3.0 x4   Samsung Electronics Co Ltd NVMe SSD Controller SM951/PM951
+   │    device        model                       size  kind  bus   port     disk     link     temp  worn
+!  │    /dev/nvme0n1  SAMSUNG MZVPV512HDGL-00000  477G  SSD   NVME  Gen3 x4  Gen3 x4  Gen3 x4   39C   59%
+        address       capable  running  name
+   ├─   0000:00:03.0  3.0 x8   3.0 x8   Intel Corporation ... PCI Express Root Port 3a  (root port)
+~  │ └─ 0000:03:00.0  4.0 x8   3.0 x8   Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS38xx
+   │    device        model                       size  kind  bus   port     disk     link     temp  worn
+~  │    /dev/sda      Samsung SSD 870 EVO 4TB     3.6T  SSD   SATA  12G      6G       6G        36C    1%
+~  │    /dev/sdb      Samsung SSD 870 EVO 500GB   466G  SSD   SATA  12G      6G       6G        30C    2%
 
 Controllers on linux-sas-hba        ...
 Disks on linux-sas-hba              ...

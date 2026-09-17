@@ -24,11 +24,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
-- **The tree's rules are box drawing, and they do not break.** A disk row
-  blanked the whole spine, so a reader following a vertical rule down the page
-  lost it at every disk block and had to trust it came back in the right column;
-  the block now carries the rules of the controller above it, which costs no
-  width because the spine is a fixed-width field. The glyphs are box drawing
+- **The tree's rules are box drawing, they turn down into what they carry, and
+  they do not break.** A device that carries another says so on its own row with
+  a turn into the column its children draw in, and a leader runs from every
+  glyph to the address rather than leaving blank padding between them. The rule
+  ENDS at the PCIe device: the drives under a controller are that controller's
+  own table, not another level of fabric. Everything drawn between two devices
+  at one level - a drive table, a repeated column header - now carries the rule
+  that is live at that column, where each of them used to blank it and let it
+  resume on the far side. The glyphs are box drawing
   rather than `|-` and `'-`, defined once for both trees and registered in the
   console's ASCII fallback table one character for one, so a legacy Windows
   console gets exactly the old picture with its widths intact rather than a page

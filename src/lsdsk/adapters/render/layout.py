@@ -43,6 +43,13 @@ TREE_BRANCH = "\u251c\u2500"
 TREE_LAST = "\u2514\u2500"
 TREE_PIPE = "\u2502 "
 TREE_STOP = "  "
+#: The turn where a row's own rule goes DOWN to the block it carries, and the
+#: leader that runs from any row's glyph to the columns after the spine. The
+#: turn sits exactly above the first child's glyph, so a parent says on its own
+#: line that something hangs below it rather than leaving it to be read off the
+#: next line's indentation.
+TREE_DOWN = "\u252c"
+TREE_LEAD = "\u2500"
 
 
 @dataclass(frozen=True, slots=True)
