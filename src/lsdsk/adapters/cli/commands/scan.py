@@ -229,14 +229,20 @@ def resolve_tunables(ctx: click.Context) -> Tunables:
         cli_context = get_cli_context(ctx)
     except RuntimeError:
         # Invoked directly in a test, without the root group having run.
-        config, expand_virtual = Config({}, {}), False
+        config, expand_virtual, tree_density = Config({}, {}), False, None
     else:
         config, expand_virtual = cli_context.config, cli_context.expand_virtual
+        tree_density = cli_context.tree_density
     display = get_display_settings(config)
     # A global --expand-virtual lands on the same key the file sets, so one
-    # object answers "does this run list them" whichever source said so.
+    # object answers "does this run list them" whichever source said so. The
+    # same holds for --tree-density: every view that draws the fabric reads it
+    # from here, so a global option folded in anywhere else would reach the one
+    # command that asked and silently miss the default page.
     if expand_virtual:
         display = display.model_copy(update={"expand_virtual": True})
+    if tree_density is not None:
+        display = display.model_copy(update={"tree_density": tree_density})
     return Tunables(get_thresholds(config), display)
 
 
@@ -604,10 +610,11 @@ def effective_tree_density(ctx: click.Context, tree_density: str | None) -> Tree
 
     Three sources, in the same order ``--expand-virtual`` settles in: the
     subcommand's own ``--tree-density``, the global ``--tree-density`` beside
-    ``--replay``, and the configuration key. Landing on the same key the file
-    sets is what makes one object answer the question whichever source spoke,
-    so ``lsdsk --tree-density storage-only`` and
-    ``display.tree_density = "storage-only"`` name the same setting.
+    ``--replay``, and the configuration key. Only the subcommand's own option
+    is read here, because the other two are already settled onto one field by
+    :func:`resolve_tunables`, which is what the default page and ``report``
+    read as well. Resolving the global option here instead gave this command
+    the setting and left every other view on the shipped default.
 
     Args:
         ctx: The Click context, which carries the merged configuration.
@@ -618,13 +625,6 @@ def effective_tree_density(ctx: click.Context, tree_density: str | None) -> Tree
     """
     if tree_density is not None:
         return TreeDensity(tree_density.casefold())
-    try:
-        global_density = get_cli_context(ctx).tree_density
-    except RuntimeError:
-        # Invoked directly in a test, without the root group having run.
-        global_density = None
-    if global_density is not None:
-        return global_density
     return resolve_tunables(ctx).display.tree_density
 
 

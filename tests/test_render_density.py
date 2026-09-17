@@ -13,12 +13,17 @@ import io
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from rich.console import Console
 
 from lsdsk.domain.enums import TreeDensity
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from click.testing import CliRunner
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 _FIXTURE = FIXTURES / "linux-sas-hba.json"
@@ -191,3 +196,39 @@ def _drawn_addresses(machine: Any, findings: Any, density: TreeDensity) -> set[s
         if match is not None:
             found = {match.group(0), *found}
     return found
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("command", "scoped"),
+    [([], False), (["report"], False), (["topology"], False), (["topology"], True)],
+    ids=["default-view", "report", "topology", "topology-scoped"],
+)
+def test_the_density_option_reaches_every_view_that_draws_the_fabric(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], command: list[str], scoped: bool
+) -> None:
+    """One setting, whichever view draws the fabric and whichever source asked.
+
+    ``--tree-density`` is a GLOBAL option, so README states it "applies to
+    whichever command follows". It reached ``topology`` alone: the bare page
+    and ``report`` resolve their display settings through ``resolve_tunables``,
+    which folded ``--expand-virtual`` and not this, so the flag was accepted
+    and silently dropped on the view the tool tells you to run first.
+    """
+    from lsdsk.adapters.cli import cli
+
+    fixture = str(FIXTURES / "linux-sas-hba.json")
+    common = ["--no-record", "--replay", fixture]
+    asked = [*command, "--tree-density", "storage-only"] if scoped else ["--tree-density", "storage-only", *command]
+    full = cli_runner.invoke(cli, [*common, *command], obj=production_factory)
+    reduced = cli_runner.invoke(cli, [*common, *asked], obj=production_factory)
+
+    assert full.output, "the run without the option rendered nothing"
+    assert reduced.output, "the run with the option rendered nothing"
+    drawn_full = [line for line in full.output.splitlines() if DeviceLine.search(line)]
+    drawn_reduced = [line for line in reduced.output.splitlines() if DeviceLine.search(line)]
+    where = "after" if scoped else "before"
+    assert len(drawn_reduced) < len(drawn_full), (
+        f"--tree-density {where} {command or ['(no command)']} changed nothing: "
+        f"{len(drawn_reduced)} lines against {len(drawn_full)}"
+    )
