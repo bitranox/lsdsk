@@ -156,6 +156,26 @@ def _pcie_link(entry: PciEntry) -> PcieLink:
     )
 
 
+def _pcie_capability_present(entry: PciEntry) -> bool:
+    """Whether this device has a PCIe capability, which sysfs answers either way.
+
+    Linux publishes ``max_link_speed`` and the rest for every device carrying a
+    PCIe capability and nothing for one that does not, so absence here is a
+    reading rather than a gap: this is a legacy PCI device. That is why the
+    answer is a plain bool on this platform and a tri-state on the node.
+    """
+    return any(
+        value is not None
+        for value in (
+            entry.max_link_speed,
+            entry.max_link_width,
+            entry.current_link_speed,
+            entry.current_link_width,
+            entry.pcie_port_type,
+        )
+    )
+
+
 def _class_code(entry: PciEntry) -> int | None:
     """Return the PCI class triple as an integer."""
     return parse_int(entry.class_code, 16)
@@ -653,6 +673,7 @@ def build_tree(capture: LinuxCapture) -> tuple[PciNode, ...]:
                 vendor=parse_int(entry.vendor, 16),
                 driver=entry.driver,
                 link=_pcie_link(entry),
+                pcie_capability_present=_pcie_capability_present(entry),
                 port_kind=port_kind_of(entry.pcie_port_type),
                 connector_present=entry.slot_implemented,
                 physical_slot_number=entry.slot_number,

@@ -583,6 +583,13 @@ class PciNode:
         vendor: PCI vendor identifier.
         driver: Bound driver name.
         link: The device's own link state and capability.
+        pcie_capability_present: Whether this device has a PCIe capability at
+            all. ``True`` when the capture shows one, ``False`` when the
+            platform publishes the answer and there was none, and ``None``
+            when the platform publishes nothing either way for this device,
+            which is every bridge on Windows. The three are different facts:
+            ``False`` is a measured absence and reads as a legacy PCI device,
+            while ``None`` is unread and must say so.
         port_kind: What kind of PCIe port this bridge is, when it is one.
         connector_present: Whether this port ends in a physical slot.
         physical_slot_number: The board's own number for this connector.
@@ -604,6 +611,7 @@ class PciNode:
     vendor: int | None = None
     driver: str | None = None
     link: PcieLink = field(default_factory=PcieLink)
+    pcie_capability_present: bool | None = None
     port_kind: PciPortKind = PciPortKind.UNKNOWN
     connector_present: bool | None = None
     physical_slot_number: int | None = None

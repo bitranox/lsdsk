@@ -23,9 +23,11 @@ from lsdsk.adapters.render.layout import ELLIPSIS, Column, clip, fit, natural_wi
 from lsdsk.adapters.render.report import DISK_COLUMNS, render_tree
 from lsdsk.adapters.render.tables import DISK_COLUMNS as PRINTED_DISK_COLUMNS
 from lsdsk.adapters.render.tables import render_disks
+from lsdsk.adapters.render.tree import render_fabric
 from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui.app import DISK_COLUMNS as TUI_DISK_COLUMNS
 from lsdsk.adapters.tui.typed_table import rows_of
+from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import Align
 from lsdsk.domain.models import Inventory
 
@@ -831,3 +833,38 @@ class TestTheDiskPageKeepsALongIdentifierReachable:
                 await pilot.pause()
                 actions = {active.binding.action for active in app.screen.active_bindings.values()}
                 assert ("wwn_right" in actions) is offered, f"page {key} should offer the keys: {offered}"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
+@pytest.mark.parametrize("width", [100, 140, 200])
+async def test_the_topology_page_lays_the_fabric_out_at_the_width_it_was_given(width: int) -> None:
+    """The page had one width built into it, whatever the terminal offered.
+
+    The page asked for the section with no width at all, so it was laid out for
+    the piped default of 120 columns: names clipped with room to spare in a
+    200-column terminal, and columns fitted for a width the window did not have
+    in a 100-column one. The printed command of the same name passes the
+    console's width, so one view read two ways.
+
+    Asserted against that command's own output at the page's width rather than
+    against a line length, because a length depends on the longest name this
+    capture happens to carry and would pass on a machine with short ones.
+    """
+    machine = inventory()
+    findings = diagnose(machine)
+    app = LsdskApp(machine)
+    async with app.run_test(size=(width, 45)) as pilot:
+        await pilot.press("1")
+        await pilot.pause()
+        page = app.query_one("#tree", Static)
+        page_width = page.size.width
+        painted = [page.render_line(row).text.rstrip() for row in range(page.size.height)]
+
+    buffer = io.StringIO()
+    Console(file=buffer, width=page_width, no_color=True).print(render_fabric(machine, findings, width=page_width))
+    printed = [line.rstrip() for line in buffer.getvalue().splitlines()]
+
+    assert painted[: len(printed)] == printed[: len(painted)], (
+        f"the page is not laid out at its own {page_width} columns in a {width}-column terminal"
+    )

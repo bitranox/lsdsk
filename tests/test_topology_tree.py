@@ -75,3 +75,111 @@ def test_a_controller_whose_link_was_read_is_unchanged() -> None:
 
     assert "PCIe 3.0 x8" in line
     assert "not read" not in line, f"a measured link must carry no caveat: {line!r}"
+
+
+# --------------------------------------------------------------------------
+# The same law, in the fabric view: a hop nobody could read is not a device
+# without a link
+# --------------------------------------------------------------------------
+
+
+def _fabric_lines(host: str, width: int = 200) -> list[str]:
+    from lsdsk.adapters.render.tree import render_fabric
+
+    machine = build_from(_load(host))
+    text = _rendered(render_fabric(machine, diagnose(machine), width=width), width=width)
+    return text.splitlines()
+
+
+def _fabric_line_for(address: str, host: str) -> str:
+    return next(line for line in _fabric_lines(host) if address in line)
+
+
+@pytest.mark.os_agnostic
+def test_a_bridge_on_a_platform_that_publishes_no_registers_reads_as_unread() -> None:
+    """Windows publishes no link registers for a bridge, so the hop is unread.
+
+    ``legacy PCI`` is a MEASUREMENT: this device has no PCIe capability at all.
+    Windows never told us either way about a bridge, so printing it there
+    asserts a reading nobody took, which is the same blank-implies-fine the
+    tree's own law forbids, wearing a more confident word.
+    """
+    machine = build_from(_load("windows-ahci"))
+    bridges = [node for node in machine.pci_tree if node.is_bridge]
+    assert bridges, "the Windows fixture no longer carries a bridge"
+
+    for bridge in bridges:
+        line = _fabric_line_for(bridge.address, "windows-ahci")
+        assert "not read" in line, f"an unread Windows bridge must say so: {line!r}"
+        assert "legacy PCI" not in line, f"nobody measured that it has no capability: {line!r}"
+
+
+@pytest.mark.os_agnostic
+def test_a_linux_device_with_no_pcie_capability_still_reads_as_legacy() -> None:
+    """The control: where the platform DOES publish absence, say absence.
+
+    Linux lists a PCIe device's link in sysfs, so a device carrying no link
+    keys there has no PCIe capability, which is a different fact from an
+    unreadable one and keeps its own words.
+    """
+    machine = build_from(_load("linux-sas-hba"))
+    legacy = next(
+        node
+        for node in machine.pci_tree
+        if not node.is_root and node.pcie_capability_present is False and node.link.max_speed_gtps is None
+    )
+
+    line = _fabric_line_for(legacy.address, "linux-sas-hba")
+
+    assert "legacy PCI" in line, f"a measured absence keeps its own word: {line!r}"
+    assert "not read" not in line, f"nothing here was left unread: {line!r}"
+
+
+@pytest.mark.os_agnostic
+def test_a_half_read_register_never_reads_as_a_device_without_a_capability() -> None:
+    """A speed read without its width is not a device with no capability.
+
+    ``hop_cells`` decided by re-reading its own rendered dash, so a link whose
+    speeds were read and whose widths were not rendered as ``legacy PCI`` in
+    both columns - a reading taken, reported as hardware that cannot be read.
+    """
+    from lsdsk.adapters.render.tree import hop_cells
+    from lsdsk.domain.models import PcieLink, PciNode
+
+    half = PciNode(
+        "0000:00:1c.0",
+        "a bridge whose widths were not read",
+        class_code=0x060400,
+        link=PcieLink(max_speed_gtps=8.0, current_speed_gtps=8.0),
+        pcie_capability_present=True,
+    )
+
+    capable, running = hop_cells(half)
+
+    assert "legacy PCI" not in (capable[0], running[0]), f"a read register is not an absent one: {capable} {running}"
+    assert capable[0] == "not read"
+    assert running[0] == "not read"
+
+
+@pytest.mark.os_agnostic
+def test_an_unread_hop_is_dimmed_like_every_other_unread_figure() -> None:
+    """Colour carries the same meaning here as in every other table.
+
+    The fabric row appended bare strings, so ``not read`` rendered at the same
+    weight as the measured figure beside it while ``theme.hop_link_cells``,
+    which styles it, went unused.
+    """
+    from lsdsk.adapters.render import theme
+    from lsdsk.adapters.render.tree import _Fabric
+    from lsdsk.domain.enums import TreeDensity
+
+    machine = build_from(_load("windows-ahci"))
+    findings = diagnose(machine)
+    fabric = _Fabric(machine.pci_tree, 200, TreeDensity.FULL)
+    node = next(node for node, _level in fabric.drawn() if node.is_bridge)
+
+    row = fabric.row(node, findings)
+    dimmed = [span for span in row.spans if span.style == theme.STYLE_UNKNOWN]
+
+    assert dimmed, f"an unread hop carries no style at all: {row.spans}"
+    assert "not read" in row.plain[dimmed[0].start : dimmed[0].end]

@@ -83,6 +83,11 @@ class NodeSource(NamedTuple):
         physical_slot_number: The board's own number for this connector.
         parent: Address of the node directly above, or ``None`` when it has
             none in the source data.
+        pcie_capability_present: Whether this device has a PCIe capability at
+            all, as far as the platform says: ``True`` measured present,
+            ``False`` measured absent, ``None`` where the platform answers
+            neither. Last and defaulted because only a platform that can tell
+            the last two apart has anything to say here.
     """
 
     address: str
@@ -95,6 +100,7 @@ class NodeSource(NamedTuple):
     connector_present: bool | None
     physical_slot_number: int | None
     parent: str | None
+    pcie_capability_present: bool | None = None
 
 
 def _root_bus(address: str) -> str:
@@ -195,6 +201,7 @@ def assemble(sources: Sequence[NodeSource]) -> tuple[PciNode, ...]:
             vendor=source.vendor,
             driver=source.driver,
             link=source.link,
+            pcie_capability_present=source.pcie_capability_present,
             port_kind=source.port_kind,
             connector_present=source.connector_present,
             physical_slot_number=source.physical_slot_number,

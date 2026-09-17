@@ -97,10 +97,14 @@ def render_fabric_for(
     ``--expand-virtual`` flag controls and the inventory are already agreed on
     here: a page and the printed command of its name are one view, and a
     second delivery path is how one of them goes deaf.
+
+    The section lays itself out at the width the page gives it rather than at a
+    width chosen here, because a window's width is known only once the layout
+    has run and changes again on every resize.
     """
     from ..render import tree  # noqa: PLC0415 - keeps rich render off app import
 
-    return tree.render_fabric(
+    return tree.FabricSection(
         inventory,
         findings,
         density=display.tree_density,

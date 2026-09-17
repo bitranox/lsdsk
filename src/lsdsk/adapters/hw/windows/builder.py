@@ -63,6 +63,27 @@ def _pcie_link(entry: PciEntry) -> PcieLink:
     )
 
 
+def _pcie_capability_present(entry: PciEntry) -> bool | None:
+    """Whether this device has a PCIe capability, as far as Windows says.
+
+    ``True`` where a link property came back, and ``None`` otherwise, never
+    ``False``: Windows publishes the link registers of an endpoint and of a
+    bridge nothing at all, so a device with no values did not answer the
+    question rather than answering no. Calling that a legacy PCI device would
+    state a measurement nobody took, on every bridge of every Windows machine.
+    """
+    published = any(
+        value is not None
+        for value in (
+            entry.max_link_speed,
+            entry.max_link_width,
+            entry.current_link_speed,
+            entry.current_link_width,
+        )
+    )
+    return True if published else None
+
+
 def _class_code(entry: PciEntry) -> int | None:
     """Return the PCI class triple as an integer."""
     return parse_int(entry.class_code, 16)
@@ -348,6 +369,7 @@ def build_tree(capture: WindowsCapture) -> tuple[PciNode, ...]:
                 vendor=parse_int(entry.vendor, 16),
                 driver=entry.driver,
                 link=_pcie_link(entry),
+                pcie_capability_present=_pcie_capability_present(entry),
                 # Windows publishes no PCIe capability port type without a
                 # kernel driver, so every port reads as unknown here.
                 port_kind=PciPortKind.UNKNOWN,

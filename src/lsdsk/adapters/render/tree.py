@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING
 from rich.console import Group
 from rich.text import Text
 
-from ...domain.enums import PciPortKind, TreeDensity
+from ...domain.enums import TreeDensity
 from ..config.tunables import DEFAULT_PIPED_WIDTH
 from . import theme
 from .layout import GAP, Layout, clip, pad
@@ -50,18 +50,9 @@ from .report import (
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from rich.console import RenderableType
+    from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
 
-    from ...domain.models import Disk, Finding, Inventory, PcieLink, PciNode
-
-# What a bridge is called beside its address, by its port kind. ASCII only,
-# like every marker in the repo. An unread port kind gets no tag rather than a
-# wrong one; the name beside the address still says what the device is.
-_KIND_TAG: dict[PciPortKind, str] = {
-    PciPortKind.ROOT: "root port",
-    PciPortKind.SWITCH_UPSTREAM: "switch port",
-    PciPortKind.SWITCH_DOWNSTREAM: "switch port",
-}
+    from ...domain.models import Disk, Finding, Inventory, PciNode
 
 # Spine geometry: two characters per drawn level, one blank before the address
 # column. S = 2K + 1 for the deepest drawn level K, so a four-level fabric fits
@@ -92,33 +83,25 @@ _STOP_LEG = "  "
 # Width assumed when the caller gives none, as a Textual page does.
 DEFAULT_WIDTH = DEFAULT_PIPED_WIDTH
 
-# What an unread column prints. Deliberately never a dash.
-NOT_READ = "not read"
-#: The case of no PCIe capability at all: a legacy bridge, on both platforms.
-#: ``not read`` would suggest a register was skipped that this device never had.
-LEGACY_PCI = "legacy PCI"
 
+def hop_cells(node: PciNode) -> tuple[theme.Cell, theme.Cell]:
+    """(capable, running) for one device's own hop, never a bare dash.
 
-def hop_cells(link: PcieLink) -> tuple[str, str]:
-    """(capable, running) for one hop, never a bare dash.
+    Asked of the NODE rather than of its link, because the difference between
+    a register nobody could read and a device that has none is carried by
+    :attr:`~lsdsk.domain.models.PciNode.pcie_capability_present` and by nothing
+    in the link itself.
 
     Example:
-        >>> from lsdsk.domain.models import PcieLink
-        >>> hop_cells(PcieLink(8.0, 4, 8.0, 4))
-        ('3.0 x4', '3.0 x4')
-        >>> hop_cells(PcieLink())
-        ('legacy PCI', 'legacy PCI')
-        >>> hop_cells(PcieLink(current_speed_gtps=16.0, current_width=2))
-        ('not read', '4.0 x2')
+        >>> from lsdsk.domain.models import PciNode, PcieLink
+        >>> hop_cells(PciNode("a", "b", link=PcieLink(8.0, 4, 8.0, 4)))
+        (('3.0 x4', ''), ('3.0 x4', ''))
+        >>> hop_cells(PciNode("a", "b", pcie_capability_present=False))
+        (('legacy PCI', ''), ('legacy PCI', ''))
+        >>> hop_cells(PciNode("a", "b"))[0][0]
+        'not read'
     """
-    capable = theme.format_pcie_decimal(link.max_speed_gtps, link.max_width)
-    running = theme.format_pcie_decimal(link.current_speed_gtps, link.current_width)
-    if capable == "-" and running == "-":
-        return LEGACY_PCI, LEGACY_PCI
-    return (
-        capable if capable != "-" else NOT_READ,
-        running if running != "-" else NOT_READ,
-    )
+    return theme.hop_link_cells(node.link, capability_present=node.pcie_capability_present)
 
 
 def _spine_width(deepest_level: int) -> int:
@@ -238,9 +221,12 @@ class _Fabric:
         line.append(theme.marker_for(severity).ljust(_MARKER_WIDTH), style=theme.style_for(severity))
         line.append("".join(self._legs_for(node)).ljust(max(self.spine - _MARKER_WIDTH, 0)))
         line.append(node.address.ljust(_ADDRESS_WIDTH), style=theme.STYLE_IDENTIFIER)
-        capable, running = hop_cells(node.link)
-        line.append(f"{capable:<{_HOP_WIDTH}}{_TREE_GAP}{running:<{_HOP_WIDTH}}")
-        tag = _KIND_TAG.get(node.port_kind, "")
+        for text, style in hop_cells(node):
+            # Each cell carries its own style, so an unread figure is dimmed
+            # here exactly as it is in every other table rather than reading at
+            # the same weight as the measurement beside it.
+            line.append(f"{text:<{_HOP_WIDTH}}{_TREE_GAP}", style=style)
+        tag = theme.pci_tag(node.port_kind)
         label = node.name + (f"  ({tag})" if tag else "")
         line.append(clip(label, self.budget))
         return line
@@ -416,4 +402,52 @@ def disk_header_line(fabric: _Fabric, layout: Layout) -> Text:
     return line
 
 
-__all__ = ["LEGACY_PCI", "NOT_READ", "hop_cells", "render_fabric"]
+class FabricSection:
+    """The topology section, laid out at whatever width it is handed.
+
+    :func:`render_fabric` fits its columns once, for one width, which is what a
+    command that knows the console's width wants. A page inside a window does
+    not know it until the layout runs and loses it again on every resize, so it
+    asked for no width at all and got the piped default: the fabric drew itself
+    for 120 columns in a 200-column terminal and clipped names that had room.
+
+    Deciding it at render time instead of at build time is what keeps the
+    interactive page and the printed command one view, and it costs nothing to
+    a caller that already knows the width, which passes it and skips this.
+
+    Example:
+        >>> from rich.console import Console
+        >>> from lsdsk.domain.models import Disk, Inventory
+        >>> machine = Inventory("example", disks=(Disk(path="/dev/sda", node="sda", model="A DRIVE"),))
+        >>> console = Console(width=60, no_color=True)
+        >>> with console.capture() as capture:
+        ...     console.print(FabricSection(machine, ()))
+        >>> "A DRIVE" in capture.get()
+        True
+    """
+
+    def __init__(
+        self,
+        inventory: Inventory,
+        findings: Sequence[Finding],
+        *,
+        density: TreeDensity = TreeDensity.FULL,
+        expand_virtual: bool = False,
+    ) -> None:
+        self.inventory = inventory
+        self.findings = findings
+        self.density = density
+        self.expand_virtual = expand_virtual
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        """Render the section at the width the console offers right now."""
+        yield render_fabric(
+            self.inventory,
+            self.findings,
+            width=options.max_width,
+            density=self.density,
+            expand_virtual=self.expand_virtual,
+        )
+
+
+__all__ = ["FabricSection", "hop_cells", "render_fabric"]
