@@ -52,6 +52,7 @@ module exists that is not listed here, or a listed path does not exist.
 
 ### Adapters - rendering
 
+- `src/lsdsk/adapters/render/detail.py` - The whole record of one selected thing: what it is, measured and judged.
 - `src/lsdsk/adapters/render/full.py` - The whole machine on one page.
 - `src/lsdsk/adapters/render/layout.py` - Column layout for the topology tree.
 - `src/lsdsk/adapters/render/report.py` - The default view: a problem summary above an aligned topology tree.

@@ -95,6 +95,31 @@ def worst_severity(findings: Iterable[Finding], subject: str) -> Severity | None
     return None
 
 
+def findings_for(findings: Iterable[Finding], *subjects: str) -> tuple[Finding, ...]:
+    """Every finding recorded against any of these subjects, in the findings' order.
+
+    A finding names its subject with a bare string, and WHICH string depends on
+    the rule that raised it: a drive's path, a controller's address, or - for
+    firmware consistency - a drive MODEL, which no row anywhere is keyed by. So
+    a caller asking "everything about this drive" has to name both of the keys
+    that can reach it, and the detail panel does.
+
+    :func:`worst_severity` deliberately stays single-subject and is not built on
+    this: a per-model hint raised on every row's marker would mark seven rows to
+    say one thing about the set of them, which is the judgement already recorded
+    for the opportunity colour.
+
+    Args:
+        findings: All findings.
+        subjects: The subject strings to gather.
+
+    Returns:
+        The matching findings, keeping the order they were diagnosed in.
+    """
+    wanted = frozenset(subjects)
+    return tuple(finding for finding in findings if finding.subject in wanted)
+
+
 def render_header(inventory: Inventory) -> RenderableType:
     """Render the banner above the report, including any caveat on the readings.
 
@@ -934,6 +959,7 @@ __all__ = [
     "VIRTUAL_HEADING",
     "disk_cells",
     "disk_row",
+    "findings_for",
     "render_controller_disks",
     "render_findings",
     "render_header",
