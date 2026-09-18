@@ -199,9 +199,10 @@ CLAUDE.local.md
 # Python virtual environments (managed by bmk)
 .venv*/
 
-# Autonomous-execution decision log (never committed)
+# Autonomous-execution decision log, and the session records beside it (never committed)
 EXECUTION-USER-REVIEW.md
 handover.md
+OPEN-WORK.md
 
 # Session working notes (never committed)
 .remember/
