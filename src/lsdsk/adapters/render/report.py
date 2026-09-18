@@ -170,7 +170,7 @@ def environment_caveat(inventory: Inventory) -> str:
     Example:
         >>> from lsdsk.domain.models import Inventory
         >>> from lsdsk.domain.enums import Environment
-        >>> environment_caveat(Inventory("h", environment=Environment.BARE_METAL))
+        >>> environment_caveat(Inventory(hostname="h", environment=Environment.BARE_METAL))
         ''
     """
     named = f" ({inventory.environment_detail})" if inventory.environment_detail else ""
@@ -231,9 +231,9 @@ def slot_privilege_note(inventory: Inventory) -> str:
 
     Example:
         >>> from ...domain.models import Inventory
-        >>> slot_privilege_note(Inventory("h", privileged=True))
+        >>> slot_privilege_note(Inventory(hostname="h", privileged=True))
         ''
-        >>> "Run as root" in slot_privilege_note(Inventory("h", privileged=False))
+        >>> "Run as root" in slot_privilege_note(Inventory(hostname="h", privileged=False))
         True
     """
     if inventory.privileged:
@@ -565,7 +565,12 @@ def virtual_note(disks: Sequence[Disk]) -> str:
 
     Example:
         >>> from lsdsk.domain.models import Disk
-        >>> virtual_note([Disk("zram0", "/dev/zram0", "zram"), Disk("loop0", "/dev/loop0", "loop")])
+        >>> virtual_note(
+        ...     [
+        ...         Disk(node="zram0", path="/dev/zram0", model="zram"),
+        ...         Disk(node="loop0", path="/dev/loop0", model="loop"),
+        ...     ]
+        ... )
         '2 not listed: 1 loop, 1 zram   (--expand-virtual lists them)'
         >>> virtual_note([])
         ''
@@ -728,10 +733,17 @@ def slot_verdict(slot: PcieSlot) -> theme.Cell:
 
     Example:
         >>> from ...domain.models import PcieLink, PcieSlot
-        >>> free = PcieSlot("0000:00:1c.0", PcieLink(8.0, 1, 8.0, 1), connector_present=True)
+        >>> free = PcieSlot(
+        ...     address="0000:00:1c.0",
+        ...     link=PcieLink(current_speed_gtps=8.0, current_width=1, max_speed_gtps=8.0, max_width=1),
+        ...     connector_present=True,
+        ... )
         >>> slot_verdict(free)[0]
         'FREE'
-        >>> unknown = PcieSlot("0000:00:1c.0", PcieLink(8.0, 1, 8.0, 1))
+        >>> unknown = PcieSlot(
+        ...     address="0000:00:1c.0",
+        ...     link=PcieLink(current_speed_gtps=8.0, current_width=1, max_speed_gtps=8.0, max_width=1),
+        ... )
         >>> slot_verdict(unknown)[0]
         'empty, connector unknown'
     """

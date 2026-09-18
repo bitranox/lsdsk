@@ -22,8 +22,6 @@ there is no slot data to read or no warning to replace.
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 import pytest
 
 from lsdsk.domain.diagnostics import diagnose, diagnose_controller_oversubscription
@@ -47,7 +45,7 @@ _NETWORK_PART_MAKER = 0x10EC
 _SATA_PART_MAKER = 0x1095
 _CARD_READER_MAKER = 0x197B
 
-_FLOOR = PcieLink(2.5, 1, 2.5, 1)
+_FLOOR = PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=2.5, max_width=1)
 _SATA_ADDRESS = "0000:11:00.0"
 _OWN_PORT_ADDRESS = "0000:08:0d.0"
 _REPLACE_THE_CARD = "replace this card"
@@ -69,8 +67,8 @@ def _port(
     default to the chipset's, which is how a function built into it reads.
     """
     return PcieSlot(
-        address,
-        PcieLink(),
+        address=address,
+        link=PcieLink(),
         occupied=True,
         occupant_address=occupant,
         occupant_class=occupant_class,
@@ -82,13 +80,19 @@ def _port(
 
 _USB_AT_THE_FLOOR = _port("0000:08:0c.0", occupant="0000:10:00.0", link=_FLOOR, occupant_class=_USB)
 _NVME_WITH_A_REAL_LINK = _port(
-    "0000:08:00.0", occupant="0000:09:00.0", link=PcieLink(16.0, 2, 16.0, 4), occupant_class=_NVME
+    "0000:08:00.0",
+    occupant="0000:09:00.0",
+    link=PcieLink(current_speed_gtps=16.0, current_width=2, max_speed_gtps=16.0, max_width=4),
+    occupant_class=_NVME,
 )
 _NVME_AT_THE_FLOOR = _port("0000:08:00.0", occupant="0000:09:00.0", link=_FLOOR, occupant_class=_NVME)
-_EMPTY_PORT = PcieSlot("0000:08:04.0", PcieLink())
+_EMPTY_PORT = PcieSlot(address="0000:08:04.0", link=PcieLink())
 _USB_AT_THE_FLOOR_ON_ANOTHER_SWITCH = _port("0000:02:0c.0", occupant="0000:05:00.0", link=_FLOOR, occupant_class=_USB)
 _NVME_WITH_A_REAL_LINK_ON_ANOTHER_SWITCH = _port(
-    "0000:02:00.0", occupant="0000:03:00.0", link=PcieLink(16.0, 4, 16.0, 4), occupant_class=_NVME
+    "0000:02:00.0",
+    occupant="0000:03:00.0",
+    link=PcieLink(current_speed_gtps=16.0, current_width=4, max_speed_gtps=16.0, max_width=4),
+    occupant_class=_NVME,
 )
 
 # The bridge above bus 0000:08. Its record names the first downstream port as
@@ -102,7 +106,12 @@ _SWITCH_UPSTREAM_PORT = _port("0000:07:00.0", occupant="0000:08:00.0", link=Pcie
 _A_SWITCH_ELSEWHERE = (
     _port("0000:00:03.1", occupant="0000:07:00.0", link=PcieLink(), occupant_class=_BRIDGE),
     _port("0000:07:00.0", occupant="0000:08:00.0", link=PcieLink(), occupant_class=_BRIDGE),
-    _port("0000:08:00.0", occupant="0000:09:00.0", link=PcieLink(16.0, 4, 16.0, 4), occupant_class=_NVME),
+    _port(
+        "0000:08:00.0",
+        occupant="0000:09:00.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=4, max_speed_gtps=16.0, max_width=4),
+        occupant_class=_NVME,
+    ),
 )
 
 
@@ -128,13 +137,15 @@ def _drives(negotiated_gbps: float = 6.0) -> tuple[Disk, ...]:
     """Three SATA drives on the controller under test."""
     return tuple(
         Disk(
-            node,
-            f"/dev/{node}",
-            "SATA SSD",
+            node=node,
+            path=f"/dev/{node}",
+            model="SATA SSD",
             kind=DiskKind.SSD,
             bus=BusType.SATA,
             controller_address=_SATA_ADDRESS,
-            link=InterfaceLink(negotiated_gbps, negotiated_gbps, negotiated_gbps),
+            link=InterfaceLink(
+                negotiated_gbps=negotiated_gbps, drive_max_gbps=negotiated_gbps, port_max_gbps=negotiated_gbps
+            ),
         )
         for node in ("sda", "sdb", "sdc")
     )
@@ -155,7 +166,7 @@ def _machine(sata: Controller, *neighbours: PcieSlot, negotiated_gbps: float = 6
         occupant_vendor=sata.vendor,
     )
     return Inventory(
-        "h",
+        hostname="h",
         controllers=(sata,),
         disks=_drives(negotiated_gbps),
         slots=(_SWITCH_UPSTREAM_PORT, own_port, *neighbours),
@@ -169,7 +180,7 @@ def _assert_judged_as_before(sata: Controller, machine: Inventory) -> None:
     assert len(findings) == 1, f"expected the oversubscription warning alone, got {findings}"
     assert findings[0].severity is Severity.WARNING
     assert "oversubscribed" in findings[0].title
-    assert findings == diagnose_controller_oversubscription(sata, replace(machine, slots=())), (
+    assert findings == diagnose_controller_oversubscription(sata, machine.with_changes(slots=())), (
         "the slot data altered a finding it must leave alone"
     )
 
@@ -237,9 +248,17 @@ def test_a_switch_with_nothing_above_the_floor_cannot_be_told_apart(neighbours: 
 @pytest.mark.parametrize(
     "link",
     [
-        pytest.param(PcieLink(5.0, 1, 5.0, 1), id="a real Gen2 x1 link"),
-        pytest.param(PcieLink(2.5, 1, 5.0, 1), id="resting at the floor speed but capable of more"),
-        pytest.param(PcieLink(2.5, 1, 2.5, 4), id="resting at one lane but capable of four"),
+        pytest.param(
+            PcieLink(current_speed_gtps=5.0, current_width=1, max_speed_gtps=5.0, max_width=1), id="a real Gen2 x1 link"
+        ),
+        pytest.param(
+            PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=5.0, max_width=1),
+            id="resting at the floor speed but capable of more",
+        ),
+        pytest.param(
+            PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=2.5, max_width=4),
+            id="resting at one lane but capable of four",
+        ),
     ],
 )
 def test_a_controller_not_at_the_floor_in_both_is_judged_as_before(link: PcieLink) -> None:
@@ -270,9 +289,9 @@ def test_the_pattern_across_root_ports_is_not_one_switch(root_bus: str, elsewher
     so nothing proves one switch and the warning stands.
     """
     sata = _sata_controller()
-    graphics = PcieLink(16.0, 16, 16.0, 16)
+    graphics = PcieLink(current_speed_gtps=16.0, current_width=16, max_speed_gtps=16.0, max_width=16)
     machine = Inventory(
-        "h",
+        hostname="h",
         controllers=(sata,),
         disks=_drives(),
         slots=(
@@ -290,7 +309,7 @@ def test_the_pattern_across_root_ports_is_not_one_switch(root_bus: str, elsewher
 def test_a_floor_link_with_no_slot_data_is_judged_as_before() -> None:
     """With no ports read at all there is no twin to find, so the warning stands."""
     sata = _sata_controller()
-    machine = Inventory("h", controllers=(sata,), disks=_drives())
+    machine = Inventory(hostname="h", controllers=(sata,), disks=_drives())
 
     findings = diagnose_controller_oversubscription(sata, machine)
 
@@ -391,7 +410,7 @@ def test_a_neighbour_capable_of_more_but_trained_at_the_floor_is_not_a_real_link
     trained_at_the_floor = _port(
         "0000:08:00.0",
         occupant="0000:09:00.0",
-        link=PcieLink(2.5, 1, 16.0, 4),
+        link=PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=16.0, max_width=4),
         occupant_class=_NVME,
         occupant_vendor=0x144D,
     )
@@ -447,8 +466,8 @@ def test_a_port_capable_of_more_holds_a_part_rather_than_a_function_of_the_switc
     """
     sata = _sata_controller()
     own_port = PcieSlot(
-        "0000:08:0d.0",
-        PcieLink(2.5, 1, 5.0, 1),
+        address="0000:08:0d.0",
+        link=PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=5.0, max_width=1),
         occupied=True,
         occupant_address=sata.address,
         occupant_class=_AHCI,
@@ -457,7 +476,7 @@ def test_a_port_capable_of_more_holds_a_part_rather_than_a_function_of_the_switc
         occupant_vendor=_CHIPSET_MAKER,
     )
     machine = Inventory(
-        "h",
+        hostname="h",
         controllers=(sata,),
         disks=_drives(),
         slots=(_SWITCH_UPSTREAM_PORT, own_port, _USB_AT_THE_FLOOR, _NVME_WITH_A_REAL_LINK),
@@ -480,8 +499,8 @@ def test_a_port_reading_the_floor_itself_still_marks_a_function_of_the_switch() 
     """
     sata = _sata_controller()
     own_port = PcieSlot(
-        "0000:08:0d.0",
-        _FLOOR,
+        address="0000:08:0d.0",
+        link=_FLOOR,
         occupied=True,
         occupant_address=sata.address,
         occupant_class=_AHCI,
@@ -490,7 +509,7 @@ def test_a_port_reading_the_floor_itself_still_marks_a_function_of_the_switch() 
         occupant_vendor=_CHIPSET_MAKER,
     )
     machine = Inventory(
-        "h",
+        hostname="h",
         controllers=(sata,),
         disks=_drives(),
         slots=(_SWITCH_UPSTREAM_PORT, own_port, _USB_AT_THE_FLOOR, _NVME_WITH_A_REAL_LINK),
@@ -520,12 +539,12 @@ def test_a_function_sharing_its_port_with_another_device_is_still_a_function_of_
     shared_port = _port(
         _OWN_PORT_ADDRESS,
         occupant="0000:12:00.0",
-        link=PcieLink(5.0, 1, 5.0, 1),
+        link=PcieLink(current_speed_gtps=5.0, current_width=1, max_speed_gtps=5.0, max_width=1),
         occupant_class=0x080501,
         occupant_vendor=_CHIPSET_MAKER,
     )
     machine = Inventory(
-        "h",
+        hostname="h",
         controllers=(sata,),
         disks=_drives(),
         slots=(_SWITCH_UPSTREAM_PORT, shared_port, _USB_AT_THE_FLOOR, _NVME_WITH_A_REAL_LINK),

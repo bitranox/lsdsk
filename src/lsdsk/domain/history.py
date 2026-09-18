@@ -26,10 +26,10 @@ over, while the self-calibrating rule separates them correctly.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from .base import DomainModel
 from .thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
@@ -85,8 +85,7 @@ class TrendVerdict(StrEnum):
     RESET = "reset"
 
 
-@dataclass(frozen=True, slots=True)
-class Sample:
+class Sample(DomainModel, frozen=True):
     """One drive's monotone counters at one moment.
 
     Only counters are stored.  Temperature, link speed and negotiated width are
@@ -174,8 +173,7 @@ class Sample:
         return dict(self.counters())[kind]
 
 
-@dataclass(frozen=True, slots=True)
-class DiskSeries:
+class DiskSeries(DomainModel, frozen=True):
     """Every sample recorded for one drive, oldest first.
 
     Attributes:
@@ -193,8 +191,7 @@ class DiskSeries:
     samples: tuple[Sample, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
-class History:
+class History(DomainModel, frozen=True):
     """Everything recorded on one machine.
 
     Attributes:
@@ -224,8 +221,7 @@ class History:
         return None
 
 
-@dataclass(frozen=True, slots=True)
-class Trend:
+class Trend(DomainModel, frozen=True):
     """What the samples support saying about one counter on one drive.
 
     Attributes:
@@ -240,7 +236,15 @@ class Trend:
             defensible, and what withholds it when the span proves nothing.
 
     Example:
-        >>> Trend(CounterKind.CRC_ERRORS, TrendVerdict.QUIET, 5, 0, 400, None, 92.0).is_quiet
+        >>> Trend(
+        ...     kind=CounterKind.CRC_ERRORS,
+        ...     verdict=TrendVerdict.QUIET,
+        ...     latest=5,
+        ...     delta=0,
+        ...     span_hours=400,
+        ...     per_hour=None,
+        ...     expected_from_lifetime=92.0,
+        ... ).is_quiet
         True
     """
 
@@ -640,8 +644,24 @@ def _rising(kind: CounterKind, previous: Sample, latest: Sample, delta: int, thr
     span = latest.power_on_hours - previous.power_on_hours
     latest_value = latest.counter(kind)
     if span < thresholds.min_span_hours:
-        return Trend(kind, TrendVerdict.TOO_CLOSE, latest_value, delta, span, None, None)
-    return Trend(kind, TrendVerdict.RISING, latest_value, delta, span, delta / span, None)
+        return Trend(
+            kind=kind,
+            verdict=TrendVerdict.TOO_CLOSE,
+            latest=latest_value,
+            delta=delta,
+            span_hours=span,
+            per_hour=None,
+            expected_from_lifetime=None,
+        )
+    return Trend(
+        kind=kind,
+        verdict=TrendVerdict.RISING,
+        latest=latest_value,
+        delta=delta,
+        span_hours=span,
+        per_hour=delta / span,
+        expected_from_lifetime=None,
+    )
 
 
 def _quiet(kind: CounterKind, usable: list[Sample], latest_value: int, thresholds: Thresholds) -> Trend:
@@ -652,7 +672,15 @@ def _quiet(kind: CounterKind, usable: list[Sample], latest_value: int, threshold
     expected = lifetime_rate * span
     convincing = span >= thresholds.min_span_hours and expected >= thresholds.quiet_expected_min
     verdict = TrendVerdict.QUIET if convincing else TrendVerdict.TOO_CLOSE
-    return Trend(kind, verdict, latest_value, 0, span, None, expected)
+    return Trend(
+        kind=kind,
+        verdict=verdict,
+        latest=latest_value,
+        delta=0,
+        span_hours=span,
+        per_hour=None,
+        expected_from_lifetime=expected,
+    )
 
 
 def trend_for(series: DiskSeries, kind: CounterKind, thresholds: Thresholds = DEFAULT_THRESHOLDS) -> Trend:
@@ -669,7 +697,7 @@ def trend_for(series: DiskSeries, kind: CounterKind, thresholds: Thresholds = DE
     Example:
         >>> early = Sample(power_on_hours=1000, captured_at="a", crc_errors=100)
         >>> late = Sample(power_on_hours=1010, captured_at="b", crc_errors=300)
-        >>> trend = trend_for(DiskSeries("naa.1", "X", (early, late)), CounterKind.CRC_ERRORS)
+        >>> trend = trend_for(DiskSeries(identity="naa.1", model="X", samples=(early, late)), CounterKind.CRC_ERRORS)
         >>> trend.verdict is TrendVerdict.RISING, trend.per_hour
         (True, 20.0)
     """

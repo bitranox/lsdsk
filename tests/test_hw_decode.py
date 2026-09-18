@@ -359,11 +359,11 @@ def test_a_drive_below_its_threshold_reads_as_failing() -> None:
     from lsdsk.adapters.hw.decode.ata_smart import overall_health
     from lsdsk.domain.models import SmartAttribute
 
-    healthy = (SmartAttribute(5, "Reallocated_Sector_Ct", 100, 100, 10, 0),)
-    failing = (SmartAttribute(5, "Reallocated_Sector_Ct", 10, 10, 10, 4096),)
+    healthy = (SmartAttribute(id=5, name="Reallocated_Sector_Ct", value=100, worst=100, threshold=10, raw=0),)
+    failing = (SmartAttribute(id=5, name="Reallocated_Sector_Ct", value=10, worst=10, threshold=10, raw=4096),)
     # A threshold of zero means the attribute is advisory and never fails, no
     # matter how large its raw value grows.
-    advisory = (SmartAttribute(199, "CRC_Error_Count", 1, 1, 0, 2_174_213),)
+    advisory = (SmartAttribute(id=199, name="CRC_Error_Count", value=1, worst=1, threshold=0, raw=2_174_213),)
 
     assert overall_health(healthy) is True
     assert overall_health(failing) is False

@@ -288,9 +288,9 @@ def test_every_thresholds_key_in_the_shipped_file_is_read(
     from lsdsk.adapters.config.tunables import get_thresholds
     from lsdsk.domain.thresholds import Thresholds
 
-    probe = dict.fromkeys(Thresholds.__dataclass_fields__, 7)
+    probe = dict.fromkeys(Thresholds.model_fields, 7)
     got = get_thresholds(Config({"thresholds": probe}, {}))
-    for name in Thresholds.__dataclass_fields__:
+    for name in Thresholds.model_fields:
         assert getattr(got, name) == 7, f"[thresholds].{name} is not read"
 
 
@@ -334,7 +334,7 @@ def test_every_key_documented_in_the_shipped_toml_exists_on_its_model(section: s
     from lsdsk.domain.thresholds import Thresholds
 
     known = {
-        "thresholds": set(Thresholds.__dataclass_fields__),
+        "thresholds": set(Thresholds.model_fields),
         "display": set(DisplaySettings.model_fields),
         "history": set(HistorySettings.model_fields),
     }[section]

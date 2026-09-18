@@ -342,7 +342,15 @@ def test_a_counter_cell_reflects_what_the_samples_support(
     from lsdsk.adapters.render.tables import RISING_MARK, counter_cell
     from lsdsk.domain.history import CounterKind, Trend
 
-    trend = Trend(CounterKind.CRC_ERRORS, verdict, 462640, 0, 16, None, 235.0)
+    trend = Trend(
+        kind=CounterKind.CRC_ERRORS,
+        verdict=verdict,
+        latest=462640,
+        delta=0,
+        span_hours=16,
+        per_hour=None,
+        expected_from_lifetime=235.0,
+    )
     text, style = counter_cell(462640, trend)
 
     assert text.endswith(RISING_MARK) is expect_mark

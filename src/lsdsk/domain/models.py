@@ -12,10 +12,12 @@ System Role:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from math import inf
 from typing import TYPE_CHECKING, NamedTuple
 
+from pydantic import Field
+
+from .base import DomainModel
 from .enums import BusType, ControllerKind, DiskKind, Environment, PciPortKind, Severity
 
 if TYPE_CHECKING:
@@ -175,8 +177,7 @@ def pcie_bandwidth_gbps(speed_gtps: float | None, width: int | None) -> float | 
     return round(per_lane * width, 3)
 
 
-@dataclass(frozen=True, slots=True)
-class PcieLink:
+class PcieLink(DomainModel, frozen=True):
     """Negotiated and maximum state of one PCIe link.
 
     Attributes:
@@ -186,7 +187,7 @@ class PcieLink:
         max_width: Widest width this end of the link supports.
 
     Example:
-        >>> link = PcieLink(8.0, 8, 16.0, 8)
+        >>> link = PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8)
         >>> link.current_bandwidth_gbps
         7.88
         >>> link.is_downgraded
@@ -242,8 +243,8 @@ class PcieLink:
             end published nothing.
 
         Example:
-            >>> drive = PcieLink(8.0, 4, 16.0, 4)
-            >>> seat = PcieLink(8.0, 4, 8.0, 4)
+            >>> drive = PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=16.0, max_width=4)
+            >>> seat = PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4)
             >>> drive.limiting_end(seat) is seat
             True
             >>> drive.limiting_end(None) is None
@@ -263,9 +264,9 @@ class PcieLink:
         """Whether the link negotiated below what this end supports.
 
         Example:
-            >>> PcieLink(8.0, 8, 8.0, 8).is_downgraded
+            >>> PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8).is_downgraded
             False
-            >>> PcieLink(8.0, 4, 8.0, 8).is_downgraded
+            >>> PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=8).is_downgraded
             True
         """
         speed_low = (
@@ -283,7 +284,7 @@ class PcieLink:
         """Whether the link never trained, reported as a width of zero.
 
         Example:
-            >>> PcieLink(2.5, 0, 8.0, 4).is_dead
+            >>> PcieLink(current_speed_gtps=2.5, current_width=0, max_speed_gtps=8.0, max_width=4).is_dead
             True
         """
         return self.current_width == 0
@@ -297,9 +298,9 @@ class PcieLink:
         floor describes a device that shows nothing above it.
 
         Example:
-            >>> PcieLink(2.5, 1, 2.5, 1).is_at_floor
+            >>> PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=2.5, max_width=1).is_at_floor
             True
-            >>> PcieLink(2.5, 1, 8.0, 4).is_at_floor
+            >>> PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=8.0, max_width=4).is_at_floor
             False
             >>> PcieLink().is_at_floor
             False
@@ -324,9 +325,13 @@ class PcieLink:
         trains to nothing.
 
         Example:
-            >>> PcieLink(2.5, 1, 2.5, 1).capability_is_at_floor
+            >>> PcieLink(
+            ...     current_speed_gtps=2.5, current_width=1, max_speed_gtps=2.5, max_width=1
+            ... ).capability_is_at_floor
             True
-            >>> PcieLink(2.5, 1, 5.0, 1).capability_is_at_floor
+            >>> PcieLink(
+            ...     current_speed_gtps=2.5, current_width=1, max_speed_gtps=5.0, max_width=1
+            ... ).capability_is_at_floor
             False
             >>> PcieLink().capability_is_at_floor
             False
@@ -344,11 +349,17 @@ class PcieLink:
         everywhere produces. An unread link is above nothing.
 
         Example:
-            >>> PcieLink(16.0, 2, 16.0, 4).is_running_above_floor
+            >>> PcieLink(
+            ...     current_speed_gtps=16.0, current_width=2, max_speed_gtps=16.0, max_width=4
+            ... ).is_running_above_floor
             True
-            >>> PcieLink(2.5, 4, 16.0, 4).is_running_above_floor
+            >>> PcieLink(
+            ...     current_speed_gtps=2.5, current_width=4, max_speed_gtps=16.0, max_width=4
+            ... ).is_running_above_floor
             True
-            >>> PcieLink(2.5, 1, 16.0, 4).is_running_above_floor
+            >>> PcieLink(
+            ...     current_speed_gtps=2.5, current_width=1, max_speed_gtps=16.0, max_width=4
+            ... ).is_running_above_floor
             False
             >>> PcieLink().is_running_above_floor
             False
@@ -374,13 +385,21 @@ class PcieLink:
 
         Example:
             >>> card = PcieLink(max_speed_gtps=16.0, max_width=8)
-            >>> PcieLink(8.0, 8, 8.0, 8).shortfall_against(card)
+            >>> PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8).shortfall_against(
+            ...     card
+            ... )
             'speed'
-            >>> PcieLink(16.0, 4, 16.0, 4).shortfall_against(card)
+            >>> PcieLink(current_speed_gtps=16.0, current_width=4, max_speed_gtps=16.0, max_width=4).shortfall_against(
+            ...     card
+            ... )
             'width'
-            >>> PcieLink(8.0, 4, 8.0, 4).shortfall_against(card)
+            >>> PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4).shortfall_against(
+            ...     card
+            ... )
             'speed and width'
-            >>> PcieLink(16.0, 8, 16.0, 8).shortfall_against(card) is None
+            >>> PcieLink(current_speed_gtps=16.0, current_width=8, max_speed_gtps=16.0, max_width=8).shortfall_against(
+            ...     card
+            ... ) is None
             True
         """
         slow = (
@@ -466,8 +485,7 @@ def _displacement_rank(child: PortChild) -> tuple[int, float, str]:
     return (0 if display else 1, capability, child.address)
 
 
-@dataclass(frozen=True, slots=True)
-class PcieSlot:
+class PcieSlot(DomainModel, frozen=True):
     """A PCIe port, and whether a card could actually be moved into it.
 
     Used to answer "is there a better place for this card in this machine".
@@ -512,12 +530,16 @@ class PcieSlot:
             fields describe whichever of them is hardest to displace.
 
     Example:
-        >>> port = PcieSlot("0000:00:03.0", PcieLink(8.0, 8, 8.0, 8), connector_present=True)
+        >>> port = PcieSlot(
+        ...     address="0000:00:03.0",
+        ...     link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+        ...     connector_present=True,
+        ... )
         >>> port.is_move_target
         True
-        >>> PcieSlot("0000:00:11.0", PcieLink(), connector_present=False).is_move_target
+        >>> PcieSlot(address="0000:00:11.0", link=PcieLink(), connector_present=False).is_move_target
         False
-        >>> PcieSlot("0000:00:03.0", PcieLink()).is_move_target
+        >>> PcieSlot(address="0000:00:03.0", link=PcieLink()).is_move_target
         False
     """
 
@@ -569,11 +591,11 @@ class PcieSlot:
         answer, and two copies of it would drift.
 
         Example:
-            >>> PcieSlot("a", PcieLink(), occupant_class=0x030000).occupant_is_display
+            >>> PcieSlot(address="a", link=PcieLink(), occupant_class=0x030000).occupant_is_display
             True
-            >>> PcieSlot("a", PcieLink(), occupant_class=0x020000).occupant_is_display
+            >>> PcieSlot(address="a", link=PcieLink(), occupant_class=0x020000).occupant_is_display
             False
-            >>> PcieSlot("a", PcieLink()).occupant_is_display
+            >>> PcieSlot(address="a", link=PcieLink()).occupant_is_display
             False
         """
         return self.occupant_class is not None and (self.occupant_class >> 16) == _PCI_CLASS_DISPLAY
@@ -591,11 +613,11 @@ class PcieSlot:
         Example:
             >>> narrow = PcieLink(max_speed_gtps=2.5, max_width=1)
             >>> wide = PcieLink(max_speed_gtps=8.0, max_width=8)
-            >>> nic = PcieSlot("0000:00:02.0", wide, occupied=True, connector_present=True,
+            >>> nic = PcieSlot(address="0000:00:02.0", link=wide, occupied=True, connector_present=True,
             ...                occupant_class=0x020000, occupant_link=narrow)
             >>> nic.is_swap_candidate
             True
-            >>> gpu = PcieSlot("0000:00:02.0", wide, occupied=True, connector_present=True,
+            >>> gpu = PcieSlot(address="0000:00:02.0", link=wide, occupied=True, connector_present=True,
             ...                occupant_class=0x030000, occupant_link=wide)
             >>> gpu.is_swap_candidate
             False
@@ -612,9 +634,9 @@ class PcieSlot:
         """A readable description of what is in this slot.
 
         Example:
-            >>> PcieSlot("a", PcieLink(), occupied=True, occupant_class=0x030000).occupant_description
+            >>> PcieSlot(address="a", link=PcieLink(), occupied=True, occupant_class=0x030000).occupant_description
             'display controller'
-            >>> PcieSlot("a", PcieLink()).occupant_description
+            >>> PcieSlot(address="a", link=PcieLink()).occupant_description
             'empty'
         """
         if not self.occupied:
@@ -624,8 +646,7 @@ class PcieSlot:
         return pci_class_name(self.occupant_class)
 
 
-@dataclass(frozen=True, slots=True)
-class PciNode:
+class PciNode(DomainModel, frozen=True):
     """One node of the PCI fabric: a device, a bridge, or a synthetic root.
 
     This is the whole-machine tree the topology view draws, so unlike
@@ -662,10 +683,10 @@ class PciNode:
         children: Addresses of the nodes directly below, in address order.
 
     Example:
-        >>> root = PciNode("0000:00", "root", children=("0000:00:1c.0",))
+        >>> root = PciNode(address="0000:00", name="root", children=("0000:00:1c.0",))
         >>> root.is_root
         True
-        >>> PciNode("0000:00:1c.0", "bridge", class_code=0x060400).is_bridge
+        >>> PciNode(address="0000:00:1c.0", name="bridge", class_code=0x060400).is_bridge
         True
     """
 
@@ -674,7 +695,7 @@ class PciNode:
     class_code: int | None = None
     vendor: int | None = None
     driver: str | None = None
-    link: PcieLink = field(default_factory=PcieLink)
+    link: PcieLink = Field(default_factory=PcieLink)
     pcie_capability_present: bool | None = None
     port_kind: PciPortKind = PciPortKind.UNKNOWN
     connector_present: bool | None = None
@@ -690,9 +711,9 @@ class PciNode:
         flag, so the two can never disagree.
 
         Example:
-            >>> PciNode("0000:00", "root").is_root
+            >>> PciNode(address="0000:00", name="root").is_root
             True
-            >>> PciNode("0000:00:1c.0", "bridge", parent_address="0000:00").is_root
+            >>> PciNode(address="0000:00:1c.0", name="bridge", parent_address="0000:00").is_root
             False
         """
         return self.parent_address is None
@@ -702,11 +723,11 @@ class PciNode:
         """Whether this node is a PCI-to-PCI bridge, by its class code.
 
         Example:
-            >>> PciNode("a", "b", class_code=0x060400).is_bridge
+            >>> PciNode(address="a", name="b", class_code=0x060400).is_bridge
             True
-            >>> PciNode("a", "b", class_code=0x010601).is_bridge
+            >>> PciNode(address="a", name="b", class_code=0x010601).is_bridge
             False
-            >>> PciNode("a", "b").is_bridge
+            >>> PciNode(address="a", name="b").is_bridge
             False
         """
         return self.class_code is not None and (self.class_code >> 8) == _PCI_BRIDGE_CLASS
@@ -722,11 +743,11 @@ class PciNode:
         under-counts that density by exactly the two devices that carry them.
 
         Example:
-            >>> PciNode("a", "b", class_code=0x060000).is_bridge_family
+            >>> PciNode(address="a", name="b", class_code=0x060000).is_bridge_family
             True
-            >>> PciNode("a", "b", class_code=0x060100).is_bridge_family
+            >>> PciNode(address="a", name="b", class_code=0x060100).is_bridge_family
             True
-            >>> PciNode("a", "b", class_code=0x010601).is_bridge_family
+            >>> PciNode(address="a", name="b", class_code=0x010601).is_bridge_family
             False
         """
         return self.class_code is not None and (self.class_code >> 16) == _PCI_CLASS_BRIDGE
@@ -741,11 +762,11 @@ class PciNode:
         still is.
 
         Example:
-            >>> PciNode("a", "b", class_code=0x060400).is_port
+            >>> PciNode(address="a", name="b", class_code=0x060400).is_port
             True
-            >>> PciNode("a", "b", port_kind=PciPortKind.ROOT).is_port
+            >>> PciNode(address="a", name="b", port_kind=PciPortKind.ROOT).is_port
             True
-            >>> PciNode("a", "b").is_port
+            >>> PciNode(address="a", name="b").is_port
             False
         """
         return self.is_bridge or self.port_kind is not PciPortKind.UNKNOWN
@@ -755,16 +776,15 @@ class PciNode:
         """Whether this node is itself a storage controller.
 
         Example:
-            >>> PciNode("a", "b", class_code=0x010601).is_storage
+            >>> PciNode(address="a", name="b", class_code=0x010601).is_storage
             True
-            >>> PciNode("a", "b", class_code=0x030000).is_storage
+            >>> PciNode(address="a", name="b", class_code=0x030000).is_storage
             False
         """
         return self.class_code is not None and (self.class_code >> 16) == _PCI_CLASS_STORAGE
 
 
-@dataclass(frozen=True, slots=True)
-class InterfaceLink:
+class InterfaceLink(DomainModel, frozen=True):
     """Negotiated versus capable speed of one disk's own interface.
 
     Holds three numbers, because whether a slow link is a fault depends on both
@@ -776,7 +796,7 @@ class InterfaceLink:
         port_max_gbps: The fastest the port or phy it is attached to can go.
 
     Example:
-        >>> link = InterfaceLink(3.0, 6.0, 12.0)
+        >>> link = InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=12.0)
         >>> link.achievable_gbps
         6.0
         >>> link.is_underperforming
@@ -798,13 +818,13 @@ class InterfaceLink:
         between a cable fault and a drive sitting in a slower port.
 
         Example:
-            >>> InterfaceLink(6.0, 6.0, 12.0).achievable_gbps
+            >>> InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=12.0).achievable_gbps
             6.0
-            >>> InterfaceLink(3.0, 6.0, 3.0).achievable_gbps
+            >>> InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=3.0).achievable_gbps
             3.0
-            >>> InterfaceLink(3.0, 6.0, None).achievable_gbps is None
+            >>> InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=None).achievable_gbps is None
             True
-            >>> InterfaceLink(6.0, None, None).achievable_gbps is None
+            >>> InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=None, port_max_gbps=None).achievable_gbps is None
             True
         """
         if self.drive_max_gbps is None or self.port_max_gbps is None:
@@ -819,9 +839,9 @@ class InterfaceLink:
         that *both* ends agreed they could go faster and then did not.
 
         Example:
-            >>> InterfaceLink(3.0, 6.0, 6.0).is_underperforming
+            >>> InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=6.0).is_underperforming
             True
-            >>> InterfaceLink(3.0, 6.0, None).is_underperforming
+            >>> InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=None).is_underperforming
             False
         """
         achievable = self.achievable_gbps
@@ -836,9 +856,9 @@ class InterfaceLink:
         knowable when the port capability could not be read.
 
         Example:
-            >>> InterfaceLink(3.0, 6.0, None).is_below_drive_capability
+            >>> InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=None).is_below_drive_capability
             True
-            >>> InterfaceLink(6.0, 6.0, None).is_below_drive_capability
+            >>> InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=None).is_below_drive_capability
             False
         """
         return (
@@ -852,9 +872,9 @@ class InterfaceLink:
         """Whether the port, not the drive, is what caps this link.
 
         Example:
-            >>> InterfaceLink(3.0, 6.0, 3.0).is_port_limited
+            >>> InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=3.0).is_port_limited
             True
-            >>> InterfaceLink(6.0, 6.0, 12.0).is_port_limited
+            >>> InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=12.0).is_port_limited
             False
         """
         return (
@@ -864,8 +884,7 @@ class InterfaceLink:
         )
 
 
-@dataclass(frozen=True, slots=True)
-class SmartAttribute:
+class SmartAttribute(DomainModel, frozen=True):
     """One row of the ATA SMART attribute table.
 
     Attributes:
@@ -877,9 +896,9 @@ class SmartAttribute:
         raw: Vendor-specific raw value.
 
     Example:
-        >>> SmartAttribute(5, "Reallocated_Sector_Ct", 100, 100, 10, 0).is_failing
+        >>> SmartAttribute(id=5, name="Reallocated_Sector_Ct", value=100, worst=100, threshold=10, raw=0).is_failing
         False
-        >>> SmartAttribute(5, "Reallocated_Sector_Ct", 8, 8, 10, 42).is_failing
+        >>> SmartAttribute(id=5, name="Reallocated_Sector_Ct", value=8, worst=8, threshold=10, raw=42).is_failing
         True
     """
 
@@ -909,8 +928,7 @@ CRITICAL_WARNING_REASONS: tuple[str, ...] = (
 )
 
 
-@dataclass(frozen=True, slots=True)
-class Health:
+class Health(DomainModel, frozen=True):
     """Condition and wear of one disk, normalised across ATA and NVMe.
 
     Every field is optional because an unprivileged run, or a controller that
@@ -993,8 +1011,7 @@ class Health:
         return self.available_spare <= self.available_spare_threshold
 
 
-@dataclass(frozen=True, slots=True)
-class Controller:
+class Controller(DomainModel, frozen=True):
     """A storage controller and its position on the PCIe fabric.
 
     Attributes:
@@ -1028,7 +1045,7 @@ class Controller:
         ports_used: Ports or phys with something attached.
 
     Example:
-        >>> Controller("0000:03:00.0", "HBA 9500-16i", ControllerKind.SAS).address
+        >>> Controller(address="0000:03:00.0", name="HBA 9500-16i", kind=ControllerKind.SAS).address
         '0000:03:00.0'
     """
 
@@ -1037,7 +1054,7 @@ class Controller:
     kind: ControllerKind = ControllerKind.UNKNOWN
     driver: str | None = None
     firmware: str | None = None
-    link: PcieLink = field(default_factory=PcieLink)
+    link: PcieLink = Field(default_factory=PcieLink)
     upstream: PcieLink | None = None
     upstream_name: str | None = None
     upstream_address: str | None = None
@@ -1050,9 +1067,9 @@ class Controller:
         """How many ports are still available for another drive.
 
         Example:
-            >>> Controller("a", "n", port_count=16, ports_used=11).ports_free
+            >>> Controller(address="a", name="n", port_count=16, ports_used=11).ports_free
             5
-            >>> Controller("a", "n").ports_free is None
+            >>> Controller(address="a", name="n").ports_free is None
             True
         """
         if self.port_count is None or self.ports_used is None:
@@ -1066,9 +1083,9 @@ class Controller:
         The lower of what the card supports and what its bridge supports.
 
         Example:
-            >>> card = PcieLink(8.0, 8, 16.0, 8)
-            >>> bridge = PcieLink(8.0, 8, 8.0, 8)
-            >>> Controller("a", "n", link=card, upstream=bridge).achievable_bandwidth_gbps
+            >>> card = PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8)
+            >>> bridge = PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8)
+            >>> Controller(address="a", name="n", link=card, upstream=bridge).achievable_bandwidth_gbps
             7.88
         """
         own = self.link.max_bandwidth_gbps
@@ -1079,8 +1096,7 @@ class Controller:
         return min(candidates) if candidates else None
 
 
-@dataclass(frozen=True, slots=True)
-class Disk:
+class Disk(DomainModel, frozen=True):
     """One physical disk, wherever it hangs.
 
     Attributes:
@@ -1102,7 +1118,7 @@ class Disk:
         health: Condition and wear, when it could be read.
 
     Example:
-        >>> Disk("sda", "/dev/sda", "Samsung SSD 870 EVO 4TB").node
+        >>> Disk(node="sda", path="/dev/sda", model="Samsung SSD 870 EVO 4TB").node
         'sda'
     """
 
@@ -1116,13 +1132,12 @@ class Disk:
     kind: DiskKind = DiskKind.UNKNOWN
     bus: BusType = BusType.UNKNOWN
     controller_address: str | None = None
-    link: InterfaceLink = field(default_factory=InterfaceLink)
+    link: InterfaceLink = Field(default_factory=InterfaceLink)
     pcie: PcieLink | None = None
     health: Health | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class Finding:
+class Finding(DomainModel, frozen=True):
     """One diagnosed problem or improvement opportunity.
 
     Attributes:
@@ -1133,7 +1148,7 @@ class Finding:
         action: What to do about it, or ``None`` when nothing can be done.
 
     Example:
-        >>> Finding(Severity.WARNING, "/dev/sdb", "SATA link below drive capability").severity
+        >>> Finding(severity=Severity.WARNING, subject="/dev/sdb", title="SATA link below drive capability").severity
         <Severity.WARNING: 'warning'>
     """
 
@@ -1144,8 +1159,7 @@ class Finding:
     action: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class Inventory:
+class Inventory(DomainModel, frozen=True):
     """Everything one scan found on one machine.
 
     Attributes:
@@ -1172,7 +1186,7 @@ class Inventory:
             changes nothing because there is nothing to open.
 
     Example:
-        >>> Inventory("linux-sas-hba").hostname
+        >>> Inventory(hostname="linux-sas-hba").hostname
         'linux-sas-hba'
     """
 
@@ -1193,9 +1207,9 @@ class Inventory:
         """Whether the hardware described here is this machine's to act on.
 
         Example:
-            >>> Inventory("h", environment=Environment.BARE_METAL).hardware_is_local
+            >>> Inventory(hostname="h", environment=Environment.BARE_METAL).hardware_is_local
             True
-            >>> Inventory("h", environment=Environment.CONTAINER).hardware_is_local
+            >>> Inventory(hostname="h", environment=Environment.CONTAINER).hardware_is_local
             False
         """
         return self.environment is not Environment.CONTAINER
@@ -1210,9 +1224,9 @@ class Inventory:
         Only a hypervisor invents the numbers.
 
         Example:
-            >>> Inventory("h", environment=Environment.VIRTUAL_MACHINE).readings_are_physical
+            >>> Inventory(hostname="h", environment=Environment.VIRTUAL_MACHINE).readings_are_physical
             False
-            >>> Inventory("h", environment=Environment.CONTAINER).readings_are_physical
+            >>> Inventory(hostname="h", environment=Environment.CONTAINER).readings_are_physical
             True
         """
         return self.environment is not Environment.VIRTUAL_MACHINE
@@ -1249,8 +1263,8 @@ class Inventory:
             Matching disks, in inventory order.
 
         Example:
-            >>> disk = Disk("sda", "/dev/sda", "m", controller_address="0000:03:00.0")
-            >>> inv = Inventory("h", disks=(disk,))
+            >>> disk = Disk(node="sda", path="/dev/sda", model="m", controller_address="0000:03:00.0")
+            >>> inv = Inventory(hostname="h", disks=(disk,))
             >>> [d.node for d in inv.disks_on("0000:03:00.0")]
             ['sda']
         """
@@ -1274,9 +1288,23 @@ class Inventory:
             One disk per drive, its first namespace standing for it, in inventory order.
 
         Example:
-            >>> first = Disk("nvme0n1", "/dev/nvme0n1", "m", serial="S1", bus=BusType.NVME, controller_address="a")
-            >>> second = Disk("nvme0n2", "/dev/nvme0n2", "m", serial="S1", bus=BusType.NVME, controller_address="a")
-            >>> [d.node for d in Inventory("h", disks=(first, second)).drives_on("a")]
+            >>> first = Disk(
+            ...     node="nvme0n1",
+            ...     path="/dev/nvme0n1",
+            ...     model="m",
+            ...     serial="S1",
+            ...     bus=BusType.NVME,
+            ...     controller_address="a",
+            ... )
+            >>> second = Disk(
+            ...     node="nvme0n2",
+            ...     path="/dev/nvme0n2",
+            ...     model="m",
+            ...     serial="S1",
+            ...     bus=BusType.NVME,
+            ...     controller_address="a",
+            ... )
+            >>> [d.node for d in Inventory(hostname="h", disks=(first, second)).drives_on("a")]
             ['nvme0n1']
         """
         seen: set[str] = set()

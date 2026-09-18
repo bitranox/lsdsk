@@ -147,7 +147,15 @@ def worth_showing(kind: CounterKind, trend: Trend, wear_floor: int = WEAR_WORTH_
         Whether to render the row.
 
     Example:
-        >>> quiet_wear = Trend(CounterKind.PERCENT_USED, TrendVerdict.TOO_CLOSE, 1, 0, 16, None, 0.0)
+        >>> quiet_wear = Trend(
+        ...     kind=CounterKind.PERCENT_USED,
+        ...     verdict=TrendVerdict.TOO_CLOSE,
+        ...     latest=1,
+        ...     delta=0,
+        ...     span_hours=16,
+        ...     per_hour=None,
+        ...     expected_from_lifetime=0.0,
+        ... )
         >>> worth_showing(CounterKind.PERCENT_USED, quiet_wear)
         False
     """

@@ -570,9 +570,11 @@ def hop_link_cells(
         not restated here per column.
 
     Example:
-        >>> hop_link_cells(PcieLink(8.0, 4, 8.0, 4))
+        >>> hop_link_cells(PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4))
         (('Gen3x4', ''), ('Gen3x4', ''))
-        >>> hop_link_cells(PcieLink(8.0, 4, 16.0, 4), bandwidth=True)
+        >>> hop_link_cells(
+        ...     PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=16.0, max_width=4), bandwidth=True
+        ... )
         (('Gen4x4 (7.88 GB/s)', ''), ('Gen3x4 (3.94 GB/s)', ''))
         >>> hop_link_cells(PcieLink(), capability_present=False)
         (('legacy', ''), ('legacy', ''))

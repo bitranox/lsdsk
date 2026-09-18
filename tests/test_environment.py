@@ -102,7 +102,7 @@ def test_evidence_survives_a_snapshot_round_trip() -> None:
 @pytest.mark.os_agnostic
 def test_when_running_in_a_container_the_caveat_names_the_host() -> None:
     """Verify the reader is told whose hardware this is."""
-    inventory = Inventory("h", environment=Environment.CONTAINER, environment_detail="LXC")
+    inventory = Inventory(hostname="h", environment=Environment.CONTAINER, environment_detail="LXC")
     caveat = environment_caveat(inventory)
 
     assert "container (LXC)" in caveat
@@ -114,7 +114,7 @@ def test_when_running_in_a_container_the_caveat_names_the_host() -> None:
 @pytest.mark.os_agnostic
 def test_when_running_in_a_vm_the_caveat_says_the_disks_are_invented() -> None:
     """Verify a guest is told its link speeds are not physical."""
-    inventory = Inventory("h", environment=Environment.VIRTUAL_MACHINE, environment_detail="QEMU")
+    inventory = Inventory(hostname="h", environment=Environment.VIRTUAL_MACHINE, environment_detail="QEMU")
 
     assert "hypervisor presents" in environment_caveat(inventory)
     assert not inventory.readings_are_physical
@@ -123,7 +123,7 @@ def test_when_running_in_a_vm_the_caveat_says_the_disks_are_invented() -> None:
 @pytest.mark.os_agnostic
 def test_bare_metal_gets_no_caveat() -> None:
     """Verify the normal case stays uncluttered."""
-    assert environment_caveat(Inventory("h", environment=Environment.BARE_METAL)) == ""
+    assert environment_caveat(Inventory(hostname="h", environment=Environment.BARE_METAL)) == ""
 
 
 @pytest.mark.os_agnostic
@@ -134,9 +134,9 @@ def test_missing_device_nodes_are_not_blamed_on_privilege() -> None:
     Telling a container user to run as root sends them to do something that
     cannot work.
     """
-    no_nodes = Inventory("h", privileged=False, devices_accessible=False)
-    unprivileged = Inventory("h", privileged=False, devices_accessible=True)
-    fine = Inventory("h", privileged=True, devices_accessible=True)
+    no_nodes = Inventory(hostname="h", privileged=False, devices_accessible=False)
+    unprivileged = Inventory(hostname="h", privileged=False, devices_accessible=True)
+    fine = Inventory(hostname="h", privileged=True, devices_accessible=True)
 
     assert "elevating would not change that" in privilege_note(no_nodes)
     assert "Run as root" not in privilege_note(no_nodes)
@@ -151,7 +151,7 @@ def test_the_unavailable_note_names_the_columns_it_means() -> None:
     Without the names, a dash in the table is ambiguous: it could mean zero or
     it could mean unknown, and those call for different actions.
     """
-    note = privilege_note(Inventory("h", privileged=False, devices_accessible=False))
+    note = privilege_note(Inventory(hostname="h", privileged=False, devices_accessible=False))
 
     for name, _ in HEALTH_NEEDING_SMART:
         assert name in note, f"{name} is promised by the model but not named to the reader"
@@ -160,11 +160,9 @@ def test_the_unavailable_note_names_the_columns_it_means() -> None:
 @pytest.mark.os_agnostic
 def test_every_named_value_is_a_real_health_field() -> None:
     """Verify the prose cannot drift away from what the model actually carries."""
-    from dataclasses import fields
-
     from lsdsk.domain.models import Health
 
-    known = {field.name for field in fields(Health)}
+    known = set(Health.model_fields)
     for name, attribute in HEALTH_NEEDING_SMART:
         assert attribute in known, f"the note names {name!r}, but Health has no {attribute!r}"
 
@@ -314,8 +312,8 @@ def test_the_header_names_the_mainboard_when_dmi_carried_it(rendered: Callable[.
     from lsdsk.adapters.render.report import render_header
     from lsdsk.domain.models import Inventory
 
-    named = Inventory("h", board="Micro-Star International Co., Ltd. MEG Z690 ACE (MS-7D27)")
-    anonymous = Inventory("h")
+    named = Inventory(hostname="h", board="Micro-Star International Co., Ltd. MEG Z690 ACE (MS-7D27)")
+    anonymous = Inventory(hostname="h")
 
     assert "MEG Z690 ACE (MS-7D27)" in rendered(render_header(named))
     assert "MEG Z690" not in rendered(render_header(anonymous))

@@ -323,10 +323,10 @@ def test_an_unread_seat_leaves_the_pairing_unanswered() -> None:
     not evidence of a capable one, and inheriting the drive's own figure would
     turn "we could not measure this" into "the seat is fine".
     """
-    drive = PcieLink(8.0, 4, 16.0, 4)
+    drive = PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=16.0, max_width=4)
     assert drive.limiting_end(None) is None, "a drive with no known seat claimed a pairing"
     assert drive.limiting_end(PcieLink()) is None, "an unread seat was treated as a capable one"
-    slower = PcieLink(8.0, 4, 8.0, 4)
+    slower = PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4)
     assert drive.limiting_end(slower) is slower, "the slower end is what the pairing can manage"
     assert slower.limiting_end(drive) is slower, "the answer does not depend on which end asks"
 

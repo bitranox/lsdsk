@@ -81,7 +81,10 @@ def test_a_truncated_config_space_yields_nothing_rather_than_a_guess() -> None:
 
 def slot(**kwargs: object) -> PcieSlot:
     """Build a port for one verdict under test."""
-    defaults: dict[str, object] = {"address": "0000:00:01.0", "link": PcieLink(8.0, 8, 8.0, 8)}
+    defaults: dict[str, object] = {
+        "address": "0000:00:01.0",
+        "link": PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    }
     defaults.update(kwargs)
     return PcieSlot(**defaults)  # pyright: ignore[reportArgumentType] - test helper forwarding optional fields
 
@@ -113,10 +116,10 @@ def test_unused_bandwidth_is_reported_even_when_no_move_could_be_proposed() -> N
     unprivileged run, which is exactly when somebody is looking for it.
     """
     nic = slot(
-        link=PcieLink(32.0, 8, 32.0, 8),
+        link=PcieLink(current_speed_gtps=32.0, current_width=8, max_speed_gtps=32.0, max_width=8),
         occupied=True,
         occupant_class=0x020000,
-        occupant_link=PcieLink(5.0, 8, 5.0, 8),
+        occupant_link=PcieLink(current_speed_gtps=5.0, current_width=8, max_speed_gtps=5.0, max_width=8),
     )
 
     verdict = slot_verdict(nic)[0]
@@ -130,11 +133,11 @@ def test_unused_bandwidth_is_reported_even_when_no_move_could_be_proposed() -> N
 def test_a_graphics_card_is_never_offered_as_spare_capacity() -> None:
     """Verify the display exclusion holds in the view as well as the rules."""
     gpu = slot(
-        link=PcieLink(32.0, 16, 32.0, 16),
+        link=PcieLink(current_speed_gtps=32.0, current_width=16, max_speed_gtps=32.0, max_width=16),
         occupied=True,
         connector_present=True,
         occupant_class=0x030000,
-        occupant_link=PcieLink(8.0, 4, 8.0, 4),
+        occupant_link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
     )
 
     assert slot_verdict(gpu)[0] == "in use (graphics)"
@@ -144,10 +147,10 @@ def test_a_graphics_card_is_never_offered_as_spare_capacity() -> None:
 def test_a_port_slower_than_its_occupant_says_so() -> None:
     """Verify the port-limited case is named rather than called full."""
     limited = slot(
-        link=PcieLink(8.0, 4, 8.0, 4),
+        link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
         occupied=True,
         occupant_class=0x010802,
-        occupant_link=PcieLink(8.0, 4, 16.0, 4),
+        occupant_link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=16.0, max_width=4),
     )
 
     assert slot_verdict(limited)[0] == "port limits it"
@@ -160,7 +163,7 @@ def test_the_view_always_says_the_form_factor_is_unknown(rendered: Callable[...,
     No readable source gives the form factor, and an x4 port is as likely a card
     slot as an M.2 socket, so silence here would invite a wrong guess.
     """
-    board = Inventory("h", board="Test Board", slots=(slot(connector_present=True),), privileged=True)
+    board = Inventory(hostname="h", board="Test Board", slots=(slot(connector_present=True),), privileged=True)
 
     output = rendered(render_slots(board))
 
@@ -171,8 +174,8 @@ def test_the_view_always_says_the_form_factor_is_unknown(rendered: Callable[...,
 @pytest.mark.os_agnostic
 def test_the_privilege_note_appears_only_when_privilege_is_the_cause() -> None:
     """Verify the note names the real cause and does not fire when data was read."""
-    unprivileged = Inventory("h", privileged=False)
-    privileged = Inventory("h", privileged=True)
+    unprivileged = Inventory(hostname="h", privileged=False)
+    privileged = Inventory(hostname="h", privileged=True)
 
     note = slot_privilege_note(unprivileged)
 
@@ -187,7 +190,7 @@ def test_in_a_container_the_note_does_not_send_anybody_to_sudo() -> None:
     """Verify elevating is not advised where it cannot help."""
     from lsdsk.domain.enums import Environment
 
-    contained = Inventory("h", privileged=False, environment=Environment.CONTAINER)
+    contained = Inventory(hostname="h", privileged=False, environment=Environment.CONTAINER)
 
     note = slot_privilege_note(contained)
 

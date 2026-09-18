@@ -50,7 +50,7 @@ def controller(
         address=address,
         name=name,
         kind=ControllerKind.SAS,
-        link=link or PcieLink(8.0, 8, 8.0, 8),
+        link=link or PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
         upstream=upstream,
         **kwargs,  # pyright: ignore[reportArgumentType] - test helper forwarding optional fields
     )
@@ -65,7 +65,7 @@ def disk(node: str = "sda", *, link: InterfaceLink | None = None, health: Health
         kind=DiskKind.SSD,
         bus=BusType.SATA,
         controller_address="0000:03:00.0",
-        link=link or InterfaceLink(6.0, 6.0, 6.0),
+        link=link or InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=6.0),
         health=health,
     )
 
@@ -78,36 +78,36 @@ def enough_drives_to_fill(bandwidth_gbps: float) -> tuple[Disk, ...]:
 def resting_nvme(node: str) -> Disk:
     """An NVMe drive behind a tri-mode HBA, idling at 2.5 GT/s on a link that carries PCIe 4.0 x4."""
     return Disk(
-        node,
-        f"/dev/{node}",
-        "NVMe drive",
+        node=node,
+        path=f"/dev/{node}",
+        model="NVMe drive",
         kind=DiskKind.SSD,
         bus=BusType.NVME,
         controller_address="0000:03:00.0",
-        pcie=PcieLink(2.5, 4, 16.0, 4),
+        pcie=PcieLink(current_speed_gtps=2.5, current_width=4, max_speed_gtps=16.0, max_width=4),
     )
 
 
 def namespace(node: str, *, serial: str | None = "S1", link: PcieLink | None = None) -> Disk:
     """One namespace of an NVMe drive that is its own controller, shared by every namespace of it."""
     return Disk(
-        node,
-        f"/dev/{node}",
-        "NVMe drive",
+        node=node,
+        path=f"/dev/{node}",
+        model="NVMe drive",
         serial=serial,
         kind=DiskKind.SSD,
         bus=BusType.NVME,
         controller_address="0000:02:00.0",
-        pcie=link or PcieLink(16.0, 4, 16.0, 4),
+        pcie=link or PcieLink(current_speed_gtps=16.0, current_width=4, max_speed_gtps=16.0, max_width=4),
     )
 
 
 @pytest.mark.os_agnostic
 def test_when_a_link_never_trained_it_is_critical() -> None:
     """Verify a device present at width zero is the most urgent case."""
-    dead = controller(link=PcieLink(2.5, 0, 8.0, 8))
+    dead = controller(link=PcieLink(current_speed_gtps=2.5, current_width=0, max_speed_gtps=8.0, max_width=8))
 
-    findings = diagnose_controller_link(dead, Inventory("h", controllers=(dead,)))
+    findings = diagnose_controller_link(dead, Inventory(hostname="h", controllers=(dead,)))
 
     assert len(findings) == 1
     assert findings[0].severity is Severity.CRITICAL
@@ -117,9 +117,12 @@ def test_when_a_link_never_trained_it_is_critical() -> None:
 @pytest.mark.os_agnostic
 def test_when_a_link_negotiated_below_both_ends_it_is_actionable() -> None:
     """Verify a link below what both ends support is a warning, not a hint."""
-    degraded = controller(link=PcieLink(8.0, 4, 8.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    degraded = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
 
-    findings = diagnose_controller_link(degraded, Inventory("h", controllers=(degraded,)))
+    findings = diagnose_controller_link(degraded, Inventory(hostname="h", controllers=(degraded,)))
 
     assert len(findings) == 1
     assert findings[0].severity is Severity.WARNING
@@ -130,17 +133,28 @@ def test_when_a_link_negotiated_below_both_ends_it_is_actionable() -> None:
 @pytest.mark.os_agnostic
 def test_when_a_link_is_at_the_machine_ceiling_nothing_is_reported() -> None:
     """Verify a card running exactly as fast as the board allows stays silent."""
-    matched = controller(link=PcieLink(8.0, 8, 8.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    matched = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
 
-    assert diagnose_controller_link(matched, Inventory("h", controllers=(matched,))) == []
+    assert diagnose_controller_link(matched, Inventory(hostname="h", controllers=(matched,))) == []
 
 
 @pytest.mark.os_agnostic
 def test_when_a_faster_free_slot_exists_the_finding_names_it() -> None:
     """Verify a real free slot turns the ceiling into an actionable move when the drives fill this one."""
-    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
-    better = PcieSlot("0000:00:02.0", PcieLink(16.0, 16, 16.0, 16), occupied=False, connector_present=True)
-    machine = Inventory("h", controllers=(capped,), disks=enough_drives_to_fill(7.88), slots=(better,))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
+    better = PcieSlot(
+        address="0000:00:02.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=16, max_speed_gtps=16.0, max_width=16),
+        occupied=False,
+        connector_present=True,
+    )
+    machine = Inventory(hostname="h", controllers=(capped,), disks=enough_drives_to_fill(7.88), slots=(better,))
 
     findings = diagnose_controller_link(capped, machine)
 
@@ -156,11 +170,26 @@ def test_when_the_only_faster_port_is_not_a_slot_it_is_not_offered() -> None:
     An internal port to a soldered-down device looks identical to a slot in the
     PCI topology; only the Slot Implemented bit distinguishes them.
     """
-    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
-    internal = PcieSlot("0000:00:11.0", PcieLink(16.0, 16, 16.0, 16), occupied=False, connector_present=False)
-    unknown = PcieSlot("0000:00:12.0", PcieLink(16.0, 16, 16.0, 16), occupied=False, connector_present=None)
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
+    internal = PcieSlot(
+        address="0000:00:11.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=16, max_speed_gtps=16.0, max_width=16),
+        occupied=False,
+        connector_present=False,
+    )
+    unknown = PcieSlot(
+        address="0000:00:12.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=16, max_speed_gtps=16.0, max_width=16),
+        occupied=False,
+        connector_present=None,
+    )
 
-    findings = diagnose_controller_link(capped, Inventory("h", controllers=(capped,), slots=(internal, unknown)))
+    findings = diagnose_controller_link(
+        capped, Inventory(hostname="h", controllers=(capped,), slots=(internal, unknown))
+    )
 
     assert findings[0].severity is Severity.HINT
     assert "capped by the mainboard" in findings[0].title
@@ -169,19 +198,22 @@ def test_when_the_only_faster_port_is_not_a_slot_it_is_not_offered() -> None:
 @pytest.mark.os_agnostic
 def test_when_a_wasteful_card_holds_a_faster_slot_a_swap_is_proposed() -> None:
     """Verify a card that cannot use its slot is offered as a trade."""
-    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
     nic_slot = PcieSlot(
-        "0000:00:02.0",
-        PcieLink(16.0, 16, 16.0, 16),
+        address="0000:00:02.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=16, max_speed_gtps=16.0, max_width=16),
         occupied=True,
         connector_present=True,
         occupant_address="0000:02:00.0",
         occupant_class=0x020000,
         occupant_name="Gigabit Network Connection",
-        occupant_link=PcieLink(2.5, 1, 2.5, 1),
+        occupant_link=PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=2.5, max_width=1),
     )
 
-    machine = Inventory("h", controllers=(capped,), disks=enough_drives_to_fill(7.88), slots=(nic_slot,))
+    machine = Inventory(hostname="h", controllers=(capped,), disks=enough_drives_to_fill(7.88), slots=(nic_slot,))
 
     findings = diagnose_controller_link(capped, machine)
 
@@ -198,9 +230,17 @@ def test_a_faster_free_slot_the_drives_would_not_notice_is_only_a_hint() -> None
     so a PCIe 4.0 slot changes nothing they could feel. The faster slot is still
     named, for the day more drives are added.
     """
-    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
-    better = PcieSlot("0000:00:02.0", PcieLink(16.0, 16, 16.0, 16), occupied=False, connector_present=True)
-    machine = Inventory("h", controllers=(capped,), disks=(disk("sda"), disk("sdb")), slots=(better,))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
+    better = PcieSlot(
+        address="0000:00:02.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=16, max_speed_gtps=16.0, max_width=16),
+        occupied=False,
+        connector_present=True,
+    )
+    machine = Inventory(hostname="h", controllers=(capped,), disks=(disk("sda"), disk("sdb")), slots=(better,))
 
     finding = diagnose_controller_link(capped, machine)[0]
 
@@ -214,9 +254,17 @@ def test_a_faster_free_slot_the_drives_would_not_notice_is_only_a_hint() -> None
 @pytest.mark.os_agnostic
 def test_a_card_with_nothing_attached_is_not_warned_to_move() -> None:
     """Verify an empty controller is not sent to a faster slot as if something waited on it."""
-    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
-    better = PcieSlot("0000:00:02.0", PcieLink(16.0, 16, 16.0, 16), occupied=False, connector_present=True)
-    machine = Inventory("h", controllers=(capped,), slots=(better,))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
+    better = PcieSlot(
+        address="0000:00:02.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=16, max_speed_gtps=16.0, max_width=16),
+        occupied=False,
+        connector_present=True,
+    )
+    machine = Inventory(hostname="h", controllers=(capped,), slots=(better,))
 
     finding = diagnose_controller_link(capped, machine)[0]
 
@@ -227,18 +275,21 @@ def test_a_card_with_nothing_attached_is_not_warned_to_move() -> None:
 @pytest.mark.os_agnostic
 def test_a_swap_the_drives_would_not_notice_is_only_a_hint() -> None:
     """Verify a swap is graded by the drives too, since it opens two slots rather than one."""
-    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
     nic_slot = PcieSlot(
-        "0000:00:02.0",
-        PcieLink(16.0, 16, 16.0, 16),
+        address="0000:00:02.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=16, max_speed_gtps=16.0, max_width=16),
         occupied=True,
         connector_present=True,
         occupant_address="0000:02:00.0",
         occupant_class=0x020000,
         occupant_name="Gigabit Network Connection",
-        occupant_link=PcieLink(2.5, 1, 2.5, 1),
+        occupant_link=PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=2.5, max_width=1),
     )
-    machine = Inventory("h", controllers=(capped,), disks=(disk("sda"), disk("sdb")), slots=(nic_slot,))
+    machine = Inventory(hostname="h", controllers=(capped,), disks=(disk("sda"), disk("sdb")), slots=(nic_slot,))
 
     finding = diagnose_controller_link(capped, machine)[0]
 
@@ -257,10 +308,18 @@ def test_a_drive_resting_at_a_low_link_is_judged_by_what_it_can_pull() -> None:
     15.75 GB/s, far past the 7.88 GB/s the card's slot gives, and a drive retrains
     to that the moment work arrives.
     """
-    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
-    better = PcieSlot("0000:00:02.0", PcieLink(16.0, 16, 16.0, 16), occupied=False, connector_present=True)
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
+    better = PcieSlot(
+        address="0000:00:02.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=16, max_speed_gtps=16.0, max_width=16),
+        occupied=False,
+        connector_present=True,
+    )
     drives = (resting_nvme("nvme0n1"), resting_nvme("nvme1n1"))
-    machine = Inventory("h", controllers=(capped,), disks=drives, slots=(better,))
+    machine = Inventory(hostname="h", controllers=(capped,), disks=drives, slots=(better,))
 
     finding = diagnose_controller_link(capped, machine)[0]
 
@@ -274,9 +333,12 @@ def test_a_drive_whose_link_was_not_read_is_not_reported_as_nothing_attached() -
     A RAID logical drive carries no identity, phy or ATA link, so its rate is not
     read; saying nothing is attached describes a machine with a drive in it wrongly.
     """
-    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
-    logical = Disk("sda", "/dev/sda", "Logical Volume", controller_address="0000:03:00.0")
-    machine = Inventory("h", controllers=(capped,), disks=(logical,))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
+    logical = Disk(node="sda", path="/dev/sda", model="Logical Volume", controller_address="0000:03:00.0")
+    machine = Inventory(hostname="h", controllers=(capped,), disks=(logical,))
 
     finding = diagnose_controller_link(capped, machine)[0]
 
@@ -287,9 +349,12 @@ def test_a_drive_whose_link_was_not_read_is_not_reported_as_nothing_attached() -
 @pytest.mark.os_agnostic
 def test_a_drive_whose_link_was_not_read_is_not_left_out_of_the_demand() -> None:
     """Verify an unread drive beside a read one does not make the read drive's figure the whole demand."""
-    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
-    logical = Disk("sda", "/dev/sda", "Logical Volume", controller_address="0000:03:00.0")
-    machine = Inventory("h", controllers=(capped,), disks=(logical, disk("sdb")))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
+    logical = Disk(node="sda", path="/dev/sda", model="Logical Volume", controller_address="0000:03:00.0")
+    machine = Inventory(hostname="h", controllers=(capped,), disks=(logical, disk("sdb")))
 
     finding = diagnose_controller_link(capped, machine)[0]
 
@@ -300,9 +365,12 @@ def test_a_drive_whose_link_was_not_read_is_not_left_out_of_the_demand() -> None
 @pytest.mark.os_agnostic
 def test_the_capped_hint_judges_a_resting_drive_by_what_it_can_pull() -> None:
     """Verify the capped-by-the-mainboard hint does not call a link spare because its drives are idle."""
-    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
     drives = (resting_nvme("nvme0n1"), resting_nvme("nvme1n1"))
-    machine = Inventory("h", controllers=(capped,), disks=drives)
+    machine = Inventory(hostname="h", controllers=(capped,), disks=drives)
 
     finding = diagnose_controller_link(capped, machine)[0]
 
@@ -314,17 +382,20 @@ def test_the_capped_hint_judges_a_resting_drive_by_what_it_can_pull() -> None:
 @pytest.mark.os_agnostic
 def test_when_the_faster_slot_holds_the_graphics_card_no_swap_is_proposed() -> None:
     """Verify a display controller is never proposed for displacement."""
-    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
     gpu_slot = PcieSlot(
-        "0000:00:02.0",
-        PcieLink(16.0, 16, 16.0, 16),
+        address="0000:00:02.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=16, max_speed_gtps=16.0, max_width=16),
         occupied=True,
         connector_present=True,
         occupant_class=0x030000,
-        occupant_link=PcieLink(2.5, 1, 2.5, 1),
+        occupant_link=PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=2.5, max_width=1),
     )
 
-    findings = diagnose_controller_link(capped, Inventory("h", controllers=(capped,), slots=(gpu_slot,)))
+    findings = diagnose_controller_link(capped, Inventory(hostname="h", controllers=(capped,), slots=(gpu_slot,)))
 
     assert findings[0].severity is Severity.HINT
 
@@ -332,9 +403,12 @@ def test_when_the_faster_slot_holds_the_graphics_card_no_swap_is_proposed() -> N
 @pytest.mark.os_agnostic
 def test_when_the_board_caps_a_card_the_hint_quantifies_the_upgrade() -> None:
     """Verify the platform-limited hint names a generation and a figure."""
-    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
 
-    finding = diagnose_controller_link(capped, Inventory("h", controllers=(capped,)))[0]
+    finding = diagnose_controller_link(capped, Inventory(hostname="h", controllers=(capped,)))[0]
 
     assert finding.severity is Severity.HINT
     assert finding.action is not None
@@ -352,9 +426,18 @@ def test_a_board_with_faster_ports_in_use_is_not_told_to_buy_a_newer_board() -> 
     port as the board's ceiling recommended buying a PCIe 4.0 board to somebody
     who already owned a PCIe 5.0 one. The remedy is freeing a port, not buying.
     """
-    capped = controller(link=PcieLink(8.0, 4, 16.0, 4), upstream=PcieLink(8.0, 4, 8.0, 4), name="NVMe")
-    faster_but_taken = PcieSlot("0000:00:06.0", PcieLink(16.0, 4, 16.0, 4), occupied=True, connector_present=None)
-    machine = Inventory("h", controllers=(capped,), slots=(faster_but_taken,))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=16.0, max_width=4),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
+        name="NVMe",
+    )
+    faster_but_taken = PcieSlot(
+        address="0000:00:06.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=4, max_speed_gtps=16.0, max_width=4),
+        occupied=True,
+        connector_present=None,
+    )
+    machine = Inventory(hostname="h", controllers=(capped,), slots=(faster_but_taken,))
 
     finding = diagnose_controller_link(capped, machine)[0]
 
@@ -367,9 +450,18 @@ def test_a_board_with_faster_ports_in_use_is_not_told_to_buy_a_newer_board() -> 
 @pytest.mark.os_agnostic
 def test_when_the_board_really_has_nothing_faster_the_upgrade_stands() -> None:
     """Verify the board-upgrade advice survives where it is the only remedy."""
-    capped = controller(link=PcieLink(8.0, 4, 16.0, 4), upstream=PcieLink(8.0, 4, 8.0, 4), name="NVMe")
-    nothing_better = PcieSlot("0000:00:1c.0", PcieLink(8.0, 4, 8.0, 4), occupied=False, connector_present=None)
-    machine = Inventory("h", controllers=(capped,), slots=(nothing_better,))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=16.0, max_width=4),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
+        name="NVMe",
+    )
+    nothing_better = PcieSlot(
+        address="0000:00:1c.0",
+        link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
+        occupied=False,
+        connector_present=None,
+    )
+    machine = Inventory(hostname="h", controllers=(capped,), slots=(nothing_better,))
 
     finding = diagnose_controller_link(capped, machine)[0]
 
@@ -385,9 +477,18 @@ def test_a_wider_port_is_not_faster_for_a_card_that_cannot_use_the_width() -> No
     Ranking ports by their own capability called a PCIe 3.0 x16 port faster and
     promised the card 7.88 GB/s from freeing one, which moves a card for nothing.
     """
-    capped = controller(link=PcieLink(8.0, 4, 16.0, 4), upstream=PcieLink(8.0, 4, 8.0, 4), name="NVMe")
-    wide_but_slow = PcieSlot("0000:00:02.0", PcieLink(8.0, 16, 8.0, 16), occupied=True, connector_present=True)
-    machine = Inventory("h", controllers=(capped,), slots=(wide_but_slow,))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=16.0, max_width=4),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
+        name="NVMe",
+    )
+    wide_but_slow = PcieSlot(
+        address="0000:00:02.0",
+        link=PcieLink(current_speed_gtps=8.0, current_width=16, max_speed_gtps=8.0, max_width=16),
+        occupied=True,
+        connector_present=True,
+    )
+    machine = Inventory(hostname="h", controllers=(capped,), slots=(wide_but_slow,))
 
     finding = diagnose_controller_link(capped, machine)[0]
 
@@ -409,10 +510,24 @@ def test_the_best_port_named_is_one_real_port_not_the_best_speed_beside_the_best
     has, and the board already runs PCIe 4.0, so a newer board is not the remedy
     either: the card needs one port with both.
     """
-    capped = controller(link=PcieLink(8.0, 4, 16.0, 4), upstream=PcieLink(8.0, 4, 8.0, 4), name="NVMe")
-    fast_but_narrow = PcieSlot("0000:00:1c.0", PcieLink(16.0, 1, 16.0, 1), occupied=True, connector_present=True)
-    wide_but_slow = PcieSlot("0000:00:02.0", PcieLink(8.0, 16, 8.0, 16), occupied=True, connector_present=True)
-    machine = Inventory("h", controllers=(capped,), slots=(fast_but_narrow, wide_but_slow))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=16.0, max_width=4),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
+        name="NVMe",
+    )
+    fast_but_narrow = PcieSlot(
+        address="0000:00:1c.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=1, max_speed_gtps=16.0, max_width=1),
+        occupied=True,
+        connector_present=True,
+    )
+    wide_but_slow = PcieSlot(
+        address="0000:00:02.0",
+        link=PcieLink(current_speed_gtps=8.0, current_width=16, max_speed_gtps=8.0, max_width=16),
+        occupied=True,
+        connector_present=True,
+    )
+    machine = Inventory(hostname="h", controllers=(capped,), slots=(fast_but_narrow, wide_but_slow))
 
     finding = diagnose_controller_link(capped, machine)[0]
 
@@ -430,9 +545,18 @@ def test_freeing_a_faster_port_promises_what_that_port_gives_this_card() -> None
     A PCIe 5.0 x4 card in a PCIe 3.0 x4 seat gains from a PCIe 4.0 x4 port, up to
     PCIe 4.0 x4. Quoting the card's maximum promises twice what the move delivers.
     """
-    capped = controller(link=PcieLink(8.0, 4, 32.0, 4), upstream=PcieLink(8.0, 4, 8.0, 4), name="NVMe")
-    faster_but_taken = PcieSlot("0000:00:06.0", PcieLink(16.0, 4, 16.0, 4), occupied=True, connector_present=True)
-    machine = Inventory("h", controllers=(capped,), slots=(faster_but_taken,))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=32.0, max_width=4),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
+        name="NVMe",
+    )
+    faster_but_taken = PcieSlot(
+        address="0000:00:06.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=4, max_speed_gtps=16.0, max_width=4),
+        occupied=True,
+        connector_present=True,
+    )
+    machine = Inventory(hostname="h", controllers=(capped,), slots=(faster_but_taken,))
 
     finding = diagnose_controller_link(capped, machine)[0]
 
@@ -448,9 +572,13 @@ def test_a_board_upgrade_names_the_generation_that_reaches_the_figure_it_quotes(
     PCIe 4.0 board gives it half that. Naming the next generation up with the card's
     own maximum promised a PCIe 4.0 board the PCIe 5.0 figure.
     """
-    capped = controller(link=PcieLink(8.0, 4, 32.0, 4), upstream=PcieLink(8.0, 4, 8.0, 4), name="NVMe")
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=32.0, max_width=4),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
+        name="NVMe",
+    )
 
-    finding = diagnose_controller_link(capped, Inventory("h", controllers=(capped,)))[0]
+    finding = diagnose_controller_link(capped, Inventory(hostname="h", controllers=(capped,)))[0]
 
     assert finding.action == "A PCIe 5.0 board would take this link from 3.94 GB/s to 15.75 GB/s."
 
@@ -458,8 +586,11 @@ def test_a_board_upgrade_names_the_generation_that_reaches_the_figure_it_quotes(
 @pytest.mark.os_agnostic
 def test_one_drive_with_room_to_spare_is_not_counted_as_plural() -> None:
     """Verify the capped-card hint speaks of the drive when one drive is attached and fits."""
-    capped = controller(link=PcieLink(8.0, 8, 16.0, 8), upstream=PcieLink(8.0, 8, 8.0, 8))
-    machine = Inventory("h", controllers=(capped,), disks=(disk(),))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
+    machine = Inventory(hostname="h", controllers=(capped,), disks=(disk(),))
 
     finding = diagnose_controller_link(capped, machine)[0]
 
@@ -470,8 +601,11 @@ def test_one_drive_with_room_to_spare_is_not_counted_as_plural() -> None:
 @pytest.mark.os_agnostic
 def test_one_drive_that_fills_the_link_is_not_counted_as_plural() -> None:
     """Verify the capped-card hint speaks of the drive when one drive already fills the link."""
-    capped = controller(link=PcieLink(5.0, 1, 8.0, 1), upstream=PcieLink(5.0, 1, 5.0, 1))
-    machine = Inventory("h", controllers=(capped,), disks=(disk(),))
+    capped = controller(
+        link=PcieLink(current_speed_gtps=5.0, current_width=1, max_speed_gtps=8.0, max_width=1),
+        upstream=PcieLink(current_speed_gtps=5.0, current_width=1, max_speed_gtps=5.0, max_width=1),
+    )
+    machine = Inventory(hostname="h", controllers=(capped,), disks=(disk(),))
 
     finding = diagnose_controller_link(capped, machine)[0]
 
@@ -481,9 +615,9 @@ def test_one_drive_that_fills_the_link_is_not_counted_as_plural() -> None:
 @pytest.mark.os_agnostic
 def test_when_drives_outrun_the_uplink_it_is_oversubscribed() -> None:
     """Verify a controller whose drives exceed its uplink is reported."""
-    narrow = controller(link=PcieLink(5.0, 1, 5.0, 1))
+    narrow = controller(link=PcieLink(current_speed_gtps=5.0, current_width=1, max_speed_gtps=5.0, max_width=1))
     drives = tuple(disk(f"sd{letter}") for letter in "abcdefgh")
-    machine = Inventory("h", controllers=(narrow,), disks=drives)
+    machine = Inventory(hostname="h", controllers=(narrow,), disks=drives)
 
     findings = diagnose_controller_oversubscription(narrow, machine)
 
@@ -495,8 +629,8 @@ def test_when_drives_outrun_the_uplink_it_is_oversubscribed() -> None:
 @pytest.mark.os_agnostic
 def test_when_the_uplink_is_ample_nothing_is_reported() -> None:
     """Verify a controller with headroom stays silent."""
-    wide = controller(link=PcieLink(16.0, 8, 16.0, 8))
-    machine = Inventory("h", controllers=(wide,), disks=(disk(),))
+    wide = controller(link=PcieLink(current_speed_gtps=16.0, current_width=8, max_speed_gtps=16.0, max_width=8))
+    machine = Inventory(hostname="h", controllers=(wide,), disks=(disk(),))
 
     assert diagnose_controller_oversubscription(wide, machine) == []
 
@@ -504,8 +638,8 @@ def test_when_the_uplink_is_ample_nothing_is_reported() -> None:
 @pytest.mark.os_agnostic
 def test_one_drive_that_outruns_its_uplink_is_not_counted_as_plural() -> None:
     """Verify the warning speaks of the drive, not of "1 drives", when only one is attached."""
-    narrow = controller(link=PcieLink(5.0, 1, 5.0, 1))
-    machine = Inventory("h", controllers=(narrow,), disks=(disk(),))
+    narrow = controller(link=PcieLink(current_speed_gtps=5.0, current_width=1, max_speed_gtps=5.0, max_width=1))
+    machine = Inventory(hostname="h", controllers=(narrow,), disks=(disk(),))
 
     findings = diagnose_controller_oversubscription(narrow, machine)
 
@@ -517,9 +651,9 @@ def test_one_drive_that_outruns_its_uplink_is_not_counted_as_plural() -> None:
 @pytest.mark.os_agnostic
 def test_when_a_drive_links_below_both_ends_it_is_a_warning() -> None:
     """Verify the cable-or-backplane case is actionable."""
-    slow = disk(link=InterfaceLink(3.0, 6.0, 12.0))
+    slow = disk(link=InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=12.0))
 
-    findings = diagnose_disk_link(slow, Inventory("h", disks=(slow,)))
+    findings = diagnose_disk_link(slow, Inventory(hostname="h", disks=(slow,)))
 
     assert len(findings) == 1
     assert findings[0].severity is Severity.WARNING
@@ -536,9 +670,14 @@ def test_a_card_at_its_own_width_is_not_told_to_find_a_wider_slot() -> None:
     ceiling at the uplink. Telling somebody to move a physically x1 card to a
     wider slot sends them to open a machine for a change the card cannot use.
     """
-    at_own_ceiling = controller(link=PcieLink(5.0, 1, 5.0, 1), name="ASM1061")
-    drives = tuple(disk(node, link=InterfaceLink(6.0, 6.0, 6.0)) for node in ("sde", "sdf"))
-    machine = Inventory("h", controllers=(at_own_ceiling,), disks=drives)
+    at_own_ceiling = controller(
+        link=PcieLink(current_speed_gtps=5.0, current_width=1, max_speed_gtps=5.0, max_width=1), name="ASM1061"
+    )
+    drives = tuple(
+        disk(node, link=InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=6.0))
+        for node in ("sde", "sdf")
+    )
+    machine = Inventory(hostname="h", controllers=(at_own_ceiling,), disks=drives)
 
     findings = diagnose_controller_oversubscription(at_own_ceiling, machine)
 
@@ -558,9 +697,16 @@ def test_a_card_below_its_own_width_may_be_told_to_move() -> None:
     below its own width is a link fault rather than a slot choice, and
     ``diagnose_controller_link`` is the rule that owns it.
     """
-    narrowed = controller(link=PcieLink(5.0, 1, 8.0, 8), upstream=PcieLink(5.0, 1, 5.0, 1), name="Wide HBA")
-    drives = tuple(disk(node, link=InterfaceLink(6.0, 6.0, 6.0)) for node in ("sde", "sdf"))
-    machine = Inventory("h", controllers=(narrowed,), disks=drives)
+    narrowed = controller(
+        link=PcieLink(current_speed_gtps=5.0, current_width=1, max_speed_gtps=8.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=5.0, current_width=1, max_speed_gtps=5.0, max_width=1),
+        name="Wide HBA",
+    )
+    drives = tuple(
+        disk(node, link=InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=6.0))
+        for node in ("sde", "sdf")
+    )
+    machine = Inventory(hostname="h", controllers=(narrowed,), disks=drives)
 
     findings = diagnose_controller_oversubscription(narrowed, machine)
 
@@ -579,9 +725,16 @@ def test_an_idle_link_that_has_downtrained_is_not_read_as_the_ceiling() -> None:
     2.5 GT/s with it at 151 MHz. Reading the idle figure as the ceiling invents
     a bottleneck that disappears the moment anything uses it.
     """
-    resting = controller(link=PcieLink(2.5, 4, 8.0, 4), upstream=PcieLink(2.5, 4, 8.0, 4), name="Idle HBA")
-    drives = tuple(disk(node, link=InterfaceLink(6.0, 6.0, 6.0)) for node in ("sde", "sdf", "sdg"))
-    machine = Inventory("h", controllers=(resting,), disks=drives)
+    resting = controller(
+        link=PcieLink(current_speed_gtps=2.5, current_width=4, max_speed_gtps=8.0, max_width=4),
+        upstream=PcieLink(current_speed_gtps=2.5, current_width=4, max_speed_gtps=8.0, max_width=4),
+        name="Idle HBA",
+    )
+    drives = tuple(
+        disk(node, link=InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=6.0))
+        for node in ("sde", "sdf", "sdg")
+    )
+    machine = Inventory(hostname="h", controllers=(resting,), disks=drives)
 
     assert diagnose_controller_oversubscription(resting, machine) == []
 
@@ -594,7 +747,7 @@ def test_an_unread_port_capability_is_never_treated_as_fast_enough() -> None:
     sitting in a 3 Gb/s port, which is no fault at all. Treating the unknown end
     as at least as fast as the drive turns a guess into a diagnosis.
     """
-    half_known = InterfaceLink(3.0, 6.0, None)
+    half_known = InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=None)
 
     assert half_known.achievable_gbps is None
     assert not half_known.is_underperforming
@@ -604,9 +757,9 @@ def test_an_unread_port_capability_is_never_treated_as_fast_enough() -> None:
 @pytest.mark.os_agnostic
 def test_when_the_port_capability_is_unread_no_fault_is_claimed() -> None:
     """Verify a half-known link is surfaced without asserting a cable fault."""
-    unknown_port = disk(link=InterfaceLink(3.0, 6.0, None))
+    unknown_port = disk(link=InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=None))
 
-    findings = diagnose_disk_link(unknown_port, Inventory("h", disks=(unknown_port,)))
+    findings = diagnose_disk_link(unknown_port, Inventory(hostname="h", disks=(unknown_port,)))
 
     assert len(findings) == 1
     finding = findings[0]
@@ -619,9 +772,9 @@ def test_when_the_port_capability_is_unread_no_fault_is_claimed() -> None:
 @pytest.mark.os_agnostic
 def test_when_the_port_caps_the_drive_and_nothing_is_free_it_is_a_hint() -> None:
     """Verify a controller-limited drive with no better port is only a hint."""
-    limited = disk(link=InterfaceLink(3.0, 6.0, 3.0))
+    limited = disk(link=InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=3.0))
 
-    findings = diagnose_disk_link(limited, Inventory("h", disks=(limited,)))
+    findings = diagnose_disk_link(limited, Inventory(hostname="h", disks=(limited,)))
 
     assert len(findings) == 1
     assert findings[0].severity is Severity.HINT
@@ -632,9 +785,9 @@ def test_when_the_port_caps_the_drive_and_nothing_is_free_it_is_a_hint() -> None
 @pytest.mark.os_agnostic
 def test_when_a_drive_runs_at_its_own_maximum_nothing_is_reported() -> None:
     """Verify a drive at capability is silent even on a much faster port."""
-    fine = disk(link=InterfaceLink(6.0, 6.0, 12.0))
+    fine = disk(link=InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=12.0))
 
-    assert diagnose_disk_link(fine, Inventory("h", disks=(fine,))) == []
+    assert diagnose_disk_link(fine, Inventory(hostname="h", disks=(fine,))) == []
 
 
 @pytest.mark.os_agnostic
@@ -721,12 +874,12 @@ def test_when_a_disk_has_no_health_data_no_health_findings_are_made() -> None:
 def test_mixed_firmware_is_reported_once_per_model() -> None:
     """Verify identical models on different revisions are flagged, and only those."""
     machine = Inventory(
-        "h",
+        hostname="h",
         disks=(
-            Disk("sda", "/dev/sda", "Model A", firmware="1.0"),
-            Disk("sdb", "/dev/sdb", "Model A", firmware="2.0"),
-            Disk("sdc", "/dev/sdc", "Model B", firmware="9.0"),
-            Disk("sdd", "/dev/sdd", "Model B", firmware="9.0"),
+            Disk(node="sda", path="/dev/sda", model="Model A", firmware="1.0"),
+            Disk(node="sdb", path="/dev/sdb", model="Model A", firmware="2.0"),
+            Disk(node="sdc", path="/dev/sdc", model="Model B", firmware="9.0"),
+            Disk(node="sdd", path="/dev/sdd", model="Model B", firmware="9.0"),
         ),
     )
 
@@ -740,7 +893,13 @@ def test_mixed_firmware_is_reported_once_per_model() -> None:
 @pytest.mark.os_agnostic
 def test_interface_demand_uses_the_pcie_link_for_nvme() -> None:
     """Verify an NVMe drive's demand comes from its PCIe link, not a serial rate."""
-    nvme = Disk("nvme0n1", "/dev/nvme0n1", "NVMe", bus=BusType.NVME, pcie=PcieLink(8.0, 4, 8.0, 4))
+    nvme = Disk(
+        node="nvme0n1",
+        path="/dev/nvme0n1",
+        model="NVMe",
+        bus=BusType.NVME,
+        pcie=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
+    )
 
     assert interface_demand_gbytes(nvme) == 3.94
 
@@ -751,8 +910,14 @@ def test_attached_demand_sums_only_the_disks_on_that_controller() -> None:
     hba = controller()
     other = controller("0000:04:00.0")
     mine = disk("sda")
-    theirs = Disk("sdb", "/dev/sdb", "m", controller_address="0000:04:00.0", link=InterfaceLink(6.0, 6.0, 6.0))
-    machine = Inventory("h", controllers=(hba, other), disks=(mine, theirs))
+    theirs = Disk(
+        node="sdb",
+        path="/dev/sdb",
+        model="m",
+        controller_address="0000:04:00.0",
+        link=InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=6.0),
+    )
+    machine = Inventory(hostname="h", controllers=(hba, other), disks=(mine, theirs))
 
     assert attached_demand_gbytes(hba, machine) == 0.6
     assert attached_demand_gbytes(other, machine) == 0.6
@@ -766,8 +931,12 @@ def test_a_drive_split_into_namespaces_is_not_oversubscribed_by_itself() -> None
     summing block devices weighed the drive's link against itself and called a
     drive with two namespaces oversubscribed by the drives on it.
     """
-    drive = controller("0000:02:00.0", link=PcieLink(16.0, 4, 16.0, 4), upstream=PcieLink(16.0, 4, 16.0, 4))
-    machine = Inventory("h", controllers=(drive,), disks=(namespace("nvme0n1"), namespace("nvme0n2")))
+    drive = controller(
+        "0000:02:00.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=4, max_speed_gtps=16.0, max_width=4),
+        upstream=PcieLink(current_speed_gtps=16.0, current_width=4, max_speed_gtps=16.0, max_width=4),
+    )
+    machine = Inventory(hostname="h", controllers=(drive,), disks=(namespace("nvme0n1"), namespace("nvme0n2")))
 
     assert diagnose_controller_oversubscription(drive, machine) == []
     assert attached_demand_gbytes(drive, machine) == interface_demand_gbytes(namespace("nvme0n1"))
@@ -776,9 +945,16 @@ def test_a_drive_split_into_namespaces_is_not_oversubscribed_by_itself() -> None
 @pytest.mark.os_agnostic
 def test_a_capped_drive_split_into_namespaces_wants_what_one_drive_can_pull() -> None:
     """Verify the capped hint speaks of one drive and its own figure, however many namespaces it has."""
-    drive = controller("0000:02:00.0", link=PcieLink(8.0, 4, 16.0, 4), upstream=PcieLink(8.0, 4, 8.0, 4))
-    halves = tuple(namespace(node, link=PcieLink(8.0, 4, 16.0, 4)) for node in ("nvme0n1", "nvme0n2"))
-    machine = Inventory("h", controllers=(drive,), disks=halves)
+    drive = controller(
+        "0000:02:00.0",
+        link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=16.0, max_width=4),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
+    )
+    halves = tuple(
+        namespace(node, link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=16.0, max_width=4))
+        for node in ("nvme0n1", "nvme0n2")
+    )
+    machine = Inventory(hostname="h", controllers=(drive,), disks=halves)
 
     finding = diagnose_controller_link(drive, machine)[0]
 
@@ -794,9 +970,13 @@ def test_drives_that_only_share_a_controller_are_still_counted_apart(serials: tu
     drive whose serial was not read cannot be shown to be a namespace of another:
     folding either in would hide demand that is really there.
     """
-    hba = controller("0000:02:00.0", link=PcieLink(16.0, 16, 16.0, 16), upstream=PcieLink(16.0, 16, 16.0, 16))
+    hba = controller(
+        "0000:02:00.0",
+        link=PcieLink(current_speed_gtps=16.0, current_width=16, max_speed_gtps=16.0, max_width=16),
+        upstream=PcieLink(current_speed_gtps=16.0, current_width=16, max_speed_gtps=16.0, max_width=16),
+    )
     drives = tuple(namespace(f"nvme{index}n1", serial=serial) for index, serial in enumerate(serials))
-    machine = Inventory("h", controllers=(hba,), disks=drives)
+    machine = Inventory(hostname="h", controllers=(hba,), disks=drives)
 
     one = interface_demand_gbytes(drives[0])
     assert one is not None
@@ -807,10 +987,12 @@ def test_drives_that_only_share_a_controller_are_still_counted_apart(serials: tu
 def test_findings_are_sorted_most_urgent_first() -> None:
     """Verify the reader sees the worst thing first."""
     machine = Inventory(
-        "h",
-        controllers=(controller(link=PcieLink(2.5, 0, 8.0, 8)),),
+        hostname="h",
+        controllers=(
+            controller(link=PcieLink(current_speed_gtps=2.5, current_width=0, max_speed_gtps=8.0, max_width=8)),
+        ),
         disks=(
-            disk("sda", link=InterfaceLink(3.0, 6.0, 12.0)),
+            disk("sda", link=InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=12.0)),
             disk("sdb", health=Health(percent_used=99)),
         ),
     )
@@ -952,10 +1134,20 @@ def test_when_a_slow_drive_holds_a_fast_port_a_swap_is_proposed() -> None:
     exactly how a machine ends up misallocated: an old drive occupies the fast
     port it cannot use while a fast drive runs at half speed elsewhere.
     """
-    old = Disk("sda", "/dev/sda", "Old SATA-II drive", link=InterfaceLink(3.0, 3.0, 6.0))
-    new = Disk("sdb", "/dev/sdb", "Modern SSD", link=InterfaceLink(3.0, 6.0, 3.0))
+    old = Disk(
+        node="sda",
+        path="/dev/sda",
+        model="Old SATA-II drive",
+        link=InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=3.0, port_max_gbps=6.0),
+    )
+    new = Disk(
+        node="sdb",
+        path="/dev/sdb",
+        model="Modern SSD",
+        link=InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=3.0),
+    )
 
-    findings = diagnose_port_allocation(Inventory("h", disks=(old, new)))
+    findings = diagnose_port_allocation(Inventory(hostname="h", disks=(old, new)))
 
     assert len(findings) == 1
     assert findings[0].severity is Severity.WARNING
@@ -973,10 +1165,20 @@ def test_when_every_port_is_fast_enough_no_swap_is_proposed() -> None:
     phy is fine when there is no faster drive waiting for that phy.
     """
     machine = Inventory(
-        "h",
+        hostname="h",
         disks=(
-            Disk("sda", "/dev/sda", "Old drive", link=InterfaceLink(3.0, 3.0, 12.0)),
-            Disk("sdb", "/dev/sdb", "Modern SSD", link=InterfaceLink(6.0, 6.0, 12.0)),
+            Disk(
+                node="sda",
+                path="/dev/sda",
+                model="Old drive",
+                link=InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=3.0, port_max_gbps=12.0),
+            ),
+            Disk(
+                node="sdb",
+                path="/dev/sdb",
+                model="Modern SSD",
+                link=InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=12.0),
+            ),
         ),
     )
 
@@ -986,21 +1188,46 @@ def test_when_every_port_is_fast_enough_no_swap_is_proposed() -> None:
 @pytest.mark.os_agnostic
 def test_a_swap_is_not_proposed_when_the_partner_would_lose() -> None:
     """Verify a trade that merely moves the problem is refused."""
-    starved = Disk("sda", "/dev/sda", "Fast", link=InterfaceLink(3.0, 6.0, 3.0))
-    equally_fast = Disk("sdb", "/dev/sdb", "Also fast", link=InterfaceLink(6.0, 6.0, 6.0))
+    starved = Disk(
+        node="sda",
+        path="/dev/sda",
+        model="Fast",
+        link=InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=3.0),
+    )
+    equally_fast = Disk(
+        node="sdb",
+        path="/dev/sdb",
+        model="Also fast",
+        link=InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=6.0),
+    )
 
-    assert diagnose_port_allocation(Inventory("h", disks=(starved, equally_fast))) == []
+    assert diagnose_port_allocation(Inventory(hostname="h", disks=(starved, equally_fast))) == []
 
 
 @pytest.mark.os_agnostic
 def test_one_partner_is_not_promised_to_two_swaps() -> None:
     """Verify a single fast port is not offered to two starved drives at once."""
     machine = Inventory(
-        "h",
+        hostname="h",
         disks=(
-            Disk("sda", "/dev/sda", "Fast A", link=InterfaceLink(3.0, 6.0, 3.0)),
-            Disk("sdb", "/dev/sdb", "Fast B", link=InterfaceLink(3.0, 6.0, 3.0)),
-            Disk("sdc", "/dev/sdc", "Old", link=InterfaceLink(3.0, 3.0, 6.0)),
+            Disk(
+                node="sda",
+                path="/dev/sda",
+                model="Fast A",
+                link=InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=3.0),
+            ),
+            Disk(
+                node="sdb",
+                path="/dev/sdb",
+                model="Fast B",
+                link=InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=3.0),
+            ),
+            Disk(
+                node="sdc",
+                path="/dev/sdc",
+                model="Old",
+                link=InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=3.0, port_max_gbps=6.0),
+            ),
         ),
     )
 
@@ -1030,7 +1257,7 @@ def test_an_attribute_below_its_makers_threshold_is_a_finding() -> None:
     terminal. It is the manufacturer's own verdict, which makes it the least
     arguable statement this tool can make about a drive.
     """
-    findings = diagnose(Inventory("box", disks=(_disk_with_failing_attribute(),)))
+    findings = diagnose(Inventory(hostname="box", disks=(_disk_with_failing_attribute(),)))
     matching = [f for f in findings if "threshold" in f.title]
     assert matching, "the maker's own failing verdict raised no finding"
     assert matching[0].severity is Severity.CRITICAL
@@ -1042,7 +1269,7 @@ def test_a_healthy_attribute_table_raises_nothing() -> None:
     """The control: the rule must not fire on every drive that has attributes."""
     healthy = SmartAttribute(id=9, name="Power_On_Hours", value=95, worst=95, threshold=0, raw=1200)
     disk = Disk(node="sdb", path="/dev/sdb", model="ACME Y", health=Health(attributes=(healthy,)))
-    findings = diagnose(Inventory("box", disks=(disk,)))
+    findings = diagnose(Inventory(hostname="box", disks=(disk,)))
     assert not [f for f in findings if "threshold" in f.title], "the rule fired on a healthy attribute table"
 
 
@@ -1061,7 +1288,7 @@ def test_the_failing_attribute_row_carries_a_text_marker() -> None:
 
     buffer = io.StringIO()
     console = Console(file=buffer, width=100, no_color=True, force_terminal=False)
-    console.print(render_smart(Inventory("box", disks=(_disk_with_failing_attribute(),)), 100))
+    console.print(render_smart(Inventory(hostname="box", disks=(_disk_with_failing_attribute(),)), 100))
     rendered = buffer.getvalue()
     failing_line = next(line for line in rendered.splitlines() if "Reallocated_Sector_Ct" in line)
     healthy_line = next(line for line in rendered.splitlines() if "Power_On_Hours" in line)
@@ -1074,7 +1301,10 @@ def test_the_failing_attribute_row_carries_a_text_marker() -> None:
     "upstream",
     [
         pytest.param(None, id="no upstream device at all"),
-        pytest.param(PcieLink(None, None, None, None), id="upstream present, capability unreadable"),
+        pytest.param(
+            PcieLink(current_speed_gtps=None, current_width=None, max_speed_gtps=None, max_width=None),
+            id="upstream present, capability unreadable",
+        ),
     ],
 )
 def test_an_unread_port_is_never_treated_as_a_capable_one(upstream: PcieLink | None) -> None:
@@ -1094,7 +1324,7 @@ def test_an_unread_port_is_never_treated_as_a_capable_one(upstream: PcieLink | N
         link=PcieLink(current_speed_gtps=16.0, current_width=4, max_speed_gtps=32.0, max_width=4),
         upstream=upstream,
     )
-    findings = diagnose_controller_link(gen5_drive_in_an_unread_port, Inventory("probe"))
+    findings = diagnose_controller_link(gen5_drive_in_an_unread_port, Inventory(hostname="probe"))
 
     assert findings, "a device below its own maximum is still worth reporting"
     text = " ".join(f"{f.title} {f.detail} {f.action}" for f in findings)

@@ -31,7 +31,6 @@ System Role:
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import json
 import os
 import sys
@@ -67,7 +66,7 @@ MAX_SAMPLES_PER_DRIVE = 512
 MAX_STORED_MAGNITUDE = 10**300
 
 #: Read once from the class rather than per sample; see the validator below.
-_SAMPLE_FIELD_NAMES = tuple(field.name for field in dataclasses.fields(Sample))
+_SAMPLE_FIELD_NAMES = tuple(Sample.model_fields)
 
 # Where a root-run store belongs. The useful runs of this tool are all root on a
 # server, and what it records is a property of the machine's hardware rather than
@@ -84,7 +83,7 @@ _FILENAME = "history.json"
 class HistoryFile(BaseModel):
     """The on-disk shape, and the only place a stored file is trusted.
 
-    The domain dataclasses are serialised directly rather than mirrored into a
+    The domain models are serialised directly rather than mirrored into a
     parallel set of models, which is this project's usual one-parse-in,
     one-dump-out arrangement.
 
@@ -114,12 +113,10 @@ class HistoryFile(BaseModel):
         without asking where its numbers came from.
         """
         # Read once because the field names belong to the class, not to a
-        # sample. Not for speed: measured over five runs each, hoisting the
-        # dataclasses.fields() call out of the loop is worth nothing (8.4 ms
-        # against 8.5 ms per 10k samples), because it already returns a cached
-        # tuple. The walk itself is the cost, about 19 ms to load a 20-drive
-        # store at the sample cap, which is a once-per-run price worth paying
-        # to keep a crash out of the domain.
+        # sample, and not for speed: the class holds them ready either way.
+        # The walk itself is the cost, about 19 ms to load a 20-drive store at
+        # the sample cap, which is a once-per-run price worth paying to keep a
+        # crash out of the domain.
         names = _SAMPLE_FIELD_NAMES
         for drive in series:
             for sample in drive.samples:

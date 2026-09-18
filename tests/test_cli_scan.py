@@ -98,8 +98,8 @@ def test_when_only_hints_exist_the_exit_code_stays_zero() -> None:
     failure would make every machine with a capable card in an older board
     permanently red.
     """
-    hint = Finding(Severity.HINT, "0000:03:00.0", "capped by the mainboard")
-    warning = Finding(Severity.WARNING, "/dev/sda", "linked below capability")
+    hint = Finding(severity=Severity.HINT, subject="0000:03:00.0", title="capped by the mainboard")
+    warning = Finding(severity=Severity.WARNING, subject="/dev/sda", title="linked below capability")
 
     assert exit_code_for([hint]) == ExitCode.SUCCESS
     assert exit_code_for([]) == ExitCode.SUCCESS

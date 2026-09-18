@@ -163,8 +163,8 @@ def test_a_half_read_register_never_reads_as_a_device_without_a_capability() -> 
     from lsdsk.domain.models import PcieLink, PciNode
 
     half = PciNode(
-        "0000:00:1c.0",
-        "a bridge whose widths were not read",
+        address="0000:00:1c.0",
+        name="a bridge whose widths were not read",
         class_code=0x060400,
         link=PcieLink(max_speed_gtps=8.0, current_speed_gtps=8.0),
         pcie_capability_present=True,
@@ -237,7 +237,7 @@ def test_a_section_whose_hops_were_all_read_explains_nothing() -> None:
     from lsdsk.domain.enums import PciPortKind, TreeDensity
     from lsdsk.domain.models import Inventory, PcieLink
 
-    measured = PcieLink(8.0, 4, 8.0, 4)
+    measured = PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4)
     tree = fabric_module.assemble(
         [
             fabric_module.NodeSource(
@@ -268,7 +268,7 @@ def test_a_section_whose_hops_were_all_read_explains_nothing() -> None:
             ),
         ]
     )
-    machine = Inventory("example", pci_tree=tree)
+    machine = Inventory(hostname="example", pci_tree=tree)
     text = _rendered(render_fabric(machine, (), 160, FabricView(density=TreeDensity.FULL)), width=160)
 
     assert "0000:01:00.0" in text, "the fixture drew nothing to judge"

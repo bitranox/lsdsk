@@ -267,7 +267,7 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
     from lsdsk.domain.history import History
     from lsdsk.domain.models import Finding, Inventory
 
-    machine = Inventory("probe")
+    machine = Inventory(hostname="probe")
     read = SimpleNamespace(history=History(hostname="probe"), writable=False)
     called: list[str] = []
 

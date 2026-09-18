@@ -341,7 +341,7 @@ def test_when_a_column_can_shrink_it_shrinks_before_others_are_dropped() -> None
 @pytest.mark.os_agnostic
 def test_when_the_machine_is_empty_the_tree_says_so() -> None:
     """Verify an inventory with nothing in it renders a sentence, not a blank."""
-    rendered = render_tree(Inventory("empty"), ())
+    rendered = render_tree(Inventory(hostname="empty"), ())
 
     assert "No storage controllers or disks found." in str(rendered)
 

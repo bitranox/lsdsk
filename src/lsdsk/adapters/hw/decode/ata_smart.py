@@ -186,10 +186,10 @@ def overall_health(attributes: tuple[SmartAttribute, ...]) -> bool | None:
         possible.
 
     Example:
-        >>> healthy = (SmartAttribute(5, "Reallocated_Sector_Ct", 100, 100, 10, 0),)
+        >>> healthy = (SmartAttribute(id=5, name="Reallocated_Sector_Ct", value=100, worst=100, threshold=10, raw=0),)
         >>> overall_health(healthy)
         True
-        >>> failing = (SmartAttribute(5, "Reallocated_Sector_Ct", 8, 8, 10, 4096),)
+        >>> failing = (SmartAttribute(id=5, name="Reallocated_Sector_Ct", value=8, worst=8, threshold=10, raw=4096),)
         >>> overall_health(failing)
         False
         >>> overall_health(()) is None

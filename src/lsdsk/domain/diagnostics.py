@@ -21,7 +21,6 @@ System Role:
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from .enums import ControllerKind, Severity
@@ -66,7 +65,14 @@ def interface_demand_gbytes(disk: Disk) -> float | None:
 
     Example:
         >>> from lsdsk.domain.models import Disk, InterfaceLink
-        >>> interface_demand_gbytes(Disk("sda", "/dev/sda", "m", link=InterfaceLink(6.0, 6.0, 6.0)))
+        >>> interface_demand_gbytes(
+        ...     Disk(
+        ...         node="sda",
+        ...         path="/dev/sda",
+        ...         model="m",
+        ...         link=InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=6.0),
+        ...     )
+        ... )
         0.6
     """
     if disk.pcie is not None:
@@ -451,8 +457,7 @@ def _graded_by_the_drives(
     """
     if _drives_would_notice(controller, inventory, achievable):
         return advice
-    return replace(
-        advice,
+    return advice.with_changes(
         severity=Severity.HINT,
         title=unneeded_title,
         detail=f"{advice.detail} {_headroom_sentence(controller, inventory, achievable)}",
@@ -471,7 +476,12 @@ def _peak_demand_gbytes(disk: Disk) -> float | None:
 
     Example:
         >>> from lsdsk.domain.models import Disk, PcieLink
-        >>> resting = Disk("nvme0n1", "/dev/nvme0n1", "m", pcie=PcieLink(2.5, 4, 8.0, 4))
+        >>> resting = Disk(
+        ...     node="nvme0n1",
+        ...     path="/dev/nvme0n1",
+        ...     model="m",
+        ...     pcie=PcieLink(current_speed_gtps=2.5, current_width=4, max_speed_gtps=8.0, max_width=4),
+        ... )
         >>> _format_gbytes(_peak_demand_gbytes(resting))
         '3.94 GB/s'
     """
@@ -757,8 +767,16 @@ def refine(finding: Finding, trend: Trend | None) -> Finding:
 
     Example:
         >>> from .history import CounterKind, Trend, TrendVerdict
-        >>> base = Finding(Severity.WARNING, "/dev/sdd", "has errors")
-        >>> rising = Trend(CounterKind.CRC_ERRORS, TrendVerdict.RISING, 900, 200, 10, 20.0, None)
+        >>> base = Finding(severity=Severity.WARNING, subject="/dev/sdd", title="has errors")
+        >>> rising = Trend(
+        ...     kind=CounterKind.CRC_ERRORS,
+        ...     verdict=TrendVerdict.RISING,
+        ...     latest=900,
+        ...     delta=200,
+        ...     span_hours=10,
+        ...     per_hour=20.0,
+        ...     expected_from_lifetime=None,
+        ... )
         >>> refine(base, rising).severity
         <Severity.CRITICAL: 'critical'>
         >>> refine(base, None).severity
@@ -772,8 +790,7 @@ def refine(finding: Finding, trend: Trend | None) -> Finding:
             f" It gained {trend.delta} in the last {trend.span_hours} power-on hours, "
             f"about {rate} an hour, so this is happening now rather than in the past."
         )
-        return replace(
-            finding,
+        return finding.with_changes(
             severity=_ESCALATION[finding.severity],
             detail=f"{finding.detail}{measured}",
         )
@@ -783,8 +800,7 @@ def refine(finding: Finding, trend: Trend | None) -> Finding:
             f"and this drive's own lifetime rate predicted about {trend.expected_from_lifetime:.0f} "
             "in that time. Whatever caused them is not doing so now."
         )
-        return replace(
-            finding,
+        return finding.with_changes(
             severity=_DE_ESCALATION[finding.severity],
             detail=f"{finding.detail}{measured}",
         )
@@ -1131,10 +1147,10 @@ def _bus_is_behind_a_bridge(bus: str, inventory: Inventory) -> bool:
 
     Example:
         >>> from lsdsk.domain.models import PcieLink
-        >>> upstream = PcieSlot("0000:07:00.0", PcieLink(), occupied=True, occupant_address="0000:08:00.0")
-        >>> _bus_is_behind_a_bridge("0000:08", Inventory("h", slots=(upstream,)))
+        >>> upstream = PcieSlot(address="0000:07:00.0", link=PcieLink(), occupied=True, occupant_address="0000:08:00.0")
+        >>> _bus_is_behind_a_bridge("0000:08", Inventory(hostname="h", slots=(upstream,)))
         True
-        >>> _bus_is_behind_a_bridge("0000:00", Inventory("h", slots=(upstream,)))
+        >>> _bus_is_behind_a_bridge("0000:00", Inventory(hostname="h", slots=(upstream,)))
         False
     """
     return any(_bus_of(slot.occupant_address or "") == bus for slot in inventory.slots)
@@ -1188,11 +1204,13 @@ def _switch_function_maker(port: PcieSlot) -> int | None:
 
     Example:
         >>> from lsdsk.domain.models import PcieLink
-        >>> _switch_function_maker(PcieSlot("a", PcieLink(), vendor=0x1022, occupant_vendor=0x1022))
+        >>> _switch_function_maker(PcieSlot(address="a", link=PcieLink(), vendor=0x1022, occupant_vendor=0x1022))
         4130
-        >>> _switch_function_maker(PcieSlot("a", PcieLink(), vendor=0x1022, occupant_vendor=0x10EC)) is None
+        >>> _switch_function_maker(
+        ...     PcieSlot(address="a", link=PcieLink(), vendor=0x1022, occupant_vendor=0x10EC)
+        ... ) is None
         True
-        >>> _switch_function_maker(PcieSlot("a", PcieLink(), occupant_vendor=0x1022)) is None
+        >>> _switch_function_maker(PcieSlot(address="a", link=PcieLink(), occupant_vendor=0x1022)) is None
         True
     """
     return _shared_maker(port.vendor, port.occupant_vendor)
@@ -1214,11 +1232,19 @@ def _port_capability_denies_a_function(port: PcieSlot) -> bool:
 
     Example:
         >>> from lsdsk.domain.models import PcieLink
-        >>> _port_capability_denies_a_function(PcieSlot("a", PcieLink(2.5, 1, 5.0, 1)))
+        >>> _port_capability_denies_a_function(
+        ...     PcieSlot(
+        ...         address="a", link=PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=5.0, max_width=1)
+        ...     )
+        ... )
         True
-        >>> _port_capability_denies_a_function(PcieSlot("a", PcieLink(2.5, 1, 2.5, 1)))
+        >>> _port_capability_denies_a_function(
+        ...     PcieSlot(
+        ...         address="a", link=PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=2.5, max_width=1)
+        ...     )
+        ... )
         False
-        >>> _port_capability_denies_a_function(PcieSlot("a", PcieLink()))
+        >>> _port_capability_denies_a_function(PcieSlot(address="a", link=PcieLink()))
         False
     """
     return port.link.capability_is_known and not port.link.capability_is_at_floor
@@ -1438,7 +1464,7 @@ def diagnose(
 
     Example:
         >>> from lsdsk.domain.models import Inventory
-        >>> diagnose(Inventory("empty"))
+        >>> diagnose(Inventory(hostname="empty"))
         ()
     """
     findings: list[Finding] = []

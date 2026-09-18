@@ -13,7 +13,6 @@ System Role:
 from __future__ import annotations
 
 import re
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from ....domain.enums import BusType, ControllerKind, DiskKind
@@ -647,7 +646,7 @@ def build_virtual_disks(capture: LinuxCapture) -> tuple[Disk, ...]:
         with no claim about its media.
     """
     return tuple(
-        replace(_build_one(node, block, capture), bus=BusType.VIRTUAL, kind=DiskKind.UNKNOWN)
+        _build_one(node, block, capture).with_changes(bus=BusType.VIRTUAL, kind=DiskKind.UNKNOWN)
         for node, block in sorted(capture.block.items())
         if _is_kernel_virtual(block)
     )
@@ -716,11 +715,11 @@ def build_inventory(capture: LinuxCapture) -> Inventory:
 
     return Inventory(
         hostname=device_text(capture.hostname) or "unknown",
-        # replace, not a rebuild: only ports_used is known this late, and
+        # A copy, not a rebuild: only ports_used is known this late, and
         # restating every other field here would silently drop any field
         # Controller gains later.
         controllers=tuple(
-            replace(controller, ports_used=used.get(controller.address, 0)) for controller in controllers
+            controller.with_changes(ports_used=used.get(controller.address, 0)) for controller in controllers
         ),
         disks=disks,
         virtual_disks=build_virtual_disks(capture),

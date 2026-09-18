@@ -231,7 +231,7 @@ def test_a_storage_controller_under_a_classless_device_is_still_drawn() -> None:
             source("0000:01:00.0", 0x010802, "0000:00:01.0"),
         ]
     )
-    machine = Inventory("example", pci_tree=tree)
+    machine = Inventory(hostname="example", pci_tree=tree)
 
     buffer = io.StringIO()
     Console(file=buffer, width=120, no_color=True).print(
@@ -644,7 +644,12 @@ def test_no_hop_figure_is_wider_than_the_column_it_is_drawn_in(*, bandwidth: boo
                 widest = max(widest, len(text))
     assert widest <= column, f"the column is {column} wide and something needs {widest}"
 
-    future = PciNode("a", "b", link=PcieLink(64.0, 16, 64.0, 16), pcie_capability_present=True)
+    future = PciNode(
+        address="a",
+        name="b",
+        link=PcieLink(current_speed_gtps=64.0, current_width=16, max_speed_gtps=64.0, max_width=16),
+        pcie_capability_present=True,
+    )
     drawn = hop_cells(future, bandwidth=bandwidth)[0][0]
     assert len(drawn) <= column, f"a shipping generation must fit: {drawn!r} needs {len(drawn)} of {column}"
     assert len(theme.NOT_READ) <= column and len(theme.LEGACY) <= column
@@ -758,7 +763,7 @@ def test_the_header_names_exactly_the_columns_the_rows_draw() -> None:
                 class_code=0x010802,
                 vendor=None,
                 driver=None,
-                link=PcieLink(8.0, 4, 8.0, 4),
+                link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
                 port_kind=PciPortKind.UNKNOWN,
                 connector_present=None,
                 physical_slot_number=None,

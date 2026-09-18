@@ -176,13 +176,26 @@ def hop_cells(node: PciNode, *, bandwidth: bool = False) -> tuple[theme.Cell, th
 
     Example:
         >>> from lsdsk.domain.models import PciNode, PcieLink
-        >>> hop_cells(PciNode("a", "b", link=PcieLink(8.0, 4, 8.0, 4)))
+        >>> hop_cells(
+        ...     PciNode(
+        ...         address="a",
+        ...         name="b",
+        ...         link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
+        ...     )
+        ... )
         (('Gen3x4', ''), ('Gen3x4', ''))
-        >>> hop_cells(PciNode("a", "b", link=PcieLink(8.0, 4, 8.0, 4)), bandwidth=True)
+        >>> hop_cells(
+        ...     PciNode(
+        ...         address="a",
+        ...         name="b",
+        ...         link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
+        ...     ),
+        ...     bandwidth=True,
+        ... )
         (('Gen3x4 (3.94 GB/s)', ''), ('Gen3x4 (3.94 GB/s)', ''))
-        >>> hop_cells(PciNode("a", "b", pcie_capability_present=False))[0][0]
+        >>> hop_cells(PciNode(address="a", name="b", pcie_capability_present=False))[0][0]
         'legacy'
-        >>> hop_cells(PciNode("a", "b"))[0][0]
+        >>> hop_cells(PciNode(address="a", name="b"))[0][0]
         '-'
     """
     return theme.hop_link_cells(node.link, capability_present=node.pcie_capability_present, bandwidth=bandwidth)
@@ -929,7 +942,7 @@ class FabricSection:
     Example:
         >>> from rich.console import Console
         >>> from lsdsk.domain.models import Disk, Inventory
-        >>> machine = Inventory("example", disks=(Disk(path="/dev/sda", node="sda", model="A DRIVE"),))
+        >>> machine = Inventory(hostname="example", disks=(Disk(path="/dev/sda", node="sda", model="A DRIVE"),))
         >>> console = Console(width=60, no_color=True)
         >>> with console.capture() as capture:
         ...     console.print(FabricSection(machine, ()))

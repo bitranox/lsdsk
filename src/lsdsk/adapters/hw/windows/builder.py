@@ -15,7 +15,6 @@ System Role:
 from __future__ import annotations
 
 import re
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from ....domain.enums import BusType, ControllerKind, DiskKind, PciPortKind
@@ -415,11 +414,11 @@ def build_inventory(capture: WindowsCapture) -> Inventory:
 
     return Inventory(
         hostname=device_text(capture.hostname) or "unknown",
-        # replace, not a rebuild: only ports_used is known this late, and
+        # A copy, not a rebuild: only ports_used is known this late, and
         # restating every other field here would silently drop any field
         # Controller gains later.
         controllers=tuple(
-            replace(controller, ports_used=used.get(controller.address, 0)) for controller in controllers
+            controller.with_changes(ports_used=used.get(controller.address, 0)) for controller in controllers
         ),
         disks=disks,
         slots=build_slots(capture),

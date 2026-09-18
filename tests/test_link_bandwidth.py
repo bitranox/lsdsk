@@ -243,11 +243,16 @@ def test_a_hop_column_never_decorates_a_symbol() -> None:
     from lsdsk.adapters.render.tree import hop_cells
     from lsdsk.domain.models import PciNode
 
-    legacy = PciNode("a", "b", pcie_capability_present=False)
-    unread = PciNode("a", "b")
+    legacy = PciNode(address="a", name="b", pcie_capability_present=False)
+    unread = PciNode(address="a", name="b")
     for node in (legacy, unread):
         for text, _style in hop_cells(node, bandwidth=True):
             assert "GB/s" not in text, f"{text!r} prices a link nobody read"
 
-    read = PciNode("a", "b", link=PcieLink(8.0, 4, 8.0, 4), pcie_capability_present=True)
+    read = PciNode(
+        address="a",
+        name="b",
+        link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
+        pcie_capability_present=True,
+    )
     assert "GB/s" in hop_cells(read, bandwidth=True)[0][0], "a read link must gain its figure"

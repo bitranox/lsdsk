@@ -17,11 +17,10 @@ System Role:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from .base import DomainModel
 
 
-@dataclass(frozen=True, slots=True)
-class Thresholds:
+class Thresholds(DomainModel, frozen=True):
     """The judgement values every rule weighs against.
 
     Attributes:

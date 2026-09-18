@@ -206,8 +206,8 @@ def test_the_envelope_round_trips_the_tree_through_json() -> None:
     """Verify pci_tree reaches a JSON consumer with its structure intact.
 
     Built at the envelope boundary rather than with a hand-built tree, because
-    the field serialises frozen dataclasses directly and the whole tree must
-    survive the trip, roots and parent pointers alike.
+    the field serialises the frozen domain models directly and the whole tree
+    must survive the trip, roots and parent pointers alike.
     """
     from lsdsk.adapters.cli.commands.scan import build_envelope
     from lsdsk.domain.diagnostics import diagnose

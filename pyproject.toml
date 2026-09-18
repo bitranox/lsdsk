@@ -138,7 +138,12 @@ convention = "google"
 # from moving those imports into a TYPE_CHECKING block and breaking model
 # construction. Ruff cannot follow a base class imported from another module, so
 # the capture models' own bases are named beside Pydantic's.
-runtime-evaluated-base-classes = ["pydantic.BaseModel", "lsdsk.adapters.hw.capture.CaptureModel", "lsdsk.adapters.hw.capture.CaptureHeader"]
+runtime-evaluated-base-classes = [
+    "pydantic.BaseModel",
+    "lsdsk.domain.base.DomainModel",
+    "lsdsk.adapters.hw.capture.CaptureModel",
+    "lsdsk.adapters.hw.capture.CaptureHeader",
+]
 
 [tool.ruff.lint.per-file-ignores]
 # Notebooks: unused imports are often intentional for side effects. F821 covers

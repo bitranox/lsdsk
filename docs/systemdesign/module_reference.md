@@ -9,6 +9,7 @@ module exists that is not listed here, or a listed path does not exist.
 
 ### Domain Layer
 
+- `src/lsdsk/domain/base.py` - The frozen, extra-refusing Pydantic base every domain value is built on.
 - `src/lsdsk/domain/diagnostics.py` - Pure rules that turn an inventory into findings.
 - `src/lsdsk/domain/enums.py` - Type-safe domain enums for output formats and deployment targets.
 - `src/lsdsk/domain/errors.py` - Domain-specific exceptions for typed error handling at boundaries.
@@ -150,10 +151,11 @@ Two splits inside the adapters carry most of the design:
   capture; a Windows capture does not carry them, so its builder resolves device names against
   whatever `pci.ids` the replaying host has.
 
-The domain layer is frozen dataclasses rather than Pydantic, because it has no serialization
-concern. Pydantic sits at the two boundaries that do: the capture models (`CaptureEnvelope`, and
-`LinuxCapture` and `WindowsCapture` for each platform's reading) typing a reading on the way in,
-and `ScanEnvelope` producing the JSON on the way out.
+The domain layer is Pydantic too: every value derives from `DomainModel`, frozen and refusing a
+field it does not declare, so a mapping that produces a wrong-typed value is refused where it is
+made. Pydantic also sits at the two boundaries that serialise: the capture models
+(`CaptureEnvelope`, and `LinuxCapture` and `WindowsCapture` for each platform's reading) typing a
+reading on the way in, and `ScanEnvelope` producing the JSON on the way out.
 
 ## CLI commands
 
