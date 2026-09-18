@@ -32,6 +32,24 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **A panel under the table, answering for the row in front.** A table gives up
+  most of what a scan reads as the terminal narrows - the disks table draws
+  twelve of a drive's fields and the health table eleven, and between them they
+  never show the drive's own temperature limits, the spare, the power cycles or
+  a single SMART attribute - so the interactive view carries the record the
+  tables cannot: one subject, every value it holds, then the findings that name
+  it with their reasoning and their remedy. It is keyed by the SUBJECT rather
+  than by the page, so a drive reads the same wherever the cursor meets it and
+  only the order of its groups changes. `i` hides it, `shift+up` and
+  `shift+down` scroll it, and `display.detail_height_percent` caps how much of
+  the window it may take.
+
+- **The topology and trend pages carry a cursor.** Both were rendered as text,
+  so the panel could answer for a controller or a drive and not for a device on
+  the fabric or a counter row. The topology page is a list of lines each paired
+  with what it is about, and the trend page is a table, which puts a cursor on
+  six of the eight pages. SMART and findings scroll as a page, as they did.
+
 - **A link figure says what it is worth.** Every PCIe and SATA figure drawn in a
   column carries its own bandwidth - `Gen3x4 (3.94 GB/s)`, `Gen4x8 (15.75 GB/s)`,
   `6G (0.60 GB/s)` - in the disks, controllers and slots tables, in both trees
@@ -186,6 +204,18 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   hidden.
 
 ### Fixed
+
+- **The controllers and health pages named their own columns, and dropped
+  some.** A hand-written column tuple had already cost the disk page `serial`
+  and `firmware` for a whole minor series, and the same defect was still live
+  in two of its neighbours: the controllers page was missing `free` and `load`
+  and filled `ports` with "used of total" where the printed column of that name
+  means "total", and the health page was missing `model`, so it identified a
+  drive by path alone. Every page now derives both its columns and its cells
+  from the printed table it shares a name with. Two guards cover all five table
+  pages at once - one on the headings, one on the drawn cells - because taking
+  the right headings and filling them from your own arithmetic is exactly what
+  the controllers page was doing.
 
 - **The detail panel put a capable throughput beside a running link.** A
   controller's link line ended with a single `carries` figure taken from the

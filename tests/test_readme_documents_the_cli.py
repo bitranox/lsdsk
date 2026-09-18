@@ -93,3 +93,46 @@ def test_the_readme_invents_no_option() -> None:
     invented = [option for option in sorted(set(re.findall(r"(--[a-z][a-z-]+)", readme))) if option not in every_screen]
 
     assert not invented, f"the README documents options that do not exist: {invented}"
+
+
+#: The prose that covers the page keys, which are eight bindings a reader meets
+#: as one sentence rather than as eight lines.
+PAGE_KEY_PROSE = "`1` to `8`"
+
+#: Keys Textual names one way and a reader types another.
+KEY_AS_TYPED = {"comma": ",", "full_stop": "."}
+
+
+def _keys_as_typed(key_field: str) -> list[str]:
+    """Every key one binding answers to, spelled the way a reader types it."""
+    return [KEY_AS_TYPED.get(key, key) for key in key_field.split(",")]
+
+
+def test_the_readme_names_a_key_for_every_action_the_interactive_view_binds() -> None:
+    """A key the README omits is a feature reachable only by accident.
+
+    The footer is not the manual: it lists what the page in front offers, and a
+    key held back until its panel is scrollable never appears until a reader has
+    already found the panel. Nothing was asking whether the README's key list
+    still matched, and it had stopped: `i`, `shift+up`, `shift+down`, `,` and
+    `.` were all bound and unmentioned, while a sentence beside them said
+    nothing had to be selected, which six of the eight pages had stopped being
+    true of.
+
+    ONE key per action rather than every alias. `f9`, `f10` and `escape` are
+    aliases nobody needs told about, so the claim asserted here is that every
+    action is REACHABLE from the README, not that the README is a second copy of
+    the binding table.
+    """
+    from lsdsk.adapters.tui.app import LsdskApp
+
+    readme = README.read_text(encoding="utf-8")
+    assert PAGE_KEY_PROSE in readme, "the README no longer says which keys switch page"
+
+    unreachable = [
+        f"{binding.action} ({binding.key})"
+        for binding in LsdskApp.BINDINGS
+        if not binding.action.startswith("show(")
+        and not any(f"`{key}`" in readme for key in _keys_as_typed(binding.key))
+    ]
+    assert not unreachable, "the README names no key for: " + ", ".join(unreachable)

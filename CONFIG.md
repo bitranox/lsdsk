@@ -425,7 +425,9 @@ the same setting with `d` on its topology page, and a capture's whole tree
 travels in the JSON envelope under `pci_tree` whatever the display shows.
 
 `detail_height_percent` caps the detail panel in the interactive view - the box
-under the tables carrying the whole record of whatever the cursor is on: every
+under the tables carrying the whole record of whatever the cursor is on, on the
+six pages that carry one (topology, controllers, disks, health, slots and
+trend): every
 value the row had no column for, then the findings that name it with their
 reasoning and their remedy. It is a CEILING rather than a height, so a short
 record takes the lines it needs and a long one scrolls inside the panel. Set

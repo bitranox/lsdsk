@@ -137,7 +137,10 @@ a free port into an honest answer rather than a tempting one.
 
 One row per drive, with the identity you need to order a replacement: model, WWN, serial and
 firmware, then size, bus and the three speeds. `port` is what the seat can give, `disk` what the
-drive can do, `link` what the two of them agreed on.
+drive can do, `link` what the two of them agreed on. A speed carries what it is worth, because a
+shape says nothing about throughput to a reader who does not keep the PCIe lane table in their
+head, and `size` names the scale it is written on: a drive is sold in powers of ten and reports in
+powers of two, so `466GiB` is the drive whose label says 500 GB.
 
 ### 4 Health
 
@@ -311,12 +314,23 @@ because there is nothing to fix.
 
 The interactive view is keyed the way the `*top` family is: `1` to `8` or the
 matching function key switch page, and `q` quits; the footer lists those, so
-there is nothing to memorise. `left`, `right` and `tab` also step between pages,
-and `r` rescans, without appearing in the footer.
+there is nothing to memorise. `left`, `right`, `tab` and `shift+tab` also step
+between pages, and `r` rescans, without appearing in the footer.
 The pages carry the same names as the commands, in the same order, so `4` and
-`lsdsk health` are the same view.
+`lsdsk health` are the same view, drawing the same columns.
 Each page stands alone and shows every disk, so nothing has to be selected to
-see it, and `up` and `down` scroll whichever page is on screen.
+read one.
+
+Six of the eight pages also carry a cursor - topology, controllers, disks,
+health, slots and trend - which `up` and `down` move. A panel under the table
+answers for whatever the cursor is on: every value the row had no column for,
+then the findings that name it, with their reasoning and their remedy. The
+record belongs to the subject rather than to the page, so a drive reads the
+same wherever it is met and only the order of its groups changes. `i` hides the
+panel and gives the table the whole screen; `shift+up` and `shift+down` scroll
+inside it, and are offered only when the record is taller than the panel is.
+SMART and findings carry no cursor, scroll as a page, and the panel reads
+`Nothing selected.` there.
 
 Every option below is global: it goes before the command, and it applies to
 whichever command follows. `--expand-virtual` is also accepted after `topology`,
@@ -343,7 +357,8 @@ how to ask for the rest.
 `display.wwn_width` characters, because an NVMe WWN is five times the length of
 the SATA ones beside it and would otherwise set the column's width for every
 row; a cut value is marked rather than shortened in silence, and on the
-interactive page it stays readable in full in a strip under the table.
+interactive page it stays readable in full in a strip under the table, which
+`,` and `.` scroll; neither key is offered on any other page.
 `--full-wwn` prints the whole identifier instead, and lays the table out wider
 than the terminal rather than buying the width from the columns beside it, so
 the row runs off the side and a pager scrolls it (`lsdsk disks --full-wwn |
