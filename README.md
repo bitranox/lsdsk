@@ -12,6 +12,14 @@
 [![Maintainability](https://qlty.sh/gh/bitranox/projects/lsdsk/maintainability.svg)](https://qlty.sh/gh/bitranox/projects/lsdsk)
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
+lsdsk is a storage diagnostic for Linux and Windows: it groups every disk under the
+controller and the PCIe path it hangs off, grades each link against what both of its ends
+could do, reads SMART wear and error counters, and says which of the differences it finds is
+worth acting on.
+
+c't Magazin covered it on 17 September 2026, in German:
+[Kommandozeilentool lsdsk: Performance-Engpässe bei SSDs und Controllern finden](https://www.heise.de/ratgeber/Kommandozeilentool-lsdsk-Performance-Engpaesse-bei-SSDs-und-Controllern-finden-11440011.html).
+
 Ten drives, three controllers, a chipset and a riser between them and the CPU. The machine
 boots fine, and nothing on it tells you that one card negotiated x1 in an x8 slot, that two
 SSDs share a link narrower than either of them alone, or that the free port you were about
@@ -23,9 +31,9 @@ lsdsk is the quick look before you buy or blame anything: where every drive hang
 link negotiated against what it could have done, which slots are free and what they are
 worth, and where the bottleneck actually is rather than where it is easiest to see.
 
-Groups disks by the controller they hang off, grades every link against what both ends could
-do, reads SMART wear and error counters, and reports what is worth acting on. Linux and
-Windows, no subprocesses, no network.
+It starts no subprocesses and makes no network requests: every figure it prints was read
+here, from sysfs and direct ioctls on Linux and from SetupAPI and DeviceIoControl on
+Windows.
 
 The command below needs `uv` and nothing else; if it is not installed yet,
 [INSTALL.md](INSTALL.md#easiest-install-and-run-with-uv) has the one-line installer for Linux,

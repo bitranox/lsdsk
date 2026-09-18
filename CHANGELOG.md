@@ -7,6 +7,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [1.2.15] 2026-09-18 14:03:22
 
+### Added
+
+- **The README says what lsdsk is in its first sentence.** A reader landing on
+  the page met a scene, then a promise, and only then a definition; the
+  definition is first now, and the paragraph it would otherwise have repeated
+  says the thing it alone says, which is that nothing here starts a subprocess
+  or touches the network. The c't Magazin article of 17 September 2026 is
+  linked beneath it.
+
 ### Changed
 
 - **The README describes the interface that shipped.** The detail panel and the
