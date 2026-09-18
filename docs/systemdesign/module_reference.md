@@ -94,6 +94,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/config/deploy.py` - Deploy default configuration to app/host/user target directories.
 - `src/lsdsk/adapters/config/display.py` - Display configuration - delegates to lib_layered_config.
 - `src/lsdsk/adapters/config/history.py` - The ``[history]`` configuration section, parsed into a typed model.
+- `src/lsdsk/adapters/config/known_keys.py` - Which configuration keys this tool actually reads, so a mistyped one is refused rather than left inert.
 - `src/lsdsk/adapters/config/loader.py` - Configuration loader with caching and profile/override support.
 - `src/lsdsk/adapters/config/overrides.py` - Parse and apply ``--set SECTION.KEY=VALUE`` CLI overrides to Config.
 - `src/lsdsk/adapters/config/permissions.py` - Permission settings loader for config deployment.

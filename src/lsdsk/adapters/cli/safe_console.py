@@ -31,10 +31,13 @@ Contents
 
 from __future__ import annotations
 
+import os
 import sys
-from typing import IO, Any, Final, TextIO, cast
+from typing import IO, Any, Final, NoReturn, TextIO, cast
 
 import rich_click as click
+
+from .exit_codes import ExitCode
 
 ASCII_FALLBACKS: Final[dict[str, str]] = {
     "✓": "[OK]",  # check mark
@@ -86,6 +89,49 @@ def _stream_encoding(file: IO[Any] | None, *, err: bool = False) -> str | None:
     stream = file if file is not None else (sys.stderr if err else sys.stdout)
     encoding = getattr(stream, "encoding", None)
     return encoding if isinstance(encoding, str) else None
+
+
+def _stop_writing_to_stdout() -> None:
+    """Point this process's stdout at the null device.
+
+    Python flushes ``sys.stdout`` as the interpreter exits. On a pipe whose
+    reader has gone that raises a SECOND ``BrokenPipeError``, after the exit
+    code has already been decided, and prints "Exception ignored while flushing
+    sys.stdout" at somebody who did nothing wrong. Replacing the file
+    DESCRIPTOR rather than rebinding ``sys.stdout`` is what makes that hold: the
+    original stream object is still flushed on the way down, and it writes
+    through the descriptor.
+
+    A stdout with no descriptor - a test harness's buffer, a captured stream -
+    needs none of this and is left alone.
+    """
+    try:
+        descriptor = sys.stdout.fileno()
+    except (AttributeError, OSError, ValueError):
+        return
+    try:
+        null = os.open(os.devnull, os.O_WRONLY)
+    except OSError:  # pragma: no cover - the null device is always openable
+        return
+    try:
+        os.dup2(null, descriptor)
+    finally:
+        os.close(null)
+
+
+def _reader_went_away() -> NoReturn:
+    """Leave with the code that says the pipe closed, never the one that says a drive is failing.
+
+    Raised rather than returned so it cannot be forgotten at a call site, and
+    raised as ``SystemExit`` on purpose: click catches ``OSError`` with
+    ``errno.EPIPE`` in its own ``main`` and calls ``sys.exit(1)``, which is this
+    tool's code for an actionable finding. Reporting a hardware fault because
+    somebody piped the output into ``head`` is the defect; exiting before click
+    can see an ``OSError`` is the fix, and ``SystemExit`` passes through its
+    handler untouched.
+    """
+    _stop_writing_to_stdout()
+    raise SystemExit(ExitCode.BROKEN_PIPE)
 
 
 def ascii_fallback(text: str, encoding: str) -> str:
@@ -148,7 +194,10 @@ def echo(message: object = "", *, file: IO[Any] | None = None, err: bool = False
     Writes to the given stream.
     """
     text = message if isinstance(message, str) else str(message)
-    click.echo(encode_safe(text, _stream_encoding(file, err=err)), file=file, err=err, nl=nl)
+    try:
+        click.echo(encode_safe(text, _stream_encoding(file, err=err)), file=file, err=err, nl=nl)
+    except BrokenPipeError:
+        _reader_went_away()
 
 
 class _SafeWriter:
@@ -178,11 +227,17 @@ class _SafeWriter:
         """Write `text`, degrading anything the current target cannot encode."""
         target = self._target()
         encoding = getattr(target, "encoding", None)
-        return target.write(encode_safe(text, encoding if isinstance(encoding, str) else None))
+        try:
+            return target.write(encode_safe(text, encoding if isinstance(encoding, str) else None))
+        except BrokenPipeError:
+            _reader_went_away()
 
     def flush(self) -> None:
         """Flush the current target."""
-        self._target().flush()
+        try:
+            self._target().flush()
+        except BrokenPipeError:
+            _reader_went_away()
 
     def isatty(self) -> bool:
         """Report the target's tty-ness, so rich keeps its styling."""

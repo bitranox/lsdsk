@@ -10,6 +10,8 @@ import orjson
 from lib_layered_config import Config
 from pydantic import BaseModel, ConfigDict
 
+from .known_keys import nearest_known_key, unknown_owned_key
+
 if TYPE_CHECKING:
     from lib_layered_config.domain.config import SourceInfo
 
@@ -230,6 +232,26 @@ def _provenance_naming_the_cli(
     return provenance
 
 
+def _refusal_for(raw: str, override: ConfigOverride) -> str:
+    """Explain a key this tool does not read, naming the one that was probably meant.
+
+    Args:
+        raw: The override exactly as typed, so the reader can find it in their
+            own command line.
+        override: The parsed form, which already carries the section and the key
+            path - the dotted string is built from it here rather than taken as
+            a second parameter and split back apart, which was re-deriving what
+            the caller had.
+
+    Returns:
+        The message to refuse with.
+    """
+    key = ".".join(override.key_path)
+    suggestion = nearest_known_key(override.section, override.key_path[-1]) if override.key_path else None
+    meant = f" Did you mean {override.section}.{suggestion}?" if suggestion else ""
+    return f"Invalid override {raw!r}: [{override.section}] has no key {key!r}.{meant}"
+
+
 def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
     """Deep-merge CLI overrides into a Config instance.
 
@@ -245,7 +267,13 @@ def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
         ``raw_overrides`` is empty.
 
     Raises:
-        ValueError: If any override string is malformed.
+        ValueError: If any override string is malformed, or names a key that a
+            section this tool OWNS does not have. The owned sections are the
+            three whose key set is exactly a model's, so an unknown key there is
+            a typo and inert - which reads identically to a setting that was
+            applied. Keys outside them belong to libraries or to another
+            consumer's file and are passed through untouched; see
+            :mod:`lsdsk.adapters.config.known_keys`.
 
     Examples:
         >>> from lib_layered_config import Config
@@ -265,8 +293,11 @@ def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
     overridden: set[str] = set()
     for raw in raw_overrides:
         parsed = parse_override(raw)
+        dotted = ".".join((parsed.section, *parsed.key_path))
+        if unknown_owned_key(parsed.section, parsed.key_path) is not None:
+            raise ValueError(_refusal_for(raw, parsed))
         _nest_override(overrides, parsed)
-        overridden.add(".".join((parsed.section, *parsed.key_path)))
+        overridden.add(dotted)
 
     # Rebuilt rather than returned straight from with_overrides, which shares
     # the original provenance map by design: the merged value is the CLI's and

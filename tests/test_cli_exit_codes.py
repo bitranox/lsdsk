@@ -91,13 +91,18 @@ def test_every_declared_exit_code_is_one_the_tool_can_actually_produce() -> None
 
     The signal codes are exempt and say so in the enum's own docstring: they are
     produced by lib_cli_exit_tools translating a signal, never raised here.
+
+    ``BROKEN_PIPE`` used to sit in that exemption and did not belong there. The
+    stated reason was false - nothing translates a broken pipe, click turns it
+    into a 1 first - so the member this guard was least able to see was the one
+    that was unreachable. It is checked like any other now.
     """
     import ast
     import pathlib
 
     from lsdsk.adapters.cli.exit_codes import ExitCode
 
-    informational = {ExitCode.SIGNAL_INT, ExitCode.BROKEN_PIPE, ExitCode.SIGNAL_TERM}
+    informational = {ExitCode.SIGNAL_INT, ExitCode.SIGNAL_TERM}
     src = pathlib.Path(__file__).parent.parent / "src" / "lsdsk"
 
     referenced: set[str] = set()
@@ -187,3 +192,103 @@ def test_a_diagnostic_run_exits_13_when_the_hardware_read_is_refused(
 
     assert result.exit_code == 13, f"{argv or 'bare'}: exited {result.exit_code}"
     assert "Permission denied" in result.output
+
+
+def _run_and_take_the_output_away(*, capture: Path, history: Path, argv: list[str], leaves: bool) -> tuple[int, int]:
+    """Run a real lsdsk process and either read it out or walk away.
+
+    Spawned rather than invoked in-process because the defect lives in the write
+    to a real pipe: a ``CliRunner`` writes into a buffer that never closes, so
+    both arms would pass against the broken code.
+
+    The reader closes WITHOUT reading. Taking a byte first and then closing is
+    the shape a shell pipeline has, but it is a race against the writer and
+    measured 5 failures in 12 runs here; closing first was 12 in 12. A flaky
+    arm on a defect this quiet is worse than none, because the green run is the
+    one that gets believed.
+
+    Args:
+        capture: The snapshot to replay.
+        history: A counter store of this test's own, so the run can neither read
+            nor write the developer's.
+        argv: The subcommand and any format flag, which is what selects the sink
+            under test - the human page renders through rich's writer, the JSON
+            envelope through ``safe_console.echo``, and they are separate code.
+        leaves: Whether the reader closes the pipe instead of consuming it.
+
+    Returns:
+        The exit code, and how many bytes were read before leaving.
+    """
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    process = subprocess.Popen(  # noqa: S603 - argv is built here, no shell
+        [
+            sys.executable,
+            "-m",
+            "lsdsk",
+            "--no-record",
+            "--history-file",
+            str(history),
+            "--replay",
+            str(capture),
+            *argv,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=str(Path(__file__).parent.parent),
+        env={**os.environ, "TERM": "dumb"},
+    )
+    assert process.stdout is not None, "the pipe this test is about was not created"
+    try:
+        read = 0
+        if leaves:
+            process.stdout.close()
+        else:
+            read = len(process.stdout.read())
+        return process.wait(timeout=120), read
+    finally:
+        if process.poll() is None:  # pragma: no cover - only on a hang
+            process.kill()
+            process.wait(timeout=30)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["findings", "--format", "json"], id="json, through safe_console.echo"),
+        pytest.param(["report"], id="human, through rich's writer"),
+    ],
+)
+def test_a_reader_that_leaves_early_gets_the_broken_pipe_code_not_the_findings_code(argv: list[str]) -> None:
+    """`lsdsk ... | head` must not report the code that means a failing drive.
+
+    Click catches the EPIPE itself (``click/core.py``, ``except OSError`` on
+    ``errno.EPIPE``) and calls ``sys.exit(1)`` - and 1 is this tool's code for
+    "found a warning or critical". So a monitoring check that pipes the output
+    read a hardware fault on a healthy machine, with nothing on any stream to
+    say otherwise, not even under ``--traceback``.
+
+    The consume-everything arm is the control: it shares every part of this
+    apparatus except the reader leaving, so a run that never reaches the pipe
+    fails here rather than passing quietly.
+    """
+    from pathlib import Path
+
+    from lsdsk.adapters.cli.exit_codes import ExitCode
+
+    capture = Path(__file__).parent / "fixtures" / "hw" / "linux-minimal.json"
+    history = Path(__file__).parent / "fixtures" / "hw" / "does-not-exist-history.json"
+
+    consumed, size = _run_and_take_the_output_away(capture=capture, history=history, argv=argv, leaves=False)
+    assert consumed == ExitCode.SUCCESS, "the control: this capture must exit 0 when its output is read"
+    assert size > 0, "the control wrote nothing, so the arm below would pass with no pipe to break"
+
+    abandoned, _ = _run_and_take_the_output_away(capture=capture, history=history, argv=argv, leaves=True)
+    assert abandoned == ExitCode.BROKEN_PIPE, (
+        f"a reader that left early got {abandoned}, "
+        f"and {int(ExitCode.GENERAL_ERROR)} is what an actionable finding leaves"
+    )

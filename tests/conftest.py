@@ -23,7 +23,7 @@ from click.testing import CliRunner
 from lib_layered_config import Config
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterator, Mapping
 
     from lib_layered_config.domain.config import SourceInfo
 
@@ -276,33 +276,44 @@ def clear_config_cache() -> Iterator[None]:
 @pytest.fixture
 def inject_config(
     clear_config_cache: None,
-) -> Callable[[Config], Callable[[], AppServices]]:
+) -> Callable[[Mapping[str, Any]], Callable[[], AppServices]]:
     """Return a factory that provides test services with injected Config.
 
     Creates a services factory with the injected config loader,
     avoiding filesystem I/O while exercising the real Config API.
     Only replaces the I/O boundary (``get_config``), not the Config object itself.
 
+    The layers are given as plain data and WRAPPED here, because every caller
+    had been handing this fixture a bare ``dict`` while its annotation claimed a
+    ``Config``: the double's return type is the port's contract, and a dict
+    satisfies the parts of it a renderer happens to touch while failing the
+    first call to a real ``Config`` method. Nothing noticed until one arrived -
+    the tests annotate the fixture as ``Callable[..., Callable[[], Any]]``, which
+    erases the parameter, so the type checker never saw the mismatch either.
+    Wrapping at the seam keeps the call sites reading as data and makes the
+    double honest.
+
     Args:
         clear_config_cache: Implicit fixture dependency ensuring cache is cleared.
 
     Returns:
-        Callable[[Config], Callable[[], AppServices]]: Function that accepts a Config
-            and returns a services factory callable suitable for ``cli_runner.invoke(obj=...)``.
+        Callable[[Mapping[str, Any]], Callable[[], AppServices]]: Function that
+            accepts the config layers as plain data and returns a services
+            factory callable suitable for ``cli_runner.invoke(obj=...)``.
 
     Example:
         def test_config_display(
             cli_runner: CliRunner,
-            config_factory: Callable[[dict[str, Any]], Config],
-            inject_config: Callable[[Config], Callable[[], AppServices]],
+            inject_config: Callable[[Mapping[str, Any]], Callable[[], AppServices]],
         ) -> None:
-            config = config_factory({"section": {"key": "value"}})
-            factory = inject_config(config)
+            factory = inject_config({"section": {"key": "value"}})
             result = cli_runner.invoke(cli, ["config"], obj=factory)
             assert "key" in result.output
     """
 
-    def _inject(config: Config) -> Callable[[], AppServices]:
+    def _inject(data: Mapping[str, Any]) -> Callable[[], AppServices]:
+        config = data if isinstance(data, Config) else Config(dict(data), {})
+
         def _fake_get_config(**_kwargs: Any) -> Config:
             return config
 

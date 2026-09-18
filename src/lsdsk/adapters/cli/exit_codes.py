@@ -3,9 +3,13 @@
 Provides a single :class:`ExitCode` enum so every ``SystemExit`` raised by a
 CLI command carries a meaningful, grep-friendly integer instead of a bare ``1``.
 
-Signal codes (130, 141, 143) are informational constants only - the application
-never raises ``SystemExit`` with these values; ``lib_cli_exit_tools`` handles
-signal-to-exit-code translation automatically.
+Signal codes 130 and 143 are informational constants only - the application never
+raises ``SystemExit`` with those values; ``lib_cli_exit_tools`` translates the
+signal. 141 is NOT one of them, however much it looks like one: nothing
+translates a broken pipe, because click catches the ``EPIPE`` in its own
+``main`` and calls ``sys.exit(1)`` before anything here runs, and 1 is this
+tool's code for an actionable finding. So ``adapters/cli/safe_console`` raises
+141 itself at the write that fails.
 
 Contents:
     * :class:`ExitCode` - IntEnum of all exit codes used by this application.
@@ -25,7 +29,9 @@ class ExitCode(IntEnum):
     * 13: EACCES
     * 22: EINVAL
     * 78: EX_CONFIG (sysexits.h)
-    * 128+N: signal N (informational only)
+    * 128+N: signal N. 130 and 143 are informational, raised by nobody here;
+      141 is raised by :mod:`lsdsk.adapters.cli.safe_console` when a reader
+      closes the pipe, since click would otherwise report that as a 1.
 
     Two codes a caller will see are deliberately absent, because this enum is
     the codes lsdsk RAISES and neither of those is one:

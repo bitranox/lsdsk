@@ -7,6 +7,45 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A reader that leaves early no longer reports a failing drive.** `lsdsk health
+| head`, `lsdsk smart | less` quit early, and `lsdsk findings --format json | jq
+  -e` all left exit 1, which is this tool's code for "found a warning or
+  critical", so a monitoring check that pipes the output raised a hardware alarm
+  for a machine that was fine. Nothing was printed on any stream, with or
+  without `--traceback`, so there was no way to tell. The cause is not in
+  `lib_cli_exit_tools`, whose translation the enum's docstring credited: click
+  catches the `EPIPE` in its own `main` and calls `sys.exit(1)` before anything
+  here runs. Both sinks now leave `ExitCode.BROKEN_PIPE` (141) at the write that
+  fails - `safe_console.echo` for the JSON envelope and the rich writer for the
+  human page, which are separate code paths and are tested separately. Stdout is
+  pointed at the null device first, so the interpreter's own flush on the way
+  down cannot raise a second time. The test spawns a real process and closes the
+  pipe WITHOUT reading: taking a byte first is the shape a shell pipeline has and
+  measured 5 failures in 12 runs, where closing first was 12 in 12. The declared
+  exit code 141 was exempt from
+  `test_every_declared_exit_code_is_one_the_tool_can_actually_produce` on the
+  same false premise, which is why a green suite never saw this; it is checked
+  like any other member now.
+
+- **A configuration key this tool does not read no longer passes in silence.**
+  `--set thresholds.wear_warning_percent=1` yields 16 findings on the
+  `linux-nvme-board` capture and the one-letter typo
+  `thresholds.wear_warnning_percent=1` yielded 5, which is the shipped default,
+  with exit 0 and nothing on any stream; `lsdsk config` then printed the unknown
+  key back, so the operator got positive confirmation of a setting that decided
+  nothing. For a tool whose output is a judgement, that is the setting silently
+  choosing the answer. A key in a section whose full key set lsdsk owns -
+  `thresholds`, `display` and `history`, each exactly a model's fields and
+  already held to the shipped TOML in both directions - is now refused from
+  `--set` and warned about on stderr when it comes from a config file. The
+  asymmetry is about who else writes it: a `--set` is typed for one run and has
+  one consumer, so an unknown key there is always a mistake, while a config file
+  is durable and shares its namespace with `lib_layered_config` and
+  `lib_log_rich`, which accept keys this project ships no line for. Those
+  sections, and any section nothing declares, are passed through untouched -
+  closing the case that can be proven a typo rather than guessing at the case
+  that cannot.
+
 - **A run that was REFUSED a reading no longer reports itself complete.** The
   envelope's own promise is that `ok` saves a caller from inspecting every field,
   and this was the case where it failed: an AHCI port count is read by mapping

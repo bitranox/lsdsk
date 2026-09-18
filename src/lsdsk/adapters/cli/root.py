@@ -5,6 +5,7 @@ all subcommands. Handles global flags like --traceback, --profile, and --set.
 
 Contents:
     * :func:`cli` - Root command group with global options.
+    * :func:`_report_keys_nothing_reads` - warn about a file key nothing reads.
 """
 
 from __future__ import annotations
@@ -15,9 +16,11 @@ from typing import TYPE_CHECKING, cast
 import rich_click as click
 
 from lsdsk import __init__conf__
+from lsdsk.adapters.config.known_keys import nearest_known_key, unknown_owned_keys
 from lsdsk.adapters.config.overrides import apply_overrides
 from lsdsk.domain.enums import TreeDensity
 
+from . import safe_console
 from .constants import CLICK_CONTEXT_SETTINGS, TREE_DENSITY_TOKENS
 from .context import CLIContext, apply_traceback_preferences, store_cli_context
 from .typed_click import option, version_option
@@ -26,6 +29,34 @@ if TYPE_CHECKING:
     from lib_layered_config import Config
 
     from lsdsk.composition import AppServices
+
+
+def _report_keys_nothing_reads(config: Config) -> None:
+    """Say so on stderr when a config FILE carries a key this tool does not read.
+
+    Warned about rather than refused, unlike the same typo in ``--set``. A
+    ``--set`` is typed for one run and has one consumer, so an unknown key there
+    is always a mistake; a config file is durable and shared with the libraries
+    that read the same namespace, so refusing would make it brittle. The value
+    is inert either way, and the whole point is that an inert value must not
+    read like an applied one.
+
+    On stderr in both output modes, so a parsed stdout stays exactly what a
+    caller expects.
+
+    Args:
+        config: The configuration as the file and environment layers left it,
+            before any ``--set`` is merged in - those are refused rather than
+            warned about, so they never reach here.
+
+    Side Effects:
+        Writes a line per unknown key to stderr.
+    """
+    for dotted in unknown_owned_keys(config.as_dict()):
+        section, _, key = dotted.partition(".")
+        suggestion = nearest_known_key(section, key)
+        meant = f" Did you mean {section}.{suggestion}?" if suggestion else ""
+        safe_console.echo(f"Warning: ignoring {dotted}: [{section}] has no such key.{meant}", err=True)
 
 
 def _apply_cli_overrides(config: Config, set_overrides: tuple[str, ...]) -> Config:
@@ -163,6 +194,7 @@ def cli(
     # closes such gaps with a cast to the real type (see typed_click.py).
     services = cast("AppServices", ctx.obj())
     config = services.get_config(profile=profile, dotenv_path=env_file)
+    _report_keys_nothing_reads(config)
     config = _apply_cli_overrides(config, set_overrides)
     services.init_logging(config)
     store_cli_context(
