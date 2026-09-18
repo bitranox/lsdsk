@@ -14,38 +14,36 @@
 [![Maintainability](https://qlty.sh/gh/bitranox/projects/lsdsk/maintainability.svg)](https://qlty.sh/gh/bitranox/projects/lsdsk)
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
-lsdsk is a storage diagnostic for Linux and Windows: it groups every disk under the
-controller and the PCIe path it hangs off, grades each link against what both of its ends
-could do, reads SMART wear and error counters, and says which of the differences it finds is
-worth acting on.
+lsdsk is a storage diagnostic for Linux and Windows: it groups every drive under the
+controller and the PCIe path it hangs off, reads what the ports and the drives can do and what
+they actually negotiated, reads SMART data and error counters, and recommends what to act on.
 
 c't Magazin covered it on 17 September 2026, in German:
 [Kommandozeilentool lsdsk: Performance-Engpässe bei SSDs und Controllern finden](https://www.heise.de/ratgeber/Kommandozeilentool-lsdsk-Performance-Engpaesse-bei-SSDs-und-Controllern-finden-11440011.html).
 
 Ten drives, three controllers, a chipset and a riser between them and the CPU. The machine
 boots fine, and nothing on it tells you that one card negotiated x1 in an x8 slot, that two
-SSDs share a link narrower than either of them alone, or that the free port you were about
-to fill hangs off an uplink that is already full. A storage server rarely fails outright. It
-runs at a fraction of what it cost, quietly, for years, and the parts that would explain it
-are spread across sysfs, a set of ioctls and the mainboard manual.
+SSDs share a link, or that the free port you were about to fill hangs off an uplink that is
+already full. A storage server rarely fails outright. It runs quietly for years with a
+shortfall that is easy to fix, and the values that would explain it are spread across sysfs, a
+set of ioctls and the mainboard manual.
 
-lsdsk is the quick look before you buy or blame anything: where every drive hangs, what each
-link negotiated against what it could have done, which slots are free and what they are
-worth, and where the bottleneck actually is rather than where it is easiest to see.
-
-It starts no subprocesses and makes no network requests: every figure it prints was read
-here, from sysfs and direct ioctls on Linux and from SetupAPI and DeviceIoControl on
+lsdsk starts no subprocesses and makes no network requests: every value it prints was read
+directly, from sysfs and direct ioctls on Linux and from SetupAPI and DeviceIoControl on
 Windows.
 
 ## QUICKSTART
 
-The command below needs `uv` and nothing else; if it is not installed yet,
-[INSTALL.md](INSTALL.md#easiest-install-and-run-with-uv) has the one-line installer for Linux,
-macOS and Windows.
+The command below needs `uv` and nothing else; if `uv` is not installed yet,
+[INSTALL.md](INSTALL.md#easiest-install-and-run-with-uv) documents the one-line installer for
+Linux, macOS and Windows.
 
-For full information run it as root or Administrator (`sudo`). Without that, SMART wear, the
-error counters, PCIe connector detection and a SATA controller's port count read as `-`, and the
-header says so. [INSTALL.md](INSTALL.md#what-needs-root) has the list.
+For full information run `lsdsk` as root or Administrator. Without those rights you lose SMART
+wear, the error counters, PCIe connector detection and the SATA controllers' port count. The
+details are in [INSTALL.md](INSTALL.md#what-needs-root).
+
+The usual invocation is `uvx lsdsk@latest` - uv then installs the newest version in a virtual
+environment. The rest of this document writes the short form `lsdsk` for readability.
 
 ```bash
 # run as Administrator or root for full information 
@@ -54,11 +52,11 @@ uvx lsdsk@latest report   # get a printed report
 uvx lsdsk@latest --help   # get further help
 ```
 
-That is the whole command. At a terminal it opens an interactive view with a
-page per question; piped or redirected it prints the same machine as one page:
-the mainboard, what is wrong, the controller tree, every disk's identity, wear
-and error counters, every SMART attribute, the PCIe slots, and each finding with
-its reasoning.
+`uvx lsdsk@latest` opens an interactive view at a terminal, with a page per
+topic; piped or redirected it prints the same data as one page: the mainboard,
+what is wrong, the controller tree, every disk's identity, wear and error
+counters, every SMART attribute, the PCIe slots, and each finding with its
+reasoning.
 
 ## The TUI
 
@@ -66,71 +64,57 @@ Number keys switch between the pages, `Tab` cycles, and every page is also a sub
 
 ![The lsdsk interactive view: eight pages, the tree density cycling, the detail panel, and a table being scrolled](docs/media/lsdsk-demo.gif)
 
-Six of the eight pages carry a cursor, and a panel under the table answers for
-whatever it is on: every value the row had no column for, then the findings that
-name it. [PAGES.md](PAGES.md) walks through all eight, with a picture of each and
-the keys that reach them.
+Six of the eight pages carry a cursor, and a panel under the table gives the
+detail: every value the row had no column for, and the findings that go with it.
+[PAGES.md](PAGES.md) describes all eight pages in detail.
 
-Piped, redirected or asked for by name, the same machine prints as one page
-instead, worst first, so stopping after the first screen still shows everything
-actionable. [REPORT.md](REPORT.md) shows that page and says when to ask for it
-explicitly.
+Through a pipe, into a file, or with the command `lsdsk report`, the program
+prints text instead, most important findings first.
+[REPORT.md](REPORT.md) documents that report.
 
 ## Privileges
 
-It runs unprivileged and says what that costs. Topology, PCIe link state, SATA
-capability and negotiated speed, SAS phy rates, capacity, controller firmware
-and NVMe temperature all read without any privilege at all.
+`lsdsk` runs unprivileged too. Topology, PCIe link state, SATA capability and
+negotiated speed, SAS phy rates, capacity, controller firmware and NVMe
+temperature all read without elevated rights.
 
-Four things need root or Administrator, and none is guessed without it:
+Four things do need root or Administrator:
 
-- **SMART attributes and wear.** Those columns read `-`.
-- **The error counters, so `trend` and `record`.** Same passthrough read, so an
-  unelevated run records nothing at all and no trend can be built from it.
-- **PCIe slot numbers and whether a port is a real connector.** The capability
-  structures holding them sit past the first 64 bytes of config space, which is
-  where an unprivileged read stops. Without them the `slot` column reads `-`,
-  and no card move is ever proposed, because a port that cannot be confirmed as
-  a physical connector might be soldered-down silicon.
-- **The AHCI capability register**, which needs the controller's BAR5 mapped and
-  carries both the ports-implemented bitmap, giving a SATA controller's
-  free-port count, and the speed the port itself can carry, which is the `port`
-  column on every SATA row. Without it both read `-`. This one is refused on
-  some hosts even as root, so a `-` there is not proof of an unprivileged run.
+- **SMART attributes and wear.**
+- **The error counters, so `trend` and `record`.**
+- **PCIe slot numbers and whether a port is a real connector.**
+- **The AHCI capability register.**
 
-In a container none of it comes back, because the device nodes are not there to
-read; elevating changes nothing.
+Inside an LXC or Proxmox container these values cannot be read even with
+elevated rights.
 
-Spare bandwidth on a port is reported either way: it is a measurement, and a
-measurement is shown whether or not a card could actually be moved there.
-
-## It ships a skill for Claude Code
+## lsdsk ships a skill for Claude Code
 
 The hard part of a storage report is not reading it, it is knowing which findings
 deserve action. lsdsk ships that judgement as a Claude Code skill, so an agent
 reading the output reaches the same conclusions a practised admin would.
 
 ```
+# in claude code
 /plugin marketplace add bitranox/lsdsk
 /plugin install lsdsk
 ```
 
-The skill teaches what the tool cannot: that a CRC count is the cable and never
-the drive, that a wear percentage means nothing without the drive's own
-threshold, that a controller capped by the board has two opposite remedies
+The skill shows and explains what the tool cannot: that a CRC count is the cable
+and never the drive, that a wear percentage means nothing without the drive's
+own threshold, that a controller capped by the board has two opposite remedies
 depending on whether a faster port exists and is merely occupied, and that a
 slot number is matched against the mainboard manual because no readable source
-gives the form factor. It also says where to go when lsdsk stops: the tool makes
-no network request by design, but an agent can fetch the board manual or the HBA
-datasheet, and the skill says which questions that answers and how to keep the
-looked-up figures apart from the measured ones.
+gives the form factor. `lsdsk` can also export every value as JSON, and the
+skill can then interpret that data on another machine. Nobody wants an agent
+running on the server itself.
 
 ## Install
 
 ```bash
 uvx lsdsk@latest       # run without installing
-uv tool install lsdsk  # install for repeated use
-pip install lsdsk
+uv tool install lsdsk  # install for repeated use, in its own venv
+pip install lsdsk      # if you prefer the old way
 ```
 
 Python 3.11 or newer, Linux or Windows. It shells out to nothing: no
@@ -138,34 +122,30 @@ Python 3.11 or newer, Linux or Windows. It shells out to nothing: no
 network access at any point. Its own Python dependencies are declared in
 `pyproject.toml`.
 
-Turning a controller's numeric identifiers into a name is the one thing it
-cannot read off the hardware, so it ships the PCI name database and uses the
-system's own copy in preference where there is one. That is why a controller
-reads the same on Linux and on Windows, and why it reads in English on a
-machine whose operating system is not: Windows localises its device
-descriptions, and lsdsk does not quote them. See `NOTICE` for that file's
-licence.
+From the hardware `lsdsk` reads only a controller's numeric identifiers, not its
+name. The PCI name database therefore ships with it. That is why a controller
+reads the same on Linux and on Windows; lsdsk does not quote the localised
+device names Windows carries. See `NOTICE` for that database's licence.
 
-## How it works
+## How lsdsk works
 
 Linux reads sysfs and issues `SG_IO` ATA passthrough and NVMe admin ioctls
 directly. A SATA port's own speed comes from the AHCI controller's capability
-register, because `libata` publishes a port speed only once a limit has been
-applied to it, so on healthy hardware sysfs has no answer at all. Windows uses `SetupAPI` and `DeviceIoControl` through `ctypes`, with
+register. Windows uses `SetupAPI` and `DeviceIoControl` through `ctypes`, with
 no WMI and no PowerShell. Both platforms receive the same ATA IDENTIFY, ATA
 SMART and NVMe structures, so a single set of decoders serves both and is tested
 against captures from real hardware on every supported operating system.
 
-Every command it issues is a read. It never writes to a device.
+Every command lsdsk issues is a read. It never writes to a device or a controller.
 
 ## Documentation
 
 | Document                                                                       | What it covers                                                                       |
 |--------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
-| [PAGES.md](PAGES.md)                                                           | The eight pages, the keys that reach them, and what each one answers                 |
-| [REPORT.md](REPORT.md)                                                         | The one-page report, and when to name it rather than let the terminal decide         |
+| [PAGES.md](PAGES.md)                                                           | The eight pages and the key bindings                                                 |
+| [REPORT.md](REPORT.md)                                                         | The one-page report                                                                  |
 | [COMMANDS.md](COMMANDS.md)                                                     | Every command and global option, the JSON envelope, and the exit codes               |
-| [FINDINGS.md](FINDINGS.md)                                                     | What it reports, what evidence each rule needs, and what it refuses to guess         |
+| [FINDINGS.md](FINDINGS.md)                                                     | What it reports, and what evidence each rule needs                                   |
 | [WHY.md](WHY.md)                                                               | The problem it was written for, and the two cases easiest to get wrong without it    |
 | [INSTALL.md](INSTALL.md)                                                       | Installing it, and what works unprivileged versus what needs root                    |
 | [CONFIG.md](CONFIG.md)                                                         | Every configuration key, the layered sources, and the env-var forms                  |

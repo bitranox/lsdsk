@@ -25,7 +25,7 @@ Statt "war KI beteiligt" wäre uns also lieber, Sie fragten:
 - Steht jemand gerade, wenn etwas schiefgeht?
 - Kann ein Aussenstehender die Behauptungen selbst prüfen?
 
-Unsere Sicht auf KI ist schlicht. Sie ist ein Elektrowerkzeug. Mit Aufmerksamkeit
+Unsere Sicht auf KI ist schlicht. Sie ist ein Werkzeug. Mit Aufmerksamkeit
 eingesetzt, macht sie einen fähigen Entwickler schneller. Achtlos eingesetzt,
 erzeugt sie Ergebnisse, die in Ordnung aussehen, bis man sie ein zweites Mal
 liest. Den Unterschied zu erkennen ist Aufgabe des Menschen.
@@ -112,7 +112,7 @@ Und Code, den wir nicht am Whiteboard verteidigen könnten.
 Ob ein Modell im Spiel war oder nicht, die Arbeit muss trotzdem standhalten.
 Jedes Projekt, das wir ausliefern, durchläuft daher ungefähr dieselbe Routine.
 
-Ein Mensch liest die Änderung, bevor sie übernommen wird. Sie wird geübt, durch
+Ein Mensch liest die Änderung, bevor sie übernommen wird. Sie wird überprüft, durch
 Tests oder von Hand, je nachdem, was angemessen ist. Sie ist gut genug
 dokumentiert, dass sich das beabsichtigte Verhalten gegen das tatsächliche
 prüfen lässt. Die Begründung einer Änderung steht dort, wo die Änderung steht:
@@ -154,8 +154,8 @@ gestellte Reinheit, dafür mehr klare Auskunft darüber, was tatsächlich getan
 wurde.
 
 Wenn Sie eines unserer Projekte verwenden und wissen wollen, wie KI darin
-vorkommt, ist das eine berechtigte Frage, und Sie sollten eine berechtigte
-Antwort bekommen. Umgekehrt sollte sorgfältige Arbeit nicht als Ausschuss
+vorkommt, ist das eine berechtigte Frage, und Sie sollten eine fundierte
+Antwort bekommen. Umgekehrt sollte sorgfältige Arbeit nicht als Slop
 abgetan werden, bloss weil irgendwo in der Kette ein Modell war.
 
 Diese Seite ist der Massstab, an dem wir uns zu halten versuchen. Wenn sie

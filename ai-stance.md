@@ -15,7 +15,7 @@ So instead of "was AI involved," we'd rather you ask:
 - Is somebody on the hook when things go wrong?
 - Can an outsider check the claims for themselves?
 
-Our view of AI is plain. It's a power tool. Used with attention, it makes a competent developer faster. Used carelessly, it produces output that looks fine until you read it twice. Telling the difference is the human's job.
+Our view of AI is plain. It's a tool. Used with attention, it makes a competent developer faster. Used carelessly, it produces output that looks fine until you read it twice. Telling the difference is the human's job.
 
 ## The short version
 
@@ -64,7 +64,7 @@ Code we couldn't defend on a whiteboard.
 
 Whether or not a model was in the loop, the work still has to hold up. So every project we ship goes through roughly the same routine.
 
-A human reads the change before it merges. It gets exercised, by tests or by hand, depending on what's appropriate. It's documented well enough that intended behaviour can be checked against actual behaviour. The reasoning for a change is written where the change is: in the commit message, in the changelog, and in the design notes under `docs/`, plus whatever issue or pull request it went through.
+A human reads the change before it merges. It gets checked, by tests or by hand, depending on what's appropriate. It's documented well enough that intended behaviour can be checked against actual behaviour. The reasoning for a change is written where the change is: in the commit message, in the changelog, and in the design notes under `docs/`, plus whatever issue or pull request it went through.
 
 If something we ship is wrong, insecure or poorly designed, we'd rather you say so publicly than be polite about it. The point of working in the open is that mistakes are in the open too.
 
@@ -87,6 +87,6 @@ Models aren't going away, and they're going to keep getting better. More develop
 
 What's missing is a sensible middle ground. Less hype and less performative purity, and more straight answers about what was actually done.
 
-If you use one of our projects and want to know how AI fits into it, that's a reasonable question and you should get a reasonable answer. The other way round, careful work shouldn't be written off as slop just because a model was somewhere in the pipeline.
+If you use one of our projects and want to know how AI fits into it, that's a reasonable question and you should get a well-founded answer. The other way round, careful work shouldn't be written off as slop just because a model was somewhere in the pipeline.
 
 This page is the standard we're trying to hold ourselves to. If it nudges anyone else into writing their own version, that's a good outcome.

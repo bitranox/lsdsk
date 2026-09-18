@@ -23,8 +23,7 @@ fault, and what it refuses to guess. Back to the [README](README.md).
   it and whether the attached drives can even use the difference.
 - A drive held back by a slower port than it supports.
 - Wear-out against configurable bands, and reallocated, pending and
-  uncorrectable sectors and NVMe media errors on any count above zero, since a
-  drive reporting one of those has already lost media.
+  uncorrectable sectors and NVMe media errors on any count above zero.
 - Temperature against the limits the drive itself publishes, not a guess.
 - Identical models running mismatched firmware.
 - Where there is room for another drive, and whether that controller has the

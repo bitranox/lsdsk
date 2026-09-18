@@ -65,8 +65,7 @@ Art.
 ## Es redet Ihnen eine Anschaffung aus
 
 Die meiste Überwachung bläst auf. Alles wird zum roten Alarm, also lesen Sie die
-Alarme nicht mehr, und das ist das einzige Ergebnis, auf das niemand hin
-entworfen hat.
+Alarme nicht mehr.
 
 lsdsk stuft den Schweregrad herunter, wann immer die Maschine es nicht besser
 gekonnt hätte. Eine PCIe-4.0-Karte in einem Gen3-Board bekommt einen
@@ -81,4 +80,4 @@ wann Sie sich keine Sorgen machen müssen, ist an dem Tag glaubwürdig, an dem e
 sagt: dieses Laufwerk ersetzen.
 
 Im selben Geist veröffentlicht es eine Liste dessen, was es nicht wissen kann.
-Lesen Sie die, bevor Sie irgendeine seiner Zahlen bei Ihrer Leitung zitieren.
+Lesen Sie diese, bevor Sie irgendeine seiner Zahlen bei Ihrer Leitung zitieren.

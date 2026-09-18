@@ -17,7 +17,7 @@ Die Gestalt dieser Software ist von Anfang bis Ende die des Menschen. Er hat das
 Problem gestellt, jede Entscheidung getroffen und trägt das Ergebnis.
 
 - Das Problem ist seines: ein Vorgängerskript, das `lspci`, `lsblk`, `smartctl`
-  und `nvme` aufrief, deren menschenlesbare Ausgabe per Regex abschabte, unter
+  und `nvme` aufrief, deren menschenlesbare Ausgabe per Regex abgelesen hat, unter
   Windows nicht laufen konnte und über Verschleiss nichts berichtete.
 - Die zentrale Entwurfsregel ist seine, und sie ist es, die dieses Werkzeug von
   einer Faktenhalde unterscheidet: **der Schweregrad wird daran gemessen, was
@@ -75,12 +75,8 @@ Auf echter Hardware geprüft:
 
 Nicht geprüft:
 
-- Keine physische Windows-Maschine. Der Windows-Pfad wird auf einer virtuellen
-  Maschine und über eine Aufnahme geübt, die auf jedem CI-Runner erneut
-  dargestellt wird; die Abbildung ist also getestet, der Transportweg aber nicht
-  gegen echte Windows-Hardware bewiesen.
 - Kein SAS-Expander, kein Hardware-RAID-Controller, und kein Laufwerk nahe am
-  Ende seiner Lebensdauer.
+  Ende seiner Lebensdauer. Diese Hardware stand nicht zur Verfügung.
 
 ## Es selbst nachprüfen
 

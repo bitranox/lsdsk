@@ -59,7 +59,7 @@ Dead drives get attention because they are loud. This is the other kind.
 ## It will argue you out of a purchase
 
 Most monitoring inflates. Everything becomes a red alert, so you stop reading
-the alerts, which is the one outcome nobody designed for.
+the alerts.
 
 lsdsk grades severity down whenever the machine could not have done better. A
 PCIe 4.0 card in a Gen3 board gets a dim hint instead of a warning, with the
@@ -71,5 +71,5 @@ That restraint is the feature, not good manners. A tool that only ever escalates
 teaches you to ignore it. One that tells you when not to worry is worth
 believing on the day it says replace this drive.
 
-In the same spirit, it publishes a list of what it cannot know. Read that one
+In the same spirit, it publishes a list of what it cannot know. Read it
 before you quote any of its numbers at your manager.

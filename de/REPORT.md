@@ -2,18 +2,7 @@
 
 [English](../REPORT.md) | **Deutsch**
 
-Was `lsdsk` ausgibt, wenn niemand am Terminal sitzt, und was Sie anfordern
-sollten, wenn doch jemand dort sitzt, der Aufrufer aber kein Mensch ist. Zurück
-zur [README](README.md).
-
-`uvx lsdsk@latest report` fordert diese Seite namentlich an, wie das Terminal
-auch aussieht, und der Exit-Code ist in beiden Fällen der der Befunde.
-
-Fordern Sie sie ausdrücklich an, wo ein Terminal zugewiesen ist, aber niemand
-zusieht: in einer Notebook-Zelle, unter `script`, unter expect, in einem
-Job-Runner, der seinen Kindprozessen ein Pseudoterminal gibt. lsdsk kann das
-nicht von einem Menschen an einer Shell unterscheiden, und die Vollbildansicht
-wartet dort auf einen Tastendruck, der nie kommt.
+Über `lsdsk report` kann man diese Seite ausgeben, und der Exit-Code hängt von den Befunden ab.
 
 Nichts muss ausgewählt und kein Unterbefehl erraten werden. Wer noch nicht
 weiss, was defekt ist, muss also auch nicht wissen, wonach er fragen soll. Was
@@ -65,11 +54,3 @@ Drei Geschwindigkeiten pro Laufwerk, weil sie verschiedene Fragen beantworten.
 heisst, dass das Laufwerk den Anschluss nicht ausnutzen kann, den es belegt: eine
 Frage der Bestückung. Ein rotes `link` heisst, dass beide Enden schneller
 gekonnt hätten und es nicht getan haben: ein Fehler.
-
-`lsdsk report` beantwortet das eine, was die Terminal-Prüfung nicht sehen kann.
-Manche Aufrufer geben ihrem Kindprozess auf beiden Seiten ein Pseudoterminal -
-eine Notebook-Zelle, `script`, `expect`, ein Job-Runner - und dort unterscheidet
-nichts ein Programm von einem Menschen. Die interaktive Ansicht öffnet sich also
-und wartet auf einen Tastendruck, den niemand senden kann. Nennen Sie die Seite
-in allem Unbeaufsichtigten beim Namen, statt zu überlegen, ob dieser Aufrufer
-als Terminal zählt.

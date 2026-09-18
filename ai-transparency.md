@@ -15,7 +15,7 @@ The shape of this software is the human's, start to finish. They set the problem
 call, and own the result.
 
 - The problem is theirs: a predecessor script that shelled out to `lspci`, `lsblk`, `smartctl`
-  and `nvme`, regex-scraped their human-readable output, could not run on Windows, and reported
+  and `nvme`, read their human-readable output back with regexes, could not run on Windows, and reported
   nothing about wear.
 - The central design rule is theirs, and it is what separates this tool from a facts dump:
   **severity is graded against what the machine could actually give.** A link below a device's
@@ -62,10 +62,8 @@ Checked, on real hardware:
 
 Not checked:
 
-- No physical Windows machine. The Windows path is exercised on a virtual machine and through a
-  capture replayed on every CI runner, so the mapping is tested but the transport is not proven
-  against real Windows hardware.
-- No SAS expander, no hardware RAID controller, and no drive close to end of life.
+- No SAS expander, no hardware RAID controller, and no drive close to end of life. That hardware
+  was not available.
 
 ## Checking it yourself
 

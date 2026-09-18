@@ -28,8 +28,7 @@ Fehler nennt, und was es zu raten ablehnt. Zurück zur [README](README.md).
   Unterschied überhaupt nutzen können.
 - Ein Laufwerk, das ein langsamerer Anschluss zurückhält, als es unterstützt.
 - Verschleiss gegen einstellbare Bänder, sowie umgelagerte, schwebende und nicht
-  korrigierbare Sektoren und NVMe-Medienfehler bei jedem Stand über null, denn
-  ein Laufwerk, das davon eines meldet, hat bereits Medium verloren.
+  korrigierbare Sektoren und NVMe-Medienfehler bei jedem Stand über null.
 - Temperatur gegen die Grenzen, die das Laufwerk selbst veröffentlicht, nicht
   gegen eine Schätzung.
 - Gleiche Modelle mit unterschiedlicher Firmware.
