@@ -19,6 +19,7 @@ from pydantic import Field
 
 from .base import DomainModel
 from .enums import BusType, ControllerKind, DiskKind, Environment, PciPortKind, Severity
+from .text import DeviceText, OptionalDeviceText
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -543,13 +544,13 @@ class PcieSlot(DomainModel, frozen=True):
         False
     """
 
-    address: str
+    address: DeviceText
     link: PcieLink
     occupied: bool = False
     connector_present: bool | None = None
-    occupant_address: str | None = None
+    occupant_address: OptionalDeviceText = None
     occupant_class: int | None = None
-    occupant_name: str | None = None
+    occupant_name: OptionalDeviceText = None
     occupant_link: PcieLink | None = None
     physical_slot_number: int | None = None
     vendor: int | None = None
@@ -690,17 +691,17 @@ class PciNode(DomainModel, frozen=True):
         True
     """
 
-    address: str
-    name: str
+    address: DeviceText
+    name: DeviceText
     class_code: int | None = None
     vendor: int | None = None
-    driver: str | None = None
+    driver: OptionalDeviceText = None
     link: PcieLink = Field(default_factory=PcieLink)
     pcie_capability_present: bool | None = None
     port_kind: PciPortKind = PciPortKind.UNKNOWN
     connector_present: bool | None = None
     physical_slot_number: int | None = None
-    parent_address: str | None = None
+    parent_address: OptionalDeviceText = None
     children: tuple[str, ...] = ()
 
     @property
@@ -903,7 +904,7 @@ class SmartAttribute(DomainModel, frozen=True):
     """
 
     id: int
-    name: str
+    name: DeviceText
     value: int
     worst: int
     threshold: int | None
@@ -1049,15 +1050,15 @@ class Controller(DomainModel, frozen=True):
         '0000:03:00.0'
     """
 
-    address: str
-    name: str
+    address: DeviceText
+    name: DeviceText
     kind: ControllerKind = ControllerKind.UNKNOWN
-    driver: str | None = None
-    firmware: str | None = None
+    driver: OptionalDeviceText = None
+    firmware: OptionalDeviceText = None
     link: PcieLink = Field(default_factory=PcieLink)
     upstream: PcieLink | None = None
-    upstream_name: str | None = None
-    upstream_address: str | None = None
+    upstream_name: OptionalDeviceText = None
+    upstream_address: OptionalDeviceText = None
     vendor: int | None = None
     port_count: int | None = None
     ports_used: int | None = None
@@ -1122,16 +1123,16 @@ class Disk(DomainModel, frozen=True):
         'sda'
     """
 
-    node: str
-    path: str
-    model: str
-    serial: str | None = None
-    firmware: str | None = None
-    wwn: str | None = None
+    node: DeviceText
+    path: DeviceText
+    model: DeviceText
+    serial: OptionalDeviceText = None
+    firmware: OptionalDeviceText = None
+    wwn: OptionalDeviceText = None
     size_bytes: int | None = None
     kind: DiskKind = DiskKind.UNKNOWN
     bus: BusType = BusType.UNKNOWN
-    controller_address: str | None = None
+    controller_address: OptionalDeviceText = None
     link: InterfaceLink = Field(default_factory=InterfaceLink)
     pcie: PcieLink | None = None
     health: Health | None = None
@@ -1190,7 +1191,7 @@ class Inventory(DomainModel, frozen=True):
         'linux-sas-hba'
     """
 
-    hostname: str
+    hostname: DeviceText
     controllers: tuple[Controller, ...] = ()
     disks: tuple[Disk, ...] = ()
     virtual_disks: tuple[Disk, ...] = ()
@@ -1198,8 +1199,8 @@ class Inventory(DomainModel, frozen=True):
     pci_tree: tuple[PciNode, ...] = ()
     privileged: bool = False
     environment: Environment = Environment.UNKNOWN
-    environment_detail: str = ""
-    board: str = ""
+    environment_detail: DeviceText = ""
+    board: DeviceText = ""
     devices_accessible: bool = True
 
     @property

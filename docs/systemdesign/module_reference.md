@@ -16,6 +16,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/domain/history.py` - Counter history, and the rules that turn a stored total into a rate.
 - `src/lsdsk/domain/models.py` - Typed value objects describing storage topology, health and diagnostics.
 - `src/lsdsk/domain/thresholds.py` - Every number the rules judge by, in one place and overridable.
+- `src/lsdsk/domain/text.py` - Text the hardware chose, cleaned on the field that carries it.
 
 ### Application Layer
 
@@ -29,7 +30,6 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/hw/decode/captured.py` - Parse the integers and base64 blobs a capture records as text, for both platform builders.
 - `src/lsdsk/adapters/hw/decode/nvme.py` - Decode NVMe Identify Controller and the SMART/Health log page.
 - `src/lsdsk/adapters/hw/decode/pciids.py` - Resolve numeric PCI vendor and device identifiers to readable names.
-- `src/lsdsk/adapters/hw/decode/text.py` - Strip control characters from a string the hardware chose.
 - `src/lsdsk/adapters/hw/decode/virtualization.py` - Decide whether this machine is bare metal, a virtual machine, or a container.
 
 ### Adapters - hardware, Linux

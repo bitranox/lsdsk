@@ -182,7 +182,7 @@ def resolve_history(ctx: click.Context) -> HistorySettings:
         return get_history_settings(Config({}, {}))
     settings = get_history_settings(cli_context.config, path_override=cli_context.history_file)
     if cli_context.no_record:
-        return settings.model_copy(update={"enabled": False})
+        return settings.with_changes(enabled=False)
     return settings
 
 
@@ -240,9 +240,9 @@ def resolve_tunables(ctx: click.Context) -> Tunables:
     # from here, so a global option folded in anywhere else would reach the one
     # command that asked and silently miss the default page.
     if expand_virtual:
-        display = display.model_copy(update={"expand_virtual": True})
+        display = display.with_changes(expand_virtual=True)
     if tree_density is not None:
-        display = display.model_copy(update={"tree_density": tree_density})
+        display = display.with_changes(tree_density=tree_density)
     return Tunables(get_thresholds(config), display)
 
 
@@ -813,8 +813,8 @@ def cli_tui(ctx: click.Context, replay: Path | None, expand_virtual: bool) -> No
         # The whole section, not one field: a page reads the same settings the
         # printed command of its name reads, and the subcommand flag lands on
         # the same key the file sets rather than beside it.
-        display = resolve_tunables(ctx).display.model_copy(
-            update={"expand_virtual": effective_expand_virtual(ctx, expand_virtual)}
+        display = resolve_tunables(ctx).display.with_changes(
+            expand_virtual=effective_expand_virtual(ctx, expand_virtual)
         )
         LsdskApp(inventory, history, display=display).run()
         raise SystemExit(ExitCode.SUCCESS)

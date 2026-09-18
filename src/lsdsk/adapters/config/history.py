@@ -15,8 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from pydantic import BaseModel, ConfigDict
-
+from ...domain.base import DomainModel
 from ..history.store import MAX_SAMPLES_PER_DRIVE, default_history_path
 
 if TYPE_CHECKING:
@@ -25,7 +24,7 @@ if TYPE_CHECKING:
 SECTION = "history"
 
 
-class HistorySettings(BaseModel):
+class HistorySettings(DomainModel, frozen=True):
     """How counter history behaves on this machine.
 
     Attributes:
@@ -40,7 +39,6 @@ class HistorySettings(BaseModel):
         True
     """
 
-    model_config = ConfigDict(frozen=True)
 
     enabled: bool = True
     path: Path

@@ -35,7 +35,7 @@ from ..decode.ata_smart import decode_health
 from ..decode.captured import decode_base64, parse_int
 from ..decode.nvme import decode_identify_controller, decode_smart_log
 from ..decode.pciids import Database
-from ..decode.text import device_text
+from ....domain.text import device_text
 from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble, port_kind_of
 from .capture import AtaBlobs, NvmeBlobs, NvmeClassEntry

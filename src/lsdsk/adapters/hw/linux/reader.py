@@ -468,19 +468,42 @@ def read_ahci_capabilities(device: Path) -> dict[str, int] | None:
     return {"capability": capability, "ports_implemented": implemented}
 
 
+def _entries(directory: Path) -> list[Path]:
+    """List a sysfs directory, treating a device that vanished as empty.
+
+    Every per-attribute read in this module already swallows ``OSError`` so one
+    silent device does not cost the reading of every other, but the directory
+    walks themselves were bare. A drive unplugged between the listing and the
+    read raises ``FileNotFoundError`` out of ``iterdir`` - hot-plug is ordinary
+    on the hosts this tool is written for - and that escapes as a plain
+    ``OSError``, which the CLI does not name, so a whole scan aborted over one
+    device instead of degrading.
+
+    Args:
+        directory: The sysfs directory to list.
+
+    Returns:
+        Its entries sorted, or an empty list if it could not be read.
+    """
+    try:
+        return sorted(directory.iterdir())
+    except OSError:
+        return []
+
+
 def read_pci(root: Path = Path("/sys/bus/pci/devices")) -> dict[str, dict[str, Any]]:
     """Read every PCI device, with its link state, slot flag and children."""
     devices: dict[str, dict[str, Any]] = {}
     if not root.is_dir():
         return devices
-    for device in sorted(root.iterdir()):
+    for device in _entries(root):
         entry: dict[str, Any] = dict(_read_attrs(device, PCI_ATTRS))
         driver = device / "driver"
         if driver.is_symlink():
             entry["driver"] = Path(os.path.realpath(driver)).name
         entry["path"] = os.path.realpath(device)
         children = sorted(
-            child.name for child in device.iterdir() if child.is_dir() and child.name.count(":") == _PCI_ADDRESS_COLONS
+            child.name for child in _entries(device) if child.is_dir() and child.name.count(":") == _PCI_ADDRESS_COLONS
         )
         if children:
             entry["children"] = children
@@ -507,7 +530,7 @@ def read_classes(root: Path = Path("/sys/class")) -> dict[str, dict[str, dict[st
         if not base.is_dir():
             continue
         entries: dict[str, dict[str, str]] = {}
-        for node in sorted(base.iterdir()):
+        for node in _entries(base):
             entry = _read_attrs(node, attrs)
             entry["path"] = os.path.realpath(node)
             entries[node.name] = entry
@@ -556,7 +579,7 @@ def read_block(root: Path = Path("/sys/block")) -> dict[str, dict[str, Any]]:
     disks: dict[str, dict[str, Any]] = {}
     if not root.is_dir():
         return disks
-    for node in sorted(root.iterdir()):
+    for node in _entries(root):
         entry: dict[str, Any] = {"size": _read_text(node / "size")}
         if _is_kernel_virtual(node, root):
             entry["virtual"] = True

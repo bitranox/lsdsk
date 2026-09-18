@@ -35,7 +35,7 @@ from ..decode.ata_identify import decode_identify
 from ..decode.ata_smart import decode_health
 from ..decode.captured import decode_base64, parse_int
 from ..decode.nvme import decode_identify_controller, decode_smart_log
-from ..decode.text import device_text
+from ....domain.text import device_text
 from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble
 from ..linux.builder import controller_kind_of, parse_pcie_speed

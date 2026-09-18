@@ -16,8 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from pydantic import BaseModel, ConfigDict
-
+from ...domain.base import DomainModel
 from ...domain.enums import TreeDensity
 from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 
@@ -70,7 +69,7 @@ DEFAULT_TRACEBACK_SUMMARY_LIMIT = 500
 DEFAULT_TRACEBACK_VERBOSE_LIMIT = 10_000
 
 
-class DisplaySettings(BaseModel):
+class DisplaySettings(DomainModel, frozen=True):
     """How output is laid out and where its cut-offs sit.
 
     Attributes:
@@ -93,7 +92,6 @@ class DisplaySettings(BaseModel):
         'storage-only'
     """
 
-    model_config = ConfigDict(frozen=True)
 
     piped_width: int = DEFAULT_PIPED_WIDTH
     summary_limit: int = DEFAULT_SUMMARY_LIMIT

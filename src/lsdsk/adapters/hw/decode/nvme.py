@@ -15,7 +15,7 @@ import struct
 from dataclasses import dataclass
 
 from ....domain.models import Health
-from .text import device_text
+from ....domain.text import device_text
 
 IDENTIFY_CONTROLLER_LENGTH = 4096
 SMART_LOG_LENGTH = 512

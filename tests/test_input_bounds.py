@@ -277,3 +277,43 @@ def test_snapshot_still_writes_where_no_temporary_file_can_be_made(tmp_path: Pat
     finally:
         tmp_path.chmod(0o700)
     assert victim.read_text(encoding="utf-8") == "MUST-SURVIVE", "the fallback followed a symlink"
+
+
+@pytest.mark.os_agnostic
+def test_a_controller_name_cannot_inject_control_characters_either(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    """A controller's name and firmware are chosen by its own firmware too.
+
+    The disk fields were cleaned in the builder and the controller's were not,
+    so the same payload that a drive's model had stripped reached the terminal
+    intact through ``board_name``: measured 2 raw ESC bytes from ``controllers``
+    and 3 from the bare view. Cleaning now happens on the FIELD, so the arm
+    below covers every view a controller name reaches.
+    """
+    import json
+
+    from lsdsk.adapters.cli import cli
+
+    payload = "Evil\x1b[31mX\x1b[0m\x1b]0;PWNED\x07\nFAKE-ROW"
+    source = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
+    capture: dict[str, Any] = json.loads(source.read_text(encoding="utf-8"))
+    hosts: dict[str, Any] = capture["classes"]["scsi_host"]
+    named = [host for host in hosts.values() if host.get("board_name")]
+    assert named, "the fixture carries no controller name, so this would assert nothing"
+    for host in named:
+        host["board_name"] = payload
+        host["version_fw"] = payload
+    crafted = tmp_path / "evil-controller.json"
+    crafted.write_text(json.dumps(capture), encoding="utf-8")
+
+    clean = cli_runner.invoke(cli, ["controllers", "--replay", str(source)], obj=production_factory, color=False)
+    assert clean.output, "the control produced no output, so it proved nothing"
+
+    for argv in (["controllers"], []):
+        result = cli_runner.invoke(cli, [*argv, "--replay", str(crafted)], obj=production_factory, color=False)
+        assert result.output, f"{argv or 'bare'}: no output, so this asserted nothing"
+        assert "\x1b" not in result.output, f"{argv or 'bare'}: an escape sequence reached the terminal"
+        assert "\x07" not in result.output, f"{argv or 'bare'}: a bell character reached the terminal"
+        forged = [line for line in result.output.splitlines() if line.strip() == "FAKE-ROW"]
+        assert not forged, f"{argv or 'bare'}: an injected newline forged a table row"

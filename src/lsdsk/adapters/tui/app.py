@@ -776,7 +776,7 @@ class LsdskApp(App[None]):
         current = self.display_settings.tree_density
         position = members.index(current) if current in members else 0
         next_density = members[(position + 1) % len(members)]
-        self.display_settings = self.display_settings.model_copy(update={"tree_density": next_density})
+        self.display_settings = self.display_settings.with_changes(tree_density=next_density)
         self._refill_tree()
 
     def _refill_tree(self) -> None:

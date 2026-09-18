@@ -5,6 +5,34 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A controller's name and firmware can no longer carry an escape sequence to
+  the terminal.** They come from the HBA firmware's own `board_name` and
+  `version_fw`, which are hardware-chosen exactly as a drive's model is, and the
+  cleaning that covered the disk fields was a call the controller path did not
+  make: measured 2 raw ESC bytes from `controllers` and 3 from the bare view,
+  where the same payload in a disk's model was stripped. Cleaning now happens on
+  the FIELD - `DeviceText` on every hardware-chosen string in the domain - so a
+  value carrying a control character cannot be constructed, and a new builder,
+  platform or field has nothing to remember. The Windows name fields and the
+  `pci.ids` text are covered by the same move.
+- **A device unplugged mid-scan no longer aborts the scan.** The four sysfs
+  directory walks in the Linux reader were bare while every per-attribute read
+  around them already swallowed `OSError`, so a hot-unplug between the listing
+  and the read raised out of `collect()` past the CLI's named catches. They
+  degrade like the reads do.
+
+### Changed
+
+- **The two settings objects are validated values like every other.**
+  `HistorySettings` and `DisplaySettings` derive from `DomainModel`, so they
+  refuse a field nobody declared and are changed with `with_changes`. Five call
+  sites used `model_copy(update=...)`, which writes an unknown key straight into
+  the instance, leaves the intended field alone and raises nothing - the exact
+  hazard the domain base was written to close, left open one layer up in the
+  settings path the TUI edits on every keypress.
+
 ### Added
 
 - **The documentation is available in German.** Thirteen pages under `de/`,

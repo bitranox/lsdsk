@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from ....domain.enums import DiskKind
-from .text import device_text
+from ....domain.text import device_text
 
 # Offset of the embedded IDENTIFY payload inside a SCSI ATA Information VPD page
 # (page 0x89). The page header and the SAT fields occupy the first 60 bytes.
