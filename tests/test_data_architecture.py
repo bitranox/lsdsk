@@ -220,18 +220,6 @@ def test_every_tui_page_has_a_command_of_the_same_name() -> None:
 
 
 @pytest.mark.os_agnostic
-def test_every_page_name_is_a_command_enum_member() -> None:
-    """Verify the envelope can name every view that produces one."""
-    from lsdsk.adapters.tui.app import LsdskApp
-
-    named = {member.value for member in CliCommand}
-
-    missing = [page for page in LsdskApp.PAGES if page not in named]
-
-    assert not missing, f"pages absent from CliCommand: {missing}"
-
-
-@pytest.mark.os_agnostic
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX modes; Windows chmod only toggles read-only")
 def test_a_snapshot_is_written_owner_only(tmp_path: Path) -> None:
     """Verify a capture is not left world-readable.

@@ -270,6 +270,32 @@ def test_the_panel_names_the_capacity_and_writes_it_on_both_scales() -> None:
     assert checked, "the control: no capture reported a capacity, so this asserted nothing"
 
 
+@pytest.mark.os_agnostic
+def test_the_heading_does_not_carry_the_capacity_as_well() -> None:
+    """The labelled pair replaced the heading figure; it did not join it.
+
+    The test above passes just as well if a capacity is put BACK into the
+    heading beside the labelled one, which is the unlabelled figure the panel
+    was fixed to stop showing. Asserted on the heading's own cells, because the
+    fix is what the heading no longer says.
+    """
+    checked = 0
+    for host in CAPTURES:
+        machine = _machine(host)
+        for disk in machine.disks:
+            if disk.size_bytes is None:
+                continue
+            record = detail.disk_detail(disk, machine)
+            drawn = [cell[0] for cell in record.heading]
+            for figure in (theme.format_size(disk.size_bytes), theme.format_size_both(disk.size_bytes)):
+                assert not any(figure in cell for cell in drawn), (
+                    f"{host} {disk.path}: the heading writes {figure!r} again, unlabelled, in {drawn}"
+                )
+            checked += 1
+
+    assert checked, "the control: no capture reported a capacity, so this asserted nothing"
+
+
 def _link_pairs(machine: Inventory, disk: Disk) -> dict[str, str]:
     """The panel's link group for one drive, label to text."""
     record = detail.disk_detail(disk, machine)

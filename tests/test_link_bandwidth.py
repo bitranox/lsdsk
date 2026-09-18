@@ -15,8 +15,9 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from lsdsk.adapters.render import detail, tables, theme
+from lsdsk.adapters.render import detail, report, tables, theme
 from lsdsk.adapters.render.layout import Column, Layout
+from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.models import PcieLink
 
 if TYPE_CHECKING:
@@ -55,6 +56,50 @@ def _group(record: detail.Detail, label: str) -> dict[str, str]:
     raise AssertionError(f"no {label} group in this record")
 
 
+def _surfaces(machine: Inventory) -> list[tuple[str, tuple[Column, ...], list[dict[str, str]], list[dict[str, str]]]]:
+    """Every table the surrender rule is claimed to hold for, with its rows.
+
+    One implementation serves four column sets - the two disk tables, the
+    controllers table and the slots table - and only the new disk table was ever
+    swept. A rule asserted on one of its four surfaces is a rule three of them
+    could break without anything going red.
+
+    Args:
+        machine: The inventory whose real rows are laid out.
+
+    Returns:
+        One entry per surface: a label, its columns, and its rows with and
+        without the bandwidth.
+    """
+    findings = diagnose(machine)
+    return [
+        (
+            "the disk table",
+            tables.DISK_COLUMNS,
+            _texts([tables.disk_table_row(d, machine.port_link_for(d), bandwidth=True) for d in machine.disks]),
+            _texts([tables.disk_table_row(d, machine.port_link_for(d)) for d in machine.disks]),
+        ),
+        (
+            "the disk-and-controller tree's disk table",
+            report.DISK_COLUMNS,
+            _texts([report.disk_row(d, machine.port_link_for(d), bandwidth=True) for d in machine.disks]),
+            _texts([report.disk_row(d, machine.port_link_for(d)) for d in machine.disks]),
+        ),
+        (
+            "the controllers table",
+            tables.CONTROLLER_COLUMNS,
+            _texts([tables.controller_table_row(c, machine, findings, bandwidth=True).cells for c in machine.controllers]),
+            _texts([tables.controller_table_row(c, machine, findings).cells for c in machine.controllers]),
+        ),
+        (
+            "the slots table",
+            report.SLOT_COLUMNS,
+            _texts([report.slot_table_row(slot, bandwidth=True) for slot in machine.slots]),
+            _texts([report.slot_table_row(slot) for slot in machine.slots]),
+        ),
+    ]
+
+
 @pytest.mark.os_agnostic
 @pytest.mark.parametrize("host", CAPTURES)
 def test_the_bandwidth_is_surrendered_before_any_column_is(host: str) -> None:
@@ -71,22 +116,27 @@ def test_the_bandwidth_is_surrendered_before_any_column_is(host: str) -> None:
     whatever the code did.
     """
     machine = _machine(host)
-    rich = [tables.disk_table_row(disk, machine.port_link_for(disk), bandwidth=True) for disk in machine.disks]
-    plain = [tables.disk_table_row(disk, machine.port_link_for(disk)) for disk in machine.disks]
-    if not rich:
-        pytest.skip(f"{host} has no drives to lay out")
-
-    for width in WIDTHS:
-        chosen = Layout.preferring(tables.DISK_COLUMNS, _texts(rich), _texts(plain), width)
-        bare = Layout.for_rows(tables.DISK_COLUMNS, _texts(plain), width)
-        kept = [column.key for column in chosen.columns]
-        assert kept == [column.key for column in bare.columns], (
-            f"{host} at {width}: carrying the bandwidth cost "
-            f"{[k for k in (c.key for c in bare.columns) if k not in kept]}"
-        )
-        assert chosen.required() <= max(width, bare.required()), (
-            f"{host} at {width}: the row needs {chosen.required()} of {width}"
-        )
+    surfaces = _surfaces(machine)
+    swept = 0
+    for label, columns, rich, plain in surfaces:
+        if not rich:
+            continue
+        swept += 1
+        for width in WIDTHS:
+            chosen = Layout.preferring(columns, rich, plain, width)
+            bare = Layout.for_rows(columns, plain, width)
+            kept = [column.key for column in chosen.columns]
+            assert kept == [column.key for column in bare.columns], (
+                f"{host}, {label} at {width}: carrying the bandwidth cost "
+                f"{[k for k in (c.key for c in bare.columns) if k not in kept]}"
+            )
+            assert chosen.required() <= max(width, bare.required()), (
+                f"{host}, {label} at {width}: the row needs {chosen.required()} of {width}"
+            )
+    # The control. A surface whose rows came back empty is swept vacuously, and
+    # the whole point of this test is that three of the four were never swept at
+    # all; a silent skip would restore exactly that.
+    assert swept == len(surfaces), f"{host}: only {swept} of {len(surfaces)} surfaces had rows to lay out"
 
     # A machine whose rows are short enough to carry the bandwidth at every width
     # is a legitimate answer here, so the both-arms check belongs to the captures

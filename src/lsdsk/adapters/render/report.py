@@ -462,13 +462,10 @@ def _controller_line(controller: Controller, severity: Severity | None) -> Text:
     link = controller.link
     running_generation = pcie_generation(link.current_speed_gtps)
     if running_generation is not None and link.current_width is not None:
-        style = theme.STYLE_AT_CAPABILITY
-        if severity is Severity.CRITICAL:
-            style = theme.STYLE_FAILING
-        elif severity is Severity.WARNING:
-            style = theme.STYLE_BELOW_CAPABILITY
-        elif severity is Severity.HINT:
-            style = theme.STYLE_CEILING
+        # The same three colours the marker above already took from this table;
+        # spelled out as a chain here, they were a second place for the mapping
+        # to drift from.
+        style = theme.SEVERITY_STYLES.get(severity, theme.STYLE_AT_CAPABILITY) if severity else theme.STYLE_AT_CAPABILITY
         text = f"  PCIe {theme.format_pcie_generation(link.current_speed_gtps, link.current_width)}"
         # Only spell out the capability when the link is not already at it;
         # "PCIe Gen4x4 of Gen4x4" is noise on a card that is running perfectly.

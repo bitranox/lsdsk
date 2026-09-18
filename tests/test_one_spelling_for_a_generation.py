@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from rich.console import Console
 
-from lsdsk.adapters.render import detail
+from lsdsk.adapters.render import detail, report
 from lsdsk.adapters.render.full import render_full
 from lsdsk.domain.diagnostics import diagnose
 
@@ -72,11 +72,19 @@ def _panels(machine: Inventory, findings: Sequence[Finding]) -> list[tuple[str, 
 
 
 def _views(host: str) -> list[tuple[str, str]]:
-    """The whole printed page, plus every panel, as text a reader would read."""
+    """The whole printed page, plus every panel, as text a reader would read.
+
+    The old disk-and-controller tree is a view too. It is what a capture
+    carrying no PCI reading gets instead of the fabric, so ``render_full`` over
+    the committed captures never reaches it - every one of them has PCI data -
+    and it writes its own controller line with its own link figure. Rendering it
+    directly from the same machines is what puts it under this rule.
+    """
     machine = _machine(host)
     findings = diagnose(machine)
     return [
         ("the printed page", _text(render_full(machine, findings, width=200))),
+        ("the disk-and-controller tree", _text(report.render_controller_disks(machine, findings, width=200))),
         *_panels(machine, findings),
     ]
 
