@@ -39,7 +39,7 @@ from rich.text import Text
 from ...domain.diagnostics import attached_demand_gbytes
 from ...domain.history import CounterKind
 from . import tables, theme
-from .report import findings_for, slot_verdict
+from .report import findings_for, pcie_capability, slot_verdict
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -156,7 +156,7 @@ def disk_detail(disk: Disk, inventory: Inventory, history: History | None = None
             IDENTITY,
             (("size", size), ("serial", row["serial"]), ("firmware", row["firmware"]), ("wwn", row["wwn"])),
         ),
-        DetailGroup(LINK, _disk_link_values(disk, row)),
+        DetailGroup(LINK, _disk_link_values(disk, row, inventory.port_link_for(disk))),
         DetailGroup(SEAT, _seat_values(disk, inventory)),
         DetailGroup(HEALTH, _health_values(disk.health)),
         DetailGroup(COUNTERS, _counter_values(disk.health, series)),
@@ -362,7 +362,7 @@ def _yes_no(*, value: bool | None) -> Cell:
     return ("yes", theme.STYLE_AT_CAPABILITY) if value else ("no", theme.STYLE_BELOW_CAPABILITY)
 
 
-def _disk_link_values(disk: Disk, row: dict[str, Cell]) -> tuple[tuple[str, Cell], ...]:
+def _disk_link_values(disk: Disk, row: dict[str, Cell], port: PcieLink | None) -> tuple[tuple[str, Cell], ...]:
     """The three figures the disk table draws, plus what the PAIRING could manage.
 
     The three come from the table's own row builder, so a figure cannot be
@@ -371,10 +371,18 @@ def _disk_link_values(disk: Disk, row: dict[str, Cell]) -> tuple[tuple[str, Cell
     that detail up on a narrow terminal and the panel never has to.
 
     ``achievable`` is a different claim from any one of them - the best the two
-    ends could manage together - and it is left on the bits scale the SATA ends
-    beside it use.
+    ends could manage together - and it reads the SAME pairing they do. The
+    three switch source by drive kind, so this must too: ``InterfaceLink`` is
+    empty on every NVMe drive by construction, so asking it there returned the
+    NOT-READ dash for a pairing that was fully measured, which is one symbol
+    making two claims. A SATA drive keeps the bits scale its own ends use.
     """
-    achievable = (theme.format_speed(disk.link.achievable_gbps), "")
+    if disk.pcie is not None:
+        limiting = disk.pcie.limiting_end(port)
+        text = theme.NOT_READ if limiting is None else pcie_capability(limiting, bandwidth=True)
+        achievable = (text, "")
+    else:
+        achievable = (theme.format_speed(disk.link.achievable_gbps), "")
     return (("port", row["port"]), ("drive", row["disk"]), ("negotiated", row["link"]), ("achievable", achievable))
 
 

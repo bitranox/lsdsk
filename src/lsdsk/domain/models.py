@@ -225,6 +225,39 @@ class PcieLink:
         """Usable bandwidth this end of the link could reach, in GB/s."""
         return pcie_bandwidth_gbps(self.max_speed_gtps, self.max_width)
 
+    def limiting_end(self, other: PcieLink | None) -> PcieLink | None:
+        """Whichever end of a pairing holds it back, or None if either is unread.
+
+        The PCIe twin of :attr:`InterfaceLink.achievable_gbps`, refusing on the
+        same grounds: an end that was never read is not evidence of a capable
+        one, so filling it in from the end that WAS read would turn "we could
+        not measure this" into "the seat is fine".
+
+        Args:
+            other: The end this one is paired with, usually the port a drive
+                sits in. ``None`` when the seat was never identified.
+
+        Returns:
+            The end with the lower usable bandwidth, or ``None`` when either
+            end published nothing.
+
+        Example:
+            >>> drive = PcieLink(8.0, 4, 16.0, 4)
+            >>> seat = PcieLink(8.0, 4, 8.0, 4)
+            >>> drive.limiting_end(seat) is seat
+            True
+            >>> drive.limiting_end(None) is None
+            True
+            >>> drive.limiting_end(PcieLink()) is None
+            True
+        """
+        if other is None:
+            return None
+        mine, theirs = self.max_bandwidth_gbps, other.max_bandwidth_gbps
+        if mine is None or theirs is None:
+            return None
+        return self if mine <= theirs else other
+
     @property
     def is_downgraded(self) -> bool:
         """Whether the link negotiated below what this end supports.

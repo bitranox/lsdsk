@@ -17,6 +17,7 @@ from rich.console import Console
 
 from lsdsk.adapters.render import detail, report, tables, theme
 from lsdsk.domain.diagnostics import diagnose
+from lsdsk.domain.models import PcieLink
 
 if TYPE_CHECKING:
     from lsdsk.domain.models import Disk, Inventory
@@ -267,3 +268,64 @@ def test_the_panel_names_the_capacity_and_writes_it_on_both_scales() -> None:
             checked += 1
 
     assert checked, "the control: no capture reported a capacity, so this asserted nothing"
+
+
+def _link_pairs(machine: Inventory, disk: Disk) -> dict[str, str]:
+    """The panel's link group for one drive, label to text."""
+    record = detail.disk_detail(disk, machine)
+    group = next(one for one in record.groups if one.label == detail.LINK)
+    return {label: cell[0] for label, cell in group.values}
+
+
+def _seated_pcie_drives(machine: Inventory) -> list[Disk]:
+    """Every drive with a PCIe link whose seat was also read."""
+    return [d for d in machine.disks if d.pcie is not None and machine.port_link_for(d) is not None]
+
+
+def test_the_captures_hold_a_pcie_drive_in_a_known_seat_at_all() -> None:
+    """The control for the test below, which skips a capture that has none.
+
+    Without it a loading fault would skip every capture and the suite would
+    report the rule held while nothing was ever compared.
+    """
+    total = sum(len(_seated_pcie_drives(_machine(host))) for host in CAPTURES)
+    assert total > 0, "no capture holds a PCIe drive in a known seat, so the rule below is never checked"
+
+
+@pytest.mark.parametrize("host", CAPTURES)
+def test_a_pcie_drive_in_a_known_seat_gets_an_achievable_figure_not_a_dash(host: str) -> None:
+    """`achievable` reads the same pairing the three figures beside it read.
+
+    Those three switch source by drive kind - the PCIe link for an NVMe drive,
+    `InterfaceLink` for a SATA one - and `InterfaceLink` is empty on every NVMe
+    drive by construction, so asking it there produced the NOT-READ dash for a
+    pairing that was fully measured. A dash means the platform declined to
+    answer; using it for "this drive has no SATA pairing" is one symbol making
+    two different claims.
+    """
+    machine = _machine(host)
+    seated = _seated_pcie_drives(machine)
+    if not seated:
+        pytest.skip(f"{host} has no PCIe drive in a known seat")
+    for disk in seated:
+        pairs = _link_pairs(machine, disk)
+        assert pairs["achievable"] != theme.NOT_READ, (
+            f"{host} {disk.path}: achievable is a dash although both PCIe ends were read "
+            f"(port={pairs['port']}, drive={pairs['drive']})"
+        )
+
+
+def test_an_unread_seat_leaves_the_pairing_unanswered() -> None:
+    """The both-ends rule, which no committed capture exercises.
+
+    Every fixture drive with a PCIe link also has a seat, so this is asserted on
+    the rule itself rather than through a panel: an end that was never read is
+    not evidence of a capable one, and inheriting the drive's own figure would
+    turn "we could not measure this" into "the seat is fine".
+    """
+    drive = PcieLink(8.0, 4, 16.0, 4)
+    assert drive.limiting_end(None) is None, "a drive with no known seat claimed a pairing"
+    assert drive.limiting_end(PcieLink()) is None, "an unread seat was treated as a capable one"
+    slower = PcieLink(8.0, 4, 8.0, 4)
+    assert drive.limiting_end(slower) is slower, "the slower end is what the pairing can manage"
+    assert slower.limiting_end(drive) is slower, "the answer does not depend on which end asks"

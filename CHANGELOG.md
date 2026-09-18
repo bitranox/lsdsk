@@ -5,6 +5,20 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`achievable` reads the same pairing as the three figures beside it.** On an
+  NVMe drive the detail panel's link group showed `port`, `drive` and
+  `negotiated` as measured PCIe figures and then `achievable -`, because those
+  three switch source by drive kind while `achievable` always asked
+  `InterfaceLink`, which is empty on every NVMe drive by construction. The dash
+  is this tool's NOT-READ symbol, so it was claiming the platform declined to
+  answer about a pairing that had been fully measured. It now comes from the
+  PCIe pair, as the slower of the drive's own capability and the seat's. The
+  both-ends rule is unchanged: an end that was never read still yields a dash,
+  because inheriting the drive's figure would turn "we could not measure this"
+  into "the seat is fine". A SATA drive is unaffected.
+
 ## [1.2.14] 2026-09-18 13:06:03
 
 ### Added

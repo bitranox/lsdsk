@@ -304,7 +304,7 @@ def _pcie_text(link: PcieLink, *, bandwidth: bool = False) -> str:
     return theme.with_bandwidth(figure, link.current_bandwidth_gbps) if bandwidth else figure
 
 
-def _pcie_capability(link: PcieLink, *, bandwidth: bool = False) -> str:
+def pcie_capability(link: PcieLink, *, bandwidth: bool = False) -> str:
     """Render what a PCIe link could carry AT BEST."""
     figure = theme.format_pcie_generation(link.max_speed_gtps, link.max_width)
     return theme.with_bandwidth(figure, link.max_bandwidth_gbps) if bandwidth else figure
@@ -339,8 +339,8 @@ def disk_cells(disk: Disk, port: PcieLink | None = None, *, bandwidth: bool = Fa
     # instead of being asserted, and a drive at its own maximum in a faster port
     # reads as the placement question it is rather than as a fault.
     if disk.pcie is not None:
-        port_text = _pcie_capability(port, bandwidth=bandwidth) if port is not None else "-"
-        drive_text = _pcie_capability(disk.pcie, bandwidth=bandwidth)
+        port_text = pcie_capability(port, bandwidth=bandwidth) if port is not None else "-"
+        drive_text = pcie_capability(disk.pcie, bandwidth=bandwidth)
         link_text = _pcie_text(disk.pcie, bandwidth=bandwidth)
     else:
         port_text = _serial_text(disk.link.port_max_gbps, bandwidth=bandwidth)
@@ -781,11 +781,11 @@ def slot_table_row(slot: PcieSlot, *, bandwidth: bool = False) -> Row:
     """
     number = "-" if slot.physical_slot_number is None else f"#{slot.physical_slot_number}"
     occupant = slot.occupant_description
-    needs = "-" if slot.occupant_link is None else _pcie_capability(slot.occupant_link, bandwidth=bandwidth)
+    needs = "-" if slot.occupant_link is None else pcie_capability(slot.occupant_link, bandwidth=bandwidth)
     return {
         "port": (slot.address, theme.STYLE_IDENTIFIER),
         "slot": (number, "" if number != "-" else theme.STYLE_UNKNOWN),
-        "capable": (_pcie_capability(slot.link, bandwidth=bandwidth), ""),
+        "capable": (pcie_capability(slot.link, bandwidth=bandwidth), ""),
         # An empty port trains to nothing, and printing that as "Gen1 x0" reads
         # like a fault rather than an absence.
         "running": (_pcie_text(slot.link, bandwidth=bandwidth) if slot.occupied else "-", ""),
@@ -989,6 +989,7 @@ __all__ = [
     "disk_cells",
     "disk_row",
     "findings_for",
+    "pcie_capability",
     "render_controller_disks",
     "render_findings",
     "render_header",
