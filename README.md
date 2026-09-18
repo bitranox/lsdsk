@@ -72,18 +72,19 @@ lsdsk  linux-sas-hba   19 disks on 5 controllers
 Topology on linux-sas-hba
 showing storage and the bridges above it; --tree-density to change the detail level
 legacy = no PCIe capability
-linux-sas-hba   2 root complexes (0000:00, 0000:ff)   root ports to PCIe 3.0x8   95 PCI devices
-   │     address       capable             running             name
-   ├─┬── 0000:00:01.0  3.0x4 (3.94 GB/s)   3.0x4 (3.94 GB/s)   Intel Corporation ... Root Port 1a  (root port)
-   │ └── 0000:05:00.0  3.0x4 (3.94 GB/s)   3.0x4 (3.94 GB/s)   Samsung Electronics Co Ltd NVMe SSD Controller SM951
-   │     device        model                         size  kind  bus   port                disk                temp  worn
-!  │     /dev/nvme0n1  SAMSUNG MZVPV512HDGL-00000  477GiB  SSD   NVME  Gen3x4 (3.94 GB/s)  Gen3x4 (3.94 GB/s)   39C   59%
-   │     address       capable             running             name
-   ├─┬── 0000:00:03.0  3.0x8 (7.88 GB/s)   3.0x8 (7.88 GB/s)   Intel Corporation ... Root Port 3a  (root port)
-~  │ └── 0000:03:00.0  4.0x8 (15.75 GB/s)  3.0x8 (7.88 GB/s)   Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS38xx
-   │     device        model                         size  kind  bus   port                disk                temp  worn
-~  │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  12G (1.20 GB/s)     6G (0.60 GB/s)       36C    1%
-~  │     /dev/sdb      Samsung SSD 870 EVO 500GB   466GiB  SSD   SATA  12G (1.20 GB/s)     6G (0.60 GB/s)       30C    2%
+linux-sas-hba   2 root complexes (0000:00, 0000:ff)   root ports to PCIe Gen3x8   95 PCI devices
+   │     address       capable                running                name
+   ├─┬── 0000:00:01.0  Gen3x4 (3.94 GB/s)     Gen3x4 (3.94 GB/s)     Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 PCI Express Root>
+   │ └── 0000:05:00.0  Gen3x4 (3.94 GB/s)     Gen3x4 (3.94 GB/s)     Samsung Electronics Co Ltd NVMe SSD Controller SM951/PM951
+   │     device        model             size  kind  bus   port                disk                link                temp  worn
+!  │     /dev/nvme0n1  SAMSUNG MZVPV>  477GiB  SSD   NVME  Gen3x4 (3.94 GB/s)  Gen3x4 (3.94 GB/s)  Gen3x4 (3.94 GB/s)   39C   59%
+   │     address       capable                running                name
+   ├─┬── 0000:00:03.0  Gen3x8 (7.88 GB/s)     Gen3x8 (7.88 GB/s)     Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 PCI Express Root>
+~  │ └── 0000:03:00.0  Gen4x8 (15.75 GB/s)    Gen3x8 (7.88 GB/s)     Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS38xx
+   │     device        model             size  kind  bus   port                disk                link                temp  worn
+~  │     /dev/sda      Samsung SSD 8>  3.6TiB  SSD   SATA  12G (1.20 GB/s)     6G (0.60 GB/s)      6G (0.60 GB/s)       36C    1%
+~  │     /dev/sdb      Samsung SSD 8>  466GiB  SSD   SATA  12G (1.20 GB/s)     6G (0.60 GB/s)      6G (0.60 GB/s)       30C    2%
+   │     ...
 
 Controllers on linux-sas-hba        ...
 Disks on linux-sas-hba              ...

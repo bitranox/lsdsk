@@ -464,20 +464,20 @@ def _controller_line(controller: Controller, severity: Severity | None) -> Text:
             style = theme.STYLE_BELOW_CAPABILITY
         elif severity is Severity.HINT:
             style = theme.STYLE_CEILING
-        text = f"  PCIe {theme.format_pcie_decimal(link.current_speed_gtps, link.current_width)}"
+        text = f"  PCIe {theme.format_pcie_generation(link.current_speed_gtps, link.current_width)}"
         # Only spell out the capability when the link is not already at it;
-        # "PCIe 4.0 x4 of 4.0 x4" is noise on a card that is running perfectly.
+        # "PCIe Gen4x4 of Gen4x4" is noise on a card that is running perfectly.
         if link.capability_is_known and link.is_downgraded:
-            text += f" of {theme.format_pcie_decimal(link.max_speed_gtps, link.max_width)}"
+            text += f" of {theme.format_pcie_generation(link.max_speed_gtps, link.max_width)}"
         line.append(text, style=style)
     elif link.capability_is_known:
         # The capability was read and the negotiated link was not, so state both
         # rather than dropping the line's only link column.
-        capable = theme.format_pcie_decimal(link.max_speed_gtps, link.max_width)
+        capable = theme.format_pcie_generation(link.max_speed_gtps, link.max_width)
         line.append(f"  PCIe capable of {capable}, running not read", style=theme.STYLE_UNKNOWN)
     else:
         # Nothing was read. Say so, rather than printing nothing at all: beside
-        # a controller reading "PCIe 3.0 x8", a blank reads as a device with
+        # a controller reading "PCIe Gen3x8", a blank reads as a device with
         # nothing to report instead of one nothing could be read from, which is
         # the "blank implies fine" this tool's own law forbids. Whole platforms
         # publish no link registers for some devices.

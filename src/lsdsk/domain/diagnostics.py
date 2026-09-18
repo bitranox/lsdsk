@@ -79,24 +79,28 @@ def _format_gbytes(value: float | None) -> str:
     return "unknown" if value is None else f"{value:.2f} GB/s"
 
 
-def _format_pcie(speed_gtps: float | None, width: int | None) -> str:
+def format_pcie_sentence(speed_gtps: float | None, width: int | None) -> str:
     """Render a PCIe link as a generation and width, for a sentence.
 
-    Written closed, as the render layer writes it in a column. One spelling for
-    the whole tool: a finding that said ``PCIe 3.0 x8`` while the table above it
-    said ``3.0x8`` would be describing the same link in two hands, and a reader
-    comparing the two has to work out that they agree.
+    Written closed and in the marketing form, as the render layer writes it in a
+    column. One spelling for the whole tool: a finding that said ``PCIe 3.0x8``
+    while the table above it said ``Gen3x8`` would be describing the same link in
+    two hands, and a reader comparing the two has to work out that they agree.
+
+    The domain cannot reach the render layer's formatter, so this is the second
+    place that spelling is written, and the two are held together by a test in
+    ``tests/test_one_spelling_for_a_generation.py`` rather than by convention.
 
     Example:
-        >>> _format_pcie(8.0, 8)
-        'PCIe 3.0x8'
-        >>> _format_pcie(None, None)
+        >>> format_pcie_sentence(8.0, 8)
+        'PCIe Gen3x8'
+        >>> format_pcie_sentence(None, None)
         'PCIe unknown'
     """
     generation = pcie_generation(speed_gtps)
     if generation is None or width is None:
         return "PCIe unknown"
-    return f"PCIe {generation}.0x{width}"
+    return f"PCIe Gen{generation}x{width}"
 
 
 def _board_generation(controller: Controller, inventory: Inventory) -> int | None:
@@ -292,9 +296,9 @@ def diagnose_controller_link(controller: Controller, inventory: Inventory) -> li
                 subject=controller.address,
                 title=f"{controller.name} negotiated below what this machine offers",
                 detail=(
-                    f"Running {_format_pcie(link.current_speed_gtps, link.current_width)} "
+                    f"Running {format_pcie_sentence(link.current_speed_gtps, link.current_width)} "
                     f"({_format_gbytes(negotiated)}) where both ends support "
-                    f"{_format_pcie(achievable_speed, achievable_width)} ({_format_gbytes(achievable)})."
+                    f"{format_pcie_sentence(achievable_speed, achievable_width)} ({_format_gbytes(achievable)})."
                 ),
                 action="Reseat the card, check the riser and cabling, and look for a slot speed override in the BIOS.",
             )
@@ -335,9 +339,9 @@ def _unmeasured_port_finding(
             subject=controller.address,
             title=f"{controller.name} runs below its own maximum, and the port was not measured",
             detail=(
-                f"Running {_format_pcie(link.current_speed_gtps, link.current_width)} "
+                f"Running {format_pcie_sentence(link.current_speed_gtps, link.current_width)} "
                 f"({_format_gbytes(negotiated)}) where the device alone could do "
-                f"{_format_pcie(link.max_speed_gtps, link.max_width)} ({_format_gbytes(own_max)}). "
+                f"{format_pcie_sentence(link.max_speed_gtps, link.max_width)} ({_format_gbytes(own_max)}). "
                 "What the port can carry was not readable, so this is not attributable: a socket "
                 f"built one generation below the device reads exactly the same as a fault.{named}"
             ),
@@ -371,7 +375,7 @@ def _platform_limited_finding(
             ),
             action=(
                 f"Move it to the free slot at {move.address} "
-                f"({_format_pcie(move.link.max_speed_gtps, move.link.max_width)}). "
+                f"({format_pcie_sentence(move.link.max_speed_gtps, move.link.max_width)}). "
                 "Check the slot is mechanically long enough or open-ended first."
             ),
         )
@@ -401,10 +405,10 @@ def _platform_limited_finding(
     best = _best_port_for(controller, inventory)
     if best is not None and best[1] > achievable:
         port, gain = best
-        port_pcie = _format_pcie(port.link.max_speed_gtps, port.link.max_width)
+        port_pcie = format_pcie_sentence(port.link.max_speed_gtps, port.link.max_width)
         detail = (
-            f"The card is {_format_pcie(controller.link.max_speed_gtps, controller.link.max_width)} capable; "
-            f"the port it sits in gives it {_format_pcie(achievable_speed, achievable_width)}, short on "
+            f"The card is {format_pcie_sentence(controller.link.max_speed_gtps, controller.link.max_width)} capable; "
+            f"the port it sits in gives it {format_pcie_sentence(achievable_speed, achievable_width)}, short on "
             f"{shortfall}. This board has faster ports ({port_pcie}) but none of them is free or swappable. "
             f"{_headroom_sentence(controller, inventory, achievable)}"
         )
@@ -414,8 +418,8 @@ def _platform_limited_finding(
         )
     else:
         detail = (
-            f"The card is {_format_pcie(controller.link.max_speed_gtps, controller.link.max_width)} capable; "
-            f"the port it sits in gives it {_format_pcie(achievable_speed, achievable_width)}, short on "
+            f"The card is {format_pcie_sentence(controller.link.max_speed_gtps, controller.link.max_width)} capable; "
+            f"the port it sits in gives it {format_pcie_sentence(achievable_speed, achievable_width)}, short on "
             f"{shortfall}, and no port on this board would give it more. "
             f"{_headroom_sentence(controller, inventory, achievable)}"
         )
@@ -559,10 +563,8 @@ def _upgrade_sentence(controller: Controller, inventory: Inventory, achievable: 
             f"A PCIe {own_generation}.0 board would take this link from {_format_gbytes(achievable)} "
             f"to {_format_gbytes(own_max)}."
         )
-    return (
-        f"A {_format_pcie(controller.link.max_speed_gtps, controller.link.max_width)} port would take this link "
-        f"from {_format_gbytes(achievable)} to {_format_gbytes(own_max)}."
-    )
+    wanted = format_pcie_sentence(controller.link.max_speed_gtps, controller.link.max_width)
+    return f"A {wanted} port would take this link from {_format_gbytes(achievable)} to {_format_gbytes(own_max)}."
 
 
 def diagnose_disk_link(disk: Disk, inventory: Inventory) -> list[Finding]:
@@ -1341,7 +1343,7 @@ def _register_default_finding(
         subject=controller.address,
         title=f"{controller.name} publishes the PCIe floor as its link, which is not a ceiling",
         detail=(
-            f"{wanted}, and the link reads {_format_pcie(link.max_speed_gtps, link.max_width)} "
+            f"{wanted}, and the link reads {format_pcie_sentence(link.max_speed_gtps, link.max_width)} "
             f"({_format_gbytes(link.max_bandwidth_gbps)}) as both running and capable, the lowest the PCIe "
             f"specification allows. The {pci_class_name(twin.occupant_class)} at "
             f"{twin.occupant_address or twin.address} on the same switch publishes the identical floor, both "
@@ -1507,6 +1509,7 @@ __all__ = [
     "diagnose_firmware_consistency",
     "diagnose_health",
     "diagnose_port_allocation",
+    "format_pcie_sentence",
     "interface_demand_gbytes",
     "is_storage_controller",
 ]

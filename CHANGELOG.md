@@ -8,7 +8,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 ### Added
 
 - **A link figure says what it is worth.** Every PCIe and SATA figure drawn in a
-  column carries its own bandwidth - `Gen3x4 (3.94 GB/s)`, `3.0x4 (3.94 GB/s)`,
+  column carries its own bandwidth - `Gen3x4 (3.94 GB/s)`, `Gen4x8 (15.75 GB/s)`,
   `6G (0.60 GB/s)` - in the disks, controllers and slots tables, in both trees
   and in the detail panel. A shape alone says nothing about throughput to a
   reader who does not carry the PCIe lane table in their head, which is the
@@ -59,9 +59,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
-- **A link figure is written closed**: `Gen4 x4` is now `Gen4x4` and `3.0 x4` is
-  `3.0x4`, in every column and in a finding's own sentence, so a finding and the
-  table above it do not describe one link in two hands.
+- **A link figure is written closed, and in one spelling**: `Gen4 x4` and
+  `4.0x4` are both `Gen4x4` now - the marketing form, which is what is printed
+  on the box the part came in - in every column, in both trees, in the detail
+  panel and in a finding's own sentence. The slots table wrote the marketing
+  form while the detail panel one keypress away wrote the decimal one for the
+  same port, so a reader comparing two views of one port had to work out that
+  two different strings name one link, and a reader searching their own output
+  for a figure the documentation quotes found it in one view and not another.
+  `theme.format_pcie_decimal` is gone, and the domain's sentence formatter is
+  public as `diagnostics.format_pcie_sentence` so a test can hold it and the
+  render column to one spelling.
 
 - **A capacity names the scale it is written on.** A drive is sold in powers of
   ten and reports in powers of two, and the two differ by about 7 percent per

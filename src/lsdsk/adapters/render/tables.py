@@ -199,13 +199,13 @@ def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, 
 
 def _pcie_text(link: PcieLink, *, bandwidth: bool = False) -> str:
     """Render a RUNNING PCIe link as generation and width."""
-    figure = theme.format_pcie_decimal(link.current_speed_gtps, link.current_width)
+    figure = theme.format_pcie_generation(link.current_speed_gtps, link.current_width)
     return theme.with_bandwidth(figure, link.current_bandwidth_gbps) if bandwidth else figure
 
 
 def _pcie_capability_text(link: PcieLink, *, bandwidth: bool = False) -> str:
     """Render what a PCIe link could do AT BEST."""
-    figure = theme.format_pcie_decimal(link.max_speed_gtps, link.max_width)
+    figure = theme.format_pcie_generation(link.max_speed_gtps, link.max_width)
     return theme.with_bandwidth(figure, link.max_bandwidth_gbps) if bandwidth else figure
 
 

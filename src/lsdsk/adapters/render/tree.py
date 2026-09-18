@@ -88,18 +88,16 @@ _MARKER_WIDTH = 3
 _ADDRESS_WIDTH = 12
 #: Width of each hop column in its NARROW tier, public because it is the claim
 #: ``test_no_hop_figure_is_wider_than_the_column_it_is_drawn_in`` checks.
-# Sized by the widest thing DRAWN in it, which is its own title: "capable" is
-# 7, while the widest figure a shipping generation produces is "5.0x16" (6) and
-# "legacy" is 6. Sizing it by the figure alone pushed every value one character
-# right of the header, which is the one law this module exists to keep - and the
-# guard below did not see it, because it measured the figures and never the
-# title. It reads 7 for the same reason it did when the figure was "5.0 x16";
-# the two agreeing was a coincidence, and it is not one now.
+# Sized by the widest thing DRAWN in it, which here is its own title and its
+# widest figure at once: "capable" is 7, "Gen6x16" is 7, "legacy" is 6. Sizing
+# a column by its values alone pushes every value one character right of the
+# header naming it, which is the one law this module exists to keep, and a
+# guard that measures the figures and never the title cannot see that happen.
 HOP_WIDTH = 7
 #: Width of each hop column in its WIDE tier, where the figure carries what it
 #: is worth. Sized the same way, by the widest a shipping generation produces:
-#: "6.0x16 (121.01 GB/s)" is 20, which is wider than either title.
-HOP_WIDE_WIDTH = 20
+#: "Gen6x16 (121.01 GB/s)" is 21, which is wider than either title.
+HOP_WIDE_WIDTH = 21
 _GAP_WIDTH = 2
 #: Both hop columns with their gaps: they are drawn together or not at all.
 _HOPS_WIDTH = 2 * (HOP_WIDTH + _GAP_WIDTH)
@@ -179,9 +177,9 @@ def hop_cells(node: PciNode, *, bandwidth: bool = False) -> tuple[theme.Cell, th
     Example:
         >>> from lsdsk.domain.models import PciNode, PcieLink
         >>> hop_cells(PciNode("a", "b", link=PcieLink(8.0, 4, 8.0, 4)))
-        (('3.0x4', ''), ('3.0x4', ''))
+        (('Gen3x4', ''), ('Gen3x4', ''))
         >>> hop_cells(PciNode("a", "b", link=PcieLink(8.0, 4, 8.0, 4)), bandwidth=True)
-        (('3.0x4 (3.94 GB/s)', ''), ('3.0x4 (3.94 GB/s)', ''))
+        (('Gen3x4 (3.94 GB/s)', ''), ('Gen3x4 (3.94 GB/s)', ''))
         >>> hop_cells(PciNode("a", "b", pcie_capability_present=False))[0][0]
         'legacy'
         >>> hop_cells(PciNode("a", "b"))[0][0]
@@ -250,7 +248,7 @@ def device_fields(width: int, spine: int) -> tuple[Field, ...]:
 
     Example:
         >>> [(field.key, field.width) for field in device_fields(200, 9)]
-        [('address', 12), ('capable', 20), ('running', 20), ('name', 130)]
+        [('address', 12), ('capable', 21), ('running', 21), ('name', 128)]
         >>> [(field.key, field.width) for field in device_fields(80, 9)]
         [('address', 12), ('capable', 7), ('running', 7), ('name', 36)]
         >>> [field.key for field in device_fields(48, 9)]
@@ -851,7 +849,7 @@ def _best_root_port(nodes: Sequence[PciNode]) -> str | None:
     if not published:
         return None
     best = max(published, key=lambda link: (link.max_speed_gtps or 0.0, link.max_width or 0))
-    return theme.format_pcie_decimal(best.max_speed_gtps, best.max_width)
+    return theme.format_pcie_generation(best.max_speed_gtps, best.max_width)
 
 
 def _virtual_block(

@@ -480,8 +480,8 @@ def _pcie_values(link: PcieLink) -> tuple[tuple[str, Cell], ...]:
     Each figure now carries its own, which is the same fact in the seat that
     says whose it is.
     """
-    running = theme.format_pcie_decimal(link.current_speed_gtps, link.current_width)
-    capable = theme.format_pcie_decimal(link.max_speed_gtps, link.max_width)
+    running = theme.format_pcie_generation(link.current_speed_gtps, link.current_width)
+    capable = theme.format_pcie_generation(link.max_speed_gtps, link.max_width)
     style = "" if running == capable else theme.STYLE_BELOW_CAPABILITY
     return (
         ("running", (theme.with_bandwidth(running, link.current_bandwidth_gbps), style)),
@@ -577,7 +577,7 @@ def _occupant_values(slot: PcieSlot) -> tuple[tuple[str, Cell], ...]:
         "-"
         if slot.occupant_link is None
         else theme.with_bandwidth(
-            theme.format_pcie_decimal(slot.occupant_link.max_speed_gtps, slot.occupant_link.max_width),
+            theme.format_pcie_generation(slot.occupant_link.max_speed_gtps, slot.occupant_link.max_width),
             slot.occupant_link.max_bandwidth_gbps,
         )
     )

@@ -641,9 +641,9 @@ one of them is enough to stop:
   before recommending anything. A real ceiling cannot be exceeded. When you
   cannot get it in the same exchange, answer on the other two readings, give the
   command that would settle it, and say which answer each result would give.
-- **`running` equals `capable` at the PCIe floor.** `1.0x1` in both columns is
+- **`running` equals `capable` at the PCIe floor.** `Gen1x1` in both columns is
   the lowest value the pair can hold. A figure carries what it is worth where
-  the width allows, so the reader may see `1.0x1 (0.25 GB/s)`; match on the
+  the width allows, so the reader may see `Gen1x1 (0.25 GB/s)`; match on the
   figure, which is there either way. Devices that negotiated a real link report
   a `capable` above their `running` wherever the two differ, so a device pinned
   at the floor in both has not negotiated anything.

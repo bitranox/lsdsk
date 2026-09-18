@@ -24,10 +24,11 @@ from lsdsk.domain.models import pcie_bandwidth_gbps, pcie_generation
 
 SKILL = Path(__file__).resolve().parents[1] / "skills" / "lsdsk" / "SKILL.md"
 
-#: A PCIe link figure in either of this tool's two spellings, with or without the
-#: blank that used to sit inside it: the marketing form (``Gen4x4``) and the
-#: decimal one (``3.0x4``). The optional space is the whole point - a figure
-#: written with one is exactly what this test exists to catch.
+#: A PCIe link figure as the tool writes it (``Gen4x4``) AND in the two forms it
+#: does not: the decimal spelling (``3.0x4``) and either of them opened up with a
+#: blank. Matching what the tool cannot print is the whole point - a figure the
+#: skill quotes in a form no reader will find is what this test exists to catch,
+#: and a pattern that matched only the right form would call it absent instead.
 _FIGURE = re.compile(r"\b(?:Gen(?P<gen>\d+)|(?P<dec>\d+)\.0)\s?x(?P<width>\d+)\b")
 
 #: Every generation this tool knows how to price, so a quoted figure can be
@@ -76,9 +77,11 @@ def test_every_link_figure_the_skill_quotes_is_one_a_formatter_produces() -> Non
         assert gtps is not None, f"line {line}: {text!r} names generation {generation}, which this tool cannot price"
         assert pcie_generation(gtps) == generation, f"line {line}: {text!r} is not a generation this tool knows"
 
-        drawn = (
-            theme.format_pcie_generation(gtps, width) if match.group("gen") else theme.format_pcie_decimal(gtps, width)
-        )
+        # One formatter, whichever spelling the skill used: a quoted figure in
+        # the decimal form is exactly the drift this asserts against, so it must
+        # be measured against what the tool prints rather than against the
+        # formatter that would have produced it.
+        drawn = theme.format_pcie_generation(gtps, width)
         assert drawn == text, f"line {line}: the skill quotes {text!r}; the tool prints {drawn!r}"
 
 

@@ -422,25 +422,6 @@ def format_pcie_generation(speed_gtps: float | None, width: int | None) -> str:
     return "-" if generation is None or width is None else f"Gen{generation}x{width}"
 
 
-def format_pcie_decimal(speed_gtps: float | None, width: int | None) -> str:
-    """Render a PCIe link the way a specification sheet writes it.
-
-    The spelled-out form, for a device row that names a generation the way a
-    specification sheet does: ``3.0x8``. Closed like
-    :func:`format_pcie_generation` and for the same reason; the PROSE form that
-    follows the word PCIe keeps its blank and lives in the domain, because a
-    sentence is not a column.
-
-    Example:
-        >>> format_pcie_decimal(8.0, 8)
-        '3.0x8'
-        >>> format_pcie_decimal(8.0, None)
-        '-'
-    """
-    generation = pcie_generation(speed_gtps)
-    return "-" if generation is None or width is None else f"{generation}.0x{width}"
-
-
 def format_temperature(
     celsius: int | None,
     warning: int | None = None,
@@ -590,9 +571,9 @@ def hop_link_cells(
 
     Example:
         >>> hop_link_cells(PcieLink(8.0, 4, 8.0, 4))
-        (('3.0x4', ''), ('3.0x4', ''))
+        (('Gen3x4', ''), ('Gen3x4', ''))
         >>> hop_link_cells(PcieLink(8.0, 4, 16.0, 4), bandwidth=True)
-        (('4.0x4 (7.88 GB/s)', ''), ('3.0x4 (3.94 GB/s)', ''))
+        (('Gen4x4 (7.88 GB/s)', ''), ('Gen3x4 (3.94 GB/s)', ''))
         >>> hop_link_cells(PcieLink(), capability_present=False)
         (('legacy', ''), ('legacy', ''))
         >>> hop_link_cells(PcieLink(), capability_present=False, bandwidth=True)
@@ -600,12 +581,12 @@ def hop_link_cells(
         >>> hop_link_cells(PcieLink(), capability_present=None)[0] == (NOT_READ, STYLE_UNKNOWN)
         True
         >>> hop_link_cells(PcieLink(current_speed_gtps=16.0, current_width=2))[1]
-        ('4.0x2', '')
+        ('Gen4x2', '')
         >>> hop_link_cells(PcieLink(current_speed_gtps=16.0, current_width=2))[0] == (NOT_READ, STYLE_UNKNOWN)
         True
     """
-    capable = format_pcie_decimal(link.max_speed_gtps, link.max_width)
-    running = format_pcie_decimal(link.current_speed_gtps, link.current_width)
+    capable = format_pcie_generation(link.max_speed_gtps, link.max_width)
+    running = format_pcie_generation(link.current_speed_gtps, link.current_width)
     if bandwidth:
         # Each figure with ITS OWN throughput: the capable link's from the
         # maximum, the running link's from what was negotiated. Crossing them
@@ -711,11 +692,11 @@ def hop_legend(drawn: Iterable[str]) -> str:
         nothing to explain.
 
     Example:
-        >>> hop_legend(["3.0x4", NOT_READ])
+        >>> hop_legend(["Gen3x4", NOT_READ])
         '- = not read'
         >>> hop_legend([NOT_READ, LEGACY])
         '- = not read, legacy = no PCIe capability'
-        >>> hop_legend(["3.0x4", "1.0x1"])
+        >>> hop_legend(["Gen3x4", "Gen1x1"])
         ''
     """
     seen = set(drawn)

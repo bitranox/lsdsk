@@ -177,7 +177,7 @@ def test_a_port_the_drive_could_really_use_is_still_named() -> None:
 
     assert len(capped) == 1
     assert capped[0].action is not None
-    assert "Freeing a PCIe 5.0x8 port would take this link to 7.88 GB/s" in capped[0].action
+    assert "Freeing a PCIe Gen5x8 port would take this link to 7.88 GB/s" in capped[0].action
 
 
 def with_a_second_namespace(capture: dict[str, Any]) -> dict[str, Any]:

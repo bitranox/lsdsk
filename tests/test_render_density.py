@@ -574,7 +574,7 @@ def test_the_tree_starts_at_the_board_that_carries_the_fabric() -> None:
     assert "1 root complex" in board, board
     assert "0000:00" in board, board
     # This board's own root ports publish PCIe 5.0 x8, so the line may say so.
-    assert "5.0x8" in board, board
+    assert "Gen5x8" in board, board
     assert f"{len([node for node in machine.pci_tree if not node.is_root])} PCI devices" in board, board
     assert lines.index(board) < min(index for index, line in enumerate(lines) if DeviceLine.search(line)), (
         "the board line sits below the devices it carries"
@@ -740,7 +740,7 @@ def test_the_header_names_exactly_the_columns_the_rows_draw() -> None:
     promise about what sits beneath it.
 
     Driven on a hand-built device whose link was READ, so the hop text starts
-    `3.0x4` and cannot be confused with anything else on the row. A capture
+    `Gen3x4` and cannot be confused with anything else on the row. A capture
     whose hops are all the dash symbol cannot answer this question at all: `-`
     also occurs in the tree glyph `|-`, so "the row drew a hop" would be true
     at every width, which is how this test first passed while proving nothing.
@@ -774,7 +774,7 @@ def test_the_header_names_exactly_the_columns_the_rows_draw() -> None:
         node, _level = fabric.drawn()[0]
         # Matches BOTH hop tiers: the narrow figure is a prefix of the wide
         # one, so this asks "did the row draw a hop" without caring which.
-        drew_hops = "3.0x4" in fabric.row(node, ()).plain
+        drew_hops = "Gen3x4" in fabric.row(node, ()).plain
         seen[drew_hops] += 1
 
         assert ("capable" in header.plain) == drew_hops, f"at {width}: {header.plain!r}"
