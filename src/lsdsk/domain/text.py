@@ -37,7 +37,7 @@ from pydantic import AfterValidator
 # hide a difference; it is simply removed with the rest.
 _UNSAFE = frozenset(range(0x00, 0x20)) | {0x7F} | frozenset(range(0x80, 0xA0))
 
-__all__ = ["DeviceText", "OptionalDeviceText", "device_text"]
+__all__ = ["DeviceText", "OptionalDeviceText", "device_text", "first_reported"]
 
 
 def device_text(value: str) -> str:
@@ -80,6 +80,40 @@ def _clean_optional(value: str | None) -> str | None:
         '13.00[5m'
     """
     return None if value is None else device_text(value)
+
+
+def first_reported(*values: str | None) -> str | None:
+    """Return the first of several spellings the machine actually reported.
+
+    A drive's model, serial and firmware are each published in more than one
+    place - a decoded IDENTIFY structure, the platform's own text, sometimes a
+    second decoder - and the rule is the same everywhere: take the first that
+    says anything. Written out at the call site it is a chain of ``or`` around a
+    conditional per candidate, and it was written out three times, once per
+    builder, which is three places for one rule to drift.
+
+    Emptiness is judged AFTER cleaning, so a field holding only control
+    characters or spaces counts as unreported and the next candidate is used.
+
+    Args:
+        values: The candidate spellings, best first.
+
+    Returns:
+        The first candidate with something left after cleaning, or ``None``.
+
+    Example:
+        >>> first_reported(None, "  ", "Samsung SSD 870 EVO")
+        'Samsung SSD 870 EVO'
+        >>> first_reported(None, "\x1b\x1b") is None
+        True
+    """
+    for value in values:
+        if value is None:
+            continue
+        cleaned = device_text(value)
+        if cleaned:
+            return cleaned
+    return None
 
 
 #: A string field carrying text the hardware chose, cleaned on construction.

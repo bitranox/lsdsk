@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import enum
+
 import pytest
 
 from lsdsk.domain import enums as enums_module

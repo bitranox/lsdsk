@@ -287,16 +287,30 @@ def _break_cycles(parents: dict[str, str | None]) -> None:
     however the walk enters it, and the cut node falls to its own bus's root.
     Every node stays in the output; only the impossible edge is dropped.
     """
+    # Carried across the calls rather than rebuilt inside each. A node already
+    # proven to reach a root still does after an edge elsewhere is cut, so
+    # re-walking the cleared prefix on every cycle only costs time - quadratic
+    # in the node count for a capture holding many small disjoint cycles, which
+    # a replay file supplies for free.
+    resolved: set[str] = set()
     while True:
-        cycle = _first_cycle(parents)
+        cycle = _first_cycle(parents, resolved)
         if cycle is None:
             return
         parents[max(cycle)] = None
 
 
-def _first_cycle(parents: Mapping[str, str | None]) -> frozenset[str] | None:
-    """Return the members of the first parent cycle, or ``None``."""
-    resolved: set[str] = set()
+def _first_cycle(parents: Mapping[str, str | None], resolved: set[str]) -> frozenset[str] | None:
+    """Return the members of the first parent cycle, or ``None``.
+
+    Args:
+        parents: Each node's parent address, or ``None`` at a root.
+        resolved: Nodes already proven to reach a root, added to as the walk
+            proves more. Shared across calls so each node is walked once.
+
+    Returns:
+        The members of the first cycle found, or ``None`` when none remains.
+    """
     for start in sorted(parents):
         if start in resolved:
             continue

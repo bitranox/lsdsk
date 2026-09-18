@@ -30,7 +30,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import NamedTuple
 
-from ...textfile import read_text_bounded
+from ...textfile import MAX_INPUT_BYTES, read_text_bounded
 
 # Ships with the package, so a machine with no hwdata installed - every Windows
 # one - still resolves a controller to the same name Linux gives it.
@@ -154,17 +154,29 @@ def read_bundled_pci_ids(path: Path = BUNDLED_PCI_IDS) -> str | None:
         path: The compressed database to read.
 
     Returns:
-        The decompressed contents, or ``None`` when the file is absent or
-        unreadable.
+        The decompressed contents, or ``None`` when the file is absent,
+        unreadable, or larger than a database plausibly is.
+
+    The system copy beside this one goes through the shared byte bound, and this
+    read did not: it decompressed whatever it was handed, in full, in memory. The
+    bundled file is a package asset and so is trusted, but the path is a
+    parameter, and compression is exactly where a bound stops being optional -
+    a few hundred kilobytes can expand to gigabytes. Reading through
+    ``gzip.open`` with a ceiling bounds the DECOMPRESSED size without ever
+    holding more than that.
 
     Example:
         >>> read_bundled_pci_ids(Path("/definitely/not/here.gz")) is None
         True
     """
     try:
-        return gzip.decompress(path.read_bytes()).decode("utf-8", errors="replace")
+        with gzip.open(path, "rb") as handle:
+            raw = handle.read(MAX_INPUT_BYTES + 1)
     except (OSError, gzip.BadGzipFile, EOFError):
         return None
+    if len(raw) > MAX_INPUT_BYTES:
+        return None
+    return raw.decode("utf-8", errors="replace")
 
 
 def _database_text() -> str | None:

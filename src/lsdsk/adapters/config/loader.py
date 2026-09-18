@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol
 
 from lib_layered_config import (
     DEFAULT_MAX_PROFILE_LENGTH,
@@ -181,12 +181,38 @@ def _cache_clear() -> None:
     _get_config_impl.cache_clear()
 
 
-# Attach cache_clear method to satisfy ConfigLoaderProtocol.
-# Required because lru_cache's cache_clear isn't visible to static type checkers
-# when the decorated function is later cast to a Protocol type. The type: ignore
-# is necessary since we're dynamically adding an attribute to a function object.
-_get_config.cache_clear = _cache_clear  # type: ignore[attr-defined]
-get_config: ConfigLoaderProtocol = cast("ConfigLoaderProtocol", _get_config)
+class _ConfigLoader:
+    """A callable with a ``cache_clear``, which is what the protocol asks for.
+
+    The pair used to be built by assigning ``cache_clear`` onto the function
+    object and casting the result, which needed a ``type: ignore`` because a
+    function has no such attribute to a type checker. A class that declares both
+    members satisfies :class:`ConfigLoaderProtocol` structurally, so neither the
+    cast nor the suppression is needed and the shape is checked rather than
+    asserted.
+    """
+
+    def __call__(
+        self, *, profile: str | None = None, start_dir: str | None = None, dotenv_path: str | None = None
+    ) -> Config:
+        """Load the merged configuration.
+
+        Args:
+            profile: Environment profile to layer in, if any.
+            start_dir: Directory the upward ``.env`` search starts from.
+            dotenv_path: An explicit ``.env`` file, skipping that search.
+
+        Returns:
+            The merged configuration.
+        """
+        return _get_config(profile=profile, start_dir=start_dir, dotenv_path=dotenv_path)
+
+    def cache_clear(self) -> None:
+        """Drop the cached configuration so the next call re-reads it."""
+        _cache_clear()
+
+
+get_config: ConfigLoaderProtocol = _ConfigLoader()
 
 
 __all__ = [

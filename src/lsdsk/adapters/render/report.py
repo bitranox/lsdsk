@@ -465,7 +465,9 @@ def _controller_line(controller: Controller, severity: Severity | None) -> Text:
         # The same three colours the marker above already took from this table;
         # spelled out as a chain here, they were a second place for the mapping
         # to drift from.
-        style = theme.SEVERITY_STYLES.get(severity, theme.STYLE_AT_CAPABILITY) if severity else theme.STYLE_AT_CAPABILITY
+        style = (
+            theme.SEVERITY_STYLES.get(severity, theme.STYLE_AT_CAPABILITY) if severity else theme.STYLE_AT_CAPABILITY
+        )
         text = f"  PCIe {theme.format_pcie_generation(link.current_speed_gtps, link.current_width)}"
         # Only spell out the capability when the link is not already at it;
         # "PCIe Gen4x4 of Gen4x4" is noise on a card that is running perfectly.

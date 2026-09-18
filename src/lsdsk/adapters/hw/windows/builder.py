@@ -30,12 +30,12 @@ from ....domain.models import (
     PortChild,
     representative_occupant,
 )
+from ....domain.text import device_text, first_reported
 from ..decode import pciids
 from ..decode.ata_identify import decode_identify
 from ..decode.ata_smart import decode_health
 from ..decode.captured import decode_base64, parse_int
 from ..decode.nvme import decode_identify_controller, decode_smart_log
-from ....domain.text import device_text
 from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble
 from ..linux.builder import controller_kind_of, parse_pcie_speed
@@ -301,19 +301,27 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
         elif rotating is not None:
             kind = DiskKind.HDD if rotating else DiskKind.SSD
 
-        model = (nvme_identity.model if nvme_identity else None) or (identity.model if identity else None)
+        model = first_reported(
+            nvme_identity.model if nvme_identity else None,
+            identity.model if identity else None,
+            device.model,
+        )
         node = _node_name(entry, path)
         disks.append(
             Disk(
                 node=node,
                 path=node,
-                model=model or device.model or "unknown",
-                serial=(nvme_identity.serial if nvme_identity else None)
-                or (identity.serial if identity else None)
-                or device.serial,
-                firmware=(nvme_identity.firmware if nvme_identity else None)
-                or (identity.firmware if identity else None)
-                or device.rev,
+                model=model or "unknown",
+                serial=first_reported(
+                    nvme_identity.serial if nvme_identity else None,
+                    identity.serial if identity else None,
+                    device.serial,
+                ),
+                firmware=first_reported(
+                    nvme_identity.firmware if nvme_identity else None,
+                    identity.firmware if identity else None,
+                    device.rev,
+                ),
                 size_bytes=entry.size_bytes,
                 kind=kind,
                 bus=bus,

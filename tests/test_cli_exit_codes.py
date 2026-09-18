@@ -153,3 +153,37 @@ def test_exit_two_means_a_usage_error_not_specifically_a_missing_file(
     result: Result = cli_runner.invoke(cli_mod.cli, argv, obj=production_factory)
 
     assert result.exit_code == 2
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("argv", [["findings"], ["topology"], []], ids=["findings", "topology", "bare"])
+def test_a_diagnostic_run_exits_13_when_the_hardware_read_is_refused(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    monkeypatch: pytest.MonkeyPatch,
+    argv: list[str],
+) -> None:
+    """A refused read is "could not run", and it says so with the privilege code.
+
+    ``load_inventory`` converts a ``PermissionError`` escaping the reader into
+    exit 13, and every diagnostic command goes through it. Nothing pinned that,
+    and the shipped skill told an agent the opposite - that a diagnostic run
+    never exits 13 and degrades instead - so error handling written against the
+    documentation branched on a code this path really does produce.
+
+    Degrading IS what happens for a field the reader could not read: those are
+    swallowed per attribute and reported as ``-`` with a line in ``skipped``.
+    This is the other case, where the read as a whole was refused and there is
+    no inventory to degrade.
+    """
+    from lsdsk.adapters.hw import snapshot as snapshot_adapter
+
+    def refuse() -> dict[str, Any]:
+        raise PermissionError(13, "Permission denied", "/sys/class/nvme")
+
+    monkeypatch.setattr(snapshot_adapter, "read_current_machine", refuse)
+
+    result: Result = cli_runner.invoke(cli_mod.cli, argv, obj=production_factory, color=False)
+
+    assert result.exit_code == 13, f"{argv or 'bare'}: exited {result.exit_code}"
+    assert "Permission denied" in result.output

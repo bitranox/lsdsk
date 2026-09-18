@@ -88,7 +88,9 @@ def _surfaces(machine: Inventory) -> list[tuple[str, tuple[Column, ...], list[di
         (
             "the controllers table",
             tables.CONTROLLER_COLUMNS,
-            _texts([tables.controller_table_row(c, machine, findings, bandwidth=True).cells for c in machine.controllers]),
+            _texts(
+                [tables.controller_table_row(c, machine, findings, bandwidth=True).cells for c in machine.controllers]
+            ),
             _texts([tables.controller_table_row(c, machine, findings).cells for c in machine.controllers]),
         ),
         (

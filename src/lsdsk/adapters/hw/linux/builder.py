@@ -28,6 +28,7 @@ from ....domain.models import (
     PortChild,
     representative_occupant,
 )
+from ....domain.text import device_text, first_reported
 from ..decode import pciids
 from ..decode.ahci import decode_capabilities
 from ..decode.ata_identify import AtaIdentity, decode_identify, decode_vpd_ata_information
@@ -35,7 +36,6 @@ from ..decode.ata_smart import decode_health
 from ..decode.captured import decode_base64, parse_int
 from ..decode.nvme import decode_identify_controller, decode_smart_log
 from ..decode.pciids import Database
-from ....domain.text import device_text
 from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble, port_kind_of
 from .capture import AtaBlobs, NvmeBlobs, NvmeClassEntry
@@ -514,9 +514,9 @@ def _build_nvme_disk(node: str, block: BlockEntry, capture: LinuxCapture) -> Dis
     return Disk(
         node=node,
         path=f"/dev/{node}",
-        model=(identity.model if identity else None) or device_text(published.model or "") or node,
-        serial=(identity.serial if identity else None) or device_text(published.serial or "") or None,
-        firmware=(identity.firmware if identity else None) or device_text(published.firmware_rev or "") or None,
+        model=first_reported(identity.model if identity else None, published.model) or node,
+        serial=first_reported(identity.serial if identity else None, published.serial),
+        firmware=first_reported(identity.firmware if identity else None, published.firmware_rev),
         wwn=_stable_identifier(block),
         size_bytes=_size_bytes(block, None),
         kind=DiskKind.SSD,
@@ -564,9 +564,9 @@ def _build_ata_disk(node: str, block: BlockEntry, capture: LinuxCapture) -> Disk
     return Disk(
         node=node,
         path=f"/dev/{node}",
-        model=(identity.model if identity else None) or device_text(device.model or "") or node,
-        serial=identity.serial if identity else None,
-        firmware=(identity.firmware if identity else None) or device_text(device.rev or "") or None,
+        model=first_reported(identity.model if identity else None, device.model) or node,
+        serial=first_reported(identity.serial if identity else None),
+        firmware=first_reported(identity.firmware if identity else None, device.rev),
         wwn=_stable_identifier(block),
         size_bytes=_size_bytes(block, identity),
         kind=kind,

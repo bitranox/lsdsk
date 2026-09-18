@@ -92,7 +92,6 @@ class DisplaySettings(DomainModel, frozen=True):
         'storage-only'
     """
 
-
     piped_width: int = DEFAULT_PIPED_WIDTH
     summary_limit: int = DEFAULT_SUMMARY_LIMIT
     wear_row_floor_percent: int = DEFAULT_WEAR_ROW_FLOOR_PERCENT

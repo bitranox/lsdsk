@@ -32,7 +32,7 @@ Contents
 from __future__ import annotations
 
 import sys
-from typing import IO, Any, Final, TextIO
+from typing import IO, Any, Final, TextIO, cast
 
 import rich_click as click
 
@@ -195,11 +195,18 @@ class _SafeWriter:
         return encoding if isinstance(encoding, str) else None
 
 
-def safe_stream(stream: TextIO | None = None) -> Any:  # rich accepts any writer with this shape
+def safe_stream(stream: TextIO | None = None) -> IO[str]:
     """Wrap a stream so unencodable text degrades instead of raising.
 
     Use for a writer handed to a third-party renderer. For this project's own
     output use :func:`echo` instead.
+
+    The return is typed as the ``IO[str]`` rich's ``Console(file=...)`` declares,
+    rather than left as ``Any``. ``_SafeWriter`` implements the four members
+    rich actually calls - ``write``, ``flush``, ``isatty``, ``encoding`` - and
+    nothing else of the ABC, which is why the type has to be asserted here
+    rather than inferred; asserting it once at this boundary is what keeps the
+    call site typed, where ``Any`` erased the whole console.
 
     Parameters
     ----------
@@ -210,10 +217,10 @@ def safe_stream(stream: TextIO | None = None) -> Any:  # rich accepts any writer
 
     Returns
     -------
-    Any
+    IO[str]
         A writer with ``write``/``flush``/``isatty``/``encoding``.
     """
-    return _SafeWriter(stream)
+    return cast("IO[str]", _SafeWriter(stream))
 
 
 __all__ = [

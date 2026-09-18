@@ -39,7 +39,6 @@ class HistorySettings(DomainModel, frozen=True):
         True
     """
 
-
     enabled: bool = True
     path: Path
     max_samples_per_drive: int = MAX_SAMPLES_PER_DRIVE
