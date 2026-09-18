@@ -66,9 +66,12 @@ produced it, on every command that produces data except `report`, whose
 machine-readable form is `lsdsk snapshot`. Exit codes are `0` for nothing
 actionable and `1` when a warning or critical was found, so it drops straight
 into a monitoring check. Errors use sysexits conventions rather than a single
-code: `13` when something needs privilege this run lacks, `22` for a
-configuration section or a `--profile` name the configuration library
-rejects, `78` for a file that is not a
+code: `13` when something needs privilege this run lacks - a `config-deploy`
+target that needs root, and equally a diagnostic run whose hardware read the
+kernel refuses outright; `22` for an argument the tool cannot act on, which is a
+configuration section or a `--profile` name the configuration library rejects,
+and also an option that does not apply to the command, such as `snapshot` given
+`--replay`; `78` for a file that is not a
 snapshot this version reads or a platform with no hardware reader. Treat
 anything above `1` as "did not run".
 

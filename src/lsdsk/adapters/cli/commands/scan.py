@@ -562,8 +562,12 @@ def cli_report(ctx: click.Context, replay: Path | None) -> None:
     all present a terminal on both ends - so anything unattended should name the
     page rather than rely on being recognised.
 
-    No `--format`: this is every section at once, and the machine-readable form
-    of that is `lsdsk snapshot`, which captures the reading itself.
+    No `--format`. A machine asking for this same machine asks any section
+    command with `--format json`: the envelope carries the whole inventory and
+    every finding whichever section is named, so `lsdsk findings --format json`
+    already IS this page's structured form. `lsdsk snapshot` is the other
+    machine-readable form and a different thing - the raw reading, for replaying
+    elsewhere, not the analysis.
     """
     with lib_log_rich.runtime.bind(job_id="cli-report", extra={"command": "report"}):
         thresholds, display = resolve_tunables(ctx)

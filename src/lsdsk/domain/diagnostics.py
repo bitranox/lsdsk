@@ -97,6 +97,14 @@ def format_pcie_sentence(speed_gtps: float | None, width: int | None) -> str:
     place that spelling is written, and the two are held together by a test in
     ``tests/test_one_spelling_for_a_generation.py`` rather than by convention.
 
+    Args:
+        speed_gtps: The link's speed in GT/s per lane, or ``None`` if unread.
+        width: The link's negotiated lane count, or ``None`` if unread.
+
+    Returns:
+        The figure as a sentence writes it, or ``PCIe unknown`` when either half
+        was not read - never a half-figure, which would read as a measurement.
+
     Example:
         >>> format_pcie_sentence(8.0, 8)
         'PCIe Gen3x8'
@@ -1506,6 +1514,13 @@ def count_by_severity(findings: tuple[Finding, ...]) -> dict[Severity, int]:
 
 def is_storage_controller(kind: ControllerKind) -> bool:
     """Whether a controller kind is one that can carry disks.
+
+    Args:
+        kind: The controller kind to judge.
+
+    Returns:
+        True for the kinds that carry drives. ``UNKNOWN`` is false, because a
+        kind nobody read is not evidence of a storage controller.
 
     Example:
         >>> is_storage_controller(ControllerKind.SAS)

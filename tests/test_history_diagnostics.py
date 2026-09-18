@@ -191,6 +191,40 @@ def test_a_trend_moves_a_severity_by_at_most_one_step(base: Severity, verdict: T
 
 
 @pytest.mark.os_agnostic
+@pytest.mark.parametrize("base", [Severity.HINT, Severity.WARNING, Severity.CRITICAL])
+@pytest.mark.parametrize(
+    "verdict",
+    [TrendVerdict.FIRST_SAMPLE, TrendVerdict.TOO_CLOSE, TrendVerdict.RESET],
+)
+def test_a_refusing_verdict_leaves_the_finding_exactly_as_it_was(base: Severity, verdict: TrendVerdict) -> None:
+    """The three refusals must change nothing at all, not merely change it little.
+
+    "History refines, never invents" is the rule, and the refusing verdicts are
+    where it is load-bearing: a counter that RESET, a pair of samples too close
+    to support a rate, and a first sample are all evidence that could not show a
+    rise. The test above covers the two verdicts that DO move a severity, so
+    nothing exercised the three that must not - a reset counter never reached
+    ``refine`` in the whole suite.
+
+    Asserted on the whole finding rather than on its severity, because inventing
+    a detail line or an action from evidence this thin is the same fault as
+    inventing a severity.
+    """
+    trend = Trend(
+        kind=CounterKind.CRC_ERRORS,
+        verdict=verdict,
+        latest=100,
+        delta=0,
+        span_hours=200,
+        per_hour=None,
+        expected_from_lifetime=None,
+    )
+    finding = Finding(severity=base, subject="/dev/sda", title="something", detail="unchanged", action=None)
+
+    assert refine(finding, trend) == finding, f"{verdict.value} rewrote a finding it has no evidence for"
+
+
+@pytest.mark.os_agnostic
 def test_without_a_trend_a_severity_never_moves() -> None:
     """The control: refine must be a no-op where there is nothing measured."""
     for base in (Severity.HINT, Severity.WARNING, Severity.CRITICAL):

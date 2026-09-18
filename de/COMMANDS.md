@@ -67,8 +67,12 @@ maschinenlesbare Form `lsdsk snapshot` ist. Die Exit-Codes sind `0`, wenn nichts
 zu tun ist, und `1`, wenn eine Warnung oder ein kritischer Befund vorliegt, es
 passt also unmittelbar in eine Überwachungsprüfung. Fehler folgen den
 sysexits-Konventionen statt einem einzigen Code: `13`, wenn etwas ein Recht
-braucht, das dieser Lauf nicht hat, `22` für einen Konfigurationsabschnitt oder
-einen `--profile`-Namen, den die Konfigurationsbibliothek ablehnt, `78` für eine
+braucht, das dieser Lauf nicht hat - ein `config-deploy`-Ziel, das root
+verlangt, und ebenso ein diagnostischer Lauf, dessen Hardwarelesung der Kernel
+rundweg verweigert; `22` für ein Argument, mit dem das Werkzeug nichts anfangen
+kann, also einen Konfigurationsabschnitt oder einen `--profile`-Namen, den die
+Konfigurationsbibliothek ablehnt, und ebenso eine Option, die zum Befehl nicht
+passt, etwa `snapshot` mit `--replay`; `78` für eine
 Datei, die keine von dieser Fassung lesbare Aufnahme ist, oder für eine
 Plattform ohne Hardwareleser. Behandeln Sie alles über `1` als "ist nicht
 gelaufen".

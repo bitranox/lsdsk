@@ -346,6 +346,10 @@ def test_every_key_documented_in_the_shipped_toml_exists_on_its_model(section: s
             documented |= {str(key) for key in cast("dict[str, object]", table)}
     assert documented, f"[{section}] is not shipped in any default file"
     assert documented <= known, f"[{section}] documents keys no model has: {documented - known}"
+    # The other direction, which the docstring has always claimed and the test
+    # did not check: a field added to a model with no line in any shipped file
+    # is undocumented, and a reader looking for the knob does not find it.
+    assert known <= documented, f"[{section}] has model fields no default file ships: {known - documented}"
 
 
 @pytest.mark.os_agnostic

@@ -373,6 +373,30 @@ async def test_number_keys_switch_pages(key: str, expected: str) -> None:
 
 
 @pytest.mark.os_agnostic
+def test_the_pages_sit_in_the_order_the_number_keys_promise() -> None:
+    """The page sequence, pinned against a written list rather than its own source.
+
+    ``PAGES`` is ``tuple(CliCommand)``, so every test that derives what it
+    expects from ``PAGES`` or from the enum agrees with whatever the enum says -
+    including after somebody reorders it, which silently moves every number key.
+    This list is the independent reference: changing the order has to be a
+    decision made here too.
+
+    It is deliberately NOT the printed page's order, which ends with findings.
+    """
+    assert [page.value for page in LsdskApp.PAGES] == [
+        "topology",
+        "controllers",
+        "disks",
+        "health",
+        "smart",
+        "findings",
+        "slots",
+        "trend",
+    ]
+
+
+@pytest.mark.os_agnostic
 @pytest.mark.asyncio
 async def test_tab_cycles_through_every_page_and_wraps() -> None:
     """Verify tab reaches each page in turn and returns to the first."""

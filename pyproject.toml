@@ -241,7 +241,10 @@ source = ["src/lsdsk"]
 omit = [
   "tests/*",
 ]
-fail_under = 80
+# Measured 96.4% line / 89.6% branch on this tree. A floor of 80 could not see a
+# sixteen-point regression, which is most of the suite going quiet; 90 leaves room
+# for the per-OS variation a three-platform matrix produces and still bites.
+fail_under = 90
 show_missing = true
 
 [tool.coverage.json]

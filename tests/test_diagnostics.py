@@ -196,6 +196,38 @@ def test_when_the_only_faster_port_is_not_a_slot_it_is_not_offered() -> None:
 
 
 @pytest.mark.os_agnostic
+def test_a_port_whose_capability_was_never_read_is_not_offered_as_a_move() -> None:
+    """Rule 1: unknown capability is not unlimited capability.
+
+    A legacy PCI bridge publishes no speed and no width. Read as "no ceiling",
+    every such bridge becomes the fastest slot in the machine and the tool sends
+    somebody to move a card into a port that is slower than the one it is in.
+
+    The sibling test above covers Rule 2, the port with no physical connector,
+    and does it with a FULLY KNOWN link - so nothing exercised this rule. Here
+    the connector is confirmed present and the port is free, which removes every
+    other reason to refuse it: only the unread capability is left.
+    """
+    capped = controller(
+        link=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8),
+        upstream=PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8),
+    )
+    unread = PcieSlot(
+        address="0000:00:13.0",
+        link=PcieLink(),
+        occupied=False,
+        connector_present=True,
+    )
+
+    findings = diagnose_controller_link(capped, Inventory(hostname="h", controllers=(capped,), slots=(unread,)))
+
+    assert findings, "the capped controller reported nothing at all, so this asserted nothing"
+    assert findings[0].severity is Severity.HINT
+    assert "capped by the mainboard" in findings[0].title
+    assert "0000:00:13.0" not in (findings[0].action or ""), "a port nobody measured was offered as a move"
+
+
+@pytest.mark.os_agnostic
 def test_when_a_wasteful_card_holds_a_faster_slot_a_swap_is_proposed() -> None:
     """Verify a card that cannot use its slot is offered as a trade."""
     capped = controller(

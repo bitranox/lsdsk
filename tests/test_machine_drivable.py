@@ -7,6 +7,7 @@ A human-formatted line plus exit 0 collapses "it ran and the answer is no" into
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from typing import TYPE_CHECKING, Any, cast
@@ -21,7 +22,10 @@ if TYPE_CHECKING:
 
 # Commands with no data to structure: an interactive app, and the two template
 # vehicles the traceback and logging tests drive through the real entry point.
-NO_STRUCTURED_MODE = {"tui", "fail", "logdemo"}
+# `report` is the whole page for a reader; a machine asking for the same machine
+# asks a section command, whose envelope already carries all of it, or captures
+# the raw reading with `snapshot`.
+NO_STRUCTURED_MODE = {"tui", "fail", "logdemo", "report"}
 
 
 def subcommands() -> list[str]:
@@ -54,9 +58,55 @@ def test_every_data_producing_command_offers_a_structured_mode() -> None:
             errors="replace",
             check=False,
         ).stdout
-        if "--format" not in help_text:
+        if not _offers_the_option(help_text, "--format"):
             missing.append(command)
     assert not missing, f"no structured mode: {missing}"
+
+
+def _offers_the_option(help_text: str, option: str) -> bool:
+    """Whether the help lists ``option`` as an option, rather than merely saying it.
+
+    A bare substring search over the whole help text is satisfied by the
+    command's own DESCRIPTION, and a command that explains why it has no
+    ``--format`` says ``--format`` doing so. That is what happened here: the
+    check passed for `report` on the strength of the sentence documenting the
+    gap it exists to catch, for the whole time `report` was a subcommand.
+
+    Args:
+        help_text: The command's ``--help`` output.
+        option: The option to look for, with its dashes.
+
+    Returns:
+        True when a line of the options block begins with that option. The box
+        drawing rich-click puts around the block is stripped first, so the test
+        does not depend on the frame.
+    """
+    for line in help_text.splitlines():
+        # Strip whatever frames the line before the option starts: rich-click
+        # draws a box, and its vertical is not the ASCII pipe, so stripping that
+        # one character found nothing and reported every command as missing.
+        stripped = re.sub(r"^[^A-Za-z0-9-]+", "", line)
+        if not stripped.startswith(option):
+            continue
+        # The option has to END here. Without this, "--format-ish" answers for
+        # "--format", which is how a near-miss name would satisfy the check.
+        if len(stripped) == len(option) or not (stripped[len(option)].isalnum() or stripped[len(option)] == "-"):
+            return True
+    return False
+
+
+@pytest.mark.os_agnostic
+def test_the_option_check_can_tell_an_option_from_a_sentence_about_one() -> None:
+    """The control for the check above, which once could not fail.
+
+    Both halves are needed: a matcher that never finds anything would report
+    every command as missing, and a matcher that finds anything would report
+    none. The second case is the one that shipped.
+    """
+    assert _offers_the_option("Options:\n  --format  [human|json]  Pick a form\n", "--format")
+    assert _offers_the_option("| --format   [human|json]   Human-readable output, or JSON |", "--format")
+    assert not _offers_the_option("No `--format`: this is every section at once.\n", "--format")
+    assert not _offers_the_option("  --format-ish  something else\n", "--format")
 
 
 # A parametrised test over ["info", "snapshot", "record",

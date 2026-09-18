@@ -17,6 +17,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   value carrying a control character cannot be constructed, and a new builder,
   platform or field has nothing to remember. The Windows name fields and the
   `pci.ids` text are covered by the same move.
+- **A diagnostic run's exit code is documented as the one it produces.** A
+  hardware read the kernel refuses outright leaves `13`, and both the shipped
+  skill and `COMMANDS.md` said a diagnostic run never does. Exit `22` likewise
+  covers any argument the command cannot act on, not only a configuration
+  section or profile name.
 - **A device unplugged mid-scan no longer aborts the scan.** The four sysfs
   directory walks in the Linux reader were bare while every per-attribute read
   around them already swallowed `OSError`, so a hot-unplug between the listing
@@ -25,6 +30,13 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
+- **Rules are now tested on every surface they are claimed to hold for.** The
+  one-spelling rule names both trees and only the new one was swept; the
+  bandwidth-surrender rule names four tables and only one was swept; the detail
+  panel's capacity exclusion was asserted by omission. Each widening was proved
+  by mutating the code and requiring the test to fail. One test that compared an
+  enum against itself, and so could not fail at all, is deleted; the StrEnum
+  string form that moves between Python versions is pinned for all thirteen.
 - **The two settings objects are validated values like every other.**
   `HistorySettings` and `DisplaySettings` derive from `DomainModel`, so they
   refuse a field nobody declared and are changed with `with_changes`. Five call

@@ -296,6 +296,14 @@ inventory = snapshot.load(Path("capture.json"))  # or snapshot.collect() for thi
 findings = diagnose(inventory)  # each has .severity, .subject, .title, .detail, .action
 ```
 
+Both calls raise `lsdsk.domain.errors.ConfigurationError` - `load` for a file
+that is unreadable, malformed, or not a snapshot this version parses, and
+`collect` for a platform with no hardware reader, which raises the
+`UnsupportedPlatformError` subclass. `collect` also lets a `PermissionError`
+through when the read is refused outright, which is the exit 13 the CLI leaves.
+Catch `ConfigurationError` and `PermissionError` around either call in anything
+long-running.
+
 `diagnose` returns a tuple and takes two more keyword arguments the CLI fills
 in: `thresholds`, and `history` for the trend rules. Omit them and you get the
 SHIPPED defaults with no history, which is not what the same machine's `lsdsk`
@@ -335,14 +343,14 @@ the hardware says, so never alert on their code. And `1` is also what an
 internal error leaves, so read stderr before treating it as a finding;
 `lsdsk findings --format json` is the unambiguous test.
 
-| Code | Means                                                                                                            |
-|------|------------------------------------------------------------------------------------------------------------------|
-| `0`  | A reporting command found nothing actionable. `record`, `snapshot` and `config-*` exit `0` on success regardless |
-| `1`  | A reporting command found a warning or a critical. An internal error also leaves `1`; see below                  |
-| `2`  | The command line was wrong. See below, this one is misread constantly                                            |
-| `13` | `config-deploy --target app` or `host` without root. A diagnostic run never exits 13: it degrades to `-`         |
-| `22` | A configuration section does not exist, a `--profile` was rejected, or `snapshot` was given `--replay`           |
-| `78` | The file is not a snapshot this version reads, or this platform has no hardware reader                           |
+| Code | Means                                                                                                                                                                                                                                                                               |
+|------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`  | A reporting command found nothing actionable. `record`, `snapshot` and `config-*` exit `0` on success regardless                                                                                                                                                                    |
+| `1`  | A reporting command found a warning or a critical. An internal error also leaves `1`; see below                                                                                                                                                                                     |
+| `2`  | The command line was wrong. See below, this one is misread constantly                                                                                                                                                                                                               |
+| `13` | Something needed privilege this run lacks: `config-deploy --target app` or `host` without root, and equally a diagnostic run whose hardware read the kernel refused outright. A field that merely could not be read is different - it degrades to `-` and names itself in `skipped` |
+| `22` | A configuration section does not exist, a `--profile` was rejected, or `snapshot` was given `--replay`                                                                                                                                                                              |
+| `78` | The file is not a snapshot this version reads, or this platform has no hardware reader                                                                                                                                                                                              |
 
 **`2` does not mean the file was missing.** It is the CLI framework's usage
 error and an absent `--replay` path is only one of its causes: an unknown
@@ -815,6 +823,15 @@ column, which is what the drive itself publishes: `naa.` for SATA and SAS,
 `eui.` or a namespace `uuid.` for NVMe, and for an NVMe drive that offers
 neither, the kernel's `nvme.<vendor>-<serial>-<model>-<nsid>` fallback. It stays with the drive into whatever
 bay it lands in.
+
+**Take it from `--format json`, not from the printed table.** The `wwn` column is
+capped in both the printed table and the interactive page, because one NVMe
+identifier runs to a hundred characters where the SATA ones beside it run to
+twenty, and left uncapped that single drive pushes nine columns off the page. A
+cut value is MARKED rather than shortened in silence, so a cut is visible if you
+look for the marker - but a value copied out of piped output is a plausible
+identifier that names no drive. `--format json` always carries the whole one, and
+`lsdsk disks --full-wwn` prints it untruncated in the human table.
 
 ## Finding room, and what could move where
 
