@@ -126,15 +126,17 @@ def test_every_structured_mode_actually_emits_the_envelope() -> None:
     the source, because that is the only thing that catches a command whose
     JSON branch was never wired to the envelope at all.
     """
-    from lsdsk.adapters.cli.envelope import ActionEnvelope
+    from lsdsk.adapters.cli.commands.info import InfoResult
+    from lsdsk.adapters.cli.envelope import ActionEnvelope, MappingResult
 
     # Commands that need an argument or would touch the machine's real state are
-    # named with one that does neither.
+    # named with one that does neither, each paired with the result model its
+    # payload is supposed to be.
     invocations = {
-        "config": ["config", "--format", "json"],
-        "info": ["info", "--format", "json"],
+        "config": (["config", "--format", "json"], MappingResult),
+        "info": (["info", "--format", "json"], InfoResult),
     }
-    for command, args in invocations.items():
+    for command, (args, payload_model) in invocations.items():
         completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
             [sys.executable, "-m", "lsdsk", *args], capture_output=True, encoding="utf-8", errors="replace", check=False
         )
@@ -142,9 +144,13 @@ def test_every_structured_mode_actually_emits_the_envelope() -> None:
         missing = {"ok", "command", "data", "skipped"} - set(envelope)
         assert not missing, f"{command} emitted no envelope, missing {sorted(missing)}"
         assert envelope["command"] == command
-        # Parsing it back through the model is what proves the shape is the
-        # contract rather than four keys that happen to have the right names.
+        # The outer shape, and then the payload through the model it is SUPPOSED
+        # to be. The envelope alone cannot carry that second half: ``data`` is
+        # typed as the result base or MappingResult, and MappingResult allows any
+        # extra key, so validating the envelope can never fail on the payload
+        # whatever it holds. Naming the command's own model is what can fail.
         ActionEnvelope.model_validate(envelope)
+        payload_model.model_validate(envelope["data"])
 
 
 @pytest.mark.os_agnostic

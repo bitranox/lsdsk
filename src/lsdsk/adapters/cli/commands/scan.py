@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import lib_log_rich.runtime
 import rich_click as click
 from lib_layered_config import Config
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 from rich.console import Console
 from rich.text import Text
 
@@ -330,12 +330,26 @@ class SnapshotResult(ActionResult):
     """Where a capture was written, and which schema version it carries.
 
     The field is not called ``schema``: that name shadows a BaseModel attribute.
-    The serialisation alias keeps the wire key exactly as it was, because that
-    key is the contract a caller reads.
+    The aliases keep the wire key exactly as it was, because that key is the
+    contract a caller reads.
+
+    Both directions are spelled out so the model can READ the form it WRITES.
+    With a serialisation alias alone the emitted ``{"schema": 1}`` was refused by
+    this model's own validation - ``schema`` is a field it does not declare and
+    the base forbids those, while ``schema_version`` was missing - so the one
+    result model with a renamed wire key was the one that could not be parsed
+    back.
+
+    ``AliasChoices`` rather than ``alias`` plus ``populate_by_name``, which is
+    the obvious spelling and reads identically at runtime: measured on pyright
+    1.1.414, populate_by_name is not honoured in EITHER form - as a class keyword
+    or in a ``ConfigDict`` - so the synthesized ``__init__`` takes ``schema`` and
+    the call site below fails strict type checking while running fine. Naming
+    both accepted keys keeps the field name a real parameter.
     """
 
     path: str
-    schema_version: int = Field(serialization_alias="schema")
+    schema_version: int = Field(validation_alias=AliasChoices("schema", "schema_version"), serialization_alias="schema")
 
 
 class ScanEnvelope(BaseModel):

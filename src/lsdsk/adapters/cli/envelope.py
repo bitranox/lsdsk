@@ -48,6 +48,17 @@ class MappingResult(ActionResult, extra="allow"):
     so without this arm in the union, validating a real envelope fails on every
     key of its own payload - measured on the shipped ``config`` output, which
     the suite drives through the real entry point and parses back.
+
+    What it does NOT do is recover which result model a payload came from.
+    Allowing any extra key is what lets it stand in for every payload, and that
+    is also what makes it match every payload: measured on pydantic 2.13.5, all
+    five acting commands' results parse back as this class rather than as
+    themselves. Recovering the concrete model would mean naming the arms here,
+    and each one lives beside its own command and imports FROM this module, so
+    the union cannot see them without inverting that. Parse-back therefore
+    proves the envelope's SHAPE; to check a payload IS its command's model, name
+    that model, as ``test_every_structured_mode_actually_emits_the_envelope``
+    does.
     """
 
 
@@ -62,7 +73,10 @@ class ActionEnvelope(BaseModel):
     Attributes:
         ok: Whether the command did everything it was asked to.
         command: The command that produced this.
-        data: What it did, as the command's own result model.
+        data: What it did, as the command's own result model. On the way OUT
+            that is exactly what is serialised; on the way back IN it arrives as
+            :class:`MappingResult`, which is what that class's docstring
+            explains.
         skipped: What was not done, and why. Empty when nothing was.
 
     Example:

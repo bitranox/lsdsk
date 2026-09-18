@@ -319,3 +319,56 @@ def test_an_action_result_refuses_a_field_it_does_not_declare() -> None:
 
     with pytest.raises(pydantic.ValidationError):
         RecordResult.model_validate({"recorded": True, "store": "/tmp/h.json", "drives": 2, "drivs": 3})
+
+
+@pytest.mark.os_agnostic
+def test_every_action_result_can_read_the_wire_form_it_writes() -> None:
+    """Verify each result model validates its OWN emitted payload.
+
+    A model that renames a field for the wire writes a key it cannot read unless
+    the alias goes both ways, and nothing else notices: the emit path only ever
+    dumps, so a serialisation-only alias looks correct until something parses the
+    output back. ``SnapshotResult`` was exactly that - it emitted ``{"schema": 1}``
+    and its own validation refused it, because ``schema`` is a field it does not
+    declare and the base forbids those.
+
+    The subclasses are ENUMERATED rather than listed, and the command modules are
+    walked rather than imported by name, so a result model added later is covered
+    without anyone remembering to add it here. That is the point: the defect this
+    guards is silent, so a list somebody maintains would not hold.
+
+    A field type this cannot build fails the test by name rather than being
+    skipped, because a skipped arm is an unguarded arm.
+    """
+    import importlib
+    import pkgutil
+    import typing
+
+    import lsdsk.adapters.cli.commands as commands_package
+    from lsdsk.adapters.cli.envelope import ActionResult
+
+    for module in pkgutil.walk_packages(commands_package.__path__, f"{commands_package.__name__}."):
+        importlib.import_module(module.name)
+
+    def a_value_for(annotation: object) -> object:
+        """Build one value of the declared type, or say which type stopped us."""
+        origin = typing.get_origin(annotation)
+        if origin is list:
+            return []
+        if origin is not None and type(None) in typing.get_args(annotation):
+            return None
+        simple: dict[object, object] = {str: "x", int: 1, bool: True, float: 1.0}
+        if annotation not in simple:
+            raise AssertionError(f"this guard cannot build a {annotation!r}; teach it that type")
+        return simple[annotation]
+
+    unreadable: list[str] = []
+    for result in ActionResult.__subclasses__():
+        payload = result(**{name: a_value_for(field.annotation) for name, field in result.model_fields.items()})
+        wire = payload.model_dump_json(by_alias=True)
+        try:
+            assert result.model_validate_json(wire) == payload
+        except Exception as exc:
+            unreadable.append(f"{result.__name__} emitted {wire} and could not read it back: {type(exc).__name__}")
+
+    assert not unreadable, "result models that cannot parse their own wire form: " + "; ".join(unreadable)
