@@ -5,6 +5,22 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.15] 2026-09-18 14:03:22
+
+### Changed
+
+- **The README describes the interface that shipped.** The detail panel and the
+  selectable topology and trend pages arrived in 1.2.14 with no prose pass, so
+  the README still said nothing had to be selected, which had stopped being true
+  of six of the eight pages, and `i`, `shift+up`, `shift+down`, `,` and `.` were
+  all bound and unmentioned. Those release notes gain the entries they never
+  had, `CONFIG.md` names the six pages that carry a cursor and says why colour
+  is not a configuration key, and the disks section says what a capacity and a
+  speed figure mean. A guard now asserts that every action the interactive view
+  binds is reachable by at least one key the README names: the command and
+  option lists had one and the key list did not, which is why it was the one
+  that drifted.
+
 ### Fixed
 
 - **`achievable` reads the same pairing as the three figures beside it.** On an
