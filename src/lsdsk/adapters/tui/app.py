@@ -300,10 +300,13 @@ class LsdskApp(App[None]):
         Binding("q,f10,escape", "quit", "Quit", priority=True),
     ]
 
-    #: Page order, used by the number keys and by cycling with tab.
-    #: Page order. Taken from the command enum so the two surfaces cannot drift:
-    #: a page and its command are one view under one name.
-    PAGES: ClassVar[tuple[str, ...]] = tuple(command.value for command in CliCommand)
+    #: Page order, used by the number keys and by cycling with tab. Taken from
+    #: the command enum so the two surfaces cannot drift: a page and its
+    #: command are one view under one name. Held as the MEMBERS rather than
+    #: their wire strings, so the navigation arithmetic never leaves the enum's
+    #: own space; a ``TabbedContent.active`` id is converted back at the one
+    #: point that reads or writes it.
+    PAGES: ClassVar[tuple[CliCommand, ...]] = tuple(CliCommand)
 
     def __init__(
         self,
@@ -557,15 +560,15 @@ class LsdskApp(App[None]):
         the reader cannot see must not replace what is under the one they can.
         """
         table_id = raising_table_id(event) or ""
-        if table_id == "disk-table":
+        page = DETAIL_TABLES.get(table_id)
+        if page is CliCommand.DISKS:
             node = event.row_key.value
             self._show_wwn(self._wwn_of.get(node) if node is not None else None)
-        page = DETAIL_TABLES.get(table_id)
         if page is None:
             return
         self._row_of[table_id] = event.row_key.value
         if page.value == self.query_one(TabbedContent).active:
-            self._show_detail(self._record_for(table_id, event.row_key.value))
+            self._show_detail(self._record_for(page, event.row_key.value))
 
     def _refresh_detail(self) -> None:
         """Ask the page now in front what its cursor is on.
@@ -573,22 +576,22 @@ class LsdskApp(App[None]):
         A page switch moves no cursor and raises no row event, so the panel has
         to be asked again here or it keeps answering for the page just left.
         """
-        page = self.query_one(TabbedContent).active
-        if page == CliCommand.TOPOLOGY.value:
+        page = CliCommand(self.query_one(TabbedContent).active)
+        if page is CliCommand.TOPOLOGY:
             index = self._tree_highlighted
             self._show_detail(None if index is None else self._record_of(self._subject_at(index)))
             return
         for table_id, command in DETAIL_TABLES.items():
-            if command.value == page:
-                self._show_detail(self._record_for(table_id, self._row_of.get(table_id)))
+            if command is page:
+                self._show_detail(self._record_for(command, self._row_of.get(table_id)))
                 return
         self._show_detail(None)
 
-    def _record_for(self, table_id: str, key: str | None) -> Detail | None:
+    def _record_for(self, page: CliCommand, key: str | None) -> Detail | None:
         """The record behind one row, or nothing when the row names no subject.
 
         Args:
-            table_id: Which page's table raised the move.
+            page: Which page's table raised the move.
             key: The row key, which every table now carries.
 
         Returns:
@@ -596,15 +599,15 @@ class LsdskApp(App[None]):
         """
         if key is None:
             return None
-        if table_id == "controller-table":
+        if page is CliCommand.CONTROLLERS:
             controller = next((one for one in self.inventory.controllers if one.address == key), None)
             return None if controller is None else detail.controller_detail(controller, self.inventory)
-        if table_id == "slot-table":
+        if page is CliCommand.SLOTS:
             slot = next((one for one in self.inventory.slots if one.address == key), None)
             return None if slot is None else detail.slot_detail(slot, self.inventory)
         # A trend row is one COUNTER of one drive, so its key names both; the
         # record is the drive's, because that is what the row is about.
-        disk = self._disk_of.get(key.split("|")[0] if table_id == "trend-table" else key)
+        disk = self._disk_of.get(key.split("|")[0] if page is CliCommand.TREND else key)
         return None if disk is None else detail.disk_detail(disk, self.inventory, self.history)
 
     def _show_detail(self, record: Detail | None) -> None:
@@ -932,18 +935,27 @@ class LsdskApp(App[None]):
         self.query_one(TabbedContent).active = CliCommand(pane).value
 
     def action_next_page(self) -> None:
-        """Move to the next page, wrapping at the end."""
+        """Move to the next page, wrapping at the end.
+
+        ``tabs.active`` is Textual's own wire string, so it is parsed into the
+        enum here and nowhere else, the same boundary ``action_tree_density``
+        crosses for ``TreeDensity``; the arithmetic between the two ends stays
+        in the enum's own space.
+        """
         tabs = self.query_one(TabbedContent)
-        current = tabs.active or self.PAGES[0]
+        current = CliCommand(tabs.active) if tabs.active else self.PAGES[0]
         position = self.PAGES.index(current) if current in self.PAGES else 0
-        tabs.active = self.PAGES[(position + 1) % len(self.PAGES)]
+        tabs.active = self.PAGES[(position + 1) % len(self.PAGES)].value
 
     def action_prev_page(self) -> None:
-        """Move to the previous page, wrapping at the start."""
+        """Move to the previous page, wrapping at the start.
+
+        See :meth:`action_next_page` for why the wire string is parsed here.
+        """
         tabs = self.query_one(TabbedContent)
-        current = tabs.active or self.PAGES[0]
+        current = CliCommand(tabs.active) if tabs.active else self.PAGES[0]
         position = self.PAGES.index(current) if current in self.PAGES else 0
-        tabs.active = self.PAGES[(position - 1) % len(self.PAGES)]
+        tabs.active = self.PAGES[(position - 1) % len(self.PAGES)].value
 
     def action_rescan(self) -> None:
         """Re-run the diagnosis over the inventory already held.

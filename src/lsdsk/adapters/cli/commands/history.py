@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import lib_log_rich.runtime
 import rich_click as click
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from lsdsk.adapters.history.store import load_history, save_history
 from lsdsk.adapters.hw.capture import CaptureEnvelope
@@ -33,7 +33,7 @@ from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 from .. import safe_console
 from ..constants import CLICK_CONTEXT_SETTINGS
-from ..envelope import emit_action
+from ..envelope import ActionResult, emit_action
 from ..exit_codes import ExitCode
 from ..typed_click import option
 from .scan import (
@@ -205,7 +205,7 @@ def _capture_stamp(replay: Path | None) -> str | None:
         return None
 
 
-class RecordResult(BaseModel):
+class RecordResult(ActionResult):
     """What one `record` run stored, and where.
 
     `recorded` false is not a failure: it means no drive's own clock has moved

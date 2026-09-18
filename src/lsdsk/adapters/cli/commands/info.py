@@ -13,20 +13,19 @@ import logging
 
 import lib_log_rich.runtime
 import rich_click as click
-from pydantic import BaseModel
 
 from lsdsk import __init__conf__
 from lsdsk.domain.enums import ActionCommand, OutputFormat
 
 from ..constants import CLICK_CONTEXT_SETTINGS
 from ..context import get_cli_context
-from ..envelope import emit_action
+from ..envelope import ActionResult, emit_action
 from ..typed_click import option
 
 logger = logging.getLogger(__name__)
 
 
-class InfoResult(BaseModel):
+class InfoResult(ActionResult):
     """The package metadata `info` reports, so a caller need parse no table."""
 
     name: str

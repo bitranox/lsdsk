@@ -29,3 +29,19 @@ def test_logging_config_model_defaults() -> None:
 
     assert parsed.service is None
     assert parsed.environment == "prod"
+
+
+@pytest.mark.os_agnostic
+def test_the_theme_enum_matches_what_the_library_publishes() -> None:
+    """Verify the preview's choices are the library's, not a list that drifted.
+
+    The theme names belong to lib_log_rich, so the enum mirrors them and click
+    can refuse an unknown one with the list of choices rather than leaving the
+    library to fail on a missing dict key. A theme added or renamed upstream
+    fails here instead of silently becoming unreachable from the command line.
+    """
+    from lib_log_rich.domain.palettes import CONSOLE_STYLE_THEMES
+
+    from lsdsk.adapters.cli.commands.logging import LogDemoTheme
+
+    assert {theme.value for theme in LogDemoTheme} == set(CONSOLE_STYLE_THEMES)

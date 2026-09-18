@@ -48,7 +48,7 @@ from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from .. import safe_console
 from ..constants import CLICK_CONTEXT_SETTINGS, TREE_DENSITY_TOKENS
 from ..context import get_cli_context
-from ..envelope import emit_action
+from ..envelope import ActionResult, emit_action
 from ..exit_codes import ExitCode
 from ..typed_click import option
 
@@ -326,7 +326,7 @@ class ScanData(BaseModel):
     findings: tuple[Finding, ...]
 
 
-class SnapshotResult(BaseModel):
+class SnapshotResult(ActionResult):
     """Where a capture was written, and which schema version it carries.
 
     The field is not called ``schema``: that name shadows a BaseModel attribute.

@@ -277,3 +277,41 @@ def test_examples_in_click_docstrings_name_commands_that_exist() -> None:
             offenders.extend(f"{path}::{node.name} invokes {name!r}" for name in invoked if name not in known)
 
     assert not offenders, f"docstring examples naming commands that do not exist: {offenders}"
+
+
+@pytest.mark.os_agnostic
+def test_an_action_payload_reaches_the_wire_with_its_own_fields() -> None:
+    """Verify the envelope's payload is serialised by what it IS, not by its base.
+
+    Pydantic serialises a field by its DECLARED type, so a field annotated as the
+    bare result base - which declares no fields of its own - emits an empty
+    object for every payload put in it. Measured on pydantic 2.13.5: the same
+    envelope with a plain base annotation dumps {"data":{}}. The type checker
+    passes either way and so does a test that asserts only the outer keys, so
+    this asserts the payload's own field is on the wire.
+    """
+    from lsdsk.adapters.cli.envelope import ActionEnvelope, ActionResult
+    from lsdsk.domain.enums import ActionCommand
+
+    class Wrote(ActionResult):
+        path: str
+
+    envelope = ActionEnvelope(ok=True, command=ActionCommand.SNAPSHOT, data=Wrote(path="/tmp/capture.json"))
+
+    assert json.loads(envelope.model_dump_json(by_alias=True))["data"] == {"path": "/tmp/capture.json"}
+
+
+@pytest.mark.os_agnostic
+def test_an_action_result_refuses_a_field_it_does_not_declare() -> None:
+    """Verify a misspelled payload field is refused here, not silently dropped.
+
+    The envelope is the contract another program reads, and pydantic ignores an
+    unknown key by default: a payload built with a typo would emit without it and
+    nothing would say so.
+    """
+    import pydantic
+
+    from lsdsk.adapters.cli.commands.history import RecordResult
+
+    with pytest.raises(pydantic.ValidationError):
+        RecordResult.model_validate({"recorded": True, "store": "/tmp/h.json", "drives": 2, "drivs": 3})

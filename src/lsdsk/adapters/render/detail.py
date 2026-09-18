@@ -30,6 +30,7 @@ System Role:
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import TYPE_CHECKING, Final, NamedTuple
 
 from rich.console import Group
@@ -42,7 +43,7 @@ from . import tables, theme
 from .report import findings_for, pcie_capability, serial_speed, slot_verdict
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
     from rich.console import RenderableType
 
@@ -50,29 +51,58 @@ if TYPE_CHECKING:
     from ...domain.models import Controller, Disk, Finding, Health, Inventory, PcieLink, PcieSlot, PciNode
     from .theme import Cell
 
-#: The group labels. Named constants rather than loose strings, because a page
-#: asks for one by name and a typo there would otherwise promote nothing at all,
-#: silently - see :func:`order_groups`.
-IDENTITY: Final = "identity"
-LINK: Final = "link"
-SEAT: Final = "seat"
-HEALTH: Final = "health"
-COUNTERS: Final = "counters"
-DEVICE: Final = "device"
-UPSTREAM: Final = "upstream"
-PORTS: Final = "ports"
-PLACE: Final = "place"
-SLOT: Final = "slot"
-OCCUPANT: Final = "occupant"
-MACHINE: Final = "machine"
 
-#: Every label a group may carry. :func:`order_groups` validates a page's
-#: preference against THIS rather than against the groups in hand, which is the
-#: split that matters: a misspelled label is a mistake and raises, while a label
-#: naming a group this particular subject has none of is ordinary and is skipped.
-GROUP_LABELS: Final[frozenset[str]] = frozenset(
-    {IDENTITY, LINK, SEAT, HEALTH, COUNTERS, DEVICE, UPSTREAM, PORTS, PLACE, SLOT, OCCUPANT, MACHINE}
-)
+class DetailGroupLabel(StrEnum):
+    """Which run of paired values a :class:`DetailGroup` carries.
+
+    A closed set rather than a loose string, because a page names one of these
+    to promote it to the top of the panel (see :func:`order_groups`) and a
+    misspelling used to promote nothing at all, silently - the type checker saw
+    a ``str`` either way. This is a presentation concern, not a domain one: the
+    value is exactly what the panel prints as the group's own heading, so it
+    lives beside the code that draws it rather than in ``domain/enums.py``.
+
+    Example:
+        >>> f"{DetailGroupLabel.HEALTH}"
+        'health'
+    """
+
+    IDENTITY = "identity"
+    LINK = "link"
+    SEAT = "seat"
+    HEALTH = "health"
+    COUNTERS = "counters"
+    DEVICE = "device"
+    UPSTREAM = "upstream"
+    PORTS = "ports"
+    PLACE = "place"
+    SLOT = "slot"
+    OCCUPANT = "occupant"
+    MACHINE = "machine"
+
+
+#: The group labels, one module constant per :class:`DetailGroupLabel` member.
+#: Kept as individual names because a page, and this module's own
+#: ``*_detail`` functions, ask for one at a time rather than the whole enum.
+IDENTITY: Final = DetailGroupLabel.IDENTITY
+LINK: Final = DetailGroupLabel.LINK
+SEAT: Final = DetailGroupLabel.SEAT
+HEALTH: Final = DetailGroupLabel.HEALTH
+COUNTERS: Final = DetailGroupLabel.COUNTERS
+DEVICE: Final = DetailGroupLabel.DEVICE
+UPSTREAM: Final = DetailGroupLabel.UPSTREAM
+PORTS: Final = DetailGroupLabel.PORTS
+PLACE: Final = DetailGroupLabel.PLACE
+SLOT: Final = DetailGroupLabel.SLOT
+OCCUPANT: Final = DetailGroupLabel.OCCUPANT
+MACHINE: Final = DetailGroupLabel.MACHINE
+
+#: Every label a group may carry, which is simply the enum's own membership.
+#: :func:`order_groups` validates a page's preference against THIS rather than
+#: against the groups in hand, which is the split that matters: a misspelled
+#: label is a mistake and raises, while a label naming a group this particular
+#: subject has none of is ordinary and is skipped.
+GROUP_LABELS: Final[frozenset[DetailGroupLabel]] = frozenset(DetailGroupLabel)
 
 #: What the second scope of a drive's findings is about. Said in the panel
 #: because the finding is not about the row the cursor is on: firmware
@@ -87,7 +117,7 @@ UNREAD_LEGEND: Final = "- not read"
 class DetailGroup(NamedTuple):
     """One labelled run of name-and-value pairs."""
 
-    label: str
+    label: DetailGroupLabel
     values: tuple[tuple[str, Cell], ...]
 
 
@@ -122,7 +152,7 @@ def order_groups(groups: Sequence[DetailGroup], first: Sequence[str]) -> tuple[D
     Example:
         >>> a = DetailGroup(IDENTITY, ())
         >>> b = DetailGroup(HEALTH, ())
-        >>> [g.label for g in order_groups((a, b), (HEALTH,))]
+        >>> [g.label.value for g in order_groups((a, b), (HEALTH,))]
         ['health', 'identity']
         >>> order_groups((a, b), ("helth",))
         Traceback (most recent call last):
@@ -403,16 +433,18 @@ def _seat_values(disk: Disk, inventory: Inventory) -> tuple[tuple[str, Cell], ..
 def _health_values(health: Health | None) -> tuple[tuple[str, Cell], ...]:
     """What the drive says about itself, limits included."""
     temperature = theme.format_temperature(
-        _of(health, "temperature_c"), _of(health, "temperature_warning_c"), _of(health, "temperature_critical_c")
+        _of(health, lambda h: h.temperature_c),
+        _of(health, lambda h: h.temperature_warning_c),
+        _of(health, lambda h: h.temperature_critical_c),
     )
     return (
         ("ok", _yes_no(value=None if health is None else health.ok)),
         ("temp", temperature),
         ("limits", _limits(health)),
-        ("worn", theme.format_wear(_of(health, "percent_used"))),
-        ("hours", (tables.counter_text(_of(health, "power_on_hours")), "")),
-        ("written", (theme.format_size(_of(health, "bytes_written")), "")),
-        ("read", (theme.format_size(_of(health, "bytes_read")), "")),
+        ("worn", theme.format_wear(_of(health, lambda h: h.percent_used))),
+        ("hours", (tables.counter_text(_of(health, lambda h: h.power_on_hours)), "")),
+        ("written", (theme.format_size(_of(health, lambda h: h.bytes_written)), "")),
+        ("read", (theme.format_size(_of(health, lambda h: h.bytes_read)), "")),
         ("spare", _spare(health)),
         ("smart", _smart(health)),
     )
@@ -420,29 +452,29 @@ def _health_values(health: Health | None) -> tuple[tuple[str, Cell], ...]:
 
 def _counter_values(health: Health | None, series: DiskSeries | None) -> tuple[tuple[str, Cell], ...]:
     """Every error counter, carrying the same trend mark the health table draws."""
-    watched = (
-        ("realloc", "reallocated_sectors", CounterKind.REALLOCATED_SECTORS),
-        ("pending", "pending_sectors", CounterKind.PENDING_SECTORS),
-        ("uncorr", "uncorrectable_sectors", CounterKind.UNCORRECTABLE_SECTORS),
-        ("crc", "crc_errors", CounterKind.CRC_ERRORS),
-        ("media", "media_errors", CounterKind.MEDIA_ERRORS),
-        ("error log", "error_log_entries", CounterKind.ERROR_LOG_ENTRIES),
+    watched: tuple[tuple[str, Callable[[Health], int | None], CounterKind], ...] = (
+        ("realloc", lambda h: h.reallocated_sectors, CounterKind.REALLOCATED_SECTORS),
+        ("pending", lambda h: h.pending_sectors, CounterKind.PENDING_SECTORS),
+        ("uncorr", lambda h: h.uncorrectable_sectors, CounterKind.UNCORRECTABLE_SECTORS),
+        ("crc", lambda h: h.crc_errors, CounterKind.CRC_ERRORS),
+        ("media", lambda h: h.media_errors, CounterKind.MEDIA_ERRORS),
+        ("error log", lambda h: h.error_log_entries, CounterKind.ERROR_LOG_ENTRIES),
     )
     marked = tuple(
-        (label, tables.counter_cell(_of(health, field), tables.trend_of(series, kind)))
-        for label, field, kind in watched
+        (label, tables.counter_cell(_of(health, accessor), tables.trend_of(series, kind)))
+        for label, accessor, kind in watched
     )
     plain = (
-        ("cycles", (tables.counter_text(_of(health, "power_cycles")), "")),
-        ("unsafe", (tables.counter_text(_of(health, "unsafe_shutdowns")), "")),
+        ("cycles", (tables.counter_text(_of(health, lambda h: h.power_cycles)), "")),
+        ("unsafe", (tables.counter_text(_of(health, lambda h: h.unsafe_shutdowns)), "")),
     )
     return marked + plain
 
 
 def _limits(health: Health | None) -> Cell:
     """The drive's own temperature thresholds, which colour the reading above."""
-    warning = _of(health, "temperature_warning_c")
-    critical = _of(health, "temperature_critical_c")
+    warning = _of(health, lambda h: h.temperature_warning_c)
+    critical = _of(health, lambda h: h.temperature_critical_c)
     if warning is None and critical is None:
         return "-", theme.STYLE_UNKNOWN
     return f"warn {tables.counter_text(warning)}, crit {tables.counter_text(critical)}", ""
@@ -450,10 +482,10 @@ def _limits(health: Health | None) -> Cell:
 
 def _spare(health: Health | None) -> Cell:
     """Spare blocks left against the floor the drive itself declares."""
-    spare = _of(health, "available_spare")
+    spare = _of(health, lambda h: h.available_spare)
     if spare is None:
         return "-", theme.STYLE_UNKNOWN
-    threshold = _of(health, "available_spare_threshold")
+    threshold = _of(health, lambda h: h.available_spare_threshold)
     style = theme.STYLE_FAILING if threshold is not None and spare < threshold else theme.STYLE_AT_CAPABILITY
     return f"{spare}% of {tables.counter_text(threshold)}%", style
 
@@ -467,12 +499,27 @@ def _smart(health: Health | None) -> Cell:
     return text, theme.STYLE_FAILING if failing else ""
 
 
-def _of(health: Health | None, field: str) -> int | None:
-    """One counter, or nothing when the drive published no health at all."""
+def _of(health: Health | None, accessor: Callable[[Health], int | None]) -> int | None:
+    """One counter, read through a typed accessor rather than a field-name string.
+
+    The old signature took the field's NAME and read it with ``getattr``, which
+    is the ``data["key"]`` pattern wearing a function call: renaming a
+    :class:`Health` field would surface only as a runtime ``AttributeError``,
+    invisible to the type checker. ``accessor`` closes over the real attribute
+    read instead, so pyright checks it against the actual model and a rename
+    is a type error at every call site that still names the old field.
+
+    Args:
+        health: The drive's health record, or ``None`` when nothing was read.
+        accessor: A callable naming which field to read, for example
+            ``lambda h: h.percent_used``.
+
+    Returns:
+        The field's value, or ``None`` when there is no health record at all.
+    """
     if health is None:
         return None
-    value: int | None = getattr(health, field)
-    return value
+    return accessor(health)
 
 
 def _pcie_values(link: PcieLink) -> tuple[tuple[str, Cell], ...]:
@@ -633,6 +680,7 @@ __all__ = [
     "UPSTREAM",
     "Detail",
     "DetailGroup",
+    "DetailGroupLabel",
     "FindingScope",
     "controller_detail",
     "disk_detail",
