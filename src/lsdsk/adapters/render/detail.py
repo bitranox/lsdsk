@@ -39,7 +39,7 @@ from rich.text import Text
 from ...domain.diagnostics import attached_demand_gbytes
 from ...domain.history import CounterKind
 from . import tables, theme
-from .report import findings_for, pcie_capability, slot_verdict
+from .report import findings_for, pcie_capability, serial_speed, slot_verdict
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -382,7 +382,7 @@ def _disk_link_values(disk: Disk, row: dict[str, Cell], port: PcieLink | None) -
         text = theme.NOT_READ if limiting is None else pcie_capability(limiting, bandwidth=True)
         achievable = (text, "")
     else:
-        achievable = (theme.format_speed(disk.link.achievable_gbps), "")
+        achievable = (serial_speed(disk.link.achievable_gbps, bandwidth=True), "")
     return (("port", row["port"]), ("drive", row["disk"]), ("negotiated", row["link"]), ("achievable", achievable))
 
 

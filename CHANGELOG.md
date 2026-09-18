@@ -17,7 +17,16 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   PCIe pair, as the slower of the drive's own capability and the seat's. The
   both-ends rule is unchanged: an end that was never read still yields a dash,
   because inheriting the drive's figure would turn "we could not measure this"
-  into "the seat is fine". A SATA drive is unaffected.
+  into "the seat is fine". A SATA drive already read its own pairing and
+  still does.
+
+- **A SATA drive's `achievable` names what it is worth.** It was the one
+  figure in the panel's link group with no bandwidth beside it, reading `6G`
+  while `port`, `drive` and `negotiated` beside it read `6G (0.60 GB/s)`. A
+  serial figure is now formatted for both views by one function, so a rate
+  cannot carry its throughput in the table and lose it in the panel. The
+  guard is written for the whole group rather than for that one label, so a
+  figure added beside them later is covered by it.
 
 ## [1.2.14] 2026-09-18 13:06:03
 

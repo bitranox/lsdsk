@@ -329,3 +329,37 @@ def test_an_unread_seat_leaves_the_pairing_unanswered() -> None:
     slower = PcieLink(8.0, 4, 8.0, 4)
     assert drive.limiting_end(slower) is slower, "the slower end is what the pairing can manage"
     assert slower.limiting_end(drive) is slower, "the answer does not depend on which end asks"
+
+
+def _serial_drives_with_a_measured_pairing(machine: Inventory) -> list[Disk]:
+    """Every SATA or SAS drive whose two ends were both read."""
+    return [d for d in machine.disks if d.pcie is None and d.link.achievable_gbps is not None]
+
+
+def test_the_captures_hold_a_serial_drive_whose_pairing_was_measured_at_all() -> None:
+    """The control for the test below, whose offending arm is serial-only.
+
+    Every other figure in the link group already carried its bandwidth, so a
+    capture set holding no serial drive with a measured pairing would leave the
+    rule below passing on the three that were never in question.
+    """
+    total = sum(len(_serial_drives_with_a_measured_pairing(_machine(host))) for host in CAPTURES)
+    assert total > 0, "no capture holds a serial drive with a measured pairing, so the rule below is untested"
+
+
+@pytest.mark.parametrize("host", CAPTURES)
+def test_every_link_figure_the_panel_draws_names_what_it_is_worth(host: str) -> None:
+    """A shape says nothing about throughput, so each figure carries its own.
+
+    The rule is the whole group's, not one label's: `achievable` was the one
+    that broke it, reading `6G` beside three figures reading `6G (0.60 GB/s)`,
+    but a law written for that one label would not notice the next figure added
+    beside them. A placeholder is exempt and must stay exempt - a number after
+    a figure nobody read turns "could not measure" into a measurement.
+    """
+    machine = _machine(host)
+    for disk in machine.disks:
+        for label, text in _link_pairs(machine, disk).items():
+            if text in (theme.NOT_READ, theme.LEGACY):
+                continue
+            assert "GB/s" in text, f"{host} {disk.path}: {label} reads {text!r} and names no bandwidth"

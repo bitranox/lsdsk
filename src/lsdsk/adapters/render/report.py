@@ -310,8 +310,13 @@ def pcie_capability(link: PcieLink, *, bandwidth: bool = False) -> str:
     return theme.with_bandwidth(figure, link.max_bandwidth_gbps) if bandwidth else figure
 
 
-def _serial_text(gbps: float | None, *, bandwidth: bool = False) -> str:
-    """Render one end of a SATA or SAS link, and what that rate is worth."""
+def serial_speed(gbps: float | None, *, bandwidth: bool = False) -> str:
+    """Render one end of a SATA or SAS link, and what that rate is worth.
+
+    Public for the same reason :func:`pcie_capability` is: the detail panel
+    draws the same figures the table does, and a second copy of this pairing
+    is how one link comes to be worded two ways in two views.
+    """
     figure = theme.format_speed(gbps)
     return theme.with_bandwidth(figure, serial_bandwidth_gbps(gbps)) if bandwidth else figure
 
@@ -343,9 +348,9 @@ def disk_cells(disk: Disk, port: PcieLink | None = None, *, bandwidth: bool = Fa
         drive_text = pcie_capability(disk.pcie, bandwidth=bandwidth)
         link_text = _pcie_text(disk.pcie, bandwidth=bandwidth)
     else:
-        port_text = _serial_text(disk.link.port_max_gbps, bandwidth=bandwidth)
-        drive_text = _serial_text(disk.link.drive_max_gbps, bandwidth=bandwidth)
-        link_text = _serial_text(disk.link.negotiated_gbps, bandwidth=bandwidth)
+        port_text = serial_speed(disk.link.port_max_gbps, bandwidth=bandwidth)
+        drive_text = serial_speed(disk.link.drive_max_gbps, bandwidth=bandwidth)
+        link_text = serial_speed(disk.link.negotiated_gbps, bandwidth=bandwidth)
 
     health = disk.health
     temp_text, _ = theme.format_temperature(
@@ -995,6 +1000,7 @@ __all__ = [
     "render_header",
     "render_tree",
     "render_verdict",
+    "serial_speed",
     "slot_table_row",
     "slot_verdict",
     "virtual_note",
