@@ -47,14 +47,6 @@ class HistorySettings(BaseModel):
     max_samples_per_drive: int = MAX_SAMPLES_PER_DRIVE
 
 
-def _section_of(config: Config) -> dict[str, Any]:
-    """The ``[history]`` table, or an empty one."""
-    section: object = config.get(SECTION, {})
-    # A layered-config value is Any by nature; the isinstance check is what makes
-    # the cast true, and a cast keeps the rest of the line checked.
-    return cast("dict[str, Any]", section) if isinstance(section, dict) else {}
-
-
 def _positive_int(raw: object, default: int) -> int:
     """Read a count, falling back rather than failing the run.
 
@@ -83,7 +75,11 @@ def get_history_settings(config: Config, *, path_override: Path | None = None) -
         >>> get_history_settings(Config({"history": {"enabled": False}}, {})).enabled
         False
     """
-    section = _section_of(config)
+    # Read where the section becomes a model, not through a shared accessor that
+    # would be a dict interface between modules. A layered-config value is Any by
+    # nature; the isinstance check is what makes the cast true.
+    raw: object = config.get(SECTION, {})
+    section = cast("dict[str, Any]", raw) if isinstance(raw, dict) else {}
     configured = section.get("path")
     # An empty string is how the shipped default says "use the state directory";
     # treating it as a path would write a file literally named "" instead.

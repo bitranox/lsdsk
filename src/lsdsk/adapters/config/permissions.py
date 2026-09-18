@@ -6,7 +6,7 @@ compute effective permission modes for deployment targets.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple, assert_never
+from typing import TYPE_CHECKING, Any, NamedTuple, assert_never, cast
 
 from lib_layered_config import (
     DEFAULT_APP_DIR_MODE,
@@ -105,15 +105,14 @@ def parse_mode(value: int | str, default: int) -> int:
         return default
 
 
-def _parse_mode_from_section(section: dict[str, int | str | bool], key: str, default: int) -> int:
-    """Extract and parse a mode value from a raw config section dict.
+def _mode_or_default(raw: object, default: int) -> int:
+    """Coerce one already-extracted mode value, falling back rather than failing.
 
-    Used only at the boundary when parsing the raw config dict into
-    PermissionDefaults. The raw section comes from lib_layered_config's
-    Config.get() which returns untyped dicts.
+    A malformed permission mode in a config file must not stop a deploy, and a
+    boolean is excluded explicitly: ``True``/``False`` are ints in Python and
+    would otherwise silently become mode 1 or mode 0.
     """
-    raw = section.get(key, default)
-    if isinstance(raw, bool):
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
         return default
     return parse_mode(raw, default)
 
@@ -138,17 +137,21 @@ def get_permission_defaults(config: Config) -> PermissionDefaults:
         >>> defaults.user_directory == 0o700
         True
     """
-    section = config.get("lib_layered_config", {}).get("default_permissions", {})
+    # Read where the section becomes a model, and each field named at its own
+    # call rather than through a helper parameterised by a key, which is field
+    # access on structured data wearing a dict's clothes.
+    raw: object = config.get("lib_layered_config.default_permissions", {})
+    section = cast("dict[str, Any]", raw) if isinstance(raw, dict) else {}
     # NOTE: lib_layered_config does not define separate HOST_* constants.
     # Host layer shares defaults with app layer (both world-readable: 755/644).
     # This is intentional per CLAUDE.md "Deployment Permissions" documentation.
     return PermissionDefaults(
-        app_directory=_parse_mode_from_section(section, "app_directory", DEFAULT_APP_DIR_MODE),
-        app_file=_parse_mode_from_section(section, "app_file", DEFAULT_APP_FILE_MODE),
-        host_directory=_parse_mode_from_section(section, "host_directory", DEFAULT_APP_DIR_MODE),
-        host_file=_parse_mode_from_section(section, "host_file", DEFAULT_APP_FILE_MODE),
-        user_directory=_parse_mode_from_section(section, "user_directory", DEFAULT_USER_DIR_MODE),
-        user_file=_parse_mode_from_section(section, "user_file", DEFAULT_USER_FILE_MODE),
+        app_directory=_mode_or_default(section.get("app_directory"), DEFAULT_APP_DIR_MODE),
+        app_file=_mode_or_default(section.get("app_file"), DEFAULT_APP_FILE_MODE),
+        host_directory=_mode_or_default(section.get("host_directory"), DEFAULT_APP_DIR_MODE),
+        host_file=_mode_or_default(section.get("host_file"), DEFAULT_APP_FILE_MODE),
+        user_directory=_mode_or_default(section.get("user_directory"), DEFAULT_USER_DIR_MODE),
+        user_file=_mode_or_default(section.get("user_file"), DEFAULT_USER_FILE_MODE),
         enabled=section.get("enabled", True),
     )
 

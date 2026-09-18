@@ -106,14 +106,6 @@ class DisplaySettings(BaseModel):
     traceback_verbose_limit: int = DEFAULT_TRACEBACK_VERBOSE_LIMIT
 
 
-def section_of(config: Config, name: str) -> dict[str, Any]:
-    """One configuration table, or an empty one."""
-    section: object = config.get(name, {})
-    # A layered-config value is Any by nature; the isinstance check is what makes
-    # the cast true, and a cast keeps the rest of the line checked.
-    return cast("dict[str, Any]", section) if isinstance(section, dict) else {}
-
-
 def positive_int(raw: object, default: int) -> int:
     """Read a count, falling back rather than failing the run.
 
@@ -159,7 +151,11 @@ def get_thresholds(config: Config) -> Thresholds:
         >>> get_thresholds(Config({"thresholds": {"wear_critical_percent": 90}}, {})).wear_critical_percent
         90
     """
-    table = section_of(config, THRESHOLDS_SECTION)
+    # Read where the section becomes a model, not through a shared accessor that
+    # would be a dict interface between modules. A layered-config value is Any by
+    # nature; the isinstance check is what makes the cast true.
+    raw: object = config.get(THRESHOLDS_SECTION, {})
+    table = cast("dict[str, Any]", raw) if isinstance(raw, dict) else {}
     return Thresholds(
         wear_warning_percent=positive_int(table.get("wear_warning_percent"), DEFAULT_THRESHOLDS.wear_warning_percent),
         wear_critical_percent=positive_int(
@@ -193,7 +189,8 @@ def get_display_settings(config: Config) -> DisplaySettings:
         >>> get_display_settings(Config({"display": {"piped_width": 200}}, {})).piped_width
         200
     """
-    table = section_of(config, DISPLAY_SECTION)
+    raw: object = config.get(DISPLAY_SECTION, {})
+    table = cast("dict[str, Any]", raw) if isinstance(raw, dict) else {}
     return DisplaySettings(
         piped_width=positive_int(table.get("piped_width"), DEFAULT_PIPED_WIDTH),
         summary_limit=positive_int(table.get("summary_limit"), DEFAULT_SUMMARY_LIMIT),
@@ -241,6 +238,5 @@ __all__ = [
     "get_thresholds",
     "positive_float",
     "positive_int",
-    "section_of",
     "tree_density_of",
 ]

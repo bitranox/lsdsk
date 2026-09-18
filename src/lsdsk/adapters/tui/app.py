@@ -192,6 +192,10 @@ DETAIL_ORDER: Final[dict[CliCommand, tuple[str, ...]]] = {
 #: Which table on which page puts what under the cursor. One mapping rather than
 #: a chain of ``if`` in the handler, so a page added without an entry shows the
 #: empty panel loudly instead of silently keeping the previous page's answer.
+#: Every id a pane may carry, so the one conversion from Textual's own wire
+#: string can answer "not a page" instead of raising on one.
+PAGE_IDS: Final[frozenset[str]] = frozenset(page.value for page in CliCommand)
+
 DETAIL_TABLES: Final[dict[str, CliCommand]] = {
     "controller-table": CliCommand.CONTROLLERS,
     "disk-table": CliCommand.DISKS,
@@ -567,8 +571,24 @@ class LsdskApp(App[None]):
         if page is None:
             return
         self._row_of[table_id] = event.row_key.value
-        if page.value == self.query_one(TabbedContent).active:
+        if page is self._active_page():
             self._show_detail(self._record_for(page, event.row_key.value))
+
+    def _active_page(self) -> CliCommand | None:
+        """Which page is in front, or ``None`` when that is not a page.
+
+        ``TabbedContent.active`` is Textual's own wire string and is EMPTY until
+        the first pane is activated, so this is the one place the string becomes
+        a member, and it answers ``None`` rather than raising: every caller is
+        asking whether one particular page is up, and a pane that is not up yet
+        is simply not that page.
+
+        Returns:
+            The page in front, or ``None`` before one is or if the active id
+            names something that is not a page.
+        """
+        active = self.query_one(TabbedContent).active
+        return CliCommand(active) if active in PAGE_IDS else None
 
     def _refresh_detail(self) -> None:
         """Ask the page now in front what its cursor is on.
@@ -576,7 +596,7 @@ class LsdskApp(App[None]):
         A page switch moves no cursor and raises no row event, so the panel has
         to be asked again here or it keeps answering for the page just left.
         """
-        page = CliCommand(self.query_one(TabbedContent).active)
+        page = self._active_page()
         if page is CliCommand.TOPOLOGY:
             index = self._tree_highlighted
             self._show_detail(None if index is None else self._record_of(self._subject_at(index)))
@@ -729,12 +749,12 @@ class LsdskApp(App[None]):
             panel = self.query_one("#detail", VerticalScroll)
             return bool(panel.display) and panel.virtual_size.height > panel.size.height
         if action in {"wwn_left", "wwn_right"}:
-            return self.query_one(TabbedContent).active == CliCommand.DISKS.value
+            return self._active_page() is CliCommand.DISKS
         if action == "tree_density":
             # Gated to the page whose view it changes, the same shape the WWN
             # keys take: check_action refusing to dispatch an action also
             # hides it from the footer, so the key reads as topology-only.
-            return self.query_one(TabbedContent).active == CliCommand.TOPOLOGY.value
+            return self._active_page() is CliCommand.TOPOLOGY
         return True
 
     def action_tree_density(self) -> None:
@@ -850,7 +870,7 @@ class LsdskApp(App[None]):
         if event.option_list.id != "tree-lines":
             return
         self._tree_highlighted = event.option_index
-        if self.query_one(TabbedContent).active == CliCommand.TOPOLOGY.value:
+        if self._active_page() is CliCommand.TOPOLOGY:
             self._show_detail(self._record_of(self._subject_at(event.option_index)))
 
     @property
@@ -942,20 +962,18 @@ class LsdskApp(App[None]):
         crosses for ``TreeDensity``; the arithmetic between the two ends stays
         in the enum's own space.
         """
-        tabs = self.query_one(TabbedContent)
-        current = CliCommand(tabs.active) if tabs.active else self.PAGES[0]
-        position = self.PAGES.index(current) if current in self.PAGES else 0
-        tabs.active = self.PAGES[(position + 1) % len(self.PAGES)].value
+        current = self._active_page() or self.PAGES[0]
+        position = self.PAGES.index(current)
+        self.query_one(TabbedContent).active = self.PAGES[(position + 1) % len(self.PAGES)].value
 
     def action_prev_page(self) -> None:
         """Move to the previous page, wrapping at the start.
 
         See :meth:`action_next_page` for why the wire string is parsed here.
         """
-        tabs = self.query_one(TabbedContent)
-        current = CliCommand(tabs.active) if tabs.active else self.PAGES[0]
-        position = self.PAGES.index(current) if current in self.PAGES else 0
-        tabs.active = self.PAGES[(position - 1) % len(self.PAGES)].value
+        current = self._active_page() or self.PAGES[0]
+        position = self.PAGES.index(current)
+        self.query_one(TabbedContent).active = self.PAGES[(position - 1) % len(self.PAGES)].value
 
     def action_rescan(self) -> None:
         """Re-run the diagnosis over the inventory already held.

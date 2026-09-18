@@ -3,29 +3,57 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
+from enum import StrEnum
 from typing import TYPE_CHECKING, cast
 
 import orjson
 from lib_layered_config import Config
+from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:
     from lib_layered_config.domain.config import SourceInfo
 
-CLI_LAYER = "cli"
-"""Provenance layer recorded for a value that came from ``--set``.
 
-It is not one of the library's file layers because it names no file: the
-value was typed on the command line and there is nothing to open.
-"""
+class OverrideLayer(StrEnum):
+    """The provenance layer name ``--set`` introduces, which is lsdsk's alone.
+
+    ``lib_layered_config.Layer`` enumerates the library's own layers -
+    ``defaults``, ``app``, ``host``, ``user``, ``dotenv``, ``env`` - each one
+    naming a file lsdsk read or an environment variable it consulted. A
+    ``--set`` value comes from neither: it was typed on the command line and
+    there is no file to point at, so it needs a name the library does not
+    already define. This enum owns exactly that one name, not the library's.
+
+    Example:
+        >>> OverrideLayer.CLI == "cli"
+        True
+    """
+
+    CLI = "cli"
+
 
 CoercedValue = str | int | float | bool | None | list[object] | dict[str, object]
 """Union of types that :func:`coerce_value` can produce."""
 
 
-@dataclass(frozen=True, slots=True)
-class ConfigOverride:
-    """A single parsed configuration override."""
+class ConfigOverride(BaseModel):
+    """A single parsed configuration override, straight from ``--set``.
+
+    Parsed once, immediately, by :func:`parse_override`; nothing downstream
+    reaches back into the raw ``SECTION.KEY=VALUE`` string.
+
+    Attributes:
+        section: The top-level configuration section the override targets.
+        key_path: The dotted path under that section, one element per
+            component after the first dot.
+        value: The override's value, already coerced by :func:`coerce_value`.
+
+    Example:
+        >>> ConfigOverride(section="s", key_path=("k",), value=1)
+        ConfigOverride(section='s', key_path=('k',), value=1)
+    """
+
+    model_config = ConfigDict(frozen=True)
 
     section: str
     key_path: tuple[str, ...]
@@ -196,7 +224,7 @@ def _provenance_naming_the_cli(
     provenance: dict[str, SourceInfo] = {}
     for dotted in _dotted_keys(merged_as_dict):
         if dotted in overridden:
-            provenance[dotted] = {"layer": CLI_LAYER, "path": None, "key": dotted}
+            provenance[dotted] = {"layer": OverrideLayer.CLI, "path": None, "key": dotted}
         elif (origin := config.origin(dotted)) is not None:
             provenance[dotted] = origin
     return provenance
@@ -225,8 +253,8 @@ def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
         >>> result = apply_overrides(cfg, ("s.k=2",))
         >>> result["s"]["k"]
         2
-        >>> result.origin("s.k")["layer"]
-        'cli'
+        >>> result.origin("s.k")["layer"] == "cli"
+        True
         >>> apply_overrides(cfg, ()) is cfg
         True
     """
@@ -250,9 +278,9 @@ def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
 
 
 __all__ = [
-    "CLI_LAYER",
     "CoercedValue",
     "ConfigOverride",
+    "OverrideLayer",
     "apply_overrides",
     "coerce_value",
     "parse_override",
