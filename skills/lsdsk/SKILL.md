@@ -46,7 +46,7 @@ A snapshot names the machine and every drive in it, so check who can read the
 ticket before attaching one; `lsdsk snapshot` says the same on stderr when it
 writes the file.
 
-The page is the whole report: mainboard, problem summary, controller tree,
+The page is the whole report: mainboard, problem summary, the PCI fabric,
 the controller table, disk identities, wear and error counters, SMART
 attributes, PCIe slots, counter trends, and every finding with its reasoning, in
 that order. It already contains `trend` and `slots`, so running those again
@@ -65,7 +65,7 @@ section's envelope, `lsdsk <section> --format json`.
 ```bash
 uvx lsdsk                     # at a terminal the interactive view, elsewhere the page
 uvx lsdsk report              # everything on one page, by name. Start here
-uvx lsdsk topology            # the problem summary and the disk-to-controller tree
+uvx lsdsk topology            # the problem summary and the PCI fabric, storage-only by default
 uvx lsdsk findings            # every finding, with reasoning and a remedy
 uvx lsdsk health              # wear, temperature, hours, error counters
 uvx lsdsk smart               # every disk's SMART attributes against its thresholds
@@ -99,6 +99,76 @@ doubt, `lsdsk <command> --help` lists what that command takes.
 `fail` and `logdemo` also exist. They are not diagnostic commands: they are the
 vehicles the traceback and logging tests drive through the real entry point.
 Never reach for them to answer a question about hardware.
+
+## Reading `lsdsk topology`
+
+It is the PCI fabric, drawn root-down. Every root complex is a port of the
+processor on the board, the bridges between are the PATH a drive's traffic
+takes, and a controller's drives are its own table nested under it rather than
+another level of fabric.
+
+```text
+showing storage and the bridges above it; --tree-density to change the detail level
+legacy = no PCIe capability
+linux-sas-hba   2 root complexes (0000:00, 0000:ff)   root ports to PCIe Gen3x8   95 PCI devices
+   |     address       capable                running                name
+   +-+-- 0000:00:03.0  Gen3x8 (7.88 GB/s)     Gen3x8 (7.88 GB/s)     Intel Corporation Xeon E5 v2 PCI Express Root Port
+~  | +-- 0000:03:00.0  Gen4x8 (15.75 GB/s)    Gen3x8 (7.88 GB/s)     Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS38
+   |     device        model                         size  kind  bus   port    disk    link    temp  worn
+~  |     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  12G     6G      6G       36C    1%
+```
+
+**The first line is the BOARD, not a bus.** It names the board where DMI gave a
+name and the machine where it did not, how many root complexes the MACHINE has,
+the best link the board's own root ports publish where one was read, and how
+many PCI devices the capture holds. A tree whose first line were a bus label
+would start one level below the thing that explains it.
+
+**The default draws the LEAST of the fabric, so a missing device is usually the
+setting rather than the tool.** The note above the tree says which:
+
+- `storage-only`, the shipped default - storage and the bridges above it.
+- `storage-and-siblings` - those plus the devices sharing a bridge with storage.
+- `full` - every PCI device.
+
+So a graphics card, a NIC or a Thunderbolt leg is absent by design at the
+default. Ask for more with `--tree-density full` before concluding lsdsk cannot
+see a device, and in the interactive view press `d`, which cycles the three from
+least detail to most. Do not report "lsdsk does not show my GPU" as a defect
+without saying which density you ran.
+
+**The two hop columns are what the DEVICE can do and what it NEGOTIATED**, in
+the tool's own words:
+
+- `capable` - the best link this device publishes.
+- `running` - what it actually negotiated.
+
+Where the two differ the device is below its own maximum, which is the
+comparison this view exists to draw. Read them against the PORT above it, which
+is the row one level up: in the sample the HBA is `capable` of `Gen4x8` and
+running `Gen3x8` because the root port above it is a Gen3 port, so the card is
+not faulty and the board is the ceiling.
+
+**A hop column holds a SYMBOL when there is no figure, and the section spells
+out whichever one it drew.** Neither is a fault, and reading one as a fault is a
+work order against hardware that is fine:
+
+- `- = not read` - nobody published the register. Windows exposes a PCIe link
+  for endpoints and for BRIDGES not at all, so every bridge row reads this
+  there. It means UNMEASURED, never "down".
+- `legacy = no PCIe capability` - the device has no PCIe capability at all,
+  which is an ordinary legacy PCI part. It is a reading, not a gap.
+
+The distinction matters because the two look alike and mean opposite things
+about the EVIDENCE. `legacy` is a positive reading - the platform answered, and
+the answer was "this part has no PCIe capability". `-` is the platform declining
+to answer, so nothing has been established about that link either way. No rule
+fires on either, and no device is ever called slow on a symbol.
+
+**The marker column on the far left is the finding, not the link.** A `!` or `~`
+sits on the row a finding names, so a drive with a perfectly good link can carry
+one for wear or for CRC errors. Read `lsdsk findings` for what it is about
+rather than inferring it from the row it sits on.
 
 ## Devices with no hardware behind them
 
@@ -238,11 +308,13 @@ for hardware. Reading a machine needs privileges exactly as the CLI does, and
 `lsdsk <command> --help` for current options rather than trusting a list here.
 
 The global options are `--replay`, `--profile`, `--history-file`,
-`--no-record`, `--expand-virtual`, `--traceback`, `--env-file`, `--version` and
-`--set SECTION.KEY=VALUE`, the last being how you move a judgement for one run.
-Three also work after the subcommand: `--replay` on any command that reads a
-machine, `--profile` on the `config` commands, and `--expand-virtual` on
-`topology`, `disks` and `tui`. Every other global option is refused after the
+`--no-record`, `--expand-virtual`, `--tree-density`, `--traceback`, `--env-file`,
+`--version` and `--set SECTION.KEY=VALUE`, the last being how you move a
+judgement for one run. Four also work after the subcommand: `--replay` on any
+command that reads a machine, `--profile` on the `config` commands,
+`--expand-virtual` on `topology`, `disks` and `tui`, and `--tree-density` on
+`topology` alone - given globally it reaches every view that draws the fabric,
+including a bare `lsdsk`. Every other global option is refused after the
 subcommand with exit `2`.
 
 The figures the rules turn on are all `[thresholds]` keys, so none of them is

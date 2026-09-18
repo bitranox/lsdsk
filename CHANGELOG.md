@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.2.14] 2026-09-18 13:06:03
+
 ### Added
 
 - **A link figure says what it is worth.** Every PCIe and SATA figure drawn in a
@@ -58,6 +60,19 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   The fabric tree travels with the JSON output as `pci_tree`.
 
 ### Changed
+
+- **The shipped skill describes the topology view the tool actually draws.** It
+  called the section a disk-to-controller tree and carried none of what replaced
+  it, so a reader was sent to a wrong conclusion rather than to none: a `-` in a
+  hop column read as a dead link is a fault report about working hardware, and a
+  default that omits the graphics card reads as a tool that cannot see it. The
+  skill now carries the board line, the three densities with the shipped default
+  named, both hop symbols with their legends, the device column header, and the
+  `capable`/`running` pair read against the port above. `--tree-density` joins
+  the global-option list, which had gone one short.
+  `tests/test_skill_describes_the_fabric_view.py` takes every string it checks
+  from the producer that writes it, so rewording the note, a legend or a column
+  fails until the skill follows.
 
 - **A link figure is written closed, and in one spelling**: `Gen4 x4` and
   `4.0x4` are both `Gen4x4` now - the marketing form, which is what is printed
