@@ -27,7 +27,7 @@ from lsdsk.domain.errors import ConfigurationError
 from .. import safe_console
 from ..constants import CLICK_CONTEXT_SETTINGS
 from ..context import CLIContext, get_cli_context
-from ..envelope import ActionResult, emit_action
+from ..envelope import ActionResult, MappingResult, emit_action
 from ..exit_codes import ExitCode
 from ..typed_click import option
 
@@ -35,18 +35,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
-
-
-class ConfigResult(ActionResult, extra="allow"):
-    """The merged configuration, exactly as the wire carried it before.
-
-    Extra fields are ALLOWED here and forbidden everywhere else in the family,
-    because these keys are the user's own configuration sections rather than a
-    set this code knows: a model with declared fields would either refuse a key
-    somebody added or need one field per section. It exists so the envelope's
-    payload is a model like every other, exported once by the envelope rather
-    than flattened to a dict on the way in.
-    """
 
 
 class DeployResult(ActionResult):
@@ -113,7 +101,7 @@ def cli_config(ctx: click.Context, output_format: OutputFormat, section: str | N
             except ValueError as exc:
                 safe_console.echo(f"\nError: {exc}", err=True)
                 raise SystemExit(ExitCode.INVALID_ARGUMENT) from exc
-            emit_action(ActionCommand.CONFIG, ConfigResult.model_validate(data))
+            emit_action(ActionCommand.CONFIG, MappingResult.model_validate(data))
             return
         safe_console.echo()
         try:

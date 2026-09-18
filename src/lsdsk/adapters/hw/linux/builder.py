@@ -554,12 +554,12 @@ def _build_ata_disk(node: str, block: BlockEntry, capture: LinuxCapture) -> Disk
             health = None
 
     device = block.device
-    rotational = block.queue.rotational
+    rotating = block.queue.rotational
     kind = DiskKind.UNKNOWN
     if identity is not None:
         kind = identity.kind
-    elif rotational is not None:
-        kind = DiskKind.HDD if rotational == "1" else DiskKind.SSD
+    elif rotating is not None:
+        kind = DiskKind.HDD if rotating else DiskKind.SSD
 
     return Disk(
         node=node,

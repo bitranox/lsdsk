@@ -841,12 +841,17 @@ def cli_snapshot(ctx: click.Context, output: Path, output_format: OutputFormat) 
                 err=True,
             )
             raise SystemExit(ExitCode.INVALID_ARGUMENT)
+        # One handler for both halves: save() parses the reading through the same
+        # models load() reads it back with, so it refuses a reading this tool
+        # could never replay - and that refusal deserves the same clean exit code
+        # as a reading that could not be taken at all, rather than falling
+        # through to the top-level handler as an unexpected exception.
         try:
             capture = snapshot_adapter.read_current_machine()
+            snapshot_adapter.save(capture, output)
         except ConfigurationError as error:
             safe_console.echo(f"Error: {error}", err=True)
             raise SystemExit(ExitCode.CONFIG_ERROR) from error
-        snapshot_adapter.save(capture, output)
         if output_format is OutputFormat.JSON:
             emit_action(
                 ActionCommand.SNAPSHOT, SnapshotResult(path=str(output), schema_version=snapshot_adapter.SCHEMA_VERSION)

@@ -10,22 +10,23 @@ The kernel decides. A device with no physical parent resolves under
 answer this, which is why an optical drive - named `sr0` and as physical as any
 disk - is read as ordinary hardware.
 
-The reader is importable anywhere, but every test here stands a temporary tree
-in for `/sys`, so all of them are `os_posix`: they need symlinks, which Windows
+The reader is importable anywhere, and most tests here stand a temporary tree
+in for `/sys`, so those are `os_posix`: they need symlinks, which Windows
 restricts, and they describe a layout no Windows machine has. The tree also
-avoids colons in its path segments, which Windows rejects outright.
+avoids colons in its path segments, which Windows rejects outright. The
+Windows reader's own bus-transport decision needs no such tree, so that test
+is `os_agnostic`.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
 from lsdsk.adapters.hw.linux.reader import read_block
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from lsdsk.adapters.hw.windows.capture import bus_type_of
+from lsdsk.domain.enums import BusType
 
 _PCI_BLOCK = "devices/pci0000_00/0000_00_17_0/ata5/host4/block"
 
@@ -90,3 +91,36 @@ class TestTheKernelDecidesWhatIsVirtual:
         """
         entry = read_block(sysfs / "block")["sr0"]
         assert entry.get("virtual") is not True
+
+
+@pytest.mark.os_agnostic
+def test_the_windows_reader_decides_nvme_through_the_shared_bus_conversion() -> None:
+    """The choice between NVMe and ATA passthrough must not re-derive its own bus mapping.
+
+    `read_disk` used to compare the raw transport string straight against
+    `BusType.NVME`, which only ever worked because the string Windows reports
+    for NVMe happens to be spelled the same as the enum's value. Routing the
+    decision through `bus_type_of` - the same conversion `StorageDescriptor`
+    validates through when a capture is replayed - means a transport spelling
+    lsdsk does not already grade a rule for is resolved once, not twice with
+    the two places free to disagree.
+    """
+    import ast
+
+    from lsdsk.adapters.hw.windows import reader as windows_reader
+
+    # Asserted on the AST rather than on the file's text: a substring check
+    # passes for a mention in a docstring and fails on a reformat, and neither
+    # answers whether read_disk itself calls the conversion.
+    tree = ast.parse(Path(windows_reader.__file__).read_text(encoding="utf-8"))
+    read_disk = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == "read_disk")
+    called = {
+        node.func.id for node in ast.walk(read_disk) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert "bus_type_of" in called, "read_disk does not route its bus decision through the shared conversion"
+
+    # And the conversion the reader now shares with the capture model resolves
+    # every transport name the same way replay would.
+    assert bus_type_of("nvme") is BusType.NVME
+    assert bus_type_of("scsi") is BusType.SAS
+    assert bus_type_of("made-up-transport") is BusType.UNKNOWN

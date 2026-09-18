@@ -34,7 +34,20 @@ class ActionResult(BaseModel, extra="forbid"):
     Fields are forbidden rather than ignored, so a payload built with a
     misspelled field name is refused here instead of reaching a caller with the
     key silently missing. The one payload whose keys are genuinely data - the
-    user's own merged configuration - says so by allowing them.
+    user's own merged configuration - says so with :class:`MappingResult`.
+    """
+
+
+class MappingResult(ActionResult, extra="allow"):
+    """A payload whose KEYS are data rather than a set of fields.
+
+    Two jobs, and the second is easy to miss. It carries ``config``'s merged
+    configuration, whose keys are the user's own sections and cannot be declared
+    here. And it is what a caller gets when it parses an emitted envelope BACK
+    through :class:`ActionEnvelope`: the base forbids fields it does not declare,
+    so without this arm in the union, validating a real envelope fails on every
+    key of its own payload - measured on the shipped ``config`` output, which
+    the suite drives through the real entry point and parses back.
     """
 
 
@@ -62,7 +75,7 @@ class ActionEnvelope(BaseModel):
 
     ok: bool
     command: ActionCommand
-    data: SerializeAsAny[ActionResult]
+    data: SerializeAsAny[ActionResult] | MappingResult
     skipped: list[str] = []
 
 
@@ -84,4 +97,4 @@ def emit_action(command: ActionCommand, data: ActionResult, skipped: list[str] |
     safe_console.echo(envelope.model_dump_json(indent=2, by_alias=True))
 
 
-__all__ = ["ActionEnvelope", "ActionResult", "emit_action"]
+__all__ = ["ActionEnvelope", "ActionResult", "MappingResult", "emit_action"]

@@ -43,13 +43,19 @@ _BUS_TYPES: dict[str, BusType] = {
 }
 
 
-def _bus_type_of(value: object) -> object:
+def bus_type_of(value: object) -> object:
     """Map a transport name onto a bus, leaving anything else to be refused.
 
+    Public rather than a parse-step private: :mod:`.reader` needs the same
+    mapping to decide whether to open NVMe or ATA passthrough for a disk, and
+    reaching for this shared conversion instead of comparing the raw string
+    against an enum member itself keeps that decision in the one place a
+    future transport spelling would need to be taught.
+
     Example:
-        >>> _bus_type_of("atapi")
+        >>> bus_type_of("atapi")
         <BusType.SATA: 'sata'>
-        >>> _bus_type_of("fibre")
+        >>> bus_type_of("fibre")
         <BusType.UNKNOWN: 'unknown'>
     """
     return _BUS_TYPES.get(value, BusType.UNKNOWN) if isinstance(value, str) else value
@@ -100,7 +106,7 @@ class StorageDescriptor(CaptureModel):
         rev: The firmware revision.
     """
 
-    bus_type: Annotated[BusType, BeforeValidator(_bus_type_of)] = BusType.UNKNOWN
+    bus_type: Annotated[BusType, BeforeValidator(bus_type_of)] = BusType.UNKNOWN
     model: str | None = None
     serial: str | None = None
     rev: str | None = None
@@ -193,4 +199,5 @@ __all__ = [
     "PciEntry",
     "StorageDescriptor",
     "WindowsCapture",
+    "bus_type_of",
 ]

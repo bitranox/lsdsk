@@ -379,6 +379,57 @@ def test_when_a_device_reports_no_rotation_rate_the_kind_stays_unknown() -> None
     assert inventory.disks[0].kind is DiskKind.UNKNOWN
 
 
+def _linux_capture_with_rotational(rotational: str | None) -> dict[str, Any]:
+    """A minimal Linux capture holding one disk with no ATA identity of its own.
+
+    With no identity to decide `kind` first, the builder's decision falls
+    entirely on `queue.rotational`, which is what a test of that boundary
+    needs isolated.
+    """
+    queue: dict[str, Any] = {} if rotational is None else {"rotational": rotational}
+    return {
+        "schema": 2,
+        "platform": "linux",
+        "hostname": "example",
+        "kernel": "6.1.0",
+        "pci": {},
+        "block": {
+            "sda": {
+                "size": "1024",
+                "queue": queue,
+                "device_path": "/sys/devices/pci0000:00/0000:00:17.0/ata5/host4/target4:0:0/4:0:0:0",
+            }
+        },
+    }
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("rotational", "expected"),
+    [
+        ("1", DiskKind.HDD),
+        ("0", DiskKind.SSD),
+        ("unexpected", DiskKind.UNKNOWN),
+        (None, DiskKind.UNKNOWN),
+    ],
+)
+def test_the_rotational_flag_is_parsed_at_the_capture_boundary_not_guessed_in_the_mapping(
+    rotational: str | None, expected: DiskKind
+) -> None:
+    """`rotational` is kernel-published ``0``/``1`` text; nothing else it could hold means anything.
+
+    The parse used to live in the mapping layer as `rotational == "1"`, so any
+    value other than the literal ``"1"`` fell into the SSD branch - an
+    unrecognised reading silently became a specific, wrong answer instead of
+    "not measured". Moved to the capture model's own boundary, that value
+    becomes `None` there instead, the same way an unrecognised Windows
+    transport name resolves to `BusType.UNKNOWN` rather than a guess.
+    """
+    inventory = build_from(_linux_capture_with_rotational(rotational))
+
+    assert inventory.disks[0].kind is expected
+
+
 @pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("text", "expected"),

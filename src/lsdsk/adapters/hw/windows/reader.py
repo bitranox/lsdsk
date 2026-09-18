@@ -31,6 +31,7 @@ from typing import Any
 from ....domain.enums import BusType, Platform
 from ..snapshot import SCHEMA_VERSION
 from . import winapi as api
+from .capture import bus_type_of
 
 # PCI hardware identifiers look like PCI\VEN_8086&DEV_A182&SUBSYS_...&REV_11.
 _HARDWARE_ID = re.compile(r"PCI\\VEN_([0-9A-F]{4})&DEV_([0-9A-F]{4})", re.IGNORECASE)
@@ -571,8 +572,11 @@ def read_disk(kernel32: api.WinLibrary, path: str, ancestors: list[str]) -> dict
         if temperature:
             entry["temperature"] = temperature
 
-        bus = entry["device"].get("bus_type", "")
-        if bus == BusType.NVME:
+        # The same boundary conversion `StorageDescriptor.bus_type` validates
+        # through on replay, so this decision and a replayed one can never read
+        # a transport name two different ways.
+        bus = bus_type_of(entry["device"].get("bus_type", ""))
+        if bus is BusType.NVME:
             entry["nvme"] = _read_nvme(kernel32, handle)
         elif passthrough:
             entry["ata"] = _read_ata(kernel32, handle)

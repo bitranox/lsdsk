@@ -162,6 +162,20 @@ def collect() -> Inventory:
 def save(capture: dict[str, Any], path: Path) -> None:
     """Write a reading to a snapshot file, readable only by its owner.
 
+    The reading is parsed through the same models :func:`load` reads it back
+    with before a single byte reaches disk. Previously this wrote whatever
+    :func:`read_current_machine` returned with a bare ``json.dumps``, so a
+    reader bug that shaped one section wrongly still produced a file: it
+    looked exactly like a captured snapshot and could never be replayed,
+    because ``load`` refuses that same shape. What gets written on success is
+    still the raw reading, not the parsed model's own re-encoding: the
+    platform capture models only declare the keys their builder reads
+    (``extra="ignore"``), and a capture is meant to carry more than that for a
+    bug report - the error text of a refused passthrough, VPD pages nothing
+    decodes yet, sysfs attributes no rule reads. Re-deriving the file from the
+    typed model would silently drop all of that from every new snapshot;
+    validating through it and then writing what was actually read does not.
+
     A snapshot names the machine, its kernel and every drive's serial number, and
     the run that produces the most complete one is a privileged run. Left at the
     ambient umask it lands group- and world-readable, so it is narrowed to the
@@ -182,9 +196,18 @@ def save(capture: dict[str, Any], path: Path) -> None:
         path: Destination file.
 
     Raises:
+        ConfigurationError: If the reading names no platform lsdsk has a model
+            for, or a section does not have the shape its model requires. It is
+            refused here rather than written to a file :func:`load` could
+            never open.
         OSError: If the file cannot be written or renamed into place. Any
             previous file at the destination is untouched in that case.
     """
+    try:
+        parse_capture(capture)
+    except ValidationError as error:
+        message = f"This reading is not one lsdsk understands, so it was not written: {error}"
+        raise ConfigurationError(message) from error
     body = json.dumps(capture, indent=2, sort_keys=True)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:

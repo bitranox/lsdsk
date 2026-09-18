@@ -16,6 +16,7 @@ import pytest
 
 from lsdsk.adapters.cli import cli
 from lsdsk.adapters.hw import snapshot as snapshot_adapter
+from lsdsk.domain.errors import ConfigurationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -79,6 +80,33 @@ def test_a_structured_capture_keeps_the_notice_out_of_the_envelope(
     assert envelope["ok"] is True
     assert "serial number" not in result.stdout.lower(), "the notice leaked into the envelope stream"
     assert "serial number" in result.stderr.lower(), result.stderr
+
+
+@pytest.mark.os_agnostic
+def test_a_reading_load_would_refuse_is_never_written(tmp_path: Path) -> None:
+    """A reading that fails the exact validation `load` uses must not reach disk.
+
+    Before this was fixed, `save` wrote whatever `read_current_machine`
+    produced with a bare `json.dumps`, with no parse step at all: a reader bug
+    that shaped one section wrongly still produced a file that looked exactly
+    like a captured snapshot and could never be replayed, since `load` parses
+    the identical shape through the identical models. `pci` here is a string
+    rather than the mapping `LinuxCapture` requires, the same failure `load`
+    would report for a snapshot file shaped this way.
+    """
+    malformed: dict[str, Any] = {
+        "schema": 2,
+        "platform": "linux",
+        "hostname": "box",
+        "kernel": "6.1.0",
+        "pci": "not-a-mapping",
+    }
+    target = tmp_path / "capture.json"
+
+    with pytest.raises(ConfigurationError):
+        snapshot_adapter.save(malformed, target)
+
+    assert not target.exists(), "a reading `load` would refuse was still written to disk"
 
 
 @pytest.mark.os_agnostic

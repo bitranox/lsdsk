@@ -22,13 +22,41 @@ System Role:
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 
 from ....domain.enums import Platform
 from ..capture import CaptureHeader, CaptureModel
 from ..decode.virtualization import VirtualizationEvidence
+
+# ``rotational`` is a kernel-published ``0``/``1`` text flag, unlike most of
+# what a capture carries as text: sysfs never publishes anything else there,
+# so an unrecognised value has no established meaning and reads as "not
+# measured" rather than being guessed at. Windows already carries this as a
+# real bool (``DiskEntry.rotating``); this is the Linux side of the same
+# boundary conversion, keyed by the exact wire text rather than a dict lookup
+# because there are only ever the two values worth naming.
+_ROTATING_VALUES: dict[str, bool] = {"0": False, "1": True}
+
+
+def _rotating_of(value: object) -> object:
+    """Parse the kernel's rotational flag into a bool, at the boundary.
+
+    Anything other than the two kernel-published digits - an empty read, a
+    driver that publishes something else - becomes ``None`` rather than a
+    guess, the same way :func:`~lsdsk.adapters.hw.windows.capture.bus_type_of`
+    leaves an unrecognised transport unresolved rather than inventing one.
+
+    Example:
+        >>> _rotating_of("1")
+        True
+        >>> _rotating_of("0")
+        False
+        >>> _rotating_of("unexpected") is None
+        True
+    """
+    return _ROTATING_VALUES.get(value) if isinstance(value, str) else value
 
 
 class AhciRegisters(CaptureModel):
@@ -180,10 +208,13 @@ class QueueAttributes(CaptureModel):
     """A block device's queue attributes.
 
     Attributes:
-        rotational: ``1`` for rotating media, ``0`` otherwise.
+        rotational: Whether the kernel reports rotating media, parsed from the
+            wire's ``1``/``0`` text at this boundary rather than left for the
+            mapping layer to compare against a literal. ``None`` when sysfs
+            could not be read or published something this format never uses.
     """
 
-    rotational: str | None = None
+    rotational: Annotated[bool | None, BeforeValidator(_rotating_of)] = None
 
 
 class DeviceAttributes(CaptureModel):

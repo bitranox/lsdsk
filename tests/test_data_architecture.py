@@ -240,10 +240,14 @@ def test_a_snapshot_is_written_owner_only(tmp_path: Path) -> None:
     that produces the most complete one is a privileged run. At the ambient umask
     that file lands group- and world-readable.
     """
-    from lsdsk.adapters.hw.snapshot import SNAPSHOT_FILE_MODE, save
+    from lsdsk.adapters.hw.snapshot import SCHEMA_VERSION, SNAPSHOT_FILE_MODE, save
 
     target = tmp_path / "capture.json"
-    save({"schema": 1, "platform": "linux", "hostname": "example"}, target)
+    # A real capture's shape, because save() parses a reading through the models
+    # load() reads it back with before it writes: a stub shaped like no capture
+    # is refused there, which is the point of that check rather than a problem
+    # with it.
+    save({"schema": SCHEMA_VERSION, "platform": "linux", "hostname": "example", "kernel": "6.1.0", "pci": {}}, target)
 
     assert target.stat().st_mode & 0o777 == SNAPSHOT_FILE_MODE
     assert not target.stat().st_mode & 0o077, "no group or world access"

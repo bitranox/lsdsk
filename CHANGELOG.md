@@ -24,6 +24,27 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
+- **Every domain value is a validated model.** `Disk`, `Controller`, `Inventory`,
+  the link and history types and `Thresholds` derive from `DomainModel`, frozen
+  and refusing a field name nobody declared, so a mapping that produces a
+  wrong-typed value is refused at the construction that made it rather than
+  several layers later in a renderer. A changed copy comes from `with_changes`,
+  which revalidates: pydantic's own `model_copy(update=...)` writes an unknown
+  key into the instance and leaves the intended field alone, raising nothing.
+  Nothing about the output moved - the JSON envelope, the report and the
+  interactive view are unchanged.
+- **The acting commands' JSON envelope carries a model rather than a dict.**
+  Every result derives from `ActionResult` and the payload is nested instead of
+  dumped and re-embedded. The wire form is byte-identical, checked against a
+  capture of the previous output for all six commands that emit one.
+- **Closed vocabularies travel as their own members.** The interactive view
+  navigates in `CliCommand` members and asks one method which page is in front,
+  the detail panel's twelve group labels are an enum, `Health` is read through a
+  typed accessor rather than `getattr` with a field-name string, `logdemo
+  --theme` takes a checked choice, and a `--set` override is a parsed model whose
+  provenance layer is a member. A page, a group label or a theme that does not
+  exist is now an error a type checker or the command line catches.
+
 - **The README is a front page again, and the reference it had grown into is
   five documents.** It had reached 631 lines, so what the tool is, what it
   finds, how it reasons, every command and every page all competed for the same
