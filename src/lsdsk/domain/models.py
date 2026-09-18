@@ -1012,6 +1012,37 @@ class Health(DomainModel, frozen=True):
         return self.available_spare <= self.available_spare_threshold
 
 
+class RefusedReading(DomainModel, frozen=True):
+    """A reading the machine would not give, and the reason it gave instead.
+
+    A field that went missing because nobody was allowed to ask reads exactly
+    like a field the hardware answered with a zero, and only the device knows
+    which happened. Both readers already record the OS text per device when a
+    passthrough or a register mapping is refused; this is where that text becomes
+    a value, so a caller can be told a reading is absent BECAUSE it was refused
+    rather than left to infer it from a null.
+
+    ``reading`` is the platform reader's own label for what it asked for rather
+    than a member of an enum: which readings exist is a property of the reader
+    and grows with it, and an unrecognised label would have to become UNKNOWN or
+    be dropped. Dropping a refusal is the exact defect this value exists to close
+    - it makes an incomplete scan look complete - so the label is carried as the
+    text it came as, cleaned like every other string the machine chose.
+
+    Attributes:
+        reading: What was asked for, as the reader names it: ``smart-data``,
+            ``identify``, ``ahci-port-count``.
+        reason: What the operating system said when it refused.
+
+    Example:
+        >>> RefusedReading(reading="smart-data", reason="[Errno 1] Operation not permitted").reading
+        'smart-data'
+    """
+
+    reading: DeviceText
+    reason: DeviceText
+
+
 class Controller(DomainModel, frozen=True):
     """A storage controller and its position on the PCIe fabric.
 
@@ -1044,6 +1075,10 @@ class Controller(DomainModel, frozen=True):
             occupant may be a sibling.
         port_count: Total ports or phys, where known.
         ports_used: Ports or phys with something attached.
+        readings_refused: Readings this controller would not give, each with the
+            reason. An AHCI port count is read by mapping the controller's own
+            registers, which some hosts refuse even to root, and that refusal is
+            why ``port_count`` is null rather than the hardware having no answer.
 
     Example:
         >>> Controller(address="0000:03:00.0", name="HBA 9500-16i", kind=ControllerKind.SAS).address
@@ -1062,6 +1097,7 @@ class Controller(DomainModel, frozen=True):
     vendor: int | None = None
     port_count: int | None = None
     ports_used: int | None = None
+    readings_refused: tuple[RefusedReading, ...] = ()
 
     @property
     def ports_free(self) -> int | None:
@@ -1117,6 +1153,10 @@ class Disk(DomainModel, frozen=True):
         link: Its interface speed, negotiated against both ends' capability.
         pcie: For NVMe, the drive's own PCIe link.
         health: Condition and wear, when it could be read.
+        readings_refused: Readings this drive would not give, each with the
+            reason. A drive behind some RAID drivers refuses SMART passthrough,
+            and without root no drive answers at all, so an empty ``health`` on
+            its own cannot say whether the drive is fine or was never asked.
 
     Example:
         >>> Disk(node="sda", path="/dev/sda", model="Samsung SSD 870 EVO 4TB").node
@@ -1136,6 +1176,7 @@ class Disk(DomainModel, frozen=True):
     link: InterfaceLink = Field(default_factory=InterfaceLink)
     pcie: PcieLink | None = None
     health: Health | None = None
+    readings_refused: tuple[RefusedReading, ...] = ()
 
 
 class Finding(DomainModel, frozen=True):
@@ -1330,6 +1371,7 @@ __all__ = [
     "PciNode",
     "PcieLink",
     "PcieSlot",
+    "RefusedReading",
     "SmartAttribute",
     "pcie_bandwidth_gbps",
     "pcie_generation",

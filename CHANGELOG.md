@@ -7,6 +7,22 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A run that was REFUSED a reading no longer reports itself complete.** The
+  envelope's own promise is that `ok` saves a caller from inspecting every field,
+  and this was the case where it failed: an AHCI port count is read by mapping
+  the controller's own registers, which some hosts deny even to root, and a drive
+  behind some RAID drivers refuses SMART passthrough the same way. The field went
+  null, `ok` stayed true, and the run was indistinguishable from a complete one.
+  Both readers already wrote the operating system's own words per device; the
+  typed capture models named only the payload keys, so the reason was dropped at
+  that boundary. They carry it now, a disk and a controller each carry
+  `readings_refused`, and `skipped` names the device and what it said. The rule is
+  keyed on a refusal that was RECORDED, never on a field being null: a null port
+  count is also what an NVMe controller and a legitimately zero AHCI bitmap
+  produce, so keying it there fired on every healthy capture. The Linux reader
+  reports the refusal apart from a controller that simply exposes no such region,
+  which is not an incomplete reading and says nothing.
+
 - **A controller's name and firmware can no longer carry an escape sequence to
   the terminal.** They come from the HBA firmware's own `board_name` and
   `version_fw`, which are hardware-chosen exactly as a drive's model is, and the

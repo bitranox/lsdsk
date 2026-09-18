@@ -28,6 +28,7 @@ from ....domain.models import (
     PcieSlot,
     PciNode,
     PortChild,
+    RefusedReading,
     representative_occupant,
 )
 from ....domain.text import device_text, first_reported
@@ -39,6 +40,7 @@ from ..decode.nvme import decode_identify_controller, decode_smart_log
 from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble
 from ..linux.builder import controller_kind_of, parse_pcie_speed
+from ..refusals import refusals_of
 from .capture import HealthBlobs
 
 if TYPE_CHECKING:
@@ -334,9 +336,37 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
                 ),
                 pcie=_pcie_link(endpoint) if is_nvme and endpoint is not None else None,
                 health=_health_from(record, entry, bus=bus, nvme_identity=nvme_identity),
+                readings_refused=_refusals_for(entry, record),
             )
         )
     return tuple(disks)
+
+
+def _refusals_for(entry: DiskEntry, record: HealthBlobs) -> tuple[RefusedReading, ...]:
+    """Name the readings this disk refused, with the reason Windows gave.
+
+    The whole-device refusal is kept beside the per-command ones because it is
+    the one an unprivileged run meets first: a device that cannot be opened
+    reports nothing else at all, and ``ata``/``nvme`` are then absent rather than
+    carrying a reason of their own.
+
+    Args:
+        entry: The disk as the capture holds it.
+        record: Its health blobs, ATA or NVMe.
+
+    Returns:
+        One value per refused reading, empty when the disk answered everything.
+    """
+    return refusals_of(
+        {
+            "device": entry.error,
+            "identify": record.identify_error,
+            "identify-controller": record.identify_controller_error,
+            "smart-data": record.smart_data_error,
+            "smart-thresholds": record.smart_thresholds_error,
+            "smart-log": record.smart_log_error,
+        }
+    )
 
 
 def _node_name(entry: DiskEntry, path: str) -> str:

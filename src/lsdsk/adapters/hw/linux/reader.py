@@ -425,7 +425,26 @@ def _read_config(device: Path) -> bytes:
 _AHCI_CLASS = 0x0106
 
 
-def read_ahci_capabilities(device: Path) -> dict[str, int] | None:
+class AhciReading(NamedTuple):
+    """The outcome of trying to read an AHCI controller's registers.
+
+    Two fields rather than an optional mapping because "there is no such region"
+    and "the kernel would not let me map it" are different answers and only the
+    second makes a scan incomplete. Returned as a pair so the caller cannot read
+    one without seeing the other; a bare ``None`` gave it no way to tell them
+    apart, and the port count then went missing with nothing said about why.
+
+    Attributes:
+        registers: The raw register values, or ``None`` when they were not read.
+        refused: What the kernel said when it would not give them, or ``None``
+            when the controller simply exposes no such region.
+    """
+
+    registers: dict[str, int] | None
+    refused: str | None
+
+
+def read_ahci_capabilities(device: Path) -> AhciReading:
     """Read an AHCI controller's own capability registers.
 
     They are memory mapped rather than in configuration space, so this needs the
@@ -435,27 +454,34 @@ def read_ahci_capabilities(device: Path) -> dict[str, int] | None:
 
     Only two read-only registers are touched, and the mapping is read-only.
 
+    A missing or too-small region is reported as neither: a controller that
+    exposes no BAR5 has nothing to give and the scan is not incomplete for it.
+    An open or a mapping the kernel denies is reported as a refusal in its own
+    words, because that is the case where the port count is unknown rather than
+    absent - and it happens to root as well, under kernel lockdown and on hosts
+    that deny the mapping outright.
+
     Args:
         device: The sysfs directory of the PCI device.
 
     Returns:
-        The raw register values, or ``None`` when they cannot be reached.
+        The registers, or the reason they could not be reached.
     """
     resource = device / "resource5"
     try:
         size = resource.stat().st_size
     except OSError:
-        return None
+        return AhciReading(None, None)
     if size < ahci.REGISTER_SPAN:
-        return None
+        return AhciReading(None, None)
     try:
         handle = os.open(resource, os.O_RDONLY)
-    except OSError:
-        return None
+    except OSError as error:
+        return AhciReading(None, str(error))
     try:
         mapped = mmap.mmap(handle, min(size, mmap.PAGESIZE), prot=mmap.PROT_READ)
-    except (OSError, ValueError):
-        return None
+    except (OSError, ValueError) as error:
+        return AhciReading(None, str(error))
     finally:
         os.close(handle)
     try:
@@ -465,7 +491,7 @@ def read_ahci_capabilities(device: Path) -> dict[str, int] | None:
         )
     finally:
         mapped.close()
-    return {"capability": capability, "ports_implemented": implemented}
+    return AhciReading({"capability": capability, "ports_implemented": implemented}, None)
 
 
 def _entries(directory: Path) -> list[Path]:
@@ -508,9 +534,11 @@ def read_pci(root: Path = Path("/sys/bus/pci/devices")) -> dict[str, dict[str, A
         if children:
             entry["children"] = children
         if _to_class(entry.get("class")) == _AHCI_CLASS:
-            registers = read_ahci_capabilities(device)
-            if registers is not None:
-                entry["ahci"] = registers
+            reading = read_ahci_capabilities(device)
+            if reading.registers is not None:
+                entry["ahci"] = reading.registers
+            elif reading.refused is not None:
+                entry["ahci_error"] = reading.refused
         capability = parse_pcie_capability(_read_config(device))
         if capability.port_type is not None:
             entry["pcie_port_type"] = capability.port_type
@@ -790,6 +818,7 @@ __all__ = [
     "ATA_SMART",
     "NVME_IOCTL_ADMIN_CMD",
     "SG_IO",
+    "AhciReading",
     "NvmePassthruCommand",
     "SgIoHeader",
     "ata_passthrough",

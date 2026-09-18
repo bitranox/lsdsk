@@ -42,7 +42,7 @@ from lsdsk.adapters.render.tables import counter_legend
 from lsdsk.domain.diagnostics import count_by_severity
 from lsdsk.domain.enums import ActionCommand, CliCommand, Environment, OutputFormat, Severity, TreeDensity
 from lsdsk.domain.errors import ConfigurationError
-from lsdsk.domain.models import Controller, Disk, Finding, Inventory, PcieSlot, PciNode
+from lsdsk.domain.models import Controller, Disk, Finding, Inventory, PcieSlot, PciNode, RefusedReading
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 
 from .. import safe_console
@@ -421,6 +421,15 @@ def _skipped_readings(inventory: Inventory) -> list[str]:
     a null counter and cannot tell "this drive reports zero errors" from "nobody
     was allowed to ask", which are opposite conclusions.
 
+    Privilege and the hypervisor are properties of the RUN, so they are asked of
+    the inventory once. A refusal is a property of one device: a drive behind some
+    RAID drivers says no to SMART passthrough, and a host can deny an AHCI
+    register mapping even to root, so a privileged run is incomplete without
+    anything here being false. Those entries come from what the reader RECORDED,
+    never from a field being null - keyed on null this fired on every healthy
+    capture, because a null port count is also what an NVMe controller and a
+    legitimately zero AHCI bitmap produce.
+
     Args:
         inventory: The machine that was scanned.
 
@@ -437,7 +446,33 @@ def _skipped_readings(inventory: Inventory) -> list[str]:
         skipped.append("slot-numbers: needs root or Administrator")
     if not inventory.readings_are_physical:
         skipped.append("physical-link-rules: suppressed, the hypervisor invents these values")
+    skipped.extend(_refusals_named(inventory))
     return skipped
+
+
+def _refusals_named(inventory: Inventory) -> list[str]:
+    """Name every reading a device refused, with its subject and the reason.
+
+    The subject is part of the line because a refusal belongs to one device: a
+    reader told that SMART was refused, without being told on which drive, has to
+    interrogate the whole machine by hand to find out. Virtual devices are
+    included: they are part of the machine, and one of them refusing a reading is
+    the same kind of incompleteness.
+
+    Args:
+        inventory: The machine that was scanned.
+
+    Returns:
+        One entry per refused reading, in device order, empty when nothing was
+        refused.
+    """
+    subjects: list[tuple[str, tuple[RefusedReading, ...]]] = [
+        (disk.path or disk.node, disk.readings_refused) for disk in (*inventory.disks, *inventory.virtual_disks)
+    ]
+    subjects += [(controller.address, controller.readings_refused) for controller in inventory.controllers]
+    return [
+        f"{refused.reading}: {subject} - {refused.reason}" for subject, refusals in subjects for refused in refusals
+    ]
 
 
 def emit_json(inventory: Inventory, findings: Sequence[Finding], command: CliCommand) -> None:

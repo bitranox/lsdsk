@@ -38,6 +38,7 @@ from ..decode.nvme import decode_identify_controller, decode_smart_log
 from ..decode.pciids import Database
 from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble, port_kind_of
+from ..refusals import refusals_of
 from .capture import AtaBlobs, NvmeBlobs, NvmeClassEntry
 
 if TYPE_CHECKING:
@@ -299,6 +300,7 @@ def build_controllers(capture: LinuxCapture) -> tuple[Controller, ...]:
                 vendor=parse_int(entry.vendor, 16),
                 port_count=ports.get(address),
                 ports_used=None,
+                readings_refused=refusals_of({"ahci-port-count": entry.ahci_error}),
             )
         )
     return tuple(controllers)
@@ -524,6 +526,13 @@ def _build_nvme_disk(node: str, block: BlockEntry, capture: LinuxCapture) -> Dis
         controller_address=address,
         pcie=None if endpoint is None else _pcie_link(endpoint),
         health=health,
+        readings_refused=refusals_of(
+            {
+                "device": record.error,
+                "identify-controller": record.identify_controller_error,
+                "smart-log": record.smart_log_error,
+            }
+        ),
     )
 
 
@@ -574,6 +583,14 @@ def _build_ata_disk(node: str, block: BlockEntry, capture: LinuxCapture) -> Disk
         controller_address=address,
         link=_sata_link(identity, phy, ata_link, _ahci_port_speed(capture, address)),
         health=health,
+        readings_refused=refusals_of(
+            {
+                "device": ata.error,
+                "identify": ata.identify_error,
+                "smart-data": ata.smart_data_error,
+                "smart-thresholds": ata.smart_thresholds_error,
+            }
+        ),
     )
 
 

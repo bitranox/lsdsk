@@ -216,7 +216,13 @@ so a caller can tell a complete answer from a partial one.
 **The envelope's four keys, and what a caller may rely on.** `ok` is true when
 the command did everything asked of it, and false when something was left
 undone - it is NOT "the hardware is healthy", so never alert on it. `skipped` is
-a list of sentences saying what was not done and why, empty when nothing was.
+a list of sentences saying what was not done and why, empty when nothing was. A
+reading one DEVICE refused appears there too, as `<reading>: <subject> - <reason>`,
+so a run made as root can still be incomplete: a drive behind some RAID drivers
+refuses SMART passthrough, and an AHCI port count is read by mapping the
+controller's own registers, which some hosts deny outright. Those entries name
+the drive or the PCI address, so a check does not have to interrogate the machine
+again to find out which one said no.
 `command` names the command that produced the payload. `data` is that command's
 own result.
 
@@ -240,8 +246,11 @@ an `IndentationError`, which exits `1` - the same code these checks use for
 
 **A disk, inside `data.disks`, carries `node`, `path`, `model`, `serial`,
 `firmware`, `wwn`, `size_bytes`, `kind`, `bus`, `controller_address`, `link`,
-`pcie` and `health`.** Every one but `node`, `path`, `model` and `bus` may be
-`null`, which means it was not read rather than that it is zero. `bus` is one of
+`pcie`, `health` and `readings_refused`.** Every one but `node`, `path`,
+`model`, `bus` and `readings_refused` may be `null`, which means it was not read
+rather than that it is zero. `readings_refused` is a list, empty on a drive that
+answered everything, and each entry is an object of `reading` and `reason`: what
+was asked for, and what the operating system said when it would not give it. `bus` is one of
 `sata`, `sas`, `nvme`, `usb`, `virtual`, `unknown`; `kind` is `ssd`, `hdd` or
 `unknown`. `link` is an object of `negotiated_gbps`, `drive_max_gbps` and
 `port_max_gbps`, and a speed rule only fires when both ends are known.

@@ -129,12 +129,22 @@ class DiskTemperature(CaptureModel):
 class HealthBlobs(CaptureModel):
     """What passthrough returned for one disk, base64 encoded.
 
+    The ``*_error`` fields are the other half of every payload field: the reader
+    writes one or the other, never both. A device opened without Administrator
+    cannot be asked for IDENTIFY at all, and that sentence is what tells an
+    absent reading from a healthy zero.
+
     Attributes:
         identify: The ATA IDENTIFY DEVICE data.
         identify_controller: The NVMe Identify Controller structure.
         smart_log: The NVMe SMART / Health Information log page.
         smart_data: The ATA SMART READ DATA structure.
         smart_thresholds: The ATA SMART READ THRESHOLDS structure.
+        identify_error: Why IDENTIFY was refused.
+        identify_controller_error: Why Identify Controller was refused.
+        smart_log_error: Why the health log was refused.
+        smart_data_error: Why SMART READ DATA was refused.
+        smart_thresholds_error: Why SMART READ THRESHOLDS was refused.
     """
 
     identify: str | None = None
@@ -142,6 +152,11 @@ class HealthBlobs(CaptureModel):
     smart_log: str | None = None
     smart_data: str | None = None
     smart_thresholds: str | None = None
+    identify_error: str | None = None
+    identify_controller_error: str | None = None
+    smart_log_error: str | None = None
+    smart_data_error: str | None = None
+    smart_thresholds_error: str | None = None
 
 
 class DiskEntry(CaptureModel):
@@ -159,6 +174,8 @@ class DiskEntry(CaptureModel):
         temperature: The temperature, when the storage stack offered one.
         nvme: NVMe passthrough results.
         ata: ATA passthrough results.
+        error: Why the device could not be opened at all, in which case nothing
+            else here was read.
     """
 
     parent: str | None = None
@@ -170,6 +187,7 @@ class DiskEntry(CaptureModel):
     temperature: DiskTemperature | None = None
     nvme: HealthBlobs | None = None
     ata: HealthBlobs | None = None
+    error: str | None = None
 
 
 class WindowsCapture(CaptureHeader):

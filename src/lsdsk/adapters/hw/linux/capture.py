@@ -88,6 +88,11 @@ class PciEntry(CaptureModel):
         children: The PCI addresses directly below a bridge.
         ahci: The AHCI registers, recorded for an AHCI controller on a
             privileged run only.
+        ahci_error: Why those registers could not be read, when the host refused
+            the mapping rather than the controller having no such region. The two
+            are not the same fact: a controller with no BAR5 has nothing to
+            report, while a refused mapping means the port count is unknown and
+            the run is incomplete.
         slot_implemented: Whether the port ends in a physical connector, read
             from configuration space and therefore only with privilege.
         slot_number: The physical slot number the board assigned the port.
@@ -108,6 +113,7 @@ class PciEntry(CaptureModel):
     path: str = ""
     children: tuple[str, ...] = ()
     ahci: AhciRegisters | None = None
+    ahci_error: str | None = None
     slot_implemented: bool | None = None
     slot_number: int | None = None
     pcie_port_type: int | None = None
@@ -270,15 +276,30 @@ class BlockEntry(CaptureModel):
 class AtaBlobs(CaptureModel):
     """What ATA passthrough returned for one disk, base64 encoded.
 
+    The ``*_error`` fields are the other half of every payload field: the reader
+    writes one or the other, never both, and until they were named here the
+    refusal was dropped at this boundary while the payload got through. A
+    reading that is absent because the drive refused it is a different fact from
+    one that is absent because nobody looked, and only this text tells them
+    apart.
+
     Attributes:
         identify: The IDENTIFY DEVICE data.
         smart_data: The SMART READ DATA structure.
         smart_thresholds: The SMART READ THRESHOLDS structure.
+        error: Why the device node could not be opened at all.
+        identify_error: Why IDENTIFY was refused.
+        smart_data_error: Why SMART READ DATA was refused.
+        smart_thresholds_error: Why SMART READ THRESHOLDS was refused.
     """
 
     identify: str | None = None
     smart_data: str | None = None
     smart_thresholds: str | None = None
+    error: str | None = None
+    identify_error: str | None = None
+    smart_data_error: str | None = None
+    smart_thresholds_error: str | None = None
 
 
 class NvmeBlobs(CaptureModel):
@@ -287,10 +308,16 @@ class NvmeBlobs(CaptureModel):
     Attributes:
         identify_controller: The Identify Controller structure.
         smart_log: The SMART / Health Information log page.
+        error: Why the device node could not be opened at all.
+        identify_controller_error: Why Identify Controller was refused.
+        smart_log_error: Why the health log was refused.
     """
 
     identify_controller: str | None = None
     smart_log: str | None = None
+    error: str | None = None
+    identify_controller_error: str | None = None
+    smart_log_error: str | None = None
 
 
 class LinuxCapture(CaptureHeader):

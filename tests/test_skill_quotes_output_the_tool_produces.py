@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from lsdsk.adapters.render import theme
+from lsdsk.domain.enums import CliCommand
 from lsdsk.domain.models import pcie_bandwidth_gbps, pcie_generation
 
 SKILL = Path(__file__).resolve().parents[1] / "skills" / "lsdsk" / "SKILL.md"
@@ -106,3 +107,47 @@ def test_a_bandwidth_the_skill_quotes_beside_a_figure_is_that_figure_s_own() -> 
             checked += 1
     if not checked:
         pytest.skip("the skill quotes no figure with its throughput")
+
+
+#: The sentence that enumerates a disk's fields, and the end of it. Anchored on
+#: the sentence rather than on a heading because the surrounding prose is free to
+#: move; what must not drift is this list against the payload itself.
+_DISK_FIELDS_OPENS = "A disk, inside `data.disks`, carries "
+_SENTENCE_ENDS = ".**"
+
+
+def _enumerated_disk_fields() -> list[str]:
+    """The field names the skill's own sentence promises a disk carries."""
+    text = SKILL.read_text(encoding="utf-8")
+    start = text.index(_DISK_FIELDS_OPENS)
+    sentence = text[start : text.index(_SENTENCE_ENDS, start)]
+    return re.findall(r"`([a-z_]+)`", sentence)
+
+
+def test_the_skill_enumerates_the_fields_a_disk_really_carries() -> None:
+    """A field added to the payload and not to this sentence is missing from the docs.
+
+    The failure this guards is not a wrong word: a caller reading an enumerated
+    list takes it as the whole payload, so a field the tool emits and the list
+    omits is one nobody knows to read. The same shape cost the TUI's disk page its
+    serial and firmware columns for a whole minor series, and that list had no
+    guard either.
+
+    Compared against a real envelope rather than against ``Disk.model_fields``,
+    because the promise is about what a caller RECEIVES, and a field could be
+    excluded on the way out without the model saying so.
+    """
+    from lsdsk.adapters.cli.commands.scan import build_envelope
+    from lsdsk.adapters.hw import snapshot as snapshot_adapter
+
+    capture = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
+    inventory = snapshot_adapter.load(capture)
+    envelope = build_envelope(inventory, (), CliCommand.DISKS)
+    emitted = set(envelope.model_dump(mode="json")["data"]["disks"][0])
+
+    promised = _enumerated_disk_fields()
+    assert promised, "the enumerating sentence was not found, so this test checked nothing"
+    assert set(promised) == emitted, (
+        f"the skill and the payload disagree: only in the skill {sorted(set(promised) - emitted)}, "
+        f"only in the payload {sorted(emitted - set(promised))}"
+    )
