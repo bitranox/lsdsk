@@ -1,23 +1,25 @@
-# The one-page report
+# Der Bericht auf einer Seite
 
-**English** | [Deutsch](de/REPORT.md)
+[English](../REPORT.md) | **Deutsch**
 
-What `lsdsk` prints when nobody is sitting at the terminal, and what to ask for
-when somebody is but the caller is not a person. Back to the [README](README.md).
+Was `lsdsk` ausgibt, wenn niemand am Terminal sitzt, und was Sie anfordern
+sollten, wenn doch jemand dort sitzt, der Aufrufer aber kein Mensch ist. Zurück
+zur [README](README.md).
 
-`uvx lsdsk@latest report` asks for that page by name, whatever the terminal
-looks like, and the exit code is the findings' either way.
+`uvx lsdsk@latest report` fordert diese Seite namentlich an, wie das Terminal
+auch aussieht, und der Exit-Code ist in beiden Fällen der der Befunde.
 
-Ask for it explicitly wherever a terminal is allocated but nobody is watching -
-a notebook cell, `script`, expect, a job runner that gives its children a pty.
-lsdsk cannot tell those from somebody sitting at a shell, and a full-screen view
-there waits for a keypress that never comes.
+Fordern Sie sie ausdrücklich an, wo ein Terminal zugewiesen ist, aber niemand
+zusieht: in einer Notebook-Zelle, unter `script`, unter expect, in einem
+Job-Runner, der seinen Kindprozessen ein Pseudoterminal gibt. lsdsk kann das
+nicht von einem Menschen an einer Shell unterscheiden, und die Vollbildansicht
+wartet dort auf einen Tastendruck, der nie kommt.
 
-Nothing has to be selected and no subcommand has to be guessed, so
-somebody who does not yet know what is wrong does not have to know what to ask
-for. What is wrong comes first, so stopping after the first screen still shows
-everything actionable, and each command in the table below is one section of the
-same report for when you already know which one you want.
+Nichts muss ausgewählt und kein Unterbefehl erraten werden. Wer noch nicht
+weiss, was defekt ist, muss also auch nicht wissen, wonach er fragen soll. Was
+defekt ist, steht zuerst, sodass schon der erste Bildschirm alles Handelnswerte
+zeigt; und jeder Befehl in der Tabelle ist ein Abschnitt desselben Berichts, für
+den Fall, dass Sie bereits wissen, welchen Sie brauchen.
 
 ```
 lsdsk  linux-sas-hba   19 disks on 5 controllers
@@ -57,15 +59,17 @@ Counter trends on linux-sas-hba     ...
 Findings on linux-sas-hba           ...
 ```
 
-Three speeds per drive, because they answer different questions. `port` is what
-the seat can give, `disk` is what the drive can do, and `link` is what the two
-of them actually agreed on. An orange `disk` means the drive cannot use the port
-it occupies, which is a placement question. A red `link` means both ends could
-have gone faster and did not, which is a fault.
+Drei Geschwindigkeiten pro Laufwerk, weil sie verschiedene Fragen beantworten.
+`port` ist, was der Steckplatz hergibt, `disk`, was das Laufwerk könnte, und
+`link`, worauf die beiden sich tatsächlich geeinigt haben. Ein oranges `disk`
+heisst, dass das Laufwerk den Anschluss nicht ausnutzen kann, den es belegt: eine
+Frage der Bestückung. Ein rotes `link` heisst, dass beide Enden schneller
+gekonnt hätten und es nicht getan haben: ein Fehler.
 
-`lsdsk report` answers the one thing the terminal test cannot see. Some callers hand
-their child a pseudo-terminal on both ends - a notebook cell, `script`, `expect`,
-a job runner - and there nothing distinguishes a program from a person, so the
-interactive view opens and waits for a keypress nobody can send. Name the page
-in anything unattended rather than reasoning about whether that caller counts as
-a terminal.
+`lsdsk report` beantwortet das eine, was die Terminal-Prüfung nicht sehen kann.
+Manche Aufrufer geben ihrem Kindprozess auf beiden Seiten ein Pseudoterminal -
+eine Notebook-Zelle, `script`, `expect`, ein Job-Runner - und dort unterscheidet
+nichts ein Programm von einem Menschen. Die interaktive Ansicht öffnet sich also
+und wartet auf einen Tastendruck, den niemand senden kann. Nennen Sie die Seite
+in allem Unbeaufsichtigten beim Namen, statt zu überlegen, ob dieser Aufrufer
+als Terminal zählt.

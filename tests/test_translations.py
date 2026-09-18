@@ -27,24 +27,12 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parent.parent
 GERMAN = ROOT / "de"
 
-#: Documents declared for translation that do not have a German page yet. The
-#: completeness test below reads this as a third bucket beside translated and
-#: excluded, so a NEW English document cannot appear without being placed in one
-#: of the three. It shrinks to empty as the translation lands.
-PENDING: Final[tuple[str, ...]] = (
-    "COMMANDS.md",
-    "CONFIG.md",
-    "CONTRIBUTING.md",
-    "DEVELOPMENT.md",
-    "FINDINGS.md",
-    "INSTALL.md",
-    "PAGES.md",
-    "README.md",
-    "REPORT.md",
-    "WHY.md",
-    "ai-stance.md",
-    "ai-transparency.md",
-)
+#: Documents declared for translation that do not have a German page yet. Empty
+#: now that every declared document is translated, and it stays as the bucket a
+#: NEW English document goes through: declare it, land the German page, remove
+#: it from here. While a name sits in this tuple the guards below exempt it, so
+#: leaving one behind is the way to have an unguarded German page.
+PENDING: Final[tuple[str, ...]] = ()
 
 
 def _manifest() -> ModuleType:

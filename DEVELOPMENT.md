@@ -1,5 +1,7 @@
 # Developing lsdsk
 
+**English** | [Deutsch](de/DEVELOPMENT.md)
+
 ## Setting up
 
 ```bash

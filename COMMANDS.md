@@ -1,5 +1,7 @@
 # Command reference
 
+**English** | [Deutsch](de/COMMANDS.md)
+
 Every command, every global option, the JSON envelope and the exit codes.
 Back to the [README](README.md).
 

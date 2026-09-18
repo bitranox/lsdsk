@@ -1,5 +1,7 @@
 # The eight pages
 
+**English** | [Deutsch](de/PAGES.md)
+
 One page per question, in the order the number keys reach them. Each is also a
 subcommand printing the same view, so `4` and `lsdsk health` are one thing under
 one name. Back to the [README](README.md).

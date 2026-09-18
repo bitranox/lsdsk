@@ -5,6 +5,23 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Added
+
+- **The documentation is available in German.** Thirteen pages under `de/`,
+  mirroring the root, with a switcher row under every H1 in both languages and
+  English always on the left. The directory is what makes a German page lead to
+  German pages: a bare link resolves inside `de/`, and only shared assets and
+  the two untranslated documents take a `../` prefix. `CHANGELOG.md` and the
+  module reference stay English and are marked as such in the German index.
+- **The translation cannot go stale in silence.** `de/TRANSLATIONS.toml` records
+  the SHA-256 of the English text each German page was written from, and the
+  gate names every document whose English half has moved since.
+  `scripts/translation_manifest.py --check` reports it,
+  `--refresh <document>` re-records one after its German page has been read
+  against the English. Eight guards cover the set: both directions of the file
+  list, link resolution, anchors, the switcher rows, no German page linking back
+  to an English twin, staleness, and a control that the manifest is not empty.
+
 ### Changed
 
 - **The README is a front page again, and the reference it had grown into is

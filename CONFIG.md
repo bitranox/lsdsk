@@ -1,5 +1,7 @@
 # Configuration System
 
+**English** | [Deutsch](de/CONFIG.md)
+
 This project uses [`lib_layered_config`](https://github.com/bitranox/lib_layered_config) to manage configuration through a layered merging system. Configuration values are loaded from multiple sources and merged in a defined order, allowing flexible overrides from system-wide defaults down to individual command-line arguments.
 
 ## Key Concepts

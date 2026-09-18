@@ -1,5 +1,7 @@
 # Why this exists
 
+**English** | [Deutsch](de/WHY.md)
+
 The problem lsdsk was written for, and the two cases that are easiest to get
 wrong without it. Back to the [README](README.md).
 

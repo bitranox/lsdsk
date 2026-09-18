@@ -39,7 +39,12 @@ PAGES = ROOT / "PAGES.md"
 #: claim the README used to make on its own. INSTALL.md and CONFIG.md are NOT
 #: here: they document uv's flags and POSIX file modes, where `--extra`, `--with`
 #: and a `-r--r--r--` mode string would be read as invented lsdsk options.
-USER_DOCS = (README, COMMANDS, PAGES, ROOT / "REPORT.md", ROOT / "FINDINGS.md", ROOT / "WHY.md")
+_ENGLISH_DOCS = (README, COMMANDS, PAGES, ROOT / "REPORT.md", ROOT / "FINDINGS.md", ROOT / "WHY.md")
+
+#: The German twins of those, which carry the same flags. An option string is
+#: language-neutral, so a translator who renders one as prose or leaves a stale
+#: one behind is caught by exactly the check that catches it in English.
+USER_DOCS = (*_ENGLISH_DOCS, *(ROOT / "de" / doc.name for doc in _ENGLISH_DOCS))
 
 # Neither is a feature. `fail` is the vehicle the traceback and exit-code tests
 # drive through the real entry point, and `logdemo` previews the logging

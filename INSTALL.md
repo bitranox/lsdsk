@@ -1,5 +1,7 @@
 # Installing lsdsk
 
+**English** | [Deutsch](de/INSTALL.md)
+
 Python 3.11 or newer, on Linux or Windows. Any other platform runs `--replay`
 against a capture taken on one of those.
 

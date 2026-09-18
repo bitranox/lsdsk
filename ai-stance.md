@@ -1,5 +1,7 @@
 # Our stance on AI
 
+**English** | [Deutsch](de/ai-stance.md)
+
 Whenever AI comes up around a software project, the conversation usually collapses into one question: did a model write the code? We think that's the wrong place to start.
 
 The things you probably want to know about any piece of software are older than LLMs. Does it do what the docs say? Will it treat your data the way you'd expect? Can someone fix it when it breaks? Is there a person on the other end who'll answer for it? Those questions matter whether the code was hand-typed, generated, or pulled out of a forum post from 2009.

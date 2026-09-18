@@ -7,4 +7,16 @@
 #     python scripts/translation_manifest.py --refresh <document>
 
 [sources]
+"COMMANDS.md" = "8bec62a7291b1a63295f8b7e007cc2bb55930a2a0a249883785bd3ed76eb2b0d"
+"CONFIG.md" = "67417c9066b4c7aa42cad9841573f4484cfc7fb4202a1c42bca60c4b46e583f2"
+"CONTRIBUTING.md" = "7f5ffb64e9be47a22462df61ee523ae0df2f33c80734dcbb1a5d5b332ae1a0f1"
+"DEVELOPMENT.md" = "4d3a9de385ccd39354727e22c28218f8d2da06b5ce86d54fcbd5605f0b196dd7"
+"FINDINGS.md" = "58466042e8d83519973c56464c1b5c5a4ebff9fa2054003af8d4f2b54dc877c4"
+"INSTALL.md" = "e28f8b63ccde57a3b83a289b71b220d62db05afd89d9049aae19dddbf952f3fa"
+"PAGES.md" = "2709e85ace87f6a423c4d80aad6b9d0fdc0e715f08cf3db0383f5ddf7757740a"
+"README.md" = "994e22298d3b93b13ae348db0e406aa438e1400147ae7aea5f6e24c795e83d45"
+"REPORT.md" = "c71fc12b4eca2fce77758dff1cfa2b23febc0445ce9823ffa6cc4cfa8da7beeb"
 "SECURITY.md" = "fe247aab82fcf85af831cd9b2663dfe7f77737673a94381fdafccbb2929a0635"
+"WHY.md" = "270f13b3b12a3ebc526d1a44ea290eea56c063aa94ac81dc9c33bfb881e45d7e"
+"ai-stance.md" = "dfb90e610057fa62a48a9dbabc957388817611e3b8b9e28561f38daf3482ff51"
+"ai-transparency.md" = "afae3fcded1e4d50ec252429bba7820f3728d67ee602291e5748a976ca21dc0a"

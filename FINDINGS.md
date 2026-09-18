@@ -1,5 +1,7 @@
 # What it finds, and how it decides
 
+**English** | [Deutsch](de/FINDINGS.md)
+
 Every rule lsdsk applies, what evidence it needs before it will call something a
 fault, and what it refuses to guess. Back to the [README](README.md).
 

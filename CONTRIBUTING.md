@@ -1,5 +1,7 @@
 # Contributing Guide
 
+**English** | [Deutsch](de/CONTRIBUTING.md)
+
 Thanks for helping improve **lsdsk**. The sections below summarise the day-to-day workflow, highlight the repository automation, and list the checks that must pass before a change is merged.
 
 ## 1. Workflow Overview

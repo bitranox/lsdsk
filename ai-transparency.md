@@ -1,5 +1,7 @@
 # AI transparency
 
+**English** | [Deutsch](de/ai-transparency.md)
+
 The author and owner of this project is the human, [@bitranox](https://github.com/bitranox).
 Every design and engineering decision is theirs, and they answer for everything published
 here. An AI assistant (Claude, run through the Claude Code CLI) was used as a tool along the
