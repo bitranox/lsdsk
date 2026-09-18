@@ -434,6 +434,17 @@ record takes the lines it needs and a long one scrolls inside the panel. Set
 `25` for a quarter of the window. Press `i` to hide it and give the table the
 whole screen. It changes nothing a printed command draws.
 
+Colour is not a key, although this section is named for it. The printed palette
+has to stay readable on a black console and a white one at once, which is a
+measurement rather than a taste: sweeping a saturated hue's lightness puts its
+ceiling near 4.2:1 against both, so the gate holding every shipped colour sits
+at 4.0 across four real backgrounds, two dark and two light. The interactive
+view paints its own background, so it carries a second palette measured against
+that one at the body-text floor of 4.5. Neither can be overridden from a file,
+because a value failing those gates would make a severity unreadable - and where
+colour carries a severity it is never the only thing carrying it, so a report
+read with colour off says the same as one read with it on.
+
 ### `[history]` - the counter store
 
 | Key                     | Default | Effect                                                                            |
