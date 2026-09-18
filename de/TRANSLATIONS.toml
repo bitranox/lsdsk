@@ -1,0 +1,10 @@
+# The English text each German page under de/ was translated from.
+#
+# Generated, never hand-edited.  A mismatch means the English half moved
+# and the German one has not been read against it since:
+#
+#     python scripts/translation_manifest.py --check
+#     python scripts/translation_manifest.py --refresh <document>
+
+[sources]
+"SECURITY.md" = "fe247aab82fcf85af831cd9b2663dfe7f77737673a94381fdafccbb2929a0635"
