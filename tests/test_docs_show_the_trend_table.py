@@ -18,7 +18,7 @@ import pytest
 from lsdsk.adapters.render.trend import TREND_COLUMNS
 
 _ROOT = Path(__file__).resolve().parent.parent
-_DOCS = (_ROOT / "README.md", _ROOT / "skills" / "lsdsk" / "SKILL.md")
+_DOCS = (_ROOT / "FINDINGS.md", _ROOT / "skills" / "lsdsk" / "SKILL.md")
 
 
 def printed_header() -> str:

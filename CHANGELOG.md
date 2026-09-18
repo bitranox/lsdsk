@@ -5,6 +5,23 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **The README is a front page again, and the reference it had grown into is
+  five documents.** It had reached 631 lines, so what the tool is, what it
+  finds, how it reasons, every command and every page all competed for the same
+  scroll. `PAGES.md` holds the eight pages and the keys that reach them,
+  `REPORT.md` the one-page report, `COMMANDS.md` the commands, options, JSON
+  envelope and exit codes, `FINDINGS.md` what each rule needs before it will
+  call something a fault, and `WHY.md` the problem it was written for. The
+  README keeps the quickstart, the interactive view, privileges, install and an
+  index of the rest.
+- **The documentation guards follow the content rather than the filename.** The
+  command, option and key checks now read the document that OWNS each claim, and
+  the invents-no-option check reads the whole set with a count control, because
+  every option left the README in one move and a scan over a file holding none
+  can no longer fail.
+
 ## [1.2.15] 2026-09-18 14:03:22
 
 ### Added

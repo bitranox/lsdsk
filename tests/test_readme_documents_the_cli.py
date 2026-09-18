@@ -24,7 +24,22 @@ from pathlib import Path
 
 import pytest
 
-README = Path(__file__).resolve().parent.parent / "README.md"
+ROOT = Path(__file__).resolve().parent.parent
+README = ROOT / "README.md"
+
+#: The document that OWNS each claim. The README is the front page and links to
+#: these, so a claim is asserted against the file a reader is actually sent to;
+#: pointing every test at the README instead would pass vacuously the moment a
+#: section moves, which is how a whole reference can go missing with the suite
+#: still green.
+COMMANDS = ROOT / "COMMANDS.md"
+PAGES = ROOT / "PAGES.md"
+
+#: The README and the documents split out of it, which between them hold every
+#: claim the README used to make on its own. INSTALL.md and CONFIG.md are NOT
+#: here: they document uv's flags and POSIX file modes, where `--extra`, `--with`
+#: and a `-r--r--r--` mode string would be read as invented lsdsk options.
+USER_DOCS = (README, COMMANDS, PAGES, ROOT / "REPORT.md", ROOT / "FINDINGS.md", ROOT / "WHY.md")
 
 # Neither is a feature. `fail` is the vehicle the traceback and exit-code tests
 # drive through the real entry point, and `logdemo` previews the logging
@@ -57,42 +72,50 @@ def help_of(*args: str) -> str:
 
 
 @pytest.mark.os_agnostic
-def test_the_readme_names_every_command() -> None:
-    """A command absent from the README is one nobody discovers."""
-    readme = README.read_text(encoding="utf-8")
+def test_the_command_reference_names_every_command() -> None:
+    """A command absent from the reference is one nobody discovers."""
+    reference = COMMANDS.read_text(encoding="utf-8")
     missing = [
         command
         for command in registered_commands()
-        if command not in TEST_VEHICLES and not re.search(rf"`lsdsk {re.escape(command)}\b", readme)
+        if command not in TEST_VEHICLES and not re.search(rf"`lsdsk {re.escape(command)}\b", reference)
     ]
 
-    assert not missing, f"the README documents no `lsdsk <command>` for: {missing}"
+    assert not missing, f"{COMMANDS.name} documents no `lsdsk <command>` for: {missing}"
 
 
 @pytest.mark.os_agnostic
-def test_the_readme_names_every_global_option() -> None:
+def test_the_command_reference_names_every_global_option() -> None:
     """The global options are the ones a reader cannot discover from a command."""
-    readme = README.read_text(encoding="utf-8")
+    reference = COMMANDS.read_text(encoding="utf-8")
     options = sorted(set(re.findall(r"(--[a-z][a-z-]+)", help_of())) - {"--help"})
     assert len(options) > 5, f"only {len(options)} options parsed out of the group's help"
 
-    missing = [option for option in options if option not in readme]
+    missing = [option for option in options if option not in reference]
 
-    assert not missing, f"the README does not mention: {missing}"
+    assert not missing, f"{COMMANDS.name} does not mention: {missing}"
 
 
 @pytest.mark.os_agnostic
-def test_the_readme_invents_no_option() -> None:
-    """An option the README names but the CLI refuses reads as a broken tool."""
-    readme = README.read_text(encoding="utf-8")
+def test_the_documentation_invents_no_option() -> None:
+    """An option the docs name but the CLI refuses reads as a broken tool."""
+    documented = {
+        option: doc.name
+        for doc in USER_DOCS
+        for option in re.findall(r"(--[a-z][a-z-]+)", doc.read_text(encoding="utf-8"))
+    }
     every_screen = help_of() + "".join(help_of(command) for command in registered_commands())
-    # A control, because the check is only worth its runtime if it can fire: a
-    # flag that exists nowhere has to be reported as invented.
+    # Two controls. The first is the original: a flag that exists nowhere has
+    # to be reported as invented. The second is what splitting the README made
+    # necessary - every option left it in one move, and a scan over a file
+    # holding none can no longer fail, so it has to be shown to have found some
+    # before its silence means anything.
     assert "--not-a-real-flag" not in every_screen
+    assert len(documented) > 5, f"only {len(documented)} options across {len(USER_DOCS)} documents"
 
-    invented = [option for option in sorted(set(re.findall(r"(--[a-z][a-z-]+)", readme))) if option not in every_screen]
+    invented = {option: doc for option, doc in sorted(documented.items()) if option not in every_screen}
 
-    assert not invented, f"the README documents options that do not exist: {invented}"
+    assert not invented, f"documented options that do not exist: {invented}"
 
 
 #: The prose that covers the page keys, which are eight bindings a reader meets
@@ -108,7 +131,7 @@ def _keys_as_typed(key_field: str) -> list[str]:
     return [KEY_AS_TYPED.get(key, key) for key in key_field.split(",")]
 
 
-def test_the_readme_names_a_key_for_every_action_the_interactive_view_binds() -> None:
+def test_the_pages_document_names_a_key_for_every_action_the_interactive_view_binds() -> None:
     """A key the README omits is a feature reachable only by accident.
 
     The footer is not the manual: it lists what the page in front offers, and a
@@ -126,13 +149,13 @@ def test_the_readme_names_a_key_for_every_action_the_interactive_view_binds() ->
     """
     from lsdsk.adapters.tui.app import LsdskApp
 
-    readme = README.read_text(encoding="utf-8")
-    assert PAGE_KEY_PROSE in readme, "the README no longer says which keys switch page"
+    pages = PAGES.read_text(encoding="utf-8")
+    assert PAGE_KEY_PROSE in pages, f"{PAGES.name} no longer says which keys switch page"
 
     unreachable = [
         f"{binding.action} ({binding.key})"
         for binding in LsdskApp.BINDINGS
         if not binding.action.startswith("show(")
-        and not any(f"`{key}`" in readme for key in _keys_as_typed(binding.key))
+        and not any(f"`{key}`" in pages for key in _keys_as_typed(binding.key))
     ]
-    assert not unreachable, "the README names no key for: " + ", ".join(unreachable)
+    assert not unreachable, f"{PAGES.name} names no key for: " + ", ".join(unreachable)

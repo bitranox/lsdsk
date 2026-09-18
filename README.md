@@ -35,6 +35,8 @@ It starts no subprocesses and makes no network requests: every figure it prints 
 here, from sysfs and direct ioctls on Linux and from SetupAPI and DeviceIoControl on
 Windows.
 
+## QUICKSTART
+
 The command below needs `uv` and nothing else; if it is not installed yet,
 [INSTALL.md](INSTALL.md#easiest-install-and-run-with-uv) has the one-line installer for Linux,
 macOS and Windows.
@@ -44,475 +46,33 @@ error counters, PCIe connector detection and a SATA controller's port count read
 header says so. [INSTALL.md](INSTALL.md#what-needs-root) has the list.
 
 ```bash
-uvx lsdsk@latest
+# run as Administrator or root for full information 
+uvx lsdsk@latest          # lsdsk TUI
+uvx lsdsk@latest report   # get a printed report
+uvx lsdsk@latest --help   # get further help
 ```
 
 That is the whole command. At a terminal it opens an interactive view with a
 page per question; piped or redirected it prints the same machine as one page:
 the mainboard, what is wrong, the controller tree, every disk's identity, wear
 and error counters, every SMART attribute, the PCIe slots, and each finding with
-its reasoning. `lsdsk report` asks for that page by name, whatever the terminal
-looks like, and the exit code is the findings' either way.
+its reasoning.
 
-Ask for it explicitly wherever a terminal is allocated but nobody is watching -
-a notebook cell, `script`, expect, a job runner that gives its children a pty.
-lsdsk cannot tell those from somebody sitting at a shell, and a full-screen view
-there waits for a keypress that never comes.
+## The TUI
 
-Nothing has to be selected and no subcommand has to be guessed, so
-somebody who does not yet know what is wrong does not have to know what to ask
-for. What is wrong comes first, so stopping after the first screen still shows
-everything actionable, and each command in the table below is one section of the
-same report for when you already know which one you want.
-
-```
-lsdsk  linux-sas-hba   19 disks on 5 controllers
-
-    PROBLEMS      7 warning   6 hint
- !  /dev/nvme0n1  SAMSUNG MZVPV512HDGL-00000 logged 2 media errors
- !  /dev/sdc      Samsung SSD 870 EVO 4TB has 99345 interface CRC errors
- !  /dev/sdd      Samsung SSD 870 EVO 4TB has 2179485 interface CRC errors
- !  /dev/sde      Samsung SSD 870 EVO 500GB has 430 interface CRC errors
- !  /dev/sdj      Samsung SSD 870 EVO 4TB has 462640 interface CRC errors
- !  /dev/sdl      Hitachi HDS722020ALA330 has 4 reallocated sectors
-                  and 7 more, run `lsdsk findings`
-
-Topology on linux-sas-hba
-showing storage and the bridges above it; --tree-density to change the detail level
-legacy = no PCIe capability
-linux-sas-hba   2 root complexes (0000:00, 0000:ff)   root ports to PCIe Gen3x8   95 PCI devices
-   │     address       capable                running                name
-   ├─┬── 0000:00:01.0  Gen3x4 (3.94 GB/s)     Gen3x4 (3.94 GB/s)     Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 PCI Express Root>
-   │ └── 0000:05:00.0  Gen3x4 (3.94 GB/s)     Gen3x4 (3.94 GB/s)     Samsung Electronics Co Ltd NVMe SSD Controller SM951/PM951
-   │     device        model             size  kind  bus   port                disk                link                temp  worn
-!  │     /dev/nvme0n1  SAMSUNG MZVPV>  477GiB  SSD   NVME  Gen3x4 (3.94 GB/s)  Gen3x4 (3.94 GB/s)  Gen3x4 (3.94 GB/s)   39C   59%
-   │     address       capable                running                name
-   ├─┬── 0000:00:03.0  Gen3x8 (7.88 GB/s)     Gen3x8 (7.88 GB/s)     Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 PCI Express Root>
-~  │ └── 0000:03:00.0  Gen4x8 (15.75 GB/s)    Gen3x8 (7.88 GB/s)     Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS38xx
-   │     device        model             size  kind  bus   port                disk                link                temp  worn
-~  │     /dev/sda      Samsung SSD 8>  3.6TiB  SSD   SATA  12G (1.20 GB/s)     6G (0.60 GB/s)      6G (0.60 GB/s)       36C    1%
-~  │     /dev/sdb      Samsung SSD 8>  466GiB  SSD   SATA  12G (1.20 GB/s)     6G (0.60 GB/s)      6G (0.60 GB/s)       30C    2%
-   │     ...
-
-Controllers on linux-sas-hba        ...
-Disks on linux-sas-hba              ...
-Disk health on linux-sas-hba        ...
-SMART attributes on linux-sas-hba   ...
-mainboard not named by firmware     13 ports   2 free   ...
-Counter trends on linux-sas-hba     ...
-Findings on linux-sas-hba           ...
-```
-
-Three speeds per drive, because they answer different questions. `port` is what
-the seat can give, `disk` is what the drive can do, and `link` is what the two
-of them actually agreed on. An orange `disk` means the drive cannot use the port
-it occupies, which is a placement question. A red `link` means both ends could
-have gone faster and did not, which is a fault.
-
-## The eight pages
-
-The same machine as above, one page at a time. Number keys switch between them, `Tab` cycles,
-and every page is also a subcommand, so `lsdsk health` prints exactly what page 4 shows.
-
-These were taken with a counter history recorded, which is why the problem counts differ from the
-plain run above: with a second reading to compare against, history can raise a finding by one step.
-
-One pass through the whole interface, in the order below: the cursor lands on a drive and the panel
-under the table answers for it, `i` hides and restores that panel, `d` cycles how much of the PCI
-fabric is drawn, and then each page in turn. Every still further down is a frame of this same run.
+Number keys switch between the pages, `Tab` cycles, and every page is also a subcommand, so `lsdsk health` prints exactly what page 4 shows.
 
 ![The lsdsk interactive view: eight pages, the tree density cycling, the detail panel, and a table being scrolled](docs/media/lsdsk-demo.gif)
 
-### 1 Topology
-
-![Topology](docs/screenshots/1-topology.png)
-
-What is wrong comes first, then the machine itself: each controller with the link it negotiated
-against the link it could have run, and the drives hanging under it. Stopping after this page
-still leaves nothing actionable unseen.
-
-### 2 Controllers
-
-![Controllers](docs/screenshots/2-controllers.png)
-
-One row per controller: driver and firmware, running against capable, how many ports it has and
-how many are free, and what the drives on it would pull together. That last column is what turns
-a free port into an honest answer rather than a tempting one.
-
-### 3 Disks
-
-![Disks](docs/screenshots/3-disks.png)
-
-One row per drive, with the identity you need to order a replacement: model, WWN, serial and
-firmware, then size, bus and the three speeds. `port` is what the seat can give, `disk` what the
-drive can do, `link` what the two of them agreed on. A speed carries what it is worth, because a
-shape says nothing about throughput to a reader who does not keep the PCIe lane table in their
-head, and `size` names the scale it is written on: a drive is sold in powers of ten and reports in
-powers of two, so `466GiB` is the drive whose label says 500 GB.
-
-### 4 Health
-
-![Health](docs/screenshots/4-health.png)
-
-Wear, temperature, power-on hours and bytes written, beside the counters that decide whether a
-drive is dying or merely badly cabled: reallocated, pending, uncorrectable, interface CRC and
-media errors.
-
-### 5 SMART
-
-![SMART attributes](docs/screenshots/5-smart.png)
-
-Every attribute of every drive, with value, worst and threshold beside the raw number, because a
-raw count means nothing without the threshold the drive itself judges it against. NVMe drives
-publish a fixed health log instead of an attribute table, and the page says so rather than
-leaving a gap.
-
-### 6 Findings
-
-![Findings](docs/screenshots/6-findings.png)
-
-Each finding with its reasoning underneath and a remedy: what was measured, what it means, and
-what to do about it. This is where a CRC count is named as the cable rather than the drive.
-
-### 7 Slots
-
-![Slots](docs/screenshots/7-slots.png)
-
-Every PCIe port: what it can carry, what it is running, what occupies it, what that occupant
-needs, and a verdict. `FREE` is an empty port, `full` means the occupant uses what the port
-offers, and a spare figure is bandwidth nobody is using.
-
-### 8 Trend
-
-![Counter trends](docs/screenshots/8-trend.png)
-
-What each counter is DOING rather than what it totals: the change since the last reading, the
-span it was measured over, a rate per hour, and a verdict. Two drives here read `rising`. One
-reads `no new in 16h, 235 were due`, a counter that has stopped climbing, which is only sayable
-because the drive's own lifetime rate says how many were expected. The rest say `too soon to say`,
-the honest answer until enough of the drive's own clock has passed.
-
-## Why this exists
-
-Anyone who looks after a server with a lot of disks knows the moment. Something
-has failed, and the picture goes cloudy exactly when it needs to be sharp:
-
-- Which drive is it?
-- Where does it hang, physically and logically?
-- How are the others on the same controller doing?
-- Is everything running at the link speed it should be?
-- Where could another drive go, and is there bandwidth to feed it?
-- any potential cabling or tray problems like CRC Errors otherwise unnoticed?
-- SMART Status? 
-
-Every answer is somewhere in `lspci`, `lsblk`, `smartctl` and `nvme`, in four
-formats that agree on nothing, and you assemble it by hand at the worst possible
-time. On Windows you do not assemble it at all.
-
-The obvious response is to gather all of that into one place and print it
-neatly. Useful, and most tools stop there.
-
-Gathering is the easy half. A number on its own is inert. `3.0 Gb/s` means
-nothing until you also remember what that particular drive is capable of, and
-nobody remembers that for eighteen drives at two in the morning. Set the two
-side by side and the remembering stops being your job:
-
-```
-port             disk             link
-6G (0.60 GB/s)   6G (0.60 GB/s)   6G (0.60 GB/s)   everything agrees, nothing to say
-12G (1.20 GB/s)  3G (0.30 GB/s)   3G (0.30 GB/s)   a 3 Gb/s drive occupying a 12 Gb/s seat
-3G (0.30 GB/s)   6G (0.60 GB/s)   3G (0.30 GB/s)   the port is the limit, the drive could do more
-6G (0.60 GB/s)   6G (0.60 GB/s)   3G (0.30 GB/s)   both ends can do 6 and the link cannot: a fault
-```
-
-Same bytes, off the same drive, from the same commands. What changed is only
-what they sit next to. That is most of what lsdsk is: every reading placed
-against what it should have been, so you get a verdict instead of arithmetic.
-
-## The failure nobody notices
-
-Now the more interesting case, the one where nothing is broken at all.
-
-An old 3 Gb/s drive plugged into your only 6 Gb/s port is not a fault. It runs
-at its rated speed, reports perfect health, and no monitoring system on earth
-will ever mention it. Meanwhile a 6 Gb/s drive somewhere else in the same
-chassis is running at half speed because the fast port was already taken.
-
-Both drives are individually fine. The arrangement is not, and the fix is
-swapping two cables. lsdsk looks for exactly that pairing and names both drives,
-because this is the kind of thing that survives for the life of a machine: too
-small to alarm anybody, too cheap to leave sitting there.
-
-Dead drives get attention because they are loud. This is the other kind.
-
-## It will argue you out of a purchase
-
-Most monitoring inflates. Everything becomes a red alert, so you stop reading
-the alerts, which is the one outcome nobody designed for.
-
-lsdsk grades severity down whenever the machine could not have done better. A
-PCIe 4.0 card in a Gen3 board gets a dim hint instead of a warning, with the
-arithmetic attached: the ten drives on it want about 6.00 GB/s and the link
-carries 7.88 GB/s, so the ceiling is real and costs you nothing today. Revisit
-it when the drive count grows.
-
-That restraint is the feature, not good manners. A tool that only ever escalates
-teaches you to ignore it. One that tells you when not to worry is worth
-believing on the day it says replace this drive.
-
-In the same spirit, it publishes a list of what it cannot know. Read that one
-before you quote any of its numbers at your manager.
-
-## What it finds
-
-- A link negotiated below what both ends support, which is nearly always a
-  cable, a backplane slot or a connector.
-- Interface CRC errors, the frames corrupted in transit and resent. These are
-  the cable, not the drive, and replacing the drive fixes nothing.
-- The overall SMART verdict, computed the way the drive computes it: failing
-  when a graded attribute has reached the threshold its maker set.
-- Two drives in the wrong ports: a slow one holding a fast seat that a faster
-  drive is waiting for.
-- A controller in a slot narrower or slower than it needs, naming the free slot
-  to move it to, or a card that would lose nothing by swapping places with it: a
-  warning when the drives on it would use the faster slot, a hint when they fit
-  the one it has.
-- A controller capped by the mainboard, with the PCIe generation that would lift
-  it and whether the attached drives can even use the difference.
-- A drive held back by a slower port than it supports.
-- Wear-out against configurable bands, and reallocated, pending and
-  uncorrectable sectors and NVMe media errors on any count above zero, since a
-  drive reporting one of those has already lost media.
-- Temperature against the limits the drive itself publishes, not a guess.
-- Identical models running mismatched firmware.
-- Where there is room for another drive, and whether that controller has the
-  bandwidth to feed it. A SAS HBA answers this exactly, because each phy is a
-  real port the kernel publishes. An AHCI controller answers it only when its
-  firmware publishes a ports-implemented bitmap, and otherwise reports no count
-  at all rather than the inflated one the kernel's port list would give. An NVMe
-  controller has no spare port to report: it is the drive's own interface. Where
-  the count is absent, `lsdsk slots` still shows which PCIe ports are free.
-
-Severity is graded by what the machine could actually give. A card running below
-its own maximum in a board that has nothing faster is a dim hint, not a warning,
-because there is nothing to fix.
-
-## Commands
-
-| Command                          | Shows                                                                                              |
-|----------------------------------|----------------------------------------------------------------------------------------------------|
-| `lsdsk`                          | At a terminal, the interactive view. Anywhere else, the page below                                 |
-| `lsdsk report`                   | Everything on one page. Each command below is one section of it                                    |
-| `lsdsk topology`                 | The problem summary, then the whole PCI fabric root-down with each controller's disks nested on it |
-| `lsdsk controllers`              | Controllers, PCIe placement, free ports, load                                                      |
-| `lsdsk disks`                    | One row per disk                                                                                   |
-| `lsdsk health`                   | Wear, temperature, hours and error counters                                                        |
-| `lsdsk smart`                    | Every disk's SMART attributes against its thresholds                                               |
-| `lsdsk findings`                 | Every finding with its reasoning and its remedy                                                    |
-| `lsdsk slots`                    | Every PCIe port: capability, occupant, what is free                                                |
-| `lsdsk trend`                    | What each error counter is doing over time, not just its total                                     |
-| `lsdsk record`                   | Store one reading and print nothing, for a timer                                                   |
-| `lsdsk tui`                      | An interactive page per question, `*top` style                                                     |
-| `lsdsk snapshot -o f.json`       | Capture the raw reading                                                                            |
-| `lsdsk --replay f.json`          | Render a capture from any machine                                                                  |
-| `lsdsk config`                   | The merged configuration, and which layer each value came from                                     |
-| `lsdsk config-deploy`            | Write the shipped defaults where you can edit them                                                 |
-| `lsdsk config-generate-examples` | Write commented example files without touching live config                                         |
-| `lsdsk info`                     | Version, homepage and the metadata a bug report needs                                              |
-
-The interactive view is keyed the way the `*top` family is: `1` to `8` or the
-matching function key switch page, and `q` quits; the footer lists those, so
-there is nothing to memorise. `left`, `right`, `tab` and `shift+tab` also step
-between pages, and `r` rescans, without appearing in the footer.
-The pages carry the same names as the commands, in the same order, so `4` and
-`lsdsk health` are the same view, drawing the same columns.
-Each page stands alone and shows every disk, so nothing has to be selected to
-read one.
-
-Six of the eight pages also carry a cursor - topology, controllers, disks,
-health, slots and trend - which `up` and `down` move. A panel under the table
-answers for whatever the cursor is on: every value the row had no column for,
-then the findings that name it, with their reasoning and their remedy. The
-record belongs to the subject rather than to the page, so a drive reads the
-same wherever it is met and only the order of its groups changes. `i` hides the
-panel and gives the table the whole screen; `shift+up` and `shift+down` scroll
-inside it, and are offered only when the record is taller than the panel is.
-SMART and findings carry no cursor, scroll as a page, and the panel reads
-`Nothing selected.` there.
-
-Every option below is global: it goes before the command, and it applies to
-whichever command follows. `--expand-virtual` is also accepted after `topology`,
-`disks` and `tui`, because that is what the line tallying those devices tells
-you to type. `--tree-density` is also accepted after `topology`, and the
-interactive view cycles the same setting with `d` on its topology page. Every
-view opens on `storage-only` and says in a line above the tree what it draws and
-how to ask for the rest.
-
-| Option                                                    | Does                                                                     |
-|-----------------------------------------------------------|--------------------------------------------------------------------------|
-| `--replay FILE`                                           | Render a capture instead of reading this machine                         |
-| `--history-file F`                                        | Read and write counter history there instead of the per-user state file  |
-| `--no-record`                                             | Judge counters against history without adding this reading to it         |
-| `--expand-virtual`                                        | List every kernel-virtual device instead of tallying them in one line    |
-| `--tree-density storage-only\|storage-and-siblings\|full` | How much of the PCI fabric every view draws (default `storage-only`)     |
-| `--profile NAME`                                          | Load a named configuration profile                                       |
-| `--set S.K=V`                                             | Override one configuration value, repeatable                             |
-| `--env-file FILE`                                         | Read that `.env` rather than searching upward from the working directory |
-| `--traceback` / `--no-traceback`                          | Print the Python traceback on an error instead of one line               |
-| `--version`                                               | Print the version and exit                                               |
-
-`lsdsk disks` takes one option of its own. The `wwn` column is held to
-`display.wwn_width` characters, because an NVMe WWN is five times the length of
-the SATA ones beside it and would otherwise set the column's width for every
-row; a cut value is marked rather than shortened in silence, and on the
-interactive page it stays readable in full in a strip under the table, which
-`,` and `.` scroll; neither key is offered on any other page.
-`--full-wwn` prints the whole identifier instead, and lays the table out wider
-than the terminal rather than buying the width from the columns beside it, so
-the row runs off the side and a pager scrolls it (`lsdsk disks --full-wwn |
-less -S`). The JSON envelope always carries every WWN in full, whatever the
-human view was asked for.
-
-`lsdsk report` answers the one thing the terminal test cannot see. Some callers hand
-their child a pseudo-terminal on both ends - a notebook cell, `script`, `expect`,
-a job runner - and there nothing distinguishes a program from a person, so the
-interactive view opens and waits for a keypress nobody can send. Name the page
-in anything unattended rather than reasoning about whether that caller counts as
-a terminal.
-
-`--format json` gives a machine-readable envelope naming the command that
-produced it, on every command that produces data except `report`, whose
-machine-readable form is `lsdsk snapshot`. Exit codes are `0` for nothing
-actionable and `1` when a warning or critical was found, so it drops straight
-into a monitoring check. Errors use sysexits conventions rather than a single
-code: `13` when something needs privilege this run lacks, `22` for a
-configuration section or a `--profile` name the configuration library
-rejects, `78` for a file that is not a
-snapshot this version reads or a platform with no hardware reader. Treat
-anything above `1` as "did not run".
-
-`2` is Click's usage error and means the command line was wrong, not that a file
-was missing: an unknown option, an unknown command, a missing argument and a bad
-`--format` choice all produce it, alongside a `--replay` path that is not there.
-
-## A number is not a rate
-
-An error counter lives in the drive's own non-volatile table. It survives
-reboots, power cycles and reinstalls, and the host cannot clear it. That is what
-makes it trustworthy and also what makes it nearly useless on its own: it says
-how much damage there has ever been, never when.
-
-Two drives on one machine here make the point. Both are the same model, both
-report hundreds of thousands of interface CRC errors. One gained sixteen
-thousand of them in fifteen hours. The other has not gained one, and its own
-lifetime rate says a couple of hundred should have appeared in that time. The
-first is corrupting frames right now. The second is a cable somebody already
-reseated, probably years ago.
-
-Every tool that reads the total alone reports those two identically. lsdsk does
-not, because it keeps its own record:
-
-```
-device        counter           total  change  span  per hour  verdict
-/dev/sdc      interface CRC     99361     +16   16h       1.0  rising
-/dev/sdd      interface CRC   2196127  +16642   15h      1109  rising
-/dev/sde      interface CRC       430      +0   15h         -  too soon to say, this drive's rate would not have produced even one in 15h
-/dev/sdj      interface CRC    462640      +0   16h         -  no new in 16h, 235 were due
-```
-
-`span` is the window the `change` figure covers, and it is measured per counter
-rather than per drive: it reaches back to where that counter last moved, so one
-drive legitimately shows a different figure on each of its rows.
-
-Rates are per power-on hour of the drive itself rather than per hour of wall
-clock. The drive's own clock is monotonic, ignores clock steps and timezones,
-and does not advance while the machine is off, so the figure still means
-something on a host that runs two weeks a year.
-
-The last two rows are the part worth arguing about. Silence only counts as
-evidence when the drive's own history says errors should have turned up: at 430
-errors over ten thousand hours, fifteen quiet hours prove nothing and the tool
-says so rather than implying the drive is fine. A fixed rule cannot do that, and
-a fixed one-week rule refuses every drive on this machine including the one
-whose fault is provably over.
-
-The record feeds itself. Any ordinary run stores one reading when the drives'
-clocks have moved on, so nothing has to be set up; `lsdsk record` from a systemd
-timer is there for unattended sampling. A REPORTING command stores nothing when
-replaying someone else's snapshot or when `--format json` is asked for, because
-a command in a pipeline should not change state behind your back. `record` is
-the exception, since storing a reading is its whole purpose: it writes under
-both, which is how `lsdsk record --replay` folds an old capture into the
-history.
-
-`--no-record` opts out entirely and `--history-file` puts the store somewhere of
-your choosing. Both are global, like `--profile`, so they go before the
-subcommand: `lsdsk --history-file /var/lib/lsdsk.json record`. For a permanent
-setting there is a `[history]` section with `enabled`, `path` and
-`max_samples_per_drive`; `lsdsk config` shows the effective values and where
-each came from. As root the store defaults to `/var/lib/lsdsk/history.json`,
-because what it records is a property of the machine rather than of whoever
-typed the command; a non-root run keeps a per-user path, since it could not
-write there anyway. The first reporting run that records names the file,
-once; `lsdsk record` writes silently unless asked for `--format json`.
-
-Every value the tool judges or lays out by is a configuration key: `[thresholds]`
-carries the wear bands, the CRC significance floor, the firmware-mismatch count
-and the quiet-evidence figure, and `[display]` carries the assumed width when
-output is piped, the summary cap, the wear floor a trend row must clear, whether
-kernel-virtual devices are listed, the ceiling on the wwn column, and the
-traceback limits. What is deliberately *not*
-configurable is anything a specification fixes: register offsets, IOCTL codes,
-the Kelvin offset, the 512-byte sector. Those are not choices, and a file that
-could change them would break decoding rather than tune it. Turning recording off never stops history being *read*, so
-findings stay graded against the past either way.
-
-The `health` table carries the same distinction in the column you already read:
-a count still climbing gets a trailing `+`, and one proved to have stopped drops
-out of red. A red number that never changes is how a tool teaches you to ignore
-red.
-
-One consequence worth knowing if you alert on the exit code: a fault the record
-proves is over is downgraded to a hint, and a hint is not counted as actionable.
-A host whose only complaint was a long-dead cable fault moves from exit `1` to
-exit `0`. That is the right answer, and it is a change if you gate a cron on it.
-
-## Where could this card go
-
-`lsdsk slots` puts the whole board on one screen: every PCIe port, what it is
-capable of, what it negotiated, what occupies it, what that occupant actually
-needs, and a verdict. A free port is named, and a card leaving bandwidth unused
-is named with the figure, so a swap is obvious before you open the case.
-
-```
-MSI MEG Z690 ACE (MS-7D27)   18 ports   3 free
-   port          slot  capable              running             occupant                        needs               verdict
-   0000:00:01.0  #1    Gen5x8 (31.50 GB/s)  Gen3x8 (7.88 GB/s)  AMD Hawaii XT [Radeon R9 290X]  Gen3x16 (15.76 GB/s)  in use (graphics)
-   0000:00:01.1  #2    Gen5x8 (31.50 GB/s)  Gen2x8 (4.00 GB/s)  Intel 82599ES 10G SFI/SFP+      Gen2x8 (4.00 GB/s)    spare 27.50 GB/s
-   0000:00:1d.0  #12   Gen3x4 (3.94 GB/s)   Gen3x4 (3.94 GB/s)  Samsung 980 PRO 2TB             Gen4x4 (7.88 GB/s)    port limits it
-   0000:00:1c.0  #0    Gen3x1 (0.98 GB/s)   -                   empty                           -                     FREE
-```
-
-It does not say whether a port is an M.2 socket or a card slot, and that is
-deliberate. The firmware slot table is the only thing carrying form factor, and
-on three boards measured here it named no M.2 socket at all while getting most
-of its bus addresses wrong. The view carries the board's own slot number
-instead, which you match against the manual. Unused bandwidth is reported
-whether or not a move can be proposed, because the figure is measured either
-way.
-
-## It tells you whose hardware you are looking at
-
-Storage tools are routinely run inside a container or a guest, where the answer
-means something different. lsdsk detects which and says so:
-
-- In a **container** you are shown the host's real hardware through a shared
-  kernel. The faults are genuine, they just belong to the host, and the missing
-  SMART data is missing device nodes rather than privileges, so it will not send
-  you off to try `sudo`.
-- In a **virtual machine** the disks and link speeds are the hypervisor's
-  invention, so the link and placement rules are suppressed rather than
-  reporting cable faults on an emulated controller.
+Six of the eight pages carry a cursor, and a panel under the table answers for
+whatever it is on: every value the row had no column for, then the findings that
+name it. [PAGES.md](PAGES.md) walks through all eight, with a picture of each and
+the keys that reach them.
+
+Piped, redirected or asked for by name, the same machine prints as one page
+instead, worst first, so stopping after the first screen still shows everything
+actionable. [REPORT.md](REPORT.md) shows that page and says when to ask for it
+explicitly.
 
 ## Privileges
 
@@ -600,6 +160,11 @@ Every command it issues is a read. It never writes to a device.
 
 | Document                                                                       | What it covers                                                                       |
 |--------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
+| [PAGES.md](PAGES.md)                                                           | The eight pages, the keys that reach them, and what each one answers                 |
+| [REPORT.md](REPORT.md)                                                         | The one-page report, and when to name it rather than let the terminal decide         |
+| [COMMANDS.md](COMMANDS.md)                                                     | Every command and global option, the JSON envelope, and the exit codes               |
+| [FINDINGS.md](FINDINGS.md)                                                     | What it reports, what evidence each rule needs, and what it refuses to guess         |
+| [WHY.md](WHY.md)                                                               | The problem it was written for, and the two cases easiest to get wrong without it    |
 | [INSTALL.md](INSTALL.md)                                                       | Installing it, and what works unprivileged versus what needs root                    |
 | [CONFIG.md](CONFIG.md)                                                         | Every configuration key, the layered sources, and the env-var forms                  |
 | [DEVELOPMENT.md](DEVELOPMENT.md)                                               | Working on lsdsk: the gate, the test lanes, capturing a fixture                      |
