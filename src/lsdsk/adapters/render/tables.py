@@ -197,16 +197,13 @@ def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, 
     return table
 
 
-def _pcie_text(link: PcieLink, *, bandwidth: bool = False) -> str:
-    """Render a RUNNING PCIe link as generation and width."""
-    figure = theme.format_pcie_generation(link.current_speed_gtps, link.current_width)
-    return theme.with_bandwidth(figure, link.current_bandwidth_gbps) if bandwidth else figure
+def _count_cell(value: int | None) -> theme.Cell:
+    """A count, or the dash that says nobody published one.
 
-
-def _pcie_capability_text(link: PcieLink, *, bandwidth: bool = False) -> str:
-    """Render what a PCIe link could do AT BEST."""
-    figure = theme.format_pcie_generation(link.max_speed_gtps, link.max_width)
-    return theme.with_bandwidth(figure, link.max_bandwidth_gbps) if bandwidth else figure
+    Styled grey like every other unread value, so a port count nobody could
+    read is not drawn the same as one that was read.
+    """
+    return (theme.NOT_READ, theme.STYLE_UNKNOWN) if value is None else (str(value), "")
 
 
 def render_controllers(inventory: Inventory, findings: Sequence[Finding], width: int = DEFAULT_WIDTH) -> Table:
@@ -246,8 +243,7 @@ def controller_table_row(
     """
     demand = attached_demand_gbytes(controller, inventory)
     severity = worst_severity(findings, controller.address)
-    running = _pcie_text(controller.link, bandwidth=bandwidth)
-    capable = _pcie_capability_text(controller.link, bandwidth=bandwidth)
+    link = theme.link_pair_cells(controller.link, bandwidth=bandwidth)
     return MarkedRow(
         marker=(theme.marker_for(severity), theme.style_for(severity)),
         cells={
@@ -255,10 +251,10 @@ def controller_table_row(
             "controller": (controller.name, ""),
             "driver": (controller.driver or "-", "" if controller.driver else theme.STYLE_UNKNOWN),
             "firmware": (controller.firmware or "-", "" if controller.firmware else theme.STYLE_UNKNOWN),
-            "running": (running, "" if running == capable else theme.STYLE_BELOW_CAPABILITY),
-            "capable": (capable, ""),
-            "ports": ("-" if controller.port_count is None else str(controller.port_count), ""),
-            "free": ("-" if controller.ports_free is None else str(controller.ports_free), ""),
+            "running": link.running,
+            "capable": link.capable,
+            "ports": _count_cell(controller.port_count),
+            "free": _count_cell(controller.ports_free),
             "disks": (str(len(inventory.disks_on(controller.address))), ""),
             "load": (
                 "-" if demand is None else f"{demand:.2f} GB/s",

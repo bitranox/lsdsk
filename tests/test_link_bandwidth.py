@@ -308,3 +308,80 @@ def test_a_hop_column_never_decorates_a_symbol() -> None:
         pcie_capability_present=True,
     )
     assert "GB/s" in hop_cells(read, bandwidth=True)[0][0], "a read link must gain its figure"
+
+
+# A link figure is read only when BOTH halves of it were published: a speed
+# without a width formats to a dash exactly as an unread speed does.
+UNREAD = PcieLink()
+RUNNING_ONLY = PcieLink(current_speed_gtps=8.0, current_width=8)
+CAPABLE_ONLY = PcieLink(max_speed_gtps=8.0, max_width=8)
+AT_CAPABILITY = PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8)
+DEGRADED = PcieLink(current_speed_gtps=2.5, current_width=8, max_speed_gtps=8.0, max_width=8)
+
+
+def _controller_with(host: str, link: PcieLink):
+    """A real controller from a capture, carrying the link state under test."""
+    machine = _machine(host)
+    return machine.controllers[0].with_changes(link=link), machine
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", CAPTURES)
+def test_no_dash_in_the_controllers_table_is_drawn_as_a_reading(host: str) -> None:
+    """A blank must never read as nothing to report - the tool's own rule.
+
+    The style used to be chosen by comparing two strings the row had just
+    FORMATTED, which cannot tell an unread figure from a figure that was read
+    and matched. Both ends unread compare EQUAL, so an unread link was drawn
+    with no style at all, exactly like a link measured to be at capability.
+    """
+    machine = _machine(host)
+    findings = diagnose(machine)
+    dashes = 0
+    for controller in machine.controllers:
+        row = tables.controller_table_row(controller, machine, findings, bandwidth=True)
+        for name, (text, style) in row.cells.items():
+            if text != theme.NOT_READ:
+                continue
+            dashes += 1
+            assert style == theme.STYLE_UNKNOWN, f"{host} {controller.address}: {name} is a dash drawn as a reading"
+    assert dashes, f"{host} has no unread cell, so this arm proves nothing"
+
+
+@pytest.mark.os_agnostic
+def test_the_link_pair_is_styled_from_the_model_and_not_from_its_own_text() -> None:
+    """Every state the pair can be in, including the two a string compare confuses."""
+    _controller, machine = _controller_with("linux-minimal", UNREAD)
+    findings = diagnose(machine)
+
+    def styles(link: PcieLink) -> tuple[str, str]:
+        controller, _ = _controller_with("linux-minimal", link)
+        row = tables.controller_table_row(controller, machine, findings, bandwidth=True)
+        return row.cells["running"][1], row.cells["capable"][1]
+
+    # Neither read. A string compare called these EQUAL and drew them unstyled.
+    assert styles(UNREAD) == (theme.STYLE_UNKNOWN, theme.STYLE_UNKNOWN)
+    # One end read. A string compare called these DIFFERENT and drew the dash
+    # amber, which claims a shortfall against a capability nobody measured.
+    assert styles(RUNNING_ONLY) == ("", theme.STYLE_UNKNOWN)
+    assert styles(CAPABLE_ONLY) == (theme.STYLE_UNKNOWN, "")
+    # Both read: the judgement the amber exists for is unchanged.
+    assert styles(AT_CAPABILITY) == ("", "")
+    assert styles(DEGRADED) == (theme.STYLE_BELOW_CAPABILITY, "")
+
+
+@pytest.mark.os_agnostic
+def test_the_detail_panel_dims_an_unread_link_like_the_table_does() -> None:
+    """The second home of the same comparison, held to the same rule."""
+    controller, machine = _controller_with("linux-minimal", UNREAD)
+    panel = detail.controller_detail(controller, machine)
+    seen = {
+        name: (text, style)
+        for group in panel.groups
+        for name, (text, style) in group.values
+        if name in ("running", "capable")
+    }
+    assert seen, "the panel drew no link pair, so this arm proves nothing"
+    for name, (text, style) in seen.items():
+        assert text == theme.NOT_READ, f"{name} was expected unread on a blank link"
+        assert style == theme.STYLE_UNKNOWN, f"{name} is a dash drawn as a reading"

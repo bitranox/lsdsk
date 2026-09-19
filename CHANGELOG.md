@@ -7,6 +7,25 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **An unread PCIe link is no longer drawn like a healthy one.** The controllers
+  table and the detail panel both chose the style by comparing the two figures
+  they had just FORMATTED, and a string comparison cannot tell an unread figure
+  from one that was read and matched. Both ends unread formatted to two dashes,
+  compared equal, and were drawn with no style at all - identical to a link
+  measured to be at capability, which is the blank-implies-fine this tool
+  forbids itself. One end unread compared different and was drawn amber,
+  claiming a shortfall against a capability nobody read. Measured over the five
+  committed captures: 6 controllers carried an unread link drawn as a reading,
+  and 40 dash cells across `capable`, `running`, `ports` and `free` carried no
+  style while `driver`, `firmware` and `load` in the same row greyed theirs
+  correctly. Both sites now share one `theme.link_pair_cells`, which decides
+  from the model - a figure counts as read only when BOTH its speed and its
+  width were published, since a speed with no width formats to a dash exactly
+  as an unread speed does. The below-capability amber is unchanged for a
+  shortfall that was actually measured. `ports` and `free` grey their dash like
+  their neighbours. All 67 unread cells now carry `STYLE_UNKNOWN` and none is
+  unstyled.
+
 - **The size ceiling now holds for a file whose directory entry understates it.**
   `read_text_bounded` took the size from `path.stat().st_size`, refused anything
   over `MAX_INPUT_BYTES`, and then called the unbounded `path.read_text()`. A

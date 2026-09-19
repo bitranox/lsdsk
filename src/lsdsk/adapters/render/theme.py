@@ -19,7 +19,7 @@ System Role:
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, NamedTuple
 
 from ...domain.enums import BusType, DiskKind, PciPortKind, Severity
 from ...domain.models import PcieLink, pcie_generation
@@ -603,6 +603,78 @@ def hop_link_cells(
     )
 
 
+class LinkPair(NamedTuple):
+    """The two styled cells of one link. Named because both fields are a
+    :data:`Cell`, so a type checker cannot catch them being swapped."""
+
+    running: Cell
+    capable: Cell
+
+
+def link_pair_cells(link: PcieLink, *, bandwidth: bool = False) -> LinkPair:
+    """The running and capable cells for one link, decided from the MODEL.
+
+    Both homes of this pair used to choose the style by comparing the two
+    strings they had just formatted, and a string comparison cannot tell an
+    unread figure from a figure that was read and matched. Both ends unread
+    formatted to two dashes, compared EQUAL, and were drawn with no style at
+    all - identical to a link measured to be at capability, which is the
+    blank-implies-fine this tool forbids itself. One end unread compared
+    DIFFERENT and was drawn amber, claiming a shortfall against a capability
+    nobody read.
+
+    A figure is read only when BOTH halves of it were published: a speed with
+    no width formats to a dash exactly as an unread speed does, so the state is
+    asked of the link rather than of the text.
+
+    Unlike :func:`hop_link_cells`, the below-capability judgement IS restated
+    here, because these two columns are drawn without the row marker that
+    carries it in the fabric view.
+
+    Args:
+        link: The link to describe.
+        bandwidth: Whether each figure carries what it is worth.
+
+    Returns:
+        The running and capable cells. An unread figure is
+        :data:`STYLE_UNKNOWN`; a running figure measured below a capability
+        that was ALSO measured is :data:`STYLE_BELOW_CAPABILITY`.
+
+    Example:
+        >>> link_pair_cells(PcieLink()) == ((NOT_READ, STYLE_UNKNOWN), (NOT_READ, STYLE_UNKNOWN))
+        True
+        >>> link_pair_cells(PcieLink(current_speed_gtps=8.0, current_width=8)).running
+        ('Gen3x8', '')
+        >>> link_pair_cells(PcieLink(current_speed_gtps=8.0, current_width=8)).capable
+        ('-', '#6E7687')
+        >>> link_pair_cells(
+        ...     PcieLink(current_speed_gtps=2.5, current_width=8, max_speed_gtps=8.0, max_width=8)
+        ... ).running
+        ('Gen1x8', '#A5660D')
+    """
+    running_read = link.current_speed_gtps is not None and link.current_width is not None
+    capable_read = link.max_speed_gtps is not None and link.max_width is not None
+    running = format_pcie_generation(link.current_speed_gtps, link.current_width)
+    capable = format_pcie_generation(link.max_speed_gtps, link.max_width)
+    if bandwidth:
+        running = with_bandwidth(running, link.current_bandwidth_gbps)
+        capable = with_bandwidth(capable, link.max_bandwidth_gbps)
+    below = (
+        running_read
+        and capable_read
+        and link.current_bandwidth_gbps is not None
+        and link.max_bandwidth_gbps is not None
+        and link.current_bandwidth_gbps < link.max_bandwidth_gbps
+    )
+    if not running_read:
+        running_style = STYLE_UNKNOWN
+    elif below:
+        running_style = STYLE_BELOW_CAPABILITY
+    else:
+        running_style = ""
+    return LinkPair((running, running_style), (capable, "" if capable_read else STYLE_UNKNOWN))
+
+
 #: What a hop column prints when the register behind it was not read, and what
 #: it prints for a device that has no PCIe capability at all. They are SYMBOLS,
 #: short because a column of repeated words carries one bit down a whole page,
@@ -732,6 +804,7 @@ __all__ = [
     "TEMPERATURE_HOT",
     "TEMPERATURE_WARM",
     "Cell",
+    "LinkPair",
     "Palette",
     "disk_style",
     "format_bandwidth",
@@ -741,6 +814,7 @@ __all__ = [
     "format_temperature",
     "format_wear",
     "hop_link_cells",
+    "link_pair_cells",
     "link_style",
     "marker_for",
     "pci_tag",
