@@ -684,6 +684,15 @@ def link_pair_cells(link: PcieLink, *, bandwidth: bool = False) -> LinkPair:
 NOT_READ = "-"
 LEGACY = "legacy"
 
+#: What a value prints when the thing it names cannot exist for this subject at
+#: all: a numbered ATA attribute on an NVMe drive, the occupant of a socket with
+#: nothing in it. A SECOND symbol rather than the dash, because the dash already
+#: means "nobody read it" and one marker cannot carry both - a reader who cannot
+#: tell them apart reads a field that never existed as a reading somebody
+#: missed, which is the direction that sends them looking for a fault. Whichever
+#: markers a panel drew are named under it.
+NOT_APPLICABLE = "n/a"
+
 #: What each symbol means, keyed by the token the column actually prints, so
 #: the legend cannot explain a word the view does not use.
 _HOP_MEANINGS: Final[dict[str, str]] = {
@@ -693,10 +702,10 @@ _HOP_MEANINGS: Final[dict[str, str]] = {
 
 
 #: The placeholders a bandwidth is never put beside. Kept as a set of the
-#: TOKENS a column actually prints, so adding a third symbol to the hop
-#: vocabulary and forgetting it here is one edit rather than a silent decoration
-#: of a value nobody read.
-_NO_BANDWIDTH: Final[frozenset[str]] = frozenset({NOT_READ, LEGACY})
+#: TOKENS a column actually prints, so adding a fourth symbol to the vocabulary
+#: and forgetting it here is one edit rather than a silent decoration of a value
+#: nobody read - or of one that could not exist to be read.
+_NO_BANDWIDTH: Final[frozenset[str]] = frozenset({NOT_READ, LEGACY, NOT_APPLICABLE})
 
 
 def format_bandwidth(gbps: float | None) -> str:

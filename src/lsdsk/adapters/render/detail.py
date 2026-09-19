@@ -19,10 +19,13 @@ Three rules hold it together, each of them earned elsewhere in this tool:
 - **Every value goes through the formatter its table cell uses**, and the link
   group is taken from :func:`tables.disk_table_row` rather than re-derived, so
   a figure cannot be worded or coloured one way in a row and another here.
-- **A value that was not read is a dash in** ``STYLE_UNKNOWN``, and the panel
-  prints the legend ``- not read`` once, only when a dash is actually in it.
-  The fabric's hop columns carry a legend for the same reason: a bare dash on
-  its own is the blank-implies-fine the link rules refuse.
+- **A value that was not read is a dash in** ``STYLE_UNKNOWN``, and one that
+  CANNOT exist for this subject is ``n/a`` - an ATA attribute on an NVMe drive,
+  the occupant of an empty socket. Two markers because one cannot carry both
+  facts, and a field that never existed drawn as a missed reading sends a
+  reader looking for a fault. Each panel names the markers it drew and no
+  others. The fabric's hop columns carry a legend for the same reason: a bare
+  dash on its own is the blank-implies-fine the link rules refuse.
 
 System Role:
     Adapter layer, presentation. Consumes domain objects; decides nothing.
@@ -38,6 +41,7 @@ from rich.table import Table
 from rich.text import Text
 
 from ...domain.diagnostics import attached_demand_gbytes
+from ...domain.enums import BusType
 from ...domain.history import CounterKind
 from . import tables, theme
 from .report import findings_for, pcie_capability, serial_speed, slot_verdict
@@ -47,7 +51,7 @@ if TYPE_CHECKING:
 
     from rich.console import RenderableType
 
-    from ...domain.history import DiskSeries, History
+    from ...domain.history import DiskSeries, History, Trend
     from ...domain.models import Controller, Disk, Finding, Health, Inventory, PcieLink, PcieSlot, PciNode
     from .theme import Cell
 
@@ -110,8 +114,25 @@ GROUP_LABELS: Final[frozenset[DetailGroupLabel]] = frozenset(DetailGroupLabel)
 #: keyed by, and read without this line it accuses one drive of a fleet's state.
 MODEL_NOTE: Final = "about every drive of this model"
 
-#: Printed once under the values when any of them is a dash.
+#: What each marker a panel can draw means. Printed under the values, and only
+#: for the markers that panel actually drew, so the legend cannot explain a
+#: symbol the reader cannot see.
 UNREAD_LEGEND: Final = "- not read"
+NOT_APPLICABLE_LEGEND: Final = "n/a does not apply"
+
+#: What each marker means, keyed by the token a panel actually prints, so the
+#: legend cannot explain a symbol the view does not use. The order is the order
+#: they are named in.
+_MARKER_MEANINGS: Final[dict[str, str]] = {
+    theme.NOT_READ: UNREAD_LEGEND,
+    theme.NOT_APPLICABLE: NOT_APPLICABLE_LEGEND,
+}
+
+#: The counters an ATA drive publishes as numbered SMART attributes. NVMe has no
+#: attribute table at all - it publishes one fixed log page - so no reading of
+#: an NVMe drive could produce these however privileged the run, and their
+#: absence there is the device's shape rather than a reading nobody took.
+_ATA_ATTRIBUTE_COUNTERS: Final[frozenset[str]] = frozenset({"realloc", "pending", "uncorr", "crc"})
 
 
 class DetailGroup(NamedTuple):
@@ -188,8 +209,8 @@ def disk_detail(disk: Disk, inventory: Inventory, history: History | None = None
         ),
         DetailGroup(LINK, _disk_link_values(disk, row, inventory.port_link_for(disk))),
         DetailGroup(SEAT, _seat_values(disk, inventory)),
-        DetailGroup(HEALTH, _health_values(disk.health)),
-        DetailGroup(COUNTERS, _counter_values(disk.health, series)),
+        DetailGroup(HEALTH, _health_values(disk.health, disk.bus)),
+        DetailGroup(COUNTERS, _counter_values(disk.health, series, disk.bus)),
     )
     return Detail(heading, groups, (FindingScope(disk.path), FindingScope(disk.model, MODEL_NOTE)))
 
@@ -292,8 +313,9 @@ def render_detail(
     gathered = tuple((scope, findings_for(findings, scope.subject)) for scope in detail.scopes)
     total = sum(len(matching) for _scope, matching in gathered)
     parts: list[RenderableType] = [_heading_line(detail.heading, total), _values_table(detail.groups, header_style)]
-    if _anything_unread(detail.groups):
-        parts.append(Text(f" {UNREAD_LEGEND}", style=theme.STYLE_UNKNOWN))
+    legend = "   ".join(_MARKER_MEANINGS[marker] for marker in _markers_drawn(detail.groups))
+    if legend:
+        parts.append(Text(f" {legend}", style=theme.STYLE_UNKNOWN))
     parts.append(_findings_table(gathered))
     return Group(*parts)
 
@@ -375,9 +397,22 @@ def _values_text(values: Sequence[tuple[str, Cell]]) -> Text:
     return line
 
 
-def _anything_unread(groups: Iterable[DetailGroup]) -> bool:
-    """Whether any drawn value is the dash that means nobody published it."""
-    return any(text == "-" for group in groups for _name, (text, _style) in group.values)
+def _markers_drawn(groups: Iterable[DetailGroup]) -> list[str]:
+    """Which markers this panel drew, in the order the legend names them.
+
+    Read off the cells, which is sound here and would not be if the cells were
+    all dashes: the marker IS the classification. A builder chose between the
+    two from the model - the drive's bus, whether the socket is occupied - so
+    this reads a decision that was already taken rather than re-deriving one
+    from formatted text.
+    """
+    drawn = {text for group in groups for _name, (text, _style) in group.values}
+    return [marker for marker in _MARKER_MEANINGS if marker in drawn]
+
+
+def _absent() -> Cell:
+    """The marker for something that cannot exist for this subject."""
+    return theme.NOT_APPLICABLE, theme.STYLE_UNKNOWN
 
 
 def _said(value: str | None) -> Cell:
@@ -430,8 +465,13 @@ def _seat_values(disk: Disk, inventory: Inventory) -> tuple[tuple[str, Cell], ..
     )
 
 
-def _health_values(health: Health | None) -> tuple[tuple[str, Cell], ...]:
-    """What the drive says about itself, limits included."""
+def _health_values(health: Health | None, bus: BusType) -> tuple[tuple[str, Cell], ...]:
+    """What the drive says about itself, limits included.
+
+    The bus is carried for one value: ``smart`` summarises the decoded ATA
+    attribute table, and NVMe has none, so its absence on an NVMe drive is not
+    a reading that was missed.
+    """
     temperature = theme.format_temperature(
         _of(health, lambda h: h.temperature_c),
         _of(health, lambda h: h.temperature_warning_c),
@@ -446,12 +486,18 @@ def _health_values(health: Health | None) -> tuple[tuple[str, Cell], ...]:
         ("written", (theme.format_size(_of(health, lambda h: h.bytes_written)), "")),
         ("read", (theme.format_size(_of(health, lambda h: h.bytes_read)), "")),
         ("spare", _spare(health)),
-        ("smart", _smart(health)),
+        ("smart", _absent() if bus is BusType.NVME and not (health and health.attributes) else _smart(health)),
     )
 
 
-def _counter_values(health: Health | None, series: DiskSeries | None) -> tuple[tuple[str, Cell], ...]:
-    """Every error counter, carrying the same trend mark the health table draws."""
+def _counter_values(health: Health | None, series: DiskSeries | None, bus: BusType) -> tuple[tuple[str, Cell], ...]:
+    """Every error counter, carrying the same trend mark the health table draws.
+
+    A counter this bus cannot publish is marked absent rather than unread. The
+    test is the VALUE being missing as well as the bus, so a drive that somehow
+    answers one keeps its figure instead of having it overwritten by a claim
+    about its protocol.
+    """
     watched: tuple[tuple[str, Callable[[Health], int | None], CounterKind], ...] = (
         ("realloc", lambda h: h.reallocated_sectors, CounterKind.REALLOCATED_SECTORS),
         ("pending", lambda h: h.pending_sectors, CounterKind.PENDING_SECTORS),
@@ -461,7 +507,7 @@ def _counter_values(health: Health | None, series: DiskSeries | None) -> tuple[t
         ("error log", lambda h: h.error_log_entries, CounterKind.ERROR_LOG_ENTRIES),
     )
     marked = tuple(
-        (label, tables.counter_cell(_of(health, accessor), tables.trend_of(series, kind)))
+        (label, _counter_cell(_of(health, accessor), tables.trend_of(series, kind), label=label, bus=bus))
         for label, accessor, kind in watched
     )
     plain = (
@@ -469,6 +515,13 @@ def _counter_values(health: Health | None, series: DiskSeries | None) -> tuple[t
         ("unsafe", (tables.counter_text(_of(health, lambda h: h.unsafe_shutdowns)), "")),
     )
     return marked + plain
+
+
+def _counter_cell(value: int | None, trend: Trend | None, *, label: str, bus: BusType) -> Cell:
+    """One counter's cell, marked absent where this bus has no such counter."""
+    if value is None and bus is BusType.NVME and label in _ATA_ATTRIBUTE_COUNTERS:
+        return _absent()
+    return tables.counter_cell(value, trend)
 
 
 def _limits(health: Health | None) -> Cell:
@@ -612,19 +665,35 @@ def _slot_link_values(slot: PcieSlot) -> tuple[tuple[str, Cell], ...]:
 
     An empty socket still publishes a negotiated speed and width, usually x0,
     and the slots table draws a dash there rather than that figure. The panel
-    follows it: a reader comparing the two must not be shown a link running in
-    a socket they can see is empty.
+    does not show that figure either, for the same reason - a reader comparing
+    the two must not be shown a link running in a socket they can see is empty -
+    but it marks it ABSENT rather than unread, because nothing running in an
+    empty socket is the socket's state and not a register nobody read.
     """
     values = _pcie_values(slot.link)
     if slot.occupied:
         return values
-    return tuple((name, ("-", theme.STYLE_UNKNOWN) if name == "running" else cell) for name, cell in values)
+    return tuple((name, _absent() if name == "running" else cell) for name, cell in values)
 
 
 def _occupant_values(slot: PcieSlot) -> tuple[tuple[str, Cell], ...]:
-    """What sits in the socket, and what it could use if the socket allowed it."""
+    """What sits in the socket, and what it could use if the socket allowed it.
+
+    With nothing in the socket every one of these is marked absent rather than
+    unread. The panel says ``occupied no`` two lines above, so dashing them
+    stated the opposite of what it had just reported: a reading nobody took,
+    of a card that is not there.
+    """
+    if not slot.occupied:
+        return (
+            ("address", _absent()),
+            ("name", _absent()),
+            ("needs", _absent()),
+            ("devices", (str(slot.occupant_count), "")),
+            ("vendor", _absent()),
+        )
     needs = (
-        "-"
+        theme.NOT_READ
         if slot.occupant_link is None
         else theme.with_bandwidth(
             theme.format_pcie_generation(slot.occupant_link.max_speed_gtps, slot.occupant_link.max_width),
@@ -666,6 +735,7 @@ __all__ = [
     "LINK",
     "MACHINE",
     "MODEL_NOTE",
+    "NOT_APPLICABLE_LEGEND",
     "OCCUPANT",
     "PLACE",
     "PORTS",

@@ -7,6 +7,20 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **The detail panel no longer calls a value that cannot exist a value nobody
+  read.** It printed one legend, `- not read`, whenever any value was a dash,
+  and the dash carried three meanings. Measured over the five captures: every
+  NVMe drive dashes `realloc`, `pending`, `uncorr`, `crc` and `smart`, which are
+  numbered ATA SMART attributes and an attribute-table summary that NVMe has no
+  counterpart to at all, and every empty socket dashes its occupant's address,
+  name, needs and vendor two lines under `occupied no`. Both then read as
+  readings somebody missed, which is the direction that sends a reader looking
+  for a fault. There are two markers now - the dash keeps its meaning and `n/a`
+  means the thing cannot exist here - each panel names only the markers it drew,
+  and a builder chooses between them from the model rather than from the text
+  the renderer just formatted. A counter is marked absent only where its value
+  is missing as well, so a drive that answers one keeps its figure.
+
 - **The transparency page says again what the Windows path is and is not proven
   on.** `ai-transparency.md` promises "what was verified on real hardware, and
   what was not" while its whole checked list is Linux, and the bullet saying no

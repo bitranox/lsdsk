@@ -17,7 +17,8 @@ from rich.console import Console
 
 from lsdsk.adapters.render import detail, report, tables, theme
 from lsdsk.domain.diagnostics import diagnose
-from lsdsk.domain.models import PcieLink
+from lsdsk.domain.enums import BusType
+from lsdsk.domain.models import PcieLink, PcieSlot
 
 if TYPE_CHECKING:
     from lsdsk.domain.models import Disk, Inventory
@@ -54,6 +55,10 @@ def _drawn(renderable: object, width: int = 118) -> str:
 
 def _disk_panel(machine: Inventory, disk: Disk, width: int = 118) -> str:
     return _drawn(detail.render_detail(detail.disk_detail(disk, machine), diagnose(machine)), width)
+
+
+def _slot_panel(machine: Inventory, slot: PcieSlot, width: int = 118) -> str:
+    return _drawn(detail.render_detail(detail.slot_detail(slot, machine), diagnose(machine)), width)
 
 
 @pytest.mark.os_agnostic
@@ -207,12 +212,18 @@ def test_every_record_the_panel_can_show_renders_at_every_width(host: str) -> No
 
 @pytest.mark.os_agnostic
 def test_an_empty_socket_shows_no_link_running_in_it_just_as_the_table_does() -> None:
-    """The slots table dashes a running figure it would otherwise draw as x0.
+    """Neither view prints a running figure it would otherwise draw as x0.
 
     A socket with nothing in it still publishes a negotiated speed and width,
     and ``report.slot_verdict``'s own table refuses to print it. A panel one
     keypress away printing ``1.0 x0`` there would be two answers about one
     socket, which is the drift this module exists to prevent.
+
+    The two say so with different MARKERS and that is deliberate: the table has
+    one column and no legend, so it dashes, while the panel carries a legend and
+    can say that nothing running in an empty socket is the socket's state rather
+    than a register nobody read. What they may never disagree about is the
+    figure, which is what this asserts.
     """
     empty_seen = 0
     filled_seen = 0
@@ -235,7 +246,9 @@ def test_an_empty_socket_shows_no_link_running_in_it_just_as_the_table_does() ->
                 assert carried in table_running, f"{host} {slot.address}: the table drew {table_running!r}"
             else:
                 empty_seen += 1
-                assert running == "-", f"{host} {slot.address}: an empty socket reads as running {running}"
+                assert running == theme.NOT_APPLICABLE, (
+                    f"{host} {slot.address}: an empty socket reads as running {running}"
+                )
     # Both arms have to occur, or one of the two branches is never tested.
     assert empty_seen and filled_seen, f"the captures cover only one case: {empty_seen} empty, {filled_seen} filled"
 
@@ -389,3 +402,56 @@ def test_every_link_figure_the_panel_draws_names_what_it_is_worth(host: str) -> 
             if text in (theme.NOT_READ, theme.LEGACY):
                 continue
             assert "GB/s" in text, f"{host} {disk.path}: {label} reads {text!r} and names no bandwidth"
+
+
+@pytest.mark.os_agnostic
+def test_a_counter_that_cannot_exist_on_this_bus_is_not_reported_as_unread() -> None:
+    """The dash means nobody read it, and four counters on an NVMe drive are not that.
+
+    ``realloc``, ``pending``, ``uncorr`` and ``crc`` are numbered ATA SMART
+    attributes and NVMe has no attribute table at all, so no reading of an NVMe
+    drive could ever produce them. Drawn as the unread dash they say a reading
+    was missed, on every NVMe drive in the fixtures, and the legend underneath
+    then states it in words.
+
+    The control is a SATA drive on the SAME machine: it can publish those
+    counters, so a dash there is a genuine gap and must stay one. Without it
+    this passes on a panel that marks every counter it has no value for.
+    """
+    machine = _machine("linux-nvme-board")
+    drive = next(one for one in machine.disks if one.bus is BusType.NVME)
+    sata = next(one for one in machine.disks if one.bus is not BusType.NVME)
+    assert sata.health is not None and sata.health.pending_sectors is None, "the fixture no longer supports this test"
+
+    panel = _disk_panel(machine, drive)
+    assert f"realloc {theme.NOT_APPLICABLE}" in panel, panel
+    assert detail.NOT_APPLICABLE_LEGEND in panel, panel
+
+    control = _disk_panel(machine, sata)
+    assert f"pending {theme.NOT_READ}" in control, "a counter this drive could publish stopped reading as unread"
+    assert detail.UNREAD_LEGEND in control, control
+
+
+@pytest.mark.os_agnostic
+def test_an_empty_socket_does_not_report_the_occupant_it_has_none_of_as_unread() -> None:
+    """Nothing plugged in is not a reading nobody took.
+
+    The panel says ``occupied no`` two lines above and then dashed the
+    occupant's address, name, needs and vendor, which the legend called not
+    read. The socket number on the same panel IS unread, so the two markers
+    appear together and the legend names both - which is the whole reason the
+    panel needs two rather than deciding by counting dashes.
+    """
+    machine = _machine("linux-sas-hba")
+    empty = next(slot for slot in machine.slots if not slot.occupied)
+    occupied = next(slot for slot in machine.slots if slot.occupied)
+    assert empty.physical_slot_number is None, "the fixture no longer supports the paired-marker half"
+
+    panel = _slot_panel(machine, empty)
+    assert f"address {theme.NOT_APPLICABLE}" in panel, panel
+    assert f"socket {theme.NOT_READ}" in panel, "the unread socket number stopped reading as unread"
+    assert detail.NOT_APPLICABLE_LEGEND in panel and detail.UNREAD_LEGEND in panel, panel
+
+    assert theme.NOT_APPLICABLE not in _slot_panel(machine, occupied), (
+        "an occupied socket marks something as not applicable, so the mark is not about the occupant"
+    )
