@@ -299,43 +299,46 @@ def _break_cycles(parents: dict[str, str | None]) -> None:
     however the walk enters it, and the cut node falls to its own bus's root.
     Every node stays in the output; only the impossible edge is dropped.
     """
-    # Carried across the calls rather than rebuilt inside each. A node already
-    # proven to reach a root still does after an edge elsewhere is cut, so
-    # re-walking the cleared prefix on every cycle only costs time - quadratic
-    # in the node count for a capture holding many small disjoint cycles, which
-    # a replay file supplies for free.
+    # The scan ADVANCES rather than restarting. Both halves of that matter: a
+    # node proven to reach a root still does after an edge elsewhere is cut, so
+    # `resolved` is carried, and the walk resumes at the node it had got to
+    # rather than from the top. Restarting cost a pass over every node plus a
+    # sort per cycle, which is quadratic for a capture holding many small
+    # disjoint cycles - a replay file supplies one for free, and it measured
+    # 2.45s for 16,000 devices in 8,000 cycles against 0.12s for the same
+    # devices in none.
     resolved: set[str] = set()
-    while True:
-        cycle = _first_cycle(parents, resolved)
-        if cycle is None:
-            return
-        parents[max(cycle)] = None
+    for start in sorted(parents):
+        while (cycle := _cycle_above(parents, start, resolved)) is not None:
+            parents[max(cycle)] = None
 
 
-def _first_cycle(parents: Mapping[str, str | None], resolved: set[str]) -> frozenset[str] | None:
-    """Return the members of the first parent cycle, or ``None``.
+def _cycle_above(parents: Mapping[str, str | None], start: str, resolved: set[str]) -> frozenset[str] | None:
+    """The first parent cycle on the path up from one node, or ``None``.
 
     Args:
         parents: Each node's parent address, or ``None`` at a root.
+        start: The node to walk up from.
         resolved: Nodes already proven to reach a root, added to as the walk
             proves more. Shared across calls so each node is walked once.
 
     Returns:
-        The members of the first cycle found, or ``None`` when none remains.
+        The members of the cycle this node's path enters, or ``None`` when the
+        path reaches a root or ground already covered.
     """
-    for start in sorted(parents):
-        if start in resolved:
-            continue
-        path: list[str] = []
-        seen: dict[str, int] = {}
-        current: str | None = start
-        while current is not None and current in parents and current not in resolved:
-            if current in seen:
-                return frozenset(path[seen[current] :])
-            seen[current] = len(path)
-            path.append(current)
-            current = parents[current]
-        resolved.update(path)
+    if start in resolved:
+        return None
+    path: list[str] = []
+    seen: dict[str, int] = {}
+    current: str | None = start
+    while current is not None and current in parents and current not in resolved:
+        if current in seen:
+            return frozenset(path[seen[current] :])
+        seen[current] = len(path)
+        path.append(current)
+        current = parents[current]
+    resolved.update(path)
+    return None
 
 
 __all__ = [

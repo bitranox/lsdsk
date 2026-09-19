@@ -430,3 +430,57 @@ def test_a_source_whose_own_address_carries_the_duplicate_mark_still_reaches_the
 
     assert len(placed) == len(crafted), f"a device was dropped: {sorted(node.address for node in placed)}"
     assert sorted(node.name for node in placed) == ["first", "second", "third"]
+
+
+#: How many times the cycle-bearing path may cost the same devices in a chain.
+#: Measured before the fix at n=16,000: 2.450s against 0.125s, a factor of 20.
+#: Cutting an edge is real work the control does not do, so this one cannot be
+#: as loose as a ratio against an idle path would allow.
+_ACCEPTABLE_CYCLE_RATIO = 5
+
+
+def _in_pairs(count: int, *, looping: bool) -> list[NodeSource]:
+    """Devices paired off, each pair a two-node parent cycle or two roots."""
+
+    def address(index: int) -> str:
+        return f"0000:{index // 256:02x}:{(index // 8) % 32:02x}.{index % 8}"
+
+    return [
+        NodeSource(
+            address(index),
+            f"device {index}",
+            None,
+            None,
+            None,
+            PcieLink(),
+            PciPortKind.UNKNOWN,
+            None,
+            None,
+            address(index + 1 if index % 2 == 0 else index - 1) if looping else None,
+        )
+        for index in range(count)
+    ]
+
+
+@pytest.mark.os_agnostic
+def test_a_capture_full_of_small_parent_cycles_is_cut_in_one_pass() -> None:
+    """Many disjoint cycles cost what many devices cost, not their square.
+
+    Breaking a cycle re-scanned every node from the top, so a capture holding
+    one cycle per pair of devices paid that scan once per cycle. The module's
+    own comment named it and nothing bounded it. A replay capture is untrusted
+    input by this repo's own topology rules, and the 64 MB input bound admits
+    hundreds of thousands of devices.
+
+    The control is the same devices with no parents at all, so the difference
+    between the arms is the cycles rather than the size, and the assertion is a
+    ratio measured on the machine running it.
+    """
+    ordinary = _seconds_to_assemble(_in_pairs(_CRAFTED_DEVICE_COUNT, looping=False))
+    looping = _seconds_to_assemble(_in_pairs(_CRAFTED_DEVICE_COUNT, looping=True))
+
+    assert ordinary > 0, "the control measured no time at all, so the ratio below means nothing"
+    assert looping < ordinary * _ACCEPTABLE_CYCLE_RATIO, (
+        f"{_CRAFTED_DEVICE_COUNT} devices in {_CRAFTED_DEVICE_COUNT // 2} cycles took {looping:.3f}s "
+        f"against {ordinary:.3f}s for the same devices in none, a factor of {looping / ordinary:.0f}"
+    )

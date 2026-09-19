@@ -7,6 +7,16 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A capture holding many small parent cycles is cut in one pass.** Breaking a
+  cycle restarted the search from the top, so every cycle paid a sort and a scan
+  over every node. Measured, quadrupling on every doubling: 16,000 devices
+  arranged in 8,000 two-node cycles took 2.45 seconds against 0.12 for the same
+  devices in none, and the module's own comment named the shape without bounding
+  it. The scan advances now, resuming where it had got to, and the same
+  measurement reads 0.08 against 0.07. A replay capture is untrusted input by
+  this repo's own topology rules, and the 64 MB input bound admits hundreds of
+  thousands of devices.
+
 - **A capture whose devices all claim one address is keyed in one pass.** Every
   duplicate was placed by probing upward from copy 2 until a free key appeared,
   so N devices at one address cost N-squared over 2 probes. Measured here, four
