@@ -277,3 +277,61 @@ def test_every_view_that_shows_a_value_honours_its_key(key: str) -> None:
         if quiet == loud:
             deaf.append(" ".join(command) or "<bare>")
     assert not deaf, f"display.{key} is ignored by: {', '.join(deaf)}"
+
+
+#: Display keys that must also reach the INTERACTIVE view, and where to look.
+#: Every arm above drives the CLI, so not one of them can see the TUI at all -
+#: which is how `wear_row_floor_percent` stayed deaf on the trend page while
+#: `lsdsk trend` honoured it. The value is the page key to press and the table
+#: whose contents the setting has to move.
+TUI_ARMS: dict[str, tuple[str, str]] = {
+    "wear_row_floor_percent": ("8", "#trend-table"),
+}
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key", sorted(TUI_ARMS), ids=str)
+async def test_every_display_key_reaches_the_interactive_view(key: str) -> None:
+    """A page and the command of the same name are one view under one name.
+
+    The printed command being covered is not the key working: both views draw
+    the same rows of the same machine, so both have to read the same setting,
+    and the one that does not is invisible to anyone testing the other.
+    """
+    from lsdsk.adapters.config.tunables import DisplaySettings
+    from lsdsk.adapters.hw.snapshot import load
+    from lsdsk.adapters.tui.app import LsdskApp
+    from lsdsk.adapters.tui.typed_table import rows_of
+    from lsdsk.domain.history import DiskSeries, History, Sample, identity_of
+
+    low, high, _ = PROBES[key]
+    page, table_id = TUI_ARMS[key]
+    machine = load(FIXTURES / "linux-sas-hba.json")
+    # A QUIET series, deliberately: the floor decides whether a drive that is
+    # NOT moving earns a row, so a rising one is shown whatever the floor says
+    # and would make this arm inert. Held at 50 percent so the two probe values
+    # (0 and 100) fall either side of it.
+    disk = next(one for one in machine.disks if identity_of(one) and one.health and one.health.percent_used is not None)
+    samples = tuple(
+        Sample(power_on_hours=hour, captured_at=f"2024-0{index + 1}-01T00:00:00Z", percent_used=50)
+        for index, hour in enumerate((1000, 2000, 3000))
+    )
+    history = History(
+        hostname=machine.hostname,
+        series=(DiskSeries(identity=identity_of(disk) or "", model=disk.model, samples=samples),),
+    )
+
+    async def rows_at(value: str) -> int:
+        # ``with_changes`` rather than the constructor: it takes ``object``,
+        # so setting a field chosen at runtime stays type-clean, where a
+        # ``**{key: ...}`` expansion is checked against EVERY field at once.
+        settings = DisplaySettings().with_changes(**{key: int(value)})
+        app = LsdskApp(machine, history, display=settings)
+        async with app.run_test(size=(180, 50)) as pilot:
+            await pilot.press(page)
+            await pilot.pause()
+            return rows_of(app.query_one(table_id)).row_count
+
+    quiet, loud = await rows_at(low), await rows_at(high)
+    assert quiet != loud, f"display.{key} is ignored by the interactive view ({table_id} shows {quiet} either way)"

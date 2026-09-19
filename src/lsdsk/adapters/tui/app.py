@@ -663,7 +663,8 @@ class LsdskApp(App[None]):
         """
         table = rows_of(self.query_one("#trend-table"))
         table.add_columns(*TREND_PAGE_COLUMNS)
-        rows = trend_rows(self.inventory, self.history)
+        wear_floor = self.display_settings.wear_row_floor_percent
+        rows = trend_rows(self.inventory, self.history, wear_floor)
         self.query_one("#trend-table", DataTable).display = bool(rows)
         for row in rows:
             table.add_row(
@@ -671,7 +672,9 @@ class LsdskApp(App[None]):
                 key=f"{row.disk.node}|{row.kind.value}",
             )
         self.query_one("#trend-body", Static).update(
-            tui_palette.Recoloured(render_trend(self.inventory, self.history) if not rows else _note())
+            tui_palette.Recoloured(
+                render_trend(self.inventory, self.history, wear_floor=wear_floor) if not rows else _note()
+            )
         )
 
     def _fill_health(self) -> None:

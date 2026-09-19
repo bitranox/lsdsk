@@ -7,6 +7,20 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **The interactive trend page now answers from the configured wear floor.**
+  `display.wear_row_floor_percent` reached three of its four consumers:
+  `full.py` and `cli/commands/history.py` both threaded it, and the two TUI call
+  sites did not, so the page fell back to the shipped default of 10 while
+  `lsdsk trend` honoured the setting. Measured on a quiet wear series held at 50
+  percent: the printed command drops the row at a floor above 50 and the page
+  kept showing it at every floor. That breaks the rule `LsdskApp` states for
+  itself, that a page and the command of the same name are one view under one
+  name - and `full.py` already named THIS key as the one that "was honoured by
+  `lsdsk trend` alone" the last time it happened. The harness that exists to
+  catch this could not see it: every arm of `test_config_keys_are_live` drives
+  the CLI, so no display key had a TUI arm at all. One has now been added, and
+  it is parametrized so the next key can join it.
+
 - **An unread PCIe link is no longer drawn like a healthy one.** The controllers
   table and the detail panel both chose the style by comparing the two figures
   they had just FORMATTED, and a string comparison cannot tell an unread figure
