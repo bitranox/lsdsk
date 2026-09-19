@@ -79,7 +79,7 @@ def test_a_reporting_command_asked_for_json_never_records(
         "--format",
         "json",
     )
-    assert json.loads(result.output)["command"], "no envelope, so the run proved nothing"
+    assert json.loads(result.stdout)["command"], "no envelope, so the run proved nothing"
     assert not store.exists()
 
 
@@ -166,7 +166,7 @@ def test_trend_reports_the_live_fault_and_the_dead_one_differently(
 @pytest.mark.os_agnostic
 def test_trend_names_itself_in_the_envelope(cli_runner: CliRunner, production_factory: Callable[[], Any]) -> None:
     result = run(cli_runner, production_factory, "trend", "--replay", str(SNAPSHOT), "--format", "json")
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["command"] == CliCommand.TREND.value
 
 

@@ -36,6 +36,14 @@ FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 # the caller gets the reason, not a flag saying something was missing.
 REFUSAL = "[Errno 1] Operation not permitted (planted)"
 
+# A skipif CONDITION is evaluated at IMPORT time, before any marker can skip
+# anything, and ``os.geteuid`` does not exist on Windows - so a bare call in the
+# decorator raises AttributeError on the Windows runner and takes down collection
+# of this whole FILE rather than skipping one test. Asking whether the platform
+# has euids at all keeps the question answerable everywhere; ``os_linux`` is what
+# actually keeps the test off Windows.
+RUNNING_AS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
+
 
 def envelope_of(capture: Path, runner: CliRunner, factory: Callable[[], object]) -> dict[str, Any]:
     """Replay one capture through ``health --format json`` and decode its envelope.
@@ -216,7 +224,7 @@ def test_a_complete_privileged_run_reports_ok_on_every_committed_capture(
 
 
 @pytest.mark.os_linux
-@pytest.mark.skipif(os.geteuid() == 0, reason="root is allowed to open the region, so nothing is refused")
+@pytest.mark.skipif(RUNNING_AS_ROOT, reason="root is allowed to open the region, so nothing is refused")
 def test_a_denied_register_mapping_is_recorded_with_the_reason_the_kernel_gave(tmp_path: Path) -> None:
     """The reader's own half: a region it may not open comes back as a refusal.
 

@@ -216,10 +216,17 @@ FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-minimal.json"
 
 
 def _run(runner: CliRunner, factory: Callable[[], Any], *args: str) -> str:
-    """Drive the real CLI over the capture that carries virtual devices."""
+    """Drive the real CLI over the capture that carries virtual devices.
+
+    Returns STDOUT alone. ``result.output`` merges stderr, and the logging
+    runtime is a process-global that no fixture resets, so once any earlier test
+    in the process has raised the console level a stray log line sits in front of
+    the JSON and the caller's ``json.loads`` fails on output the command wrote
+    correctly. The failure message keeps ``output``, where both streams help.
+    """
     result = runner.invoke(cli_mod.cli, [*args, "--replay", str(FIXTURE)], obj=factory)
     assert result.exit_code in (0, 1), result.output
-    return result.output
+    return result.stdout
 
 
 @pytest.mark.os_agnostic
