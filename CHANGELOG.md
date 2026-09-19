@@ -7,6 +7,24 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **The size ceiling now holds for a file whose directory entry understates it.**
+  `read_text_bounded` took the size from `path.stat().st_size`, refused anything
+  over `MAX_INPUT_BYTES`, and then called the unbounded `path.read_text()`. A
+  character device, a FIFO and nearly everything under `/proc` report a size of
+  0 whatever they go on to deliver, so the guard was inert for exactly the
+  inputs that can be unbounded, and it covered both files that reach this tool
+  from outside it. Measured: `--replay /dev/zero` read until the process was
+  killed, and `--history-file /dev/full record` was killed by the OOM killer at
+  exit 137 with nothing on either stream. The reason it survived review is that
+  the guard looks correct - `/proc/kcore` IS refused, being the one non-regular
+  file that reports a real size. The read now also stops one byte past the
+  ceiling and refuses there, which is the shape `read_bundled_pci_ids` already
+  used for the decompressed database. A stream UNDER the ceiling still loads, so
+  `--replay <(ssh host lsdsk snapshot -o -)` keeps working; refusing everything
+  that is not a regular file would have closed the hole and taken that with it.
+  The refusal from the second check states no figure, because the read stopped
+  early and the size is not something that branch measured.
+
 - **A reader that leaves early no longer reports a failing drive.** `lsdsk health
 | head`, `lsdsk smart | less` quit early, and `lsdsk findings --format json | jq
   -e` all left exit 1, which is this tool's code for "found a warning or

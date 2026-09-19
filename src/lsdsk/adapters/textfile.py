@@ -36,8 +36,14 @@ MAX_INPUT_BYTES = 64 * 1024 * 1024
 def read_text_bounded(path: Path, *, what: str, errors: str = "strict") -> str:
     """Read a UTF-8 text file, refusing one too large to be what it claims.
 
-    The size is taken from the directory entry rather than by reading and
-    counting, so an oversized file costs one ``stat`` and is never resident.
+    Bounded twice, because neither check alone is enough. The directory entry
+    is consulted first, so a mistyped path to a disk image is refused for one
+    ``stat`` and is never resident. That entry cannot be trusted to describe
+    the content, though: a character device, a FIFO and nearly everything under
+    ``/proc`` report a size of 0 whatever they go on to deliver, so the read
+    itself also stops one byte past the ceiling and refuses there. A stream
+    under the ceiling still loads, which is what keeps
+    ``--replay <(ssh host lsdsk snapshot -o -)`` working.
 
     Args:
         path: The file to read.
@@ -77,10 +83,25 @@ def read_text_bounded(path: Path, *, what: str, errors: str = "strict") -> str:
         raise ConfigurationError(message)
 
     try:
-        return path.read_text(encoding="utf-8", errors=errors)
+        with path.open("rb") as handle:
+            # One byte past the ceiling: enough to know the file is over it
+            # without ever holding more than that, which is the same shape
+            # ``read_bundled_pci_ids`` uses for the decompressed database.
+            raw = handle.read(MAX_INPUT_BYTES + 1)
     except OSError as error:
         message = f"Could not read {what} at {path}: {error}"
         raise ConfigurationError(message) from error
+
+    if len(raw) > MAX_INPUT_BYTES:
+        # Deliberately no figure: the read stopped early, so the size is not
+        # something this branch measured and must not be stated as if it were.
+        message = (
+            f"{path} is larger than {what} ever is "
+            f"(the limit is {MAX_INPUT_BYTES // 1024 // 1024} MB). Check the path."
+        )
+        raise ConfigurationError(message)
+
+    return raw.decode("utf-8", errors=errors)
 
 
 __all__ = ["MAX_INPUT_BYTES", "read_text_bounded"]

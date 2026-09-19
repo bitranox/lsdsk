@@ -7,7 +7,9 @@ memory. These tests hold the guard that runs first.
 
 from __future__ import annotations
 
+import os
 import sys
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +26,11 @@ if TYPE_CHECKING:
     from click.testing import CliRunner
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
+
+#: A FIFO needs ``os.mkfifo``, which Windows does not have. Asked with
+#: ``hasattr`` rather than by calling it, because a skipif CONDITION is
+#: evaluated at IMPORT time, before any marker can skip anything.
+HAS_FIFO = hasattr(os, "mkfifo")
 SNAPSHOT = FIXTURES / "linux-sas-hba.json"
 
 
@@ -317,3 +324,77 @@ def test_a_controller_name_cannot_inject_control_characters_either(
         assert "\x07" not in result.output, f"{argv or 'bare'}: a bell character reached the terminal"
         forged = [line for line in result.output.splitlines() if line.strip() == "FAKE-ROW"]
         assert not forged, f"{argv or 'bare'}: an injected newline forged a table row"
+
+
+def _fifo_carrying(path: Path, payload_bytes: int) -> threading.Thread:
+    """A FIFO fed ``payload_bytes`` by a writer that gives up when nobody reads.
+
+    A FIFO is the case the directory entry cannot describe: ``st_size`` is 0
+    whatever is about to come through it. The writer is a daemon thread so a
+    regression cannot wedge the suite, and it swallows the broken pipe it gets
+    when a correctly-bounded reader stops early.
+    """
+    os.mkfifo(path)
+
+    def feed() -> None:
+        chunk = b"x" * (1024 * 1024)
+        remaining = payload_bytes
+        try:
+            with path.open("wb") as handle:
+                while remaining > 0:
+                    handle.write(chunk[:remaining])
+                    remaining -= min(remaining, len(chunk))
+        except (BrokenPipeError, OSError):
+            pass
+
+    writer = threading.Thread(target=feed, daemon=True)
+    writer.start()
+    return writer
+
+
+@pytest.mark.os_linux
+@pytest.mark.skipif(not HAS_FIFO, reason="a FIFO needs os.mkfifo")
+def test_a_stream_whose_directory_entry_understates_it_is_still_bounded(tmp_path: Path) -> None:
+    """The size cap must not rest on ``st_size`` being honest.
+
+    A character device, a FIFO and nearly everything under ``/proc`` report a
+    size of 0, so a guard that reads the directory entry and then calls
+    ``read_text`` is inert for exactly the inputs that can be unbounded. Before
+    this was fixed, ``--replay /dev/zero`` read until the kernel killed the
+    process, and ``--history-file /dev/full`` did the same with no message at
+    all.
+    """
+    fifo = tmp_path / "capture.json"
+    writer = _fifo_carrying(fifo, MAX_INPUT_BYTES + 1)
+    assert fifo.stat().st_size == 0, "the premise failed: this FIFO reports a size"
+
+    with pytest.raises(ConfigurationError) as raised:
+        read_text_bounded(fifo, what="a snapshot")
+    assert "Check the path" in str(raised.value)
+    writer.join(timeout=30)
+
+
+@pytest.mark.os_linux
+@pytest.mark.skipif(not HAS_FIFO, reason="a FIFO needs os.mkfifo")
+def test_a_stream_that_fits_is_still_read_whatever_its_directory_entry_says(tmp_path: Path) -> None:
+    """The control, and the reason the bound is a read rather than a refusal.
+
+    ``--replay <(ssh host lsdsk snapshot -o -)`` hands this tool a FIFO on
+    purpose. Refusing everything that is not a regular file would close the
+    hole and take that with it, so a stream under the limit must still load.
+    """
+    fifo = tmp_path / "capture.json"
+    body = '{"hello": "world"}'
+    writer = _fifo_carrying(fifo, 0)
+    writer.join(timeout=30)
+    fifo.unlink()
+    os.mkfifo(fifo)
+
+    def feed() -> None:
+        with fifo.open("wb") as handle:
+            handle.write(body.encode("utf-8"))
+
+    small = threading.Thread(target=feed, daemon=True)
+    small.start()
+    assert read_text_bounded(fifo, what="a snapshot") == body
+    small.join(timeout=30)
