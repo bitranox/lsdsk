@@ -20,11 +20,10 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import lib_log_rich.runtime
 import rich_click as click
-from pydantic import ValidationError
 
 from lsdsk.adapters.history.store import load_history, save_history
 from lsdsk.adapters.hw.capture import CaptureEnvelope
-from lsdsk.adapters.textfile import read_text_bounded
+from lsdsk.adapters.textfile import read_json_bounded
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import ActionCommand, CliCommand, OutputFormat
 from lsdsk.domain.errors import ConfigurationError
@@ -196,12 +195,23 @@ def _capture_stamp(replay: Path | None) -> str | None:
     than by reaching into the raw mapping, so the field is typed at exactly one
     place. A capture that cannot be read at all is not an error here: the stamp
     is for display, and the reading itself has already succeeded by this point.
+
+    Parsed through `read_json_bounded` rather than by handing the text to
+    Pydantic, because Pydantic's own parser resolves a repeated key
+    last-writer-wins exactly as `json.loads` does, and this is the only other
+    place a file from outside this tool is turned into JSON. The caller reads
+    the same file through the guarded path first, so nothing unguarded reaches
+    here today - but that is an ordering, and an ordering is one edit from not
+    holding.
     """
     if replay is None:
         return None
     try:
-        return CaptureEnvelope.model_validate_json(read_text_bounded(replay, what="a snapshot")).captured_at
-    except (ConfigurationError, ValidationError):
+        return CaptureEnvelope.model_validate(read_json_bounded(replay, what="a snapshot")).captured_at
+    # ValueError rather than ValidationError, which is a subclass of it: a
+    # repeated key is refused as the plain error json.loads raises, and the
+    # stamp is for display either way.
+    except (ConfigurationError, ValueError):
         return None
 
 

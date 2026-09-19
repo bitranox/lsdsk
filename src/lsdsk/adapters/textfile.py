@@ -14,11 +14,13 @@ System Role:
 Contents:
     * :data:`MAX_INPUT_BYTES` - the ceiling both boundaries refuse above.
     * :func:`read_text_bounded` - read a file, or refuse it for its size.
+    * :func:`read_json_bounded` - the same read, parsed, refusing a repeated key.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import json
+from typing import TYPE_CHECKING, Any
 
 from lsdsk.domain.errors import ConfigurationError, MissingFileError
 
@@ -111,6 +113,71 @@ def read_text_bounded(path: Path, *, what: str, errors: str = "strict") -> str:
     return raw.decode("utf-8", errors=errors)
 
 
+def read_json_bounded(path: Path, *, what: str) -> Any:
+    """Read a bounded file and parse it as JSON, refusing one that repeats a key.
+
+    JSON says nothing about an object naming one key twice, and CPython
+    resolves it last-writer-wins with no signal at all. Both files that reach
+    this tool from outside it are keyed maps read back by key, so a repeat is
+    a value silently replaced by another: measured on a capture, a graphics
+    device repeating a SAS HBA's address left the machine reporting four
+    controllers where it has five, moved ten drives to "not attached to a
+    known controller" and grew a root complex that does not exist, and a
+    repeated `block` section emptied the machine and turned `lsdsk health`
+    from exit 1 into exit 0 on a drive carrying 99,345 CRC errors.
+
+    Refused rather than resolved, because nothing here can tell which of the
+    two values was meant. Neither writer can produce one - a Python dict has
+    no repeated key to dump - so a file carrying one was not written by
+    lsdsk, and picking either value would be the tool reporting something it
+    did not read.
+
+    Args:
+        path: The file to read.
+        what: What the file was expected to be, for the refusal message.
+
+    Returns:
+        Whatever the document holds, untyped as JSON always is; the caller's
+        model is what gives it a shape.
+
+    Raises:
+        MissingFileError: If the file is not there.
+        ConfigurationError: If the file cannot be read or is too large.
+        ValueError: If any object in it names one key twice. Left as the
+            plain error `json.loads` already raises for a malformed number,
+            so both callers' existing handlers turn it into the same refusal
+            every other unreadable document gets.
+
+    Example:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as directory:
+        ...     store = Path(directory) / 'twice.json'
+        ...     _ = store.write_text('{"a": 1, "a": 2}', encoding='utf-8')
+        ...     read_json_bounded(store, what='a snapshot')
+        Traceback (most recent call last):
+        ...
+        ValueError: the key 'a' is given twice in one object
+    """
+    return json.loads(read_text_bounded(path, what=what), object_pairs_hook=_object_without_repeated_keys)
+
+
+def _object_without_repeated_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Build one JSON object, refusing it if a key is given more than once.
+
+    Called for every object in the document, nested ones included, which is
+    where the repeat can hide: the sections a capture is read by are one
+    level down and the samples in a history store are three.
+    """
+    entry: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in entry:
+            message = f"the key {key!r} is given twice in one object"
+            raise ValueError(message)
+        entry[key] = value
+    return entry
+
+
 def _unreadable(path: Path, what: str, error: OSError) -> ConfigurationError:
     """The refusal a failed read deserves, typed by WHY it failed.
 
@@ -126,4 +193,4 @@ def _unreadable(path: Path, what: str, error: OSError) -> ConfigurationError:
     return ConfigurationError(message)
 
 
-__all__ = ["MAX_INPUT_BYTES", "read_text_bounded"]
+__all__ = ["MAX_INPUT_BYTES", "read_json_bounded", "read_text_bounded"]

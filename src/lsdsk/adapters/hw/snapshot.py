@@ -25,7 +25,7 @@ from pydantic import Field, TypeAdapter, ValidationError
 
 from ...domain.enums import Platform
 from ...domain.errors import ConfigurationError, UnsupportedPlatformError
-from ..textfile import read_text_bounded
+from ..textfile import read_json_bounded
 from .capture import CaptureEnvelope
 from .linux import builder as linux_builder
 from .linux.capture import LinuxCapture
@@ -276,7 +276,7 @@ def load(path: Path) -> Inventory:
         ConfigurationError: If the file is not a snapshot this version understands.
     """
     try:
-        payload: Any = json.loads(read_text_bounded(path, what="a snapshot"))
+        payload: Any = read_json_bounded(path, what="a snapshot")
     # Not only JSONDecodeError: an integer literal past CPython's
     # digit limit raises a bare ValueError, and deeply nested JSON
     # exhausts the C stack with RecursionError. Both used to escape as a

@@ -42,7 +42,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from ...domain.errors import ConfigurationError, MissingFileError
 from ...domain.history import DiskSeries, History, Sample
-from ..textfile import read_text_bounded
+from ..textfile import read_json_bounded
 
 HISTORY_SCHEMA_VERSION = 1
 
@@ -195,7 +195,7 @@ def load_history(path: Path, *, hostname: str) -> History:
         ()
     """
     try:
-        payload: Any = json.loads(read_text_bounded(path, what="a history store"))
+        payload: Any = read_json_bounded(path, what="a history store")
     # Asked of the READ rather than of path.exists(), which answers False for a
     # store this process may not look at exactly as it does for one that was
     # never written: the OSError is swallowed inside it. Read as absent, an

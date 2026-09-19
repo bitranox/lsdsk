@@ -8,6 +8,7 @@ that passed it still has to respect once its contents reach a renderer.
 
 from __future__ import annotations
 
+import ast
 import io
 import os
 import sys
@@ -445,3 +446,153 @@ def test_a_parent_chain_deeper_than_the_frame_limit_is_still_drawn() -> None:
     buffer = io.StringIO()
     Console(file=buffer, width=200, no_color=True).print(section)
     assert nodes[-1].address in buffer.getvalue(), "the deepest device of the chain is not drawn"
+
+
+#: A capture with one storage controller and one drive behind it, written as
+#: TEXT rather than dumped, because the point of these arms is a key that
+#: appears twice and no JSON writer will produce one.
+_CONTROLLER = (
+    '"0000:03:00.0": {"class": "0x010700", "device": "0x00e6", "vendor": "0x1000", '
+    '"driver": "mpt3sas", "path": "/sys/devices/pci0000:00/0000:03:00.0"}'
+)
+_GRAPHICS = (
+    '"0000:03:00.0": {"class": "0x030000", "device": "0x1234", "vendor": "0x10de", '
+    '"path": "/sys/devices/pci0000:00/0000:03:00.0"}'
+)
+_BLOCK = '"sda": {"size": "2048", "device_path": "/sys/devices/pci0000:00/0000:03:00.0/host0/target0:0:0/0:0:0:0"}'
+
+
+def _capture_text(*, pci: str, block: str, trailer: str = "") -> str:
+    """One snapshot as text, with whatever the arm needs repeated inside it."""
+    return (
+        '{"schema": 2, "platform": "linux", "hostname": "crafted", "kernel": "6.1.0", '
+        f'"pci": {{{pci}}}, "block": {{{block}}}{trailer}}}'
+    )
+
+
+@pytest.mark.os_agnostic
+def test_a_capture_that_names_one_pci_address_twice_is_refused(tmp_path: Path) -> None:
+    """A repeated key resolves last-writer-wins, and the loser leaves no trace.
+
+    `fabric._keyed_by_address` exists to stop exactly this loss one layer
+    further in, because "the device that vanished took its disks' controller
+    with it" - and it runs after `json.loads` has already resolved the repeat.
+    Measured on the `linux-sas-hba` capture with a graphics device repeating the
+    SAS HBA's address: the machine reads `4 controllers` where it has 5, ten
+    drives move to "not attached to a known controller", one finding disappears,
+    and the fabric grows a third root complex that does not exist. Exit 0
+    throughout, nothing on stderr.
+    """
+    crafted = tmp_path / "duplicate.json"
+    crafted.write_text(_capture_text(pci=f"{_CONTROLLER}, {_GRAPHICS}", block=_BLOCK), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError) as refusal:
+        load(crafted)
+
+    assert "0000:03:00.0" in str(refusal.value), "the refusal does not name the key that was repeated"
+
+
+@pytest.mark.os_agnostic
+def test_a_capture_that_names_one_whole_section_twice_is_refused(tmp_path: Path) -> None:
+    """The severe shape: a repeated SECTION key replaces every entry at once.
+
+    Measured on the `linux-sas-hba` capture with a second, empty `block`
+    section: every drive vanishes, the page reports `1 hint` where the control
+    reports 7 warnings and 6 hints including a drive carrying 99,345 interface
+    CRC errors, and `lsdsk health` exits 0 rather than 1. A tool whose exit code
+    is its verdict cannot let a file edit turn "something is wrong here" into
+    "nothing is".
+    """
+    crafted = tmp_path / "duplicate-section.json"
+    crafted.write_text(_capture_text(pci=_CONTROLLER, block=_BLOCK, trailer=', "block": {}'), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError) as refusal:
+        load(crafted)
+
+    assert "block" in str(refusal.value), "the refusal does not name the section that was repeated"
+
+
+@pytest.mark.os_agnostic
+def test_the_same_capture_without_a_repeated_key_still_loads(tmp_path: Path) -> None:
+    """The control both arms above need.
+
+    A guard that refused every capture would pass them and say nothing, and
+    this fixture is the one they are built from, so it fails if the refusal is
+    reaching anything more than the repeat.
+    """
+    ordinary = tmp_path / "ordinary.json"
+    ordinary.write_text(_capture_text(pci=_CONTROLLER, block=_BLOCK), encoding="utf-8")
+
+    inventory = load(ordinary)
+
+    assert [controller.address for controller in inventory.controllers] == ["0000:03:00.0"]
+    assert [disk.node for disk in inventory.disks] == ["sda"]
+
+
+@pytest.mark.os_agnostic
+def test_a_history_store_that_names_one_key_twice_is_refused(tmp_path: Path) -> None:
+    """The counter store is read back through the same shape, and is not rebuildable.
+
+    A capture can be taken again from the hardware; this file is the only record
+    of what the drives used to say, so a value silently replaced by a later one
+    under the same key is worse here than in a capture. The two readers are
+    siblings line for line, down to the comment above their handlers, so the
+    guard belongs at both or it is one edit from being absent at one.
+    """
+    recorded = '[{"identity": "naa.1", "model": "a drive", "samples": [{"power_on_hours": 100}]}]'
+    store = tmp_path / "history.json"
+    store.write_text(f'{{"schema": 1, "hostname": "crafted", "series": {recorded}, "series": []}}', encoding="utf-8")
+
+    with pytest.raises(ConfigurationError) as refusal:
+        load_history(store, hostname="crafted")
+
+    assert "series" in str(refusal.value), "the refusal does not name the key that was repeated"
+
+
+#: The one module allowed to turn a file from outside this tool into JSON.
+_JSON_PARSE_HOME = "textfile.py"
+
+#: The calls that parse a whole document. `orjson.loads` in the config
+#: overrides is deliberately not here: it parses one value the user typed on
+#: the command line, not a document read from a file, so a key repeated in it
+#: substitutes the caller's own text and there is no second party to mislead.
+_DOCUMENT_PARSERS = ("loads", "load", "model_validate_json")
+
+
+def _document_parse_sites() -> list[str]:
+    """Every call in the source that parses a whole JSON document."""
+    found: list[str] = []
+    source_root = Path(__file__).parent.parent / "src" / "lsdsk"
+    for module in sorted(source_root.rglob("*.py")):
+        if module.name == _JSON_PARSE_HOME:
+            continue
+        tree = ast.parse(module.read_text(encoding="utf-8"), filename=str(module))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr != "model_validate_json" and not (
+                node.func.attr in _DOCUMENT_PARSERS
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "json"
+            ):
+                continue
+            found.append(f"{module.relative_to(source_root)}:{node.lineno} {node.func.attr}")
+    return found
+
+
+@pytest.mark.os_agnostic
+def test_only_one_module_turns_a_file_from_outside_into_json() -> None:
+    """The repeated-key guard is a property of WHERE parsing happens.
+
+    Three sites parsed a document before this was written, two through
+    ``json.loads`` and one through Pydantic's own parser, and all three resolved
+    a repeated key last-writer-wins. Guarding the ones that existed leaves the
+    next one to be written unguarded, and nothing would say so: a repeat is
+    silent by construction. So the shape is held instead of the instances.
+
+    Asserted over the call graph rather than the text, because a comment naming
+    ``json.loads`` is not a call and must not fail this.
+    """
+    assert _document_parse_sites() == [], (
+        f"these parse a document outside the one module that refuses a repeated key: {_document_parse_sites()}"
+    )

@@ -7,6 +7,25 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A file that names one key twice is refused rather than half read.** JSON
+  says nothing about an object repeating a key and CPython resolves it
+  last-writer-wins with no signal, so a value was silently replaced by another
+  in both files that reach lsdsk from outside it. Measured on the
+  `linux-sas-hba` capture: a graphics device repeating the SAS HBA's address
+  leaves the machine reading `4 controllers` where it has 5, moves that HBA's
+  ten drives to "not attached to a known controller", drops one finding of
+  thirteen and grows a third root complex that does not exist. A repeated
+  SECTION key is worse: a second, empty `block` empties the machine, turns 7
+  warnings and 6 hints into `1 hint`, and takes `lsdsk health` from exit 1 to
+  exit 0 on a host with a drive carrying 99,345 interface CRC errors. It is
+  refused rather than resolved, because nothing at the parse can tell which
+  value was meant and neither writer can produce a repeat, so a file carrying
+  one was not written by lsdsk. The refusal names the key and arrives as the
+  same configuration error every other unreadable document gets. Three places
+  parsed a document, one of them through Pydantic's own parser, which repeats
+  the same resolution; all three read through one function now, and a test
+  holds that shape rather than those three instances.
+
 - **The Linux builder's per-disk lookups are built once per capture.** Three of
   them walked a whole capture-controlled map for every disk, so a reading cost
   the PRODUCT of its disks and its class entries: the libata link a SATA drive
