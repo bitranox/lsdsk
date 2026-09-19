@@ -7,6 +7,18 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A deep PCI parent chain no longer takes the view that draws it down with
+  it.** `fabric.assemble` walks parenthood from an explicit stack and carries
+  any depth a capture holds, and it hands that tree straight to `Fabric`, which
+  walked the same chain with one frame per level. Measured on a hand-built
+  chain: depth 950 drew, depth 2000 raised `RecursionError` inside
+  `Fabric.__init__` - before a row exists and after the page's header and its
+  findings are already on stdout, so a caller got half a page and a traceback,
+  on `topology` and on the bare default page alike. The walk is an explicit
+  stack now, and the method says so rather than being called `_recurse`. The arm
+  that holds it takes its depth from `sys.getrecursionlimit()` rather than a
+  literal, so it cannot go vacuous where that limit is raised.
+
 - **The interactive trend page now answers from the configured wear floor.**
   `display.wear_row_floor_percent` reached three of its four consumers:
   `full.py` and `cli/commands/history.py` both threaded it, and the two TUI call

@@ -435,13 +435,28 @@ class Fabric:
         order within a parent."""
         out: list[tuple[PciNode, int]] = []
         for root in self.roots:
-            out.extend(self._recurse(root))
+            out.extend(self._descendants(root))
         return out
 
-    def _recurse(self, parent: PciNode) -> Iterable[tuple[PciNode, int]]:
-        for node in self.by_parent.get(parent.address, ()):
+    def _descendants(self, parent: PciNode) -> Iterable[tuple[PciNode, int]]:
+        """Everything below ``parent``, parents before children.
+
+        Walked from an explicit stack rather than by recursion. Parenthood is
+        the capture's to state, so the depth of a chain is too, and one frame
+        per level made a deep one raise ``RecursionError`` where no depth at
+        all is a defect: the sibling that ASSEMBLES this tree is iterative and
+        carries any chain a capture holds. It fired while the section was
+        being built, which is after the page above it had been written, so a
+        caller got half a page and a traceback.
+
+        Pushed in reverse so the children come back off the stack in the
+        address order :meth:`_grouped` put them in.
+        """
+        stack = list(reversed(self.by_parent.get(parent.address, ())))
+        while stack:
+            node = stack.pop()
             yield node, self.level_of(node)
-            yield from self._recurse(node)
+            stack.extend(reversed(self.by_parent.get(node.address, ())))
 
     def level_of(self, node: PciNode) -> int:
         """Level of a device: the child of a root bus is level 1."""

@@ -1,12 +1,14 @@
-"""The size guard on the two files that reach lsdsk from outside it.
+"""What a file reaching lsdsk from outside it is allowed to do to it.
 
 A capture handed to ``--replay`` and the store at ``--history-file`` are both
 validated against a Pydantic model, but only after the whole file is already in
-memory. These tests hold the guard that runs first.
+memory. These tests hold the guard that runs first, and the bounds a capture
+that passed it still has to respect once its contents reach a renderer.
 """
 
 from __future__ import annotations
 
+import io
 import os
 import sys
 import threading
@@ -14,11 +16,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from rich.console import Console
 
 from lsdsk.adapters.history.store import load_history
 from lsdsk.adapters.hw.snapshot import load
+from lsdsk.adapters.render.tree import FabricView, render_fabric
 from lsdsk.adapters.textfile import MAX_INPUT_BYTES, read_text_bounded
+from lsdsk.domain.enums import TreeDensity
 from lsdsk.domain.errors import ConfigurationError
+from lsdsk.domain.models import Inventory, PciNode
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -398,3 +404,44 @@ def test_a_stream_that_fits_is_still_read_whatever_its_directory_entry_says(tmp_
     small.start()
     assert read_text_bounded(fifo, what="a snapshot") == body
     small.join(timeout=30)
+
+
+def _chain_address(level: int) -> str:
+    """One address per level of a synthetic chain, in the width a real one has.
+
+    A PCI address is twelve characters and the address column is sized for
+    exactly that, so a wider synthetic one would be clipped and the arm would
+    fail on its own fixture rather than on the tree.
+    """
+    return f"0000:{level // 256:02x}:{(level // 8) % 32:02x}.{level % 8}"
+
+
+@pytest.mark.os_agnostic
+def test_a_parent_chain_deeper_than_the_frame_limit_is_still_drawn() -> None:
+    """A capture whose devices form one very deep chain is drawn, not died on.
+
+    ``fabric.assemble`` is iterative and hands the renderer whatever depth a
+    capture carries, so the ceiling is the renderer's own: walking that chain
+    with one frame per level raises ``RecursionError`` while the section is
+    being built, which is after the page's header and its findings are already
+    on stdout. The depth is taken from the interpreter's own limit, so the arm
+    cannot go vacuous where that limit is raised.
+    """
+    depth = sys.getrecursionlimit() + 500
+    nodes = [PciNode(address="0000:00", name="root complex")]
+    nodes.extend(
+        PciNode(
+            address=_chain_address(level),
+            name=f"switch leg {level}",
+            class_code=0x060400,
+            parent_address=_chain_address(level - 1) if level else "0000:00",
+        )
+        for level in range(depth)
+    )
+    inventory = Inventory(hostname="deep-chain", pci_tree=tuple(nodes))
+
+    section = render_fabric(inventory, (), 200, FabricView(density=TreeDensity.FULL))
+
+    buffer = io.StringIO()
+    Console(file=buffer, width=200, no_color=True).print(section)
+    assert nodes[-1].address in buffer.getvalue(), "the deepest device of the chain is not drawn"
