@@ -7,6 +7,20 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A snapshot that cannot be written now exits with a code lsdsk means
+  something by.** `save` declares `Raises: OSError` and `cli_snapshot` caught
+  `ConfigurationError` alone, so a write failure escaped to the top-level
+  handler, which turns an exception into its errno. Measured: `-o /dev/full`
+  left 28, which this tool means nothing by, and `-o /proc/lsdskx.json` left 2,
+  which is the code Click leaves for a usage error - an unknown option, a
+  missing argument, a bad `--format` choice - so an agent branching on it
+  rewrote its command line when the real answer was a destination it cannot
+  create. Both now leave 1 and name the path and the reason on stderr, and a
+  destination refused for permissions leaves 13, which is what `config-deploy`
+  already did for the same failure. The comment above that try block always said
+  the catch existed so a failure would not fall "through to the top-level
+  handler as an unexpected exception", which is exactly what `OSError` did.
+
 - **A counter-history store that cannot be read is no longer taken for one that
   was never written.** `load_history` decided with `path.exists()`, which
   swallows the OSError and answers False for a store this process may not look

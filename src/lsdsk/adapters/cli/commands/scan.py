@@ -905,6 +905,19 @@ def cli_snapshot(ctx: click.Context, output: Path, output_format: OutputFormat) 
         except ConfigurationError as error:
             safe_console.echo(f"Error: {error}", err=True)
             raise SystemExit(ExitCode.CONFIG_ERROR) from error
+        # save() declares OSError and it is the destination's, not the
+        # machine's: read_current_machine documents ConfigurationError alone,
+        # and a drive that refuses to answer is recorded against that drive
+        # rather than raised. Uncaught, the errno became the exit code, and the
+        # codes a filesystem produces overlap the ones this tool means
+        # something by - "-o /proc/lsdskx.json" left 2, which is Click's usage
+        # error, and "-o /dev/full" left 28, which is nothing here at all.
+        except PermissionError as error:
+            safe_console.echo(f"Error: not allowed to write the capture to {output}: {error}", err=True)
+            raise SystemExit(ExitCode.PERMISSION_DENIED) from error
+        except OSError as error:
+            safe_console.echo(f"Error: could not write the capture to {output}: {error}", err=True)
+            raise SystemExit(ExitCode.GENERAL_ERROR) from error
         if output_format is OutputFormat.JSON:
             emit_action(
                 ActionCommand.SNAPSHOT, SnapshotResult(path=str(output), schema_version=snapshot_adapter.SCHEMA_VERSION)

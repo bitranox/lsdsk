@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from lsdsk.adapters import cli as cli_mod
+from lsdsk.adapters.cli.exit_codes import ExitCode
+from lsdsk.adapters.hw import snapshot as snapshot_adapter
+from lsdsk.composition import build_production
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from click.testing import CliRunner, Result
+
+CAPTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-minimal.json"
 
 
 @pytest.mark.os_agnostic
@@ -292,3 +299,76 @@ def test_a_reader_that_leaves_early_gets_the_broken_pipe_code_not_the_findings_c
         f"a reader that left early got {abandoned}, "
         f"and {int(ExitCode.GENERAL_ERROR)} is what an actionable finding leaves"
     )
+
+
+def _read_a_committed_capture(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stand a committed capture in for the hardware read.
+
+    ``read_current_machine`` reads sysfs, ioctls or SetupAPI, which is the true
+    external edge of ``snapshot``: a CI runner has no drives worth reading and a
+    macOS one cannot read hardware at all. Everything after the read - which is
+    the write these two arms are about - runs for real.
+    """
+    capture = json.loads(CAPTURE.read_text(encoding="utf-8"))
+    monkeypatch.setattr(snapshot_adapter, "read_current_machine", lambda: capture)
+
+
+@pytest.mark.os_agnostic
+def test_a_snapshot_that_cannot_be_written_exits_with_a_code_lsdsk_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A destination that cannot be created is not a usage error.
+
+    ``save`` declares ``Raises: OSError`` and the command caught
+    ``ConfigurationError`` alone, so the errno reached the top-level handler and
+    became the exit code. Measured on this machine before the change:
+    ``-o /proc/lsdskx.json`` left 2 and ``-o /dev/full`` left 28, and 2 is the
+    code Click leaves for a usage error - an unknown option, a bad ``--format``
+    choice - so a caller branching on it rewrites its command line when the real
+    answer is that the destination cannot be written. The arm reaches the same
+    branch portably: a regular file standing where the destination's directory
+    should be, which raises EEXIST rather than a permission error and so cannot
+    coincide with a code lsdsk raises. Driven through ``main`` rather than a
+    runner, because the errno mapping is ``main``'s and a runner never reaches
+    it.
+    """
+    _read_a_committed_capture(monkeypatch)
+    in_the_way = tmp_path / "not-a-directory"
+    in_the_way.write_text("", encoding="utf-8")
+    target = in_the_way / "capture.json"
+
+    code = cli_mod.main(["snapshot", "-o", str(target)], services_factory=build_production)
+
+    assert code == ExitCode.GENERAL_ERROR, f"a write that could not happen left {code}"
+    assert str(target) in capsys.readouterr().err, "the refusal does not name the destination"
+
+
+@pytest.mark.os_posix
+def test_a_snapshot_refused_by_the_filesystem_says_which_path_was_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The permission arm, which the exit code alone cannot hold.
+
+    EACCES is 13 and :class:`ExitCode.PERMISSION_DENIED` is 13, so an escaping
+    ``PermissionError`` leaves the right number for the wrong reason and an
+    assertion on the code alone passes either way - measured, it did. What
+    separates them is the sentence: the top-level handler prints the exception,
+    which carries the path but not what lsdsk was doing with it, and only the
+    command's own handler says a capture was being written.
+    """
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root writes through a mode that refuses everyone else")
+    _read_a_committed_capture(monkeypatch)
+    closed = tmp_path / "closed"
+    closed.mkdir(mode=0o500)
+    target = closed / "capture.json"
+
+    try:
+        code = cli_mod.main(["snapshot", "-o", str(target)], services_factory=build_production)
+    finally:
+        closed.chmod(0o700)
+
+    assert code == ExitCode.PERMISSION_DENIED, f"a refused write left {code}"
+    refusal = capsys.readouterr().err
+    assert str(target) in refusal, "the refusal does not name the destination"
+    assert "write the capture to" in refusal, f"nothing says what was refused: {refusal!r}"
