@@ -7,6 +7,19 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **The shipped skill's slot-verdict table lists every verdict the column
+  prints.** It enumerated seven and `report.slot_verdict` returns eight; the
+  missing one is `in use`, for an occupied port whose capability or whose
+  occupant's need was not read. That vocabulary is closed, so an agent reading
+  the table treats an unlisted value as an anomaly, and this one differs from
+  `in use (graphics)` by a single parenthetical - the likely failure being a
+  graphics card reported where there is a balloon device. It is not an edge
+  case on the platform the table omits: Windows publishes no link registers for
+  a bridge, so both occupied ports of the `windows-ahci` capture print it and
+  none of the 53 ports across the four Linux captures does. The new guard reads
+  the expected set off `report.py`'s own AST, following returns into the helper
+  it hands off to, so a verdict added later fails until the table follows.
+
 - **A snapshot that cannot be written now exits with a code lsdsk means
   something by.** `save` declares `Raises: OSError` and `cli_snapshot` caught
   `ConfigurationError` alone, so a write failure escaped to the top-level

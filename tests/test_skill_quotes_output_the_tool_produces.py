@@ -14,6 +14,7 @@ which a fixed list of corrected lines would not.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from lsdsk.domain.enums import CliCommand
 from lsdsk.domain.models import pcie_bandwidth_gbps, pcie_generation
 
 SKILL = Path(__file__).resolve().parents[1] / "skills" / "lsdsk" / "SKILL.md"
+REPORT = Path(__file__).resolve().parents[1] / "src" / "lsdsk" / "adapters" / "render" / "report.py"
 
 #: A PCIe link figure as the tool writes it (``Gen4x4``) AND in the two forms it
 #: does not: the decimal spelling (``3.0x4``) and either of them opened up with a
@@ -150,4 +152,84 @@ def test_the_skill_enumerates_the_fields_a_disk_really_carries() -> None:
     assert set(promised) == emitted, (
         f"the skill and the payload disagree: only in the skill {sorted(set(promised) - emitted)}, "
         f"only in the payload {sorted(emitted - set(promised))}"
+    )
+
+
+def _verdict_of(returned: ast.expr, calls: list[str]) -> str | None:
+    """The verdict text one ``return`` hands back, or None when it hands on.
+
+    A verdict is returned as ``(text, style)``, so the text is the first element
+    of the tuple. A computed one is normalised to the form a table can carry: the
+    documented row for ``f"spare {spare:.2f} GB/s"`` is ``spare N GB/s``.
+    """
+    if isinstance(returned, ast.Tuple) and returned.elts:
+        return _verdict_of(returned.elts[0], calls)
+    if isinstance(returned, ast.Constant) and isinstance(returned.value, str):
+        return returned.value
+    if isinstance(returned, ast.JoinedStr):
+        return "".join(
+            part.value if isinstance(part, ast.Constant) and isinstance(part.value, str) else "N"
+            for part in returned.values
+        )
+    if isinstance(returned, ast.Call) and isinstance(returned.func, ast.Name):
+        calls.append(returned.func.id)
+    return None
+
+
+def _verdicts_the_code_can_produce() -> set[str]:
+    """Every verdict ``slot_verdict`` can hand back, read off its own source.
+
+    Read from the source rather than by driving the function over a list of
+    slots, because a list I write can only reach the branches I thought of and
+    the branch this exists to catch is the one somebody adds later. Returns that
+    hand on to another function in the module are followed, so moving a branch
+    into a helper does not quietly empty the set.
+    """
+    module = ast.parse(REPORT.read_text(encoding="utf-8"))
+    bodies = {node.name: node for node in ast.walk(module) if isinstance(node, ast.FunctionDef)}
+    verdicts: set[str] = set()
+    pending = ["slot_verdict"]
+    walked: set[str] = set()
+    while pending:
+        name = pending.pop()
+        if name in walked or name not in bodies:
+            continue
+        walked.add(name)
+        for node in ast.walk(bodies[name]):
+            if isinstance(node, ast.Return) and node.value is not None:
+                verdict = _verdict_of(node.value, pending)
+                if verdict is not None:
+                    verdicts.add(verdict)
+    return verdicts
+
+
+def _documented_verdicts() -> set[str]:
+    """The verdicts the skill's own table lists, keyed on its heading."""
+    text = SKILL.read_text(encoding="utf-8")
+    start = text.index("| Verdict ")
+    table = text[start : text.index("\n\n", start)]
+    return {match.group(1) for line in table.splitlines()[2:] if (match := re.match(r"\| `([^`]+)`", line))}
+
+
+@pytest.mark.os_agnostic
+def test_the_skill_lists_every_verdict_the_slots_table_can_print() -> None:
+    """The verdict vocabulary is CLOSED, so an unlisted one reads as an anomaly.
+
+    An agent handed a table of the values a column takes treats anything else as
+    something to escalate, and two of these differ by one parenthetical: ``in
+    use`` and ``in use (graphics)``, so the likely failure is reporting a
+    graphics card where there is a balloon device. It is not an edge case on
+    Windows, which is the platform that publishes no link registers for a
+    bridge: the two occupied ports of the windows-ahci capture both read ``in
+    use`` and not one of the 44 ports in the four Linux captures does, so
+    whoever reads the table is exactly whoever runs it on the platform it omits.
+    """
+    produced = _verdicts_the_code_can_produce()
+    documented = _documented_verdicts()
+
+    assert len(produced) >= 7, f"the source walk found {sorted(produced)}, so it is not reading the branches"
+    assert len(documented) >= 7, f"the table read as {sorted(documented)}, so the heading moved"
+    assert produced == documented, (
+        f"printed but not documented: {sorted(produced - documented)}; "
+        f"documented but not printed: {sorted(documented - produced)}"
     )

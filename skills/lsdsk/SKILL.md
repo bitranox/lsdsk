@@ -867,15 +867,16 @@ from `lsdsk slots` instead, which shows the PCIe ports that are free.
 `lsdsk slots` is the board-level view: every PCIe port, what it is capable of,
 what it negotiated, what occupies it, what that occupant needs, and a verdict.
 
-| Verdict                    | Means                                                                  |
-|----------------------------|------------------------------------------------------------------------|
-| `FREE`                     | Empty, and the hardware confirmed a physical connector                 |
-| `spare N GB/s`             | Occupied by a card that cannot use the port's full bandwidth           |
-| `port limits it`           | The occupant is faster than the port it sits in                        |
-| `full`                     | Occupant and port matched                                              |
-| `in use (graphics)`        | A graphics card. Never proposed for displacement                       |
-| `no connector`             | An internal port to a soldered-down device, not a slot                 |
-| `empty, connector unknown` | Nothing there, and root was needed to tell whether it is a real socket |
+| Verdict                    | Means                                                                                                                                                                             |
+|----------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `FREE`                     | Empty, and the hardware confirmed a physical connector                                                                                                                            |
+| `spare N GB/s`             | Occupied by a card that cannot use the port's full bandwidth                                                                                                                      |
+| `port limits it`           | The occupant is faster than the port it sits in                                                                                                                                   |
+| `full`                     | Occupant and port matched                                                                                                                                                         |
+| `in use`                   | Occupied, and either the port's capability or the occupant's need went unread, so the two cannot be compared. The rule on Windows, which publishes no link registers for a bridge |
+| `in use (graphics)`        | A graphics card. Never proposed for displacement                                                                                                                                  |
+| `no connector`             | An internal port to a soldered-down device, not a slot                                                                                                                            |
+| `empty, connector unknown` | Nothing there, and root was needed to tell whether it is a real socket                                                                                                            |
 
 `spare` is a measurement and appears whether or not a move is possible, so it is
 not on its own an instruction to swap anything. "Swappable" means the occupant
