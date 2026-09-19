@@ -67,13 +67,21 @@ machine-readable form is `lsdsk snapshot`. Exit codes are `0` for nothing
 actionable and `1` when a warning or critical was found, so it drops straight
 into a monitoring check. Errors use sysexits conventions rather than a single
 code: `13` when something needs privilege this run lacks - a `config-deploy`
-target that needs root, and equally a diagnostic run whose hardware read the
-kernel refuses outright; `22` for an argument the tool cannot act on, which is a
+target that needs root, a diagnostic run whose hardware read the kernel refuses
+outright, and a `snapshot` whose destination refuses to be written; `22` for an
+argument the tool cannot act on, which is a
 configuration section or a `--profile` name the configuration library rejects,
 and also an option that does not apply to the command, such as `snapshot` given
 `--replay`; `78` for a file that is not a
 snapshot this version reads or a platform with no hardware reader. Treat
 anything above `1` as "did not run".
+
+A command that diagnoses nothing has no finding to report, so on those `1` means
+the failure it just named on stderr rather than a warning or a critical: a
+`snapshot` that could not be written and a `config-deploy` that could not write
+its files both leave it. The errno is never the exit code - a full destination
+does not leave `28` - because the codes a filesystem produces overlap the ones
+above and mean something else here.
 
 `2` is Click's usage error and means the command line was wrong, not that a file
 was missing: an unknown option, an unknown command, a missing argument and a bad

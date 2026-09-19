@@ -68,14 +68,23 @@ zu tun ist, und `1`, wenn eine Warnung oder ein kritischer Befund vorliegt, es
 passt also unmittelbar in eine Überwachungsprüfung. Fehler folgen den
 sysexits-Konventionen statt einem einzigen Code: `13`, wenn etwas ein Recht
 braucht, das dieser Lauf nicht hat - ein `config-deploy`-Ziel, das root
-verlangt, und ebenso ein diagnostischer Lauf, dessen Hardwarelesung der Kernel
-rundweg verweigert; `22` für ein Argument, mit dem das Werkzeug nichts anfangen
+verlangt, ein diagnostischer Lauf, dessen Hardwarelesung der Kernel rundweg
+verweigert, und ein `snapshot`, dessen Ziel sich nicht schreiben lässt; `22` für
+ein Argument, mit dem das Werkzeug nichts anfangen
 kann, also einen Konfigurationsabschnitt oder einen `--profile`-Namen, den die
 Konfigurationsbibliothek ablehnt, und ebenso eine Option, die zum Befehl nicht
 passt, etwa `snapshot` mit `--replay`; `78` für eine
 Datei, die keine von dieser Fassung lesbare Aufnahme ist, oder für eine
 Plattform ohne Hardwareleser. Behandeln Sie alles über `1` als "ist nicht
 gelaufen".
+
+Ein Befehl, der nichts diagnostiziert, hat keinen Befund zu melden; dort steht
+`1` also für den Fehlschlag, den er soeben auf stderr genannt hat, und nicht für
+eine Warnung oder einen kritischen Befund: ein `snapshot`, der nicht geschrieben
+werden konnte, und ein `config-deploy`, das seine Dateien nicht schreiben
+konnte, hinterlassen beide diesen Code. Die errno-Nummer ist nie der Exit-Code,
+ein volles Ziel hinterlässt also kein `28`, denn die Codes eines Dateisystems
+überschneiden sich mit den obigen und bedeuten hier etwas anderes.
 
 `2` ist der Verwendungsfehler von Click und heisst, dass die Befehlszeile falsch
 war, nicht dass eine Datei fehlte: eine unbekannte Option, ein unbekannter
