@@ -48,7 +48,7 @@ several places where the tool asserted something it had not measured.
 
 ## What's been checked, and what hasn't
 
-Checked, on real hardware:
+Checked, on real hardware, all of it Linux:
 
 - Every reading compared field by field against `smartctl --json -x` across 19 disks on a
   storage server: 207 of 207 agreed, and the two apparent differences were proven to be a
@@ -62,6 +62,9 @@ Checked, on real hardware:
 
 Not checked:
 
+- No physical Windows machine. The Windows path runs on virtual machines and on the CI's Windows
+  runner, and the only Windows capture in this repository is a QEMU guest, so the mapping is
+  tested everywhere while the transport is not proven against real Windows hardware.
 - No SAS expander, no hardware RAID controller, and no drive close to end of life. That hardware
   was not available.
 

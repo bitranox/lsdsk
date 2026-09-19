@@ -7,6 +7,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **The transparency page says again what the Windows path is and is not proven
+  on.** `ai-transparency.md` promises "what was verified on real hardware, and
+  what was not" while its whole checked list is Linux, and the bullet saying no
+  physical Windows machine has been used was dropped as a side effect of a
+  translation round trip - the removing commit's own message says it was the
+  only place that said so. It is back in both languages, the checked list now
+  names the platform it was taken on, and a test holds the section against
+  `Platform`, the closed set the capture format and the replay dispatch already
+  share, so a reader for a third platform fails it until the page says what was
+  done about that one.
+
 - **The shipped skill's slot-verdict table lists every verdict the column
   prints.** It enumerated seven and `report.slot_verdict` returns eight; the
   missing one is `in use`, for an occupied port whose capability or whose

@@ -59,7 +59,7 @@ denen das Werkzeug etwas behauptete, das es nicht gemessen hatte.
 
 ## Was geprüft ist, und was nicht
 
-Auf echter Hardware geprüft:
+Auf echter Hardware geprüft, durchweg Linux:
 
 - Jede Messung Feld für Feld gegen `smartctl --json -x` über 19 Platten eines
   Speicherservers verglichen: 207 von 207 stimmten überein, und die zwei
@@ -75,6 +75,10 @@ Auf echter Hardware geprüft:
 
 Nicht geprüft:
 
+- Kein physischer Windows-Rechner. Der Windows-Pfad läuft auf virtuellen
+  Maschinen und auf dem Windows-Runner der CI, und die einzige Windows-Aufnahme
+  in diesem Repository ist ein QEMU-Gast. Die Zuordnung ist damit überall
+  geprüft, die Übertragung aber nicht gegen echte Windows-Hardware belegt.
 - Kein SAS-Expander, kein Hardware-RAID-Controller, und kein Laufwerk nahe am
   Ende seiner Lebensdauer. Diese Hardware stand nicht zur Verfügung.
 
