@@ -13,7 +13,7 @@ System Role:
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from ....domain.enums import BusType, ControllerKind, DiskKind
 from ....domain.models import (
@@ -42,7 +42,7 @@ from ..refusals import refusals_of
 from .capture import AtaBlobs, NvmeBlobs, NvmeClassEntry
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from ..decode.ahci import AhciCapabilities
     from .capture import AtaLinkEntry, BlockEntry, LinuxCapture, PciEntry, SasPhyEntry, ScsiHostEntry
@@ -56,6 +56,11 @@ if TYPE_CHECKING:
 _PCI_ADDRESS = re.compile(r"(?<![0-9a-f])[0-9a-f]{4,}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]")
 _SAS_PORT = re.compile(r"/port-(\d+:\d+)/")
 _ATA_PORT = re.compile(r"/ata(\d+)/")
+# The same token as a zero-width lookahead, so EVERY occurrence in one path
+# is found. A consuming pattern eats the separator its neighbour needs, so
+# `/ata1/ata2/` would index only the first and a disk asking for the second
+# would get no link where the substring test this replaces found one.
+_ATA_PORT_ANYWHERE = re.compile(r"(?=/ata(\d+)/)")
 
 # PCI base and sub class codes for storage, from the class triple 0xBBSSPP.
 _CONTROLLER_KINDS: dict[int, ControllerKind] = {
@@ -375,6 +380,99 @@ def build_slots(capture: LinuxCapture) -> tuple[PcieSlot, ...]:
     return tuple(slots)
 
 
+class _HwmonReading(NamedTuple):
+    """One hardware monitor's temperature, and where it sat in the capture.
+
+    The position is kept because a disk can own several monitors and the
+    answer is the first of them IN CAPTURE ORDER, which a lookup keyed by
+    path cannot otherwise recover.
+
+    Attributes:
+        position: The monitor's index among the capture's hwmon entries.
+        temperature_c: Its temperature in whole degrees Celsius.
+    """
+
+    position: int
+    temperature_c: int
+
+
+class _IndexedCapture(NamedTuple):
+    """A capture and the three lookups its disks are resolved through.
+
+    Each is built ONCE for the whole capture rather than walked per disk. The
+    scans they replace were O(disks x entries), so doubling a capture cost
+    3.8 times as much rather than twice: measured over 2,000 against 4,000
+    crafted disks, 93 percent of an ATA build sat in the libata scan and 85
+    percent of an NVMe one in the class-entry scan. A capture is untrusted
+    input admitted up to 64 MB, which is hundreds of thousands of entries.
+
+    Attributes:
+        capture: The reading every other value is read from.
+        ata_links: libata links, keyed by the ``ataN`` tokens in their paths.
+        nvme_classes: NVMe controllers, keyed by their own sysfs paths.
+        hwmon_readings: Temperatures, keyed by the monitor's sysfs path.
+    """
+
+    capture: LinuxCapture
+    ata_links: Mapping[str, AtaLinkEntry]
+    nvme_classes: Mapping[str, NvmeClassEntry]
+    hwmon_readings: Mapping[str, _HwmonReading]
+
+
+def _index_capture(capture: LinuxCapture) -> _IndexedCapture:
+    """Build every per-disk lookup a capture needs, once for all of them."""
+    return _IndexedCapture(
+        capture=capture,
+        ata_links=_ata_links_by_port(capture),
+        nvme_classes=_nvme_classes_by_path(capture),
+        hwmon_readings=_hwmon_readings_by_path(capture),
+    )
+
+
+def _ata_links_by_port(capture: LinuxCapture) -> dict[str, AtaLinkEntry]:
+    """Key each libata link by every ``ataN`` port token its path carries.
+
+    The first entry wins, which is the one the per-disk scan returned: that
+    took the first match in capture order too.
+    """
+    links: dict[str, AtaLinkEntry] = {}
+    for entry in capture.classes.ata_link.values():
+        for match in _ATA_PORT_ANYWHERE.finditer(entry.path):
+            links.setdefault(match.group(1), entry)
+    return links
+
+
+def _nvme_classes_by_path(capture: LinuxCapture) -> dict[str, NvmeClassEntry]:
+    """Key each NVMe controller by its own sysfs path, the first entry winning."""
+    classes: dict[str, NvmeClassEntry] = {}
+    for entry in capture.classes.nvme.values():
+        if entry.path:
+            classes.setdefault(entry.path, entry)
+    return classes
+
+
+def _hwmon_readings_by_path(capture: LinuxCapture) -> dict[str, _HwmonReading]:
+    """Key every monitor that published a readable temperature by its path.
+
+    A monitor whose reading does not parse is left out rather than stored as
+    absent, because the scan this replaces walked past such an entry and kept
+    looking rather than giving up on the disk.
+    """
+    readings: dict[str, _HwmonReading] = {}
+    for position, entry in enumerate(capture.classes.hwmon.values()):
+        raw = parse_int(entry.temp1_input)
+        if raw is not None:
+            readings.setdefault(entry.path, _HwmonReading(position, round(raw / _MILLIDEGREE)))
+    return readings
+
+
+def _self_and_ancestors(path: str) -> Iterator[str]:
+    """`path`, then each directory above it, nearest first."""
+    while path:
+        yield path
+        path = path.rpartition("/")[0]
+
+
 def _phy_for(device_path: str, capture: LinuxCapture) -> SasPhyEntry | None:
     """Find the SAS phy a disk is attached through."""
     match = _SAS_PORT.search(device_path + "/")
@@ -383,15 +481,12 @@ def _phy_for(device_path: str, capture: LinuxCapture) -> SasPhyEntry | None:
     return capture.classes.sas_phy.get(f"phy-{match.group(1)}")
 
 
-def _ata_link_for(device_path: str, capture: LinuxCapture) -> AtaLinkEntry | None:
+def _ata_link_for(device_path: str, indexed: _IndexedCapture) -> AtaLinkEntry | None:
     """Find the ATA link a disk is attached through."""
     match = _ATA_PORT.search(device_path + "/")
     if match is None:
         return None
-    return next(
-        (entry for entry in capture.classes.ata_link.values() if f"/ata{match.group(1)}/" in entry.path),
-        None,
-    )
+    return indexed.ata_links.get(match.group(1))
 
 
 def _ata_identity(block: BlockEntry, ata: AtaBlobs) -> AtaIdentity | None:
@@ -450,16 +545,17 @@ def _sata_link(
     )
 
 
-def _hwmon_temperature(paths: Sequence[str], capture: LinuxCapture) -> int | None:
-    """Read a device's temperature from the hwmon nodes it owns."""
-    wanted = set(paths)
-    for entry in capture.classes.hwmon.values():
-        if entry.path not in wanted:
-            continue
-        raw = parse_int(entry.temp1_input)
-        if raw is not None:
-            return round(raw / _MILLIDEGREE)
-    return None
+def _hwmon_temperature(paths: Sequence[str], indexed: _IndexedCapture) -> int | None:
+    """Read a device's temperature from the hwmon nodes it owns.
+
+    A device can own several, so the answer is the first of them in CAPTURE
+    order rather than in the order the device lists them, which is what the
+    scan this replaces returned.
+    """
+    readings = [reading for path in paths if (reading := indexed.hwmon_readings.get(path)) is not None]
+    if not readings:
+        return None
+    return min(readings, key=lambda reading: reading.position).temperature_c
 
 
 def _bus_of(identity: AtaIdentity | None, phy: SasPhyEntry | None) -> BusType:
@@ -484,8 +580,9 @@ def _size_bytes(block: BlockEntry, identity: AtaIdentity | None) -> int | None:
     return identity.size_bytes if identity else None
 
 
-def _build_nvme_disk(node: str, block: BlockEntry, capture: LinuxCapture) -> Disk:
+def _build_nvme_disk(node: str, block: BlockEntry, indexed: _IndexedCapture) -> Disk:
     """Build one NVMe disk from a capture."""
+    capture = indexed.capture
     record = capture.nvme.get(node, NvmeBlobs())
     identity = None
     controller_blob = decode_base64(record.identify_controller)
@@ -503,7 +600,7 @@ def _build_nvme_disk(node: str, block: BlockEntry, capture: LinuxCapture) -> Dis
         except ValueError:
             health = None
 
-    temperature = _hwmon_temperature(block.hwmon, capture)
+    temperature = _hwmon_temperature(block.hwmon, indexed)
     if health is None and temperature is not None:
         health = Health(temperature_c=temperature)
 
@@ -512,7 +609,7 @@ def _build_nvme_disk(node: str, block: BlockEntry, capture: LinuxCapture) -> Dis
     # The controller publishes its model, serial and firmware in sysfs, readable
     # without any privilege. Falling back to it means an unprivileged run still
     # names the drive instead of showing three dashes.
-    published = _nvme_class_entry(capture, block.device_path)
+    published = _nvme_class_entry(indexed, block.device_path)
     return Disk(
         node=node,
         path=f"/dev/{node}",
@@ -536,23 +633,36 @@ def _build_nvme_disk(node: str, block: BlockEntry, capture: LinuxCapture) -> Dis
     )
 
 
-def _nvme_class_entry(capture: LinuxCapture, device_path: str) -> NvmeClassEntry:
-    """Find the nvme class entry matching one namespace's device path."""
-    for entry in capture.classes.nvme.values():
-        path = entry.path
-        if path and device_path and (device_path.startswith(path) or path.startswith(device_path)):
+def _nvme_class_entry(indexed: _IndexedCapture, device_path: str) -> NvmeClassEntry:
+    """Find the nvme class entry for one namespace's device path.
+
+    The entry sits AT that path or above it: sysfs publishes a controller's
+    class entry at the controller, and a namespace's device path is either
+    the controller itself or a directory under it. So the answer is the
+    NEAREST ancestor of the device path that published one.
+
+    An entry BELOW the device path is not one, though the scan this replaces
+    accepted that direction too. It names something the namespace contains
+    rather than the controller the namespace hangs off, and the raw string
+    prefix it was tested with matched `/nvme/nvme01` against a device path of
+    `/nvme/nvme0` - two different controllers.
+    """
+    for candidate in _self_and_ancestors(device_path):
+        entry = indexed.nvme_classes.get(candidate)
+        if entry is not None:
             return entry
     return NvmeClassEntry()
 
 
-def _build_ata_disk(node: str, block: BlockEntry, capture: LinuxCapture) -> Disk:
+def _build_ata_disk(node: str, block: BlockEntry, indexed: _IndexedCapture) -> Disk:
     """Build one SATA or SAS disk from a capture."""
+    capture = indexed.capture
     ata = capture.ata.get(node, AtaBlobs())
     device_path = block.device_path
     address = controller_address_of(device_path)
     identity = _ata_identity(block, ata)
     phy = _phy_for(device_path, capture)
-    ata_link = _ata_link_for(device_path, capture)
+    ata_link = _ata_link_for(device_path, indexed)
 
     health: Health | None = None
     data = decode_base64(ata.smart_data)
@@ -618,10 +728,10 @@ def _is_kernel_virtual(block: BlockEntry) -> bool:
     return block.virtual
 
 
-def _build_one(node: str, block: BlockEntry, capture: LinuxCapture) -> Disk:
+def _build_one(node: str, block: BlockEntry, indexed: _IndexedCapture) -> Disk:
     """Build one disk, routed by whether its node is an NVMe namespace."""
     builder = _build_nvme_disk if node.startswith("nvme") else _build_ata_disk
-    return builder(node, block, capture)
+    return builder(node, block, indexed)
 
 
 def build_disks(capture: LinuxCapture) -> tuple[Disk, ...]:
@@ -633,8 +743,9 @@ def build_disks(capture: LinuxCapture) -> tuple[Disk, ...]:
     Returns:
         Disks in node order, kernel-virtual devices excluded.
     """
+    indexed = _index_capture(capture)
     return tuple(
-        _build_one(node, block, capture)
+        _build_one(node, block, indexed)
         for node, block in sorted(capture.block.items())
         if not _is_kernel_virtual(block)
     )
@@ -662,8 +773,9 @@ def build_virtual_disks(capture: LinuxCapture) -> tuple[Disk, ...]:
         Kernel-virtual devices in node order, each on ``BusType.VIRTUAL`` and
         with no claim about its media.
     """
+    indexed = _index_capture(capture)
     return tuple(
-        _build_one(node, block, capture).with_changes(bus=BusType.VIRTUAL, kind=DiskKind.UNKNOWN)
+        _build_one(node, block, indexed).with_changes(bus=BusType.VIRTUAL, kind=DiskKind.UNKNOWN)
         for node, block in sorted(capture.block.items())
         if _is_kernel_virtual(block)
     )

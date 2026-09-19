@@ -7,6 +7,24 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **The Linux builder's per-disk lookups are built once per capture.** Three of
+  them walked a whole capture-controlled map for every disk, so a reading cost
+  the PRODUCT of its disks and its class entries: the libata link a SATA drive
+  hangs off, and the class entry and the hardware monitor an NVMe one does.
+  Measured, close to four times the cost on every doubling rather than twice:
+  2,000 against 4,000 crafted disks read 0.18 and 0.69 seconds on the SATA arm
+  and 0.16 and 0.60 on the NVMe one, with 93 percent of the first build sitting
+  inside the libata scan, over 8,010,000 re-evaluations of one regex group
+  inside its own generator, and 85 percent of the second inside the class-entry
+  scan over 15,940,134 prefix comparisons. A replay capture is untrusted input
+  and the 64 MB input bound admits hundreds of thousands of entries. The three
+  lookups are dicts built once for the whole reading now, and every committed
+  capture builds to a byte-identical inventory. One deliberate difference: an
+  NVMe class entry is taken from the namespace's own path or an ancestor of it,
+  though the scan accepted an entry BELOW that path too, and accepted it on a
+  raw string prefix that matched `nvme01` against a device path of `nvme0` -
+  two different controllers.
+
 - **A capture holding many small parent cycles is cut in one pass.** Breaking a
   cycle restarted the search from the top, so every cycle paid a sort and a scan
   over every node. Measured, quadrupling on every doubling: 16,000 devices
