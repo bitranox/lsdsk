@@ -40,7 +40,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from ...domain.errors import ConfigurationError
+from ...domain.errors import ConfigurationError, MissingFileError
 from ...domain.history import DiskSeries, History, Sample
 from ..textfile import read_text_bounded
 
@@ -194,11 +194,17 @@ def load_history(path: Path, *, hostname: str) -> History:
         ...     load_history(Path(directory) / "history.json", hostname="box").series
         ()
     """
-    if not path.exists():
-        return History(hostname=hostname)
-
     try:
         payload: Any = json.loads(read_text_bounded(path, what="a history store"))
+    # Asked of the READ rather than of path.exists(), which answers False for a
+    # store this process may not look at exactly as it does for one that was
+    # never written: the OSError is swallowed inside it. Read as absent, an
+    # unreadable store makes every rate verdict degrade to "first sample" while
+    # the page says nothing has been recorded on this machine yet, which is the
+    # opposite of what happened. Reachable without anything unusual - a root
+    # timer under umask 077 leaves the state directory 0700.
+    except MissingFileError:
+        return History(hostname=hostname)
     # Not only JSONDecodeError: an integer literal past CPython's
     # digit limit raises a bare ValueError, and deeply nested JSON
     # exhausts the C stack with RecursionError. Both used to escape as a

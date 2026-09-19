@@ -7,6 +7,23 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A counter-history store that cannot be read is no longer taken for one that
+  was never written.** `load_history` decided with `path.exists()`, which
+  swallows the OSError and answers False for a store this process may not look
+  at exactly as it does for an absent one, while the function's own docstring
+  promised `ConfigurationError` "if the file is unreadable". Measured behind a
+  directory at mode 000: an empty `History` came back with nothing on either
+  stream, so every rate verdict degraded to "first sample" and the run went on
+  believing it was free to replace the record. Nothing unusual is needed to
+  reach it - `save_history` creates the state directory with no mode of its own,
+  so a root timer under umask 077 leaves it 0700 and every later unprivileged
+  run reads no history. The read answers now: `read_text_bounded` raises the new
+  `MissingFileError`, a subclass of `ConfigurationError` so every caller that
+  wants neither distinction is unaffected, for a file that is not there and
+  nothing else, and `load_history` treats that alone as the first run. Every
+  other refusal reaches the stand-down path that was already there, which names
+  it on stderr and withholds permission to overwrite the file.
+
 - **A deep PCI parent chain no longer takes the view that draws it down with
   it.** `fabric.assemble` walks parenthood from an explicit stack and carries
   any depth a capture holds, and it hands that tree straight to `Fabric`, which

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from lsdsk.domain.errors import ConfigurationError
+from lsdsk.domain.errors import ConfigurationError, MissingFileError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -59,21 +59,30 @@ def read_text_bounded(path: Path, *, what: str, errors: str = "strict") -> str:
         The file's contents.
 
     Raises:
+        MissingFileError: If the file is not there. A subclass of the below, so
+            only a caller that has to tell an absent file from an unreadable one
+            asks for it.
         ConfigurationError: If the file cannot be read, or is larger than
             :data:`MAX_INPUT_BYTES`.
 
     Example:
+        A directory this example owns, because a fixed path is not absent
+        everywhere: ``/nonexistent`` is the ``nobody`` account's home on a
+        Debian or Ubuntu box, mode 0700, so the stat refuses rather than
+        answering no and the refusal is a different one.
+
+        >>> import tempfile
         >>> from pathlib import Path
-        >>> read_text_bounded(Path("/nonexistent"), what="a snapshot")
+        >>> with tempfile.TemporaryDirectory() as directory:
+        ...     read_text_bounded(Path(directory) / "absent.json", what="a snapshot")
         Traceback (most recent call last):
         ...
-        lsdsk.domain.errors.ConfigurationError: Could not read a snapshot at ...
+        lsdsk.domain.errors.MissingFileError: Could not read a snapshot at ...
     """
     try:
         size = path.stat().st_size
     except OSError as error:
-        message = f"Could not read {what} at {path}: {error}"
-        raise ConfigurationError(message) from error
+        raise _unreadable(path, what, error) from error
 
     if size > MAX_INPUT_BYTES:
         message = (
@@ -89,8 +98,7 @@ def read_text_bounded(path: Path, *, what: str, errors: str = "strict") -> str:
             # ``read_bundled_pci_ids`` uses for the decompressed database.
             raw = handle.read(MAX_INPUT_BYTES + 1)
     except OSError as error:
-        message = f"Could not read {what} at {path}: {error}"
-        raise ConfigurationError(message) from error
+        raise _unreadable(path, what, error) from error
 
     if len(raw) > MAX_INPUT_BYTES:
         # Deliberately no figure: the read stopped early, so the size is not
@@ -101,6 +109,21 @@ def read_text_bounded(path: Path, *, what: str, errors: str = "strict") -> str:
         raise ConfigurationError(message)
 
     return raw.decode("utf-8", errors=errors)
+
+
+def _unreadable(path: Path, what: str, error: OSError) -> ConfigurationError:
+    """The refusal a failed read deserves, typed by WHY it failed.
+
+    A file that is not there is a different answer from one that is there and
+    will not open, and the reader is the only place that knows which happened:
+    by the time a caller asks ``Path.exists`` the OSError has been swallowed and
+    both read as absent. Both remain configuration errors, so a caller that
+    wants neither distinction is unaffected.
+    """
+    message = f"Could not read {what} at {path}: {error}"
+    if isinstance(error, FileNotFoundError):
+        return MissingFileError(message)
+    return ConfigurationError(message)
 
 
 __all__ = ["MAX_INPUT_BYTES", "read_text_bounded"]

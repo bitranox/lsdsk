@@ -60,6 +60,39 @@ def test_a_missing_store_reads_as_empty_not_as_an_error(store: Path) -> None:
     assert loaded.hostname == "box"
 
 
+#: ``chmod 000`` refuses everyone except root, who reads through it, so the
+#: counterpart below would report the unreadable store as readable rather than
+#: fail. Asked with ``hasattr`` because Windows has no ``geteuid``.
+RUNNING_AS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
+
+
+@pytest.mark.os_posix
+@pytest.mark.skipif(RUNNING_AS_ROOT, reason="root reads through a mode that refuses everyone else")
+def test_a_store_that_cannot_be_read_is_refused_rather_than_reported_absent(tmp_path: Path) -> None:
+    """The counterpart: a store this process may not look at is not an absent one.
+
+    They are opposite answers to the caller. An absent store is the ordinary
+    first run and every rule degrades to "first sample" correctly; one that
+    exists and cannot be read means every verdict the tool is about to give is
+    computed from nothing, and saying "no counter history recorded yet on this
+    machine" tells the reader the opposite of what happened. It is reachable
+    without anybody doing anything unusual: the store's directory is created
+    with whatever the writer's umask says, so a root timer under umask 077
+    leaves it 0700 and every later unprivileged run reads it as empty.
+    """
+    closed = tmp_path / "closed"
+    closed.mkdir()
+    store = closed / "history.json"
+    save_history(history_of(sample(100, 5)), store)
+    closed.chmod(0o000)
+
+    try:
+        with pytest.raises(ConfigurationError):
+            load_history(store, hostname="box")
+    finally:
+        closed.chmod(0o700)
+
+
 def test_a_saved_history_reads_back_identically(store: Path) -> None:
     original = history_of(sample(100, 5), sample(200, 9))
     save_history(original, store)

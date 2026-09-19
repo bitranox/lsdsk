@@ -38,7 +38,29 @@ class UnsupportedPlatformError(ConfigurationError):
     """
 
 
+class MissingFileError(ConfigurationError):
+    """The file is not there at all.
+
+    A file that is absent and a file that is present and refuses to be read are
+    different answers, and only the reader knows which it met: ``Path.exists``
+    swallows the OSError and answers ``False`` to both. Callers that must tell
+    them apart ask for this - the history store, where an absent file is an
+    ordinary first run and an unreadable one means every verdict about to be
+    given was computed from nothing.
+
+    A subclass for the same reason :class:`UnsupportedPlatformError` is one: a
+    caller that only wants "this file is no good" keeps spelling it
+    ``ConfigurationError`` and is unaffected.
+
+    Example:
+        >>> from lsdsk.domain.errors import ConfigurationError, MissingFileError
+        >>> issubclass(MissingFileError, ConfigurationError)
+        True
+    """
+
+
 __all__ = [
     "ConfigurationError",
+    "MissingFileError",
     "UnsupportedPlatformError",
 ]
