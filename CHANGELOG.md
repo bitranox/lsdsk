@@ -7,6 +7,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A capture whose devices all claim one address is keyed in one pass.** Every
+  duplicate was placed by probing upward from copy 2 until a free key appeared,
+  so N devices at one address cost N-squared over 2 probes. Measured here, four
+  times the cost on every doubling: 16,000 such devices took 10.1 seconds
+  against 0.0012 for the same count at addresses of their own, and the 64 MB
+  input bound admits hundreds of thousands of entries. Only a Windows capture
+  reaches it, since the Linux builder keys off sysfs dict keys, which are unique
+  by construction. The copy number is remembered per address now. The probe
+  stays, because a counter alone drops a device whose OWN address already
+  carries the mark, and it is bounded because the counter only moves forward.
+
 - **The detail panel no longer calls a value that cannot exist a value nobody
   read.** It printed one legend, `- not read`, whenever any value was a dash,
   and the dash carried three meanings. Measured over the five captures: every

@@ -10,6 +10,7 @@ no committed fixture carries, a parent cycle and a parent outside the capture.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -323,3 +324,109 @@ def test_two_entries_at_one_address_both_reach_the_tree() -> None:
     assert len(devices) == 2, f"a device was dropped: {[node.address for node in devices]}"
     assert {node.name for node in devices} == {"first", "second"}
     assert len({node.address for node in devices}) == 2, "two nodes cannot share one address"
+
+
+#: Enough devices for a quadratic to be unmistakable and a linear one to be
+#: instant: measured before the fix, 16,000 sources at one address took 9.98
+#: seconds against 0.0012 for the same count at addresses of their own, and the
+#: cost quadrupled on every doubling from 2,000 up.
+_CRAFTED_DEVICE_COUNT = 16_000
+
+#: How many times the duplicate path may cost what the ordinary one does. A
+#: ratio measured on the machine running the test rather than a wall-clock
+#: ceiling, because the claim is about COMPLEXITY and a second on a fast runner
+#: is a minute on a slow one. Measured end to end through ``assemble``, which
+#: does linear work of its own around the keying: before the fix the two arms
+#: read 10.1s against 0.09s, a factor of about 110, and after it 0.09 against
+#: 0.09. Ten sits an order of magnitude from each.
+_ACCEPTABLE_RATIO = 10
+
+
+def _crafted(count: int, *, colliding: bool) -> list[NodeSource]:
+    """Devices that all claim one address, or each its own."""
+    return [
+        NodeSource(
+            "0000:06:03.0" if colliding else f"0000:{index // 256:02x}:{(index // 8) % 32:02x}.{index % 8}",
+            f"device {index}",
+            None,
+            None,
+            None,
+            PcieLink(),
+            PciPortKind.UNKNOWN,
+            None,
+            None,
+            None,
+        )
+        for index in range(count)
+    ]
+
+
+def _seconds_to_assemble(sources: list[NodeSource], runs: int = 2) -> float:
+    """The FASTEST of several assemblies of those sources, the building excluded.
+
+    The fastest rather than the mean, because a one-off pause on a shared runner
+    only ever inflates a reading, and the arm below compares two of these
+    against each other: a pause in the control would make the ratio look better
+    than it is, and one in the measurement worse.
+    """
+    measured: list[float] = []
+    for _run in range(runs):
+        started = time.perf_counter()
+        nodes = assemble(sources)
+        measured.append(time.perf_counter() - started)
+        placed = [node for node in nodes if not node.is_root]
+        assert len(placed) == len(sources), "the assembly dropped a device, so the timing is of the wrong work"
+    return min(measured)
+
+
+@pytest.mark.os_agnostic
+def test_a_capture_whose_devices_all_claim_one_address_is_keyed_in_the_same_pass() -> None:
+    """A crafted capture cannot make the keying cost the square of its size.
+
+    Every duplicate was placed by probing upward from copy 2 until a free key
+    appeared, so N devices at one address cost N-squared over 2 probes. A
+    capture is untrusted input and the size guard admits one up to 64 MB, which
+    is hundreds of thousands of entries, so the ceiling on this is hours rather
+    than the seconds the size bound was sized for. Only a Windows capture can
+    reach it: the Linux builder keys off sysfs dict keys, which are unique by
+    construction.
+
+    The control is the same count at addresses of their own, timed on the same
+    machine in the same test, so what is asserted is the RATIO between the two
+    paths rather than a wall-clock figure a slower runner would fail. It is
+    measured through ``assemble`` rather than the keying alone, which is the
+    seam a capture actually arrives at - and it is why the ratio is a tight one:
+    the linear work around the keying lands in BOTH arms and shrinks the figure,
+    so a loose ceiling here passes against the quadratic it exists to catch.
+    """
+    ordinary = _seconds_to_assemble(_crafted(_CRAFTED_DEVICE_COUNT, colliding=False))
+    crafted = _seconds_to_assemble(_crafted(_CRAFTED_DEVICE_COUNT, colliding=True))
+
+    assert ordinary > 0, "the control measured no time at all, so the ratio below means nothing"
+    assert crafted < ordinary * _ACCEPTABLE_RATIO, (
+        f"{_CRAFTED_DEVICE_COUNT} devices at one address took {crafted:.3f}s against {ordinary:.4f}s "
+        f"for the same count at their own, a factor of {crafted / ordinary:.0f}"
+    )
+
+
+@pytest.mark.os_agnostic
+def test_a_source_whose_own_address_carries_the_duplicate_mark_still_reaches_the_tree() -> None:
+    """The case a remembered copy number alone would drop.
+
+    The mark is chosen because no real PCI address holds it, and a capture is
+    untrusted input, so an address that holds it anyway is exactly what has to
+    be handled rather than assumed away. Keying the third device below straight
+    into the copy number its base has never been given would land it on the key
+    the second device already took, and the second would vanish silently, taking
+    whatever hangs below it.
+    """
+    crafted = [
+        NodeSource("0000:06:03.0", "first", None, None, None, PcieLink(), PciPortKind.UNKNOWN, None, None, None),
+        NodeSource("0000:06:03.0", "second", None, None, None, PcieLink(), PciPortKind.UNKNOWN, None, None, None),
+        NodeSource("0000:06:03.0#2", "third", None, None, None, PcieLink(), PciPortKind.UNKNOWN, None, None, None),
+    ]
+
+    placed = [node for node in assemble(crafted) if not node.is_root]
+
+    assert len(placed) == len(crafted), f"a device was dropped: {sorted(node.address for node in placed)}"
+    assert sorted(node.name for node in placed) == ["first", "second", "third"]

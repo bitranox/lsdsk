@@ -176,12 +176,24 @@ def _keyed_by_address(sources: Sequence[NodeSource]) -> dict[str, NodeSource]:
         [('0000:06:03.0', 'first'), ('0000:06:03.0#2', 'second')]
     """
     keyed: dict[str, NodeSource] = {}
+    # The next free copy number per address, REMEMBERED rather than searched for
+    # from 2 upward every time: a crafted capture naming one address N times
+    # cost N-squared over 2 probes that way, and the 64 MB size guard admits
+    # hundreds of thousands of entries, so the ceiling was hours. Only a Windows
+    # capture can reach it - the Linux builder keys off sysfs dict keys, which
+    # are unique by construction.
+    copies: dict[str, int] = {}
     for source in sources:
-        address = source.address
-        copy = 2
+        # The probe stays, because the counter alone would silently drop a
+        # device: a source whose OWN address already carries the mark collides
+        # with a copy key, and a capture is untrusted input. It is bounded now,
+        # since the counter only ever moves forward.
+        copy = copies.get(source.address, 1)
+        address = source.address if copy == 1 else f"{source.address}{DUPLICATE_MARK}{copy}"
         while address in keyed:
-            address = f"{source.address}{DUPLICATE_MARK}{copy}"
             copy += 1
+            address = f"{source.address}{DUPLICATE_MARK}{copy}"
+        copies[source.address] = copy + 1
         keyed[address] = source if address == source.address else source._replace(address=address)
     return keyed
 
