@@ -96,8 +96,7 @@ def read_text_bounded(path: Path, *, what: str, errors: str = "strict") -> str:
         # Deliberately no figure: the read stopped early, so the size is not
         # something this branch measured and must not be stated as if it were.
         message = (
-            f"{path} is larger than {what} ever is "
-            f"(the limit is {MAX_INPUT_BYTES // 1024 // 1024} MB). Check the path."
+            f"{path} is larger than {what} ever is (the limit is {MAX_INPUT_BYTES // 1024 // 1024} MB). Check the path."
         )
         raise ConfigurationError(message)
 
