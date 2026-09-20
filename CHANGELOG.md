@@ -7,6 +7,23 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **A PCI address in the JSON envelope is cleaned like every other value the
+  hardware chose.** `PciNode.address` and `parent_address` already were;
+  `children` was not, so a capture carrying control characters in an address put
+  them straight into `data.pci_tree[].children[]`. Measured on a salted capture:
+  27 addresses carrying ESC, BEL, NUL, DEL, C1 and a newline, across eight of the
+  JSON views. The human tree never showed it, because it draws each child by
+  looking up that child's own node, whose address was already clean - so the leak
+  existed only in the format a program parses, which is the one that acts on it
+  without a person looking.
+
+  The guard now covers every committed capture, all nine views and both formats,
+  with every string value in the capture salted, and it reads stderr as well as
+  stdout. Two surfaces made the old arms read clean when they were not: the JSON
+  encoder escapes a control character, so counting bytes in the document reports
+  zero whether the value was cleaned or not, and a warning naming the machine
+  goes to stderr, which a check of stdout alone never sees.
+
 - **A crash no longer looks like a machine that needs attention: an internal
   error leaves `70`.** Exit `1` meant both "a reporting command found a warning or
   a critical" and "this tool broke", so a monitoring check could not tell a failing
