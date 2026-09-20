@@ -853,11 +853,17 @@ _STRUCTURAL_KEYS = frozenset({"platform"})
 #: if one of these ever starts carrying device text, the arm fails and says to
 #: promote it rather than silently covering nothing.
 #:
-#: ``trend`` in human form prints an explanation naming no device at all when no
-#: history has been recorded, which is every run of this suite - the autouse
-#: fixture gives each test its own empty state directory. Its JSON form DOES
-#: carry the salted values and is covered.
-_CARRIES_NO_DEVICE_TEXT = frozenset({("trend", "human")})
+#: Keyed by CAPTURE as well as view and format, because whether a cell carries
+#: anything is a fact about the machine in the capture and not about the view
+#: alone. ``trend`` in human form prints an explanation naming no device at all
+#: when no history has been recorded, which is every run of this suite - the
+#: autouse fixture gives each test its own empty state directory. It now also
+#: ends with the line accounting for its own exit code, which a capture with an
+#: actionable finding gets and ``windows-ahci``, whose drives are clean, does
+#: not. So the two captures that do carry findings have a real arm here now, and
+#: this is the one that still has nothing: the exclusion cancelled itself for
+#: the others exactly as its own sentence says it should.
+_CARRIES_NO_DEVICE_TEXT = frozenset({("windows-ahci", "trend", "human")})
 
 
 def _salted(node: object, key: str | None = None) -> object:
@@ -951,7 +957,7 @@ def test_no_control_character_reaches_any_view_from_a_salted_capture(
     assert dirty.stdout.strip() or dirty.stderr.strip(), f"{cell}: produced no output at all"
 
     reached = (clean.stdout, clean.stderr) != (dirty.stdout, dirty.stderr)
-    if (view, output_format) in _CARRIES_NO_DEVICE_TEXT:
+    if (capture_name, view, output_format) in _CARRIES_NO_DEVICE_TEXT:
         assert not reached, f"{cell}: now carries device text, so give it a real arm instead of an exclusion"
         return
     assert reached, f"{cell}: salting changed nothing here, so this arm asserts nothing"

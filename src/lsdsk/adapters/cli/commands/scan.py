@@ -302,6 +302,53 @@ def exit_code_for(findings: Sequence[Finding]) -> ExitCode:
     return ExitCode.GENERAL_ERROR if actionable else ExitCode.SUCCESS
 
 
+def note_the_findings_this_page_left_out(
+    findings: Sequence[Finding], drawn_subjects: Sequence[str], console: Console
+) -> None:
+    """Account on the page for the code the process is about to leave.
+
+    The exit code counts every warning and critical in the MACHINE; a section
+    shows one part of it. So ``lsdsk smart`` printed 342 lines of clean
+    attribute tables and left 1, and a reader had nothing on the page to connect
+    the two - measured with a driven threshold, four section commands produced
+    byte-identical output with and without it while the code moved 0 to 1.
+
+    One line rather than a change to what the code MEANS. Scoping the code to
+    each page would have silently stopped a monitor on ``lsdsk health`` from
+    ever catching a link fault the topology rules found, with nothing to show it
+    had stopped.
+
+    What counts as left out is decided from the findings and the subjects the
+    section drew, never by reading back the text just rendered: a page that
+    marked a drive's row HAS shown that finding, so counting it as missing would
+    make the sentence untrue on exactly the pages that did the most.
+
+    Args:
+        findings: Every finding from this run.
+        drawn_subjects: The subjects this section drew a row for, so a finding
+            against one of them is already on the page. Empty for a section that
+            is handed no findings at all.
+        console: Where the page is going.
+
+    Side Effects:
+        Prints one line, or nothing when there is nothing left to account for.
+    """
+    if exit_code_for(findings) is ExitCode.SUCCESS:
+        return
+    shown = set(report.findings_for(findings, *drawn_subjects))
+    left_out = tuple(finding for finding in findings if finding not in shown)
+    if not left_out:
+        return
+    counts = count_by_severity(left_out)
+    named = ", ".join(
+        f"{counts[severity]} {severity.value}{'s' if counts[severity] != 1 else ''}"
+        for severity in (Severity.CRITICAL, Severity.WARNING, Severity.HINT)
+        if counts[severity]
+    )
+    console.print("")
+    console.print(note(f"{named} on this machine are not on this page: run `lsdsk findings` to read them."))
+
+
 class ScanData(BaseModel):
     """The payload half of the machine-readable envelope.
 
@@ -699,6 +746,7 @@ def cli_smart(ctx: click.Context, replay: Path | None, output_format: OutputForm
 
             console = console_for_output(display.piped_width)
             console.print(render_smart(inventory, width=console.width))
+            note_the_findings_this_page_left_out(findings, (), console)
         raise SystemExit(exit_code_for(findings))
 
 
@@ -737,6 +785,9 @@ def cli_controllers(ctx: click.Context, replay: Path | None, output_format: Outp
 
             console = console_for_output(display.piped_width)
             console.print(render_controllers(inventory, findings, width=console.width))
+            note_the_findings_this_page_left_out(
+                findings, [controller.address for controller in inventory.controllers], console
+            )
         raise SystemExit(exit_code_for(findings))
 
 
@@ -756,6 +807,7 @@ def cli_slots(ctx: click.Context, replay: Path | None, output_format: OutputForm
 
             console = console_for_output(display.piped_width)
             console.print(render_slots(inventory, width=console.width))
+            note_the_findings_this_page_left_out(findings, (), console)
         raise SystemExit(exit_code_for(findings))
 
 
@@ -796,6 +848,7 @@ def cli_disks(
                     wwn_width=None if full_wwn else display.wwn_width,
                 )
             )
+            note_the_findings_this_page_left_out(findings, [disk.path for disk in inventory.disks], console)
         raise SystemExit(exit_code_for(findings))
 
 
@@ -830,6 +883,7 @@ def cli_health(ctx: click.Context, replay: Path | None, output_format: OutputFor
                 console.print(
                     note("Running unprivileged. Wear, error counters and SMART attributes need root or Administrator.")
                 )
+            note_the_findings_this_page_left_out(findings, [disk.path for disk in inventory.disks], console)
         raise SystemExit(exit_code_for(findings))
 
 

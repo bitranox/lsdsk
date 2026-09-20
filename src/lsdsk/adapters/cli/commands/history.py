@@ -43,6 +43,7 @@ from .scan import (
     emit_json,
     exit_code_for,
     load_inventory,
+    note_the_findings_this_page_left_out,
     resolve_history,
     resolve_tunables,
 )
@@ -464,6 +465,9 @@ def cli_trend(ctx: click.Context, replay: Path | None, output_format: OutputForm
                     store_refusal=read.refusal,
                 )
             )
+            # No subjects: the trend section draws counters, never a finding, so
+            # everything the machine has to report is somewhere else.
+            note_the_findings_this_page_left_out(findings, (), console)
         raise SystemExit(exit_code_for(findings))
 
 

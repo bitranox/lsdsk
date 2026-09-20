@@ -7,6 +7,25 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **A section now accounts for the exit code it leaves.** The code counts every
+  warning and critical in the MACHINE; a section shows one part of it. So
+  `lsdsk smart` printed 342 lines of clean attribute tables and exited `1`, and
+  so did `slots`, `controllers`, `trend`, `disks` and `health`. Driving
+  `thresholds.wear_warning_percent=1` sharpened it: four of those commands
+  produced byte-identical human output with and without the override while the
+  code moved `0` to `1`. A person read a clean page and a failing exit; a
+  monitoring wrapper alerted on something the page could not explain.
+
+  Each of those pages now ends with one line naming how many findings it did not
+  show and where to read them. What counts as not shown is worked out per page
+  from the subjects it drew, so `lsdsk disks`, which marks a row for each drive
+  with a problem, reports only the two it had no row for. Nothing about the exit
+  code changed, which was the point: scoping the code to each page would have
+  silently stopped a check on `lsdsk health` from ever catching a link fault the
+  topology rules found. `topology` and the whole-machine page draw the verdict
+  block already and `findings` is the list, so those three say nothing extra,
+  and the machine-readable form is untouched.
+
 - **`lsdsk --no-record record` is refused rather than quietly obeyed.** On
   every other command the flag means "judge the counters against the store
   without adding this reading to it", which is sensible; on `record`, whose only

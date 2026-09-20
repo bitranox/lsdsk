@@ -134,6 +134,21 @@ ebenfalls bestehen, aus einem anderen Grund: `70` sagt nichts darüber aus, was
 die Ausgabe enthielt, eine Prüfung, die `lsdsk` nach `head` oder `jq` leitet,
 liest also den Absturz und nicht das Weggehen des eigenen Lesers.
 
+Die `1` eines Abschnittsbefehls ist das Urteil über die ganze MASCHINE, nicht
+über seine eigene Seite. `lsdsk smart` liest einen Teil der Maschine und endet
+mit `1`, weil irgendein Laufwerk eine Warnung hat - genau das braucht eine
+Überwachung, die irgendeinen Abschnitt beobachtet. Den Code auf die jeweilige
+Seite zu beschränken würde eine Prüfung auf `lsdsk health` still davon abhalten,
+je einen Verbindungsfehler zu bemerken, den die Topologieregeln gefunden haben.
+Stattdessen legt die Seite Rechenschaft über den Code ab: ein Abschnitt, der
+nicht mit null endet, schließt mit einer Zeile, die nennt, wie viele Befunde er
+nicht gezeigt hat und wo sie zu lesen sind. Was als nicht gezeigt gilt, wird pro
+Seite bestimmt: `lsdsk disks` markiert für jedes Laufwerk mit einem Problem eine
+Zeile und nennt deshalb nur jene, für die es keine Zeile gab. `topology` und die
+Gesamtseite zeichnen den `PROBLEMS`-Block ohnehin, und `findings` ist die Liste,
+diese drei sagen also nichts zusätzlich. Die maschinenlesbare Form bleibt
+unverändert: ihr Umschlag trägt die Befunde selbst.
+
 Ein Befehl, der nichts diagnostiziert, hat keinen Befund zu melden; dort steht
 `1` also für den Fehlschlag, den er soeben auf stderr genannt hat, und nicht für
 eine Warnung oder einen kritischen Befund: ein `snapshot`, der nicht geschrieben

@@ -126,6 +126,19 @@ different reason: `70` says nothing about what the output contained, so a check
 piping `lsdsk` into `head` or `jq` reads the crash rather than its own reader
 leaving.
 
+A section command's `1` is the whole MACHINE's verdict, not its own page's.
+`lsdsk smart` reads one part of the machine and exits `1` because a drive
+somewhere has a warning, which is what a monitoring wrapper watching any section
+needs. Scoping the code to each page would silently stop a check on `lsdsk
+health` from ever catching a link fault the topology rules found. So the page
+accounts for the code instead: a section that exits non-zero ends with one line
+naming how many findings it did not show and where to read them. What counts as
+not shown is worked out per page, so `lsdsk disks`, which marks a row for each
+drive with a problem, reports only the ones it had no row for. `topology` and
+the whole-machine page draw the `PROBLEMS` block already and `findings` is the
+list, so those three say nothing extra. The machine-readable form is unchanged:
+its envelope carries the findings themselves.
+
 A command that diagnoses nothing has no finding to report, so on those `1` means
 the failure it just named on stderr rather than a warning or a critical: a
 `snapshot` that could not be written and a `config-deploy` that could not write
