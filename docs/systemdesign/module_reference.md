@@ -253,7 +253,9 @@ fails, before Click can see it.
 contract, answered by `outranks_a_departed_reader`. A code saying the run could not
 START stands - 2, 13, 22 and 78 - because there was never any output for that reader
 to lose: a mistyped `--section` is a mistyped `--section` whether it was piped into
-`head` or into a file. A code saying what the output CONTAINED yields to `141`,
+`head` or into a file. So does 70, which says the tool BROKE: that is equally true of
+a run whose reader stayed, and without it a check piping `lsdsk` into `head` would
+read a crash as its own reader leaving. A code saying what the output CONTAINED yields to `141`,
 because it was not delivered: `lsdsk report | head -5` on a failing machine has shown
 the reader five lines, and leaving `1` there would tell a monitoring check it had
 received a complete verdict.

@@ -112,7 +112,10 @@ and no `--format` has been parsed yet, so `--format json` and `--format=json` ar
 both recognised and nothing past a bare `--` is read. The exit code does not
 depend on which format was asked for: a refusal piped into a reader that walked
 away leaves `2`, `13`, `22` or `78` in either mode, and only a run whose output
-the reader never received answers `141`.
+the reader never received answers `141`. A crash stands there too, for a
+different reason: `70` says nothing about what the output contained, so a check
+piping `lsdsk` into `head` or `jq` reads the crash rather than its own reader
+leaving.
 
 A command that diagnoses nothing has no finding to report, so on those `1` means
 the failure it just named on stderr rather than a warning or a critical: a

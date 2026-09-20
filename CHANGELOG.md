@@ -24,6 +24,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   `1` is unchanged everywhere else: an actionable finding, and the failed
   `record`, `snapshot` and `config-deploy` writes that already shared it.
 
+  A crash also STANDS when the reader has already closed the pipe, where a
+  verdict yields to `141`. The reason a verdict yields is that it was not
+  delivered; `70` says nothing about what the output contained, so that reason
+  does not reach it, and without this a check piping `lsdsk` into `head` or `jq`
+  would read a crash as its own reader leaving - the one hole left in the split.
+
 - **`record` says which of its four outcomes happened, and a write that failed
   now leaves a code.** Measured before this: a run with nothing new to store, a
   store belonging to another machine, a write refused with EACCES, and

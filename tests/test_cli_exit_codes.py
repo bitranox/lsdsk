@@ -698,3 +698,34 @@ def test_a_code_the_resolver_derived_from_the_exception_is_not_relabelled_as_a_c
     assert code_for_an_unhandled_exception(OSError(errno.EPERM, "Operation not permitted")) == ExitCode.GENERAL_ERROR
     assert code_for_an_unhandled_exception(KeyboardInterrupt()) == ExitCode.SIGNAL_INT
     assert code_for_an_unhandled_exception(BrokenPipeError()) == ExitCode.BROKEN_PIPE
+
+
+@pytest.mark.os_agnostic
+def test_a_crash_stands_whoever_was_reading_because_it_says_nothing_about_the_output() -> None:
+    """The contract (user, 2026-09-20), extended to the code added the same day.
+
+    141 means "what you asked for was not delivered", which is why a verdict
+    yields to it: `lsdsk report | head -5` on a failing machine really did show
+    five lines of one. A crash says nothing about what the output contained, so
+    it stands for the same reason a refusal does - and a check that pipes lsdsk
+    into `head`, `jq` or `grep` would otherwise read 141 and file a crash as its
+    own reader leaving, which is the one hole left in the split that 70 exists
+    to make.
+
+    Asserted on the decider rather than end to end: the pipe breaks at a write,
+    and no command both writes to stdout and then crashes, so there is no run
+    that reaches this branch to drive. The mutation that drops 70 from the set
+    is what keeps the arm honest.
+    """
+    from lsdsk.adapters.cli.exit_codes import ExitCode, outranks_a_departed_reader
+
+    assert outranks_a_departed_reader(int(ExitCode.SOFTWARE_ERROR)) is True, (
+        "a crash whose reader had already gone would report the reader leaving, not the crash"
+    )
+    assert outranks_a_departed_reader(int(ExitCode.CONFIG_ERROR)) is True, (
+        "the control that must answer the same way: a refusal still stands"
+    )
+    assert outranks_a_departed_reader(int(ExitCode.GENERAL_ERROR)) is False, (
+        "the control that must answer the OTHER way: an undelivered verdict still yields"
+    )
+    assert outranks_a_departed_reader(int(ExitCode.SUCCESS)) is False

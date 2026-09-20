@@ -80,16 +80,22 @@ class ExitCode(IntEnum):
     SIGNAL_TERM = 143
 
 
-#: The codes that say the run could not START, as opposed to what its output said.
+#: The codes that are true whoever was reading, as opposed to what the output said.
 #:
-#: A usage error is in here whichever end produced it: click's parser refusing an
-#: unknown option, or this tool's own ``click.UsageError`` for a malformed
-#: ``--set``. Both mean the run never started.
-_RUN_DID_NOT_START: Final[frozenset[int]] = frozenset(
+#: Two kinds qualify, and the name says what they have in common rather than
+#: naming one of them. A code saying the run could not START: a usage error from
+#: whichever end produced it - click's parser refusing an unknown option, or this
+#: tool's own ``click.UsageError`` for a malformed ``--set`` - and 13, 22 and 78
+#: beside it. And a code saying THIS TOOL BROKE, which is just as true of a run
+#: whose reader stayed; without it a check piping lsdsk into ``head`` or ``jq``
+#: would read a crash as its own reader leaving, which is the one gap
+#: :attr:`ExitCode.SOFTWARE_ERROR` exists to close.
+_TRUE_WHOEVER_WAS_READING: Final[frozenset[int]] = frozenset(
     {
         int(ExitCode.USAGE_ERROR),
         int(ExitCode.PERMISSION_DENIED),
         int(ExitCode.INVALID_ARGUMENT),
+        int(ExitCode.SOFTWARE_ERROR),
         int(ExitCode.CONFIG_ERROR),
     }
 )
@@ -102,6 +108,11 @@ def outranks_a_departed_reader(code: int) -> bool:
     true whoever was reading, because there was never any output for that reader
     to lose: a mistyped ``--section`` is a mistyped ``--section`` whether it was
     piped into ``head`` or into a file. So 2, 13, 22 and 78 stand.
+
+    So does 70, decided the same day. A crash says nothing about what the output
+    contained, so the reason a verdict yields does not reach it, and a check
+    piping lsdsk into ``head`` or ``jq`` would otherwise read a crash as its own
+    reader leaving - the one hole left in the split 70 exists to make.
 
     A code that says what the output CONTAINED does not stand, because it was not
     delivered. ``lsdsk report | head -5`` on a failing machine has shown the
@@ -123,12 +134,14 @@ def outranks_a_departed_reader(code: int) -> bool:
     Example:
         >>> outranks_a_departed_reader(int(ExitCode.INVALID_ARGUMENT))
         True
+        >>> outranks_a_departed_reader(int(ExitCode.SOFTWARE_ERROR))
+        True
         >>> outranks_a_departed_reader(int(ExitCode.GENERAL_ERROR))
         False
         >>> outranks_a_departed_reader(int(ExitCode.SUCCESS))
         False
     """
-    return code in _RUN_DID_NOT_START
+    return code in _TRUE_WHOEVER_WAS_READING
 
 
 def error_type_for(code: int) -> str:

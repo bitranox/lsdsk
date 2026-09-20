@@ -72,8 +72,10 @@ GREEN reported four. One real and closed, three declined.
 
 ## Left for another pass
 
-- Whether `70` should outrank a departed reader is undecided. It is deliberately
-  NOT in `_RUN_DID_NOT_START`, so a crash whose reader has gone answers `141`
-  exactly as a finding does. That is a contract question for the user rather than
-  an implementation detail, and settling it inside this change is the mistake the
-  ranking work already recorded. Tracked separately.
+- Whether `70` should outrank a departed reader was left undecided by this pass,
+  deliberately: a contract question for the user rather than an implementation
+  detail, and settling it inside another change is the mistake the ranking work
+  already recorded. It was put to the user separately and ANSWERED the same day -
+  `70` stands. The set it joined is `_TRUE_WHOEVER_WAS_READING`, renamed from
+  `_RUN_DID_NOT_START` because a crash can happen mid-report, so the old name
+  would have described only half its members. See the pass that followed this one.

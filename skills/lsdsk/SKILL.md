@@ -450,7 +450,16 @@ there would tell a monitoring check it had a complete answer when it had five
 lines of one. So `0` and `1` yield. A refusal is the other way round - `2`, `13`,
 `22` and `78` stand whoever was reading, because there was never any output for
 that reader to lose; an unknown option is an unknown option whether it went into
-`head` or into a file, and `lsdsk disks --bogus | head -c 0` duly leaves `2`. Both halves hold identically in human and
+`head` or into a file, and `lsdsk disks --bogus | head -c 0` duly leaves `2` -
+read through `${PIPESTATUS[0]}` or under `set -o pipefail`, because a bare `$?`
+after a pipe is the READER's status and reports `head` succeeding whatever
+`lsdsk` left. `70`
+stands too, for its own reason rather than that one: a crash says nothing about
+what the output CONTAINED, so the reason a verdict yields does not reach it, and a
+check piping `lsdsk` into `head` or `jq` reads the crash rather than its own reader
+leaving. The one crash that does NOT leave `70` is the one the departed reader
+CAUSED - a failed write raises a broken pipe, which carries its own code, so that
+leaves `141`. Both halves hold identically in human and
 `--format json` output, which is the point of them: an exit code that changed with
 the output format would be useless to a wrapper that uses both.
 

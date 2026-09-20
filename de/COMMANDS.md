@@ -119,7 +119,10 @@ werden daher `--format json` und `--format=json`, und nichts hinter einem
 einzelnen `--` wird gelesen. Der Exit-Code hängt nicht davon ab, welches Format
 verlangt wurde: eine Ablehnung, die in einen Leser läuft, der weggegangen ist,
 hinterlässt in beiden Modi `2`, `13`, `22` oder `78`, und nur ein Lauf, dessen
-Ausgabe den Leser nie erreicht hat, antwortet mit `141`.
+Ausgabe den Leser nie erreicht hat, antwortet mit `141`. Ein Absturz bleibt dort
+ebenfalls bestehen, aus einem anderen Grund: `70` sagt nichts darüber aus, was
+die Ausgabe enthielt, eine Prüfung, die `lsdsk` nach `head` oder `jq` leitet,
+liest also den Absturz und nicht das Weggehen des eigenen Lesers.
 
 Ein Befehl, der nichts diagnostiziert, hat keinen Befund zu melden; dort steht
 `1` also für den Fehlschlag, den er soeben auf stderr genannt hat, und nicht für
