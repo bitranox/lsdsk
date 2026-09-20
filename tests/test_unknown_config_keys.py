@@ -149,6 +149,57 @@ def test_a_key_outside_an_owned_section_is_left_alone(
     assert result.exit_code != 2, f"{spec} was refused, and nothing here can prove it is a mistake"
 
 
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("spec", "meant"),
+    [
+        pytest.param("threshold.wear_warning_percent=1", "thresholds", id="a dropped letter"),
+        pytest.param("Thresholds.wear_warning_percent=1", "thresholds", id="the wrong case"),
+        pytest.param("dislay.wwn_width=9", "display", id="a transposed section"),
+        pytest.param("histroy.max_samples_per_drive=2", "history", id="a transposed history"),
+    ],
+)
+def test_a_near_miss_section_is_refused_rather_than_ignored(
+    clear_config_cache: None,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+    spec: str,
+    meant: str,
+) -> None:
+    """A section name one edit away from an owned one is a typo, not somebody else's namespace.
+
+    The key half of this is already refused, which is what makes the gap visible:
+    ``thresholds.wear_warnning_percent`` exits 2 with a did-you-mean, while
+    ``threshold.wear_warning_percent`` - the same distance, one level up - was
+    applied to a section nothing reads and changed the verdict from 16 findings
+    to the shipped 5, at exit 1 with ``ok`` true, an empty ``skipped`` and
+    nothing on stderr.
+    """
+    from pathlib import Path as _Path
+
+    capture = _Path(__file__).parent / "fixtures" / "hw" / _CAPTURE
+    result: Result = cli_runner.invoke(
+        cli_mod.cli,
+        [
+            "--no-record",
+            "--history-file",
+            str(tmp_path / "h.json"),
+            "--set",
+            spec,
+            "findings",
+            "--replay",
+            str(capture),
+            "--format",
+            "json",
+        ],
+        obj=production_factory,
+    )
+
+    assert result.exit_code == 2, f"{spec} exited {result.exit_code}, so it was applied to a section nothing reads"
+    assert meant in result.output, f"the refusal did not name [{meant}], which is the section the reader meant"
+
+
 def _run_with_config(*, config_home: Path, history: Path, capture: Path) -> tuple[int, str, str]:
     """Run a real lsdsk process against a config directory of this test's own.
 

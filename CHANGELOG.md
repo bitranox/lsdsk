@@ -135,6 +135,21 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A misspelled `--set` SECTION is refused instead of applied to nothing.**
+  Measured before this: `--set threshold.wear_warning_percent=1`, one letter
+  short, moved the verdict from 16 findings to the shipped 5 at exit 1 with `ok`
+  true, an empty `skipped` and nothing on stderr, while the SAME edit distance
+  one level down - `thresholds.wear_warnning_percent` - exited 2 with a
+  did-you-mean. The asymmetry was structural: `unknown_owned_key` answers `None`
+  for every section this tool does not own, which is precisely what a misspelled
+  owned section looks like to it, so the key check could not see a wrong section
+  at all. `nearest_owned_section` is its section-level twin and is consulted
+  first. Only a CLOSE match is refused, so `lib_log_rich` and any other foreign
+  namespace still pass through untouched, and a section resembling nothing owned
+  passes too - nothing can prove that one is a mistake. The wrong CASE
+  (`Thresholds.`) is caught as the near miss it is.
+
+
 - **Every command answers a departed reader with 141, including the three that
   did not.** Measured with a reader closing the pipe without reading: the eight
   section commands already left 141, while `lsdsk --version` left 1 - this tool's

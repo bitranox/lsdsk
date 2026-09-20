@@ -10,7 +10,7 @@ import orjson
 from lib_layered_config import Config
 from pydantic import BaseModel, ConfigDict
 
-from .known_keys import nearest_known_key, unknown_owned_key
+from .known_keys import nearest_known_key, nearest_owned_section, unknown_owned_key
 
 if TYPE_CHECKING:
     from lib_layered_config.domain.config import SourceInfo
@@ -252,6 +252,21 @@ def _refusal_for(raw: str, override: ConfigOverride) -> str:
     return f"Invalid override {raw!r}: [{override.section}] has no key {key!r}.{meant}"
 
 
+def _section_refusal_for(raw: str, override: ConfigOverride, meant: str) -> str:
+    """Explain a section name that is one typo away from one this tool owns.
+
+    Args:
+        raw: The override exactly as typed, so the reader can find it in their
+            own command line.
+        override: The parsed form, which carries the section that was typed.
+        meant: The owned section it is probably a typo for.
+
+    Returns:
+        The message to refuse with.
+    """
+    return f"Invalid override {raw!r}: there is no section [{override.section}]. Did you mean [{meant}]?"
+
+
 def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
     """Deep-merge CLI overrides into a Config instance.
 
@@ -267,12 +282,16 @@ def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
         ``raw_overrides`` is empty.
 
     Raises:
-        ValueError: If any override string is malformed, or names a key that a
-            section this tool OWNS does not have. The owned sections are the
-            three whose key set is exactly a model's, so an unknown key there is
-            a typo and inert - which reads identically to a setting that was
-            applied. Keys outside them belong to libraries or to another
-            consumer's file and are passed through untouched; see
+        ValueError: If any override string is malformed, names a SECTION one
+            typo away from an owned one, or names a key that an owned section
+            does not have. The owned sections are the three whose key set is
+            exactly a model's, so an unknown key there is a typo and inert -
+            which reads identically to a setting that was applied. The section
+            is judged first because the key check cannot see a wrong one: it
+            answers ``None`` for every unowned section, which is what a
+            misspelled owned section looks like to it. A section resembling
+            nothing owned, and keys outside the three, belong to libraries or to
+            another consumer's file and are passed through untouched; see
             :mod:`lsdsk.adapters.config.known_keys`.
 
     Examples:
@@ -294,6 +313,12 @@ def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
     for raw in raw_overrides:
         parsed = parse_override(raw)
         dotted = ".".join((parsed.section, *parsed.key_path))
+        # The section is judged FIRST, because the key check cannot see a wrong
+        # one: unknown_owned_key answers None for every section this tool does
+        # not own, which is what a misspelled owned section looks like to it.
+        meant = nearest_owned_section(parsed.section)
+        if meant is not None:
+            raise ValueError(_section_refusal_for(raw, parsed, meant))
         if unknown_owned_key(parsed.section, parsed.key_path) is not None:
             raise ValueError(_refusal_for(raw, parsed))
         _nest_override(overrides, parsed)

@@ -496,6 +496,22 @@ exactly what a parser expects. Keys outside these three sections are left alone:
 names this project ships no line for, and refusing there would fail you over
 somebody else's business.
 
+A misspelled SECTION is refused the same way, and it has to be judged first: the
+key check cannot see a wrong section, because it says nothing at all about a
+section this tool does not own - which is exactly what `threshold` looks like to
+it. Without this, one dropped letter moved the verdict from 16 findings to the
+shipped 5 at exit 1, with nothing on any stream:
+
+```
+$ lsdsk --set threshold.wear_warning_percent=1 findings
+Error: Invalid override 'threshold.wear_warning_percent=1': there is no section [threshold]. Did you mean [thresholds]?
+```
+
+Only a CLOSE match is refused, so `lib_log_rich` and any other foreign namespace
+still pass through untouched. A section that resembles nothing owned - `a.b.c=1`
+- passes through too: nothing here can prove it is a mistake rather than a key
+another reader of the same file wants.
+
 ## Profiles
 
 Profiles provide isolated configuration namespaces for different environments (e.g., `production`, `staging`, `test`).

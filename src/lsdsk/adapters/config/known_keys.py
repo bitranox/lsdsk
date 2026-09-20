@@ -33,6 +33,7 @@ Contents
 * :func:`owned_sections` - the sections whose keys are fully known, and their keys
 * :func:`unknown_owned_key` - the dotted path if it names an unknown key, else None
 * :func:`nearest_known_key` - the key a reader most likely meant
+* :func:`nearest_owned_section` - the SECTION a reader most likely meant
 """
 
 from __future__ import annotations
@@ -157,4 +158,50 @@ def nearest_known_key(section: str, key: str) -> str | None:
     return matches[0] if matches else None
 
 
-__all__ = ["nearest_known_key", "owned_sections", "unknown_owned_key", "unknown_owned_keys"]
+def nearest_owned_section(section: str) -> str | None:
+    """The owned section `section` most likely meant, when it is not one itself.
+
+    The section-level twin of :func:`nearest_known_key`, and it exists because
+    the key check is VACUOUS when the section is wrong: ``unknown_owned_key``
+    returns ``None`` for any section this tool does not own, which is exactly
+    what a misspelled owned section looks like. So ``thresholds.wear_warnning``
+    was refused while ``threshold.wear_warning_percent`` - the same distance,
+    one level up - was applied to a section nothing reads.
+
+    Only a CLOSE match answers. A section that resembles nothing owned is
+    somebody else's namespace (``lib_log_rich``, a key another consumer's file
+    carries) and passing it through untouched is the whole reason this module
+    says nothing about the sections it does not own.
+
+    Args:
+        section: The top-level section named by the caller.
+
+    Returns:
+        The owned section it is probably a typo for, or ``None`` when `section`
+        is owned already or nothing is near enough that naming it would be a
+        guess.
+
+    Example:
+        >>> nearest_owned_section("threshold")
+        'thresholds'
+        >>> nearest_owned_section("Thresholds")
+        'thresholds'
+        >>> nearest_owned_section("thresholds") is None
+        True
+        >>> nearest_owned_section("lib_log_rich") is None
+        True
+    """
+    known = owned_sections()
+    if section in known:
+        return None
+    matches = difflib.get_close_matches(section, sorted(known), n=1, cutoff=_SUGGESTION_CUTOFF)
+    return matches[0] if matches else None
+
+
+__all__ = [
+    "nearest_known_key",
+    "nearest_owned_section",
+    "owned_sections",
+    "unknown_owned_key",
+    "unknown_owned_keys",
+]

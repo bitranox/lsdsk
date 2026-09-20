@@ -504,6 +504,24 @@ Schlüssel der obersten Ebene aus einer `.env` nehmen Namen an, für die dieses
 Projekt keine Zeile mitliefert. Ein Abweisen dort würde Sie an etwas scheitern
 lassen, das nicht Ihre Sache ist.
 
+Ein falsch geschriebener ABSCHNITT wird genauso abgewiesen, und er muss zuerst
+beurteilt werden: die Schlüsselprüfung kann einen falschen Abschnitt gar nicht
+sehen, denn sie sagt über einen Abschnitt, den dieses Werkzeug nicht besitzt,
+überhaupt nichts - und genau so sieht `threshold` für sie aus. Ohne das
+verschob ein einziger fehlender Buchstabe das Urteil von 16 Befunden auf die
+mitgelieferten 5, bei Exit-Code 1 und ohne eine Zeile auf irgendeinem Strom:
+
+```
+$ lsdsk --set threshold.wear_warning_percent=1 findings
+Error: Invalid override 'threshold.wear_warning_percent=1': there is no section [threshold]. Did you mean [thresholds]?
+```
+
+Abgewiesen wird nur eine NAHE Übereinstimmung, damit `lib_log_rich` und jeder
+andere fremde Namensraum weiterhin unangetastet durchgehen. Ein Abschnitt, der
+nichts Eigenem ähnelt - `a.b.c=1` -, geht ebenfalls durch: nichts hier kann
+beweisen, dass es ein Fehler ist und nicht ein Schlüssel, den ein anderer Leser
+derselben Datei haben möchte.
+
 ## Profile
 
 Profile bieten voneinander getrennte Namensräume für verschiedene Umgebungen (etwa `production`, `staging`, `test`).
