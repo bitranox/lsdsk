@@ -5,6 +5,7 @@ all subcommands. Handles global flags like --traceback, --profile, and --set.
 
 Contents:
     * :func:`cli` - Root command group with global options.
+    * :func:`_report_profile_that_named_nothing` - warn about a profile nothing answered to.
     * :func:`_report_keys_nothing_reads` - warn about a file key nothing reads.
     * :func:`_report_values_nothing_uses` - warn about a value nothing can use.
     * :func:`_print_version` - the version line, written through the guarded sink.
@@ -21,6 +22,7 @@ from lsdsk import __init__conf__
 from lsdsk.adapters.config.history import read_history_settings
 from lsdsk.adapters.config.known_keys import nearest_known_key, unknown_owned_keys
 from lsdsk.adapters.config.overrides import apply_overrides
+from lsdsk.adapters.config.profiles import contributed_layers, existing_profiles, nearest_profile
 from lsdsk.adapters.config.tunables import read_display_settings, read_thresholds
 from lsdsk.domain.enums import TreeDensity
 
@@ -90,6 +92,37 @@ def _report_keys_nothing_reads(config: Config) -> None:
         suggestion = nearest_known_key(section, key)
         meant = f" Did you mean {section}.{suggestion}?" if suggestion else ""
         safe_console.echo(f"Warning: ignoring {dotted}: [{section}] has no such key.{meant}", err=True)
+
+
+def _report_profile_that_named_nothing(config: Config, profile: str | None) -> None:
+    """Say so on stderr when ``--profile`` loaded nothing under that name.
+
+    A profile REPLACES the configuration directories rather than adding to
+    them, so a name with one letter wrong reads no file at all and every value
+    falls back to the shipped one at exit 0. Every other identifier typed at
+    this CLI answers back - an unknown ``--set`` key is refused, an unknown file
+    key gets a did-you-mean, an invalid profile SYNTAX exits 22 - and this was
+    the one well-formed name allowed to mean nothing quietly.
+
+    Warned rather than refused, for the same reason an unknown file key is: the
+    values are inert either way and the run still diagnoses the hardware, which
+    is what somebody is at the terminal for.
+
+    Args:
+        config: The configuration as loaded, carrying which files it came from.
+        profile: The name that was asked for, or ``None`` when none was.
+
+    Side Effects:
+        Writes one line to stderr when the name answered nothing.
+    """
+    if profile is None or contributed_layers(config, profile):
+        return
+    suggestion = nearest_profile(profile, existing_profiles())
+    meant = f" Did you mean {suggestion}?" if suggestion else ""
+    safe_console.echo(
+        f"Warning: profile {profile} named nothing, so every value is the one configured without it.{meant}",
+        err=True,
+    )
 
 
 def _report_values_nothing_uses(config: Config, *, history_file: Path | None) -> None:
@@ -266,6 +299,7 @@ def cli(
     # closes such gaps with a cast to the real type (see typed_click.py).
     services = cast("AppServices", ctx.obj())
     config = services.get_config(profile=profile, dotenv_path=env_file)
+    _report_profile_that_named_nothing(config, profile)
     _report_keys_nothing_reads(config)
     config = _apply_cli_overrides(config, set_overrides)
     # After the overrides, not before: an unknown --set KEY is refused outright and

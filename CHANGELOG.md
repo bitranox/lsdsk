@@ -7,6 +7,25 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **A `--profile` that matched nothing said nothing.** A profile REPLACES the
+  configuration directories rather than adding to them, so a name with one
+  letter wrong read no file at all and every value fell back to the shipped
+  one - at exit `0`, with nothing on stderr, and with `lsdsk config` afterwards
+  reporting those fallen-back figures as the values in force. A scheduled
+  `lsdsk --profile production findings` would have judged against the default
+  thresholds forever. It was the one well-formed identifier on this CLI allowed
+  to mean nothing quietly: an unknown `--set` key is refused, an unknown file
+  key gets a did-you-mean, and an invalid profile NAME already exits `22`.
+
+  A profile that contributed no layer now says so and names the closest profile
+  on this machine when one is close enough, including for a wrong case, which a
+  reader is least likely to spot by re-reading their own command. Whether it
+  answered is read from provenance rather than from a directory existing,
+  because a directory holding nothing readable falls back in exactly the same
+  way; the profiles offered as suggestions are read from the directory the
+  loader searches, because with a wrong name nothing from it is in the
+  provenance to learn from.
+
 - **The Win32 bindings have the layout Windows gives them on every runner.**
   `ctypes.wintypes` takes its integer widths from the machine the interpreter is
   running on, where `DWORD` is `c_ulong`: four bytes under Windows and eight

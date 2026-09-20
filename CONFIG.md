@@ -568,6 +568,26 @@ Profile directories are **separate namespaces**. Configuration deployed with a p
 | `config`                      | No        | Yes        |
 | `config --profile production` | Yes       | No         |
 
+### A Profile Nothing Answers To
+
+Because a profile REPLACES the directories rather than adding to them, a name
+with one letter wrong reads no file at all and every value falls back to the
+shipped one. The run still exits `0`, and `config` afterwards reports those
+fallen-back figures as the values in force.
+
+So a `--profile` that contributed no layer says so on stderr, and names the
+closest profile on this machine when one is close enough:
+
+```text
+Warning: profile prodd named nothing, so every value is the one configured without it. Did you mean prod?
+```
+
+Case counts, because a profile directory is matched exactly: `--profile PROD`
+does not find `prod` and gets the same line. The warning is a warning rather
+than a refusal, so the run still reports on the hardware in front of you. A
+directory that exists but holds nothing readable gets it too, because it is a
+silent fallback in exactly the same way.
+
 ---
 
 ## Environment Variables

@@ -578,6 +578,28 @@ Profilverzeichnisse sind **getrennte Namensräume**. Mit einem Profil ausgebrach
 | `config`                      | Nein        | Ja           |
 | `config --profile production` | Ja          | Nein         |
 
+### Ein Profil, auf das nichts antwortet
+
+Weil ein Profil die Verzeichnisse ERSETZT und nicht ergänzt, liest ein Name mit
+einem falschen Buchstaben überhaupt keine Datei, und jeder Wert fällt auf den
+ausgelieferten zurück. Der Lauf endet trotzdem mit `0`, und `config` meldet
+anschließend genau diese zurückgefallenen Zahlen als die geltenden Werte.
+
+Ein `--profile`, das keine Schicht beigetragen hat, sagt das deshalb auf stderr
+und nennt das nächstliegende Profil dieser Maschine, sofern eines nahe genug
+liegt:
+
+```text
+Warning: profile prodd named nothing, so every value is the one configured without it. Did you mean prod?
+```
+
+Groß- und Kleinschreibung zählt, denn ein Profilverzeichnis wird exakt
+verglichen: `--profile PROD` findet `prod` nicht und bekommt dieselbe Zeile.
+Es ist eine Warnung und keine Zurückweisung, der Lauf berichtet also weiterhin
+über die Hardware vor Ihnen. Ein Verzeichnis, das zwar existiert, aber nichts
+Lesbares enthält, bekommt sie ebenfalls, denn es ist auf genau dieselbe Weise
+ein stiller Rückfall.
+
 ---
 
 ## Umgebungsvariablen

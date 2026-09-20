@@ -98,6 +98,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/config/loader.py` - Configuration loader with caching and profile/override support.
 - `src/lsdsk/adapters/config/overrides.py` - Parse and apply ``--set SECTION.KEY=VALUE`` CLI overrides to Config.
 - `src/lsdsk/adapters/config/permissions.py` - Permission settings loader for config deployment.
+- `src/lsdsk/adapters/config/profiles.py` - Whether a named profile answered, and which ones exist to be named.
 - `src/lsdsk/adapters/config/secrets.py` - A second, broader redaction pass over anything about to be printed.
 - `src/lsdsk/adapters/config/tunables.py` - The `[thresholds]` and `[display]` sections, parsed into typed models.
 - `src/lsdsk/adapters/config/values.py` - How a raw configured value becomes a typed one, and what it had to refuse.
