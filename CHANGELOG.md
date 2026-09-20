@@ -7,6 +7,25 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A configured value the tool cannot use is named on stderr, with the default
+  that judged the machine instead.** The fallback itself is deliberate and
+  stays - a malformed threshold must never stop somebody diagnosing a failing
+  drive - but it was silent, so an inert value read exactly like an applied one:
+  `--set thresholds.wear_warning_percent=abc` took the verdict from 16 findings
+  to 5, exit 0, zero bytes on any stream, and `lsdsk config --format json` then
+  reported `abc` back as the value in force. A config file did the same, and so
+  did a known key holding a table. The unknown-KEY half of this shape was closed
+  earlier; this is the VALUE half, and the same tool refusing `--tree-density
+  bogus` at the Click door is what made one setting carry two opposite
+  contracts. Every key of all three owned sections is covered, `[thresholds]`,
+  `[display]` and `[history]`, and the line goes to stderr in both output modes
+  so `--format json` on stdout stays exactly what a parser expects. Each coercer
+  now names the predicate that decides what it accepts and the record reads that
+  same predicate, so the value and the warning cannot come from two lists that
+  drift; `[history]` also loses its own character-for-character copy of the count
+  coercer. Reported once per run from the root group rather than where the values
+  are read, because `resolve_tunables` is called again by every view that draws.
+
 - **Every integer a capture carries is bounded by the width of its own source.**
   A value wider than the register or the API it is read from was never read
   from hardware, and unbounded, three reached the output. An AHCI

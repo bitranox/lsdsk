@@ -14,11 +14,12 @@ System Role:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, NamedTuple
 
 from ...domain.base import DomainModel
 from ...domain.enums import TreeDensity
 from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
+from .values import RejectedValue, SectionValues
 
 if TYPE_CHECKING:
     from lib_layered_config import Config
@@ -103,33 +104,87 @@ class DisplaySettings(DomainModel, frozen=True):
     traceback_verbose_limit: int = DEFAULT_TRACEBACK_VERBOSE_LIMIT
 
 
-def positive_int(raw: object, default: int) -> int:
-    """Read a count, falling back rather than failing the run.
+class ThresholdsReading(NamedTuple):
+    """The figures the rules weigh against, and every configured value refused.
 
-    A malformed threshold must never stop somebody diagnosing a failing drive,
-    and a zero or negative one would make a rule fire on everything or nothing.
-    ``True`` is an ``int`` in Python, so booleans are excluded explicitly.
+    Returned as a pair rather than threaded through a mutable collector because the
+    refusals are a PROPERTY of this reading: the value and the record of falling
+    back come from the same decision, so neither can be produced without the other.
     """
-    if isinstance(raw, bool) or not isinstance(raw, int):
-        return default
-    return raw if raw > 0 else default
+
+    thresholds: Thresholds
+    rejected: tuple[RejectedValue, ...]
 
 
-def positive_float(raw: object, default: float) -> float:
-    """Read a rate or a count that may be fractional, falling back if malformed."""
-    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-        return default
-    return float(raw) if raw > 0 else default
+class DisplayReading(NamedTuple):
+    """The layout values, and every configured value refused."""
+
+    display: DisplaySettings
+    rejected: tuple[RejectedValue, ...]
 
 
-def flag(raw: object, *, default: bool) -> bool:
-    """Read a switch, falling back rather than failing the run.
+def read_thresholds(config: Config) -> ThresholdsReading:
+    """Read the `[thresholds]` section, keeping what it could not use.
 
-    A string is not accepted as a truthy value: TOML has a real boolean, and
-    taking ``"false"`` for true is the kind of quiet inversion that makes a
-    setting look ignored.
+    Args:
+        config: The merged configuration.
+
+    Returns:
+        The judgement values, defaulting to the shipped ones key by key, and the
+        refused values in the order they were read.
+
+    Example:
+        >>> from lib_layered_config import Config
+        >>> read_thresholds(Config({"thresholds": {"wear_critical_percent": "abc"}}, {})).rejected[0].dotted
+        'thresholds.wear_critical_percent'
     """
-    return raw if isinstance(raw, bool) else default
+    # Read where the section becomes a model, not through a shared accessor that
+    # would be a dict interface between modules.
+    values = SectionValues(THRESHOLDS_SECTION, config)
+    thresholds = Thresholds(
+        wear_warning_percent=values.positive_int("wear_warning_percent", DEFAULT_THRESHOLDS.wear_warning_percent),
+        wear_critical_percent=values.positive_int("wear_critical_percent", DEFAULT_THRESHOLDS.wear_critical_percent),
+        crc_errors_significant=values.positive_int("crc_errors_significant", DEFAULT_THRESHOLDS.crc_errors_significant),
+        mixed_firmware_threshold=values.positive_int(
+            "mixed_firmware_threshold", DEFAULT_THRESHOLDS.mixed_firmware_threshold
+        ),
+        wear_projection_min_points=values.positive_int(
+            "wear_projection_min_points", DEFAULT_THRESHOLDS.wear_projection_min_points
+        ),
+        quiet_expected_min=values.positive_float("quiet_expected_min", DEFAULT_THRESHOLDS.quiet_expected_min),
+        min_span_hours=values.positive_int("min_span_hours", DEFAULT_THRESHOLDS.min_span_hours),
+    )
+    return ThresholdsReading(thresholds, values.rejected)
+
+
+def read_display_settings(config: Config) -> DisplayReading:
+    """Read the `[display]` section, keeping what it could not use.
+
+    Args:
+        config: The merged configuration.
+
+    Returns:
+        The layout values, defaulting to the shipped ones key by key, and the
+        refused values in the order they were read.
+
+    Example:
+        >>> from lib_layered_config import Config
+        >>> read_display_settings(Config({"display": {"tree_density": "bogus"}}, {})).rejected[0].raw
+        'bogus'
+    """
+    values = SectionValues(DISPLAY_SECTION, config)
+    display = DisplaySettings(
+        piped_width=values.positive_int("piped_width", DEFAULT_PIPED_WIDTH),
+        summary_limit=values.positive_int("summary_limit", DEFAULT_SUMMARY_LIMIT),
+        wear_row_floor_percent=values.positive_int("wear_row_floor_percent", DEFAULT_WEAR_ROW_FLOOR_PERCENT),
+        expand_virtual=values.flag("expand_virtual", default=DEFAULT_EXPAND_VIRTUAL),
+        wwn_width=values.positive_int("wwn_width", DEFAULT_WWN_WIDTH),
+        tree_density=values.tree_density("tree_density", DEFAULT_TREE_DENSITY),
+        detail_height_percent=values.positive_int("detail_height_percent", DEFAULT_DETAIL_HEIGHT_PERCENT),
+        traceback_summary_limit=values.positive_int("traceback_summary_limit", DEFAULT_TRACEBACK_SUMMARY_LIMIT),
+        traceback_verbose_limit=values.positive_int("traceback_verbose_limit", DEFAULT_TRACEBACK_VERBOSE_LIMIT),
+    )
+    return DisplayReading(display, values.rejected)
 
 
 def get_thresholds(config: Config) -> Thresholds:
@@ -148,28 +203,7 @@ def get_thresholds(config: Config) -> Thresholds:
         >>> get_thresholds(Config({"thresholds": {"wear_critical_percent": 90}}, {})).wear_critical_percent
         90
     """
-    # Read where the section becomes a model, not through a shared accessor that
-    # would be a dict interface between modules. A layered-config value is Any by
-    # nature; the isinstance check is what makes the cast true.
-    raw: object = config.get(THRESHOLDS_SECTION, {})
-    table = cast("dict[str, Any]", raw) if isinstance(raw, dict) else {}
-    return Thresholds(
-        wear_warning_percent=positive_int(table.get("wear_warning_percent"), DEFAULT_THRESHOLDS.wear_warning_percent),
-        wear_critical_percent=positive_int(
-            table.get("wear_critical_percent"), DEFAULT_THRESHOLDS.wear_critical_percent
-        ),
-        crc_errors_significant=positive_int(
-            table.get("crc_errors_significant"), DEFAULT_THRESHOLDS.crc_errors_significant
-        ),
-        mixed_firmware_threshold=positive_int(
-            table.get("mixed_firmware_threshold"), DEFAULT_THRESHOLDS.mixed_firmware_threshold
-        ),
-        wear_projection_min_points=positive_int(
-            table.get("wear_projection_min_points"), DEFAULT_THRESHOLDS.wear_projection_min_points
-        ),
-        quiet_expected_min=positive_float(table.get("quiet_expected_min"), DEFAULT_THRESHOLDS.quiet_expected_min),
-        min_span_hours=positive_int(table.get("min_span_hours"), DEFAULT_THRESHOLDS.min_span_hours),
-    )
+    return read_thresholds(config).thresholds
 
 
 def get_display_settings(config: Config) -> DisplaySettings:
@@ -186,35 +220,7 @@ def get_display_settings(config: Config) -> DisplaySettings:
         >>> get_display_settings(Config({"display": {"piped_width": 200}}, {})).piped_width
         200
     """
-    raw: object = config.get(DISPLAY_SECTION, {})
-    table = cast("dict[str, Any]", raw) if isinstance(raw, dict) else {}
-    return DisplaySettings(
-        piped_width=positive_int(table.get("piped_width"), DEFAULT_PIPED_WIDTH),
-        summary_limit=positive_int(table.get("summary_limit"), DEFAULT_SUMMARY_LIMIT),
-        wear_row_floor_percent=positive_int(table.get("wear_row_floor_percent"), DEFAULT_WEAR_ROW_FLOOR_PERCENT),
-        expand_virtual=flag(table.get("expand_virtual"), default=DEFAULT_EXPAND_VIRTUAL),
-        wwn_width=positive_int(table.get("wwn_width"), DEFAULT_WWN_WIDTH),
-        tree_density=tree_density_of(table.get("tree_density")),
-        detail_height_percent=positive_int(table.get("detail_height_percent"), DEFAULT_DETAIL_HEIGHT_PERCENT),
-        traceback_summary_limit=positive_int(table.get("traceback_summary_limit"), DEFAULT_TRACEBACK_SUMMARY_LIMIT),
-        traceback_verbose_limit=positive_int(table.get("traceback_verbose_limit"), DEFAULT_TRACEBACK_VERBOSE_LIMIT),
-    )
-
-
-def tree_density_of(raw: object) -> TreeDensity:
-    """Read a density name, falling back rather than failing the run.
-
-    A misspelled value in a configuration file must never refuse the whole
-    machine.
-    """
-    if isinstance(raw, TreeDensity):
-        return raw
-    if isinstance(raw, str):
-        try:
-            return TreeDensity(raw.strip().casefold())
-        except ValueError:
-            pass
-    return DEFAULT_TREE_DENSITY
+    return read_display_settings(config).display
 
 
 __all__ = [
@@ -229,11 +235,11 @@ __all__ = [
     "DEFAULT_WWN_WIDTH",
     "DISPLAY_SECTION",
     "THRESHOLDS_SECTION",
+    "DisplayReading",
     "DisplaySettings",
-    "flag",
+    "ThresholdsReading",
     "get_display_settings",
     "get_thresholds",
-    "positive_float",
-    "positive_int",
-    "tree_density_of",
+    "read_display_settings",
+    "read_thresholds",
 ]

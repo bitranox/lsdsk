@@ -469,6 +469,41 @@ Server füllt sich also der root-Pfad. `lsdsk record --format json` gibt unter
 Für einen einzelnen Lauf überschreiben Sie ihn mit dem globalen
 `--history-file`.
 
+### Eine Einstellung, die nichts tut, sagt das auch
+
+Alles oben greift auf den mitgelieferten Wert zurück, statt den Lauf abzubrechen:
+ein fehlerhafter Schwellwert darf niemanden daran hindern, ein ausfallendes
+Laufwerk zu untersuchen. Ein Wert, der zurückgefallen ist, wirkt aber nicht, und
+ein wirkungsloser Wert liest sich sonst genau wie ein übernommener. Deshalb
+werden beide Arten von Fehler gemeldet.
+
+Ein Schlüssel, den diese drei Abschnitte nicht haben, ist ein Tippfehler und
+sonst nichts. Aus `--set` wird er abgewiesen, mit Exitcode 2 und dem Schlüssel,
+den Sie wahrscheinlich gemeint haben. In einer Datei wird stattdessen gewarnt,
+denn eine Datei bleibt liegen und teilt den Namensraum mit den Bibliotheken, die
+dort ebenfalls schreiben:
+
+```
+$ lsdsk --set thresholds.wear_warnning_percent=1 findings
+Error: Invalid override 'thresholds.wear_warnning_percent=1': [thresholds] has no key 'wear_warnning_percent'. Did you mean thresholds.wear_warning_percent?
+```
+
+Ein Wert, den der Schlüssel nicht annehmen kann, wird auf beiden Wegen gemeldet.
+Die Meldung nennt auch, was die Maschine stattdessen beurteilt hat:
+
+```
+$ lsdsk --set thresholds.wear_warning_percent=abc --set display.tree_density=bogus findings
+Warning: ignoring thresholds.wear_warning_percent=abc: not a whole number above zero. Using 80.
+Warning: ignoring display.tree_density=bogus: not one of storage-only, storage-and-siblings, full. Using storage-only.
+```
+
+Beides geht in jedem Ausgabemodus nach stderr, damit `--format json` auf stdout
+genau das bleibt, was ein Parser erwartet. Schlüssel außerhalb dieser drei
+Abschnitte bleiben unangetastet: `lib_log_rich`, `lib_layered_config` und ein
+Schlüssel der obersten Ebene aus einer `.env` nehmen Namen an, für die dieses
+Projekt keine Zeile mitliefert. Ein Abweisen dort würde Sie an etwas scheitern
+lassen, das nicht Ihre Sache ist.
+
 ## Profile
 
 Profile bieten voneinander getrennte Namensräume für verschiedene Umgebungen (etwa `production`, `staging`, `test`).

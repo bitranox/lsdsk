@@ -13,10 +13,11 @@ System Role:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, NamedTuple
 
 from ...domain.base import DomainModel
 from ..history.store import MAX_SAMPLES_PER_DRIVE, default_history_path
+from .values import RejectedValue, SectionValues
 
 if TYPE_CHECKING:
     from lib_layered_config import Config
@@ -44,15 +45,42 @@ class HistorySettings(DomainModel, frozen=True):
     max_samples_per_drive: int = MAX_SAMPLES_PER_DRIVE
 
 
-def _positive_int(raw: object, default: int) -> int:
-    """Read a count, falling back rather than failing the run.
+class HistoryReading(NamedTuple):
+    """How counter history behaves, and every configured value refused."""
 
-    A malformed cap in a config file must not stop somebody diagnosing a failing
-    drive, and a zero or negative one would thin every series to nothing.
+    settings: HistorySettings
+    rejected: tuple[RejectedValue, ...]
+
+
+def read_history_settings(config: Config, *, path_override: Path | None = None) -> HistoryReading:
+    """Read the ``[history]`` section, keeping what it could not use.
+
+    Args:
+        config: The merged configuration.
+        path_override: A path from the command line, which wins over the file.
+
+    Returns:
+        The settings with the store path already resolved, and the refused values
+        in the order they were read.
+
+    Example:
+        >>> from lib_layered_config import Config
+        >>> read_history_settings(Config({"history": {"enabled": "yes"}}, {})).rejected[0].reason
+        'not true or false'
     """
-    if isinstance(raw, bool) or not isinstance(raw, int):
-        return default
-    return raw if raw > 0 else default
+    # Read where the section becomes a model, not through a shared accessor that
+    # would be a dict interface between modules.
+    values = SectionValues(SECTION, config)
+    # Read before the choice, never inside it: `path_override or values.path(...)`
+    # short-circuits, so on exactly the runs that pass --history-file the file's
+    # value would never be read and an unusable one would go unreported again.
+    from_file = values.path("path", overridden_by=path_override)
+    settings = HistorySettings(
+        enabled=values.flag("enabled", default=True),
+        path=path_override or from_file or default_history_path(),
+        max_samples_per_drive=values.positive_int("max_samples_per_drive", MAX_SAMPLES_PER_DRIVE),
+    )
+    return HistoryReading(settings, values.rejected)
 
 
 def get_history_settings(config: Config, *, path_override: Path | None = None) -> HistorySettings:
@@ -72,21 +100,7 @@ def get_history_settings(config: Config, *, path_override: Path | None = None) -
         >>> get_history_settings(Config({"history": {"enabled": False}}, {})).enabled
         False
     """
-    # Read where the section becomes a model, not through a shared accessor that
-    # would be a dict interface between modules. A layered-config value is Any by
-    # nature; the isinstance check is what makes the cast true.
-    raw: object = config.get(SECTION, {})
-    section = cast("dict[str, Any]", raw) if isinstance(raw, dict) else {}
-    configured = section.get("path")
-    # An empty string is how the shipped default says "use the state directory";
-    # treating it as a path would write a file literally named "" instead.
-    from_file = Path(configured).expanduser() if isinstance(configured, str) and configured.strip() else None
-    enabled = section.get("enabled", True)
-    return HistorySettings(
-        enabled=enabled if isinstance(enabled, bool) else True,
-        path=path_override or from_file or default_history_path(),
-        max_samples_per_drive=_positive_int(section.get("max_samples_per_drive"), MAX_SAMPLES_PER_DRIVE),
-    )
+    return read_history_settings(config, path_override=path_override).settings
 
 
-__all__ = ["SECTION", "HistorySettings", "get_history_settings"]
+__all__ = ["SECTION", "HistoryReading", "HistorySettings", "get_history_settings", "read_history_settings"]

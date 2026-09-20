@@ -100,6 +100,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/config/permissions.py` - Permission settings loader for config deployment.
 - `src/lsdsk/adapters/config/secrets.py` - A second, broader redaction pass over anything about to be printed.
 - `src/lsdsk/adapters/config/tunables.py` - The `[thresholds]` and `[display]` sections, parsed into typed models.
+- `src/lsdsk/adapters/config/values.py` - How a raw configured value becomes a typed one, and what it had to refuse.
 
 ### Adapters - counter history
 

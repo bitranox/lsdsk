@@ -464,6 +464,38 @@ the path this run resolved, under `store`.
 
 Override it for one run with the global `--history-file`.
 
+### A setting that does nothing says so
+
+Everything above falls back to the shipped value rather than failing the run: a
+malformed threshold must never stop you diagnosing a failing drive. But a value
+that fell back is inert, and an inert value otherwise reads exactly like one that
+was applied, so both ways of getting it wrong are reported.
+
+A key these three sections do not have is a typo and nothing else. From `--set`
+it is refused outright, with exit 2 and the key you probably meant; in a file it
+is warned about instead, because a file is durable and shared with the libraries
+that write the same namespace:
+
+```
+$ lsdsk --set thresholds.wear_warnning_percent=1 findings
+Error: Invalid override 'thresholds.wear_warnning_percent=1': [thresholds] has no key 'wear_warnning_percent'. Did you mean thresholds.wear_warning_percent?
+```
+
+A value the key cannot take is warned about on both surfaces, naming what judged
+the machine instead:
+
+```
+$ lsdsk --set thresholds.wear_warning_percent=abc --set display.tree_density=bogus findings
+Warning: ignoring thresholds.wear_warning_percent=abc: not a whole number above zero. Using 80.
+Warning: ignoring display.tree_density=bogus: not one of storage-only, storage-and-siblings, full. Using storage-only.
+```
+
+Both go to stderr in every output mode, so `--format json` on stdout stays
+exactly what a parser expects. Keys outside these three sections are left alone:
+`lib_log_rich`, `lib_layered_config` and a top-level key read from a `.env` accept
+names this project ships no line for, and refusing there would fail you over
+somebody else's business.
+
 ## Profiles
 
 Profiles provide isolated configuration namespaces for different environments (e.g., `production`, `staging`, `test`).
