@@ -75,7 +75,7 @@ dev = [
   "wheel>=0.48.0",               # CVE-2025-24049
   "pynacl>=1.6.2",               # CVE-2025-69277
   "urllib3>=2.8.0",              # CVE-2025-66471, CVE-2025-66418
-  "virtualenv>=21.7.14",         # CVE-2025-22702
+  "virtualenv>=21.9.0",         # CVE-2025-22702
 ]
 
 [project.scripts]
@@ -174,15 +174,21 @@ typeCheckingMode = "strict"
 pythonVersion = "3.11"
 # Pinned so the check does not depend on which runner happens to execute it. CI
 # runs bare `pyright` on ubuntu, windows and macos; unpinned, each analyses for
-# its own host, and the Windows runner then reports 31 errors for POSIX-only
-# stdlib symbols in adapters/hw/linux/reader.py and the pty-based terminal test -
+# its own host, and the Windows runner then reports POSIX-only stdlib symbols in
+# adapters/hw/linux/reader.py and in the tests that use a pty, a FIFO or geteuid -
 # modules that by construction never run there. Those are not defects and cannot
 # be typed away, because platform availability is not expressible as a type.
+# Measured 2026-09-20: 45 of them across 6 files, and ZERO in adapters/hw/windows.
 #
-# The trade: a Windows-only type error in adapters/hw/windows/ is not caught by
-# this check. It was not caught before either, since the Windows runner was
-# drowning in the 31 above, and the Windows transport is covered instead by the
-# captures replayed through its pure builder on every runner.
+# This pin USED to carry a trade - that a Windows-only type error in
+# adapters/hw/windows was not caught - and it no longer does.
+# `pyrightconfig.windows.json` is a second arm scoped to that package, held by
+# tests/test_windows_typecheck.py, and pyright cross-checks a platform from any
+# host, so it needs no Windows machine. The trade's own mitigation was the reason
+# to close it: it offered the captures replayed through the pure builder, which
+# reach builder.py and never reader.py or winapi.py. Those two are the transports,
+# omitted from coverage by design, so a type check is the only thing that reads
+# them at all.
 pythonPlatform = "Linux"
 extraPaths = [
   "src",

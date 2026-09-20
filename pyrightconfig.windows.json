@@ -1,0 +1,17 @@
+{
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Windows",
+  "include": [
+    "src/lsdsk/adapters/hw/windows"
+  ],
+  "extraPaths": [
+    "src"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    ".venv",
+    ".venv*"
+  ]
+}
