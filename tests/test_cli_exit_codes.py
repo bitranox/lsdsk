@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -22,6 +23,25 @@ if TYPE_CHECKING:
     from lsdsk.domain.deployment import DeployRequest
 
 CAPTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-minimal.json"
+REPO = Path(__file__).parent.parent
+
+#: The codes lsdsk never raises, exempt from both guards below.
+#:
+#: ``lib_cli_exit_tools`` translates a signal into these; no code here does. The
+#: exemption is defined once because two tests read it: one asks that every other
+#: member is reachable, the other that every other member is documented. Written
+#: twice they would drift, and the drift would silently widen whichever guard
+#: gained the extra member.
+INFORMATIONAL_CODES = frozenset({ExitCode.SIGNAL_INT, ExitCode.SIGNAL_TERM})
+
+#: A caller-facing document and the row shape its exit codes are published in.
+_EXIT_CODE_ROW = re.compile(r"^\|\s*`(\d+)`\s*\|")
+
+
+def _codes_in_the_table_of(path: Path) -> set[int]:
+    """The exit codes published as table rows in `path`."""
+    rows = (_EXIT_CODE_ROW.match(line) for line in path.read_text(encoding="utf-8").splitlines())
+    return {int(row.group(1)) for row in rows if row is not None}
 
 
 @pytest.mark.os_agnostic
@@ -93,9 +113,6 @@ def test_every_declared_exit_code_is_one_the_tool_can_actually_produce() -> None
     import ast
     import pathlib
 
-    from lsdsk.adapters.cli.exit_codes import ExitCode
-
-    informational = {ExitCode.SIGNAL_INT, ExitCode.SIGNAL_TERM}
     src = pathlib.Path(__file__).parent.parent / "src" / "lsdsk"
 
     referenced: set[str] = set()
@@ -105,8 +122,42 @@ def test_every_declared_exit_code_is_one_the_tool_can_actually_produce() -> None
                 referenced.add(node.attr)
 
     assert referenced, "the control: no ExitCode reference was found, so this asserted nothing"
-    unreachable = {member.name for member in ExitCode if member not in informational} - referenced
+    unreachable = {member.name for member in ExitCode if member not in INFORMATIONAL_CODES} - referenced
     assert not unreachable, f"declared but never raised: {sorted(unreachable)}"
+
+
+@pytest.mark.os_agnostic
+def test_every_code_the_tool_can_raise_is_documented_where_a_caller_reads() -> None:
+    """A caller branches on these, so a code the documents omit reaches nobody.
+
+    141 arrived exactly that way: it was raised at the failing write while
+    COMMANDS.md, its German twin and the skill all said nothing about it, and the
+    skill's own table said anything above 1 meant the command did not run - which
+    silently reclassified "your reader left". Nothing caught it, because the guard
+    beside this one reads five VALUES off a hand-written dict and never asks what
+    the documents enumerate.
+
+    So this is keyed on the enum's members rather than on a list: a new code is
+    required to be documented the day it is declared, and the requirement arrives
+    with it rather than being remembered. The signal codes are the one exemption
+    and they share it with the reachability guard above.
+
+    The skill publishes a table, so the table is required to be EXACTLY the set -
+    a row for a code no member holds is as wrong as a missing row. The command
+    reference states them in prose instead, so there the test can only ask that
+    the code appears at all.
+    """
+    published = _codes_in_the_table_of(REPO / "skills" / "lsdsk" / "SKILL.md")
+    assert published, "the control: no exit-code table was found in the skill, so this asserted nothing"
+
+    raised = {int(member) for member in ExitCode if member not in INFORMATIONAL_CODES}
+    assert published == raised, f"the skill's table and the enum disagree: {sorted(published ^ raised)}"
+
+    for reference in (REPO / "COMMANDS.md", REPO / "de" / "COMMANDS.md"):
+        prose = reference.read_text(encoding="utf-8")
+        undocumented = sorted(code for code in raised if f"`{code}`" not in prose)
+        assert not undocumented, f"{reference.name} documents no {undocumented}"
+        assert "`9999`" not in prose, "the control: this check cannot report a code as absent"
 
 
 @pytest.mark.os_agnostic
