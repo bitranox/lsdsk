@@ -102,6 +102,44 @@ def test_the_command_reference_names_every_global_option() -> None:
 
 
 @pytest.mark.os_agnostic
+def test_the_configuration_guide_lists_every_global_option() -> None:
+    """CONFIG.md's own table of globals is where a reader goes for a setting.
+
+    It is excluded from the invents-no-option sweep above for a good reason -
+    it documents uv's flags and POSIX mode strings, which would read as
+    invented lsdsk options - and the COMPLETENESS direction went unguarded with
+    it. That is how `--tree-density` came to be absent from the one table a
+    reader consults after reading the `[display]` key it belongs to, which sent
+    them to edit a file for something a flag does one run at a time.
+
+    Scoped to the TABLE rather than the document: prose elsewhere in the file
+    is free to mention an option or not.
+    """
+    rows = _global_option_table()
+    listed = {option for row in rows for option in re.findall(r"`(--[a-z][a-z-]+)", row)}
+    options = sorted(set(re.findall(r"(--[a-z][a-z-]+)", help_of())) - {"--help"})
+    assert len(options) > 5, f"only {len(options)} options parsed out of the group's help"
+    assert len(listed) > 5, f"only {len(listed)} options parsed out of the table, so this asserted nothing"
+
+    missing = [option for option in options if option not in listed]
+
+    assert not missing, f"CONFIG.md's global-option table does not list: {missing}"
+
+
+def _global_option_table() -> list[str]:
+    """The rows of CONFIG.md's Global Options table, and nothing else.
+
+    Read from the heading down to the first blank line after the table, so a
+    later table of per-command options cannot satisfy this by accident.
+    """
+    lines = (ROOT / "CONFIG.md").read_text(encoding="utf-8").splitlines()
+    start = next(index for index, line in enumerate(lines) if line.strip() == "### Global Options")
+    rows = [line for line in lines[start : start + 40] if line.startswith("| `--")]
+    assert rows, "the Global Options table was not found where CONFIG.md puts it"
+    return rows
+
+
+@pytest.mark.os_agnostic
 def test_the_documentation_invents_no_option() -> None:
     """An option the docs name but the CLI refuses reads as a broken tool."""
     documented = {

@@ -73,23 +73,29 @@ Die Konfiguration wird in dieser Reihenfolge geladen und zusammengeführt (vom n
 
 Diese Optionen gelten für alle Befehle und stehen **vor** dem Befehlsnamen:
 
-| Option                    | Beschreibung                                                                             |
-|---------------------------|------------------------------------------------------------------------------------------|
-| `--version`               | Version ausgeben und beenden.                                                            |
-| `--profile NAME`          | Konfiguration aus einem benannten Profil laden (etwa `production`, `test`).              |
-| `--set SECTION.KEY=VALUE` | Eine Einstellung überschreiben. Für mehrere Überschreibungen wiederholbar.               |
-| `--env-file PATH`         | Ausdrücklicher Pfad zu einer `.env`. Überspringt die Suche nach oben im Verzeichnisbaum. |
-| `--replay FILE`           | Eine früher angelegte Aufnahme darstellen, statt diese Maschine zu lesen.                |
-| `--history-file FILE`     | Zählerverlauf dort lesen und schreiben statt in der Zustandsdatei des Benutzers.         |
-| `--no-record`             | Zähler gegen den aufgezeichneten Verlauf beurteilen, ohne diese Messung aufzunehmen.     |
-| `--expand-virtual`        | Jedes kernelvirtuelle Gerät auflisten, statt sie in einer Zeile zusammenzuzählen.        |
-| `--traceback`             | Bei Fehlern den vollständigen Python-Traceback zeigen (nützlich zur Fehlersuche).        |
-| `--no-traceback`          | Keinen Traceback zeigen, nur die Fehlermeldung (Vorgabe).                                |
+| Option                    | Beschreibung                                                                                                        |
+|---------------------------|---------------------------------------------------------------------------------------------------------------------|
+| `--version`               | Version ausgeben und beenden.                                                                                       |
+| `--profile NAME`          | Konfiguration aus einem benannten Profil laden (etwa `production`, `test`).                                         |
+| `--set SECTION.KEY=VALUE` | Eine Einstellung überschreiben. Für mehrere Überschreibungen wiederholbar.                                          |
+| `--env-file PATH`         | Ausdrücklicher Pfad zu einer `.env`. Überspringt die Suche nach oben im Verzeichnisbaum.                            |
+| `--replay FILE`           | Eine früher angelegte Aufnahme darstellen, statt diese Maschine zu lesen.                                           |
+| `--history-file FILE`     | Zählerverlauf dort lesen und schreiben statt in der Zustandsdatei des Benutzers.                                    |
+| `--no-record`             | Zähler gegen den aufgezeichneten Verlauf beurteilen, ohne diese Messung aufzunehmen.                                |
+| `--expand-virtual`        | Jedes kernelvirtuelle Gerät auflisten, statt sie in einer Zeile zusammenzuzählen.                                   |
+| `--tree-density LEVEL`    | Wie viel der PCI-Struktur die Topologie zeichnet: `storage-only` (die Vorgabe), `storage-and-siblings` oder `full`. |
+| `--traceback`             | Bei Fehlern den vollständigen Python-Traceback zeigen (nützlich zur Fehlersuche).                                   |
+| `--no-traceback`          | Keinen Traceback zeigen, nur die Fehlermeldung (Vorgabe).                                                           |
 
-`--replay` und `--expand-virtual` werden auch **nach** einem Befehl angenommen,
-der sie beachtet, und der Wert des Befehls gewinnt. `--expand-virtual` steht
-dort, weil die Zeile, die die zusammengefalteten Geräte zählt, es benennt, und
-wer tippt, was ihm gerade gesagt wurde, darf nicht auf "no such option" stossen.
+`--replay`, `--expand-virtual`, `--tree-density` und `--profile` werden auch
+**nach** einem Befehl angenommen, der sie beachtet, und der Wert des Befehls
+gewinnt: `--expand-virtual` bei `disks`, `topology` und `tui`,
+`--tree-density` bei `topology`, `--profile` bei `config` und `config-deploy`,
+`--replay` bei jedem Befehl, der Hardware liest. `--expand-virtual` und
+`--tree-density` stehen dort, weil die Zeile unter der jeweiligen Ansicht sie
+benennt - die Zählung der zusammengefalteten Geräte und der Hinweis über dem
+Baum, wie viel der Struktur gezeichnet wurde - und wer tippt, was ihm gerade
+gesagt wurde, darf nicht auf "no such option" stossen.
 
 **Beispiele:**
 

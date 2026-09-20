@@ -405,6 +405,56 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **The envelope's `ok`, `skipped` and `readings_refused` are documented.**
+  COMMANDS.md promises to cover the JSON envelope and described none of the
+  three, so a caller reading `ok` for monitoring had no documented way to learn
+  that `ok: false` can mean a reading was refused rather than a finding fired.
+
+- **CONFIG.md's table of global options lists `--tree-density`.** It was the
+  one global missing from the table a reader consults, and CONFIG.md is where
+  they go for tree density: it explains the `[display]` key, the three
+  spellings and the interactive `d` key at length and never said a flag does
+  the same thing for one run. The sentence about options accepted after a
+  command names `--tree-density` and `--profile` too, and a test now holds the
+  table against the CLI - the completeness direction went unguarded because the
+  document is excluded, for a good reason, from the sweep that catches an
+  invented option.
+
+- **A reading no replay could load is refused rather than written.** `snapshot`
+  parses what it is about to write through the same models `load` reads it back
+  with, so a reader bug that shaped one section wrongly leaves `78` and a
+  sentence instead of a file that looks exactly like a capture and can never be
+  replayed. What is written on success is still the raw reading: the capture
+  models declare only the keys a builder reads, and a capture deliberately
+  carries more for a bug report - 325 to 818 more fields per committed fixture,
+  measured.
+
+- **An unrecognised `rotational` flag reads as "not measured", not as solid
+  state.** The kernel's flag is parsed to a bool at the capture boundary, the
+  way Windows already carried it, so the pure mapping no longer compares wire
+  text: any value other than `"1"` used to fall into the SSD branch, turning a
+  reading nobody understood into a specific wrong answer.
+
+- **`snapshot --format json` emits a payload its own model can parse.**
+  `SnapshotResult` carried a serialization alias with no matching validation
+  alias, so the one result model with a renamed wire key was the one that could
+  not be read back. A guard now enumerates the result models rather than listing
+  them, so one added later is covered without anyone remembering.
+
+- **The bundled PCI name database is decompressed under a ceiling.** It was read
+  in full with no bound while the system copy beside it went through the shared
+  byte limit, and compression is where a bound stops being optional.
+
+- **A crafted capture no longer makes the fabric walk quadratic.** Breaking each
+  cycle in the PCI tree began from an empty resolved set every time, re-walking
+  every node already proven to reach a root, which a replay file with many small
+  disjoint cycles supplies for free. The set is carried across the calls.
+
+- **The interactive view no longer raises before its first page is shown.**
+  Textual's `TabbedContent.active` is EMPTY until a pane activates, and
+  converting it inline raised `ValueError` where the code had fallen through.
+  One method answers which page is in front.
+
 - **A severity added later cannot be a `KeyError` out of `refine` or
   `diagnose`.** The two step maps and the report's ranking were each written
   out member by member, so each held the severities that existed when it was

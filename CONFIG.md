@@ -73,23 +73,28 @@ Configuration is loaded and merged in the following order (lowest to highest pre
 
 These options apply to all commands and go **before** the command name:
 
-| Option                    | Description                                                               |
-|---------------------------|---------------------------------------------------------------------------|
-| `--version`               | Show version and exit.                                                    |
-| `--profile NAME`          | Load configuration from a named profile (e.g., `production`, `test`).     |
-| `--set SECTION.KEY=VALUE` | Override a configuration setting. Can be repeated for multiple overrides. |
-| `--env-file PATH`         | Explicit `.env` file path. Skips the default upward directory search.     |
-| `--replay FILE`           | Render a capture taken earlier instead of reading this machine.           |
-| `--history-file FILE`     | Read and write counter history there rather than the per-user state file. |
-| `--no-record`             | Judge counters against recorded history without adding this reading.      |
-| `--expand-virtual`        | List every kernel-virtual device rather than tallying them in one line.   |
-| `--traceback`             | Show full Python traceback on errors (useful for debugging).              |
-| `--no-traceback`          | Hide traceback, show only error message (default).                        |
+| Option                    | Description                                                                                                    |
+|---------------------------|----------------------------------------------------------------------------------------------------------------|
+| `--version`               | Show version and exit.                                                                                         |
+| `--profile NAME`          | Load configuration from a named profile (e.g., `production`, `test`).                                          |
+| `--set SECTION.KEY=VALUE` | Override a configuration setting. Can be repeated for multiple overrides.                                      |
+| `--env-file PATH`         | Explicit `.env` file path. Skips the default upward directory search.                                          |
+| `--replay FILE`           | Render a capture taken earlier instead of reading this machine.                                                |
+| `--history-file FILE`     | Read and write counter history there rather than the per-user state file.                                      |
+| `--no-record`             | Judge counters against recorded history without adding this reading.                                           |
+| `--expand-virtual`        | List every kernel-virtual device rather than tallying them in one line.                                        |
+| `--tree-density LEVEL`    | How much of the PCI fabric the topology draws: `storage-only` (the default), `storage-and-siblings` or `full`. |
+| `--traceback`             | Show full Python traceback on errors (useful for debugging).                                                   |
+| `--no-traceback`          | Hide traceback, show only error message (default).                                                             |
 
-`--replay` and `--expand-virtual` are also accepted **after** a command that
-honours them, and the command's own value wins. `--expand-virtual` is there
-because the line tallying the folded-away devices names it, and a reader who
-types what they were just told must not meet "no such option".
+`--replay`, `--expand-virtual`, `--tree-density` and `--profile` are also
+accepted **after** a command that honours them, and the command's own value
+wins: `--expand-virtual` on `disks`, `topology` and `tui`, `--tree-density` on
+`topology`, `--profile` on `config` and `config-deploy`, `--replay` on every
+command that reads hardware. `--expand-virtual` and `--tree-density` are there
+because the line under each view names them - the tally of folded-away devices,
+and the note above the tree saying how much of the fabric it drew - and a reader
+who types what they were just told must not meet "no such option".
 
 **Example usage:**
 

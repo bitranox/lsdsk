@@ -87,6 +87,26 @@ came from and never by the number: an `OSError` carries an errno that means
 something, and EPERM is itself `1`, so a refusal the kernel gave keeps its own
 code rather than being reported as a bug here.
 
+Every envelope carries `ok` and `skipped` beside `command` and `data`, and
+together they say whether the answer is COMPLETE rather than whether it is
+clean. A machine reading `data` alone cannot tell a drive with no errors from a
+drive whose counters nobody was allowed to read, which are opposite
+conclusions. `skipped` holds one sentence per class of reading that was not
+taken - `smart: needs root or Administrator`, `slot-numbers: needs root or
+Administrator`, `physical-link-rules: suppressed, the hypervisor invents these
+values`, and one naming each device that refused a reading - and `ok` is simply
+whether that list is empty. So `ok` can be `false` on a run that found nothing
+wrong, and a monitoring check reads the EXIT CODE for the machine's health and
+`ok` for whether the question was fully answered.
+
+A refusal is also recorded against the device it came from: every controller and
+every disk carries `readings_refused`, a list of `{reading, reason}` where
+`reading` is the platform reader's own label for what it asked for - `smart-data`,
+`identify`, `ahci-port-count` - and `reason` is what the operating system said.
+An empty list is the ordinary case. This is what makes a null in `data`
+readable: a counter that is absent with a refusal beside it was not measured,
+and a counter that is absent with none was not published by the drive.
+
 A run that FAILS in `--format json` answers in that format too, rather than
 falling silent: one object on stdout carrying `ok: false`, the `command` that
 failed, and an `error` of `{type, message}`. The `type` is the exit code's own

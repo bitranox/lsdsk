@@ -92,6 +92,28 @@ des Codes und nie nach der Zahl: ein `OSError` trägt eine errno, die etwas
 bedeutet, und EPERM ist selbst `1`, eine Verweigerung des Kernels behält also
 ihren eigenen Code, statt hier als Fehler des Werkzeugs gemeldet zu werden.
 
+Jeder Umschlag trägt neben `command` und `data` auch `ok` und `skipped`, und
+gemeinsam sagen die beiden, ob die Antwort VOLLSTÄNDIG ist, nicht ob sie
+sauber ist. Wer nur `data` liest, kann eine Platte ohne Fehler nicht von einer
+unterscheiden, deren Zähler niemand lesen durfte - zwei gegenteilige Schlüsse.
+`skipped` enthält einen Satz je Art von Messung, die nicht stattgefunden hat -
+`smart: needs root or Administrator`, `slot-numbers: needs root or
+Administrator`, `physical-link-rules: suppressed, the hypervisor invents these
+values` sowie je einen Satz für jedes Gerät, das eine Messung verweigert hat -,
+und `ok` sagt lediglich, ob diese Liste leer ist. `ok` kann also `false` sein,
+obwohl der Lauf nichts Schlechtes gefunden hat: eine Überwachung liest den
+EXIT-CODE für den Zustand der Maschine und `ok` dafür, ob die Frage
+vollständig beantwortet wurde.
+
+Eine Verweigerung wird zusätzlich bei dem Gerät vermerkt, von dem sie kam: jeder
+Controller und jede Platte trägt `readings_refused`, eine Liste aus
+`{reading, reason}`. `reading` ist die Bezeichnung des jeweiligen Lesers für das,
+wonach er gefragt hat - `smart-data`, `identify`, `ahci-port-count` -, und
+`reason` ist, was das Betriebssystem geantwortet hat. Eine leere Liste ist der
+Normalfall. Erst das macht ein `null` in `data` lesbar: ein Zähler, der fehlt
+und eine Verweigerung neben sich hat, wurde nicht gemessen; einer, der fehlt und
+keine hat, wurde von der Platte nicht veröffentlicht.
+
 Ein Lauf, der in `--format json` FEHLSCHLÄGT, antwortet ebenfalls in diesem
 Format, statt zu verstummen: ein Objekt auf stdout mit `ok: false`, dem
 `command`, das fehlgeschlagen ist, und einem `error` aus `{type, message}`. Der
