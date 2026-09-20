@@ -262,8 +262,15 @@ def attached_demand_gbytes(controller: Controller, inventory: Inventory) -> floa
         inventory: The machine the controller belongs to.
 
     Returns:
-        Aggregate demand in GB/s, or ``None`` when nothing is attached.
+        Aggregate demand in GB/s, or ``None`` when there is nothing to total:
+        either no drives sit on this controller, or none of them had a link
+        that could be read. The second case is why the answer is not ``0.0``.
+        A controller whose drives nobody could measure has not been shown to be
+        idle, and the views draw a dash for ``None`` and a figure for a zero.
     """
+    # Truthiness rather than `is not None`, so a demand of 0.0 is counted as
+    # unread too: no link carries nothing, so a zero here is a reading that
+    # failed, and letting it into the list would turn the dash into a 0.0.
     demands = [demand for disk in inventory.drives_on(controller.address) if (demand := interface_demand_gbytes(disk))]
     return round(sum(demands), 3) if demands else None
 

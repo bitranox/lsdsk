@@ -658,8 +658,12 @@ class LsdskApp(App[None]):
         if record is None:
             body.update(Text("Nothing selected.", style=tui_palette.restyle(theme.STYLE_UNKNOWN)))
             return
-        page = CliCommand(self.query_one(TabbedContent).active)
-        ordered = record._replace(groups=detail.order_groups(record.groups, DETAIL_ORDER.get(page, ())))
+        # _active_page, not CliCommand(...): the wire string is EMPTY until the
+        # first pane is activated, so constructing a member here raised
+        # ValueError on a panel drawn before then. Only the ORDER depends on it.
+        page = self._active_page()
+        order = DETAIL_ORDER.get(page, ()) if page is not None else ()
+        ordered = record._replace(groups=detail.order_groups(record.groups, order))
         card = detail.render_detail(ordered, self.findings, header_style=tui_palette.PALETTE.header_style)
         body.update(tui_palette.Recoloured(card))
         # The panel is re-measured by the layout that draws it, so whether the
@@ -706,7 +710,7 @@ class LsdskApp(App[None]):
         table = rows_of(self.query_one("#health-table"))
         table.add_columns(*HEALTH_COLUMNS)
         for disk in self.inventory.disks:
-            row = tables.health_table_row(disk, self.inventory, self.findings, self.history, self.thresholds)
+            row = tables.health_table_row(disk, self.findings, self.history, self.thresholds)
             table.add_row(*_marked(row, tables.HEALTH_COLUMNS), key=disk.node)
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:

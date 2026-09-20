@@ -27,6 +27,7 @@ from lsdsk.adapters.render.tables import render_disks
 from lsdsk.adapters.render.tree import KEY_HINT, FabricView, render_fabric
 from lsdsk.adapters.render.trend import TREND_COLUMNS
 from lsdsk.adapters.tui import LsdskApp
+from lsdsk.adapters.tui import app as app_module
 from lsdsk.adapters.tui import palette as tui_palette
 from lsdsk.adapters.tui.app import DISK_COLUMNS as TUI_DISK_COLUMNS
 from lsdsk.adapters.tui.typed_table import rows_of
@@ -1509,6 +1510,52 @@ async def test_a_controller_row_and_a_health_row_carry_every_value_the_printed_r
     assert differed, "no controller here draws a link, so the two forms never differed and this compared nothing"
 
     for index, disk in enumerate(machine.disks):
-        printed = tables.health_table_row(disk, machine, findings, app.history)
+        printed = tables.health_table_row(disk, findings, app.history)
         expected = [printed.marker[0], *(printed.cells[column.key][0] for column in tables.HEALTH_COLUMNS)]
         assert [cell.plain for cell in drawn_health[index]] == expected, disk.path
+
+
+@pytest.mark.os_agnostic
+def test_only_one_place_turns_the_active_pane_id_into_a_page() -> None:
+    """_active_page says it is "the one place the string becomes a member".
+
+    It was not. _show_detail built one too, and TabbedContent.active is EMPTY
+    until the first pane is activated, so that second site raised ValueError on
+    a panel drawn before then - a latent trap standing under a docstring saying
+    it could not exist.
+
+    Keyed on the construction rather than on a list of call sites, so the next
+    one is caught wherever it is written.
+
+    There is no behavioural arm beside this, and the reason is worth recording
+    rather than leaving as a gap: Textual re-activates the first pane, so an
+    ``active`` set back to "" does not stay empty and the state cannot be
+    reached from a mounted app. The one caller with no page guard is the
+    OptionList highlight at the topology tree, which can only fire before the
+    first activation - so the trap is latent, and this is what keeps it that
+    way.
+    """
+    import ast
+
+    source = Path(app_module.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    def mentions_active(node: ast.AST) -> bool:
+        """Whether this argument is the pane id, read directly or through a local."""
+        return any(
+            (isinstance(inner, ast.Attribute) and inner.attr == "active")
+            or (isinstance(inner, ast.Name) and inner.id == "active")
+            for inner in ast.walk(node)
+        )
+
+    built_in: list[str] = []
+    for function in ast.walk(tree):
+        if not isinstance(function, ast.FunctionDef):
+            continue
+        for call in ast.walk(function):
+            if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name):
+                continue
+            if call.func.id == "CliCommand" and any(mentions_active(argument) for argument in call.args):
+                built_in.append(function.name)
+
+    assert built_in == ["_active_page"], f"the active id becomes a page in {built_in}"

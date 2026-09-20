@@ -390,13 +390,12 @@ def render_health(
     Returns:
         A table of health readings.
     """
-    rows = [health_table_row(disk, inventory, findings, history, thresholds) for disk in inventory.disks]
+    rows = [health_table_row(disk, findings, history, thresholds) for disk in inventory.disks]
     return _render(f"Disk health on {inventory.hostname}", HEALTH_COLUMNS, TableRows(rows), width)
 
 
 def health_table_row(
     disk: Disk,
-    inventory: Inventory,
     findings: Sequence[Finding],
     history: History | None = None,
     thresholds: Thresholds = DEFAULT_THRESHOLDS,
@@ -409,8 +408,6 @@ def health_table_row(
 
     Args:
         disk: The drive to describe.
-        inventory: The machine, unused today and taken for the shape the other
-            row builders have.
         findings: The findings, for the row's severity marker.
         history: Counter samples recorded earlier, which decide whether a count
             still carries its "rising" mark.
@@ -419,7 +416,6 @@ def health_table_row(
     Returns:
         The marker and a cell per column key.
     """
-    del inventory
     severity = worst_severity(findings, disk.path)
     health = disk.health
     series = series_for(disk, history)
