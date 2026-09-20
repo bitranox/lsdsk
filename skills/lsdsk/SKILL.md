@@ -389,17 +389,21 @@ non-zero code; a hint is a ceiling, not a fault.
 hardware says, so never read their code as a verdict about the machine. They are
 not always `0`, though: one that cannot write what it was asked to write leaves
 `13` or `1`, and for `record` that code is the only channel there is, since it
-prints nothing at all in human mode. And `1` is also what an
-internal error leaves, so read stderr before treating it as a finding;
-`lsdsk findings --format json` is the unambiguous test.
+prints nothing at all in human mode. An internal error is NOT one of the things
+`1` can mean: a crash leaves `70`, so a check can act on `1` as a verdict
+without reading stderr first to find out whether the tool merely broke. A crash
+writes no failure envelope of its own, because the handler that answers it never
+reads `--format`: the exception goes to stderr in both modes and stdout holds
+nothing, or a truncated report if the crash landed mid-write.
 
 | Code  | Means                                                                                                                                                                                                                                                                                                                                        |
 |-------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `0`   | A reporting command found nothing actionable. `record`, `snapshot` and `config-*` exit `0` on success regardless                                                                                                                                                                                                                             |
-| `1`   | A reporting command found a warning or a critical. An internal error also leaves `1`, and so does a `record` or `snapshot` whose write failed for a reason other than permission; see below                                                                                                                                                  |
+| `1`   | A reporting command found a warning or a critical. So does a `record` or `snapshot` whose write failed for a reason other than permission; see below. NOT a crash - that is `70`                                                                                                                                                             |
 | `2`   | The command line was wrong. `USAGE_ERROR` in the envelope. See below, this one is misread constantly                                                                                                                                                                                                                                         |
 | `13`  | Something needed privilege this run lacks: `config-deploy --target app` or `host` without root, a diagnostic run whose hardware read the kernel refused outright, or a `snapshot` or `record` whose destination refuses to be written. A field that merely could not be read is different - it degrades to `-` and names itself in `skipped` |
 | `22`  | `lsdsk config --section` named a section that does not exist, a `--profile` was rejected, or a global `--replay` was given to `snapshot`. `--set SECTION.KEY=VALUE` is a different option and is not what produces this                                                                                                                      |
+| `70`  | An error inside `lsdsk` itself: an exception no command handled. A bug to report and never a statement about the machine, so route it to whoever owns the tool rather than to storage. An `OSError` keeps its own code instead, because its errno means something - EPERM is itself `1`                                                      |
 | `78`  | The file is not a snapshot this version reads, or this platform has no hardware reader                                                                                                                                                                                                                                                       |
 | `141` | The process reading the output closed the pipe before the command finished. Neither a verdict nor a refusal; see the ranking below                                                                                                                                                                                                           |
 

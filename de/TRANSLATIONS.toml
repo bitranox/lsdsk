@@ -7,7 +7,7 @@
 #     python scripts/translation_manifest.py --refresh <document>
 
 [sources]
-"COMMANDS.md" = "3cc33d04fbb7e31dbaf9fde7933847a6e495475be0b90f4ddba2da6e320ae850"
+"COMMANDS.md" = "0ec90892d5a2d7fc1c5ac84c48270f0d0dbc3204b3638288b8ba6be25b461eea"
 "CONFIG.md" = "5dc72cc13dc721af0da98cf53f21f41eb123c1650ede9a3812ce7a099e4fb6ab"
 "CONTRIBUTING.md" = "7f5ffb64e9be47a22462df61ee523ae0df2f33c80734dcbb1a5d5b332ae1a0f1"
 "DEVELOPMENT.md" = "4d3a9de385ccd39354727e22c28218f8d2da06b5ce86d54fcbd5605f0b196dd7"

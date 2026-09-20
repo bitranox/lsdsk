@@ -7,6 +7,23 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **A crash no longer looks like a machine that needs attention: an internal
+  error leaves `70`.** Exit `1` meant both "a reporting command found a warning or
+  a critical" and "this tool broke", so a monitoring check could not tell a failing
+  drive from a bug here, and the only remedy the documents could offer was to read
+  the prose on stderr, which a check cannot do. `EX_SOFTWARE` (70) is what an
+  exception no command handled leaves now, alongside the 13, 22 and 78 this tool
+  already took from sysexits.
+
+  The split is keyed on where the code came from, never on the number. EPERM is
+  itself `1`, so an `OSError` carrying it resolves to exactly the value the generic
+  fallback produces; keyed on the number, a refusal the kernel gave would be
+  reported as a bug in this tool. An `OSError` is therefore taken at its word and
+  only an exception the resolver could not place at all becomes `70`.
+
+  `1` is unchanged everywhere else: an actionable finding, and the failed
+  `record`, `snapshot` and `config-deploy` writes that already shared it.
+
 - **`record` says which of its four outcomes happened, and a write that failed
   now leaves a code.** Measured before this: a run with nothing new to store, a
   store belonging to another machine, a write refused with EACCES, and

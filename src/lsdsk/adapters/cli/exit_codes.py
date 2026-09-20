@@ -15,12 +15,15 @@ Contents:
     * :class:`ExitCode` - IntEnum of all exit codes used by this application.
     * :func:`outranks_a_departed_reader` - which codes stand when the pipe also broke
     * :func:`error_type_for` - the name the failure envelope gives a code
+    * :func:`code_for_an_unhandled_exception` - a crash, told apart from a finding
 """
 
 from __future__ import annotations
 
 from enum import IntEnum
 from typing import Final
+
+import lib_cli_exit_tools
 
 
 class ExitCode(IntEnum):
@@ -32,6 +35,8 @@ class ExitCode(IntEnum):
     * 2: click's usage error, which this tool returns unchanged
     * 13: EACCES
     * 22: EINVAL
+    * 70: EX_SOFTWARE (sysexits.h), an error inside this tool rather than in
+      what it was asked to look at
     * 78: EX_CONFIG (sysexits.h)
     * 128+N: signal N. 130 and 143 are informational, raised by nobody here;
       141 is raised by :mod:`lsdsk.adapters.cli.safe_console` when a reader
@@ -68,6 +73,7 @@ class ExitCode(IntEnum):
     USAGE_ERROR = 2
     PERMISSION_DENIED = 13
     INVALID_ARGUMENT = 22
+    SOFTWARE_ERROR = 70
     CONFIG_ERROR = 78
     SIGNAL_INT = 130
     BROKEN_PIPE = 141
@@ -158,4 +164,39 @@ def error_type_for(code: int) -> str:
         return f"EXIT_{code}"
 
 
-__all__ = ["ExitCode", "error_type_for", "outranks_a_departed_reader"]
+def code_for_an_unhandled_exception(exc: BaseException) -> int:
+    """The code to leave with for an exception that escaped every command.
+
+    ``lib_cli_exit_tools`` resolves an exception to a code and falls back to 1
+    when nothing matches, and 1 is already this tool's answer for a reporting
+    command that found a warning or a critical. So a monitoring caller could not
+    tell a failing drive from a broken tool, and the only remedy the documents
+    could offer was to read the prose on stderr, which a monitoring check cannot
+    do. ``EX_SOFTWARE`` is what the crash leaves instead.
+
+    The split is keyed on where the code CAME FROM, never on the number. EPERM
+    is itself 1, so an ``OSError`` carrying it resolves to exactly the fallback's
+    value: keyed on the number, a refusal the kernel gave would be reported as a
+    bug in this tool. An ``OSError`` is therefore taken at its word whatever it
+    resolves to, and only an exception the resolver could not place at all
+    becomes :attr:`ExitCode.SOFTWARE_ERROR`.
+
+    Args:
+        exc: The exception that reached the last-resort handler.
+
+    Returns:
+        The exit code the process should leave with.
+
+    Example:
+        >>> code_for_an_unhandled_exception(RuntimeError("boom"))
+        70
+        >>> code_for_an_unhandled_exception(KeyboardInterrupt())
+        130
+    """
+    code = lib_cli_exit_tools.get_system_exit_code(exc)
+    if code != int(ExitCode.GENERAL_ERROR) or isinstance(exc, OSError):
+        return code
+    return int(ExitCode.SOFTWARE_ERROR)
+
+
+__all__ = ["ExitCode", "code_for_an_unhandled_exception", "error_type_for", "outranks_a_departed_reader"]

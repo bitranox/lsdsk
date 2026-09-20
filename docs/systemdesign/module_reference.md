@@ -192,7 +192,9 @@ machine-readable form is `lsdsk snapshot`; `tui`, `fail` and `logdemo` have no d
 
 A scan command answers a question, so its code says what the answer was: `0` nothing
 actionable, `1` a warning or a critical. A hint never sets a non-zero code, because it
-describes a ceiling rather than a fault. Anything above `1` means the command did not run.
+describes a ceiling rather than a fault. Anything above `1` means the command did not
+answer the question, either because it was refused before it started or because this tool
+broke while it ran.
 
 | Code | Name                | Raised when                                                                                            |
 |------|---------------------|--------------------------------------------------------------------------------------------------------|
@@ -200,6 +202,7 @@ describes a ceiling rather than a fault. Anything above `1` means the command di
 | 1    | `GENERAL_ERROR`     | A scan found a warning or a critical, or an action failed                                              |
 | 13   | `PERMISSION_DENIED` | A deployment target or a device needs privilege this run does not have                                 |
 | 22   | `INVALID_ARGUMENT`  | A named configuration section or `--profile` was rejected, or `snapshot` was given a global `--replay` |
+| 70   | `SOFTWARE_ERROR`    | An error inside this tool: an exception no command handled, which is a bug rather than a finding       |
 | 78   | `CONFIG_ERROR`      | A file is not a snapshot this version reads, or this platform has no hardware reader                   |
 
 Two more are named in the enum and decided elsewhere:

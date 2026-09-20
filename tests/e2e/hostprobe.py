@@ -36,7 +36,7 @@ from typing import Any, cast
 
 #: Exit codes the tool documents. Anything else is a contract breach whatever
 #: the output said.
-DOCUMENTED_EXITS = {0, 1, 2, 13, 22, 78}
+DOCUMENTED_EXITS = {0, 1, 2, 13, 22, 70, 78}
 
 #: The commands that report on a machine. Each takes --replay and --format.
 REPORTING = ("topology", "controllers", "disks", "health", "smart", "findings", "slots", "trend")

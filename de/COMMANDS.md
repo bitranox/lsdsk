@@ -75,17 +75,27 @@ verweigert, und ein `snapshot`, dessen Ziel sich nicht schreiben lässt; `22` f�
 ein Argument, mit dem das Werkzeug nichts anfangen
 kann, also einen Konfigurationsabschnitt oder einen `--profile`-Namen, den die
 Konfigurationsbibliothek ablehnt, und ebenso eine Option, die zum Befehl nicht
-passt, etwa `snapshot` mit `--replay`; `78` für eine
+passt, etwa `snapshot` mit `--replay`; `70`, wenn dieses Werkzeug selbst
+kaputtgegangen ist, also eine Ausnahme, die kein Befehl behandelt hat, und damit
+ein zu meldender Fehler statt einer Aussage über die Maschine; `78` für eine
 Datei, die keine von dieser Fassung lesbare Aufnahme ist, oder für eine
-Plattform ohne Hardwareleser. Behandeln Sie alles über `1` als "ist nicht
-gelaufen".
+Plattform ohne Hardwareleser. Behandeln Sie alles über `1` als "hat die Frage
+nicht beantwortet".
+
+`70` gibt es, damit eine Überwachungsprüfung eine ausfallende Platte von einem
+kaputten Werkzeug unterscheiden kann. Vorher hinterliessen beide `1`, und der
+einzige Weg herauszufinden, welches von beiden vorlag, war der Fliesstext auf
+stderr, den eine Prüfung nicht lesen kann. Entschieden wird nach der Herkunft
+des Codes und nie nach der Zahl: ein `OSError` trägt eine errno, die etwas
+bedeutet, und EPERM ist selbst `1`, eine Verweigerung des Kernels behält also
+ihren eigenen Code, statt hier als Fehler des Werkzeugs gemeldet zu werden.
 
 Ein Lauf, der in `--format json` FEHLSCHLÄGT, antwortet ebenfalls in diesem
 Format, statt zu verstummen: ein Objekt auf stdout mit `ok: false`, dem
 `command`, das fehlgeschlagen ist, und einem `error` aus `{type, message}`. Der
 `type` ist der Name des Exit-Codes selbst - `CONFIG_ERROR`, `INVALID_ARGUMENT`,
-`PERMISSION_DENIED`, `USAGE_ERROR`, `GENERAL_ERROR` -, er kann dem Code, den der Prozess
-hinterlässt, also nicht widersprechen. Derselbe Satz geht weiterhin an stderr,
+`PERMISSION_DENIED`, `USAGE_ERROR`, `SOFTWARE_ERROR`, `GENERAL_ERROR` -, er kann
+dem Code, den der Prozess hinterlässt, also nicht widersprechen. Derselbe Satz geht weiterhin an stderr,
 für jemanden, der mitliest, und ein Fehlschlag im menschenlesbaren Modus legt
 nach wie vor nichts auf stdout. Zuvor schrieb ein fehlgeschlagener JSON-Lauf
 überhaupt nichts: eine `jq`-Pipeline konnte ihn nicht von einem Befehl

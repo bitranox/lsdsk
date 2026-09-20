@@ -74,15 +74,24 @@ outright, and a `snapshot` whose destination refuses to be written; `22` for an
 argument the tool cannot act on, which is a
 configuration section or a `--profile` name the configuration library rejects,
 and also an option that does not apply to the command, such as `snapshot` given
-`--replay`; `78` for a file that is not a
-snapshot this version reads or a platform with no hardware reader. Treat
-anything above `1` as "did not run".
+`--replay`; `70` when this tool itself broke, which is an exception no command
+handled and a bug to report rather than anything about the machine; `78` for a
+file that is not a snapshot this version reads or a platform with no hardware
+reader. Treat anything above `1` as "did not answer the question".
+
+`70` exists so that a monitoring check can tell a failing drive from a broken
+tool. Both left `1` before it, and the only way to tell which you had was to read
+the prose on stderr, which a check cannot do. It is decided by where the code
+came from and never by the number: an `OSError` carries an errno that means
+something, and EPERM is itself `1`, so a refusal the kernel gave keeps its own
+code rather than being reported as a bug here.
 
 A run that FAILS in `--format json` answers in that format too, rather than
 falling silent: one object on stdout carrying `ok: false`, the `command` that
 failed, and an `error` of `{type, message}`. The `type` is the exit code's own
 name - `CONFIG_ERROR`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `USAGE_ERROR`,
-`GENERAL_ERROR` - so it cannot disagree with the code the process leaves. The
+`SOFTWARE_ERROR`, `GENERAL_ERROR` - so it cannot disagree with the code the
+process leaves. The
 same sentence still goes to stderr for a person reading along, and a failure in
 human mode still puts nothing on stdout. Before this, a failing JSON run wrote
 nothing at all: a `jq` pipeline could not tell it from a command that produced

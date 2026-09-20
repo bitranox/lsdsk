@@ -133,6 +133,7 @@ def test_the_exit_codes_the_docs_promise_are_the_ones_the_code_defines() -> None
         1: "GENERAL_ERROR",
         13: "PERMISSION_DENIED",
         22: "INVALID_ARGUMENT",
+        70: "SOFTWARE_ERROR",
         78: "CONFIG_ERROR",
     }
     for value, name in published.items():
@@ -646,3 +647,54 @@ def test_a_refusal_outranks_a_departed_reader_in_either_output_format(fmt: list[
     assert abandoned == ExitCode.CONFIG_ERROR, (
         f"a refusal whose reader left got {abandoned}, so the one actionable fact reached nobody"
     )
+
+
+LINUX_SAS_HBA = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
+
+
+@pytest.mark.os_agnostic
+def test_a_crash_in_the_tool_does_not_look_like_a_machine_that_needs_attention(
+    managed_traceback_state: None,
+    capsys: pytest.CaptureFixture[str],
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+) -> None:
+    """The one distinction a monitoring caller needs and could not make.
+
+    Both left 1 until this split, and the skill's exit-code table documented it
+    by telling a caller to read stderr before treating 1 as a finding, which a
+    monitoring script cannot do.
+
+    Driven through ``main`` rather than through the click runner because the
+    mapping lives in ``main``'s last-resort handler; the runner catches the
+    exception itself and never reaches it.
+    """
+    crashed = cli_mod.main(["fail"], services_factory=build_production)
+    capsys.readouterr()
+    assert crashed == ExitCode.SOFTWARE_ERROR, f"an internal error left {crashed}"
+
+    found = cli_runner.invoke(cli_mod.cli, ["topology", "--replay", str(LINUX_SAS_HBA)], obj=production_factory)
+    assert found.exit_code == ExitCode.GENERAL_ERROR, (
+        f"the control: a machine with an actionable finding must still leave {int(ExitCode.GENERAL_ERROR)}, "
+        f"and left {found.exit_code}"
+    )
+    assert crashed != found.exit_code, "the two are the same number again, which is the whole defect"
+
+
+@pytest.mark.os_agnostic
+def test_a_code_the_resolver_derived_from_the_exception_is_not_relabelled_as_a_crash() -> None:
+    """70 replaces the resolver's generic fallback, never a code it worked out.
+
+    EPERM is 1, so an ``OSError`` carrying it resolves to the same number the
+    fallback produces. Keying the split on that NUMBER would report a refusal the
+    kernel gave as a bug in this tool, which is the opposite of what the split is
+    for. A broken pipe resolves to 141 for the same reason and must survive it.
+    """
+    import errno
+
+    from lsdsk.adapters.cli.exit_codes import code_for_an_unhandled_exception
+
+    assert code_for_an_unhandled_exception(RuntimeError("boom")) == ExitCode.SOFTWARE_ERROR
+    assert code_for_an_unhandled_exception(OSError(errno.EPERM, "Operation not permitted")) == ExitCode.GENERAL_ERROR
+    assert code_for_an_unhandled_exception(KeyboardInterrupt()) == ExitCode.SIGNAL_INT
+    assert code_for_an_unhandled_exception(BrokenPipeError()) == ExitCode.BROKEN_PIPE

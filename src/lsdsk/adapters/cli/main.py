@@ -27,6 +27,7 @@ from .context import (
     restore_traceback_state,
     snapshot_traceback_state,
 )
+from .exit_codes import code_for_an_unhandled_exception
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -139,7 +140,10 @@ def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppSe
         safe_console.write_unless_the_reader_left(
             lambda: lib_cli_exit_tools.print_exception_message(trace_back=tracebacks_enabled, length_limit=length_limit)
         )
-        return lib_cli_exit_tools.get_system_exit_code(exc)
+        # Not lib_cli_exit_tools.get_system_exit_code directly: its fallback for an
+        # exception it cannot place is 1, which is this tool's answer for a machine
+        # that needs attention. Nothing reaching here is that.
+        return code_for_an_unhandled_exception(exc)
 
 
 def main(
