@@ -25,6 +25,7 @@ from lsdsk.adapters.render.tree import (
     DEFAULT_WIDTH,
     Fabric,
     FabricSection,
+    FabricView,
     device_header_line,
     disk_header_line,
     render_fabric,
@@ -97,7 +98,7 @@ def test_a_deep_fabric_still_takes_one_line_per_row_at_a_narrow_width(width: int
     captures are too shallow to reach it, so the input is built here.
     """
     nodes = deep_chain(9)
-    fabric = Fabric(nodes, width, TreeDensity.FULL)
+    fabric = Fabric(nodes, width, FabricView(density=TreeDensity.FULL))
     console = Console(file=io.StringIO(), width=width, no_color=True)
 
     # Row by row, not the finished section: a wrapped row and two devices are
@@ -120,7 +121,7 @@ def test_the_spine_formula_is_two_per_level_plus_the_margin() -> None:
     something else.
     """
     inventory = machine("linux-sas-hba.json")
-    fabric = Fabric(inventory.pci_tree, DEFAULT_WIDTH, TreeDensity.FULL)
+    fabric = Fabric(inventory.pci_tree, DEFAULT_WIDTH, FabricView(density=TreeDensity.FULL))
     deepest = max((fabric.level_of(node) for node, _level in fabric.drawn()), default=0)
 
     assert fabric.spine == 2 * deepest + 2, f"deepest level {deepest} gave spine {fabric.spine}"
@@ -245,7 +246,7 @@ def test_both_headers_of_a_section_are_drawn_in_the_same_style() -> None:
     """
     inventory = machine("linux-sas-hba.json")
     interactive = "#D7A13B"
-    fabric = Fabric(inventory.pci_tree, 200, TreeDensity.FULL, header_style=interactive)
+    fabric = Fabric(inventory.pci_tree, 200, FabricView(density=TreeDensity.FULL, header_style=interactive))
 
     device_styles = {str(span.style) for span in device_header_line(fabric).spans}
     disk_styles = {str(span.style) for span in disk_header_line(fabric, fabric.measure(inventory)).spans}
@@ -263,6 +264,6 @@ def test_the_printed_section_still_uses_the_printed_header_style() -> None:
     wrong colour.
     """
     inventory = machine("linux-sas-hba.json")
-    fabric = Fabric(inventory.pci_tree, 200, TreeDensity.FULL)
+    fabric = Fabric(inventory.pci_tree, 200, FabricView(density=TreeDensity.FULL))
     styles = {str(span.style) for span in device_header_line(fabric).spans}
     assert styles == {theme.STYLE_HEADER}, styles

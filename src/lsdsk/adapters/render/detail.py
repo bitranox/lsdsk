@@ -43,6 +43,7 @@ from rich.text import Text
 from ...domain.diagnostics import attached_demand_gbytes
 from ...domain.enums import BusType
 from ...domain.history import CounterKind
+from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from . import tables, theme
 from .report import findings_for, pcie_capability, serial_speed, slot_verdict
 
@@ -186,13 +187,19 @@ def order_groups(groups: Sequence[DetailGroup], first: Sequence[str]) -> tuple[D
     return tuple(sorted(groups, key=lambda group: rank.get(group.label, len(first))))
 
 
-def disk_detail(disk: Disk, inventory: Inventory, history: History | None = None) -> Detail:
+def disk_detail(
+    disk: Disk,
+    inventory: Inventory,
+    history: History | None = None,
+    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+) -> Detail:
     """The whole record of one drive.
 
     Args:
         disk: The drive to describe.
         inventory: The machine it sits in, for the controller and port beside it.
         history: Its counter history, where a store was readable.
+        thresholds: What this run judges wear by.
 
     Returns:
         The record, its groups in reading order.
@@ -218,7 +225,7 @@ def disk_detail(disk: Disk, inventory: Inventory, history: History | None = None
         ),
         DetailGroup(LINK, _disk_link_values(disk, row, inventory.port_link_for(disk))),
         DetailGroup(SEAT, _seat_values(disk, inventory)),
-        DetailGroup(HEALTH, _health_values(disk.health, disk.bus)),
+        DetailGroup(HEALTH, _health_values(disk.health, disk.bus, thresholds)),
         DetailGroup(COUNTERS, _counter_values(disk.health, series, disk.bus)),
     )
     return Detail(heading, groups, (FindingScope(disk.path), FindingScope(disk.model, MODEL_NOTE)))
@@ -504,7 +511,11 @@ def _seat_values(disk: Disk, inventory: Inventory) -> tuple[tuple[str, Cell], ..
     )
 
 
-def _health_values(health: Health | None, bus: BusType) -> tuple[tuple[str, Cell], ...]:
+def _health_values(
+    health: Health | None,
+    bus: BusType,
+    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+) -> tuple[tuple[str, Cell], ...]:
     """What the drive says about itself, limits included.
 
     The bus is carried for one value: ``smart`` summarises the decoded ATA
@@ -520,7 +531,7 @@ def _health_values(health: Health | None, bus: BusType) -> tuple[tuple[str, Cell
         ("ok", _yes_no(value=None if health is None else health.ok)),
         ("temp", temperature),
         ("limits", _limits(health)),
-        ("worn", theme.format_wear(_of(health, lambda h: h.percent_used))),
+        ("worn", theme.format_wear(_of(health, lambda h: h.percent_used), thresholds)),
         ("hours", (tables.counter_text(_of(health, lambda h: h.power_on_hours)), "")),
         ("written", (theme.format_size(_of(health, lambda h: h.bytes_written)), "")),
         ("read", (theme.format_size(_of(health, lambda h: h.bytes_read)), "")),

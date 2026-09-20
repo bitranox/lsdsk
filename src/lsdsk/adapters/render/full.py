@@ -26,7 +26,8 @@ from rich.console import Group
 from rich.text import Text
 
 from ...domain.history import History
-from ..config.tunables import DEFAULT_PIPED_WIDTH, DisplaySettings
+from ...domain.thresholds import DEFAULT_THRESHOLDS
+from ..config.tunables import DEFAULT_PIPED_WIDTH, DisplaySettings, Tunables
 from ..history.store import HistoryRead
 from . import report, tables, theme, tree
 from .trend import render_trend
@@ -61,7 +62,7 @@ def render_full(
     findings: Sequence[Finding],
     width: int = DEFAULT_WIDTH,
     history: HistoryRead | None = None,
-    display: DisplaySettings | None = None,
+    tunables: Tunables | None = None,
 ) -> RenderableType:
     """Render every view of one machine, in one page.
 
@@ -74,12 +75,13 @@ def render_full(
             happened. One value rather than two, because the trend section is
             drawn from both and a page given the samples without the reason
             reports a refused store as a machine nobody has ever recorded.
-        display: Layout values, or the shipped ones. Threaded through because
-            two of its keys are only honoured by the sections below: without it
-            `summary_limit` was read from configuration and passed nowhere at
-            all, and `wear_row_floor_percent` was honoured by `lsdsk trend`
-            alone, so the same setting changed one view and silently not the
-            others.
+        tunables: What this run judges and lays out by, or the shipped values.
+            Threaded through because these keys are only honoured by the
+            sections below: without it `summary_limit` was read from
+            configuration and passed nowhere at all, `wear_row_floor_percent`
+            was honoured by `lsdsk trend` alone, and the wear thresholds
+            reached the rules while the table beside them still judged at the
+            shipped 80.
 
     Returns:
         The complete report.
@@ -88,7 +90,8 @@ def render_full(
     blank = Text("")
     read = history if history is not None else HistoryRead(History(hostname=host), writable=True)
     recorded = read.history
-    laid_out = display if display is not None else DisplaySettings()
+    settled = tunables if tunables is not None else Tunables(DEFAULT_THRESHOLDS, DisplaySettings())
+    laid_out = settled.display
     sections: list[RenderableType] = [
         report.render_header(inventory),
         blank,
@@ -100,6 +103,7 @@ def render_full(
             findings,
             width,
             tree.FabricView(density=laid_out.tree_density, expand_virtual=laid_out.expand_virtual),
+            settled.thresholds,
         ),
         blank,
         tables.render_controllers(inventory, findings, width=width),
@@ -108,7 +112,7 @@ def render_full(
             inventory, findings, width=width, expand_virtual=laid_out.expand_virtual, wwn_width=laid_out.wwn_width
         ),
         blank,
-        tables.render_health(inventory, findings, width=width, history=recorded),
+        tables.render_health(inventory, findings, width=width, history=recorded, thresholds=settled.thresholds),
         *_legend(tables.counter_legend(inventory, recorded)),
         blank,
         report.render_smart(inventory, width=width),

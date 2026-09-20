@@ -25,6 +25,7 @@ from ... import __init__conf__
 from ...domain.diagnostics import count_by_severity
 from ...domain.enums import Align, BusType, Environment, Severity
 from ...domain.models import pcie_bandwidth_gbps, pcie_generation, serial_bandwidth_gbps
+from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_SUMMARY_LIMIT
 from . import theme
 from .layout import GAP, GUTTER, TREE_BRANCH, TREE_LAST, Column, Layout, fit, natural_widths, pad
@@ -342,7 +343,13 @@ def serial_speed(gbps: float | None, *, bandwidth: bool = False) -> str:
     return theme.with_bandwidth(figure, serial_bandwidth_gbps(gbps)) if bandwidth else figure
 
 
-def disk_cells(disk: Disk, port: PcieLink | None = None, *, bandwidth: bool = False) -> dict[str, str]:
+def disk_cells(
+    disk: Disk,
+    port: PcieLink | None = None,
+    *,
+    bandwidth: bool = False,
+    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+) -> dict[str, str]:
     """Build the plain-text cells for one disk, before styling.
 
     Args:
@@ -355,6 +362,7 @@ def disk_cells(disk: Disk, port: PcieLink | None = None, *, bandwidth: bool = Fa
             worth. Decided by the section from the width its columns were
             measured at, never here: these cells are measured before they are
             drawn, and text that did not go into the measurement would be cut.
+        thresholds: What this run judges wear by.
 
     Returns:
         A cell value per column key.
@@ -379,7 +387,7 @@ def disk_cells(disk: Disk, port: PcieLink | None = None, *, bandwidth: bool = Fa
         None if health is None else health.temperature_warning_c,
         None if health is None else health.temperature_critical_c,
     )
-    wear_text, _ = theme.format_wear(None if health is None else health.percent_used)
+    wear_text, _ = theme.format_wear(None if health is None else health.percent_used, thresholds)
 
     return {
         "device": disk.path,
@@ -395,7 +403,12 @@ def disk_cells(disk: Disk, port: PcieLink | None = None, *, bandwidth: bool = Fa
     }
 
 
-def disk_cell_styles(disk: Disk, port: PcieLink | None = None) -> dict[str, str]:
+def disk_cell_styles(
+    disk: Disk,
+    port: PcieLink | None = None,
+    *,
+    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+) -> dict[str, str]:
     """Style per cell, so colour only ever marks a measured relation.
 
     A PCIe disk is graded exactly as a SATA one: its negotiated rate against
@@ -406,6 +419,7 @@ def disk_cell_styles(disk: Disk, port: PcieLink | None = None) -> dict[str, str]
     Args:
         disk: The disk to style.
         port: The PCIe port it sits in, when known.
+        thresholds: What this run judges wear by.
     """
     health = disk.health
     if disk.pcie is not None:
@@ -426,7 +440,7 @@ def disk_cell_styles(disk: Disk, port: PcieLink | None = None) -> dict[str, str]
         None if health is None else health.temperature_warning_c,
         None if health is None else health.temperature_critical_c,
     )
-    _, wear_style = theme.format_wear(None if health is None else health.percent_used)
+    _, wear_style = theme.format_wear(None if health is None else health.percent_used, thresholds)
     return {
         "device": "bold",
         "model": "",
@@ -444,7 +458,13 @@ def disk_cell_styles(disk: Disk, port: PcieLink | None = None) -> dict[str, str]
 _MARKER_RESERVE = max(len(marker) for marker in theme.SEVERITY_MARKERS.values())
 
 
-def disk_row(disk: Disk, port: PcieLink | None = None, *, bandwidth: bool = False) -> dict[str, theme.Cell]:
+def disk_row(
+    disk: Disk,
+    port: PcieLink | None = None,
+    *,
+    bandwidth: bool = False,
+    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+) -> dict[str, theme.Cell]:
     """One disk's cells already paired with their styles.
 
     The text and the styling are computed separately, because the width
@@ -456,12 +476,13 @@ def disk_row(disk: Disk, port: PcieLink | None = None, *, bandwidth: bool = Fals
         disk: The disk to describe.
         port: The PCIe port a directly-attached disk sits in, when it is known.
         bandwidth: Whether each link figure carries what it is worth.
+        thresholds: What this run judges wear by.
 
     Returns:
         Column key to its (text, style) pair.
     """
-    cells = disk_cells(disk, port, bandwidth=bandwidth)
-    styles = disk_cell_styles(disk, port)
+    cells = disk_cells(disk, port, bandwidth=bandwidth, thresholds=thresholds)
+    styles = disk_cell_styles(disk, port, thresholds=thresholds)
     return {key: (text, styles.get(key, "")) for key, text in cells.items()}
 
 
@@ -516,16 +537,13 @@ def _controller_line(controller: Controller, severity: Severity | None) -> Text:
     return line
 
 
-def _disk_line(
-    disk: Disk,
-    glyph: str,
-    layout: Layout,
-    *,
-    severity: Severity | None,
-    port: PcieLink | None = None,
-) -> Text:
-    """Render one padded disk row."""
-    row = disk_row(disk, port, bandwidth=layout.bandwidth)
+def _disk_line(row: dict[str, theme.Cell], glyph: str, layout: Layout, *, severity: Severity | None) -> Text:
+    """Render one padded disk row.
+
+    Takes the row already built rather than the disk and its port: what a row
+    is built FROM keeps growing - the port, then what this run judges wear by -
+    while what it takes to DRAW one does not.
+    """
     line = Text()
     line.append(glyph.ljust(len(GUTTER)))
     # The marker LEADS the row, as it already does in every table. Appended at
@@ -638,6 +656,7 @@ def render_controller_disks(
     width: int = DEFAULT_WIDTH,
     *,
     expand_virtual: bool = False,
+    thresholds: Thresholds = DEFAULT_THRESHOLDS,
 ) -> RenderableType:
     """The disk-and-controller tree, as the topology section's no-PCI fallback.
 
@@ -646,6 +665,7 @@ def render_controller_disks(
         findings: What is worth acting on, so a row can carry its marker.
         width: The console width the rows are laid out against.
         expand_virtual: Whether to list the kernel-virtual devices rather than tally them.
+        thresholds: What this run judges wear by.
 
     Returns:
         The tree, ready to print.
@@ -679,15 +699,15 @@ def render_controller_disks(
         # no header at all.
         if disks:
             lines.append(_header_line(layout.columns, layout.widths))
-        lines.extend(_disk_lines(disks, findings, layout, inventory))
+        lines.extend(_disk_lines(disks, findings, layout, inventory, thresholds))
 
     orphans = [disk for disk in inventory.disks if disk.node not in attached]
     if orphans:
         lines.append(Text(""))
         lines.append(Text("not attached to a known controller", style=theme.STYLE_UNKNOWN))
         lines.append(_header_line(layout.columns, layout.widths))
-        lines.extend(_disk_lines(orphans, findings, layout, inventory))
-    lines.extend(_virtual_lines(inventory, findings, layout, expand_virtual=expand_virtual))
+        lines.extend(_disk_lines(orphans, findings, layout, inventory, thresholds))
+    lines.extend(_virtual_lines(inventory, findings, layout, expand_virtual=expand_virtual, thresholds=thresholds))
     return Group(*lines)
 
 
@@ -697,6 +717,7 @@ def _virtual_lines(
     layout: Layout,
     *,
     expand_virtual: bool,
+    thresholds: Thresholds = DEFAULT_THRESHOLDS,
 ) -> list[RenderableType]:
     """The kernel-virtual group: a tally, or the devices themselves."""
     if not inventory.virtual_disks:
@@ -706,7 +727,7 @@ def _virtual_lines(
         lines.append(Text(f"   {virtual_note(inventory.virtual_disks)}", style=theme.STYLE_UNKNOWN))
         return lines
     lines.append(_header_line(layout.columns, layout.widths))
-    lines.extend(_disk_lines(inventory.virtual_disks, findings, layout, inventory))
+    lines.extend(_disk_lines(inventory.virtual_disks, findings, layout, inventory, thresholds))
     return lines
 
 
@@ -715,20 +736,14 @@ def _disk_lines(
     findings: Sequence[Finding],
     layout: Layout,
     inventory: Inventory,
+    thresholds: Thresholds = DEFAULT_THRESHOLDS,
 ) -> list[Text]:
     """Render every disk under one controller, with tree glyphs."""
     lines: list[Text] = []
     for position, disk in enumerate(disks):
         glyph = TREE_LAST if position == len(disks) - 1 else TREE_BRANCH
-        lines.append(
-            _disk_line(
-                disk,
-                glyph,
-                layout,
-                severity=worst_severity(findings, disk.path),
-                port=inventory.port_link_for(disk),
-            )
-        )
+        row = disk_row(disk, inventory.port_link_for(disk), bandwidth=layout.bandwidth, thresholds=thresholds)
+        lines.append(_disk_line(row, glyph, layout, severity=worst_severity(findings, disk.path)))
     return lines
 
 

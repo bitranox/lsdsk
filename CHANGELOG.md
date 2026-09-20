@@ -405,6 +405,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **The configured wear thresholds reach the cells that draw wear.**
+  `theme.format_wear` took the two figures as defaults bound at definition time
+  and every production call site passed neither, so a fleet that lowered
+  `wear_warning_percent` got findings at its own figure and a health table
+  still coloured at 80. Measured on the committed SAS capture, whose NVMe drive
+  reads 59 percent: with the threshold at 50 the finding fired and the cell
+  stayed green. It takes the `Thresholds` object now, threaded to the four
+  views that draw a wear cell and to the interactive pages of the same names.
+
 - **`lsdsk tui` refuses where nothing can be typed at, instead of hanging.** A
   bare `lsdsk` has always degraded to the printed page off a terminal, and the
   explicit command had no such guard: measured, `lsdsk tui </dev/null` ran

@@ -32,6 +32,7 @@ from ...domain.history import History
 # record to build from what KIND of thing a line is about, and an isinstance
 # needs the class rather than its name.
 from ...domain.models import Disk, Inventory, PciNode
+from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DisplaySettings
 from ..render import detail, layout, report, tables, theme
 from ..render.tree import fabric_lines
@@ -142,6 +143,7 @@ def render_fabric_for(
     inventory: Inventory,
     findings: Sequence[Finding],
     display: DisplaySettings,
+    thresholds: Thresholds = DEFAULT_THRESHOLDS,
 ) -> RenderableType:
     """The topology page's body, from the settings the page is showing.
 
@@ -157,7 +159,7 @@ def render_fabric_for(
     """
     from ..render import tree  # noqa: PLC0415 - keeps rich render off app import
 
-    return tree.FabricSection(inventory, findings, fabric_view_for(display))
+    return tree.FabricSection(inventory, findings, fabric_view_for(display), thresholds)
 
 
 #: The short label each page carries in the footer, in number-key order. Keyed by
@@ -319,6 +321,7 @@ class LsdskApp(App[None]):
         *,
         display: DisplaySettings | None = None,
         store_refusal: str | None = None,
+        thresholds: Thresholds = DEFAULT_THRESHOLDS,
     ) -> None:
         """Build the app around one already-collected inventory.
 
@@ -333,6 +336,10 @@ class LsdskApp(App[None]):
                 used: a page and the command of the same name are one view
                 under one name, and a second delivery path is how one of them
                 goes deaf.
+            thresholds: What this run judges by, so the wear cell on the disk
+                and health pages is coloured against the same figures the
+                findings beside it were graded with - a page and the printed
+                command of its name are one view.
             store_refusal: Why the counter store could not be read, when it
                 could not. There is no stderr behind a full-screen page, so a
                 refusal that is only warned about reaches nobody here and the
@@ -344,6 +351,7 @@ class LsdskApp(App[None]):
         # NOT self.display: Textual's DOMNode already owns that name as the
         # show/hide property, and shadowing it breaks rendering.
         self.display_settings = display if display is not None else DisplaySettings()
+        self.thresholds = thresholds
         self.history: History = history if history is not None else History(hostname=inventory.hostname)
         self.store_refusal = store_refusal
         self.findings: tuple[Finding, ...] = diagnose(inventory, history=history)
@@ -635,7 +643,7 @@ class LsdskApp(App[None]):
         # A trend row is one COUNTER of one drive, so its key names both; the
         # record is the drive's, because that is what the row is about.
         disk = self._disk_of.get(key.split("|")[0] if page is CliCommand.TREND else key)
-        return None if disk is None else detail.disk_detail(disk, self.inventory, self.history)
+        return None if disk is None else detail.disk_detail(disk, self.inventory, self.history, self.thresholds)
 
     def _show_detail(self, record: Detail | None) -> None:
         """Draw one record in the panel, with the active page's group first.
@@ -698,7 +706,7 @@ class LsdskApp(App[None]):
         table = rows_of(self.query_one("#health-table"))
         table.add_columns(*HEALTH_COLUMNS)
         for disk in self.inventory.disks:
-            row = tables.health_table_row(disk, self.inventory, self.findings, self.history)
+            row = tables.health_table_row(disk, self.inventory, self.findings, self.history, self.thresholds)
             table.add_row(*_marked(row, tables.HEALTH_COLUMNS), key=disk.node)
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
@@ -814,7 +822,9 @@ class LsdskApp(App[None]):
         self._tree_lines = lines
         if not lines:
             self.query_one("#tree", Static).update(
-                tui_palette.Recoloured(render_fabric_for(self.inventory, self.findings, self.display_settings))
+                tui_palette.Recoloured(
+                    render_fabric_for(self.inventory, self.findings, self.display_settings, self.thresholds)
+                )
             )
             return
         # Kept across the redraw, or a resize and a density change would both
@@ -911,7 +921,7 @@ class LsdskApp(App[None]):
         if isinstance(subject, Inventory):
             return detail.machine_detail(subject)
         if isinstance(subject, Disk):
-            return detail.disk_detail(subject, self.inventory, self.history)
+            return detail.disk_detail(subject, self.inventory, self.history, self.thresholds)
         if isinstance(subject, PciNode):
             controller = next((one for one in self.inventory.controllers if one.address == subject.address), None)
             if controller is not None:

@@ -33,6 +33,7 @@ from lsdsk.adapters.config.history import HistorySettings, get_history_settings
 from lsdsk.adapters.config.tunables import (
     DEFAULT_PIPED_WIDTH,
     DisplaySettings,
+    Tunables,
     get_display_settings,
     get_thresholds,
 )
@@ -197,13 +198,6 @@ class Analysis(NamedTuple):
 
     inventory: Inventory
     findings: tuple[Finding, ...]
-
-
-class Tunables(NamedTuple):
-    """The judgement and layout values settled for one run."""
-
-    thresholds: Thresholds
-    display: DisplaySettings
 
 
 def note(text: str) -> Text:
@@ -627,7 +621,15 @@ def run_default_report(
         laid_out = display if display is not None else DisplaySettings()
         console = console_for_output(laid_out.piped_width)
         read = read_history(inventory, resolved)
-        console.print(render_full(inventory, findings, width=console.width, history=read, display=laid_out))
+        console.print(
+            render_full(
+                inventory,
+                findings,
+                width=console.width,
+                history=read,
+                tunables=Tunables(thresholds, laid_out),
+            )
+        )
         raise SystemExit(exit_code_for(findings))
 
 
@@ -680,7 +682,7 @@ def cli_topology(
     """
     with lib_log_rich.runtime.bind(job_id="cli-topology", extra={"command": CliCommand.TOPOLOGY.value}):
         inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
-        display = resolve_tunables(ctx).display
+        thresholds, display = resolve_tunables(ctx)
         logger.debug("Scanned %d disks on %d controllers", len(inventory.disks), len(inventory.controllers))
 
         if output_format is OutputFormat.JSON:
@@ -702,6 +704,7 @@ def cli_topology(
                         density=effective_tree_density(ctx, tree_density),
                         expand_virtual=effective_expand_virtual(ctx, expand_virtual),
                     ),
+                    thresholds,
                 )
             )
         raise SystemExit(exit_code_for(findings))
@@ -860,7 +863,7 @@ def cli_health(ctx: click.Context, replay: Path | None, output_format: OutputFor
     """Show wear, temperature, hours and error counters for every disk."""
     with lib_log_rich.runtime.bind(job_id="cli-health", extra={"command": CliCommand.HEALTH.value}):
         inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
-        display = resolve_tunables(ctx).display
+        thresholds, display = resolve_tunables(ctx)
         if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.HEALTH)
         else:
@@ -870,7 +873,9 @@ def cli_health(ctx: click.Context, replay: Path | None, output_format: OutputFor
             from .history import read_history  # noqa: PLC0415 - deferred: history imports this module
 
             history = read_history(inventory, resolve_history(ctx)).history
-            console.print(render_health(inventory, findings, width=console.width, history=history))
+            console.print(
+                render_health(inventory, findings, width=console.width, history=history, thresholds=thresholds)
+            )
             # Through the console rather than a plain echo, so prose wraps to the
             # terminal instead of running off the side of a narrow one. The
             # tables already fit themselves; a bare echo does not.
@@ -926,10 +931,15 @@ def cli_tui(ctx: click.Context, replay: Path | None, expand_virtual: bool) -> No
         # The whole section, not one field: a page reads the same settings the
         # printed command of its name reads, and the subcommand flag lands on
         # the same key the file sets rather than beside it.
-        display = resolve_tunables(ctx).display.with_changes(
-            expand_virtual=effective_expand_virtual(ctx, expand_virtual)
-        )
-        LsdskApp(inventory, read.history, display=display, store_refusal=read.refusal).run()
+        thresholds, laid_out = resolve_tunables(ctx)
+        display = laid_out.with_changes(expand_virtual=effective_expand_virtual(ctx, expand_virtual))
+        LsdskApp(
+            inventory,
+            read.history,
+            display=display,
+            store_refusal=read.refusal,
+            thresholds=thresholds,
+        ).run()
         raise SystemExit(ExitCode.SUCCESS)
 
 

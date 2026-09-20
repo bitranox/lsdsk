@@ -104,6 +104,20 @@ class DisplaySettings(DomainModel, frozen=True):
     traceback_verbose_limit: int = DEFAULT_TRACEBACK_VERBOSE_LIMIT
 
 
+class Tunables(NamedTuple):
+    """The judgement and layout values settled for one run.
+
+    They are settled together, from the same three sources in the same order,
+    and every view that draws reads both - so they travel as one value rather
+    than as two parameters a signature can carry out of step. Lives here rather
+    than in the CLI because the render layer reads it too, and a renderer that
+    imported a command module to name its own arguments would invert the layers.
+    """
+
+    thresholds: Thresholds
+    display: DisplaySettings
+
+
 class ThresholdsReading(NamedTuple):
     """The figures the rules weigh against, and every configured value refused.
 
@@ -238,6 +252,7 @@ __all__ = [
     "DisplayReading",
     "DisplaySettings",
     "ThresholdsReading",
+    "Tunables",
     "get_display_settings",
     "get_thresholds",
     "read_display_settings",

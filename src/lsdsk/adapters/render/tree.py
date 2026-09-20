@@ -37,6 +37,7 @@ from rich.console import Group
 from rich.text import Text
 
 from ...domain.enums import PciPortKind, TreeDensity
+from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_TREE_DENSITY
 from . import theme
 from .layout import (
@@ -335,19 +336,30 @@ class Fabric:
         self,
         nodes: Sequence[PciNode],
         width: int,
-        density: TreeDensity,
+        view: FabricView | None = None,
         *,
-        expand_virtual: bool = False,
-        header_style: str = theme.STYLE_HEADER,
+        thresholds: Thresholds = DEFAULT_THRESHOLDS,
     ) -> None:
+        """Settle one render call's shared state.
+
+        Takes the whole `FabricView` rather than its fields one by one: they
+        travel together through every signature that renders the fabric, which
+        is what the type exists to say, and unpacking them here made this the
+        one place they could be passed out of step.
+        """
+        settled = FabricView() if view is None else view
         self.nodes = nodes
         self.width = width
-        self.density = density
-        self.expand_virtual = expand_virtual
+        self.view = settled
+        self.density = settled.density
+        self.expand_virtual = settled.expand_virtual
         #: How this render call draws a column header. Carried here rather than
         #: passed to the two functions that draw one, so every header of one
         #: section is the same by construction.
-        self.header_style = header_style
+        self.header_style = settled.header_style
+        #: What this run judges wear by, for the disk rows drawn under a
+        #: controller. Carried here for the same reason as the header style.
+        self.thresholds = thresholds
         self.by_address = {node.address: node for node in nodes if not node.is_root}
         self.kept = self._kept()
         self.by_parent = self._grouped(node for node in self.by_address.values() if node.address in self.kept)
@@ -633,7 +645,7 @@ class Fabric:
         severity = worst_severity(findings, disk.path)
         line.append(theme.marker_for(severity).ljust(_MARKER_WIDTH), style=theme.style_for(severity))
         line.append(rules)
-        cells = disk_row(disk, inventory.port_link_for(disk), bandwidth=layout.bandwidth)
+        cells = disk_row(disk, inventory.port_link_for(disk), bandwidth=layout.bandwidth, thresholds=self.thresholds)
         for column in layout.columns:
             width = layout.widths[column.key]
             text, style = cells.get(column.key, ("", ""))
@@ -700,6 +712,7 @@ def fabric_lines(
     findings: Sequence[Finding],
     width: int = DEFAULT_WIDTH,
     view: FabricView = DEFAULT_VIEW,
+    thresholds: Thresholds = DEFAULT_THRESHOLDS,
 ) -> tuple[FabricLine, ...]:
     """Every line the fabric section draws, each paired with what it is about.
 
@@ -714,6 +727,7 @@ def fabric_lines(
         findings: The findings, used to mark affected rows.
         width: Width to lay out inside.
         view: How this view draws it.
+        thresholds: What this run judges wear by, for the disk rows.
 
     Returns:
         The lines, or an empty tuple for a capture carrying no PCI reading at
@@ -722,13 +736,7 @@ def fabric_lines(
     """
     if not inventory.pci_tree:
         return ()
-    fabric = Fabric(
-        inventory.pci_tree,
-        width,
-        view.density,
-        expand_virtual=view.expand_virtual,
-        header_style=view.header_style,
-    )
+    fabric = Fabric(inventory.pci_tree, width, view, thresholds=thresholds)
     layout = fabric.measure(inventory)
     attached: set[str] = set()
     out = [*_fabric_head(inventory, fabric, view)]
@@ -804,6 +812,7 @@ def render_fabric(
     findings: Sequence[Finding],
     width: int = DEFAULT_WIDTH,
     view: FabricView = DEFAULT_VIEW,
+    thresholds: Thresholds = DEFAULT_THRESHOLDS,
 ) -> RenderableType:
     """The whole topology section: the root-down fabric, the disks on each of
     its storage controllers, and the kernel-virtual tally behind them.
@@ -818,11 +827,12 @@ def render_fabric(
             the form a terminal-less Textual page renders at before it reflows.
         view: How this view draws it - the density, the kernel-virtual tally,
             and what its reader presses to change them.
+        thresholds: What this run judges wear by, for the disk rows.
 
     Returns:
         The fabric section.
     """
-    lines = fabric_lines(inventory, findings, width, view)
+    lines = fabric_lines(inventory, findings, width, view, thresholds)
     if lines:
         return Group(*(line.text for line in lines))
     # No PCI devices at all, and nothing the disk-and-controller table would
@@ -977,14 +987,16 @@ class FabricSection:
         inventory: Inventory,
         findings: Sequence[Finding],
         view: FabricView = DEFAULT_VIEW,
+        thresholds: Thresholds = DEFAULT_THRESHOLDS,
     ) -> None:
         self.inventory = inventory
         self.findings = findings
         self.view = view
+        self.thresholds = thresholds
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         """Render the section at the width the console offers right now."""
-        yield render_fabric(self.inventory, self.findings, options.max_width, self.view)
+        yield render_fabric(self.inventory, self.findings, options.max_width, self.view, self.thresholds)
 
 
 __all__ = [

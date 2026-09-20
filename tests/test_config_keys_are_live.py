@@ -24,6 +24,7 @@ counterpart lives in ``tests/e2e``.
 from __future__ import annotations
 
 import hashlib
+import os
 import subprocess
 import sys
 import tomllib
@@ -369,3 +370,44 @@ def test_a_shipped_default_is_the_same_figure_the_model_falls_back_to(section: s
         assert str(getattr(model, key)) == str(value), (
             f"[{section}] {key} is {value!r} in the shipped file and {getattr(model, key)!r} on the model"
         )
+
+
+def _coloured_row(argv: list[str], device: str) -> str:
+    """One device's row from a real run, with the colour left in.
+
+    The digest above reads plain stdout, where a threshold that only decides a
+    CELL'S COLOUR moves nothing: the text is `59%` whatever it is judged
+    against. Colour is forced, and the comparison is scoped to one row so a
+    changed finding count in a line below cannot answer for the table.
+    """
+    result = subprocess.run(  # noqa: S603 - argv list, no shell, all values from this file
+        [sys.executable, "-m", "lsdsk", *argv],
+        capture_output=True,
+        check=False,
+        env={**os.environ, "FORCE_COLOR": "1", "COLUMNS": "200"},
+    )
+    rows = [line for line in result.stdout.decode(errors="replace").splitlines() if device in line]
+    assert rows, f"no row for {device} in:\n{result.stdout.decode(errors='replace')}"
+    return rows[0]
+
+
+@pytest.mark.os_agnostic
+def test_a_configured_wear_threshold_colours_the_cell_that_draws_wear() -> None:
+    """The rules honoured it and the table judged by the shipped figure.
+
+    `theme.format_wear` took the thresholds as defaults bound at definition
+    time and every production call site passed none, so a fleet that sets
+    `wear_warning_percent` got findings at its own figure and a health table
+    still coloured at 80. The drive here reads 59 percent, which is under the
+    shipped warning and over the one this run configures.
+
+    The harness above cannot see this: it digests plain stdout, where the cell
+    reads `59%` either way.
+    """
+    target = str(FIXTURES / "linux-sas-hba.json")
+    device = "/dev/nvme0n1"
+    shipped = _coloured_row(["health", "--replay", target], device)
+    lowered = _coloured_row(["--set", "thresholds.wear_warning_percent=50", "health", "--replay", target], device)
+
+    assert shipped == _coloured_row(["health", "--replay", target], device), "the row is not stable between runs"
+    assert shipped != lowered, "the health table judges wear by the shipped figure whatever the configuration says"

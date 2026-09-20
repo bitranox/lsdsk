@@ -23,6 +23,7 @@ from rich.text import Text
 from ...domain.diagnostics import attached_demand_gbytes
 from ...domain.enums import Align
 from ...domain.history import CounterKind, identity_of, trend_for
+from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_WWN_WIDTH
 from . import theme
 from .layout import Column, Layout, clip
@@ -373,6 +374,7 @@ def render_health(
     findings: Sequence[Finding],
     width: int = DEFAULT_WIDTH,
     history: History | None = None,
+    thresholds: Thresholds = DEFAULT_THRESHOLDS,
 ) -> Table:
     """Render wear, temperature and error counters for every disk.
 
@@ -383,11 +385,12 @@ def render_health(
         history: Counter samples recorded earlier. With them each count says
             whether it is still moving, which is the difference between a live
             fault and one that ended years ago.
+        thresholds: What this run judges wear by.
 
     Returns:
         A table of health readings.
     """
-    rows = [health_table_row(disk, inventory, findings, history) for disk in inventory.disks]
+    rows = [health_table_row(disk, inventory, findings, history, thresholds) for disk in inventory.disks]
     return _render(f"Disk health on {inventory.hostname}", HEALTH_COLUMNS, TableRows(rows), width)
 
 
@@ -396,6 +399,7 @@ def health_table_row(
     inventory: Inventory,
     findings: Sequence[Finding],
     history: History | None = None,
+    thresholds: Thresholds = DEFAULT_THRESHOLDS,
 ) -> MarkedRow:
     """One drive's health cells for every key in :data:`HEALTH_COLUMNS`, styled.
 
@@ -410,6 +414,7 @@ def health_table_row(
         findings: The findings, for the row's severity marker.
         history: Counter samples recorded earlier, which decide whether a count
             still carries its "rising" mark.
+        thresholds: What this run judges wear by.
 
     Returns:
         The marker and a cell per column key.
@@ -423,7 +428,7 @@ def health_table_row(
         None if health is None else health.temperature_warning_c,
         None if health is None else health.temperature_critical_c,
     )
-    wear = theme.format_wear(None if health is None else health.percent_used)
+    wear = theme.format_wear(None if health is None else health.percent_used, thresholds)
     written = "-" if health is None or health.bytes_written is None else theme.format_size(health.bytes_written)
     return MarkedRow(
         marker=(theme.marker_for(severity), theme.style_for(severity)),

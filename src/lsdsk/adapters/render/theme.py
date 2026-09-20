@@ -27,7 +27,7 @@ from ...domain.models import PcieLink, pcie_generation
 #: A rendered cell: its text and the style to draw it in. Named once here so the
 #: functions that produce one and the tables that consume it agree by type
 #: rather than by convention.
-from ...domain.thresholds import DEFAULT_THRESHOLDS
+from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -498,17 +498,18 @@ def format_temperature(
     return text, STYLE_AT_CAPABILITY
 
 
-def format_wear(
-    percent_used: int | None,
-    warning_percent: int = DEFAULT_THRESHOLDS.wear_warning_percent,
-    critical_percent: int = DEFAULT_THRESHOLDS.wear_critical_percent,
-) -> Cell:
+def format_wear(percent_used: int | None, thresholds: Thresholds = DEFAULT_THRESHOLDS) -> Cell:
     """Render wear as a percentage consumed, and style it.
+
+    The thresholds come as the OBJECT the rules judge by rather than as two
+    integers defaulted at definition time. Defaulted that way, every production
+    call site passed neither and the table was judged by the shipped figures
+    while the findings beside it used the configured ones - a fleet that lowers
+    `wear_warning_percent` saw the finding and a cell still coloured at 80.
 
     Args:
         percent_used: The drive's own figure, or ``None`` where it published none.
-        warning_percent: The judged figure above which wear is worth watching.
-        critical_percent: The judged figure above which it is worth acting on.
+        thresholds: What this run judges by.
 
     Returns:
         The text and its style, as one cell.
@@ -526,9 +527,9 @@ def format_wear(
     if percent_used is None:
         return "-", STYLE_UNKNOWN
     text = f"{percent_used}%"
-    if percent_used >= critical_percent:
+    if percent_used >= thresholds.wear_critical_percent:
         return text, STYLE_FAILING
-    if percent_used >= warning_percent:
+    if percent_used >= thresholds.wear_warning_percent:
         return text, STYLE_BELOW_CAPABILITY
     return text, STYLE_AT_CAPABILITY
 
