@@ -369,16 +369,11 @@ def ascii_fallback(text: str, encoding: str) -> str:
     anything else the codec still cannot represent becomes ``?``. Text the
     encoding already accepts is returned unchanged.
 
-    Parameters
-    ----------
-    text:
-        The message as the caller wrote it.
-    encoding:
-        The target stream's encoding, e.g. ``"cp1252"``.
+    Args:
+        text: The message as the caller wrote it.
+        encoding: The target stream's encoding, e.g. ``"cp1252"``.
 
-    Returns
-    -------
-    str
+    Returns:
         A string that :meth:`str.encode` accepts for `encoding`.
     """
     mapped = "".join(ASCII_FALLBACKS.get(character, character) for character in text)
@@ -391,6 +386,13 @@ def encode_safe(text: str, encoding: str | None) -> str:
     The check runs BEFORE the write on purpose. Writing first and catching
     ``UnicodeEncodeError`` would leave the already-encoded prefix on the stream,
     so the retry would duplicate it.
+
+    Args:
+        text: The message as the caller wrote it.
+        encoding: The target stream's encoding, or ``None`` when it has none.
+
+    Returns:
+        The text unchanged, or its ASCII fallback.
     """
     if encoding is None or encoding.lower() in _UNIVERSAL_ENCODINGS:
         return text
@@ -406,20 +408,14 @@ def echo(message: object = "", *, file: IO[Any] | None = None, err: bool = False
 
     Drop-in for :func:`click.echo` for the arguments this project uses.
 
-    Parameters
-    ----------
-    message:
-        The text to write. Non-string values are stringified as click does.
-    file:
-        Target stream. Defaults to click's stdout (or stderr when `err`).
-    err:
-        Write to stderr instead of stdout.
-    nl:
-        Append a newline.
+    Args:
+        message: The text to write. Non-string values are stringified as click does.
+        file: Target stream. Defaults to click's stdout (or stderr when `err`).
+        err: Write to stderr instead of stdout.
+        nl: Append a newline.
 
-    Side Effects
-    ------------
-    Writes to the given stream.
+    Side Effects:
+        Writes to the given stream.
     """
     text = message if isinstance(message, str) else str(message)
     target = file if file is not None else (sys.stderr if err else sys.stdout)
@@ -531,16 +527,12 @@ def safe_stream(stream: TextIO | None = None) -> IO[str]:
     rather than inferred; asserting it once at this boundary is what keeps the
     call site typed, where ``Any`` erased the whole console.
 
-    Parameters
-    ----------
-    stream:
-        The destination text stream. Omit it (or pass None) to follow
-        ``sys.stdout`` as it is at each write, which is what a module-level
-        renderer needs so test harnesses can still capture the output.
+    Args:
+        stream: The destination text stream. Omit it (or pass None) to follow
+            ``sys.stdout`` as it is at each write, which is what a module-level
+            renderer needs so test harnesses can still capture the output.
 
-    Returns
-    -------
-    IO[str]
+    Returns:
         A writer with ``write``/``flush``/``isatty``/``encoding``.
     """
     return cast("IO[str]", _SafeWriter(stream))

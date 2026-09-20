@@ -80,7 +80,14 @@ TREND_COLUMNS: tuple[Column, ...] = (
 
 
 def format_rate(per_hour: float) -> str:
-    """Render a rate, dropping a decimal that would be noise."""
+    """Render a rate, dropping a decimal that would be noise.
+
+    Args:
+        per_hour: The rate against the drive's own power-on hours.
+
+    Returns:
+        The figure as a reader would quote it.
+    """
     if per_hour >= 10:  # noqa: PLR2004 - a tenth of an error an hour is meaningless above ten
         return f"{per_hour:.0f}"
     if per_hour >= 0.1:  # noqa: PLR2004 - below this a fixed decimal reads as zero
@@ -89,7 +96,14 @@ def format_rate(per_hour: float) -> str:
 
 
 def verdict_style(verdict: TrendVerdict) -> str:
-    """Colour a verdict by what it means for the reader."""
+    """Colour a verdict by what it means for the reader.
+
+    Args:
+        verdict: What the samples supported.
+
+    Returns:
+        The style, blank where the verdict carries no weight.
+    """
     if verdict is TrendVerdict.RISING:
         return theme.STYLE_FAILING
     if verdict is TrendVerdict.QUIET:
@@ -103,6 +117,12 @@ def verdict_text(trend: Trend) -> str:
     A refusal says why it is refusing. "Too soon to say" with nothing after it
     reads as a shrug, when the actual reason is that this drive errors slowly
     enough that the span so far could not have shown anything.
+
+    Args:
+        trend: The verdict and the span it rests on.
+
+    Returns:
+        The sentence, carrying its reason when it is a refusal.
     """
     word = VERDICT_WORDS[trend.verdict]
     if trend.verdict is TrendVerdict.QUIET and trend.expected_from_lifetime is not None:
@@ -167,7 +187,16 @@ def worth_showing(kind: CounterKind, trend: Trend, wear_floor: int = WEAR_WORTH_
 
 
 def trend_row(device: str, kind: CounterKind, trend: Trend) -> Row:
-    """One rendered row."""
+    """One rendered row.
+
+    Args:
+        device: The drive the row is about.
+        kind: Which counter it reports.
+        trend: What the samples say about it.
+
+    Returns:
+        One cell per column, in the table's own order.
+    """
     style = verdict_style(trend.verdict)
     return {
         "device": (device, "bold"),

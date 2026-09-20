@@ -156,7 +156,14 @@ def _controller_name(entry: PciEntry, instance: str) -> str:
 
 
 def build_controllers(capture: WindowsCapture) -> tuple[Controller, ...]:
-    """Build every storage controller found in a Windows capture."""
+    """Build every storage controller found in a Windows capture.
+
+    Args:
+        capture: The typed reading, live or replayed.
+
+    Returns:
+        One controller per storage device in the capture.
+    """
     devices = capture.pci
     controllers: list[Controller] = []
     for instance, entry in sorted(devices.items()):
@@ -190,6 +197,12 @@ def build_slots(capture: WindowsCapture) -> tuple[PcieSlot, ...]:
     never propose moving a card.  That is the honest outcome: a recommendation
     that might send someone hunting for a slot that does not exist is worse than
     the platform-ceiling hint, which is still produced.
+
+    Args:
+        capture: The typed reading, live or replayed.
+
+    Returns:
+        One port per PCIe device that could carry a card.
     """
     devices = capture.pci
     slots: list[PcieSlot] = []
@@ -263,7 +276,14 @@ def _health_from(
 
 
 def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
-    """Build every disk found in a Windows capture."""
+    """Build every disk found in a Windows capture.
+
+    Args:
+        capture: The typed reading, live or replayed.
+
+    Returns:
+        One disk per drive in the capture, virtual devices included.
+    """
     pci = capture.pci
     disks: list[Disk] = []
 

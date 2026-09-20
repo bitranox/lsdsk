@@ -238,13 +238,30 @@ class Database(NamedTuple):
 
 
 def lookup_vendor(vendor: int, database: Database | None = None) -> str | None:
-    """Return a vendor's name, or ``None`` when it is not in the database."""
+    """Return a vendor's name, or ``None`` when it is not in the database.
+
+    Args:
+        vendor: The PCI vendor id.
+        database: A parsed pci.ids, or ``None`` to use the bundled one.
+
+    Returns:
+        The vendor's name, or ``None`` when it is not listed.
+    """
     vendors, _ = database if database is not None else _load_database()
     return vendors.get(vendor)
 
 
 def lookup_device(vendor: int, device: int, database: Database | None = None) -> str | None:
-    """Return a device's name, or ``None`` when it is not in the database."""
+    """Return a device's name, or ``None`` when it is not in the database.
+
+    Args:
+        vendor: The PCI vendor id.
+        device: The device id within that vendor.
+        database: A parsed pci.ids, or ``None`` to use the bundled one.
+
+    Returns:
+        The device's name, or ``None`` when it is not listed.
+    """
     _, devices = database if database is not None else _load_database()
     return devices.get((vendor, device))
 

@@ -285,6 +285,9 @@ def fail(message: str, code: ExitCode, *, output_format: OutputFormat, hint: str
         hint: An extra line for the person only. It stays out of the envelope,
             which carries what went wrong rather than what to try next.
 
+    Returns:
+        Never: the annotation is ``NoReturn`` and the only exit is the raise below.
+
     Raises:
         SystemExit: Always, with `code`.
 

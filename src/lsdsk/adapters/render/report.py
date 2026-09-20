@@ -127,6 +127,12 @@ def render_header(inventory: Inventory) -> RenderableType:
     the host, and in a guest the disks are the hypervisor's invention, so a
     reader who does not know which they are looking at will act on the wrong
     thing.
+
+    Args:
+        inventory: The machine this report is about.
+
+    Returns:
+        The banner, with the caveat line where one applies.
     """
     line = Text()
     # The version rides in the banner because this output gets pasted into
@@ -305,7 +311,15 @@ def _pcie_text(link: PcieLink, *, bandwidth: bool = False) -> str:
 
 
 def pcie_capability(link: PcieLink, *, bandwidth: bool = False) -> str:
-    """Render what a PCIe link could carry AT BEST."""
+    """Render what a PCIe link could carry AT BEST.
+
+    Args:
+        link: The link whose capable end is being drawn.
+        bandwidth: Whether to carry what the figure is worth beside it.
+
+    Returns:
+        The marketing figure, with its bandwidth when asked for.
+    """
     figure = theme.format_pcie_generation(link.max_speed_gtps, link.max_width)
     return theme.with_bandwidth(figure, link.max_bandwidth_gbps) if bandwidth else figure
 
@@ -316,6 +330,13 @@ def serial_speed(gbps: float | None, *, bandwidth: bool = False) -> str:
     Public for the same reason :func:`pcie_capability` is: the detail panel
     draws the same figures the table does, and a second copy of this pairing
     is how one link comes to be worded two ways in two views.
+
+    Args:
+        gbps: That end's rate, or ``None`` where nobody published one.
+        bandwidth: Whether to carry what the figure is worth beside it.
+
+    Returns:
+        The figure, with its bandwidth when asked for.
     """
     figure = theme.format_speed(gbps)
     return theme.with_bandwidth(figure, serial_bandwidth_gbps(gbps)) if bandwidth else figure
@@ -618,7 +639,17 @@ def render_controller_disks(
     *,
     expand_virtual: bool = False,
 ) -> RenderableType:
-    """The disk-and-controller tree, as the topology section's no-PCI fallback."""
+    """The disk-and-controller tree, as the topology section's no-PCI fallback.
+
+    Args:
+        inventory: The machine to draw.
+        findings: What is worth acting on, so a row can carry its marker.
+        width: The console width the rows are laid out against.
+        expand_virtual: Whether to list the kernel-virtual devices rather than tally them.
+
+    Returns:
+        The tree, ready to print.
+    """
     if not inventory.disks and not inventory.controllers and not inventory.virtual_disks:
         return Text("No storage controllers or disks found.", style=theme.STYLE_UNKNOWN)
 
@@ -794,6 +825,13 @@ def slot_table_row(slot: PcieSlot, *, bandwidth: bool = False) -> Row:
     second time. It used to spell them out, and the two views had drifted: the
     printed table showed the marketing generation where the page showed the
     decimal one for the same port, and nothing compared them.
+
+    Args:
+        slot: The port to draw.
+        bandwidth: Whether each link figure carries what it is worth.
+
+    Returns:
+        One cell per key in :data:`SLOT_COLUMNS`, in that order.
     """
     number = "-" if slot.physical_slot_number is None else f"#{slot.physical_slot_number}"
     occupant = slot.occupant_description
@@ -971,7 +1009,14 @@ def _no_attributes_reason(disk: Disk) -> str:
 
 
 def render_findings(findings: Sequence[Finding]) -> RenderableType:
-    """Render every finding in full, with its reasoning and its remedy."""
+    """Render every finding in full, with its reasoning and its remedy.
+
+    Args:
+        findings: What the rules judged worth reporting.
+
+    Returns:
+        The section, or the sentence that says nothing was found.
+    """
     table = Table(box=None, show_header=False, pad_edge=False, padding=(0, 1))
     table.add_column("marker", width=2, justify="right", no_wrap=True)
     table.add_column("body", overflow="fold")

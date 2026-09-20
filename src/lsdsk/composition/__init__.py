@@ -57,7 +57,11 @@ class AppServices:
 
 
 def build_production() -> AppServices:
-    """Wire production adapters into an AppServices container."""
+    """Wire production adapters into an AppServices container.
+
+    Returns:
+        The services every command resolves its ports through.
+    """
     return AppServices(
         get_config=get_config,
         get_default_config_path=get_default_config_path,

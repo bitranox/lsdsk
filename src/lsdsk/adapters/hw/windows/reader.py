@@ -365,7 +365,17 @@ def _device_control_out(
 
 
 def query_property(kernel32: api.WinLibrary, handle: int, property_id: int, size: int = 1024) -> bytes:
-    """Run IOCTL_STORAGE_QUERY_PROPERTY and return the raw response."""
+    """Run IOCTL_STORAGE_QUERY_PROPERTY and return the raw response.
+
+    Args:
+        kernel32: The typed facade over the Win32 entry points.
+        handle: An open handle to the device.
+        property_id: Which storage property to ask for.
+        size: How large a buffer to offer the driver.
+
+    Returns:
+        The bytes the driver wrote, for a decoder to read.
+    """
     request = api.STORAGE_PROPERTY_QUERY()
     request.PropertyId = property_id
     request.QueryType = api.PROPERTY_STANDARD_QUERY
@@ -410,6 +420,13 @@ def ata_passthrough(
     kernel32: api.WinLibrary, handle: int, *, command: int, feature: int = 0, lba: int = 0
 ) -> tuple[bytes, int]:
     """Issue one read-only ATA command through the Windows passthrough ioctl.
+
+    Args:
+        kernel32: The typed facade over the Win32 entry points.
+        handle: An open handle to the device.
+        command: The ATA command code.
+        feature: The feature register, where the command takes one.
+        lba: The LBA register, where the command takes one.
 
     Returns:
         The data returned and the Win32 error code, which is zero on success.
@@ -457,7 +474,18 @@ def ata_passthrough(
 def nvme_protocol_data(
     kernel32: api.WinLibrary, handle: int, *, data_type: int, request_value: int, length: int
 ) -> bytes:
-    """Fetch an NVMe identify structure or log page through the storage stack."""
+    """Fetch an NVMe identify structure or log page through the storage stack.
+
+    Args:
+        kernel32: The typed facade over the Win32 entry points.
+        handle: An open handle to the device.
+        data_type: Which NVMe protocol structure to ask for.
+        request_value: Which identify page or log page within that type.
+        length: How many bytes the structure occupies.
+
+    Returns:
+        The raw structure, for the shared NVMe decoder.
+    """
     header = ctypes.sizeof(api.STORAGE_PROPERTY_QUERY) + ctypes.sizeof(api.STORAGE_PROTOCOL_SPECIFIC_DATA)
     total = header + length
     buffer = ctypes.create_string_buffer(total)
@@ -548,7 +576,16 @@ def _temperature(kernel32: api.WinLibrary, handle: int) -> dict[str, int]:
 
 
 def read_disk(kernel32: api.WinLibrary, path: str, ancestors: list[str]) -> dict[str, Any]:
-    """Read one disk: identity, geometry, health blobs and the devices above it."""
+    """Read one disk: identity, geometry, health blobs and the devices above it.
+
+    Args:
+        kernel32: The typed facade over the Win32 entry points.
+        path: The device path to open.
+        ancestors: The device instance ids between this disk and the root.
+
+    Returns:
+        One disk's reading, shaped for the capture model to type.
+    """
     # The parent is kept beside the ancestry, because an older lsdsk replaying
     # this capture reads only the parent.
     entry: dict[str, Any] = {"path": path, "parent": ancestors[0] if ancestors else None, "ancestors": ancestors}

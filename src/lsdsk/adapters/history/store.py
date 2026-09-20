@@ -137,6 +137,9 @@ def running_as_root() -> bool:
     Windows has no euid, and its per-user path is already machine-appropriate,
     so it never takes the system branch.
 
+    Returns:
+        Whether the system-wide store is writable by this process.
+
     Example:
         >>> isinstance(running_as_root(), bool)
         True

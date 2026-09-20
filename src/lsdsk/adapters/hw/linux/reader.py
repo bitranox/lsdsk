@@ -518,7 +518,14 @@ def _entries(directory: Path) -> list[Path]:
 
 
 def read_pci(root: Path = Path("/sys/bus/pci/devices")) -> dict[str, dict[str, Any]]:
-    """Read every PCI device, with its link state, slot flag and children."""
+    """Read every PCI device, with its link state, slot flag and children.
+
+    Args:
+        root: The sysfs directory to walk, overridable for a test.
+
+    Returns:
+        One entry per device, keyed by its sysfs address.
+    """
     devices: dict[str, dict[str, Any]] = {}
     if not root.is_dir():
         return devices
@@ -551,7 +558,14 @@ def read_pci(root: Path = Path("/sys/bus/pci/devices")) -> dict[str, dict[str, A
 
 
 def read_classes(root: Path = Path("/sys/class")) -> dict[str, dict[str, dict[str, str]]]:
-    """Read the sysfs classes that describe storage topology."""
+    """Read the sysfs classes that describe storage topology.
+
+    Args:
+        root: The sysfs class directory, overridable for a test.
+
+    Returns:
+        Each class, its members, and each member's attributes.
+    """
     classes: dict[str, dict[str, dict[str, str]]] = {}
     for class_name, attrs in CLASS_ATTRS.items():
         base = root / class_name
@@ -603,6 +617,12 @@ def read_block(root: Path = Path("/sys/block")) -> dict[str, dict[str, Any]]:
     which reads as absent hardware rather than as hardware with nothing to
     report; the builder gives them ``BusType.VIRTUAL`` and every rule that
     needs a physical link then passes over them by class instead of by name.
+
+    Args:
+        root: The sysfs block directory, overridable for a test.
+
+    Returns:
+        One entry per block device, keyed by its kernel name.
     """
     disks: dict[str, dict[str, Any]] = {}
     if not root.is_dir():

@@ -187,7 +187,16 @@ def order_groups(groups: Sequence[DetailGroup], first: Sequence[str]) -> tuple[D
 
 
 def disk_detail(disk: Disk, inventory: Inventory, history: History | None = None) -> Detail:
-    """The whole record of one drive."""
+    """The whole record of one drive.
+
+    Args:
+        disk: The drive to describe.
+        inventory: The machine it sits in, for the controller and port beside it.
+        history: Its counter history, where a store was readable.
+
+    Returns:
+        The record, its groups in reading order.
+    """
     row = tables.disk_table_row(disk, inventory.port_link_for(disk), bandwidth=True)
     series = tables.series_for(disk, history)
     heading = (
@@ -216,7 +225,15 @@ def disk_detail(disk: Disk, inventory: Inventory, history: History | None = None
 
 
 def controller_detail(controller: Controller, inventory: Inventory) -> Detail:
-    """The whole record of one storage controller."""
+    """The whole record of one storage controller.
+
+    Args:
+        controller: The controller to describe.
+        inventory: The machine it sits in, for the drives hanging off it.
+
+    Returns:
+        The record, its groups in reading order.
+    """
     heading = ((controller.address, theme.STYLE_IDENTIFIER), (controller.name, ""), (str(controller.kind), ""))
     attached = inventory.disks_on(controller.address)
     groups = (
@@ -234,6 +251,13 @@ def node_detail(node: PciNode, inventory: Inventory) -> Detail:
     A finding never names a bare PCI address, only a controller's, so a bridge
     or a stray device here shows values and no verdict. That is the honest
     answer rather than an empty one: the panel says no finding names it.
+
+    Args:
+        node: The fabric device to describe.
+        inventory: The machine it sits in.
+
+    Returns:
+        The record, its groups in reading order.
     """
     heading = ((node.address, theme.STYLE_IDENTIFIER), (node.name, ""))
     groups = (
@@ -245,7 +269,15 @@ def node_detail(node: PciNode, inventory: Inventory) -> Detail:
 
 
 def slot_detail(slot: PcieSlot, inventory: Inventory) -> Detail:
-    """The whole record of one PCIe port, and whatever sits in it."""
+    """The whole record of one PCIe port, and whatever sits in it.
+
+    Args:
+        slot: The port to describe.
+        inventory: The machine it sits in, for whatever occupies it.
+
+    Returns:
+        The record, with the occupant fields marked not-applicable when empty.
+    """
     del inventory
     verdict, verdict_style = slot_verdict(slot)
     heading = ((slot.address, theme.STYLE_IDENTIFIER), (slot.occupant_description, ""), (verdict, verdict_style))
@@ -258,7 +290,14 @@ def slot_detail(slot: PcieSlot, inventory: Inventory) -> Detail:
 
 
 def machine_detail(inventory: Inventory) -> Detail:
-    """The whole record of the machine the board carries."""
+    """The whole record of the machine the board carries.
+
+    Args:
+        inventory: The machine to describe.
+
+    Returns:
+        The record, its groups in reading order.
+    """
     heading = ((inventory.hostname, theme.STYLE_IDENTIFIER), (inventory.board, ""))
     groups = (
         DetailGroup(

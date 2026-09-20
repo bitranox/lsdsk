@@ -302,6 +302,13 @@ def device_header_line(fabric: Fabric, rules: str = "") -> Text:
 
     It carries the rules live at the point it is drawn, so a header repeated
     between two devices does not break the vertical line running past it.
+
+    Args:
+        fabric: The section being drawn, which owns the field plan and the spine.
+        rules: The rule glyphs live at this point, drawn before the header's own text.
+
+    Returns:
+        The header line, aligned with the rows beneath it.
     """
     line = Text()
     line.append(" " * _MARKER_WIDTH)

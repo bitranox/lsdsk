@@ -52,6 +52,12 @@ def bus_type_of(value: object) -> object:
     against an enum member itself keeps that decision in the one place a
     future transport spelling would need to be taught.
 
+    Args:
+        value: The transport name Windows published, or anything else.
+
+    Returns:
+        The bus it names, or the value unchanged for the model to refuse.
+
     Example:
         >>> bus_type_of("atapi")
         <BusType.SATA: 'sata'>

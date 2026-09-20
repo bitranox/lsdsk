@@ -287,6 +287,12 @@ def format_size_both(size_bytes: int | None) -> str:
 def format_speed(gbps: float | None) -> str:
     """Render an interface speed in Gb/s.
 
+    Args:
+        gbps: The rate, or ``None`` where nobody published one.
+
+    Returns:
+        The marketing figure, or the not-read marker.
+
     Example:
         >>> format_speed(6.0)
         '6G'
@@ -309,6 +315,14 @@ def link_style(negotiated: float | None, port_max: float | None, drive_max: floa
     Red is reserved for a link proven to be at fault, which needs both ends
     known. With one end unread the shortfall is real but unattributed, so it is
     yellow: an unread port may simply be the slower of the two.
+
+    Args:
+        negotiated: The rate the link actually came up at.
+        port_max: What the port end can do, or ``None`` if unread.
+        drive_max: What the drive end can do, or ``None`` if unread.
+
+    Returns:
+        The style for the negotiated figure, blank where there is nothing to say.
 
     Example:
         >>> link_style(3.0, 12.0, 3.0) == STYLE_AT_CAPABILITY
@@ -343,6 +357,13 @@ def port_style(port_max_gbps: float | None, drive_max_gbps: float | None) -> str
     port is the more capable of the two, the disk column carries that signal, so
     colouring both would say the same thing twice in two colours.
 
+    Args:
+        port_max_gbps: What the port can do, or ``None`` if unread.
+        drive_max_gbps: What the drive in it can do, or ``None`` if unread.
+
+    Returns:
+        The style for the port figure, blank when the port is not the constraint.
+
     Example:
         >>> port_style(3.0, 6.0) == STYLE_BELOW_CAPABILITY
         True
@@ -362,6 +383,13 @@ def disk_style(drive_max_gbps: float | None, port_max_gbps: float | None) -> str
     Coloured when the drive is slower than its port, because that drive is
     holding a seat it cannot use and another drive may want it. Not a fault, and
     deliberately not the colour a fault gets.
+
+    Args:
+        drive_max_gbps: What the drive can do, or ``None`` if unread.
+        port_max_gbps: What the port it sits in can do, or ``None`` if unread.
+
+    Returns:
+        The style for the drive figure, blank when it is not the slower end.
 
     Example:
         >>> disk_style(3.0, 12.0) == STYLE_OPPORTUNITY
@@ -475,6 +503,14 @@ def format_wear(
 ) -> Cell:
     """Render wear as a percentage consumed, and style it.
 
+    Args:
+        percent_used: The drive's own figure, or ``None`` where it published none.
+        warning_percent: The judged figure above which wear is worth watching.
+        critical_percent: The judged figure above which it is worth acting on.
+
+    Returns:
+        The text and its style, as one cell.
+
     Example:
         >>> format_wear(1) == ('1%', STYLE_AT_CAPABILITY)
         True
@@ -498,6 +534,12 @@ def format_wear(
 def marker_for(severity: Severity | None) -> str:
     """Return the ASCII marker for a severity, or blank for none.
 
+    Args:
+        severity: The severity to mark, or ``None``.
+
+    Returns:
+        The marker, which is what carries severity when colour is off.
+
     Example:
         >>> marker_for(Severity.CRITICAL)
         '!!'
@@ -519,6 +561,12 @@ _PCI_KIND_TAG: dict[PciPortKind, str] = {
 
 def pci_tag(kind: PciPortKind) -> str:
     """A short noun for what kind of PCIe port a node is.
+
+    Args:
+        kind: The port kind read from the device.
+
+    Returns:
+        The noun, or blank where the kind is unknown.
 
     Example:
         >>> pci_tag(PciPortKind.ROOT)
@@ -716,6 +764,12 @@ def format_bandwidth(gbps: float | None) -> str:
     beside are already a rate, and ``6G`` next to ``0.60 GB/s`` is one link
     written on two scales eight times apart.
 
+    Args:
+        gbps: The usable rate in GIGABITS per second, or ``None``.
+
+    Returns:
+        The figure in GB/s, or the not-read marker.
+
     Example:
         >>> format_bandwidth(7.876)
         '7.88 GB/s'
@@ -788,6 +842,12 @@ def hop_legend(drawn: Iterable[str]) -> str:
 
 def style_for(severity: Severity | None) -> str:
     """Return the style for a severity, or the neutral style for none.
+
+    Args:
+        severity: The severity to style, or ``None``.
+
+    Returns:
+        The style, blank where there is no severity.
 
     Example:
         >>> style_for(Severity.WARNING) == SEVERITY_STYLES[Severity.WARNING]

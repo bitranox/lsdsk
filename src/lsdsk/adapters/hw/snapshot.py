@@ -57,6 +57,9 @@ _CAPTURE: TypeAdapter[LinuxCapture | WindowsCapture] = TypeAdapter(
 def current_platform() -> str:
     """Return the platform key for the machine this is running on.
 
+    Returns:
+        The key a capture records, so a replay knows which builder to use.
+
     Example:
         >>> current_platform() in {"linux", "win32", "darwin"} or True
         True

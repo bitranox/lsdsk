@@ -12,7 +12,11 @@ if TYPE_CHECKING:
 
 
 def init_logging_in_memory(config: Config) -> None:
-    """No-op -- satisfies the InitLogging protocol without side effects."""
+    """No-op -- satisfies the InitLogging protocol without side effects.
+
+    Args:
+        config: Accepted and ignored, so the signature matches the real adapter.
+    """
 
 
 __all__ = ["init_logging_in_memory"]

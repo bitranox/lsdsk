@@ -387,6 +387,9 @@ def last_error() -> int:
 
     Resolved by name for the same reason as ``WinDLL``: it exists only on
     Windows, and this module has to stay type-checkable elsewhere.
+
+    Returns:
+        The thread's last error code, zero meaning success.
     """
     getter = getattr(ctypes, "get_last_error", None)
     return int(getter()) if getter is not None else 0
@@ -424,6 +427,11 @@ def configure_prototypes(setupapi: WinLibrary, cfgmgr32: WinLibrary, kernel32: W
     not fit in one, so the first call that receives a real handle fails with
     "int too long to convert".  Declaring the types is what makes the handle be
     passed as a pointer-width value.
+
+    Args:
+        setupapi: The device-enumeration library.
+        cfgmgr32: The configuration-manager library.
+        kernel32: The core library carrying the ioctl entry points.
     """
     setupapi.SetupDiGetClassDevsW.restype = wintypes.HANDLE
     setupapi.SetupDiGetClassDevsW.argtypes = (

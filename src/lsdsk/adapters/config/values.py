@@ -49,6 +49,9 @@ def reason_tree_density() -> str:
     added to :class:`~lsdsk.domain.enums.TreeDensity` must not leave a hand-kept
     sentence here naming three of four.
 
+    Returns:
+        The phrase a refusal uses after the colon.
+
     Example:
         >>> reason_tree_density()
         'not one of storage-only, storage-and-siblings, full'
@@ -86,6 +89,12 @@ def rendered(value: object) -> str:
     A string is shown bare, because that is how they typed it after the ``=``;
     anything else gets its repr, so a table or a number is unmistakable.
 
+    Args:
+        value: The value as the configuration layer handed it over.
+
+    Returns:
+        Text to put after the ``=`` in a warning.
+
     Example:
         >>> rendered("abc"), rendered(3), rendered({})
         ('abc', '3', '{}')
@@ -99,6 +108,12 @@ def accepts_positive_int(raw: object) -> bool:
     ``True`` is an ``int`` in Python, so booleans are excluded explicitly; zero and
     below would make a rule fire on everything or on nothing.
 
+    Args:
+        raw: The configured value, of whatever type the file produced.
+
+    Returns:
+        Whether it can be used as it stands.
+
     Example:
         >>> accepts_positive_int(1), accepts_positive_int(0), accepts_positive_int(True)
         (True, False, False)
@@ -107,7 +122,15 @@ def accepts_positive_int(raw: object) -> bool:
 
 
 def positive_int(raw: object, default: int) -> int:
-    """Read a count, falling back rather than failing the run."""
+    """Read a count, falling back rather than failing the run.
+
+    Args:
+        raw: The configured value.
+        default: The shipped figure to use when it cannot be.
+
+    Returns:
+        The configured count, or ``default``.
+    """
     return cast("int", raw) if accepts_positive_int(raw) else default
 
 
@@ -117,12 +140,26 @@ def accepts_positive_float(raw: object) -> bool:
     Example:
         >>> accepts_positive_float(2.5), accepts_positive_float("2.5")
         (True, False)
+
+    Args:
+        raw: The configured value, of whatever type the file produced.
+
+    Returns:
+        Whether it can be used as it stands.
     """
     return not isinstance(raw, bool) and isinstance(raw, (int, float)) and raw > 0
 
 
 def positive_float(raw: object, default: float) -> float:
-    """Read a rate or a count that may be fractional, falling back if malformed."""
+    """Read a rate or a count that may be fractional, falling back if malformed.
+
+    Args:
+        raw: The configured value.
+        default: The shipped figure to use when it cannot be.
+
+    Returns:
+        The configured number, or ``default``.
+    """
     return float(cast("float", raw)) if accepts_positive_float(raw) else default
 
 
@@ -132,6 +169,12 @@ def accepts_flag(raw: object) -> bool:
     A string is not: TOML has a real boolean, and taking ``"false"`` for true is the
     kind of quiet inversion that makes a setting look ignored.
 
+    Args:
+        raw: The configured value, of whatever type the file produced.
+
+    Returns:
+        Whether it can be used as it stands.
+
     Example:
         >>> accepts_flag(False), accepts_flag("false"), accepts_flag(1)
         (True, False, False)
@@ -140,7 +183,15 @@ def accepts_flag(raw: object) -> bool:
 
 
 def flag(raw: object, *, default: bool) -> bool:
-    """Read a switch, falling back rather than failing the run."""
+    """Read a switch, falling back rather than failing the run.
+
+    Args:
+        raw: The configured value.
+        default: The shipped setting to use when it cannot be.
+
+    Returns:
+        The configured switch, or ``default``.
+    """
     return cast("bool", raw) if accepts_flag(raw) else default
 
 
@@ -150,6 +201,12 @@ def accepts_tree_density(raw: object) -> bool:
     Example:
         >>> accepts_tree_density("Full"), accepts_tree_density("bogus")
         (True, False)
+
+    Args:
+        raw: The configured value, either a member or the name of one.
+
+    Returns:
+        Whether it names a density this tool draws.
     """
     if isinstance(raw, TreeDensity):
         return True
@@ -167,6 +224,13 @@ def tree_density_of(raw: object, default: TreeDensity) -> TreeDensity:
         >>> shipped = TreeDensity.STORAGE_ONLY
         >>> f"{tree_density_of(' FULL ', shipped)}", f"{tree_density_of('bogus', shipped)}"
         ('full', 'storage-only')
+
+    Args:
+        raw: The configured value, either a member or the name of one.
+        default: The shipped density to use when it names none.
+
+    Returns:
+        The named density, or ``default``.
     """
     if not accepts_tree_density(raw):
         return default
@@ -181,6 +245,12 @@ def accepts_path(raw: object) -> bool:
     Any string is, blank included: an empty string is how the shipped default says
     "use the state directory", so it is a deliberate value rather than a refused one.
 
+    Args:
+        raw: The configured value, of whatever type the file produced.
+
+    Returns:
+        Whether it can be used as it stands.
+
     Example:
         >>> accepts_path(""), accepts_path("~/h.json"), accepts_path(3)
         (True, True, False)
@@ -194,6 +264,12 @@ def path_or_none(raw: object) -> Path | None:
     Example:
         >>> path_or_none("  "), path_or_none(3)
         (None, None)
+
+    Args:
+        raw: The configured value.
+
+    Returns:
+        The expanded location, or ``None`` to mean the platform's own.
     """
     if not accepts_path(raw) or not cast("str", raw).strip():
         return None

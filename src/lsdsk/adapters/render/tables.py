@@ -459,12 +459,27 @@ def health_table_row(
 
 
 def counter_text(value: int | None) -> str:
-    """Render one health counter, or a dash when it was not read."""
+    """Render one health counter, or a dash when it was not read.
+
+    Args:
+        value: The drive's figure, or ``None`` where it published none.
+
+    Returns:
+        The number, or the not-read marker.
+    """
     return "-" if value is None else str(value)
 
 
 def series_for(disk: Disk, history: History | None) -> DiskSeries | None:
-    """This drive's recorded samples, if any."""
+    """This drive's recorded samples, if any.
+
+    Args:
+        disk: The drive to look up.
+        history: The counter store, or ``None`` when none was readable.
+
+    Returns:
+        Its samples, or ``None`` when the drive has none recorded.
+    """
     if history is None:
         return None
     identity = identity_of(disk)
@@ -472,7 +487,15 @@ def series_for(disk: Disk, history: History | None) -> DiskSeries | None:
 
 
 def trend_of(series: DiskSeries | None, kind: CounterKind) -> Trend | None:
-    """What the samples say about one counter, or nothing recorded."""
+    """What the samples say about one counter, or nothing recorded.
+
+    Args:
+        series: This drive's samples, or ``None``.
+        kind: Which counter to judge.
+
+    Returns:
+        The verdict and its rate, or ``None`` where the span supports neither.
+    """
     return None if series is None else trend_for(series, kind)
 
 
@@ -490,6 +513,13 @@ def counter_cell(value: int | None, trend: Trend | None = None) -> Cell:
 
     Takes the value rather than an object and a field name, so a renamed field
     is a type error here instead of a silent dash at runtime.
+
+    Args:
+        value: The counter's figure, or ``None`` where it was not read.
+        trend: What history says it is doing, where there is history.
+
+    Returns:
+        The text and its style, as one cell.
     """
     if value is None:
         return "-", theme.STYLE_UNKNOWN

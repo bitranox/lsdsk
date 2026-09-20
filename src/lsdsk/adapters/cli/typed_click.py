@@ -43,7 +43,15 @@ _click = cast("_RichClickDecorators", click)
 
 
 def option(*param_decls: str, **attrs: Any) -> _CommandDecorator:
-    """Typed wrapper over :func:`rich_click.option`. See module docstring."""
+    """Typed wrapper over :func:`rich_click.option`. See module docstring.
+
+    Args:
+        param_decls: The option's spellings, as rich-click takes them.
+        attrs: Every other rich-click keyword, forwarded unchanged.
+
+    Returns:
+        The decorator rich-click returns, with a type its callers can read.
+    """
     return _click.option(*param_decls, **attrs)
 
 
