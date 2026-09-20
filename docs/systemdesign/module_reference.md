@@ -202,12 +202,20 @@ describes a ceiling rather than a fault. Anything above `1` means the command di
 | 22   | `INVALID_ARGUMENT`  | A named configuration section or `--profile` was rejected, or `snapshot` was given a global `--replay` |
 | 78   | `CONFIG_ERROR`      | A file is not a snapshot this version reads, or this platform has no hardware reader                   |
 
-Two more a caller will see are named in the enum but come from elsewhere:
+Two more are named in the enum and decided elsewhere:
 
-| Code      | Source  | Meaning                                                                                       |
-|-----------|---------|-----------------------------------------------------------------------------------------------|
-| 2         | Click   | A usage error: an unknown option or command, a missing argument, a bad choice, an absent path |
-| 130 / 143 | signals | Interrupt and terminate, translated by `lib_cli_exit_tools`                                   |
+| Code      | Name          | Source  | Meaning                                                                                       |
+|-----------|---------------|---------|-----------------------------------------------------------------------------------------------|
+| 2         | `USAGE_ERROR` | Click   | A usage error: an unknown option or command, a missing argument, a bad choice, an absent path |
+| 130 / 143 | signals       | signals | Interrupt and terminate, translated by `lib_cli_exit_tools`                                   |
+
+`2` is named here although click decides it, because this tool raises
+`click.UsageError` itself for a malformed `--set` and `click.BadParameter` for an
+unreadable octal mode, and because the failure envelope names the code it leaves
+with: a code with no name would be a hole in that contract. The name says only
+what every usage error has in common, which is the second thing it has to do -
+an earlier `FILE_NOT_FOUND = 2` read as though lsdsk had chosen 2 for the
+missing-file case alone.
 
 Whatever the code, a failure in `--format json` is REPORTED in that format:
 `adapters/cli/envelope.fail` writes one `ErrorEnvelope` to stdout - `ok: false`,
@@ -216,8 +224,22 @@ sentence to stderr. One helper rather than a line at each of the twelve sites,
 so the sentence a person reads and the `message` a machine reads are the one
 string: written separately they drift, and a bug report then describes the
 failure differently from the log line beside it. The `type` is
-`ExitCode(code).name`, not a second vocabulary, so a new code cannot be added
-without its name arriving with it.
+`error_type_for(code)`, which answers with the member's own name, not a second
+vocabulary, so a new code cannot be added without its name arriving with it.
+
+A command line click REFUSES is answered the same way, and is the one failure
+class where the format cannot be read from a parameter: click raises before any
+command callback runs, so nothing has processed `--format` and no subcommand
+context holds it. `envelope.asked_for_json` therefore reads the command line
+itself, which is the only place that intent survives - both spellings click
+accepts, the value case-insensitively, the last one winning as click does, and
+nothing past a bare `--`. It is the single reader of `--format` that can disagree
+with the parser, so every ambiguity resolves to no envelope rather than one
+nobody asked for; the one it cannot see is a value that merely looks like the
+flag, as in `--replay --format json`, where click takes `--format` as
+`--replay`'s value. Which command failed is NOT read from the command line: it
+comes from `exc.ctx.info_name`, which is the subcommand for an error inside one
+and the program name for an unknown command.
 
 `141` sits with neither of those, however much it looks like a signal code. Nothing
 translates a broken pipe: Click catches the `EPIPE` in its own `main` and calls
@@ -237,6 +259,16 @@ The two streams are ranked the same way at the write itself. A departed STDOUT r
 stops the run, because that stream is what was asked for. A departed STDERR reader
 does not: stderr carries diagnostics ABOUT the run, so nobody listening to it costs
 that one message and leaves the command's own verdict standing.
+
+A DIAGNOSTIC written to stdout is the exception, and it needs one, because the
+failure envelope goes there. `safe_console.echo` cannot tell a command's own
+output from a sentence about a code already decided, so both go through
+`write_unless_the_reader_left`, which catches the departed reader in both shapes
+it arrives in: an `OSError` from a write straight to the stream, and the
+`SystemExit(141)` that `echo` raises on stdout. Catching only the first left one
+identical refusal answering `78` in human mode and `141` in JSON mode, since only
+JSON mode writes its sentence to stdout, and a code that depends on the output
+format is exactly the collapse these codes exist to prevent.
 
 That rule has to hold for every writer, including the ones a library owns.
 `lib_log_rich` renders through rich, and rich's `Console.on_broken_pipe` points

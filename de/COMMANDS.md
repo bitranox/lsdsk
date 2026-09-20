@@ -66,7 +66,9 @@ Befehl nennt, bei jedem Befehl, der Daten erzeugt, ausser `report`, dessen
 maschinenlesbare Form `lsdsk snapshot` ist. Die Exit-Codes sind `0`, wenn nichts
 zu tun ist, und `1`, wenn eine Warnung oder ein kritischer Befund vorliegt, es
 passt also unmittelbar in eine Überwachungsprüfung. Fehler folgen den
-sysexits-Konventionen statt einem einzigen Code: `13`, wenn etwas ein Recht
+sysexits-Konventionen statt einem einzigen Code: `2` für eine Befehlszeile, die
+der Parser ablehnt, also eine unbekannte Option, einen unbekannten Befehl, ein
+fehlendes Pflichtargument oder eine ungültige `--format`-Wahl; `13`, wenn etwas ein Recht
 braucht, das dieser Lauf nicht hat - ein `config-deploy`-Ziel, das root
 verlangt, ein diagnostischer Lauf, dessen Hardwarelesung der Kernel rundweg
 verweigert, und ein `snapshot`, dessen Ziel sich nicht schreiben lässt; `22` für
@@ -82,13 +84,23 @@ Ein Lauf, der in `--format json` FEHLSCHLÄGT, antwortet ebenfalls in diesem
 Format, statt zu verstummen: ein Objekt auf stdout mit `ok: false`, dem
 `command`, das fehlgeschlagen ist, und einem `error` aus `{type, message}`. Der
 `type` ist der Name des Exit-Codes selbst - `CONFIG_ERROR`, `INVALID_ARGUMENT`,
-`PERMISSION_DENIED`, `GENERAL_ERROR` -, er kann dem Code, den der Prozess
+`PERMISSION_DENIED`, `USAGE_ERROR`, `GENERAL_ERROR` -, er kann dem Code, den der Prozess
 hinterlässt, also nicht widersprechen. Derselbe Satz geht weiterhin an stderr,
 für jemanden, der mitliest, und ein Fehlschlag im menschenlesbaren Modus legt
 nach wie vor nichts auf stdout. Zuvor schrieb ein fehlgeschlagener JSON-Lauf
 überhaupt nichts: eine `jq`-Pipeline konnte ihn nicht von einem Befehl
 unterscheiden, der keine Daten erzeugte, und die Meldung mit dem Grund lag auf
 dem Strom, den sie nicht las.
+
+Eine Befehlszeile, die der Parser ablehnt, wird ebenso beantwortet, als
+`USAGE_ERROR` und Exit `2`, und der Usage-Block geht unverändert an stderr.
+Dieser Fall wird aus der Befehlszeile selbst gelesen, denn click lehnt sie ab,
+bevor irgendein Befehl läuft, und `--format` ist noch nicht geparst; erkannt
+werden daher `--format json` und `--format=json`, und nichts hinter einem
+einzelnen `--` wird gelesen. Der Exit-Code hängt nicht davon ab, welches Format
+verlangt wurde: eine Ablehnung, die in einen Leser läuft, der weggegangen ist,
+hinterlässt in beiden Modi `2`, `13`, `22` oder `78`, und nur ein Lauf, dessen
+Ausgabe den Leser nie erreicht hat, antwortet mit `141`.
 
 Ein Befehl, der nichts diagnostiziert, hat keinen Befund zu melden; dort steht
 `1` also für den Fehlschlag, den er soeben auf stderr genannt hat, und nicht für

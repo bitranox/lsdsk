@@ -66,7 +66,9 @@ produced it, on every command that produces data except `report`, whose
 machine-readable form is `lsdsk snapshot`. Exit codes are `0` for nothing
 actionable and `1` when a warning or critical was found, so it drops straight
 into a monitoring check. Errors use sysexits conventions rather than a single
-code: `13` when something needs privilege this run lacks - a `config-deploy`
+code: `2` for a command line the parser refuses, which is an unknown option, an
+unknown command, a missing required argument or a bad `--format` choice; `13` when
+something needs privilege this run lacks - a `config-deploy`
 target that needs root, a diagnostic run whose hardware read the kernel refuses
 outright, and a `snapshot` whose destination refuses to be written; `22` for an
 argument the tool cannot act on, which is a
@@ -79,12 +81,21 @@ anything above `1` as "did not run".
 A run that FAILS in `--format json` answers in that format too, rather than
 falling silent: one object on stdout carrying `ok: false`, the `command` that
 failed, and an `error` of `{type, message}`. The `type` is the exit code's own
-name - `CONFIG_ERROR`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`,
+name - `CONFIG_ERROR`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `USAGE_ERROR`,
 `GENERAL_ERROR` - so it cannot disagree with the code the process leaves. The
 same sentence still goes to stderr for a person reading along, and a failure in
 human mode still puts nothing on stdout. Before this, a failing JSON run wrote
 nothing at all: a `jq` pipeline could not tell it from a command that produced
 no data, and the message explaining why was on the stream it was not reading.
+
+A command line the parser refuses answers the same way, as `USAGE_ERROR` and
+exit `2`, and the usage block still goes to stderr unchanged. That one is read
+from the command line itself, because click refuses it before any command runs
+and no `--format` has been parsed yet, so `--format json` and `--format=json` are
+both recognised and nothing past a bare `--` is read. The exit code does not
+depend on which format was asked for: a refusal piped into a reader that walked
+away leaves `2`, `13`, `22` or `78` in either mode, and only a run whose output
+the reader never received answers `141`.
 
 A command that diagnoses nothing has no finding to report, so on those `1` means
 the failure it just named on stderr rather than a warning or a critical: a

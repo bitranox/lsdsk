@@ -147,3 +147,147 @@ def test_a_failing_human_run_writes_nothing_to_stdout(
     assert result.exit_code == ExitCode.CONFIG_ERROR
     assert result.stdout == "", f"a human-mode failure put {result.stdout!r} on stdout"
     assert "Error:" in result.stderr
+
+
+def _refused_command_line(
+    argv: list[str],
+    production_factory: Callable[[], Any],
+    capsys: pytest.CaptureFixture[str],
+) -> tuple[int, str, str]:
+    """Drive a malformed command line through the REAL entry point.
+
+    ``CliRunner.invoke`` cannot reach this path: it runs the group in click's
+    standalone mode, which prints the usage message and returns the code itself,
+    so the handler in :mod:`lsdsk.adapters.cli.main` that this behaviour lives in
+    never executes. Every arm below therefore calls ``main`` the way the console
+    script does.
+
+    Returns:
+        The exit code, what reached stdout, and what reached stderr.
+    """
+    code = cli_mod.main(argv, services_factory=production_factory)
+    captured = capsys.readouterr()
+    return code, captured.out, captured.err
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("argv", "command", "names"),
+    [
+        pytest.param(["nosuchcommand", "--format", "json"], "lsdsk", "nosuchcommand", id="an unknown command"),
+        pytest.param(["disks", "--bogus", "--format", "json"], "disks", "--bogus", id="an unknown option"),
+        pytest.param(["disks", "--format=json", "--bogus"], "disks", "--bogus", id="the --format=json form"),
+        pytest.param(["disks", "--bogus", "--format", "JSON"], "disks", "--bogus", id="the choice is case-insensitive"),
+        pytest.param(["snapshot", "--format", "json"], "snapshot", "--output", id="a missing required option"),
+    ],
+)
+def test_a_usage_error_answers_in_json_when_the_command_line_asked_for_it(
+    argv: list[str],
+    command: str,
+    names: str,
+    production_factory: Callable[[], Any],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A malformed command line is a failure like any other, and JSON was asked for.
+
+    Measured 2026-09-20 before this existed: every one of these wrote 0 bytes to
+    stdout, so a ``--format json`` pipeline could not tell a mistyped option from
+    a command that produced no data, and the sentence saying which option was
+    wrong went to stderr, which is not the stream being parsed.
+
+    The intent is read from the command line itself because there is nowhere else
+    it survives: click raises these before any command callback runs, so no
+    ``output_format`` parameter has been processed.
+    """
+    code, out, err = _refused_command_line(argv, production_factory, capsys)
+
+    assert code == 2, f"click's usage code moved: {code}; stderr was {err!r}"
+    payload = json.loads(out)
+    assert payload["ok"] is False, "a refused command line must be distinguishable from an answer by ok alone"
+    assert payload["command"] == command, (
+        f"the envelope names {payload['command']!r}, which is not the command click refused"
+    )
+    assert payload["error"]["type"] == "USAGE_ERROR", (
+        f"the typed error name is {payload['error']['type']!r}, which does not name click's exit 2"
+    )
+    assert names in payload["error"]["message"], (
+        f"the message {payload['error']['message']!r} does not say what was wrong with the command line"
+    )
+    assert names in err, "the usage prose left stderr, so a person running this by hand sees nothing"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("argv", "why"),
+    [
+        pytest.param(["nosuchcommand"], "no format was asked for at all", id="the shipped human default"),
+        pytest.param(["disks", "--bogus", "--format", "human"], "human was asked for", id="human asked for by name"),
+        pytest.param(["disks", "--bogus", "--format", "nope"], "the format itself is what is wrong", id="a bad choice"),
+        pytest.param(["--", "--format", "json"], "after -- those tokens are arguments", id="past the -- separator"),
+    ],
+)
+def test_a_refused_command_line_keeps_stdout_empty_unless_json_was_asked_for(
+    argv: list[str],
+    why: str,
+    production_factory: Callable[[], Any],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The control: without it, emitting unconditionally passes every arm above.
+
+    Three of these four are the ways the sniff can be WRONG rather than absent -
+    a format asked for by name, a format that is itself the error, and tokens
+    past the separator that click is not reading as options at all.
+    """
+    code, out, err = _refused_command_line(argv, production_factory, capsys)
+
+    assert code == 2, f"click's usage code moved: {code}; stderr was {err!r}"
+    assert out == "", f"stdout carried {out!r} although {why}"
+    assert err != "", "the usage message has to reach somebody"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("args", "asked"),
+    [
+        pytest.param(["disks", "--format", "json"], True, id="the two-token form"),
+        pytest.param(["disks", "--format=json"], True, id="the joined form"),
+        pytest.param(["disks", "--format", "JSON"], True, id="upper case, as click.Choice accepts"),
+        pytest.param(["disks", "--format=JsOn"], True, id="mixed case, joined"),
+        pytest.param(["disks"], False, id="nothing asked for"),
+        pytest.param(["disks", "--format", "human"], False, id="human by name"),
+        pytest.param(["disks", "--format"], False, id="the flag with no value at all"),
+        pytest.param(["disks", "--format", "json", "--format", "human"], False, id="the last one wins, as click does"),
+        pytest.param(["disks", "--format", "human", "--format", "json"], True, id="the last one wins the other way"),
+        pytest.param(["--", "--format", "json"], False, id="past the -- separator"),
+        pytest.param(["disks", "--formats", "json"], False, id="a longer option that merely starts the same"),
+        pytest.param(["disks", "--set", "a.b=--format", "json"], False, id="the flag's text as another option's value"),
+    ],
+)
+def test_reading_the_json_intent_off_the_command_line(args: list[str], asked: bool) -> None:
+    """The sniff itself, which is the one place this design guesses.
+
+    Click owns the value everywhere else, so this function is the only reader of
+    ``--format`` that can disagree with the parser. Each arm names a way they
+    could, and the two that are genuinely ambiguous - a value that happens to
+    read like the flag, and tokens past ``--`` - resolve the conservative way:
+    no envelope rather than one nobody asked for.
+    """
+    from lsdsk.adapters.cli.envelope import asked_for_json
+
+    assert asked_for_json(args) is asked
+
+
+@pytest.mark.os_agnostic
+def test_a_code_no_exit_member_names_is_reported_as_the_code_itself() -> None:
+    """``error.type`` stays one decider, and never invents a second word.
+
+    Every code this tool can leave has a member, so this is the arm for a code
+    arriving from somewhere else - a ``ClickException`` subclass a library
+    defines with its own ``exit_code``. Naming it after the nearest member would
+    tell a caller the name and the code agree when they do not.
+    """
+    from lsdsk.adapters.cli.exit_codes import ExitCode, error_type_for
+
+    assert error_type_for(int(ExitCode.CONFIG_ERROR)) == "CONFIG_ERROR"
+    assert error_type_for(2) == "USAGE_ERROR"
+    assert error_type_for(99) == "EXIT_99"

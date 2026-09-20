@@ -30,9 +30,10 @@ from pydantic import BaseModel, SerializeAsAny
 from lsdsk.domain.enums import ActionCommand, OutputFormat
 
 from . import safe_console
-from .exit_codes import ExitCode
+from .exit_codes import ExitCode, error_type_for
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from typing import NoReturn
 
 
@@ -181,6 +182,89 @@ def invoked_command() -> str:
     return context.info_name
 
 
+#: The option that carries the caller's choice of format.
+#:
+#: Named here because :func:`asked_for_json` is the one place this tool reads that
+#: spelling itself, with no parser to ask. Each command declares its own
+#: ``--format`` and spells it there, so this is not their source; what holds the
+#: two together is that the tests drive ``--format json`` through the real entry
+#: point, so a rename that reached only one of them fails at the parser.
+FORMAT_OPTION = "--format"
+
+
+def asked_for_json(args: Sequence[str]) -> bool:
+    """Whether `args` asks for JSON, read from the command line itself.
+
+    For the one failure class where click cannot answer: a usage error is raised
+    while the command line is still being parsed, so no ``output_format``
+    parameter has been processed and no subcommand context holds one. The
+    command line is the only place the intent survives.
+
+    This is therefore the single reader of ``--format`` that can disagree with
+    the parser, and it resolves every ambiguity the conservative way - no
+    envelope rather than one nobody asked for. Both forms click accepts are
+    read, ``--format json`` and ``--format=json``, the value case-insensitively
+    as ``click.Choice`` takes it, and the LAST one wins as click does. Nothing
+    past a bare ``--`` is read, because those tokens are arguments.
+
+    What it cannot see is a value that merely looks like the flag: in
+    ``--replay --format json`` click takes ``--format`` as ``--replay``'s value,
+    and this reads it as the flag. The cost is one envelope on a command line
+    that was refused anyway, which is why the conservative direction was chosen
+    for everything else.
+
+    Args:
+        args: The command line, without the program name.
+
+    Returns:
+        Whether the caller asked for JSON.
+
+    Example:
+        >>> asked_for_json(["disks", "--format", "json"])
+        True
+        >>> asked_for_json(["disks", "--format=JSON"])
+        True
+        >>> asked_for_json(["disks"])
+        False
+    """
+    joined = f"{FORMAT_OPTION}="
+    chosen: str | None = None
+    index = 0
+    while index < len(args):
+        # `word` rather than `token`: ruff's S105 reads a variable of that name
+        # compared against a literal as a hardcoded credential, and a shell word
+        # is what these actually are.
+        word = args[index]
+        if word == "--":
+            break
+        if word == FORMAT_OPTION:
+            chosen = args[index + 1] if index + 1 < len(args) else None
+            index += 2
+            continue
+        if word.startswith(joined):
+            chosen = word[len(joined) :]
+        index += 1
+    return chosen is not None and chosen.casefold() == OutputFormat.JSON.value.casefold()
+
+
+def emit_error(command: str, code: int, message: str) -> None:
+    """Write the failure envelope for `command` as one object on stdout.
+
+    The one emitter, so a failure click refused before the run began and a
+    failure the run itself decided cannot describe themselves differently. What
+    the two do NOT share is the exit: :func:`fail` raises, while a usage error's
+    code is click's own and is returned by the caller.
+
+    Args:
+        command: The command that failed, as the caller typed it.
+        code: The exit code the process will leave with, whose name becomes the
+            error type.
+        message: The failure, as one sentence, with no ``Error:`` prefix.
+    """
+    envelope = ErrorEnvelope(command=command, error=ErrorDetail(type=error_type_for(code), message=message))
+    safe_console.echo(envelope.model_dump_json())
+
+
 def fail(message: str, code: ExitCode, *, output_format: OutputFormat, hint: str | None = None) -> NoReturn:
     """Report `message` and leave with `code`, answering in the caller's format.
 
@@ -217,22 +301,24 @@ def fail(message: str, code: ExitCode, *, output_format: OutputFormat, hint: str
     if hint is not None:
         safe_console.echo(hint, err=True)
     if output_format is OutputFormat.JSON:
-        envelope = ErrorEnvelope(
-            command=invoked_command(),
-            error=ErrorDetail(type=ExitCode(code).name, message=message),
-        )
-        safe_console.echo(envelope.model_dump_json())
+        # Through the guard, because this is a diagnostic about a code already
+        # decided rather than the output the caller asked for: a reader that has
+        # gone costs the envelope, never the refusal.
+        safe_console.write_unless_the_reader_left(lambda: emit_error(invoked_command(), int(code), message), err=False)
     raise SystemExit(code)
 
 
 __all__ = [
+    "FORMAT_OPTION",
     "UNNAMED_COMMAND",
     "ActionEnvelope",
     "ActionResult",
     "ErrorDetail",
     "ErrorEnvelope",
     "MappingResult",
+    "asked_for_json",
     "emit_action",
+    "emit_error",
     "fail",
     "invoked_command",
 ]

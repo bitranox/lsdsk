@@ -335,3 +335,36 @@ class TestWhatMainLeavesBehindForAnEmbeddingCaller:
             "main() returned with fd 1 pointing somewhere else, so an embedding caller's own "
             "output now goes to the null device in silence"
         )
+
+
+@pytest.mark.os_agnostic
+def test_a_guarded_diagnostic_write_swallows_a_departed_reader_and_nothing_else() -> None:
+    """The guard catches one event in two shapes, never every ``SystemExit``.
+
+    A diagnostic write reaches the reader two ways, and a broken pipe arrives as
+    an ``OSError`` from one and as ``SystemExit(141)`` from the other, because
+    :func:`~lsdsk.adapters.cli.safe_console.echo` ends the run for a departed
+    STDOUT reader - which is right for a command's own output and wrong for a
+    sentence about a code already decided.
+
+    So the second catch has to be narrow. Written broadly, ``except SystemExit``
+    passes every other arm in this file while swallowing a command's deliberate
+    exit raised inside a diagnostic write, and the run would then report success
+    for a failure it had already decided. The control below is what makes this
+    arm about WHICH code rather than about a guard that does nothing.
+    """
+    from lsdsk.adapters.cli.exit_codes import ExitCode
+
+    def leaves_with_a_code_of_its_own() -> None:
+        raise SystemExit(ExitCode.CONFIG_ERROR)
+
+    with pytest.raises(SystemExit) as leaving:
+        safe_console.write_unless_the_reader_left(leaves_with_a_code_of_its_own)
+    assert leaving.value.code == ExitCode.CONFIG_ERROR, (
+        f"a deliberate exit was rewritten to {leaving.value.code!r} inside a diagnostic write"
+    )
+
+    def leaves_because_the_reader_did() -> None:
+        raise SystemExit(ExitCode.BROKEN_PIPE)
+
+    safe_console.write_unless_the_reader_left(leaves_because_the_reader_did)

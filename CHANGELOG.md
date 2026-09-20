@@ -7,6 +7,39 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **A refused command line answers in JSON too, and one refusal now leaves the
+  same exit code in both output formats.** Two halves, and the second was a
+  defect the first uncovered.
+
+  A usage error - an unknown option or command, a missing required argument, a
+  bad `--format` choice - is the one failure click raises before any command
+  callback runs, so nothing has processed `--format` and the previous release
+  answered it in prose alone: measured, `lsdsk disks --bogus --format json` wrote
+  0 bytes to stdout, so a pipeline could not tell a mistyped flag from a command
+  with no data. It now emits the same envelope every other failure does, as
+  `{"ok": false, "command": ..., "error": {"type": "USAGE_ERROR", ...}}` with the
+  usage block unchanged on stderr. The intent is read from the command line
+  itself, which is the only place it survives: both spellings click accepts, the
+  value case-insensitively, the last one winning as click does, and nothing past
+  a bare `--`. Being the one reader of `--format` that can disagree with the
+  parser, it resolves every ambiguity to no envelope rather than one nobody asked
+  for. Which command failed is not read there at all - it comes from click's own
+  context. `2` is named `USAGE_ERROR` in the exit-code enum now, because the
+  envelope names the code it leaves with and a code with no name would be a hole
+  in that contract; the enum's own note that it never raised 2 was wrong, since
+  a malformed `--set` raises `click.UsageError` here.
+
+  The defect: a refusal piped into a reader that walked away left `141` in JSON
+  mode and the refusal's own code in human mode. Measured on one identical
+  failure, a file that is not a capture: `78` in human mode, `141` in JSON.
+  Only JSON mode writes its sentence to stdout, and the writer ends the run for a
+  departed stdout reader - right for a command's own output, wrong for a sentence
+  about a code already decided. Both now go through the guard that gives up
+  quietly, which catches that event in both shapes it arrives in. So `2`, `13`,
+  `22` and `78` stand whoever was reading, in either format, and only a run whose
+  output the reader never received answers `141`. An exit code that depends on the
+  output format is exactly what these codes exist to prevent.
+
 - **A failing `--format json` run now answers in JSON instead of falling silent.**
   Measured before: every error path wrote 0 bytes to stdout, so a `jq` pipeline
   could not tell a command that failed from one that produced no data, and the

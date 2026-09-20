@@ -196,10 +196,18 @@ def write_unless_the_reader_left(emit: Callable[[], None], *, err: bool = True) 
     """Run `emit`, and give up quietly if the reader of its stream has gone.
 
     For a DIAGNOSTIC write on the way out of a run that has ALREADY decided its
-    exit code - click's usage message, a traceback. A broken pipe there must not
-    become the answer, and must not escape: the run's own code is what the caller
-    asked about, and it is a refusal, which
+    exit code - click's usage message, a traceback, the failure envelope. A broken
+    pipe there must not become the answer, and must not escape: the run's own code
+    is what the caller asked about, and it is a refusal, which
     :func:`~.exit_codes.outranks_a_departed_reader` says stands.
+
+    The same event arrives in two shapes, so both are caught. A write straight to
+    the stream raises ``OSError``; a write through :func:`echo` raises
+    ``SystemExit(BROKEN_PIPE)``, because for a command's OWN output a departed
+    stdout reader does end the run. Catching only the first left one identical
+    refusal answering 78 in human mode and 141 in JSON mode, since only the JSON
+    mode writes its sentence to stdout - and an exit code that depends on the
+    output format is the collapse the codes exist to prevent.
 
     Measured before this existed: ``lsdsk nosuchcommand 2>&1 | head`` left 120.
     click raised ``UsageError``, the ``BrokenPipeError`` from printing it was
@@ -222,6 +230,11 @@ def write_unless_the_reader_left(emit: Callable[[], None], *, err: bool = True) 
         if not is_broken_pipe(exc):
             raise
         _stop_writing_to(sys.stderr if err else sys.stdout)
+    except SystemExit as leaving:
+        if leaving.code != int(ExitCode.BROKEN_PIPE):
+            raise
+        # Nothing to silence here: whatever raised this has already pointed the
+        # stream at the null device, which is what `_reader_went_away` does first.
 
 
 def _reader_went_away(stream: IO[Any] | None) -> NoReturn:

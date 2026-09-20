@@ -372,10 +372,6 @@ def test_a_reader_that_leaves_early_gets_the_broken_pipe_code_not_the_findings_c
     )
 
 
-#: Click's usage-error code, which this tool returns unchanged and its own enum
-#: therefore does not declare - see the note in :class:`ExitCode`.
-_CLICK_USAGE_ERROR = 2
-
 FINDINGS_CAPTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
 ABSENT_HISTORY = Path(__file__).parent / "fixtures" / "hw" / "does-not-exist-history.json"
 
@@ -430,7 +426,9 @@ def test_a_refusal_click_itself_printed_outranks_a_departed_reader() -> None:
     """
     argv = ["nosuchcommand"]
     control = _run_and_take_the_output_away(capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=False)
-    assert control.code == _CLICK_USAGE_ERROR, f"the control: an unknown command must leave 2, and left {control.code}"
+    assert control.code == ExitCode.USAGE_ERROR, (
+        f"the control: an unknown command must leave {int(ExitCode.USAGE_ERROR)}, and left {control.code}"
+    )
     assert control.stderr_bytes > 0, (
         "the control wrote nothing to stderr, so the write this test is about never happened"
     )
@@ -438,7 +436,7 @@ def test_a_refusal_click_itself_printed_outranks_a_departed_reader() -> None:
     abandoned = _run_and_take_the_output_away(
         capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=True, stderr_leaves=True
     ).code
-    assert abandoned == _CLICK_USAGE_ERROR, (
+    assert abandoned == ExitCode.USAGE_ERROR, (
         f"an unknown command piped into a reader that left got {abandoned}, so the one actionable fact reached nobody"
     )
 
@@ -599,3 +597,52 @@ def test_a_snapshot_refused_by_the_filesystem_says_which_path_was_refused(
     refusal = capsys.readouterr().err
     assert str(target) in refusal, "the refusal does not name the destination"
     assert "write the capture to" in refusal, f"nothing says what was refused: {refusal!r}"
+
+
+#: A real file that is certainly not a capture, so the reader refuses it with 78
+#: before anything is written to stdout at all.
+NOT_A_CAPTURE = Path(__file__).parent.parent / "README.md"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    "fmt",
+    [
+        pytest.param([], id="human, whose sentence goes to stderr"),
+        pytest.param(["--format", "json"], id="json, whose envelope goes to stdout"),
+    ],
+)
+def test_a_refusal_outranks_a_departed_reader_in_either_output_format(fmt: list[str]) -> None:
+    """The exit code is the same fact in both formats, so it cannot depend on one.
+
+    A snapshot this version cannot read is refused before a single byte of output
+    exists, so the contract (user, 2026-09-20) says 78 stands whoever was
+    reading. Human mode already did: its sentence goes to stderr, and stdout was
+    never written.
+
+    JSON mode wrote the same refusal as an envelope on STDOUT, and
+    :func:`~lsdsk.adapters.cli.safe_console.echo` treats a departed stdout reader
+    as a reason to stop the run - which is right for a command's own output and
+    wrong for a diagnostic about a code already decided. Measured before the fix:
+    78 in human mode and 141 in JSON mode for one identical refusal, breaking the
+    format-independence the exit codes are for.
+
+    Parametrized over the two formats rather than asserting the JSON arm alone,
+    because the property is that they AGREE: a fix that moved human mode to 141
+    would satisfy a single-arm test.
+    """
+    from lsdsk.adapters.cli.exit_codes import ExitCode
+
+    argv = ["findings", *fmt]
+    control = _run_and_take_the_output_away(capture=NOT_A_CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=False)
+    assert control.code == ExitCode.CONFIG_ERROR, (
+        f"the control: a file that is not a capture must leave {int(ExitCode.CONFIG_ERROR)}, and left {control.code}"
+    )
+    assert control.stderr_bytes > 0, "the control wrote nothing to stderr, so the refusal reached nobody"
+
+    abandoned = _run_and_take_the_output_away(
+        capture=NOT_A_CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=True, stderr_leaves=True
+    ).code
+    assert abandoned == ExitCode.CONFIG_ERROR, (
+        f"a refusal whose reader left got {abandoned}, so the one actionable fact reached nobody"
+    )

@@ -47,6 +47,42 @@ def _display_settings() -> DisplaySettings:
         return DisplaySettings()
 
 
+def _answer_a_refused_command_line(exc: click.ClickException, args: Sequence[str]) -> None:
+    """Add the failure envelope for a command line click refused, if JSON was asked for.
+
+    The prose on stderr is unchanged and already written by the time this runs:
+    this is an addition for the machine, not a move. Without it a ``--format
+    json`` pipeline met the one failure class that answered in prose alone, and
+    could not tell a mistyped option from a command that produced no data.
+
+    Which command failed comes from click's own context rather than from the
+    command line, so only the format itself is read twice. ``info_name`` is the
+    subcommand for an error inside one and the program name for an error before
+    any was resolved, which is what an unknown command is.
+
+    The write goes through the same guard as the prose, on stdout: a reader that
+    has already left costs this diagnostic and nothing else, because the code
+    click decided is 2 and
+    :func:`~.exit_codes.outranks_a_departed_reader` says a refusal stands whoever
+    was reading.
+
+    Args:
+        exc: The exception click raised while parsing.
+        args: The command line it was parsing, without the program name.
+    """
+    # Deferred for the same reason as the `cli` import above: importing main stays cheap.
+    from .envelope import UNNAMED_COMMAND, asked_for_json, emit_error  # noqa: PLC0415 - deferred: see above
+
+    if not asked_for_json(args):
+        return
+    context = exc.ctx if isinstance(exc, click.UsageError) else None
+    named = context.info_name if context is not None else None
+    safe_console.write_unless_the_reader_left(
+        lambda: emit_error(named or UNNAMED_COMMAND, exc.exit_code, exc.format_message()),
+        err=False,
+    )
+
+
 def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppServices]) -> int:
     """Execute the CLI with exception handling.
 
@@ -78,6 +114,7 @@ def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppSe
         # raised INSIDE this handler, so unguarded it escapes main() itself and the
         # caller is told nothing about the usage error it actually made.
         safe_console.write_unless_the_reader_left(exc.show)
+        _answer_a_refused_command_line(exc, args)
         return exc.exit_code
     except SystemExit as exc:
         # A command raising SystemExit is stating the code it means to leave
