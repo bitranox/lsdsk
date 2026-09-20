@@ -227,10 +227,7 @@ def save(capture: dict[str, Any], path: Path) -> None:
         return
     temporary = Path(temporary_name)
     try:
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(body)
-            stream.flush()
-            os.fsync(stream.fileno())
+        _write_through(handle, body, sync=True)
         # mkstemp already creates at 0600; setting it explicitly means the
         # guarantee does not rest on that, and a umask cannot widen it.
         # A filesystem that does not carry modes is not a failure to write.
@@ -241,6 +238,37 @@ def save(capture: dict[str, Any], path: Path) -> None:
         with contextlib.suppress(OSError):
             temporary.unlink()
         raise
+
+
+def _write_through(descriptor: int, body: str, *, sync: bool) -> None:
+    """Write the body through a raw descriptor and close it however that ends.
+
+    ``os.fdopen`` takes ownership of the descriptor only once it RETURNS, so a
+    failure inside it leaves the descriptor open with nothing holding it: the
+    caller's cleanup can unlink the file it named and still leak the handle.
+    Measured before this existed - one refused save moved the next free
+    descriptor up by one.
+
+    Args:
+        descriptor: A descriptor nothing else owns yet.
+        body: The whole file.
+        sync: Whether to force the bytes out before the descriptor is closed.
+            The atomic path does, because the rename that follows must not be
+            able to publish an empty file after a crash. The in-place fallback
+            does not: it is only ever taken where no temporary file could be
+            made, which includes a character device, and ``fsync`` on one of
+            those fails with ``EINVAL`` rather than meaning anything.
+    """
+    try:
+        stream = os.fdopen(descriptor, "w", encoding="utf-8")
+    except BaseException:
+        os.close(descriptor)
+        raise
+    with stream:
+        stream.write(body)
+        if sync:
+            stream.flush()
+            os.fsync(stream.fileno())
 
 
 def _write_in_place(path: Path, body: str) -> None:
@@ -255,8 +283,7 @@ def _write_in_place(path: Path, body: str) -> None:
     """
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(path, flags, SNAPSHOT_FILE_MODE)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-        stream.write(body)
+    _write_through(descriptor, body, sync=False)
     with contextlib.suppress(OSError):
         path.chmod(SNAPSHOT_FILE_MODE)
 

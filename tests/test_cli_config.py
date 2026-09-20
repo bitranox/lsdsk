@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -614,6 +615,32 @@ def test_a_missing_section_reads_the_same_in_both_formats(
     assert human.exit_code == structured.exit_code == 22
     assert "not found" in human.stderr
     assert "not found" in structured.stderr
+
+
+@pytest.mark.os_agnostic
+def test_a_missing_section_writes_nothing_to_stdout_in_either_format(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+) -> None:
+    """A run that names no section must leave a redirect empty, not half a page.
+
+    The human arm wrote the blank line and the library's header before the
+    lookup refused, so `lsdsk config --section nope > out` left 122 bytes of a
+    page that does not exist, while the json arm of the same command left
+    exactly its error envelope and nothing else. A caller cannot tell a partial
+    page from a real one by its size.
+
+    The two arms are not asserted to write the SAME thing: a refusal in a
+    machine-readable format IS output, and the envelope is how a caller reads
+    it. What both must do is write no page.
+    """
+    args = ["config", "--section", "no_such_section"]
+    human: Result = cli_runner.invoke(cli_mod.cli, args, obj=production_factory)
+    structured: Result = cli_runner.invoke(cli_mod.cli, [*args, "--format", "json"], obj=production_factory)
+
+    assert human.exit_code == structured.exit_code == 22, "the control: both arms must refuse"
+    assert human.stdout == "", f"the human arm wrote {len(human.stdout)} bytes of a page that does not exist"
+    assert json.loads(structured.stdout)["ok"] is False, "the json arm wrote something other than its refusal"
 
 
 @pytest.mark.os_agnostic

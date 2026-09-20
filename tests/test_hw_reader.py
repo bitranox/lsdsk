@@ -124,3 +124,57 @@ def test_the_windows_reader_decides_nvme_through_the_shared_bus_conversion() -> 
     assert bus_type_of("nvme") is BusType.NVME
     assert bus_type_of("scsi") is BusType.SAS
     assert bus_type_of("made-up-transport") is BusType.UNKNOWN
+
+
+@pytest.mark.os_agnostic
+def test_every_device_tree_walk_in_the_windows_reader_is_bounded() -> None:
+    """A driver that returns a cycle must stop the walk, not the machine.
+
+    `_ancestor_instances` walks up through `CM_Get_Parent` inside a `range`,
+    and `_child_instances` walked the sibling chain under `while True:` with an
+    unbounded list behind it: a device whose sibling chain loops hangs the scan
+    and grows that list until the process dies. Neither loop can be driven from
+    a test on this platform - the calls are cfgmgr32's - so the invariant is
+    asserted on the source.
+
+    What counts as bounded is the question, and a `while` is not automatically
+    the unbounded shape: the two SetupAPI enumerations advance an `index` OF
+    THEIR OWN and hand it to the call in the condition, so each turn asks about
+    a different device and the enumeration ends itself. The shape that cannot
+    end is a loop whose condition rests on nothing the body advances - a bare
+    `while True`, or a cursor read back from the driver every turn.
+    """
+    import ast
+
+    from lsdsk.adapters.hw.windows import reader as windows_reader
+
+    def unbounded_loops(source: str) -> set[str]:
+        """The functions in `source` holding a loop nothing in the body counts down."""
+        found: set[str] = set()
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            for loop in ast.walk(node):
+                if isinstance(loop, ast.While) and not _counts_its_own_turns(loop):
+                    found.add(node.name)
+        return found
+
+    def _counts_its_own_turns(loop: ast.While) -> bool:
+        """Whether the loop's own body advances a name its condition reads."""
+        asked = {name.id for name in ast.walk(loop.test) if isinstance(name, ast.Name)}
+        advanced = {
+            step.target.id
+            for step in ast.walk(loop)
+            if isinstance(step, ast.AugAssign) and isinstance(step.target, ast.Name)
+        }
+        return bool(asked & advanced)
+
+    source = Path(windows_reader.__file__).read_text(encoding="utf-8")
+    assert unbounded_loops(source) == set(), "a device-tree walk can run forever"
+
+    # Not vacuous, in both directions: it names the shape that cannot end, and
+    # leaves the enumeration that ends itself alone.
+    cycle = "class T:\n    def _child_instances(self):\n        while True:\n            pass\n"
+    assert unbounded_loops(cycle) == {"_child_instances"}
+    enumeration = "class T:\n    def walk(self):\n        i = 0\n        while self.next(i):\n            i += 1\n"
+    assert unbounded_loops(enumeration) == set()

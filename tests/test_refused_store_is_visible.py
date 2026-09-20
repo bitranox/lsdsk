@@ -132,3 +132,28 @@ def test_the_refusal_is_quoted_rather_than_summarised() -> None:
     inventory = machine()
     said = drawn(render_trend(inventory, History(hostname=inventory.hostname), width=118, store_refusal=REFUSAL))
     assert REFUSAL in said, said[:300]
+
+
+@pytest.mark.os_agnostic
+def test_a_second_run_in_one_process_is_told_about_the_refusal_too(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path, strip_ansi: Callable[[str], str]
+) -> None:
+    """The set that keeps one run from saying it twice is scoped to the RUN.
+
+    `health` reads the store twice and printed the whole refusal both times,
+    which is what the set is for. It was never reset though, so the SECOND
+    invocation in one process - what an embedder calling `main([...])` again
+    does, and what this runner does - was told nothing at all about a store it
+    also could not read.
+    """
+    broken = tmp_path / "broken.json"
+    broken.write_text("{ broken", encoding="utf-8")
+    args = ["--history-file", str(broken), "trend", "--replay", str(FIXTURE)]
+
+    first = cli_runner.invoke(cli, args, obj=production_factory)
+    second = cli_runner.invoke(cli, args, obj=production_factory)
+
+    assert "ignoring counter history" in strip_ansi(first.stderr), "the control: the first run must say it"
+    assert "ignoring counter history" in strip_ansi(second.stderr), (
+        "a second run in the same process was told nothing about a store it could not read"
+    )

@@ -60,6 +60,17 @@ logger = logging.getLogger(__name__)
 _ANNOUNCED_REFUSALS: set[Path] = set()
 
 
+def forget_announced_refusals() -> None:
+    """Begin a run with nothing already said about any store.
+
+    The set above is scoped to a RUN, and a process can hold several: `main`
+    is the documented embedder entry, so a second `main([...])` in one process
+    is a second run and must be told about a store it cannot read. Left
+    unreset, only the first one ever was.
+    """
+    _ANNOUNCED_REFUSALS.clear()
+
+
 def read_history(inventory: Inventory, settings: HistorySettings) -> HistoryRead:
     """Load this machine's recorded history, or start an empty one.
 

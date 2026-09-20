@@ -353,3 +353,39 @@ def test_a_coercer_and_the_test_that_decides_what_it_accepts_cannot_disagree(
             )
         else:
             assert answers == defaults, f"{raw!r} is refused, so the default must decide, yet the answer was {answers}"
+
+
+@pytest.mark.os_agnostic
+def test_a_span_the_rules_cannot_divide_by_is_refused_by_the_value_object() -> None:
+    """The adapter's guard is one layer, and the domain has to hold its own.
+
+    ``_rising`` divides by the span once it clears ``min_span_hours``, and the
+    threshold's own docstring says "Below one there is nothing to divide by" -
+    but nothing on the model said so, and removing the adapter's ``raw > 0``
+    SURVIVED the whole suite. Every configured path is guarded now, and a
+    direct construction - what the domain's own callers and any embedder do -
+    was not, so a zero reached the divisor.
+    """
+    from pydantic import ValidationError
+
+    from lsdsk.domain.thresholds import Thresholds
+
+    with pytest.raises(ValidationError):
+        Thresholds(min_span_hours=0)
+    with pytest.raises(ValidationError):
+        Thresholds(min_span_hours=-1)
+    with pytest.raises(ValidationError):
+        Thresholds(quiet_expected_min=0.0)
+
+    # The control: the shipped figures, and the smallest span a rate can be
+    # computed over, are still accepted.
+    assert Thresholds(min_span_hours=1).min_span_hours == 1
+    assert Thresholds().quiet_expected_min == 10.0
+
+
+@pytest.mark.os_agnostic
+def test_the_adapter_guard_the_domain_floor_stands_behind_is_itself_tested() -> None:
+    """``positive_int`` refusing zero was the only thing between a file and the traceback."""
+    assert positive_int(0, 5) == 5, "a zero span reached the divisor"
+    assert positive_int(-3, 5) == 5
+    assert positive_int(2, 5) == 2, "the control: a usable value is still taken"

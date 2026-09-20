@@ -53,6 +53,13 @@ _NVME_SMART_LOG_ID = 0x02
 # tree from being walked forever.
 _MAX_TREE_DEPTH = 64
 
+# One node's CHILDREN are a different quantity and get their own bound: a single
+# PCI bus alone allows 32 devices of 8 functions, so a depth-sized cap here would
+# truncate a real machine. This is high enough that nothing real reaches it and
+# low enough that a driver returning a sibling cycle stops rather than filling
+# memory.
+_MAX_SIBLINGS = 4096
+
 
 def is_elevated() -> bool:
     """Whether this process can issue passthrough commands.
@@ -208,7 +215,7 @@ class _DeviceTree:
         if self.cfgmgr32.CM_Get_Child(ctypes.byref(child), devinst, 0) != 0:
             return []
         found: list[str] = []
-        while True:
+        for _ in range(_MAX_SIBLINGS):
             instance = self._instance_id(child.value)
             if instance:
                 found.append(instance)
@@ -216,6 +223,7 @@ class _DeviceTree:
             if self.cfgmgr32.CM_Get_Sibling(ctypes.byref(sibling), child.value, 0) != 0:
                 return found
             child = sibling
+        return found
 
     def _property(
         self,

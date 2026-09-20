@@ -361,6 +361,15 @@ def cli(
         ),
     )
     apply_traceback_preferences(traceback)
+    # One run, one telling. The set that keeps `health` from printing the same
+    # refused store twice is scoped to an invocation, and this callback is what
+    # an invocation begins with - including the second `main([...])` an embedder
+    # makes in one process, which was told nothing at all.
+    from .commands.history import (  # noqa: PLC0415 - deferred, same cycle as _register_commands
+        forget_announced_refusals,
+    )
+
+    forget_announced_refusals()
 
     if ctx.invoked_subcommand is not None:
         return

@@ -17,6 +17,8 @@ System Role:
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from .base import DomainModel
 
 
@@ -50,8 +52,13 @@ class Thresholds(DomainModel, frozen=True):
     crc_errors_significant: int = 100
     mixed_firmware_threshold: int = 2
     wear_projection_min_points: int = 2
-    quiet_expected_min: float = 10.0
-    min_span_hours: int = 1
+    # Both floors are the domain's own: a rule divides by the span, and its
+    # docstring already said there is nothing to divide by below one. The
+    # adapter refuses a configured zero as well, but that guard only covers the
+    # paths that come through a file - a direct construction reached the
+    # divisor, and removing the adapter's guard survived the whole suite.
+    quiet_expected_min: float = Field(default=10.0, gt=0)
+    min_span_hours: int = Field(default=1, ge=1)
 
 
 #: What the rules use when nobody says otherwise.

@@ -302,6 +302,43 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A snapshot that fails to open its temporary file no longer leaks the
+  descriptor.** `mkstemp` and `os.open` hand back a raw descriptor that nothing
+  owns until `os.fdopen` has RETURNED, so a failure inside that call left the
+  descriptor open while the cleanup unlinked the file and reported the error it
+  met. Measured: one refused save moved the next free descriptor up by one, in
+  both the atomic path and the in-place fallback. One helper now owns the
+  descriptor on every path, and the fallback keeps its own answer about
+  `fsync`, which a character device refuses.
+
+- **`lsdsk config --section <unknown>` writes no page before it refuses.** The
+  human arm let the configuration library refuse mid-render, so a redirect of a
+  failed run held a blank line and the header of a page that does not exist -
+  122 bytes - while the json arm of the same command wrote only its error
+  envelope. Both arms now resolve the section through one decider before
+  anything is written, so they cannot disagree about what a section is either.
+
+- **A second run in one process is told about a counter store it cannot read.**
+  The set that keeps `health` from printing the same refusal twice within a run
+  was never reset, so only the FIRST `main([...])` in a process ever said
+  anything: an embedder calling it again was told nothing at all about an
+  unreadable store. It is cleared where a run begins.
+
+- **A span the rules cannot divide by is refused by the value object itself.**
+  `Thresholds.min_span_hours` carried no floor although the rule divides by the
+  span it gates, and `quiet_expected_min` none either. Every configured path was
+  already guarded in the adapter - removing that guard survived the whole suite -
+  so a direct construction was the one way to reach the division. Both floors are
+  on the model now.
+
+- **The Windows device tree stops rather than looping.** `_child_instances`
+  walked the sibling chain under `while True:` with an unbounded list behind it,
+  where the ancestor walk two functions above has always been bounded, so a
+  driver returning a cycle would hang the scan and grow that list until the
+  process died. Children get their own bound rather than the depth one, because
+  a single PCI bus allows 32 devices of 8 functions and a depth-sized cap would
+  truncate a real machine.
+
 - **A misspelled `--set` SECTION is refused instead of applied to nothing.**
   Measured before this: `--set threshold.wear_warning_percent=1`, one letter
   short, moved the verdict from 16 findings to the shipped 5 at exit 1 with `ok`

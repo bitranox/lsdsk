@@ -96,11 +96,16 @@ def cli_config(ctx: click.Context, output_format: OutputFormat, section: str | N
             "Displaying configuration",
             extra={"format": output_format.value, "section": section, "profile": effective_profile},
         )
+        # Before a byte is written, in both arms: the human arm used to let the
+        # library refuse mid-render, so a redirect of a failed run held the blank
+        # line and a header of a page that does not exist while the json arm of
+        # the same command left the file empty.
+        try:
+            _refuse_a_section_that_resolves_to_nothing(effective_config, section)
+        except ValueError as exc:
+            fail(str(exc), ExitCode.INVALID_ARGUMENT, output_format=output_format)
         if output_format is OutputFormat.JSON:
-            try:
-                data = _redacted_config_data(effective_config, section)
-            except ValueError as exc:
-                _fail_after_output(str(exc), ExitCode.INVALID_ARGUMENT, output_format=output_format)
+            data = _redacted_config_data(effective_config, section)
             emit_action(ActionCommand.CONFIG, MappingResult.model_validate(data))
             return
         safe_console.echo()
@@ -109,6 +114,10 @@ def cli_config(ctx: click.Context, output_format: OutputFormat, section: str | N
                 effective_config, output_format=output_format, section=section, profile=effective_profile
             )
         except ValueError as exc:
+            # A backstop, not the guard: the lookup above is what a missing
+            # section now meets. The library decides for itself what it can
+            # render, and a disagreement between the two must still leave 22
+            # rather than reading as a crash in this tool.
             _fail_after_output(str(exc), ExitCode.INVALID_ARGUMENT, output_format=output_format)
 
 
@@ -133,6 +142,27 @@ def _fail_after_output(
     """
     safe_console.echo("", err=True)
     fail(message, code, output_format=output_format, hint=hint)
+
+
+def _refuse_a_section_that_resolves_to_nothing(config: Config, section: str | None) -> None:
+    """Refuse a `--section` that names nothing, before either arm writes anything.
+
+    One resolution for both formats, which is what keeps them agreeing about
+    what a section is: `Config.get` resolves a dotted path, and an empty string
+    is a request for everything rather than a section that is missing.
+
+    Args:
+        config: The merged configuration.
+        section: What the caller asked for, or ``None`` for all of it.
+
+    Raises:
+        ValueError: If a section was named that does not resolve.
+    """
+    if not section:
+        return
+    if config.get(section, default=None) is None:
+        message = f"Section '{section}' not found"
+        raise ValueError(message)
 
 
 def _redacted_config_data(config: Config, section: str | None) -> dict[str, Any]:
@@ -170,10 +200,10 @@ def _redacted_config_data(config: Config, section: str | None) -> dict[str, Any]
     """
     if not section:
         return redact_secrets(redact_mapping(config.as_dict()))
+    # One decider for both arms, so what counts as a missing section cannot
+    # drift between the format that refuses early and the one that renders.
+    _refuse_a_section_that_resolves_to_nothing(config, section)
     selected: Any = config.get(section, default=None)
-    if selected is None:
-        message = f"Section '{section}' not found"
-        raise ValueError(message)
     return redact_secrets(redact_mapping({section: selected}))
 
 
