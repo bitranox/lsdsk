@@ -21,7 +21,7 @@ from lsdsk.adapters.render.report import (
     slot_privilege_note,
     slot_verdict,
 )
-from lsdsk.domain.models import Inventory, PcieLink, PcieSlot
+from lsdsk.domain.models import Inventory, PcieLink, PcieSlot, PortChild, representative_occupant
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -372,3 +372,45 @@ def test_every_view_grades_a_disk_the_same_way() -> None:
     )
     texts = [str(cell) for cell in row]
     assert expected["port"] in texts, f"the table shows a different port than the tree: {texts}"
+
+
+@pytest.mark.os_agnostic
+def test_an_unread_capability_ranks_last_so_it_never_describes_a_port() -> None:
+    """The rule that decides what a port IS, on both platforms.
+
+    A port is freed only by removing everything behind it, so the child that
+    describes it is the one hardest to displace. An unread capability is not a
+    small one: ranking it first would let a device nobody measured stand for a
+    port that also holds a measured card, and the slot view would then report a
+    port as free that is not.
+
+    Promoted from a docstring example, which is where this lived. That example
+    SURVIVED a mutation swapping the unread rank to the front - it is in the
+    gate, so it was not unenforced, but nothing else in the tree noticed.
+    """
+    unread = PortChild("0000:03:00.0", 0x010601, None)
+    nic = PortChild("0000:02:00.0", 0x020000, 0.5)
+
+    assert representative_occupant([unread, nic]) == nic
+    assert representative_occupant([nic, unread]) == nic, "the answer depends on the firmware's ordering"
+
+
+@pytest.mark.os_agnostic
+def test_a_display_device_outranks_a_wider_card_because_its_slot_cannot_be_taken() -> None:
+    """Capability decides between the rest, and never against the graphics card.
+
+    The two halves are separate claims and a single case cannot tell them apart:
+    the display device here is also the NARROWER of the two, so a rule that
+    merely took the widest capability would answer the other way.
+    """
+    gpu = PortChild("0000:01:00.1", 0x030000, 2.0)
+    hba = PortChild("0000:01:00.0", 0x010700, 8.0)
+
+    assert representative_occupant([hba, gpu]) == gpu
+    assert representative_occupant([hba, PortChild("0000:02:00.0", 0x020000, 0.5)]) == hba
+
+
+@pytest.mark.os_agnostic
+def test_a_port_with_nothing_behind_it_has_no_occupant() -> None:
+    """The empty answer is None rather than a device standing for nothing."""
+    assert representative_occupant([]) is None

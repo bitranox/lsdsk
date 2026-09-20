@@ -22,6 +22,7 @@ from lsdsk.domain.history import (
     History,
     Sample,
     TrendVerdict,
+    has_new_readings,
     identity_of,
     record,
     sample_from,
@@ -416,3 +417,58 @@ def test_a_reading_in_a_later_power_on_hour_is_appended() -> None:
     history = record(history, [crc_disk(1001, 140)], T1)
 
     assert len(history.series[0].samples) == 2, "a genuinely new hour stopped being recorded"
+
+
+# --------------------------------------------------------------------------
+# The rate limit, which is the drives' own clock and is asked per drive
+# --------------------------------------------------------------------------
+
+
+def _drive(power_on_hours: int, *, wwn: str = "naa.1", node: str = "sda") -> Disk:
+    """One drive, carrying only what the rate limit reads."""
+    return Disk(node=node, path=f"/dev/{node}", model="X", wwn=wwn, health=Health(power_on_hours=power_on_hours))
+
+
+@pytest.mark.os_agnostic
+def test_a_drive_never_seen_before_always_has_something_to_say() -> None:
+    """Nothing to compare against is not the same as nothing new."""
+    assert has_new_readings(History(hostname="box"), [_drive(5)]) is True
+
+
+@pytest.mark.os_agnostic
+def test_a_second_run_inside_one_power_on_hour_adds_nothing() -> None:
+    """Two rows an hour hold one hour of information.
+
+    The wall clock plays no part: however far apart the two runs were, the drive
+    cannot have produced a rate inside its own hour. Promoted from a docstring
+    example - this is the write end of the limit, and the read end
+    (_previous_reading) enforces the same rule from the other side.
+    """
+    stored = record(History(hostname="box"), [_drive(5)], T0)
+
+    assert has_new_readings(stored, [_drive(5)]) is False
+    assert has_new_readings(stored, [_drive(6)]) is True
+
+
+@pytest.mark.os_agnostic
+def test_one_drive_whose_clock_advanced_answers_for_the_run() -> None:
+    """The question is whether the RUN has anything to store, so any drive does.
+
+    Its companion rule lives at the write: a run that does record covers every
+    drive, and a drive whose own clock stood still replaces its newest row
+    rather than adding one. Asking ANY here and writing EVERY there is only
+    sound because the write re-applies the limit per drive.
+    """
+    drives = [_drive(5, wwn="naa.1", node="sda"), _drive(5, wwn="naa.2", node="sdb")]
+    stored = record(History(hostname="box"), drives, T0)
+
+    assert has_new_readings(stored, drives) is False
+    assert has_new_readings(stored, [drives[0], _drive(6, wwn="naa.2", node="sdb")]) is True
+
+
+@pytest.mark.os_agnostic
+def test_a_drive_that_cannot_be_tracked_is_not_an_answer_either_way() -> None:
+    """No world-wide name means no identity, so it can neither block nor trigger."""
+    untrackable = Disk(node="sdz", path="/dev/sdz", model="X", health=Health(power_on_hours=9))
+
+    assert has_new_readings(History(hostname="box"), [untrackable]) is False
