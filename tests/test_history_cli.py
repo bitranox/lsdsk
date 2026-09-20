@@ -631,7 +631,7 @@ def test_every_reason_record_stored_nothing_gets_its_own_sentence(
     production_factory: Callable[[], Any],
     tmp_path: Path,
 ) -> None:
-    """Four unrelated outcomes used to print one sentence, byte for byte.
+    """Unrelated outcomes used to print one sentence, byte for byte.
 
     Measured 2026-09-20: a run with nothing new to store, a store belonging to
     another machine, a write that failed with EACCES, and ``--no-record`` all
@@ -641,10 +641,17 @@ def test_every_reason_record_stored_nothing_gets_its_own_sentence(
     instruction failed. A scheduled job watching ``skipped``, which is what the
     skill teaches, could not tell any of them apart.
 
-    The invariant is that the four sentences are DISTINCT, asserted as a set, so
-    a fix that gives three of them one new shared sentence fails here. Each arm
-    also has to name its own cause, because four distinct sentences that describe
-    the wrong things would satisfy the set alone.
+    The invariant is that the sentences are DISTINCT, asserted as a set, so a fix
+    that gives them one new shared sentence fails here. Each arm also has to name
+    its own cause, because distinct sentences describing the wrong things would
+    satisfy the set alone.
+
+    ``--no-record`` was a fourth arm here and is no longer an outcome of this
+    command at all: it is refused at 22, because on ``record`` it leaves nothing
+    to do and being obeyed quietly was silent in the human form. Its own
+    behaviour is held by ``tests/test_record_refuses_the_contradiction.py``; the
+    arm remains here as the assertion that it does not come back as a skipped
+    sentence, which is what would make it silent to a timer again.
     """
     nothing_new_store = tmp_path / "nothing-new.json"
     first = run(
@@ -663,13 +670,15 @@ def test_every_reason_record_stored_nothing_gets_its_own_sentence(
     _, another_machine, _ = _record_json(
         cli_runner, production_factory, "--history-file", str(foreign), "record", "--replay", str(SNAPSHOT)
     )
-    _, off, _ = _record_json(
+    off = run(
         cli_runner,
         production_factory,
         "--no-record",
         "--history-file",
         str(tmp_path / "off.json"),
         "record",
+        "--format",
+        "json",
         "--replay",
         str(HEALTHY),
     )
@@ -686,18 +695,25 @@ def test_every_reason_record_stored_nothing_gets_its_own_sentence(
     sentences = {
         "nothing new": nothing_new["skipped"],
         "another machine's store": another_machine["skipped"],
-        "--no-record": off["skipped"],
         "a write that failed": refused["skipped"],
     }
     for cause, skipped in sentences.items():
         assert len(skipped) == 1, f"{cause}: expected one sentence, got {skipped!r}"
     spoken = {cause: skipped[0] for cause, skipped in sentences.items()}
-    assert len(set(spoken.values())) == 4, f"two causes share a sentence, so a caller cannot tell them apart: {spoken}"
+    assert len(set(spoken.values())) == 3, f"two causes share a sentence, so a caller cannot tell them apart: {spoken}"
 
     assert "power-on hours" in spoken["nothing new"], spoken["nothing new"]
     assert "read" in spoken["another machine's store"], spoken["another machine's store"]
-    assert "--no-record" in spoken["--no-record"], spoken["--no-record"]
     assert "write" in spoken["a write that failed"], spoken["a write that failed"]
+
+    # Refused rather than skipped, and the distinction matters to a timer: a
+    # skipped sentence rides on a successful run, and this one is a failure.
+    from lsdsk.adapters.cli.exit_codes import ExitCode
+
+    off_envelope = json.loads(off.stdout)
+    assert off.exit_code == ExitCode.INVALID_ARGUMENT, off.output
+    assert "skipped" not in off_envelope, off_envelope
+    assert "--no-record" in off_envelope["error"]["message"], off_envelope
 
 
 @pytest.mark.os_agnostic

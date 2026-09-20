@@ -99,11 +99,20 @@ no data, and the message explaining why was on the stream it was not reading.
 
 `lsdsk record` says which of its outcomes happened rather than one sentence for
 all of them, because two of them mean the record has stopped growing: nothing new
-to store, a store belonging to another machine or one that cannot be read,
-`--no-record`, and a write that failed. The last is the only one that leaves a
-code - `13` when the filesystem refused permission and `1` for any other write
-failure, the same split `snapshot` makes - because the human form of `record` is
-silent by design, so a timer that is not parsing JSON has nothing else to go on.
+to store, a store belonging to another machine or one that cannot be read, and a
+write that failed. The last is the only one of those that leaves a code - `13`
+when the filesystem refused permission and `1` for any other write failure, the
+same split `snapshot` makes - because the human form of `record` is silent by
+design, so a timer that is not parsing JSON has nothing else to go on.
+
+`lsdsk --no-record record` is refused at `22` rather than obeyed. On every other
+command the flag means "judge the counters against the store without adding this
+reading to it", which is sensible; on `record`, whose only job is to add this
+reading, it leaves nothing to do. Obeyed quietly it was the worst of both - exit
+`0`, nothing stored, and in the human form, which is the one a timer runs, not a
+word on either stream - so a sampler that inherited the flag from a wrapper
+never recorded and never said so. The refusal names what to do instead, the way
+`snapshot` does for a global `--replay`.
 
 A command line the parser refuses answers the same way, as `USAGE_ERROR` and
 exit `2`, and the usage block still goes to stderr unchanged. That one is read

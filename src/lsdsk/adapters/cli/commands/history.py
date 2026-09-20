@@ -33,7 +33,7 @@ from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 from .. import safe_console
 from ..constants import CLICK_CONTEXT_SETTINGS
-from ..envelope import ActionResult, emit_action
+from ..envelope import ActionResult, emit_action, fail
 from ..exit_codes import ExitCode
 from ..typed_click import option
 from .scan import (
@@ -370,6 +370,22 @@ def cli_record(ctx: click.Context, replay: Path | None, output_format: OutputFor
     unattended sampling on a schedule rather than as a step to remember.
     """
     settings = resolve_history(ctx)
+    if not settings.enabled:
+        # A contradiction rather than a setting: on every other command
+        # --no-record means "judge against the store without adding to it",
+        # which this command has nothing left to do. Obeyed quietly it was the
+        # worst of both - exit 0, nothing stored, and in the human form, which
+        # is the one a timer runs, not a word on either stream - so a sampler
+        # inheriting the flag from a wrapper never recorded and never said so.
+        # Refused the way snapshot refuses a global --replay, for the same
+        # reason: guessing which of two incompatible things a caller meant is
+        # how a scheduled job runs wrong for a year.
+        fail(
+            "record exists to add this reading to the counter store, so --no-record leaves it nothing to do.",
+            ExitCode.INVALID_ARGUMENT,
+            output_format=output_format,
+            hint="Drop --no-record to sample, or run `lsdsk trend` to judge the counters without adding to them.",
+        )
     # Not a CliCommand member: CliCommand names the report pages, and `record`
     # is an acting command. It does emit an envelope, through emit_action.
     with lib_log_rich.runtime.bind(

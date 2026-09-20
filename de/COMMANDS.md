@@ -105,11 +105,21 @@ dem Strom, den sie nicht las.
 `lsdsk record` nennt, welches seiner Ergebnisse eingetreten ist, statt eines
 Satzes für alle, denn zwei davon bedeuten, dass der Verlauf nicht mehr wächst:
 nichts Neues zum Ablegen, ein Speicher, der zu einer anderen Maschine gehört oder
-nicht gelesen werden kann, `--no-record`, und ein fehlgeschlagener Schreibvorgang.
-Nur der letzte hinterlässt einen Code - `13`, wenn das Dateisystem die Rechte
+nicht gelesen werden kann, und ein fehlgeschlagener Schreibvorgang. Nur der
+letzte davon hinterlässt einen Code - `13`, wenn das Dateisystem die Rechte
 verweigert, und `1` bei jedem anderen Schreibfehler, dieselbe Aufteilung wie bei
 `snapshot` -, denn die menschenlesbare Form von `record` schweigt absichtlich, ein
 Timer ohne JSON-Auswertung hat also sonst keinen Anhaltspunkt.
+
+`lsdsk --no-record record` wird mit `22` abgelehnt statt befolgt. Bei jedem
+anderen Befehl bedeutet die Option „die Zähler gegen den Speicher beurteilen,
+ohne diese Messung aufzunehmen“, und das ergibt Sinn; bei `record`, dessen
+einzige Aufgabe das Aufnehmen dieser Messung ist, bleibt nichts zu tun. Still
+befolgt war es das Schlechteste aus beidem - Exit `0`, nichts abgelegt, und in
+der menschenlesbaren Form, die ein Timer ausführt, kein Wort auf einem der
+beiden Ströme -, ein Sammler, der die Option von einem Wrapper geerbt hat, nahm
+also nie etwas auf und sagte es nie. Die Ablehnung nennt, was stattdessen zu tun
+ist, so wie `snapshot` es bei einem globalen `--replay` tut.
 
 Eine Befehlszeile, die der Parser ablehnt, wird ebenso beantwortet, als
 `USAGE_ERROR` und Exit `2`, und der Usage-Block geht unverändert an stderr.

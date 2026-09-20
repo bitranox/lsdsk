@@ -7,6 +7,18 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **`lsdsk --no-record record` is refused rather than quietly obeyed.** On
+  every other command the flag means "judge the counters against the store
+  without adding this reading to it", which is sensible; on `record`, whose only
+  job is to add this reading, it leaves nothing to do. Obeyed quietly it was the
+  worst of both - exit `0`, nothing stored, and in the human form, which is the
+  one a timer runs, not a word on either stream - so a sampler that inherited
+  the flag from a wrapper never recorded and never said so.
+
+  It now exits `22` with a sentence naming what to do instead, the way `snapshot`
+  refuses a global `--replay`, and the machine-readable form gets the error
+  envelope rather than a result a program could act on.
+
 - **A `--profile` that matched nothing said nothing.** A profile REPLACES the
   configuration directories rather than adding to them, so a name with one
   letter wrong read no file at all and every value fell back to the shipped
