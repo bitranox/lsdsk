@@ -429,7 +429,7 @@ class PortChild(NamedTuple):
             on some platforms.
     """
 
-    address: str
+    address: DeviceText
     class_code: int | None
     capability_gbps: float | None
 
@@ -702,7 +702,7 @@ class PciNode(DomainModel, frozen=True):
     connector_present: bool | None = None
     physical_slot_number: int | None = None
     parent_address: OptionalDeviceText = None
-    children: tuple[str, ...] = ()
+    children: tuple[DeviceText, ...] = ()
 
     @property
     def is_root(self) -> bool:

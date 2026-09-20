@@ -15,7 +15,7 @@ import os
 import sys
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, get_args
+from typing import TYPE_CHECKING, Any, cast, get_args
 
 import annotated_types
 import pytest
@@ -827,3 +827,136 @@ def test_the_version_a_capture_declares_is_deliberately_not_bounded() -> None:
 
     assert parsed.schema_version == 10**300, "the version a capture declares is no longer readable"
     assert _NOT_A_READING in CaptureEnvelope.model_fields
+
+
+#: Every capture committed here that carries device text worth salting.
+_SALTED_CAPTURES = ("linux-sas-hba", "linux-nvme-board", "windows-ahci")
+
+#: The eight section commands, plus the default page as the empty argv.
+_SALTED_VIEWS = ("topology", "controllers", "disks", "health", "smart", "slots", "trend", "findings", "")
+
+#: Control characters from every range the sanitiser covers, plus a newline,
+#: which is what forges a table row. Each is a separate class of damage: ESC
+#: recolours and retitles, BEL sounds, NUL and DEL corrupt a parser, and the C1
+#: range is a second escape encoding some terminals still honour.
+_PAYLOAD = "\x1b[31m\x07\x00\x7f\x9b\nFAKE-ROW"
+
+#: A visible marker so a reader of a failure can see WHICH value leaked.
+_MARK = "SALTMARK"
+
+#: Keys whose value is structural rather than device text. ``platform`` selects
+#: the builder, so salting it does not test the sanitiser, it tests the dispatch.
+_STRUCTURAL_KEYS = frozenset({"platform"})
+
+#: Cells where a salted capture reaches nothing, MEASURED rather than assumed,
+#: and asserted below in the direction that makes the exclusion self-cancelling:
+#: if one of these ever starts carrying device text, the arm fails and says to
+#: promote it rather than silently covering nothing.
+#:
+#: ``trend`` in human form prints an explanation naming no device at all when no
+#: history has been recorded, which is every run of this suite - the autouse
+#: fixture gives each test its own empty state directory. Its JSON form DOES
+#: carry the salted values and is covered.
+_CARRIES_NO_DEVICE_TEXT = frozenset({("trend", "human")})
+
+
+def _salted(node: object, key: str | None = None) -> object:
+    """The same capture with every device-text string carrying the payload."""
+    if isinstance(node, dict):
+        entries = cast("dict[str, object]", node)
+        return {name: _salted(value, name) for name, value in entries.items()}
+    if isinstance(node, list):
+        return [_salted(value) for value in cast("list[object]", node)]
+    if isinstance(node, str) and key not in _STRUCTURAL_KEYS:
+        return f"{node}{_MARK}{_PAYLOAD}"
+    return node
+
+
+def _decoded_strings(node: object) -> list[str]:
+    """Every string a JSON document carries, keys included, after decoding.
+
+    The decoded value is the only honest surface for the JSON arm: the encoder
+    escapes a control character, so counting raw bytes in the document reads
+    zero whether the sanitiser ran or not, and the arm passes against the
+    defect it exists to catch.
+    """
+    if isinstance(node, dict):
+        entries = cast("dict[object, object]", node)
+        keys = [name for name in entries if isinstance(name, str)]
+        return keys + [text for value in entries.values() for text in _decoded_strings(value)]
+    if isinstance(node, list):
+        return [text for value in cast("list[object]", node) for text in _decoded_strings(value)]
+    return [node] if isinstance(node, str) else []
+
+
+def _control_characters(text: str, *, output_format: str) -> list[str]:
+    """Which control characters a reader would actually meet on this surface.
+
+    A newline is legitimate in human output, where it separates lines, and is
+    NOT legitimate inside a decoded JSON value, where it is the row-forging
+    payload arriving intact.
+    """
+    if output_format == "json":
+        if not text.strip():
+            return []
+        values = _decoded_strings(json.loads(text))
+        return [ch for value in values for ch in value if _is_control(ch)]
+    return [ch for ch in text if _is_control(ch) and ch != "\n"]
+
+
+def _is_control(ch: str) -> bool:
+    point = ord(ch)
+    return point < 0x20 or point == 0x7F or 0x80 <= point < 0xA0
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("capture_name", _SALTED_CAPTURES)
+@pytest.mark.parametrize("view", _SALTED_VIEWS)
+@pytest.mark.parametrize("output_format", ["human", "json"])
+def test_no_control_character_reaches_any_view_from_a_salted_capture(
+    capture_name: str,
+    view: str,
+    output_format: str,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+) -> None:
+    """The invariant over the whole matrix, not the two views it was raised on.
+
+    The guard used to be asserted on ``disks`` and ``controllers`` in human form
+    with four fields planted by hand. The claim is that NO control character
+    reaches ANY output surface, and the fields a capture carries are chosen by
+    the hardware, so the arm has to be every view, both formats, every string.
+
+    Both streams are read. A warning naming the machine goes to stderr, so
+    checking stdout alone leaves a surface the payload demonstrably reaches.
+    """
+    from lsdsk.adapters.cli import cli
+
+    source = Path(__file__).parent / "fixtures" / "hw" / f"{capture_name}.json"
+    crafted = tmp_path / f"salted-{capture_name}.json"
+    crafted.write_text(json.dumps(_salted(json.loads(source.read_text(encoding="utf-8")))), encoding="utf-8")
+
+    argv = [*([view] if view else []), *(["--format", "json"] if output_format == "json" else [])]
+    if not view and output_format == "json":
+        pytest.skip("the default page has no JSON form; lsdsk snapshot is its machine-readable one")
+    prefix = ["--no-record", "--history-file", str(tmp_path / "absent.json")]
+
+    def run(path: Path) -> Any:
+        return cli_runner.invoke(cli, [*prefix, *argv, "--replay", str(path)], obj=production_factory, color=False)
+
+    clean, dirty = run(source), run(crafted)
+    cell = f"{capture_name}/{view or 'bare'}/{output_format}"
+    assert dirty.exit_code in (0, 1), f"{cell}: the run failed with {dirty.exit_code}, so it rendered nothing"
+    assert dirty.stdout.strip() or dirty.stderr.strip(), f"{cell}: produced no output at all"
+
+    reached = (clean.stdout, clean.stderr) != (dirty.stdout, dirty.stderr)
+    if (view, output_format) in _CARRIES_NO_DEVICE_TEXT:
+        assert not reached, f"{cell}: now carries device text, so give it a real arm instead of an exclusion"
+        return
+    assert reached, f"{cell}: salting changed nothing here, so this arm asserts nothing"
+
+    for stream, text in (("stdout", dirty.stdout), ("stderr", dirty.stderr)):
+        fmt = output_format if stream == "stdout" else "human"
+        leaked = _control_characters(text, output_format=fmt)
+        assert not leaked, f"{cell}: {len(leaked)} control characters reached {stream}: {[hex(ord(c)) for c in leaked]}"
