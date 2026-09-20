@@ -27,6 +27,8 @@ from lsdsk.adapters.tui import palette as tui_palette
 from lsdsk.adapters.tui.app import PAGE_LABELS
 
 if TYPE_CHECKING:
+    from textual.pilot import Pilot
+
     from lsdsk.domain.models import Inventory
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
@@ -77,6 +79,35 @@ def _printed_hues() -> set[str]:
         for name, value in vars(theme).items()
         if name.startswith("STYLE_") and isinstance(value, str) and value.startswith("#")
     }
+
+
+async def _sweep_before_and_after_a_rescan(app: LsdskApp, pilot: Pilot[None]) -> list[str]:
+    """Every page, as a reader opens the app on it and again after a rescan.
+
+    The mount path and the rescan path are two ways to fill the same pane, and
+    the defect this file's gate exists to catch - a second copy of a fill that
+    does not go through the palette layer - lives on whichever of the two nobody
+    sweeps. Measured: planting that copy on the rescan path left both palette
+    suites at 94 passed, with the probe showing no printed hue before `f9` and
+    two after it.
+
+    Args:
+        app: The running application.
+        pilot: Its driver.
+
+    Returns:
+        One exported picture per page per pass, upper-cased for hex matching.
+    """
+    pictures: list[str] = []
+    for pass_number in (1, 2):
+        if pass_number == 2:
+            await pilot.press("f9")
+            await pilot.pause()
+        for number, _page in enumerate(PAGE_LABELS, start=1):
+            await pilot.press(str(number))
+            await pilot.pause()
+            pictures.append(app.export_screenshot().upper())
+    return pictures
 
 
 @pytest.mark.os_agnostic
@@ -151,15 +182,10 @@ async def test_no_printed_colour_reaches_the_interactive_view() -> None:
     }
     assert any(hue in " ".join(emitted) for hue in printed), "the control: the render layer emitted no printed colour"
 
-    seen: set[str] = set()
     app = LsdskApp(machine)
     async with app.run_test(size=DEMO_SIZE) as pilot:
-        for number, _page in enumerate(PAGE_LABELS, start=1):
-            await pilot.press(str(number))
-            await pilot.pause()
-            seen.add(app.export_screenshot().upper())
+        drawn = " ".join(await _sweep_before_and_after_a_rescan(app, pilot))
 
-    drawn = " ".join(seen)
     leaked = sorted(hue for hue in printed if hue in drawn)
     assert not leaked, f"the printed palette reached the interactive view: {leaked}"
 
@@ -169,12 +195,8 @@ async def test_no_printed_colour_reaches_the_interactive_view() -> None:
 async def test_the_interactive_palette_is_what_reaches_the_screen() -> None:
     """The other half of the gate above: these colours must actually be drawn."""
     app = LsdskApp(inventory())
-    drawn = ""
     async with app.run_test(size=DEMO_SIZE) as pilot:
-        for number, _page in enumerate(PAGE_LABELS, start=1):
-            await pilot.press(str(number))
-            await pilot.pause()
-            drawn += app.export_screenshot().upper()
+        drawn = " ".join(await _sweep_before_and_after_a_rescan(app, pilot))
 
     palette = tui_palette.PALETTE
     for role in ("at_capability", "hint", "warning", "opportunity", "unknown", "header"):
