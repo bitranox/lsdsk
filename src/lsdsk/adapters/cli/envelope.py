@@ -9,17 +9,31 @@ The two envelopes share their outer keys on purpose. ``ok`` says whether the
 answer is complete, ``command`` names what produced it, and ``skipped`` says what
 was not done and why, so one reader handles both without branching on shape.
 
+A third joins them for the case neither covers: a command that FAILED.
+:class:`ErrorEnvelope` keeps ``ok`` and ``command`` and carries an ``error``
+instead of data, so the same reader branches on the same key. Without it a
+pipeline that asked for JSON received an empty stream, which it cannot tell from
+a command that produced nothing, and the sentence explaining why went to stderr,
+which is not the stream being parsed.
+
 System Role:
     Adapter-layer output boundary for the acting commands.
 """
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+import rich_click as click
 from pydantic import BaseModel, SerializeAsAny
 
-from lsdsk.domain.enums import ActionCommand
+from lsdsk.domain.enums import ActionCommand, OutputFormat
 
 from . import safe_console
+from .exit_codes import ExitCode
+
+if TYPE_CHECKING:
+    from typing import NoReturn
 
 
 class ActionResult(BaseModel, extra="forbid"):
@@ -111,4 +125,114 @@ def emit_action(command: ActionCommand, data: ActionResult, skipped: list[str] |
     safe_console.echo(envelope.model_dump_json(indent=2, by_alias=True))
 
 
-__all__ = ["ActionEnvelope", "ActionResult", "MappingResult", "emit_action"]
+#: What a command is called when its name cannot be read from the invocation.
+#:
+#: Only reachable when a helper is called outside a Click invocation, which is a
+#: direct call from a test rather than anything a user can produce.
+UNNAMED_COMMAND = "lsdsk"
+
+
+class ErrorDetail(BaseModel, frozen=True, extra="forbid"):
+    """A typed error name and the sentence that goes with it.
+
+    ``type`` is the :class:`~.exit_codes.ExitCode` member's own name rather than
+    a second vocabulary. One decider, two readers: the code a caller switches on
+    and the name it reads can never disagree, and a new code cannot be added
+    without its name arriving with it.
+    """
+
+    type: str
+    message: str
+
+
+class ErrorEnvelope(BaseModel, frozen=True, extra="forbid"):
+    """The failure form of the machine-readable envelope.
+
+    Its own model rather than optional fields on the success envelope, so a
+    complete answer's shape is untouched and never grows a null ``error`` key.
+    ``ok`` is what a reader branches on, which is the question it already
+    answers for a partial success.
+
+    ``command`` is a plain string rather than
+    :class:`~lsdsk.domain.enums.CliCommand`, because that enum names the eight
+    section commands alone and a failure can come from ``config``, ``snapshot``
+    or ``config-deploy`` as well. On the wire the two agree: the enum serialises
+    to exactly this string.
+    """
+
+    ok: bool = False
+    command: str
+    error: ErrorDetail
+
+
+def invoked_command() -> str:
+    """The name of the command being run, as the caller typed it.
+
+    Read from Click's own context rather than threaded through every helper that
+    can fail: the subcommand's context carries it already, and a parameter would
+    have to reach a dozen call sites that have no other use for it.
+
+    Returns:
+        The subcommand name, or :data:`UNNAMED_COMMAND` outside an invocation.
+    """
+    context = click.get_current_context(silent=True)
+    if context is None or context.info_name is None:
+        return UNNAMED_COMMAND
+    return context.info_name
+
+
+def fail(message: str, code: ExitCode, *, output_format: OutputFormat, hint: str | None = None) -> NoReturn:
+    """Report `message` and leave with `code`, answering in the caller's format.
+
+    The sentence always goes to stderr, whatever the format: a person running the
+    command by hand reads it there, and moving it into the envelope would fix the
+    pipeline and break the person.
+
+    The ``SystemExit`` carries no ``__cause__``. It is not observable - ``_run_cli``
+    catches ``SystemExit`` ahead of its general handler and reads only ``.code``,
+    so no traceback is ever rendered from it - and requiring every call site to
+    pass the exception along would buy nothing.
+
+    Args:
+        message: The failure, as one sentence, with no ``Error:`` prefix: this
+            adds that for the person and leaves it out for the machine.
+        code: The exit code to leave with, whose name becomes the error type.
+        output_format: What the caller asked for.
+        hint: An extra line for the person only. It stays out of the envelope,
+            which carries what went wrong rather than what to try next.
+
+    Raises:
+        SystemExit: Always, with `code`.
+
+    Example:
+        >>> from lsdsk.adapters.cli.exit_codes import ExitCode
+        >>> from lsdsk.domain.enums import OutputFormat
+        >>> try:
+        ...     fail("nothing to read", ExitCode.CONFIG_ERROR, output_format=OutputFormat.HUMAN)
+        ... except SystemExit as leaving:
+        ...     int(leaving.code)
+        78
+    """
+    safe_console.echo(f"Error: {message}", err=True)
+    if hint is not None:
+        safe_console.echo(hint, err=True)
+    if output_format is OutputFormat.JSON:
+        envelope = ErrorEnvelope(
+            command=invoked_command(),
+            error=ErrorDetail(type=ExitCode(code).name, message=message),
+        )
+        safe_console.echo(envelope.model_dump_json())
+    raise SystemExit(code)
+
+
+__all__ = [
+    "UNNAMED_COMMAND",
+    "ActionEnvelope",
+    "ActionResult",
+    "ErrorDetail",
+    "ErrorEnvelope",
+    "MappingResult",
+    "emit_action",
+    "fail",
+    "invoked_command",
+]

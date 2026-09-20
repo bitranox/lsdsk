@@ -76,6 +76,16 @@ and also an option that does not apply to the command, such as `snapshot` given
 snapshot this version reads or a platform with no hardware reader. Treat
 anything above `1` as "did not run".
 
+A run that FAILS in `--format json` answers in that format too, rather than
+falling silent: one object on stdout carrying `ok: false`, the `command` that
+failed, and an `error` of `{type, message}`. The `type` is the exit code's own
+name - `CONFIG_ERROR`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`,
+`GENERAL_ERROR` - so it cannot disagree with the code the process leaves. The
+same sentence still goes to stderr for a person reading along, and a failure in
+human mode still puts nothing on stdout. Before this, a failing JSON run wrote
+nothing at all: a `jq` pipeline could not tell it from a command that produced
+no data, and the message explaining why was on the stream it was not reading.
+
 A command that diagnoses nothing has no finding to report, so on those `1` means
 the failure it just named on stderr rather than a warning or a critical: a
 `snapshot` that could not be written and a `config-deploy` that could not write

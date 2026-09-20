@@ -48,7 +48,7 @@ from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from .. import safe_console
 from ..constants import CLICK_CONTEXT_SETTINGS, TREE_DENSITY_TOKENS
 from ..context import get_cli_context
-from ..envelope import ActionResult, emit_action
+from ..envelope import ActionResult, emit_action, fail
 from ..exit_codes import ExitCode
 from ..typed_click import option
 
@@ -133,11 +133,13 @@ def effective_replay(ctx: click.Context, replay: Path | None) -> Path | None:
         return None
 
 
-def load_inventory(replay: Path | None) -> Inventory:
+def load_inventory(replay: Path | None, *, output_format: OutputFormat) -> Inventory:
     """Read this machine, or a snapshot captured from another one.
 
     Args:
         replay: A snapshot file, or ``None`` to read this machine.
+        output_format: What the caller asked for, so a refusal is reported in
+            that format rather than only as prose on stderr.
 
     Returns:
         The machine as the domain sees it.
@@ -149,11 +151,9 @@ def load_inventory(replay: Path | None) -> Inventory:
     try:
         return snapshot_adapter.load(replay) if replay is not None else snapshot_adapter.collect()
     except ConfigurationError as error:
-        safe_console.echo(f"Error: {error}", err=True)
-        raise SystemExit(ExitCode.CONFIG_ERROR) from error
+        fail(str(error), ExitCode.CONFIG_ERROR, output_format=output_format)
     except PermissionError as error:
-        safe_console.echo(f"Error: {error}", err=True)
-        raise SystemExit(ExitCode.PERMISSION_DENIED) from error
+        fail(str(error), ExitCode.PERMISSION_DENIED, output_format=output_format)
 
 
 def resolve_history(ctx: click.Context) -> HistorySettings:
@@ -840,7 +840,9 @@ def cli_health(ctx: click.Context, replay: Path | None, output_format: OutputFor
 def cli_tui(ctx: click.Context, replay: Path | None, expand_virtual: bool) -> None:
     """Open the interactive view, with a page per question."""
     with lib_log_rich.runtime.bind(job_id="cli-tui", extra={"command": "tui"}):
-        inventory = load_inventory(effective_replay(ctx, replay))
+        # The interactive view has no machine-readable mode, so a refusal here is
+        # always prose for the person in front of it.
+        inventory = load_inventory(effective_replay(ctx, replay), output_format=OutputFormat.HUMAN)
         from lsdsk.adapters.tui import LsdskApp  # noqa: PLC0415 - keeps textual off the fast path
 
         # Without this the Trend page always says nothing has been recorded and
@@ -888,12 +890,12 @@ def cli_snapshot(ctx: click.Context, output: Path, output_format: OutputFormat) 
     """
     with lib_log_rich.runtime.bind(job_id="cli-snapshot", extra={"command": ActionCommand.SNAPSHOT.value}):
         if effective_replay(ctx, None) is not None:
-            safe_console.echo(
-                "Error: snapshot always captures the machine it runs on, so --replay does not apply. "
+            fail(
+                "snapshot always captures the machine it runs on, so --replay does not apply. "
                 "Copy the capture file itself, or drop --replay to capture this machine.",
-                err=True,
+                ExitCode.INVALID_ARGUMENT,
+                output_format=output_format,
             )
-            raise SystemExit(ExitCode.INVALID_ARGUMENT)
         # One handler for both halves: save() parses the reading through the same
         # models load() reads it back with, so it refuses a reading this tool
         # could never replay - and that refusal deserves the same clean exit code
@@ -903,8 +905,7 @@ def cli_snapshot(ctx: click.Context, output: Path, output_format: OutputFormat) 
             capture = snapshot_adapter.read_current_machine()
             snapshot_adapter.save(capture, output)
         except ConfigurationError as error:
-            safe_console.echo(f"Error: {error}", err=True)
-            raise SystemExit(ExitCode.CONFIG_ERROR) from error
+            fail(str(error), ExitCode.CONFIG_ERROR, output_format=output_format)
         # save() declares OSError and it is the destination's, not the
         # machine's: read_current_machine documents ConfigurationError alone,
         # and a drive that refuses to answer is recorded against that drive
@@ -913,11 +914,17 @@ def cli_snapshot(ctx: click.Context, output: Path, output_format: OutputFormat) 
         # something by - "-o /proc/lsdskx.json" left 2, which is Click's usage
         # error, and "-o /dev/full" left 28, which is nothing here at all.
         except PermissionError as error:
-            safe_console.echo(f"Error: not allowed to write the capture to {output}: {error}", err=True)
-            raise SystemExit(ExitCode.PERMISSION_DENIED) from error
+            fail(
+                f"not allowed to write the capture to {output}: {error}",
+                ExitCode.PERMISSION_DENIED,
+                output_format=output_format,
+            )
         except OSError as error:
-            safe_console.echo(f"Error: could not write the capture to {output}: {error}", err=True)
-            raise SystemExit(ExitCode.GENERAL_ERROR) from error
+            fail(
+                f"could not write the capture to {output}: {error}",
+                ExitCode.GENERAL_ERROR,
+                output_format=output_format,
+            )
         if output_format is OutputFormat.JSON:
             emit_action(
                 ActionCommand.SNAPSHOT, SnapshotResult(path=str(output), schema_version=snapshot_adapter.SCHEMA_VERSION)

@@ -78,6 +78,18 @@ Datei, die keine von dieser Fassung lesbare Aufnahme ist, oder für eine
 Plattform ohne Hardwareleser. Behandeln Sie alles über `1` als "ist nicht
 gelaufen".
 
+Ein Lauf, der in `--format json` FEHLSCHLÄGT, antwortet ebenfalls in diesem
+Format, statt zu verstummen: ein Objekt auf stdout mit `ok: false`, dem
+`command`, das fehlgeschlagen ist, und einem `error` aus `{type, message}`. Der
+`type` ist der Name des Exit-Codes selbst - `CONFIG_ERROR`, `INVALID_ARGUMENT`,
+`PERMISSION_DENIED`, `GENERAL_ERROR` -, er kann dem Code, den der Prozess
+hinterlässt, also nicht widersprechen. Derselbe Satz geht weiterhin an stderr,
+für jemanden, der mitliest, und ein Fehlschlag im menschenlesbaren Modus legt
+nach wie vor nichts auf stdout. Zuvor schrieb ein fehlgeschlagener JSON-Lauf
+überhaupt nichts: eine `jq`-Pipeline konnte ihn nicht von einem Befehl
+unterscheiden, der keine Daten erzeugte, und die Meldung mit dem Grund lag auf
+dem Strom, den sie nicht las.
+
 Ein Befehl, der nichts diagnostiziert, hat keinen Befund zu melden; dort steht
 `1` also für den Fehlschlag, den er soeben auf stderr genannt hat, und nicht für
 eine Warnung oder einen kritischen Befund: ein `snapshot`, der nicht geschrieben

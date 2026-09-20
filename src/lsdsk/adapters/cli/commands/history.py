@@ -180,7 +180,7 @@ def analyse(
     Returns:
         The machine and its findings.
     """
-    inventory = load_inventory(replay)
+    inventory = load_inventory(replay, output_format=output_format)
     read = read_history(inventory, settings)
     findings = diagnose(inventory, history=read.history, thresholds=thresholds)
     if replay is None and output_format is OutputFormat.HUMAN:
@@ -264,7 +264,7 @@ def cli_record(ctx: click.Context, replay: Path | None, output_format: OutputFor
         # silently drop the root group's ``--replay``, sampling this machine into
         # the store under its own hostname while the caller asked for another's.
         target = effective_replay(ctx, replay)
-        inventory = load_inventory(target)
+        inventory = load_inventory(target, output_format=output_format)
         read = read_history(inventory, settings)
         wrote = record_reading(inventory, read, settings, captured_at=_capture_stamp(target), announce=False)
         if output_format is OutputFormat.JSON:

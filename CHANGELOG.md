@@ -5,7 +5,21 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
-### Fixed
+### Added
+
+- **A failing `--format json` run now answers in JSON instead of falling silent.**
+  Measured before: every error path wrote 0 bytes to stdout, so a `jq` pipeline
+  could not tell a command that failed from one that produced no data, and the
+  sentence explaining why had gone to stderr, which is not the stream being
+  parsed. A failure now emits one object - `{"ok": false, "command": ...,
+  "error": {"type": ..., "message": ...}}` - keeping the outer keys the success
+  envelope already uses, so one reader branches on `ok` for both. The `type` is
+  the exit code's own name rather than a second vocabulary, so the name a caller
+  reads and the code it switches on cannot disagree. The exit code itself is
+  unchanged on every path, and the human sentence still goes to stderr: the
+  envelope is an addition, not a move. Twelve error sites now go through one
+  helper, so the sentence a person reads and the `message` a machine reads are
+  the same string rather than two that drift.
 
 - **A closed stderr no longer discards a report somebody is reading.** rich's own
   `Console.on_broken_pipe` runs `os.dup2(devnull, sys.stdout.fileno())` - hardcoded

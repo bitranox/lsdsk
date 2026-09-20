@@ -209,6 +209,16 @@ Two more a caller will see are named in the enum but come from elsewhere:
 | 2         | Click   | A usage error: an unknown option or command, a missing argument, a bad choice, an absent path |
 | 130 / 143 | signals | Interrupt and terminate, translated by `lib_cli_exit_tools`                                   |
 
+Whatever the code, a failure in `--format json` is REPORTED in that format:
+`adapters/cli/envelope.fail` writes one `ErrorEnvelope` to stdout - `ok: false`,
+the invoked `command`, and an `error` of `{type, message}` - and the same
+sentence to stderr. One helper rather than a line at each of the twelve sites,
+so the sentence a person reads and the `message` a machine reads are the one
+string: written separately they drift, and a bug report then describes the
+failure differently from the log line beside it. The `type` is
+`ExitCode(code).name`, not a second vocabulary, so a new code cannot be added
+without its name arriving with it.
+
 `141` sits with neither of those, however much it looks like a signal code. Nothing
 translates a broken pipe: Click catches the `EPIPE` in its own `main` and calls
 `sys.exit(1)`, so `adapters/cli/safe_console` raises `141` itself at the write that

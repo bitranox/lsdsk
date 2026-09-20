@@ -11,7 +11,7 @@ Contents:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import lib_log_rich.runtime
 import rich_click as click
@@ -27,7 +27,7 @@ from lsdsk.domain.errors import ConfigurationError
 from .. import safe_console
 from ..constants import CLICK_CONTEXT_SETTINGS
 from ..context import CLIContext, get_cli_context
-from ..envelope import ActionResult, MappingResult, emit_action
+from ..envelope import ActionResult, MappingResult, emit_action, fail
 from ..exit_codes import ExitCode
 from ..typed_click import option
 
@@ -99,8 +99,7 @@ def cli_config(ctx: click.Context, output_format: OutputFormat, section: str | N
             try:
                 data = _redacted_config_data(effective_config, section)
             except ValueError as exc:
-                safe_console.echo(f"\nError: {exc}", err=True)
-                raise SystemExit(ExitCode.INVALID_ARGUMENT) from exc
+                _fail_after_output(str(exc), ExitCode.INVALID_ARGUMENT, output_format=output_format)
             emit_action(ActionCommand.CONFIG, MappingResult.model_validate(data))
             return
         safe_console.echo()
@@ -109,8 +108,30 @@ def cli_config(ctx: click.Context, output_format: OutputFormat, section: str | N
                 effective_config, output_format=output_format, section=section, profile=effective_profile
             )
         except ValueError as exc:
-            safe_console.echo(f"\nError: {exc}", err=True)
-            raise SystemExit(ExitCode.INVALID_ARGUMENT) from exc
+            _fail_after_output(str(exc), ExitCode.INVALID_ARGUMENT, output_format=output_format)
+
+
+def _fail_after_output(
+    message: str, code: ExitCode, *, output_format: OutputFormat, hint: str | None = None
+) -> NoReturn:
+    """Report a failure that follows this command's own output.
+
+    Every failure in this module comes after the command has already written
+    something, so the sentence starts on a fresh line. ``scan``'s failures come
+    before any output and use :func:`~lsdsk.adapters.cli.envelope.fail` directly;
+    the blank line is the only difference between them.
+
+    Args:
+        message: The failure, as one sentence, with no ``Error:`` prefix.
+        code: The exit code to leave with.
+        output_format: What the caller asked for.
+        hint: An extra line for the person only.
+
+    Raises:
+        SystemExit: Always, with `code`.
+    """
+    safe_console.echo("", err=True)
+    fail(message, code, output_format=output_format, hint=hint)
 
 
 def _redacted_config_data(config: Config, section: str | None) -> dict[str, Any]:
@@ -351,17 +372,19 @@ def _execute_deploy(
         _report_deployment_result(deployed_paths, profile, effective_set_permissions, output_format)
     except PermissionError as exc:
         logger.error("Permission denied when deploying configuration", extra={"error": str(exc)})
-        safe_console.echo(f"\nError: Permission denied. {exc}", err=True)
-        safe_console.echo("Hint: System-wide deployment (--target app/host) may require sudo.", err=True)
-        raise SystemExit(ExitCode.PERMISSION_DENIED) from exc
+        _fail_after_output(
+            f"Permission denied. {exc}",
+            ExitCode.PERMISSION_DENIED,
+            output_format=output_format,
+            hint="Hint: System-wide deployment (--target app/host) may require sudo.",
+        )
     # A rejected --profile is ordinary user input, not a fault in the
     # deployment: the configuration library validates the name and raises
     # ValueError before it writes anything. It earns the invalid-argument code
     # that a bad --section already uses, rather than the generic failure one.
     except ValueError as exc:
         logger.error("Rejected profile name", extra={"error": str(exc)})
-        safe_console.echo(f"\nError: {exc}", err=True)
-        raise SystemExit(ExitCode.INVALID_ARGUMENT) from exc
+        _fail_after_output(str(exc), ExitCode.INVALID_ARGUMENT, output_format=output_format)
     # OSError and ConfigurationError are what deployment legitimately fails
     # with: a full disk, a read-only target, a config that will not resolve.
     # Anything else is a bug in lsdsk, and catching it here would print it as a
@@ -370,8 +393,9 @@ def _execute_deploy(
     # main.py, which is what honours the flag.
     except (OSError, ConfigurationError) as exc:
         logger.error("Failed to deploy configuration", extra={"error": str(exc), "error_type": type(exc).__name__})
-        safe_console.echo(f"\nError: Failed to deploy configuration: {exc}", err=True)
-        raise SystemExit(ExitCode.GENERAL_ERROR) from exc
+        _fail_after_output(
+            f"Failed to deploy configuration: {exc}", ExitCode.GENERAL_ERROR, output_format=output_format
+        )
 
 
 def _report_deployment_result(
@@ -469,8 +493,7 @@ def cli_config_generate_examples(
         # --traceback. See the matching note in _execute_deploy.
         except OSError as exc:
             logger.error("Failed to generate examples", extra={"error": str(exc)})
-            safe_console.echo(f"\nError: {exc}", err=True)
-            raise SystemExit(ExitCode.GENERAL_ERROR) from exc
+            _fail_after_output(str(exc), ExitCode.GENERAL_ERROR, output_format=output_format)
 
 
 __all__ = ["cli_config", "cli_config_deploy", "cli_config_generate_examples"]
