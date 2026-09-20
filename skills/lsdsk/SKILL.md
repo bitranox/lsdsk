@@ -77,7 +77,7 @@ uvx lsdsk record              # store one reading, print nothing, for a timer
 uvx lsdsk tui                 # the same eight views, interactive (1-8, left/right, q)
 uvx lsdsk snapshot -o m.json  # capture the raw reading
 uvx lsdsk info                # version, homepage and the shell command name
-uvx lsdsk config              # show effective configuration
+uvx lsdsk config              # show effective configuration (--section thresholds for one)
 uvx lsdsk config-deploy --target user   # write ~/.config/lsdsk so it can be edited (app|host need root)
 uvx lsdsk config-generate-examples --destination DIR   # scaffold examples
 uvx lsdsk --replay m.json     # render a capture from any machine
@@ -255,6 +255,14 @@ was asked for, and what the operating system said when it would not give it. `bu
 `unknown`. `link` is an object of `negotiated_gbps`, `drive_max_gbps` and
 `port_max_gbps`, and a speed rule only fires when both ends are known.
 
+**A controller, inside `data.controllers`, carries `kind`**, which is one of
+`ahci`, `sas`, `nvme`, `raid`, `ide`, `other` or `unknown` - read from the PCI
+class code, so `unknown` means unclassified rather than absent. It carries
+`address`, `name`, `vendor`, `driver`, `firmware`, `link`, `port_count`,
+`ports_used`, `upstream`, `upstream_address`, `upstream_name` and
+`readings_refused` beside it. A filter for "the controllers that can carry disks"
+is `is_storage_controller` below, not a list of these values spelled out again.
+
 **`data.virtual_disks` is a second list of the same shape**, holding the devices
 with no hardware behind them. It is always populated, whatever `--expand-virtual`
 or `display.expand_virtual` says, and `data.disks` never contains one - which is
@@ -318,6 +326,34 @@ in: `thresholds`, and `history` for the trend rules. Omit them and you get the
 SHIPPED defaults with no history, which is not what the same machine's `lsdsk`
 would report if its configuration deploys different thresholds.
 
+**Do not hand-roll what `lsdsk.domain.diagnostics` already exports.**
+`count_by_severity(findings)` returns a count per `Severity` including the zeros,
+which is the whole split at once rather than the one-severity test the shell
+check above can make.
+`is_storage_controller(kind)` is the test the CLI filters controllers with.
+`format_pcie_sentence(speed_gtps, width)` writes a link the one way the whole tool
+writes it, so a sentence you compose agrees with the table beside it.
+`interface_demand_gbytes(disk)` and `attached_demand_gbytes(controller, inventory)`
+are the demand figures the oversubscription rule reasons from. Every rule is
+callable on its own, which is how you run one without the rest:
+`diagnose_disk_link(disk, inventory)`,
+`diagnose_controller_link(controller, inventory)`,
+`diagnose_controller_oversubscription(controller, inventory)`,
+`diagnose_port_allocation(inventory)`, `diagnose_health(disk, series, thresholds)`
+and `diagnose_firmware_consistency(inventory, thresholds)`. `WEAR_WARNING_PERCENT`,
+`WEAR_CRITICAL_PERCENT` and `CRC_ERRORS_SIGNIFICANT` are the shipped figures those
+rules fall back to when no `Thresholds` is passed.
+
+**`lsdsk.adapters.hw.snapshot` holds more than `load` and `collect`.**
+`read_current_machine()` returns the raw reading as a dict and `save(capture,
+path)` writes it, which is the pair `lsdsk snapshot` is made of.
+`parse_capture(reading)` types that dict and `build_from(reading)` turns it into an
+inventory, so a capture already in memory never has to reach a file.
+`current_platform()` names the reader this machine has. `SCHEMA_VERSION` and
+`OLDEST_READABLE_SCHEMA` are the capture version this build writes and the oldest
+it still reads, which is what tells you whether an archived capture will replay
+before you try it.
+
 The package's own `__all__` holds `get_config` and `print_info`, which are the
 configuration loader and the `info` command's printer; neither is what you want
 for hardware. Reading a machine needs privileges exactly as the CLI does, and
@@ -334,12 +370,14 @@ command that reads a machine, `--profile` on the `config` commands,
 including a bare `lsdsk`. Every other global option is refused after the
 subcommand with exit `2`.
 
-The figures the rules turn on are all `[thresholds]` keys, so none of them is
-fixed: `wear_warning_percent` 80, `wear_critical_percent` 95,
+The figures the rules turn on are all seven `[thresholds]` keys, so none of them
+is fixed: `wear_warning_percent` 80, `wear_critical_percent` 95,
 `crc_errors_significant` 100 (below it a CRC count is a hint), `quiet_expected_min`
 10.0 (the line the whole "were due" idea rests on: fewer expected than this and
-the tool refuses to call a counter quiet), `min_span_hours` 1 and
-`mixed_firmware_threshold` 2. Override one for a run with
+the tool refuses to call a counter quiet), `wear_projection_min_points` 2 (wear is
+an integer, so one point is one unit of resolution and a rate from it is noise -
+under this much measured movement no wear-out date is projected), `min_span_hours`
+1 and `mixed_firmware_threshold` 2. Override one for a run with
 `lsdsk --set thresholds.crc_errors_significant=10 findings`, or permanently by
 editing the deployed `config.d/60-thresholds.toml`.
 
@@ -347,19 +385,23 @@ Exit codes: `0` nothing actionable, `1` a warning or critical. Hints never set a
 non-zero code; a hint is a ceiling, not a fault.
 
 **Only the eight section commands, `report` and bare `lsdsk` set `0`/`1` from findings.**
-`record`, `snapshot` and the `config-*` commands exit `0` on success whatever
-the hardware says, so never alert on their code. And `1` is also what an
+`record`, `snapshot` and the `config-*` commands exit `0` on success whatever the
+hardware says, so never read their code as a verdict about the machine. They are
+not always `0`, though: one that cannot write what it was asked to write leaves
+`13` or `1`, and for `record` that code is the only channel there is, since it
+prints nothing at all in human mode. And `1` is also what an
 internal error leaves, so read stderr before treating it as a finding;
 `lsdsk findings --format json` is the unambiguous test.
 
-| Code | Means                                                                                                                                                                                                                                                                               |
-|------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `0`  | A reporting command found nothing actionable. `record`, `snapshot` and `config-*` exit `0` on success regardless                                                                                                                                                                    |
-| `1`  | A reporting command found a warning or a critical. An internal error also leaves `1`; see below                                                                                                                                                                                     |
-| `2`  | The command line was wrong. See below, this one is misread constantly                                                                                                                                                                                                               |
-| `13` | Something needed privilege this run lacks: `config-deploy --target app` or `host` without root, and equally a diagnostic run whose hardware read the kernel refused outright. A field that merely could not be read is different - it degrades to `-` and names itself in `skipped` |
-| `22` | A configuration section does not exist, a `--profile` was rejected, or `snapshot` was given `--replay`                                                                                                                                                                              |
-| `78` | The file is not a snapshot this version reads, or this platform has no hardware reader                                                                                                                                                                                              |
+| Code  | Means                                                                                                                                                                                                                                                                                                                                        |
+|-------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`   | A reporting command found nothing actionable. `record`, `snapshot` and `config-*` exit `0` on success regardless                                                                                                                                                                                                                             |
+| `1`   | A reporting command found a warning or a critical. An internal error also leaves `1`, and so does a `record` or `snapshot` whose write failed for a reason other than permission; see below                                                                                                                                                  |
+| `2`   | The command line was wrong. `USAGE_ERROR` in the envelope. See below, this one is misread constantly                                                                                                                                                                                                                                         |
+| `13`  | Something needed privilege this run lacks: `config-deploy --target app` or `host` without root, a diagnostic run whose hardware read the kernel refused outright, or a `snapshot` or `record` whose destination refuses to be written. A field that merely could not be read is different - it degrades to `-` and names itself in `skipped` |
+| `22`  | `lsdsk config --section` named a section that does not exist, a `--profile` was rejected, or a global `--replay` was given to `snapshot`. `--set SECTION.KEY=VALUE` is a different option and is not what produces this                                                                                                                      |
+| `78`  | The file is not a snapshot this version reads, or this platform has no hardware reader                                                                                                                                                                                                                                                       |
+| `141` | The process reading the output closed the pipe before the command finished. Neither a verdict nor a refusal; see the ranking below                                                                                                                                                                                                           |
 
 **`2` does not mean the file was missing.** It is the CLI framework's usage
 error and an absent `--replay` path is only one of its causes: an unknown
@@ -373,6 +415,53 @@ absent" will page whoever owns the capture pipeline when the actual fault is a
 typo in the wrapper's own command line, and will keep doing so until somebody
 reads the message on stderr. Read that message before concluding anything; it
 names which it was.
+
+**A usage error answers in JSON too, when the command line asked for it.**
+`lsdsk disks --bogus --format json` writes one object on stdout and exits `2`:
+
+```json
+{"ok":false,"command":"disks","error":{"type":"USAGE_ERROR","message":"No such option '--bogus'."}}
+```
+
+with the framework's own usage text on stderr, where it does not disturb a
+parser. The parser refuses before any command callback runs, so there is no
+`--format` value to consult and the intent is read from the command line itself:
+`--format json` anywhere before a bare `--` gets the envelope, and anything
+ambiguous gets none. `error.type` is always the exit code's own name, so
+`USAGE_ERROR` is `2`, `PERMISSION_DENIED` is `13`, `INVALID_ARGUMENT` is `22` and
+`CONFIG_ERROR` is `78`; a caller may branch on the name or on the code and the two
+cannot disagree.
+
+**A failed write is reported as a SKIP, not as an error, because the command
+still did something.** `lsdsk record --format json` whose store cannot be written
+exits `13` and still prints its action envelope - `ok` false, `data` naming the
+store and how many drives were read, and the refusal as a sentence in `skipped` -
+rather than the `error` object above. So a caller reading `error.type` alone sees
+nothing here: read `ok` first, then `skipped` for why.
+
+**`141` is what a departed reader leaves, and which code wins does not depend on
+the format.** `lsdsk findings ... | head -5` leaves `141` rather than the verdict
+it reached, because a verdict that was not delivered is not a verdict: leaving `1`
+there would tell a monitoring check it had a complete answer when it had five
+lines of one. So `0` and `1` yield. A refusal is the other way round - `2`, `13`,
+`22` and `78` stand whoever was reading, because there was never any output for
+that reader to lose; an unknown option is an unknown option whether it went into
+`head` or into a file, and `lsdsk disks --bogus | head -c 0` duly leaves `2`. Both halves hold identically in human and
+`--format json` output, which is the point of them: an exit code that changed with
+the output format would be useless to a wrapper that uses both.
+
+That ranking is about a code the run DECIDED. A command already writing when the
+reader leaves exits `141` at that failing write, before it has decided anything -
+so `lsdsk config --section nosuch` piped into a reader that has gone leaves `141`
+and not `22`, because it prints the configuration before it discovers the section
+is missing. Judge a command line by running it with its output going somewhere
+that stays.
+
+Do not parse what did arrive, either. Whether any of the output reached the
+reader before the pipe closed is a question about buffering rather than about the
+command, so a run that leaves `141` may have delivered a whole document, half of
+one, or nothing at all. `141` means "what you asked for was not delivered"; the
+only sound response is to run it again somewhere the output survives.
 
 **The exit code can fall from `1` to `0` with the hardware untouched**, and if
 somebody alerts on it they need to know. Two ways. A fault the recorded history

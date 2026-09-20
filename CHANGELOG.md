@@ -481,6 +481,21 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
+- **The shipped skill's exit-code table carries `141`, names the flag it blames
+  for `22`, and says that the ranking does not move with `--format`.** The table
+  stopped at `78`, so a caller consulting it to branch met an undocumented code
+  the first time they piped anything into a reader that leaves. The `22` row
+  named no flag at all, and `config --section`, the only one that produces it,
+  had zero occurrences in the file while `--set SECTION.KEY=VALUE` was documented
+  throughout using the same word SECTION - measured on a probe given the old
+  text, which answered `--set`, whose own command line exits `0` in silence. The
+  `13` row named `config-deploy` alone though `snapshot` and `record` both leave
+  it. `2` is the named member `USAGE_ERROR` now, with the envelope a refused
+  command line prints. Beside the table, the skill names the callables
+  `lsdsk.adapters.hw.snapshot` and `lsdsk.domain.diagnostics` export - including
+  `count_by_severity`, which its own example worked around - the seventh
+  `[thresholds]` key, and `controller.kind`'s seven values.
+
 - **Rules are now tested on every surface they are claimed to hold for.** The
   one-spelling rule names both trees and only the new one was swept; the
   bandwidth-surrender rule names four tables and only one was swept; the detail
