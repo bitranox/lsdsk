@@ -7,6 +7,24 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A closed stderr no longer discards a report somebody is reading.** rich's own
+  `Console.on_broken_pipe` runs `os.dup2(devnull, sys.stdout.fileno())` - hardcoded
+  to STDOUT whichever stream actually broke - and then raises `SystemExit(1)`, this
+  tool's code for an actionable finding. The console it fires on is the one
+  `lib_log_rich` builds for its stderr output, which this project does not
+  construct, so the loss was invisible from here: measured on `lsdsk config` with
+  stderr's reader gone and stdout read normally, the report arrived as 1 byte
+  instead of 13,166, with nothing on any stream to say the rest had gone to the
+  null device. Traced with `os.dup2` instrumented rather than inferred.
+
+  Fixed at the library's own seam rather than by patching anything third-party:
+  `console_stream="custom"` with a `console_stream_target` hands rich the same
+  guarded writer this project's own output goes through, so a `BrokenPipeError`
+  never reaches rich's handler and the failure is answered on the stream that
+  really broke. A `console_stream` of `both`, `custom` or `none` is left alone -
+  the first two already name a target this does not own, and the third writes
+  nowhere.
+
 - **A departed reader silences the stream that actually left, and no longer costs
   the caller the one fact it could act on.** Three defects in one path, each
   measured by spawning a real process against a real pipe. (1) The guard pointed

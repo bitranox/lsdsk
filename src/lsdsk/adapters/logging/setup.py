@@ -16,7 +16,8 @@ System Role:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+import sys
+from typing import TYPE_CHECKING, Any, Final, cast
 
 import lib_log_rich.config
 import lib_log_rich.runtime
@@ -24,7 +25,14 @@ from pydantic import BaseModel, ConfigDict
 
 from lsdsk import __init__conf__
 
+# A sibling adapter, not a layer breach: safe_console owns this project's answer to
+# a stream whose reader has gone, and that answer has to be the same one wherever
+# the writing happens.
+from ..cli import safe_console
+
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from lib_layered_config import Config
 
 
@@ -83,8 +91,54 @@ def _build_runtime_config(config: Config) -> lib_log_rich.runtime.RuntimeConfig:
     return lib_log_rich.runtime.RuntimeConfig(
         service=service,
         environment=environment,
-        **extra_config,
+        **_routed_through_the_guarded_stream(extra_config),
     )
+
+
+#: The console streams this can hand lib_log_rich a guarded writer for.
+#:
+#: ``both``, ``custom`` and ``none`` are left alone: the first two already name a
+#: target this does not own, and the third writes nowhere.
+_GUARDABLE_CONSOLE_STREAMS: Final[frozenset[str]] = frozenset({"stdout", "stderr"})
+
+
+def _routed_through_the_guarded_stream(settings: Mapping[str, Any]) -> dict[str, Any]:
+    """Point lib_log_rich's console at a writer that answers a departed reader correctly.
+
+    lib_log_rich renders through rich, and rich's ``Console.on_broken_pipe`` runs
+    ``os.dup2(devnull, sys.stdout.fileno())`` - hardcoded to STDOUT whichever
+    stream actually broke - then raises ``SystemExit(1)``, this tool's code for an
+    actionable finding. Measured on ``lsdsk config`` with stderr's reader gone and
+    stdout read normally: the report went from 13,166 bytes to 1, with nothing on
+    any stream to say the rest had been discarded.
+
+    ``console_stream="custom"`` with a ``console_stream_target`` is the library's
+    own seam for this, so nothing third-party is patched: rich is handed
+    :func:`~lsdsk.adapters.cli.safe_console.safe_stream`, whose writes never let a
+    ``BrokenPipeError`` reach rich's handler.
+
+    Args:
+        settings: The ``[lib_log_rich]`` values, minus service and environment.
+            Typed as the model's own ``Any`` values rather than narrowed to
+            ``object``: the model declares ``extra="allow"``, so these are the
+            library's keyword arguments passing through, and narrowing them here
+            erases every one of their types at the call that spreads them.
+
+    Returns:
+        Those settings, with a guarded target substituted where one applies. The
+        input is not modified.
+    """
+    configured = settings.get("console_stream")
+    # Lower-cased because lib_log_rich matches it that way, so "STDERR" names the
+    # same stream and must not slip past this guard by its spelling.
+    stream = configured.lower() if isinstance(configured, str) else ""
+    if stream not in _GUARDABLE_CONSOLE_STREAMS:
+        return dict(settings)
+    return {
+        **settings,
+        "console_stream": "custom",
+        "console_stream_target": safe_console.safe_stream(sys.stderr if stream == "stderr" else sys.stdout),
+    }
 
 
 def init_logging(config: Config) -> None:

@@ -228,6 +228,15 @@ stops the run, because that stream is what was asked for. A departed STDERR read
 does not: stderr carries diagnostics ABOUT the run, so nobody listening to it costs
 that one message and leaves the command's own verdict standing.
 
+That rule has to hold for every writer, including the ones a library owns.
+`lib_log_rich` renders through rich, and rich's `Console.on_broken_pipe` points
+STDOUT at the null device whichever stream broke, then raises `SystemExit(1)`. So
+`adapters/logging/setup.py` hands it `console_stream="custom"` with a
+`console_stream_target` of `safe_console.safe_stream(...)`: rich never sees a
+`BrokenPipeError` to handle, and the failure is answered on the stream that really
+broke. Nothing third-party is patched, and a `console_stream` of `both`, `custom` or
+`none` is left as configured.
+
 One limit is worth stating, because it looks like a breach of the rule and is not. The
 contract ranks a code the run DECIDED. A reader that leaves while a command is still
 writing gets `141` at that write, before any command code exists - which is why

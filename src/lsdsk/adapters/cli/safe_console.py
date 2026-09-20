@@ -454,7 +454,13 @@ class _SafeWriter:
         return self._stream if self._stream is not None else sys.stdout
 
     def write(self, text: str) -> int:
-        """Write `text`, degrading anything the current target cannot encode."""
+        """Write `text`, degrading anything the current target cannot encode.
+
+        Returns:
+            How many characters were written, which is the whole of `text` when
+            the target's reader has gone: there is nowhere left to put it and
+            nothing for the caller to retry.
+        """
         target = self._target()
         encoding = getattr(target, "encoding", None)
         try:
@@ -462,16 +468,22 @@ class _SafeWriter:
         except OSError as exc:
             if not is_broken_pipe(exc):
                 raise
+            if target is sys.stderr:
+                _stop_writing_to(target)
+                return len(text)
             _reader_went_away(target)
 
     def flush(self) -> None:
-        """Flush the current target."""
+        """Flush the current target, following the same per-stream rule as :func:`echo`."""
         target = self._target()
         try:
             target.flush()
         except OSError as exc:
             if not is_broken_pipe(exc):
                 raise
+            if target is sys.stderr:
+                _stop_writing_to(target)
+                return
             _reader_went_away(target)
 
     def isatty(self) -> bool:
@@ -490,6 +502,14 @@ def safe_stream(stream: TextIO | None = None) -> IO[str]:
 
     Use for a writer handed to a third-party renderer. For this project's own
     output use :func:`echo` instead.
+
+    It also keeps a renderer's own broken-pipe handling out of the way, which is
+    why the logging adapter routes through it. rich's ``Console.on_broken_pipe``
+    runs ``os.dup2(devnull, sys.stdout.fileno())`` - hardcoded to STDOUT whichever
+    stream actually broke - and then raises ``SystemExit(1)``, this tool's code
+    for an actionable finding. Writing through this wrapper means rich never sees
+    a ``BrokenPipeError`` to handle: the failure is answered here, on the stream
+    that really broke.
 
     The return is typed as the ``IO[str]`` rich's ``Console(file=...)`` declares,
     rather than left as ``Any``. ``_SafeWriter`` implements the four members

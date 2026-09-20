@@ -474,6 +474,37 @@ def test_a_refusal_this_tool_printed_outranks_a_departed_stderr_reader() -> None
 
 
 @pytest.mark.os_agnostic
+def test_a_closed_stderr_does_not_discard_the_report_on_stdout() -> None:
+    """Losing the stream nobody was reading must not cost the reader the report.
+
+    rich's own ``Console.on_broken_pipe`` runs
+    ``os.dup2(devnull, sys.stdout.fileno())`` - hardcoded to STDOUT whichever
+    stream actually broke - and the console it fires on is the one
+    ``lib_log_rich`` builds for its stderr output, which this project does not
+    construct. Measured before the logging stream was routed through the guarded
+    writer: the control delivered 13,166 bytes on stdout and this arm delivered
+    1, with nothing on any stream to say the rest had gone to the null device.
+
+    ``config`` and not ``report``, because the defect needs a write on STDERR and
+    only this command makes one under the harness's flags.
+    """
+    argv = ["config"]
+    control = _run_and_take_the_output_away(capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=False)
+    assert control.stdout_bytes > 0, "the control read nothing, so this arm has no loss to detect"
+    assert control.stderr_bytes > 0, (
+        "the control wrote nothing to stderr, so the write this test is about never happened"
+    )
+
+    kept = _run_and_take_the_output_away(
+        capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=False, stderr_leaves=True
+    )
+    assert kept.stdout_bytes == control.stdout_bytes, (
+        f"a closed stderr cost stdout {control.stdout_bytes - kept.stdout_bytes} of its "
+        f"{control.stdout_bytes} bytes, delivered to the null device instead of to the reader"
+    )
+
+
+@pytest.mark.os_agnostic
 def test_a_findings_verdict_yields_to_a_departed_reader() -> None:
     """A verdict the reader never received must not be reported as delivered.
 
