@@ -7,6 +7,25 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **A configuration this tool cannot load leaves `78`, and a refused directory
+  leaves `13`.** Two mismatches in the configuration commands, each of which
+  made a caller read one kind of failure as another.
+
+  A malformed configuration FILE escaped as the layered library's own exception.
+  It reached the top-level handler, printed `LayerLoadError: Invalid TOML in ...`
+  with no `Error:` in front of it - the one refusal in the whole program without
+  it - and left the code that means lsdsk itself broke. What broke is the file
+  the reader wrote, so it gets `78`, `EX_CONFIG`, which a malformed capture
+  already gets and which no configuration had ever left. Only the library's own
+  error type is caught, so a bug here still reaches the handler that honours
+  `--traceback`.
+
+  And `config-generate-examples` caught `OSError` wholesale, so a destination it
+  could not write left `1` - the code a caller reads as a failing disk - where
+  `config-deploy` and `snapshot` both leave `13` with a sudo hint for the
+  identical errno on the identical operation. It now answers the way its
+  neighbour does, hint included.
+
 - **A section now accounts for the exit code it leaves.** The code counts every
   warning and critical in the MACHINE; a section shows one part of it. So
   `lsdsk smart` printed 342 lines of clean attribute tables and exited `1`, and

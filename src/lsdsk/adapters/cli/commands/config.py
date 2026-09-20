@@ -489,6 +489,19 @@ def cli_config_generate_examples(
                     safe_console.echo(f"  {p}")
             else:
                 safe_console.echo("\nNo files generated (all already exist). Use --force to overwrite.")
+        # Before the OSError arm, because PermissionError IS one: caught
+        # wholesale below, a refused directory left 1 where _execute_deploy and
+        # snapshot both leave 13 with a sudo hint for the identical errno on the
+        # identical operation, and 1 is the code a caller reads as a failing
+        # disk. Same failure, same answer.
+        except PermissionError as exc:
+            logger.error("Permission denied when generating examples", extra={"error": str(exc)})
+            _fail_after_output(
+                f"Permission denied. {exc}",
+                ExitCode.PERMISSION_DENIED,
+                output_format=output_format,
+                hint="Hint: Writing outside your own directories may require sudo.",
+            )
         # Writing example files fails with OSError and nothing else. A wider
         # catch here would turn a bug in lsdsk into the same one-line message a
         # full disk produces, with the traceback discarded even under

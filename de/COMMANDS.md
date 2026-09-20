@@ -71,15 +71,17 @@ der Parser ablehnt, also eine unbekannte Option, einen unbekannten Befehl, ein
 fehlendes Pflichtargument oder eine ungültige `--format`-Wahl; `13`, wenn etwas ein Recht
 braucht, das dieser Lauf nicht hat - ein `config-deploy`-Ziel, das root
 verlangt, ein diagnostischer Lauf, dessen Hardwarelesung der Kernel rundweg
-verweigert, und ein `snapshot`, dessen Ziel sich nicht schreiben lässt; `22` für
+verweigert, ein `snapshot`, dessen Ziel sich nicht schreiben lässt, und ein
+`config-generate-examples`, dessen Ziel das ebenso tut; `22` für
 ein Argument, mit dem das Werkzeug nichts anfangen
 kann, also einen Konfigurationsabschnitt oder einen `--profile`-Namen, den die
 Konfigurationsbibliothek ablehnt, und ebenso eine Option, die zum Befehl nicht
 passt, etwa `snapshot` mit `--replay`; `70`, wenn dieses Werkzeug selbst
 kaputtgegangen ist, also eine Ausnahme, die kein Befehl behandelt hat, und damit
 ein zu meldender Fehler statt einer Aussage über die Maschine; `78` für eine
-Datei, die keine von dieser Fassung lesbare Aufnahme ist, oder für eine
-Plattform ohne Hardwareleser. Behandeln Sie alles über `1` als "hat die Frage
+Konfiguration, die dieses Werkzeug nicht laden kann, für eine Datei, die keine
+von dieser Fassung lesbare Aufnahme ist, oder für eine Plattform ohne
+Hardwareleser. Behandeln Sie alles über `1` als "hat die Frage
 nicht beantwortet".
 
 `70` gibt es, damit eine Überwachungsprüfung eine ausfallende Platte von einem

@@ -70,14 +70,15 @@ code: `2` for a command line the parser refuses, which is an unknown option, an
 unknown command, a missing required argument or a bad `--format` choice; `13` when
 something needs privilege this run lacks - a `config-deploy`
 target that needs root, a diagnostic run whose hardware read the kernel refuses
-outright, and a `snapshot` whose destination refuses to be written; `22` for an
+outright, a `snapshot` whose destination refuses to be written, and a
+`config-generate-examples` whose destination does; `22` for an
 argument the tool cannot act on, which is a
 configuration section or a `--profile` name the configuration library rejects,
 and also an option that does not apply to the command, such as `snapshot` given
 `--replay`; `70` when this tool itself broke, which is an exception no command
 handled and a bug to report rather than anything about the machine; `78` for a
-file that is not a snapshot this version reads or a platform with no hardware
-reader. Treat anything above `1` as "did not answer the question".
+configuration this tool cannot load, a file that is not a snapshot this version
+reads, or a platform with no hardware reader. Treat anything above `1` as "did not answer the question".
 
 `70` exists so that a monitoring check can tell a failing drive from a broken
 tool. Both left `1` before it, and the only way to tell which you had was to read

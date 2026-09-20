@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import rich_click as click
+from lib_layered_config import ConfigError
 
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.history import read_history_settings
@@ -29,6 +30,7 @@ from lsdsk.domain.enums import TreeDensity
 from . import safe_console
 from .constants import CLICK_CONTEXT_SETTINGS, TREE_DENSITY_TOKENS
 from .context import CLIContext, apply_traceback_preferences, store_cli_context
+from .exit_codes import ExitCode
 from .typed_click import option
 
 if TYPE_CHECKING:
@@ -92,6 +94,42 @@ def _report_keys_nothing_reads(config: Config) -> None:
         suggestion = nearest_known_key(section, key)
         meant = f" Did you mean {section}.{suggestion}?" if suggestion else ""
         safe_console.echo(f"Warning: ignoring {dotted}: [{section}] has no such key.{meant}", err=True)
+
+
+def _load_or_refuse(services: AppServices, *, profile: str | None, env_file: str | None) -> Config:
+    """Load the configuration, or refuse as a CONFIGURATION error and say so.
+
+    A configuration file this tool cannot parse used to escape as the layered
+    library's own exception. It reached the top-level handler, which printed
+    ``LayerLoadError: Invalid TOML in ...`` - the one refusal in the whole
+    program without ``Error:`` in front of it - and left the code that means
+    lsdsk itself broke. What broke is the file the reader wrote.
+
+    ``78`` is ``EX_CONFIG``, and this is the one failure in the tool that is
+    literally a configuration error; a malformed CAPTURE already gets it. Only
+    the library's own error type is caught, so a bug here still reaches the
+    handler that honours ``--traceback``.
+
+    The message goes to stderr in prose rather than through the envelope,
+    because the failure happens in the root group: the subcommand's
+    ``--format`` has not been parsed yet, so there is no format to answer in.
+
+    Args:
+        services: The wired adapters, whose loader is called.
+        profile: The profile asked for on the command line.
+        env_file: An explicit ``.env`` path, or ``None``.
+
+    Returns:
+        The merged configuration.
+
+    Raises:
+        SystemExit: With ``CONFIG_ERROR`` when the configuration cannot load.
+    """
+    try:
+        return services.get_config(profile=profile, dotenv_path=env_file)
+    except ConfigError as error:
+        safe_console.echo(f"Error: {error}", err=True)
+        raise SystemExit(ExitCode.CONFIG_ERROR) from None
 
 
 def _report_profile_that_named_nothing(config: Config, profile: str | None) -> None:
@@ -298,7 +336,7 @@ def cli(
     # cast, not a type: ignore - Click types ``obj`` as Any, and this project
     # closes such gaps with a cast to the real type (see typed_click.py).
     services = cast("AppServices", ctx.obj())
-    config = services.get_config(profile=profile, dotenv_path=env_file)
+    config = _load_or_refuse(services, profile=profile, env_file=env_file)
     _report_profile_that_named_nothing(config, profile)
     _report_keys_nothing_reads(config)
     config = _apply_cli_overrides(config, set_overrides)
