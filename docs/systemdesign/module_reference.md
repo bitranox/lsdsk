@@ -10,6 +10,7 @@ module exists that is not listed here, or a listed path does not exist.
 ### Domain Layer
 
 - `src/lsdsk/domain/base.py` - The frozen, extra-refusing Pydantic base every domain value is built on.
+- `src/lsdsk/domain/deployment.py` - What one configuration deployment asks for, as a single value.
 - `src/lsdsk/domain/diagnostics.py` - Pure rules that turn an inventory into findings.
 - `src/lsdsk/domain/enums.py` - Type-safe domain enums for output formats and deployment targets.
 - `src/lsdsk/domain/errors.py` - Domain-specific exceptions for typed error handling at boundaries.

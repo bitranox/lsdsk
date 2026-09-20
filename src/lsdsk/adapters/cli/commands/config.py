@@ -21,6 +21,7 @@ from lsdsk import __init__conf__
 from lsdsk.adapters.config.overrides import apply_overrides
 from lsdsk.adapters.config.permissions import get_permission_defaults
 from lsdsk.adapters.config.secrets import redact_secrets
+from lsdsk.domain.deployment import DeployRequest
 from lsdsk.domain.enums import ActionCommand, DeployTarget, OutputFormat
 from lsdsk.domain.errors import ConfigurationError
 
@@ -319,38 +320,33 @@ def cli_config_deploy(
         )
         _execute_deploy(
             cli_ctx,
-            targets=targets,
-            force=force,
-            profile=effective_profile,
-            set_permissions=set_permissions,
-            dir_mode=dir_mode,
-            file_mode=file_mode,
+            DeployRequest(
+                targets=targets,
+                force=force,
+                profile=effective_profile,
+                set_permissions=set_permissions,
+                dir_mode=dir_mode,
+                file_mode=file_mode,
+            ),
             output_format=output_format,
         )
 
 
 def _execute_deploy(
     cli_ctx: CLIContext,
+    request: DeployRequest,
     *,
     output_format: OutputFormat = OutputFormat.HUMAN,
-    targets: tuple[DeployTarget, ...],
-    force: bool,
-    profile: str | None,
-    set_permissions: bool | None,
-    dir_mode: int | None,
-    file_mode: int | None,
 ) -> None:
     """Execute configuration deployment with error handling.
 
     Args:
         cli_ctx: CLI context containing services.
+        request: What to deploy, as the command line asked for it. Its
+            ``set_permissions`` is still ``None`` where neither
+            ``--permissions`` nor ``--no-permissions`` was given, and this is
+            where the configured default settles it.
         output_format: What the caller asked for, which decides how a failure answers.
-        targets: Deployment target layers.
-        force: Whether to overwrite existing files.
-        profile: Optional profile name.
-        set_permissions: Whether to set Unix permissions. None uses config default.
-        dir_mode: Override directory permission mode.
-        file_mode: Override file permission mode.
 
     Raises:
         SystemExit: On permission or other errors.
@@ -359,18 +355,13 @@ def _execute_deploy(
     perm_defaults = get_permission_defaults(cli_ctx.config)
 
     # CLI --permissions/--no-permissions overrides config enabled setting
-    effective_set_permissions = set_permissions if set_permissions is not None else perm_defaults.enabled
+    settled = request.with_changes(
+        set_permissions=request.set_permissions if request.set_permissions is not None else perm_defaults.enabled
+    )
 
     try:
-        deployed_paths = cli_ctx.services.deploy_configuration(
-            targets=targets,
-            force=force,
-            profile=profile,
-            set_permissions=effective_set_permissions,
-            dir_mode=dir_mode,
-            file_mode=file_mode,
-        )
-        _report_deployment_result(deployed_paths, profile, effective_set_permissions, output_format)
+        deployed_paths = cli_ctx.services.deploy_configuration(settled)
+        _report_deployment_result(deployed_paths, settled.profile, bool(settled.set_permissions), output_format)
     except PermissionError as exc:
         logger.error("Permission denied when deploying configuration", extra={"error": str(exc)})
         _fail_after_output(

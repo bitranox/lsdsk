@@ -57,10 +57,11 @@ def test_when_profile_is_valid_alphanumeric_it_accepts(clear_config_cache: None)
 def test_when_deploy_receives_invalid_profile_it_rejects(monkeypatch: pytest.MonkeyPatch) -> None:
     """deploy_configuration must reject path traversal profiles."""
     from lsdsk.adapters.config.deploy import deploy_configuration
+    from lsdsk.domain.deployment import DeployRequest
     from lsdsk.domain.enums import DeployTarget
 
     with pytest.raises(ValueError, match=r"profile.*invalid|invalid.*profile"):
-        deploy_configuration(targets=[DeployTarget.USER], profile="../../x")
+        deploy_configuration(DeployRequest(targets=(DeployTarget.USER,), profile="../../x"))
 
 
 # --------------------------------------------------------------------------

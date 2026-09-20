@@ -15,12 +15,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
     from pathlib import Path
 
     from lib_layered_config import Config
 
-    from ..domain.enums import DeployTarget, OutputFormat
+    from ..domain.deployment import DeployRequest
+    from ..domain.enums import OutputFormat
     from ..domain.history import History
 
 
@@ -63,18 +63,9 @@ class GetDefaultConfigPath(Protocol):
 
 
 class DeployConfiguration(Protocol):
-    """Deploy default configuration to specified target layers."""
+    """Deploy default configuration to the layers one request names."""
 
-    def __call__(
-        self,
-        *,
-        targets: Sequence[DeployTarget],
-        force: bool = ...,
-        profile: str | None = ...,
-        set_permissions: bool = ...,
-        dir_mode: int | None = ...,
-        file_mode: int | None = ...,
-    ) -> list[Path]: ...
+    def __call__(self, request: DeployRequest) -> list[Path]: ...
 
 
 class DisplayConfig(Protocol):

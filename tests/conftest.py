@@ -27,6 +27,8 @@ if TYPE_CHECKING:
 
     from lib_layered_config.domain.config import SourceInfo
 
+    from lsdsk.domain.deployment import DeployRequest
+
 
 from lsdsk.composition import AppServices, build_production
 
@@ -397,16 +399,8 @@ def inject_deploy_with_profile_capture(
     """
 
     def _inject(deployed_path: Path, captured_profiles: list[str | None]) -> Callable[[], AppServices]:
-        def _capturing_deploy(
-            *,
-            targets: Any,
-            force: bool = False,
-            profile: str | None = None,
-            set_permissions: bool = True,
-            dir_mode: int | None = None,
-            file_mode: int | None = None,
-        ) -> list[Path]:
-            captured_profiles.append(profile)
+        def _capturing_deploy(request: DeployRequest) -> list[Path]:
+            captured_profiles.append(request.profile)
             return [deployed_path]
 
         prod = build_production()

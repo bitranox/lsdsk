@@ -19,6 +19,8 @@ if TYPE_CHECKING:
 
     from click.testing import CliRunner, Result
 
+    from lsdsk.domain.deployment import DeployRequest
+
 CAPTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-minimal.json"
 
 
@@ -43,15 +45,7 @@ def test_when_config_deploy_has_permission_error_it_exits_with_code_13(
 ) -> None:
     """Config-deploy PermissionError must exit with PERMISSION_DENIED (13)."""
 
-    def mock_deploy(
-        *,
-        targets: Any,
-        force: bool = False,
-        profile: str | None = None,
-        set_permissions: bool = True,
-        dir_mode: int | None = None,
-        file_mode: int | None = None,
-    ) -> list[Any]:
+    def mock_deploy(request: DeployRequest) -> list[Any]:
         raise PermissionError("Permission denied")
 
     factory = inject_deploy_configuration(mock_deploy)
@@ -69,15 +63,7 @@ def test_when_config_deploy_has_generic_error_it_exits_with_code_1(
 ) -> None:
     """Config-deploy generic Exception must exit with GENERAL_ERROR (1)."""
 
-    def mock_deploy(
-        *,
-        targets: Any,
-        force: bool = False,
-        profile: str | None = None,
-        set_permissions: bool = True,
-        dir_mode: int | None = None,
-        file_mode: int | None = None,
-    ) -> list[Any]:
+    def mock_deploy(request: DeployRequest) -> list[Any]:
         raise OSError("Disk full")
 
     factory = inject_deploy_configuration(mock_deploy)

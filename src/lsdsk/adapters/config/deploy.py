@@ -11,23 +11,14 @@ from lsdsk import __init__conf__
 from lsdsk.adapters.config.loader import get_default_config_path, validate_profile
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
     from pathlib import Path
 
-    from lsdsk.domain.enums import DeployTarget
+    from lsdsk.domain.deployment import DeployRequest
 
 _DEPLOYED_ACTIONS = frozenset({DeployAction.CREATED, DeployAction.OVERWRITTEN})
 
 
-def deploy_configuration(
-    *,
-    targets: Sequence[DeployTarget],
-    force: bool = False,
-    profile: str | None = None,
-    set_permissions: bool = True,
-    dir_mode: int | None = None,
-    file_mode: int | None = None,
-) -> list[Path]:
+def deploy_configuration(request: DeployRequest) -> list[Path]:
     r"""Deploy default configuration to specified target layers.
 
     Users need to initialize configuration files in standard locations
@@ -37,21 +28,16 @@ def deploy_configuration(
     to requested target layers (app, host, user).
 
     Args:
-        targets: Sequence of DeployTarget enum values specifying target layers.
-            Valid values: DeployTarget.APP, DeployTarget.HOST, DeployTarget.USER.
-            Multiple targets can be specified to deploy to several locations at once.
-        force: If True, overwrite existing configuration files. If False (default),
-            skip files that already exist.
-        profile: Optional profile name for environment isolation. When specified,
-            configuration is deployed to profile-specific subdirectories
-            (e.g., ~/.config/slug/profile/<name>/config.toml).
-        set_permissions: If True (default), set Unix file permissions on created
-            files and directories. Uses 755/644 for app/host layers (world-readable)
-            and 700/600 for user layer (private). If False, use system umask.
-        dir_mode: Override directory permission mode (octal integer, e.g., 0o750).
-            When specified, overrides default directory permissions for all targets.
-        file_mode: Override file permission mode (octal integer, e.g., 0o640).
-            When specified, overrides default file permissions for all targets.
+        request: What to deploy and how. Its ``targets`` are the layers to
+            write, valid values being ``DeployTarget.APP``, ``.HOST`` and
+            ``.USER``, and several may be named at once; ``force`` overwrites a
+            file already there rather than skipping it; ``profile`` deploys into
+            the profile subdirectories (``~/.config/slug/profile/<name>/``);
+            ``set_permissions`` decides whether modes are set at all, with the
+            defaults 755/644 for app and host and 700/600 for user, and ``None``
+            meaning the caller had no preference, which is taken as yes here;
+            ``dir_mode`` and ``file_mode`` override those defaults for every
+            target.
 
     Returns:
         List of paths where configuration files were created or would be created.
@@ -84,24 +70,27 @@ def deploy_configuration(
         - Linux (host): /etc/xdg/{slug}/profile/production/hosts/{hostname}.toml
         - etc.
     """
-    if profile is not None:
-        validate_profile(profile)
+    if request.profile is not None:
+        validate_profile(request.profile)
     source = get_default_config_path()
 
     # Convert enum values to strings for lib_layered_config
-    target_strings = [t.value for t in targets]
+    target_strings = [target.value for target in request.targets]
 
     results = deploy_config(
         source=source,
         vendor=__init__conf__.LAYEREDCONF_VENDOR,
         app=__init__conf__.LAYEREDCONF_APP,
         slug=__init__conf__.LAYEREDCONF_SLUG,
-        profile=profile,
+        profile=request.profile,
         targets=target_strings,
-        force=force,
-        set_permissions=set_permissions,
-        dir_mode=dir_mode,
-        file_mode=file_mode,
+        force=request.force,
+        # The library takes a bool. None here means the caller expressed no
+        # preference, which is the CLI passing neither --permissions nor
+        # --no-permissions, and the answer to that is the documented default.
+        set_permissions=request.set_permissions is not False,
+        dir_mode=request.dir_mode,
+        file_mode=request.file_mode,
     )
 
     # Extract paths where files were actually created or overwritten

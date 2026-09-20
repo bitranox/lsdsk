@@ -6,18 +6,22 @@ the CLI, and delivered to deploy_configuration.
 
 from __future__ import annotations
 
+import os
+import stat
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from lsdsk.adapters import cli as cli_mod
+from lsdsk.adapters.config.deploy import deploy_configuration
 from lsdsk.adapters.config.permissions import (
     get_modes_for_target,
     get_permission_defaults,
     parse_mode,
 )
 from lsdsk.composition import build_production
+from lsdsk.domain.deployment import DeployRequest
 from lsdsk.domain.enums import DeployTarget
 
 if TYPE_CHECKING:
@@ -414,11 +418,7 @@ def test_deploy_configuration_passes_set_permissions_to_library(
 
     monkeypatch.setattr(deploy_mod, "deploy_config", mock_deploy_config)
 
-    deploy_mod.deploy_configuration(
-        targets=[DeployTarget.USER],
-        force=False,
-        set_permissions=False,
-    )
+    deploy_mod.deploy_configuration(DeployRequest(targets=(DeployTarget.USER,), force=False, set_permissions=False))
 
     assert len(captured_kwargs) == 1
     assert captured_kwargs[0]["set_permissions"] is False
@@ -440,15 +440,62 @@ def test_deploy_configuration_passes_mode_overrides_to_library(
     monkeypatch.setattr(deploy_mod, "deploy_config", mock_deploy_config)
 
     deploy_mod.deploy_configuration(
-        targets=[DeployTarget.USER],
-        force=False,
-        dir_mode=0o750,
-        file_mode=0o640,
+        DeployRequest(targets=(DeployTarget.USER,), force=False, dir_mode=0o750, file_mode=0o640)
     )
 
     assert len(captured_kwargs) == 1
     assert captured_kwargs[0]["dir_mode"] == 0o750
     assert captured_kwargs[0]["file_mode"] == 0o640
+
+
+@pytest.mark.os_posix
+def test_a_custom_mode_reaches_the_bits_on_disk(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The whole feature, through the real library, ending at stat().
+
+    Every other test of this stops one layer short: the CLI-level ones capture
+    what the command passed through an injected double, and the two at
+    deploy_configuration level substitute the library call. A regression losing
+    dir_mode or file_mode between this command and the library would pass all of
+    them, because none of them ever looks at a file.
+
+    POSIX only, and not as root: root's umask and ownership make the modes
+    something other than what was asked for, so the assertion would be about the
+    runner rather than about the code.
+    """
+    if os.geteuid() == 0:
+        pytest.skip("root's deployment modes are not the ones asked for")
+
+    root = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(root))
+    deployed = deploy_configuration(
+        DeployRequest(targets=(DeployTarget.USER,), dir_mode=0o750, file_mode=0o640, set_permissions=True)
+    )
+
+    assert deployed, "nothing was written, so the modes below would assert nothing"
+    directory = root / "lsdsk"
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o750, oct(stat.S_IMODE(directory.stat().st_mode))
+    for written in deployed:
+        assert stat.S_IMODE(written.stat().st_mode) == 0o640, f"{written}: {oct(stat.S_IMODE(written.stat().st_mode))}"
+
+
+@pytest.mark.os_posix
+def test_the_shipped_modes_are_not_the_custom_ones(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The control for the test above.
+
+    If the defaults happened to be 750 and 640 it would pass against a build
+    that ignored the overrides entirely, which is the regression it exists to
+    catch.
+    """
+    if os.geteuid() == 0:
+        pytest.skip("root's deployment modes are not the ones asked for")
+
+    root = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(root))
+    deployed = deploy_configuration(DeployRequest(targets=(DeployTarget.USER,), set_permissions=True))
+
+    assert deployed
+    assert stat.S_IMODE((root / "lsdsk").stat().st_mode) != 0o750
+    assert stat.S_IMODE(deployed[0].stat().st_mode) != 0o640
 
 
 @pytest.fixture
@@ -461,12 +508,15 @@ def inject_deploy_with_permission_capture() -> Callable[[Path, list[CapturedDepl
     """
 
     def _inject(deployed_path: Path, captured: list[CapturedDeployArgs]) -> Callable[[], Any]:
-        def _capturing_deploy(**kwargs: Any) -> list[Path]:
+        # One typed parameter rather than **kwargs: a double that took loose
+        # keywords went on accepting a call that had dropped one of them, which
+        # is the drift the request exists to make impossible.
+        def _capturing_deploy(request: DeployRequest) -> list[Path]:
             captured.append(
                 CapturedDeployArgs(
-                    set_permissions=kwargs.get("set_permissions"),
-                    dir_mode=kwargs.get("dir_mode"),
-                    file_mode=kwargs.get("file_mode"),
+                    set_permissions=request.set_permissions,
+                    dir_mode=request.dir_mode,
+                    file_mode=request.file_mode,
                 )
             )
             return [deployed_path]
