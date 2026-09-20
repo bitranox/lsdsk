@@ -100,7 +100,9 @@ def test_record_prints_nothing(cli_runner: CliRunner, production_factory: Callab
     """It is meant for a timer, where output is noise in a log."""
     store = tmp_path / "history.json"
     result = run(cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(SNAPSHOT))
-    assert result.output.strip() == ""
+    # stdout, not output: output MERGES stderr, so a log line from another test's
+    # cold config cache reds this under any -k narrowing that drops the warm-up.
+    assert result.stdout.strip() == "", result.output
 
 
 @pytest.mark.os_agnostic
@@ -441,12 +443,21 @@ def test_a_refused_capture_exits_with_the_config_error_code(
     path.write_text("{}", encoding="utf-8")
     result = run(cli_runner, production_factory, "health", "--replay", str(path), "--format", "json")
     assert result.exit_code == 78
-    # Asserting on the absence of a brace tested the wrong thing: the validation
-    # message itself contains one. What matters is that nothing PARSES as an
-    # envelope, so a caller cannot mistake the failure for data.
-    with pytest.raises(json.JSONDecodeError):
-        json.loads(result.output)
-    assert result.output.lstrip().startswith("Error:")
+
+    # This asserted that nothing on stdout PARSES, which the tool stopped doing:
+    # a failing JSON run writes the failure envelope there so a jq pipeline can
+    # tell it from a command that produced no data. The old arm could not see
+    # that, because it parsed result.output, which merges the stderr sentence in
+    # front and so raises whatever stdout holds.
+    envelope = json.loads(result.stdout)
+    assert envelope["ok"] is False
+    assert envelope["command"] == "health"
+    assert envelope["error"]["type"] == "CONFIG_ERROR", envelope
+
+    # The sentence a person reads is on stderr in both formats, and stdout is
+    # exactly the document - no Error: line in front of it.
+    assert result.stderr.lstrip().startswith("Error:"), result.stderr
+    assert not result.stdout.lstrip().startswith("Error:")
 
 
 # --------------------------------------------------------------------------

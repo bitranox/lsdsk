@@ -140,6 +140,7 @@ def test_when_main_receives_only_help_it_shows_usage(
 
 @pytest.mark.os_agnostic
 def test_when_traceback_is_requested_without_command_the_scan_still_runs(
+    managed_traceback_state: None,
     cli_runner: CliRunner,
     production_factory: Callable[[], Any],
 ) -> None:

@@ -97,6 +97,24 @@ def test_when_set_override_has_nested_key_it_works(
     assert "8192" in result.stdout
 
 
+def _panel_prose(rendered: str) -> str:
+    """The prose of a rich-click error panel, freed of the box that wraps it.
+
+    The panel is drawn to the console width, and a phrase that does not fit is
+    split across two of its lines - with a border glyph and a run of padding
+    between the halves.
+
+    Collapsing whitespace alone does not rejoin it, which is what this replaced:
+    the border sits between the halves, so the normalised text reads
+    ``must | contain '='``. The borders come out first.
+
+    The suite deletes ``COLUMNS`` for isolation, so no ordinary test here can
+    meet a narrow console. The one below sets it back for its own invocation and
+    is the only place this helper is shown doing anything.
+    """
+    return " ".join(rendered.replace("\u2502", " ").split())
+
+
 @pytest.mark.os_agnostic
 def test_when_set_override_is_invalid_it_shows_usage_error(
     cli_runner: CliRunner,
@@ -110,7 +128,31 @@ def test_when_set_override_is_invalid_it_shows_usage_error(
     )
 
     assert result.exit_code != 0
-    assert "must contain '='" in result.output or "must contain '='" in (result.stderr or "")
+    assert "must contain '='" in _panel_prose(result.stderr), result.output
+
+
+@pytest.mark.os_agnostic
+def test_the_refusal_is_still_readable_when_the_panel_has_to_wrap_it(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The control for _panel_prose: a width where the phrase really is split.
+
+    Without this the helper is indistinguishable from the raw string it wraps,
+    because the suite deletes COLUMNS and every other test here runs at the
+    default width, where nothing wraps. The first assertion is what makes the
+    second one mean something: it requires the panel to have broken the phrase.
+    """
+    monkeypatch.setenv("COLUMNS", "50")
+    result: Result = cli_runner.invoke(
+        cli_mod.cli,
+        ["--set", "invalid_no_equals", "config"],
+        obj=production_factory,
+    )
+
+    assert "must contain '='" not in result.stderr, "the control: this width no longer wraps the phrase"
+    assert "must contain '='" in _panel_prose(result.stderr), result.stderr
 
 
 @pytest.mark.os_agnostic
