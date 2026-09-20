@@ -61,6 +61,7 @@ def render_full(
     width: int = DEFAULT_WIDTH,
     history: History | None = None,
     display: DisplaySettings | None = None,
+    store_refusal: str | None = None,
 ) -> RenderableType:
     """Render every view of one machine, in one page.
 
@@ -76,6 +77,10 @@ def render_full(
             all, and `wear_row_floor_percent` was honoured by `lsdsk trend`
             alone, so the same setting changed one view and silently not the
             others.
+        store_refusal: Why the counter store could not be read, when it could
+            not. Carried onto the page rather than left on stderr, because this
+            page is the file somebody archives and an incomplete report must
+            say so inside itself.
 
     Returns:
         The complete report.
@@ -110,7 +115,13 @@ def render_full(
         blank,
         report.render_slots(inventory, width=width),
         blank,
-        render_trend(inventory, history, width=width, wear_floor=laid_out.wear_row_floor_percent),
+        render_trend(
+            inventory,
+            history,
+            width=width,
+            wear_floor=laid_out.wear_row_floor_percent,
+            store_refusal=store_refusal,
+        ),
         blank,
         _heading(f"Findings on {host}"),
         report.render_findings(findings),

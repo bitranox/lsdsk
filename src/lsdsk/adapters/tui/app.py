@@ -318,6 +318,7 @@ class LsdskApp(App[None]):
         history: History | None = None,
         *,
         display: DisplaySettings | None = None,
+        store_refusal: str | None = None,
     ) -> None:
         """Build the app around one already-collected inventory.
 
@@ -332,6 +333,11 @@ class LsdskApp(App[None]):
                 used: a page and the command of the same name are one view
                 under one name, and a second delivery path is how one of them
                 goes deaf.
+            store_refusal: Why the counter store could not be read, when it
+                could not. There is no stderr behind a full-screen page, so a
+                refusal that is only warned about reaches nobody here and the
+                trend page would report the machine as one nothing has ever
+                been recorded on.
         """
         super().__init__()
         self.inventory = inventory
@@ -339,6 +345,7 @@ class LsdskApp(App[None]):
         # show/hide property, and shadowing it breaks rendering.
         self.display_settings = display if display is not None else DisplaySettings()
         self.history: History = history if history is not None else History(hostname=inventory.hostname)
+        self.store_refusal = store_refusal
         self.findings: tuple[Finding, ...] = diagnose(inventory, history=history)
         #: The uncut WWN of each listed drive, by row key. The cell is clipped
         #: to the column width, so the whole of it has to be kept somewhere for
@@ -673,7 +680,11 @@ class LsdskApp(App[None]):
             )
         self.query_one("#trend-body", Static).update(
             tui_palette.Recoloured(
-                render_trend(self.inventory, self.history, wear_floor=wear_floor) if not rows else _note()
+                render_trend(
+                    self.inventory, self.history, wear_floor=wear_floor, store_refusal=self.store_refusal
+                )
+                if not rows
+                else _note()
             )
         )
 

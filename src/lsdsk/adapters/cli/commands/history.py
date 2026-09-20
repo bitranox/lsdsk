@@ -460,10 +460,16 @@ def cli_trend(ctx: click.Context, replay: Path | None, output_format: OutputForm
         else:
             from lsdsk.adapters.render.trend import render_trend  # noqa: PLC0415 - keeps the import graph flat
 
-            history = read_history(inventory, settings).history
+            read = read_history(inventory, settings)
             console = console_for_output(display.piped_width)
             console.print(
-                render_trend(inventory, history, width=console.width, wear_floor=display.wear_row_floor_percent)
+                render_trend(
+                    inventory,
+                    read.history,
+                    width=console.width,
+                    wear_floor=display.wear_row_floor_percent,
+                    store_refusal=read.refusal,
+                )
             )
         raise SystemExit(exit_code_for(findings))
 

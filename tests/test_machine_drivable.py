@@ -309,9 +309,9 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
     """
     import contextlib
     import sys as _sys
-    from types import SimpleNamespace
 
     from lsdsk.adapters.cli.commands import scan
+    from lsdsk.adapters.cli.commands.history import HistoryRead
 
     # The logging runtime is a real external edge and refuses to bind
     # without an init() the CLI entry point normally performs.
@@ -324,7 +324,10 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
     from lsdsk.domain.models import Finding, Inventory
 
     machine = Inventory(hostname="probe")
-    read = SimpleNamespace(history=History(hostname="probe"), writable=False)
+    # The real NamedTuple, not a stand-in with the fields this test happens to
+    # need: a hand-built double keeps answering after the type grows a field,
+    # so the code under test reads an attribute nobody gave it.
+    read = HistoryRead(History(hostname="probe"), writable=False)
     called: list[str] = []
 
     def note_report(*_args: object, **_kwargs: object) -> None:
@@ -333,7 +336,7 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
     def give_inventory(*_args: object, **_kwargs: object) -> tuple[Inventory, list[Finding]]:
         return machine, []
 
-    def give_history(*_args: object, **_kwargs: object) -> SimpleNamespace:
+    def give_history(*_args: object, **_kwargs: object) -> HistoryRead:
         return read
 
     class StubApp:

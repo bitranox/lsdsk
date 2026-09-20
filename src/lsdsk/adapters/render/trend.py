@@ -284,6 +284,7 @@ def render_trend(
     history: History,
     width: int = DEFAULT_WIDTH,
     wear_floor: int = WEAR_WORTH_PLANNING_PERCENT,
+    store_refusal: str | None = None,
 ) -> Group:
     """Render every counter that has moved, or provably has not.
 
@@ -292,13 +293,18 @@ def render_trend(
         history: What has been recorded on earlier runs.
         width: Terminal width, which decides how many columns fit.
         wear_floor: The wear percentage above which a drive earns a row on its own.
+        store_refusal: Why the counter store could not be read, when it could
+            not. An unreadable store yields an empty history, which is
+            indistinguishable from a machine nobody has recorded yet, so
+            without this the page tells a reader the reassuring one of two
+            opposite answers.
 
     Returns:
         The table, or an explanation of why there is nothing to show yet.
     """
     rows = [row.cells for row in trend_rows(inventory, history, wear_floor)]
     if not rows:
-        return Group(Text(_nothing_yet(inventory, history), style=theme.STYLE_UNKNOWN))
+        return Group(Text(_nothing_yet(inventory, history, store_refusal), style=theme.STYLE_UNKNOWN))
     return Group(
         _table(rows, f"Counter trends on {inventory.hostname}", width),
         Text(""),
@@ -310,14 +316,25 @@ def render_trend(
     )
 
 
-def _nothing_yet(inventory: Inventory, history: History) -> str:
+def _nothing_yet(inventory: Inventory, history: History, store_refusal: str | None = None) -> str:
     """Explain an empty trend view, saying which kind of empty it is.
 
-    Three different situations produce no rows and they mean opposite things. A
-    machine with nothing recorded yet, a machine nobody was allowed to read, and
-    a machine whose drives are simply all healthy must not share a sentence: the
-    last one is good news and the first two are the absence of news.
+    Four different situations produce no rows and they mean opposite things. A
+    machine with nothing recorded yet, a machine whose store could not be read,
+    a machine nobody was allowed to read, and a machine whose drives are simply
+    all healthy must not share a sentence: the last one is good news and the
+    rest are the absence of news.
+
+    The refusal is answered first and quoted whole. It is the only one of the
+    four that names something the reader can go and fix, and a paraphrase would
+    leave them without the reader's own words to act on.
     """
+    if store_refusal is not None:
+        return (
+            f"The counter history could not be read, so nothing here is a comparison with the past: {store_refusal}. "
+            "Whatever was recorded before is still on disk and is left untouched; move it aside or point "
+            "--history-file elsewhere to start a new record."
+        )
     if not inventory.privileged:
         return "Counters need root or Administrator, so this run had nothing to compare."
     if not history.series:

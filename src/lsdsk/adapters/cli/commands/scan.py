@@ -537,8 +537,8 @@ def run_default_view(
         inventory, findings = analyse(replay, OutputFormat.HUMAN, resolved, thresholds)
         from lsdsk.adapters.tui import LsdskApp  # noqa: PLC0415 - keeps textual off the fast path
 
-        history = read_history(inventory, resolved).history
-        LsdskApp(inventory, history, display=laid_out).run()
+        read = read_history(inventory, resolved)
+        LsdskApp(inventory, read.history, display=laid_out, store_refusal=read.refusal).run()
         raise SystemExit(exit_code_for(findings))
 
 
@@ -579,8 +579,17 @@ def run_default_report(
 
         laid_out = display if display is not None else DisplaySettings()
         console = console_for_output(laid_out.piped_width)
-        history = read_history(inventory, resolved).history
-        console.print(render_full(inventory, findings, width=console.width, history=history, display=laid_out))
+        read = read_history(inventory, resolved)
+        console.print(
+            render_full(
+                inventory,
+                findings,
+                width=console.width,
+                history=read.history,
+                display=laid_out,
+                store_refusal=read.refusal,
+            )
+        )
         raise SystemExit(exit_code_for(findings))
 
 
@@ -850,14 +859,14 @@ def cli_tui(ctx: click.Context, replay: Path | None, expand_virtual: bool) -> No
         # sitting on disk and which `lsdsk health` reads correctly.
         from .history import read_history  # noqa: PLC0415 - deferred: history imports this module
 
-        history = read_history(inventory, resolve_history(ctx)).history
+        read = read_history(inventory, resolve_history(ctx))
         # The whole section, not one field: a page reads the same settings the
         # printed command of its name reads, and the subcommand flag lands on
         # the same key the file sets rather than beside it.
         display = resolve_tunables(ctx).display.with_changes(
             expand_virtual=effective_expand_virtual(ctx, expand_virtual)
         )
-        LsdskApp(inventory, history, display=display).run()
+        LsdskApp(inventory, read.history, display=display, store_refusal=read.refusal).run()
         raise SystemExit(ExitCode.SUCCESS)
 
 

@@ -7,6 +7,21 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **A counter store that could not be read no longer reads as a machine nobody
+  has ever recorded.** Both produce a trend section with no rows, and they mean
+  opposite things: one says nothing has happened yet, the other says the record
+  somebody has been keeping is unreachable. The refusal already reached stderr,
+  but a caller that archives stdout alone, and a reader on the interactive page
+  where there is no stderr at all, were told the reassuring one.
+
+  The refusal is now carried from the store read to the section that draws it
+  and quoted whole, so the reader acts on the words the reader of the file
+  produced rather than on a paraphrase. It reaches all three views that draw
+  that section together - `lsdsk trend`, the whole-machine page and the
+  interactive page - because a setting that reaches three of its four consumers
+  is the shape this repo has already paid for once, and each of the three is
+  held by a test its own consumer's mutation kills.
+
 - **A PCI address in the JSON envelope is cleaned like every other value the
   hardware chose.** `PciNode.address` and `parent_address` already were;
   `children` was not, so a capture carrying control characters in an address put
