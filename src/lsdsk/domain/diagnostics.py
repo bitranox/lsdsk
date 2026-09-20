@@ -44,15 +44,6 @@ if TYPE_CHECKING:
     from .history import DiskSeries, Trend
     from .thresholds import Thresholds
 
-# The shipped judgement values now live on Thresholds, which the adapter layer
-# builds from configuration. These names are kept as the documented defaults.
-WEAR_WARNING_PERCENT = DEFAULT_THRESHOLDS.wear_warning_percent
-WEAR_CRITICAL_PERCENT = DEFAULT_THRESHOLDS.wear_critical_percent
-
-CRC_ERRORS_SIGNIFICANT = DEFAULT_THRESHOLDS.crc_errors_significant
-
-_MIXED_FIRMWARE_THRESHOLD = DEFAULT_THRESHOLDS.mixed_firmware_threshold
-
 
 def interface_demand_gbytes(disk: Disk) -> float | None:
     """Return the bandwidth one disk can actually pull, in GB/s.
@@ -735,21 +726,42 @@ def _wasteful_holder(inventory: Inventory, *, needs: float, offers: float, taken
     return None
 
 
-# A measured rate moves a finding by exactly one step, never more. History
-# refines a judgement that the counters already justified; it never manufactures
-# one, and it never jumps a hint straight to critical.
-_ESCALATION: dict[Severity, Severity] = {
-    Severity.HINT: Severity.WARNING,
-    Severity.WARNING: Severity.CRITICAL,
-    Severity.CRITICAL: Severity.CRITICAL,
-}
-_DE_ESCALATION: dict[Severity, Severity] = {
-    Severity.CRITICAL: Severity.WARNING,
-    Severity.WARNING: Severity.HINT,
-    Severity.HINT: Severity.HINT,
-}
+#: The severities most urgent first, which is `Severity`'s own declaration
+#: order and is load-bearing: a step is taken along THIS tuple, and the ranking
+#: a report sorts by is a position in it. Written out member by member, each of
+#: the three maps below was a list of the members that existed when it was
+#: written, so a member added later was a `KeyError` out of two public entry
+#: points - not a type error, so nothing could see it coming.
+#: `test_every_severity_can_take_a_step_in_both_directions` holds this. Public
+#: with `one_step_in_severity` because the tests that tie them to the enum sit
+#: outside this module, and pyright refuses a private name reached from there.
+SEVERITY_RANKING: tuple[Severity, ...] = tuple(Severity)
 
-WEAR_PROJECTION_MIN_POINTS = DEFAULT_THRESHOLDS.wear_projection_min_points
+
+def one_step_in_severity(severity: Severity, *, towards_urgent: bool) -> Severity:
+    """Move a severity one step along the ranking, and never past its end.
+
+    A measured rate moves a finding by exactly one step, never more. History
+    refines a judgement that the counters already justified; it never
+    manufactures one, and it never jumps a hint straight to critical.
+
+    Args:
+        severity: What the rule decided without the counters.
+        towards_urgent: Whether the measurement supports the finding or weakens
+            it.
+
+    Returns:
+        The neighbouring severity, or `severity` itself at either end.
+
+    Example:
+        >>> one_step_in_severity(Severity.HINT, towards_urgent=True)
+        <Severity.WARNING: 'warning'>
+        >>> one_step_in_severity(Severity.CRITICAL, towards_urgent=True)
+        <Severity.CRITICAL: 'critical'>
+    """
+    step = -1 if towards_urgent else 1
+    moved = SEVERITY_RANKING.index(severity) + step
+    return SEVERITY_RANKING[min(max(moved, 0), len(SEVERITY_RANKING) - 1)]
 
 
 def _trend(series: DiskSeries | None, kind: CounterKind, thresholds: Thresholds) -> Trend | None:
@@ -799,7 +811,7 @@ def refine(finding: Finding, trend: Trend | None) -> Finding:
             f"about {rate} an hour, so this is happening now rather than in the past."
         )
         return finding.with_changes(
-            severity=_ESCALATION[finding.severity],
+            severity=one_step_in_severity(finding.severity, towards_urgent=True),
             detail=f"{finding.detail}{measured}",
         )
     if trend.is_quiet and trend.span_hours and trend.expected_from_lifetime is not None:
@@ -809,7 +821,7 @@ def refine(finding: Finding, trend: Trend | None) -> Finding:
             "in that time. Whatever caused them is not doing so now."
         )
         return finding.with_changes(
-            severity=_DE_ESCALATION[finding.severity],
+            severity=one_step_in_severity(finding.severity, towards_urgent=False),
             detail=f"{finding.detail}{measured}",
         )
     return finding
@@ -1445,9 +1457,6 @@ def diagnose_controller_oversubscription(controller: Controller, inventory: Inve
     ]
 
 
-_SEVERITY_ORDER = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.HINT: 2}
-
-
 def diagnose(
     inventory: Inventory,
     *,
@@ -1490,7 +1499,7 @@ def diagnose(
     if physical:
         findings.extend(diagnose_port_allocation(inventory))
     findings.extend(diagnose_firmware_consistency(inventory, thresholds))
-    return tuple(sorted(findings, key=lambda f: (_SEVERITY_ORDER[f.severity], f.subject)))
+    return tuple(sorted(findings, key=lambda f: (SEVERITY_RANKING.index(f.severity), f.subject)))
 
 
 def count_by_severity(findings: tuple[Finding, ...]) -> dict[Severity, int]:
@@ -1539,9 +1548,7 @@ def is_storage_controller(kind: ControllerKind) -> bool:
 
 
 __all__ = [
-    "CRC_ERRORS_SIGNIFICANT",
-    "WEAR_CRITICAL_PERCENT",
-    "WEAR_WARNING_PERCENT",
+    "SEVERITY_RANKING",
     "attached_demand_gbytes",
     "count_by_severity",
     "diagnose",
@@ -1554,4 +1561,5 @@ __all__ = [
     "format_pcie_sentence",
     "interface_demand_gbytes",
     "is_storage_controller",
+    "one_step_in_severity",
 ]

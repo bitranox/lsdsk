@@ -300,7 +300,124 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   went 141 to 13, `lsdsk config --section nope 2>&-` went 120 to 22, and `lsdsk
   report | head` on a machine with a finding stays 141.
 
+
+- **The documentation is available in German.** Thirteen pages under `de/`,
+  mirroring the root, with a switcher row under every H1 in both languages and
+  English always on the left. The directory is what makes a German page lead to
+  German pages: a bare link resolves inside `de/`, and only shared assets and
+  the two untranslated documents take a `../` prefix. `CHANGELOG.md` and the
+  module reference stay English and are marked as such in the German index.
+- **The translation cannot go stale in silence.** `de/TRANSLATIONS.toml` records
+  the SHA-256 of the English text each German page was written from, and the
+  gate names every document whose English half has moved since.
+  `scripts/translation_manifest.py --check` reports it,
+  `--refresh <document>` re-records one after its German page has been read
+  against the English. Eight guards cover the set: both directions of the file
+  list, link resolution, anchors, the switcher rows, no German page linking back
+  to an English twin, staleness, and a control that the manifest is not empty.
+
+### Changed
+
+- **The shipped skill's exit-code table carries `141`, names the flag it blames
+  for `22`, and says that the ranking does not move with `--format`.** The table
+  stopped at `78`, so a caller consulting it to branch met an undocumented code
+  the first time they piped anything into a reader that leaves. The `22` row
+  named no flag at all, and `config --section`, the only one that produces it,
+  had zero occurrences in the file while `--set SECTION.KEY=VALUE` was documented
+  throughout using the same word SECTION - measured on a probe given the old
+  text, which answered `--set`, whose own command line exits `0` in silence. The
+  `13` row named `config-deploy` alone though `snapshot` and `record` both leave
+  it. `2` is the named member `USAGE_ERROR` now, with the envelope a refused
+  command line prints. Beside the table, the skill names the callables
+  `lsdsk.adapters.hw.snapshot` and `lsdsk.domain.diagnostics` export - including
+  `count_by_severity`, which its own example worked around - the seventh
+  `[thresholds]` key, and `controller.kind`'s seven values.
+
+- **Rules are now tested on every surface they are claimed to hold for.** The
+  one-spelling rule names both trees and only the new one was swept; the
+  bandwidth-surrender rule names four tables and only one was swept; the detail
+  panel's capacity exclusion was asserted by omission. Each widening was proved
+  by mutating the code and requiring the test to fail. One test that compared an
+  enum against itself, and so could not fail at all, is deleted; the StrEnum
+  string form that moves between Python versions is pinned for all thirteen.
+- **The two settings objects are validated values like every other.**
+  `HistorySettings` and `DisplaySettings` derive from `DomainModel`, so they
+  refuse a field nobody declared and are changed with `with_changes`. Five call
+  sites used `model_copy(update=...)`, which writes an unknown key straight into
+  the instance, leaves the intended field alone and raises nothing - the exact
+  hazard the domain base was written to close, left open one layer up in the
+  settings path the TUI edits on every keypress.
+
+
+- **Every domain value is a validated model.** `Disk`, `Controller`, `Inventory`,
+  the link and history types and `Thresholds` derive from `DomainModel`, frozen
+  and refusing a field name nobody declared, so a mapping that produces a
+  wrong-typed value is refused at the construction that made it rather than
+  several layers later in a renderer. A changed copy comes from `with_changes`,
+  which revalidates: pydantic's own `model_copy(update=...)` writes an unknown
+  key into the instance and leaves the intended field alone, raising nothing.
+  Nothing about the output moved - the JSON envelope, the report and the
+  interactive view are unchanged.
+- **The acting commands' JSON envelope carries a model rather than a dict.**
+  Every result derives from `ActionResult` and the payload is nested instead of
+  dumped and re-embedded. The wire form is byte-identical, checked against a
+  capture of the previous output for all six commands that emit one.
+- **Closed vocabularies travel as their own members.** The interactive view
+  navigates in `CliCommand` members and asks one method which page is in front,
+  the detail panel's twelve group labels are an enum, `Health` is read through a
+  typed accessor rather than `getattr` with a field-name string, `logdemo
+  --theme` takes a checked choice, and a `--set` override is a parsed model whose
+  provenance layer is a member. A page, a group label or a theme that does not
+  exist is now an error a type checker or the command line catches.
+
+- **The README is a front page again, and the reference it had grown into is
+  five documents.** It had reached 631 lines, so what the tool is, what it
+  finds, how it reasons, every command and every page all competed for the same
+  scroll. `PAGES.md` holds the eight pages and the keys that reach them,
+  `REPORT.md` the one-page report, `COMMANDS.md` the commands, options, JSON
+  envelope and exit codes, `FINDINGS.md` what each rule needs before it will
+  call something a fault, and `WHY.md` the problem it was written for. The
+  README keeps the quickstart, the interactive view, privileges, install and an
+  index of the rest.
+- **The documentation guards follow the content rather than the filename.** The
+  command, option and key checks now read the document that OWNS each claim, and
+  the invents-no-option check reads the whole set with a count control, because
+  every option left the README in one move and a scan over a file holding none
+  can no longer fail.
+
+### Removed
+
+- **Three dead threshold constants, one of them exported.**
+  `CRC_ERRORS_SIGNIFICANT` was in `diagnostics.__all__` with no reader at all,
+  and `_MIXED_FIRMWARE_THRESHOLD` and `WEAR_PROJECTION_MIN_POINTS` had none
+  either, under a comment calling them the documented defaults when nothing
+  documented them. `WEAR_WARNING_PERCENT` and `WEAR_CRITICAL_PERCENT` go with
+  them: they were read only by a test, which reads `DEFAULT_THRESHOLDS` at the
+  call site now. The shipped figures live on `Thresholds`, which is what the
+  rules read.
+
+- **Seven inert `py.typed` markers.** PEP 561 needs one at the top-level
+  package, and `lsdsk/py.typed` is it; the seven in subpackages did nothing,
+  which their arbitrary set showed - five other subpackages never had one and
+  nothing was worse off. Measured on the built wheel: with the root marker
+  taken out of an installed copy a consumer's strict type check reports the
+  package as untyped, and with it the seven make no difference.
+
 ### Fixed
+
+- **A severity added later cannot be a `KeyError` out of `refine` or
+  `diagnose`.** The two step maps and the report's ranking were each written
+  out member by member, so each held the severities that existed when it was
+  written and two public entry points indexed them - which pyright cannot see,
+  because a `dict[Severity, Severity]` is complete by its type either way. All
+  three read `Severity`'s own declaration order now, and the tests parametrize
+  over the enum rather than naming the three members.
+
+- **The shipped configuration file and the model it falls back to are held
+  together.** Every judgement and layout value is written twice, once on the
+  model and once in the shipped TOML a reader edits, and nothing compared them:
+  one could be changed alone and the tool would judge by one figure while its
+  own configuration file stated another.
 
 - **A snapshot that fails to open its temporary file no longer leaks the
   descriptor.** `mkstemp` and `os.open` hand back a raw descriptor that nothing
@@ -697,93 +814,6 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   around them already swallowed `OSError`, so a hot-unplug between the listing
   and the read raised out of `collect()` past the CLI's named catches. They
   degrade like the reads do.
-
-### Changed
-
-- **The shipped skill's exit-code table carries `141`, names the flag it blames
-  for `22`, and says that the ranking does not move with `--format`.** The table
-  stopped at `78`, so a caller consulting it to branch met an undocumented code
-  the first time they piped anything into a reader that leaves. The `22` row
-  named no flag at all, and `config --section`, the only one that produces it,
-  had zero occurrences in the file while `--set SECTION.KEY=VALUE` was documented
-  throughout using the same word SECTION - measured on a probe given the old
-  text, which answered `--set`, whose own command line exits `0` in silence. The
-  `13` row named `config-deploy` alone though `snapshot` and `record` both leave
-  it. `2` is the named member `USAGE_ERROR` now, with the envelope a refused
-  command line prints. Beside the table, the skill names the callables
-  `lsdsk.adapters.hw.snapshot` and `lsdsk.domain.diagnostics` export - including
-  `count_by_severity`, which its own example worked around - the seventh
-  `[thresholds]` key, and `controller.kind`'s seven values.
-
-- **Rules are now tested on every surface they are claimed to hold for.** The
-  one-spelling rule names both trees and only the new one was swept; the
-  bandwidth-surrender rule names four tables and only one was swept; the detail
-  panel's capacity exclusion was asserted by omission. Each widening was proved
-  by mutating the code and requiring the test to fail. One test that compared an
-  enum against itself, and so could not fail at all, is deleted; the StrEnum
-  string form that moves between Python versions is pinned for all thirteen.
-- **The two settings objects are validated values like every other.**
-  `HistorySettings` and `DisplaySettings` derive from `DomainModel`, so they
-  refuse a field nobody declared and are changed with `with_changes`. Five call
-  sites used `model_copy(update=...)`, which writes an unknown key straight into
-  the instance, leaves the intended field alone and raises nothing - the exact
-  hazard the domain base was written to close, left open one layer up in the
-  settings path the TUI edits on every keypress.
-
-### Added
-
-- **The documentation is available in German.** Thirteen pages under `de/`,
-  mirroring the root, with a switcher row under every H1 in both languages and
-  English always on the left. The directory is what makes a German page lead to
-  German pages: a bare link resolves inside `de/`, and only shared assets and
-  the two untranslated documents take a `../` prefix. `CHANGELOG.md` and the
-  module reference stay English and are marked as such in the German index.
-- **The translation cannot go stale in silence.** `de/TRANSLATIONS.toml` records
-  the SHA-256 of the English text each German page was written from, and the
-  gate names every document whose English half has moved since.
-  `scripts/translation_manifest.py --check` reports it,
-  `--refresh <document>` re-records one after its German page has been read
-  against the English. Eight guards cover the set: both directions of the file
-  list, link resolution, anchors, the switcher rows, no German page linking back
-  to an English twin, staleness, and a control that the manifest is not empty.
-
-### Changed
-
-- **Every domain value is a validated model.** `Disk`, `Controller`, `Inventory`,
-  the link and history types and `Thresholds` derive from `DomainModel`, frozen
-  and refusing a field name nobody declared, so a mapping that produces a
-  wrong-typed value is refused at the construction that made it rather than
-  several layers later in a renderer. A changed copy comes from `with_changes`,
-  which revalidates: pydantic's own `model_copy(update=...)` writes an unknown
-  key into the instance and leaves the intended field alone, raising nothing.
-  Nothing about the output moved - the JSON envelope, the report and the
-  interactive view are unchanged.
-- **The acting commands' JSON envelope carries a model rather than a dict.**
-  Every result derives from `ActionResult` and the payload is nested instead of
-  dumped and re-embedded. The wire form is byte-identical, checked against a
-  capture of the previous output for all six commands that emit one.
-- **Closed vocabularies travel as their own members.** The interactive view
-  navigates in `CliCommand` members and asks one method which page is in front,
-  the detail panel's twelve group labels are an enum, `Health` is read through a
-  typed accessor rather than `getattr` with a field-name string, `logdemo
-  --theme` takes a checked choice, and a `--set` override is a parsed model whose
-  provenance layer is a member. A page, a group label or a theme that does not
-  exist is now an error a type checker or the command line catches.
-
-- **The README is a front page again, and the reference it had grown into is
-  five documents.** It had reached 631 lines, so what the tool is, what it
-  finds, how it reasons, every command and every page all competed for the same
-  scroll. `PAGES.md` holds the eight pages and the keys that reach them,
-  `REPORT.md` the one-page report, `COMMANDS.md` the commands, options, JSON
-  envelope and exit codes, `FINDINGS.md` what each rule needs before it will
-  call something a fault, and `WHY.md` the problem it was written for. The
-  README keeps the quickstart, the interactive view, privileges, install and an
-  index of the rest.
-- **The documentation guards follow the content rather than the filename.** The
-  command, option and key checks now read the document that OWNS each claim, and
-  the invents-no-option check reads the whole set with a count control, because
-  every option left the README in one move and a scan over a file holding none
-  can no longer fail.
 
 ## [1.2.15] 2026-09-18 14:03:22
 

@@ -335,3 +335,37 @@ async def test_every_display_key_reaches_the_interactive_view(key: str) -> None:
 
     quiet, loud = await rows_at(low), await rows_at(high)
     assert quiet != loud, f"display.{key} is ignored by the interactive view ({table_id} shows {quiet} either way)"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("section", ["thresholds", "display"])
+def test_a_shipped_default_is_the_same_figure_the_model_falls_back_to(section: str) -> None:
+    """The file and the model must not disagree about what the shipped figure IS.
+
+    Every value is written twice - once on the model, where the rules read it
+    when nothing says otherwise, and once in the shipped TOML, which is what a
+    reader edits. Nothing compared them, so one could be changed alone and the
+    tool would judge by one number while its own configuration file stated
+    another. A key's existence is already checked; this is its VALUE.
+
+    Scoped to the two sections this project owns. `lib_log_rich` and
+    `lib_layered_config` are another library's defaults and are not ours to
+    pin.
+    """
+    import tomllib
+
+    from lsdsk.adapters.config.tunables import DisplaySettings
+    from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
+
+    shipped: dict[str, Any] = {}
+    for path in sorted(DEFAULTS.glob("*.toml")):
+        shipped.update(tomllib.loads(path.read_text(encoding="utf-8")).get(section, {}))
+
+    model = DEFAULT_THRESHOLDS if section == "thresholds" else DisplaySettings()
+    assert shipped, f"[{section}] is not in any shipped file, so this asserted nothing"
+    for key, value in shipped.items():
+        # str(): `tree_density` is an enum on the model and its own value in the
+        # file, and the two are equal as text, which is what the file can hold.
+        assert str(getattr(model, key)) == str(value), (
+            f"[{section}] {key} is {value!r} in the shipped file and {getattr(model, key)!r} on the model"
+        )

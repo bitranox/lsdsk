@@ -132,9 +132,9 @@ def test_a_drive_whose_span_proves_nothing_is_left_alone() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_severity_moves_by_one_step_at_most() -> None:
+def test_severity_moves_byone_step_in_severity_at_most() -> None:
     """History refines a judgement the counters justified; it does not leap."""
-    order = [Severity.HINT, Severity.WARNING, Severity.CRITICAL]
+    order = list(reversed(Severity))
     plain = {(f.subject, f.title): f.severity for f in diagnose(latest_inventory())}
     for finding in diagnose(latest_inventory(), history=paired_history()):
         was = plain.get((finding.subject, finding.title))
@@ -163,9 +163,9 @@ def test_the_detail_always_carries_the_measurement_it_acted_on(subject: str) -> 
 
 
 @pytest.mark.os_agnostic
-@pytest.mark.parametrize("base", [Severity.HINT, Severity.WARNING, Severity.CRITICAL])
+@pytest.mark.parametrize("base", list(Severity))
 @pytest.mark.parametrize("verdict", [TrendVerdict.RISING, TrendVerdict.QUIET])
-def test_a_trend_moves_a_severity_by_at_most_one_step(base: Severity, verdict: TrendVerdict) -> None:
+def test_a_trend_moves_a_severity_by_at_mostone_step_in_severity(base: Severity, verdict: TrendVerdict) -> None:
     """CLAUDE.md states this rule and names this file as asserting it.
 
     It was asserted for exactly one of the three base severities. Instrumenting
@@ -174,7 +174,7 @@ def test_a_trend_moves_a_severity_by_at_most_one_step(base: Severity, verdict: T
     code comment expressly forbids, left all 884 tests green. Six cases, no
     fixture.
     """
-    order = [Severity.HINT, Severity.WARNING, Severity.CRITICAL]
+    order = list(reversed(Severity))
     trend = Trend(
         kind=CounterKind.CRC_ERRORS,
         verdict=verdict,
@@ -191,7 +191,7 @@ def test_a_trend_moves_a_severity_by_at_most_one_step(base: Severity, verdict: T
 
 
 @pytest.mark.os_agnostic
-@pytest.mark.parametrize("base", [Severity.HINT, Severity.WARNING, Severity.CRITICAL])
+@pytest.mark.parametrize("base", list(Severity))
 @pytest.mark.parametrize(
     "verdict",
     [TrendVerdict.FIRST_SAMPLE, TrendVerdict.TOO_CLOSE, TrendVerdict.RESET],
@@ -227,6 +227,48 @@ def test_a_refusing_verdict_leaves_the_finding_exactly_as_it_was(base: Severity,
 @pytest.mark.os_agnostic
 def test_without_a_trend_a_severity_never_moves() -> None:
     """The control: refine must be a no-op where there is nothing measured."""
-    for base in (Severity.HINT, Severity.WARNING, Severity.CRITICAL):
+    for base in Severity:
         finding = Finding(severity=base, subject="/dev/sda", title="something", detail="", action=None)
         assert refine(finding, None).severity is base
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("base", list(Severity))
+def test_every_severity_can_take_a_step_in_both_directions(base: Severity) -> None:
+    """A severity added later must not be a KeyError out of a public entry point.
+
+    The two step maps and the report's ranking were each written out member by
+    member, so each was a list of the severities that existed on the day it was
+    written and `refine` and `diagnose` indexed them. A fourth member would have
+    raised out of both, which pyright cannot see because a `dict[Severity,
+    Severity]` is complete by its type either way. All three read the enum now,
+    and the parametrize reads it too rather than naming the three.
+    """
+    from lsdsk.domain.diagnostics import SEVERITY_RANKING, one_step_in_severity
+
+    assert base in SEVERITY_RANKING, "a severity the ranking does not rank"
+    more = one_step_in_severity(base, towards_urgent=True)
+    less = one_step_in_severity(base, towards_urgent=False)
+    assert abs(SEVERITY_RANKING.index(more) - SEVERITY_RANKING.index(base)) <= 1
+    assert abs(SEVERITY_RANKING.index(less) - SEVERITY_RANKING.index(base)) <= 1
+    # The ends hold rather than wrap: the most urgent cannot become the least.
+    assert one_step_in_severity(SEVERITY_RANKING[0], towards_urgent=True) is SEVERITY_RANKING[0]
+    assert one_step_in_severity(SEVERITY_RANKING[-1], towards_urgent=False) is SEVERITY_RANKING[-1]
+
+
+@pytest.mark.os_agnostic
+def test_the_severities_are_declared_from_most_urgent_to_least() -> None:
+    """The declaration order is what a step and the report's ranking walk.
+
+    Nothing looks a member up: `one_step_in_severity` moves along the tuple and the
+    findings are sorted by a position in it, so declaring a member in the wrong
+    place would silently make a step go the wrong way. Asserted on the
+    BEHAVIOUR rather than on a written-out list, which would agree with the enum
+    by construction.
+    """
+    from lsdsk.domain.diagnostics import SEVERITY_RANKING, one_step_in_severity
+
+    assert SEVERITY_RANKING[0] is Severity.CRITICAL, "the most urgent severity is not first"
+    assert SEVERITY_RANKING[-1] is Severity.HINT, "the least urgent severity is not last"
+    assert one_step_in_severity(Severity.HINT, towards_urgent=True) is Severity.WARNING
+    assert one_step_in_severity(Severity.WARNING, towards_urgent=True) is Severity.CRITICAL

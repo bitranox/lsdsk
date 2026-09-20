@@ -11,8 +11,6 @@ import pytest
 
 from lsdsk.adapters.render import theme
 from lsdsk.domain.diagnostics import (
-    WEAR_CRITICAL_PERCENT,
-    WEAR_WARNING_PERCENT,
     attached_demand_gbytes,
     count_by_severity,
     diagnose,
@@ -35,6 +33,7 @@ from lsdsk.domain.models import (
     PcieSlot,
     SmartAttribute,
 )
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 
 def controller(
@@ -827,9 +826,9 @@ def test_when_a_drive_runs_at_its_own_maximum_nothing_is_reported() -> None:
     ("used", "expected"),
     [
         (10, None),
-        (WEAR_WARNING_PERCENT - 1, None),
-        (WEAR_WARNING_PERCENT, Severity.WARNING),
-        (WEAR_CRITICAL_PERCENT, Severity.CRITICAL),
+        (DEFAULT_THRESHOLDS.wear_warning_percent - 1, None),
+        (DEFAULT_THRESHOLDS.wear_warning_percent, Severity.WARNING),
+        (DEFAULT_THRESHOLDS.wear_critical_percent, Severity.CRITICAL),
         (120, Severity.CRITICAL),
     ],
 )
