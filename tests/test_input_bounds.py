@@ -105,6 +105,39 @@ def test_an_unreadable_path_is_reported_as_configuration_not_as_oserror(tmp_path
 
 
 @pytest.mark.os_agnostic
+def test_a_path_under_a_regular_file_is_absent_rather_than_merely_unreadable(tmp_path: Path) -> None:
+    """A path component that is a file means nothing can exist below it, ever.
+
+    The two answers differ for a caller that has to start fresh: ``load_history``
+    treats absent as "no store yet" and unreadable as "a store may be there, do
+    not replace it". Read as unreadable, a ``--history-file`` under a regular file
+    made ``record`` report that it had left an existing store alone - a sentence
+    about a file that cannot exist - and leave 0, so a timer pointed at such a path
+    recorded nothing for as long as it ran.
+
+    The control is here rather than in the directory arm below, which cannot be
+    one: ``MissingFileError`` SUBCLASSES ``ConfigurationError``, so that arm's
+    ``pytest.raises(ConfigurationError)`` passes whichever answer the classifier
+    gives. A directory is genuinely there, so it must be refused as unreadable and
+    NOT as absent - without that asserted, this arm would still pass if every
+    failed read were called absent.
+    """
+    from lsdsk.domain.errors import MissingFileError
+
+    in_the_way = tmp_path / "not-a-directory"
+    in_the_way.write_text("", encoding="utf-8")
+
+    with pytest.raises(MissingFileError):
+        read_text_bounded(in_the_way / "store.json", what="a history store")
+
+    with pytest.raises(ConfigurationError) as refused:
+        read_text_bounded(tmp_path, what="a history store")
+    assert not isinstance(refused.value, MissingFileError), (
+        "the control: a directory that is genuinely there was called absent, so the arm above asserts nothing"
+    )
+
+
+@pytest.mark.os_agnostic
 def test_a_directory_handed_to_the_reader_is_refused_cleanly(tmp_path: Path) -> None:
     """stat() succeeds on a directory, so the read is what has to refuse it."""
     with pytest.raises(ConfigurationError):

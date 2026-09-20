@@ -7,6 +7,35 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **`record` says which of its four outcomes happened, and a write that failed
+  now leaves a code.** Measured before this: a run with nothing new to store, a
+  store belonging to another machine, a write refused with EACCES, and
+  `--no-record` all emitted the identical envelope - `ok: false` and "no drive has
+  advanced its power-on hours since the last reading" - and all four left 0. Two
+  of them mean the record has stopped growing, and one is the caller being told
+  its own instruction failed, so a scheduled job watching `skipped` could not tell
+  a healthy run from a broken one. Each outcome carries its own sentence now, and a
+  failed write leaves `13` when the filesystem refused permission or `1` for any
+  other failure, which is the split `snapshot` already makes for the same event
+  rather than a third answer. The human form of `record` prints nothing by design,
+  so before this a timer could stop recording for months with no signal on any
+  stream.
+
+  `report` and `health` are unchanged: they record because they happen to have
+  read the counters, so a store they cannot write stays a warning and never costs
+  the diagnosis. That is why the reporting moved out of the recorder and into each
+  caller, which now decides what a failed write means to it.
+
+- **A `--history-file` path that cannot exist is treated as absent rather than as
+  unreadable.** A path component that is a regular file means nothing can live
+  below it, now or ever, and reading that as "a store may be there" made `record`
+  report that it had left an existing store alone - a sentence about a file that
+  cannot exist - and leave 0, so a timer pointed at such a path recorded nothing
+  for as long as it ran. Classified in the reader, which is the one place that
+  knows why a read failed: `Path.exists` cannot tell an absent file from one this
+  process may not look at, and that distinction is what protects a real store from
+  being replaced.
+
 - **A refused command line answers in JSON too, and one refusal now leaves the
   same exit code in both output formats.** Two halves, and the second was a
   defect the first uncovered.

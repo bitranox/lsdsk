@@ -613,3 +613,203 @@ def test_a_readable_store_is_still_written(
     assert result.exit_code == 0
     assert store.exists(), "a store that could be read was not written"
     assert load_history(store, hostname="linux-sas-hba").series
+
+
+def _record_json(
+    runner: CliRunner,
+    factory: Callable[[], Any],
+    *args: str,
+) -> tuple[int, dict[str, Any], str]:
+    """Run ``record --format json`` and hand back the code, the envelope and stderr."""
+    result = run(runner, factory, *args, "--format", "json")
+    return result.exit_code, json.loads(result.stdout), result.stderr
+
+
+@pytest.mark.os_agnostic
+def test_every_reason_record_stored_nothing_gets_its_own_sentence(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+) -> None:
+    """Four unrelated outcomes used to print one sentence, byte for byte.
+
+    Measured 2026-09-20: a run with nothing new to store, a store belonging to
+    another machine, a write that failed with EACCES, and ``--no-record`` all
+    emitted the identical envelope - ``ok: false`` and "no drive has advanced its
+    power-on hours since the last reading" - and all four left 0. Two of them
+    mean the record has stopped growing, and one is the caller being told its own
+    instruction failed. A scheduled job watching ``skipped``, which is what the
+    skill teaches, could not tell any of them apart.
+
+    The invariant is that the four sentences are DISTINCT, asserted as a set, so
+    a fix that gives three of them one new shared sentence fails here. Each arm
+    also has to name its own cause, because four distinct sentences that describe
+    the wrong things would satisfy the set alone.
+    """
+    nothing_new_store = tmp_path / "nothing-new.json"
+    first = run(
+        cli_runner, production_factory, "--history-file", str(nothing_new_store), "record", "--replay", str(HEALTHY)
+    )
+    assert first.exit_code == 0, "the control: the first run must store a reading for the second to have nothing to add"
+
+    foreign = tmp_path / "foreign.json"
+    _seed_foreign_store(foreign)
+    in_the_way = tmp_path / "not-a-directory"
+    in_the_way.write_text("", encoding="utf-8")
+
+    _, nothing_new, _ = _record_json(
+        cli_runner, production_factory, "--history-file", str(nothing_new_store), "record", "--replay", str(HEALTHY)
+    )
+    _, another_machine, _ = _record_json(
+        cli_runner, production_factory, "--history-file", str(foreign), "record", "--replay", str(SNAPSHOT)
+    )
+    _, off, _ = _record_json(
+        cli_runner,
+        production_factory,
+        "--no-record",
+        "--history-file",
+        str(tmp_path / "off.json"),
+        "record",
+        "--replay",
+        str(HEALTHY),
+    )
+    _, refused, _ = _record_json(
+        cli_runner,
+        production_factory,
+        "--history-file",
+        str(in_the_way / "history.json"),
+        "record",
+        "--replay",
+        str(HEALTHY),
+    )
+
+    sentences = {
+        "nothing new": nothing_new["skipped"],
+        "another machine's store": another_machine["skipped"],
+        "--no-record": off["skipped"],
+        "a write that failed": refused["skipped"],
+    }
+    for cause, skipped in sentences.items():
+        assert len(skipped) == 1, f"{cause}: expected one sentence, got {skipped!r}"
+    spoken = {cause: skipped[0] for cause, skipped in sentences.items()}
+    assert len(set(spoken.values())) == 4, f"two causes share a sentence, so a caller cannot tell them apart: {spoken}"
+
+    assert "power-on hours" in spoken["nothing new"], spoken["nothing new"]
+    assert "read" in spoken["another machine's store"], spoken["another machine's store"]
+    assert "--no-record" in spoken["--no-record"], spoken["--no-record"]
+    assert "write" in spoken["a write that failed"], spoken["a write that failed"]
+
+
+@pytest.mark.os_agnostic
+def test_a_record_that_could_not_write_leaves_a_code_a_timer_can_see(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+) -> None:
+    """``record`` prints nothing in human mode, so the code is its only channel.
+
+    Measured before this: exit 0 on a write that failed, identical to a run with
+    nothing to store, and in human mode not a byte on stdout either - a timer
+    could stop recording for months without a single signal. ``snapshot`` already
+    answers a refused destination with a code, so the tool held two philosophies
+    for a write failure on its own two file-writing commands.
+
+    A regular file standing where the destination's directory should be, which is
+    how ``test_a_snapshot_refused_by_a_path_that_cannot_exist`` reaches the same
+    branch portably: it raises EEXIST or ENOTDIR rather than a permission error,
+    so the code cannot coincide with the permission arm below.
+    """
+    from lsdsk.adapters.cli.exit_codes import ExitCode
+
+    in_the_way = tmp_path / "not-a-directory"
+    in_the_way.write_text("", encoding="utf-8")
+    store = in_the_way / "history.json"
+
+    human = run(cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(HEALTHY))
+    assert human.exit_code == ExitCode.GENERAL_ERROR, f"a write that could not happen left {human.exit_code}"
+    assert str(store) in human.stderr, f"the failure does not name the store: {human.stderr!r}"
+
+    code, envelope, _ = _record_json(
+        cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(HEALTHY)
+    )
+    assert code == ExitCode.GENERAL_ERROR, f"the machine-readable mode left {code} for the same failure"
+    assert envelope["ok"] is False, "a write that failed cannot report ok"
+    assert envelope["data"]["recorded"] is False, "nothing was recorded, so the payload must not say it was"
+
+
+@pytest.mark.os_posix
+def test_a_record_the_filesystem_refuses_leaves_the_permission_code(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+) -> None:
+    """The permission arm, which the other code cannot hold.
+
+    ``snapshot`` splits a refused write by exception - ``PermissionError`` to 13,
+    any other ``OSError`` to 1 - because the errnos a filesystem produces overlap
+    the codes this tool means something by. ``record`` follows it rather than
+    inventing a third answer.
+
+    The precondition is probed rather than inferred from the user id: a mode of
+    0o500 does not stop root, and on some filesystems it does not stop anybody,
+    so the test writes into the directory itself and skips only when that
+    succeeds - which is the condition, where ``geteuid() == 0`` is a proxy for it.
+    """
+    from lsdsk.adapters.cli.exit_codes import ExitCode
+
+    closed = tmp_path / "closed"
+    closed.mkdir(mode=0o500)
+    try:
+        probe = closed / "probe"
+        try:
+            probe.write_text("", encoding="utf-8")
+        except OSError:
+            pass
+        else:
+            probe.unlink()
+            pytest.skip("this run can write into a mode-0500 directory, so nothing here is refused")
+
+        store = closed / "history.json"
+        result = run(cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(HEALTHY))
+    finally:
+        closed.chmod(0o700)
+
+    assert result.exit_code == ExitCode.PERMISSION_DENIED, f"a refused write left {result.exit_code}"
+    assert str(store) in result.stderr, f"the refusal does not name the store: {result.stderr!r}"
+
+
+@pytest.mark.os_agnostic
+def test_a_report_still_reports_when_its_store_cannot_be_written(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``report`` records incidentally, so a store it cannot write is a warning.
+
+    The opposite of what ``record`` wants from the same failure, which is why the
+    reporting moved out of ``record_reading`` and into each caller. That makes the
+    call in ``analyse`` something a caller has to remember, and forgetting it would
+    be SILENT - the report would still be correct and the warning would simply stop
+    - so it is asserted here rather than left to a reading of the source.
+
+    The hardware read is stood in for at its true external edge, which is what
+    ``snapshot``'s own write tests do: a CI runner has no drives worth reading, and
+    everything after that read, including the store write this is about, runs for
+    real. A replay would not do - ``analyse`` records only for a LIVE run, so the
+    path under test would never be reached.
+    """
+    from lsdsk.adapters.hw import snapshot as snapshot_adapter
+
+    capture = json.loads(HEALTHY.read_text(encoding="utf-8"))
+    monkeypatch.setattr(snapshot_adapter, "read_current_machine", lambda: capture)
+    in_the_way = tmp_path / "not-a-directory"
+    in_the_way.write_text("", encoding="utf-8")
+
+    result = run(cli_runner, production_factory, "--history-file", str(in_the_way / "history.json"), "findings")
+
+    assert result.exit_code == 0, f"a store that could not be written cost the diagnosis: {result.exit_code}"
+    assert result.output.strip(), "the report itself is gone, which is the trade this warning exists to avoid"
+    assert "could not record counter history" in result.stderr, (
+        f"a failed store write was silent, so the record can stop growing unnoticed: {result.stderr!r}"
+    )

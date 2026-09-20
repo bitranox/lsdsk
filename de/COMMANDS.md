@@ -92,6 +92,15 @@ nach wie vor nichts auf stdout. Zuvor schrieb ein fehlgeschlagener JSON-Lauf
 unterscheiden, der keine Daten erzeugte, und die Meldung mit dem Grund lag auf
 dem Strom, den sie nicht las.
 
+`lsdsk record` nennt, welches seiner Ergebnisse eingetreten ist, statt eines
+Satzes für alle, denn zwei davon bedeuten, dass der Verlauf nicht mehr wächst:
+nichts Neues zum Ablegen, ein Speicher, der zu einer anderen Maschine gehört oder
+nicht gelesen werden kann, `--no-record`, und ein fehlgeschlagener Schreibvorgang.
+Nur der letzte hinterlässt einen Code - `13`, wenn das Dateisystem die Rechte
+verweigert, und `1` bei jedem anderen Schreibfehler, dieselbe Aufteilung wie bei
+`snapshot` -, denn die menschenlesbare Form von `record` schweigt absichtlich, ein
+Timer ohne JSON-Auswertung hat also sonst keinen Anhaltspunkt.
+
 Eine Befehlszeile, die der Parser ablehnt, wird ebenso beantwortet, als
 `USAGE_ERROR` und Exit `2`, und der Usage-Block geht unverändert an stderr.
 Dieser Fall wird aus der Befehlszeile selbst gelesen, denn click lehnt sie ab,

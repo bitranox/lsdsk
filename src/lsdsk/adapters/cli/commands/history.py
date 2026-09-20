@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Final, NamedTuple
 
 import lib_log_rich.runtime
 import rich_click as click
@@ -70,10 +71,15 @@ class HistoryRead(NamedTuple):
         history: What has been recorded, empty when there is nothing usable.
         writable: Whether this run may replace the file. False only when a store
             is present and could not be read.
+        refusal: Why it may not be replaced, as the sentence the reader produced.
+            ``None`` when nothing refused. Carried rather than left on stderr
+            because ``record --format json`` reports this cause apart from the
+            others, and a caller parsing stdout cannot see a warning.
     """
 
     history: History
     writable: bool
+    refusal: str | None = None
 
 
 def read_history(inventory: Inventory, settings: HistorySettings) -> HistoryRead:
@@ -110,7 +116,135 @@ def read_history(inventory: Inventory, settings: HistorySettings) -> HistoryRead
                 "Move it aside or point --history-file elsewhere to start a new record.",
                 err=True,
             )
-        return HistoryRead(History(hostname=inventory.hostname), writable=False)
+        return HistoryRead(History(hostname=inventory.hostname), writable=False, refusal=str(error))
+
+
+class RecordOutcome(StrEnum):
+    """What a run did about the counter store, and why when it did nothing.
+
+    One member per reason, because ``record --format json`` reports them apart and
+    a caller acts differently on each: a run with nothing new is healthy, while a
+    store that may not be replaced and a write that failed both mean the record
+    has stopped growing. Collapsed into one boolean they were indistinguishable -
+    measured 2026-09-20, all four emitted the same sentence byte for byte.
+
+    The two failure members mirror ``snapshot``, which splits a refused write the
+    same way, because the errnos a filesystem produces overlap the codes this tool
+    means something by.
+    """
+
+    RECORDED = "recorded"
+    NOTHING_NEW = "nothing new"
+    STORE_NOT_READABLE = "store not readable"
+    RECORDING_OFF = "recording off"
+    NOT_PERMITTED = "not permitted"
+    COULD_NOT_WRITE = "could not write"
+
+
+class RecordAttempt(NamedTuple):
+    """What came of adding this reading to the store.
+
+    Attributes:
+        outcome: What happened.
+        detail: The reader's or the filesystem's own words, for the outcomes that
+            have any. ``None`` otherwise.
+    """
+
+    outcome: RecordOutcome
+    detail: str | None = None
+
+    @property
+    def stored(self) -> bool:
+        """Whether a sample reached the store."""
+        return self.outcome is RecordOutcome.RECORDED
+
+
+#: The outcomes that mean the store could not be written, as opposed to should not be.
+_WRITE_FAILED: Final[frozenset[RecordOutcome]] = frozenset({RecordOutcome.NOT_PERMITTED, RecordOutcome.COULD_NOT_WRITE})
+
+
+def why_nothing_was_stored(attempt: RecordAttempt, path: Path) -> str | None:
+    """The one sentence ``record`` reports for `attempt`.
+
+    Args:
+        attempt: What came of the write.
+        path: The store, so every sentence that is about a file names it.
+
+    Returns:
+        The sentence, or ``None`` when a sample was stored and there is nothing
+        to report.
+
+    Example:
+        >>> from pathlib import Path
+        >>> why_nothing_was_stored(RecordAttempt(RecordOutcome.RECORDED), Path("h.json")) is None
+        True
+        >>> why_nothing_was_stored(RecordAttempt(RecordOutcome.RECORDING_OFF), Path("h.json"))
+        '--no-record was given, so this run judged the counters without adding to them'
+    """
+    match attempt.outcome:
+        case RecordOutcome.RECORDED:
+            return None
+        case RecordOutcome.NOTHING_NEW:
+            return "no drive has advanced its power-on hours since the last reading"
+        case RecordOutcome.RECORDING_OFF:
+            return "--no-record was given, so this run judged the counters without adding to them"
+        case RecordOutcome.STORE_NOT_READABLE:
+            return f"left the existing store at {path} alone, because it could not be read: {attempt.detail}"
+        case RecordOutcome.NOT_PERMITTED:
+            return f"not allowed to write counter history to {path}: {attempt.detail}"
+        case RecordOutcome.COULD_NOT_WRITE:
+            return f"could not write counter history to {path}: {attempt.detail}"
+
+
+def record_exit_code(attempt: RecordAttempt) -> ExitCode:
+    """The code ``record`` leaves for `attempt`.
+
+    A write that FAILED is the only non-zero answer: the other outcomes are the
+    store being left alone on purpose, which is what the command is for. It has
+    to be non-zero somewhere, because ``record`` prints nothing at all in human
+    mode and the code is then the only channel a timer has - measured before this,
+    a store that could not be written left 0 and said nothing on either stream.
+
+    The split follows ``snapshot`` rather than the errno, which would collide:
+    EACCES is 13 and so is this tool's own permission code, while ENOSPC is 28,
+    which means nothing here.
+
+    Args:
+        attempt: What came of the write.
+
+    Returns:
+        The exit code.
+
+    Example:
+        >>> record_exit_code(RecordAttempt(RecordOutcome.NOTHING_NEW))
+        <ExitCode.SUCCESS: 0>
+        >>> record_exit_code(RecordAttempt(RecordOutcome.NOT_PERMITTED, "denied"))
+        <ExitCode.PERMISSION_DENIED: 13>
+        >>> record_exit_code(RecordAttempt(RecordOutcome.COULD_NOT_WRITE, "full"))
+        <ExitCode.GENERAL_ERROR: 1>
+    """
+    if attempt.outcome is RecordOutcome.NOT_PERMITTED:
+        return ExitCode.PERMISSION_DENIED
+    if attempt.outcome is RecordOutcome.COULD_NOT_WRITE:
+        return ExitCode.GENERAL_ERROR
+    return ExitCode.SUCCESS
+
+
+def warn_if_the_store_was_not_written(attempt: RecordAttempt) -> None:
+    """Report a failed write for a command that records only incidentally.
+
+    ``report`` and ``health`` record because they happen to have read the
+    counters, so a store they cannot write is a warning and never the answer:
+    refusing to diagnose the hardware in front of somebody because a state file
+    is read-only would be the wrong trade. ``record`` itself wants the opposite,
+    which is why the reporting is the caller's rather than
+    :func:`record_reading`'s.
+
+    Args:
+        attempt: What came of the write.
+    """
+    if attempt.outcome in _WRITE_FAILED:
+        safe_console.echo(f"Warning: could not record counter history: {attempt.detail}", err=True)
 
 
 def record_reading(
@@ -120,7 +254,7 @@ def record_reading(
     captured_at: str | None = None,
     *,
     announce: bool = True,
-) -> bool:
+) -> RecordAttempt:
     """Add this reading to the store, when it has anything new to say.
 
     Args:
@@ -133,7 +267,9 @@ def record_reading(
         announce: Name the store the first time a machine records anything.
 
     Returns:
-        Whether a sample was written.
+        What came of it, as the outcome plus whatever the refusal said. Reporting
+        is the caller's, because the two callers want opposite things from a
+        failed write: see :func:`warn_if_the_store_was_not_written`.
     """
     history = read.history
     # A store that could not be read is still a store. Writing this run's
@@ -141,22 +277,25 @@ def record_reading(
     # every refusal reason reaches here: a renamed host, a newer schema, a file
     # too large to read, malformed JSON. None of them is a reason to delete it.
     if not read.writable:
-        return False
-    if not settings.enabled or not has_new_readings(history, inventory.disks):
-        return False
+        return RecordAttempt(RecordOutcome.STORE_NOT_READABLE, read.refusal)
+    if not settings.enabled:
+        return RecordAttempt(RecordOutcome.RECORDING_OFF)
+    if not has_new_readings(history, inventory.disks):
+        return RecordAttempt(RecordOutcome.NOTHING_NEW)
     first_ever = not settings.path.exists()
     stamp = captured_at or datetime.now(UTC).isoformat()
     updated = record(history, inventory.disks, stamp, cap=settings.max_samples_per_drive)
     try:
         save_history(updated, settings.path)
+    except PermissionError as error:
+        return RecordAttempt(RecordOutcome.NOT_PERMITTED, str(error))
     except OSError as error:
-        safe_console.echo(f"Warning: could not record counter history: {error}", err=True)
-        return False
+        return RecordAttempt(RecordOutcome.COULD_NOT_WRITE, str(error))
     if first_ever and announce:
         # Said once per machine, so a run that writes to disk is never a silent
         # surprise, and never again after that.
         safe_console.echo(f"Recording disk error counters to {settings.path} (--no-record turns this off).", err=True)
-    return True
+    return RecordAttempt(RecordOutcome.RECORDED)
 
 
 def analyse(
@@ -184,7 +323,7 @@ def analyse(
     read = read_history(inventory, settings)
     findings = diagnose(inventory, history=read.history, thresholds=thresholds)
     if replay is None and output_format is OutputFormat.HUMAN:
-        record_reading(inventory, read, settings)
+        warn_if_the_store_was_not_written(record_reading(inventory, read, settings))
     return Analysis(inventory, findings)
 
 
@@ -266,18 +405,25 @@ def cli_record(ctx: click.Context, replay: Path | None, output_format: OutputFor
         target = effective_replay(ctx, replay)
         inventory = load_inventory(target, output_format=output_format)
         read = read_history(inventory, settings)
-        wrote = record_reading(inventory, read, settings, captured_at=_capture_stamp(target), announce=False)
+        attempt = record_reading(inventory, read, settings, captured_at=_capture_stamp(target), announce=False)
+        # One sentence per reason rather than one for all of them. A run that
+        # stored nothing because no drive's clock has advanced is healthy; a store
+        # it may not replace, and a write that failed, both mean the record has
+        # stopped growing, and a scheduled job has to be able to tell them apart.
+        reason = why_nothing_was_stored(attempt, settings.path)
+        code = record_exit_code(attempt)
+        if code is not ExitCode.SUCCESS:
+            # Said on stderr as well, because the human form of this command is
+            # silent by design and would otherwise report a failed write with
+            # nothing but an exit code.
+            safe_console.echo(f"Error: {reason}", err=True)
         if output_format is OutputFormat.JSON:
             emit_action(
                 ActionCommand.RECORD,
-                RecordResult(recorded=wrote, store=str(settings.path), drives=len(inventory.disks)),
-                # A run that stored nothing is not a failure: it means no drive's
-                # own clock has advanced since the last reading, so there is
-                # nothing new to say. A caller has to be able to tell that from a
-                # run that could not read anything at all.
-                skipped=[] if wrote else ["no drive has advanced its power-on hours since the last reading"],
+                RecordResult(recorded=attempt.stored, store=str(settings.path), drives=len(inventory.disks)),
+                skipped=[] if reason is None else [reason],
             )
-        raise SystemExit(ExitCode.SUCCESS)
+        raise SystemExit(code)
 
 
 @click.command("trend", context_settings=CLICK_CONTEXT_SETTINGS)
@@ -324,9 +470,14 @@ def cli_trend(ctx: click.Context, replay: Path | None, output_format: OutputForm
 
 __all__ = [
     "HistoryRead",
+    "RecordAttempt",
+    "RecordOutcome",
     "analyse",
     "cli_record",
     "cli_trend",
     "read_history",
+    "record_exit_code",
     "record_reading",
+    "warn_if_the_store_was_not_written",
+    "why_nothing_was_stored",
 ]

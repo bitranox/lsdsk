@@ -186,9 +186,18 @@ def _unreadable(path: Path, what: str, error: OSError) -> ConfigurationError:
     by the time a caller asks ``Path.exists`` the OSError has been swallowed and
     both read as absent. Both remain configuration errors, so a caller that
     wants neither distinction is unaffected.
+
+    ``NotADirectoryError`` counts as not there, and provably so: a path component
+    is a regular file, so nothing can exist below it, now or ever. Read as merely
+    unreadable it made the history store report that it had left an existing store
+    alone - a sentence about a file that cannot exist - and a timer pointed at such
+    a path then recorded nothing for as long as it ran, with exit 0 and a reason
+    that was false. Classified here rather than at that caller, because
+    ``Path.exists`` cannot tell an absent file from one this process may not look
+    at, which is the distinction this function exists to keep.
     """
     message = f"Could not read {what} at {path}: {error}"
-    if isinstance(error, FileNotFoundError):
+    if isinstance(error, FileNotFoundError | NotADirectoryError):
         return MissingFileError(message)
     return ConfigurationError(message)
 

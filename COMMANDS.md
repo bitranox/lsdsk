@@ -88,6 +88,14 @@ human mode still puts nothing on stdout. Before this, a failing JSON run wrote
 nothing at all: a `jq` pipeline could not tell it from a command that produced
 no data, and the message explaining why was on the stream it was not reading.
 
+`lsdsk record` says which of its outcomes happened rather than one sentence for
+all of them, because two of them mean the record has stopped growing: nothing new
+to store, a store belonging to another machine or one that cannot be read,
+`--no-record`, and a write that failed. The last is the only one that leaves a
+code - `13` when the filesystem refused permission and `1` for any other write
+failure, the same split `snapshot` makes - because the human form of `record` is
+silent by design, so a timer that is not parsing JSON has nothing else to go on.
+
 A command line the parser refuses answers the same way, as `USAGE_ERROR` and
 exit `2`, and the usage block still goes to stderr unchanged. That one is read
 from the command line itself, because click refuses it before any command runs
