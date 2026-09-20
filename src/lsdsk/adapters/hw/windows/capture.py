@@ -216,6 +216,10 @@ class WindowsCapture(CaptureHeader):
         devices_accessible: Whether any disk could be opened at all.
         environment: The evidence for bare metal, a guest or a container.
         pci: Every PCI device, keyed by instance identifier.
+        pci_names: Device names the reader resolved, keyed ``vendor:device``, so
+            a replay names devices the way the capturing machine did. Absent
+            from a capture taken before this field existed, which is the one
+            case a builder still has to fall back on the replaying machine for.
         disks: Every disk, keyed by interface path.
     """
 
@@ -224,6 +228,7 @@ class WindowsCapture(CaptureHeader):
     devices_accessible: bool = True
     environment: VirtualizationEvidence = VirtualizationEvidence()
     pci: dict[str, PciEntry]
+    pci_names: dict[str, str] = Field(default_factory=dict[str, str])
     disks: dict[str, DiskEntry] = Field(default_factory=dict[str, DiskEntry])
 
 

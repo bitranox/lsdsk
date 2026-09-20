@@ -29,6 +29,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ....domain.enums import BusType, Platform
+from ..decode import pciids
 from ..snapshot import SCHEMA_VERSION
 from . import winapi as api
 from .capture import bus_type_of
@@ -711,6 +712,10 @@ def read_system() -> dict[str, Any]:
         "environment": read_environment(),
         "devices_accessible": bool(disks),
         "pci": pci,
+        # Resolved HERE and not in the builder: the builder is pure, so a name
+        # it looked up itself would come from whichever machine replays the
+        # capture rather than from the one that took it.
+        "pci_names": pciids.resolve_names(pci),
         "disks": disks,
         "cwd": os.getcwd(),  # noqa: PTH109 - recorded as context for a bug report, not used as a path
     }

@@ -6,6 +6,12 @@ That is what lets the whole Linux mapping path be tested on any operating system
 against captures taken from real machines, and it is what makes ``--replay``
 render exactly what a live run would.
 
+One exception, and it is the reason ``pci_names`` exists: a capture that records
+no resolved device names leaves this module nothing to name a device from, and
+:func:`~lsdsk.adapters.hw.decode.pciids.describe` then reads the REPLAYING
+machine's ``pci.ids``. Every capture a current reader takes carries those names,
+so the fallback is reached only by one taken before the field existed.
+
 System Role:
     Adapter layer, translation half.  The impure half lives in :mod:`.reader`.
 """
@@ -35,7 +41,6 @@ from ..decode.ata_identify import AtaIdentity, decode_identify, decode_vpd_ata_i
 from ..decode.ata_smart import decode_health
 from ..decode.captured import decode_base64, parse_int
 from ..decode.nvme import decode_identify_controller, decode_smart_log
-from ..decode.pciids import Database
 from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble, port_kind_of
 from ..refusals import refusals_of
@@ -322,15 +327,7 @@ def _pci_database(capture: LinuxCapture) -> pciids.Database | None:
     A capture taken on one machine may be replayed on another that has a
     different ``pci.ids``, or none, so the reader records the names it resolved.
     """
-    if not capture.pci_names:
-        return None
-    devices: dict[tuple[int, int], str] = {}
-    for key, value in capture.pci_names.items():
-        vendor_text, _, device_text = key.partition(":")
-        vendor, device = parse_int(vendor_text, 16), parse_int(device_text, 16)
-        if vendor is not None and device is not None:
-            devices[(vendor, device)] = value
-    return Database({}, devices)
+    return pciids.database_from_names(capture.pci_names)
 
 
 def _pci_name(entry: PciEntry, database: pciids.Database | None) -> str:

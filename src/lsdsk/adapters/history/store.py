@@ -36,7 +36,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
@@ -304,12 +304,36 @@ def write_history(history: History, *, path: Path | None = None) -> None:
     save_history(history, path or default_history_path())
 
 
+class HistoryRead(NamedTuple):
+    """What the store held, and whether this run may write over it.
+
+    The two are separate answers. An unreadable store still yields an empty
+    history so the hardware is diagnosed anyway, but it must never be treated as
+    "there was nothing here", because that is indistinguishable from an empty
+    store right up until the moment it is overwritten.
+
+    Attributes:
+        history: What has been recorded, empty when there is nothing usable.
+        writable: Whether this run may replace the file. False only when a store
+            is present and could not be read.
+        refusal: Why it may not be replaced, as the sentence the reader produced.
+            ``None`` when nothing refused. Carried rather than left on stderr
+            because ``record --format json`` reports this cause apart from the
+            others, and a caller parsing stdout cannot see a warning.
+    """
+
+    history: History
+    writable: bool
+    refusal: str | None = None
+
+
 __all__ = [
     "HISTORY_FILE_MODE",
     "HISTORY_SCHEMA_VERSION",
     "MAX_SAMPLES_PER_DRIVE",
     "SYSTEM_STORE_DIR",
     "HistoryFile",
+    "HistoryRead",
     "default_history_path",
     "load_history",
     "read_history",

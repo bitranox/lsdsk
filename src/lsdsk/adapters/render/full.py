@@ -27,6 +27,7 @@ from rich.text import Text
 
 from ...domain.history import History
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DisplaySettings
+from ..history.store import HistoryRead
 from . import report, tables, theme, tree
 from .trend import render_trend
 
@@ -59,9 +60,8 @@ def render_full(
     inventory: Inventory,
     findings: Sequence[Finding],
     width: int = DEFAULT_WIDTH,
-    history: History | None = None,
+    history: HistoryRead | None = None,
     display: DisplaySettings | None = None,
-    store_refusal: str | None = None,
 ) -> RenderableType:
     """Render every view of one machine, in one page.
 
@@ -69,25 +69,25 @@ def render_full(
         inventory: The machine.
         findings: What the diagnosis produced.
         width: Terminal width, which decides how many columns each table fits.
-        history: Counter samples recorded on earlier runs. Without them the
-            trend section explains that there is nothing to compare yet.
+        history: What the counter store gave up - the samples recorded on
+            earlier runs, and the reason it could not be read when that is what
+            happened. One value rather than two, because the trend section is
+            drawn from both and a page given the samples without the reason
+            reports a refused store as a machine nobody has ever recorded.
         display: Layout values, or the shipped ones. Threaded through because
             two of its keys are only honoured by the sections below: without it
             `summary_limit` was read from configuration and passed nowhere at
             all, and `wear_row_floor_percent` was honoured by `lsdsk trend`
             alone, so the same setting changed one view and silently not the
             others.
-        store_refusal: Why the counter store could not be read, when it could
-            not. Carried onto the page rather than left on stderr, because this
-            page is the file somebody archives and an incomplete report must
-            say so inside itself.
 
     Returns:
         The complete report.
     """
     host = inventory.hostname
     blank = Text("")
-    history = history or History(hostname=host)
+    read = history if history is not None else HistoryRead(History(hostname=host), writable=True)
+    recorded = read.history
     laid_out = display if display is not None else DisplaySettings()
     sections: list[RenderableType] = [
         report.render_header(inventory),
@@ -108,8 +108,8 @@ def render_full(
             inventory, findings, width=width, expand_virtual=laid_out.expand_virtual, wwn_width=laid_out.wwn_width
         ),
         blank,
-        tables.render_health(inventory, findings, width=width, history=history),
-        *_legend(tables.counter_legend(inventory, history)),
+        tables.render_health(inventory, findings, width=width, history=recorded),
+        *_legend(tables.counter_legend(inventory, recorded)),
         blank,
         report.render_smart(inventory, width=width),
         blank,
@@ -117,10 +117,10 @@ def render_full(
         blank,
         render_trend(
             inventory,
-            history,
+            recorded,
             width=width,
             wear_floor=laid_out.wear_row_floor_percent,
-            store_refusal=store_refusal,
+            store_refusal=read.refusal,
         ),
         blank,
         _heading(f"Findings on {host}"),

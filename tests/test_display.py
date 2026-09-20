@@ -154,6 +154,7 @@ def test_the_default_page_contains_every_section_a_command_can_show() -> None:
 
     from rich.console import Console
 
+    from lsdsk.adapters.history.store import HistoryRead
     from lsdsk.adapters.hw.snapshot import build_from
     from lsdsk.adapters.render import report, tables
     from lsdsk.adapters.render.full import render_full
@@ -189,7 +190,7 @@ def test_the_default_page_contains_every_section_a_command_can_show() -> None:
         Console(file=buffer, width=width, no_color=True).print(renderable)
         return buffer.getvalue()
 
-    page = rendered(render_full(machine, findings, width=width, history=history))
+    page = rendered(render_full(machine, findings, width=width, history=HistoryRead(history, writable=True)))
     sections = {
         "topology tree": render_fabric(machine, findings, width=width),
         "controllers": tables.render_controllers(machine, findings, width=width),

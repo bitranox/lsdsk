@@ -14,23 +14,29 @@ floor reached three of its four consumers once and the miss was invisible.
 from __future__ import annotations
 
 import io
-from collections.abc import Callable
+import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-from click.testing import CliRunner
 from rich.console import Console
 from textual.widgets import Static
 
+from lsdsk.adapters.cli import cli
+from lsdsk.adapters.history.store import HistoryRead
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render.full import render_full
 from lsdsk.adapters.render.trend import render_trend
 from lsdsk.adapters.tui import LsdskApp
-from lsdsk.adapters.cli import cli
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.history import History
-from lsdsk.domain.models import Inventory
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from click.testing import CliRunner
+
+    from lsdsk.domain.models import Inventory
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
 
@@ -43,8 +49,6 @@ REFUSAL = "Expecting property name enclosed in double quotes"
 
 def machine() -> Inventory:
     """The inventory every test here draws."""
-    import json  # noqa: PLC0415 - one call, kept out of the module's import surface
-
     with FIXTURE.open(encoding="utf-8") as handle:
         payload: dict[str, Any] = json.load(handle)
     return build_from(payload)
@@ -99,11 +103,11 @@ def test_the_whole_machine_page_carries_the_refusal_into_the_file_somebody_archi
     findings = diagnose(inventory)
     empty = History(hostname=inventory.hostname)
 
-    refused = drawn(render_full(inventory, findings, width=118, history=empty, store_refusal=REFUSAL))
+    refused = drawn(render_full(inventory, findings, width=118, history=HistoryRead(empty, False, REFUSAL)))
     assert NOTHING_EVER_RECORDED not in refused, "the page reads as a machine with nothing recorded yet"
     assert "could not be read" in refused
 
-    control = drawn(render_full(inventory, findings, width=118, history=empty))
+    control = drawn(render_full(inventory, findings, width=118, history=HistoryRead(empty, writable=True)))
     assert NOTHING_EVER_RECORDED in control, "without a refusal the page must still say nothing was recorded"
 
 

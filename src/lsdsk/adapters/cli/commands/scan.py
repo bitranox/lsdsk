@@ -580,16 +580,7 @@ def run_default_report(
         laid_out = display if display is not None else DisplaySettings()
         console = console_for_output(laid_out.piped_width)
         read = read_history(inventory, resolved)
-        console.print(
-            render_full(
-                inventory,
-                findings,
-                width=console.width,
-                history=read.history,
-                display=laid_out,
-                store_refusal=read.refusal,
-            )
-        )
+        console.print(render_full(inventory, findings, width=console.width, history=read, display=laid_out))
         raise SystemExit(exit_code_for(findings))
 
 

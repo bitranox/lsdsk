@@ -784,25 +784,6 @@ def _devices_accessible(nodes: list[str]) -> bool:
     return any(Path(f"/dev/{node}").exists() for node in nodes) if nodes else True
 
 
-def _resolve_pci_names(devices: dict[str, dict[str, Any]]) -> dict[str, str]:
-    """Resolve the names of the PCI devices actually present.
-
-    Recorded alongside the reading so a snapshot renders the same names when it
-    is replayed on a machine whose ``pci.ids`` differs, or which has none.
-    """
-    names: dict[str, str] = {}
-    for entry in devices.values():
-        vendor_text, device_text = entry.get("vendor"), entry.get("device")
-        if not vendor_text or not device_text:
-            continue
-        vendor, device = int(vendor_text, 16), int(device_text, 16)
-        resolved = pciids.lookup_device(vendor, device)
-        if resolved:
-            vendor_name = pciids.lookup_vendor(vendor)
-            names[f"{vendor:04x}:{device:04x}"] = f"{vendor_name} {resolved}" if vendor_name else resolved
-    return names
-
-
 def read_system() -> dict[str, Any]:
     """Read the whole storage subsystem from this machine.
 
@@ -825,7 +806,7 @@ def read_system() -> dict[str, Any]:
         "kernel": os.uname().release,
         "euid": os.geteuid(),
         "pci": pci,
-        "pci_names": _resolve_pci_names(pci),
+        "pci_names": pciids.resolve_names(pci),
         "classes": read_classes(),
         "block": block,
         "ata": read_ata_blobs(ata_nodes),

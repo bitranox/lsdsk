@@ -28,9 +28,12 @@ from __future__ import annotations
 import gzip
 from functools import lru_cache
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from ...textfile import MAX_INPUT_BYTES, read_text_bounded
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 # Ships with the package, so a machine with no hwdata installed - every Windows
 # one - still resolves a controller to the same name Linux gives it.
@@ -307,11 +310,90 @@ def describe(vendor: int, device: int, database: Database | None = None) -> str:
     return f"Device {vendor:04x}:{device:04x}"
 
 
+def resolve_names(devices: Mapping[str, Mapping[str, object]], database: Database | None = None) -> dict[str, str]:
+    """Resolve the names of the PCI devices a reading actually found.
+
+    Recorded alongside the reading so a snapshot renders the same names when it
+    is replayed on a machine whose ``pci.ids`` differs, or which has none. This
+    is where the file read belongs: it is the READER's half of the split, and a
+    builder that resolved a name itself would make a replay depend on the
+    machine replaying it.
+
+    One implementation for both platforms. Their entries are shaped alike here -
+    ``vendor`` and ``device`` as hexadecimal text - so two copies would only
+    differ by drifting.
+
+    Args:
+        devices: The PCI entries of one reading, keyed however that platform
+            keys them.
+        database: A parsed database to use instead of this machine's. Supplied
+            by tests so the expected names do not depend on which ``pci.ids``
+            the runner has.
+
+    Returns:
+        Resolved names keyed ``vendor:device`` in lowercase hexadecimal, holding
+        only the devices that resolved to something.
+
+    Example:
+        >>> known = Database({0x1000: "Broadcom"}, {(0x1000, 0x0097): "SAS3008"})
+        >>> resolve_names({"0000:01:00.0": {"vendor": "0x1000", "device": "0x0097"}}, known)
+        {'1000:0097': 'Broadcom SAS3008'}
+    """
+    names: dict[str, str] = {}
+    for entry in devices.values():
+        vendor_text, device_text = entry.get("vendor"), entry.get("device")
+        if not isinstance(vendor_text, str) or not isinstance(device_text, str):
+            continue
+        try:
+            vendor, device = int(vendor_text, 16), int(device_text, 16)
+        except ValueError:
+            continue
+        resolved = lookup_device(vendor, device, database)
+        if resolved:
+            vendor_name = lookup_vendor(vendor, database)
+            names[f"{vendor:04x}:{device:04x}"] = f"{vendor_name} {resolved}" if vendor_name else resolved
+    return names
+
+
+def database_from_names(names: Mapping[str, str]) -> Database | None:
+    """Turn a capture's recorded names back into a database, when it has any.
+
+    The names a reader resolved already carry the vendor, so the vendor table is
+    left empty and :func:`describe` takes the device name whole. ``None`` where
+    the capture carries nothing, which is the one case a builder has no answer
+    for and the only one that still falls back to this machine.
+
+    Args:
+        names: What the capture recorded, keyed ``vendor:device``.
+
+    Returns:
+        The database those names make, or ``None`` when there are none.
+
+    Example:
+        >>> database_from_names({"1000:0097": "Broadcom SAS3008"}).devices
+        {(4096, 151): 'Broadcom SAS3008'}
+        >>> database_from_names({}) is None
+        True
+    """
+    if not names:
+        return None
+    devices: dict[tuple[int, int], str] = {}
+    for key, value in names.items():
+        vendor_text, _, device_text = key.partition(":")
+        try:
+            vendor, device = int(vendor_text, 16), int(device_text, 16)
+        except ValueError:
+            continue
+        devices[(vendor, device)] = value
+    return Database({}, devices)
+
+
 __all__ = [
     "BUNDLED_PCI_IDS",
     "FALLBACK_VENDORS",
     "PCI_IDS_SEARCH_PATHS",
     "Database",
+    "database_from_names",
     "describe",
     "find_pci_ids",
     "lookup_device",
@@ -319,4 +401,5 @@ __all__ = [
     "parse_pci_ids",
     "read_bundled_pci_ids",
     "reset_database_cache",
+    "resolve_names",
 ]

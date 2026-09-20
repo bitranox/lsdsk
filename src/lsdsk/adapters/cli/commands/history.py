@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Final, NamedTuple
 import lib_log_rich.runtime
 import rich_click as click
 
-from lsdsk.adapters.history.store import load_history, save_history
+from lsdsk.adapters.history.store import HistoryRead, load_history, save_history
 from lsdsk.adapters.hw.capture import CaptureEnvelope
 from lsdsk.adapters.textfile import read_json_bounded
 from lsdsk.domain.diagnostics import diagnose
@@ -57,29 +57,6 @@ logger = logging.getLogger(__name__)
 #: Stores whose refusal has already been reported this run. A command that
 #: reads the history twice must not say the same thing to the operator twice.
 _ANNOUNCED_REFUSALS: set[Path] = set()
-
-
-class HistoryRead(NamedTuple):
-    """What the store held, and whether this run may write over it.
-
-    The two are separate answers. An unreadable store still yields an empty
-    history so the hardware is diagnosed anyway, but it must never be treated as
-    "there was nothing here", because that is indistinguishable from an empty
-    store right up until the moment it is overwritten.
-
-    Attributes:
-        history: What has been recorded, empty when there is nothing usable.
-        writable: Whether this run may replace the file. False only when a store
-            is present and could not be read.
-        refusal: Why it may not be replaced, as the sentence the reader produced.
-            ``None`` when nothing refused. Carried rather than left on stderr
-            because ``record --format json`` reports this cause apart from the
-            others, and a caller parsing stdout cannot see a warning.
-    """
-
-    history: History
-    writable: bool
-    refusal: str | None = None
 
 
 def read_history(inventory: Inventory, settings: HistorySettings) -> HistoryRead:

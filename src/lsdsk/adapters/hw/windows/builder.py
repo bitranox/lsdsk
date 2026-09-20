@@ -4,6 +4,12 @@ Pure, like its Linux counterpart, so the whole Windows mapping path is testable
 on any operating system against captures taken from real machines. It takes the
 typed reading :mod:`.capture` parses from the mapping :mod:`.reader` produces.
 
+It shares its counterpart's one exception, and for the same reason: a capture
+recording no ``pci_names`` leaves nothing here to name a device from, so
+:func:`~lsdsk.adapters.hw.decode.pciids.describe` falls back on the replaying
+machine's ``pci.ids`` - which on a Windows capture rendered on Linux means the
+device is named by a file the captured machine never had.
+
 Windows names devices by instance identifier rather than by PCI address, so the
 tree is walked by parentage instead of by path.  The disks a controller carries
 are found by walking up from each disk until a PCI device is reached.
@@ -129,7 +135,7 @@ def _ancestry_of(entry: DiskEntry) -> tuple[str, ...]:
     return (entry.parent,) if entry.parent else ()
 
 
-def _controller_name(entry: PciEntry, instance: str) -> str:
+def _controller_name(entry: PciEntry, instance: str, database: pciids.Database | None) -> str:
     """Name one controller, preferring the language-neutral PCI database.
 
     Windows' own device description is localised, so on a German install an
@@ -144,6 +150,10 @@ def _controller_name(entry: PciEntry, instance: str) -> str:
     Args:
         entry: One PCI device from the capture.
         instance: The device instance path, used when nothing else names it.
+        database: The names the capturing machine resolved, or ``None`` where
+            it recorded none. Passed in rather than looked up here, because a
+            lookup would read the REPLAYING machine's ``pci.ids`` and name a
+            Windows capture after whatever box is rendering it.
 
     Returns:
         A name for the controller.
@@ -151,7 +161,7 @@ def _controller_name(entry: PciEntry, instance: str) -> str:
     vendor = parse_int(entry.vendor, 16)
     device = parse_int(entry.device, 16)
     if vendor is not None and device is not None:
-        return pciids.describe(vendor, device)
+        return pciids.describe(vendor, device, database)
     return entry.name or instance
 
 
@@ -165,6 +175,7 @@ def build_controllers(capture: WindowsCapture) -> tuple[Controller, ...]:
         One controller per storage device in the capture.
     """
     devices = capture.pci
+    database = pciids.database_from_names(capture.pci_names)
     controllers: list[Controller] = []
     for instance, entry in sorted(devices.items()):
         kind = controller_kind_of(_class_code(entry))
@@ -174,7 +185,7 @@ def build_controllers(capture: WindowsCapture) -> tuple[Controller, ...]:
         controllers.append(
             Controller(
                 address=entry.address or instance,
-                name=_controller_name(entry, instance),
+                name=_controller_name(entry, instance, database),
                 kind=kind,
                 driver=entry.driver,
                 link=_pcie_link(entry),
@@ -417,11 +428,12 @@ def build_tree(capture: WindowsCapture) -> tuple[PciNode, ...]:
         children, in address order.
     """
     devices = capture.pci
+    database = pciids.database_from_names(capture.pci_names)
     return assemble(
         tuple(
             NodeSource(
                 address=entry.address or instance,
-                name=_controller_name(entry, instance),
+                name=_controller_name(entry, instance, database),
                 class_code=_class_code(entry),
                 vendor=parse_int(entry.vendor, 16),
                 driver=entry.driver,

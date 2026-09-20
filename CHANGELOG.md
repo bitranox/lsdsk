@@ -7,6 +7,22 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **A Windows capture is named by the machine that took it.** Resolving a PCI
+  vendor and device identifier to a readable name is a lookup in a file, not
+  something the hardware says, and only the Linux reader recorded what it
+  resolved. So a Windows capture rendered anywhere else was named from the
+  rendering machine's `pci.ids` - on this developer box, a Linux distribution's
+  hwdata package naming the devices of a Windows machine that never had it.
+
+  The Windows reader records `pci_names` now, as its counterpart already did,
+  and both builders take what the capture carries. Verified on a real Windows
+  machine, where the reader resolved 20 of its 27 PCI devices. One resolver
+  serves both platforms rather than two copies that could only drift, and a
+  test sweeps the source for a second one starting. The remaining case is
+  stated rather than papered over: a capture taken before the field existed
+  carries no names, so that one still falls back on the replaying machine, and
+  a test holds that boundary from both sides.
+
 - **A counter store that could not be read no longer reads as a machine nobody
   has ever recorded.** Both produce a trend section with no rows, and they mean
   opposite things: one says nothing has happened yet, the other says the record
