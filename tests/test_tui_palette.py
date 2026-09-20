@@ -159,6 +159,12 @@ async def test_every_interactive_colour_is_legible_on_the_background_it_lands_on
     assert not failures, "unreadable: " + "; ".join(failures)
 
 
+#: The roles a page must actually DRAW, named once for both halves of the gate.
+#: One list, because the two halves are one claim: that these appear and the
+#: printed hues do not.
+INTERACTIVE_ROLES = ("at_capability", "hint", "warning", "opportunity", "unknown", "header")
+
+
 @pytest.mark.os_agnostic
 @pytest.mark.asyncio
 async def test_no_printed_colour_reaches_the_interactive_view() -> None:
@@ -189,6 +195,15 @@ async def test_no_printed_colour_reaches_the_interactive_view() -> None:
     leaked = sorted(hue for hue in printed if hue in drawn)
     assert not leaked, f"the printed palette reached the interactive view: {leaked}"
 
+    # The other half of the same claim, asserted on the SAME picture rather than
+    # in a test of its own. Split across two tests it could be satisfied
+    # vacuously under any selection that ran only this one: measured with
+    # NO_COLOR=1, the partner test reds while this one passes on a screen
+    # carrying no colour at all, which is precisely the state the pair exists to
+    # refuse. `-k` is a selection too, and so is a partner someone deletes.
+    missing = sorted(role for role in INTERACTIVE_ROLES if getattr(tui_palette.PALETTE, role).upper() not in drawn)
+    assert not missing, f"the interactive palette was not drawn either, so nothing above was tested: {missing}"
+
 
 @pytest.mark.os_agnostic
 @pytest.mark.asyncio
@@ -199,7 +214,7 @@ async def test_the_interactive_palette_is_what_reaches_the_screen() -> None:
         drawn = " ".join(await _sweep_before_and_after_a_rescan(app, pilot))
 
     palette = tui_palette.PALETTE
-    for role in ("at_capability", "hint", "warning", "opportunity", "unknown", "header"):
+    for role in INTERACTIVE_ROLES:
         value = getattr(palette, role).upper()
         assert value in drawn, f"{role} ({value}) is defined but never drawn"
 

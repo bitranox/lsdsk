@@ -243,17 +243,31 @@ def test_a_capture_cannot_inject_control_characters_into_the_terminal(
     crafted = tmp_path / "evil.json"
     crafted.write_text(json.dumps(capture), encoding="utf-8")
 
+    # The control does two jobs. It proves the run produces output at all, and
+    # it proves the PREMISE this test rests on - that nothing else in the
+    # process emits an escape byte - so a failure below is the crafted payload
+    # getting through rather than Rich colouring its own table. Without it the
+    # assertion cannot tell those apart, which is what made it fail under
+    # FORCE_COLOR while the stripper was working perfectly.
     clean = cli_runner.invoke(cli, ["disks", "--replay", str(source)], obj=production_factory, color=False)
-    assert clean.output, "the control produced no output, so it proved nothing"
+    assert clean.stdout, "the control produced no output, so it proved nothing"
+    assert "\x1b" not in clean.stdout, "this run emits colour of its own, so an escape byte below proves nothing"
 
     for argv in (["disks"], []):
         result = cli_runner.invoke(cli, [*argv, "--replay", str(crafted)], obj=production_factory, color=False)
-        assert result.output, f"{argv or 'bare'}: no output, so this asserted nothing"
-        assert "\x1b" not in result.output, f"{argv or 'bare'}: an escape sequence reached the terminal"
-        assert "\x07" not in result.output, f"{argv or 'bare'}: a bell character reached the terminal"
+        # stdout, not output: the latter carries stderr too, so a coloured log
+        # line from anywhere in the process answered for the page.
+        assert result.stdout, f"{argv or 'bare'}: no output, so this asserted nothing"
+        assert "\x1b" not in result.stdout, f"{argv or 'bare'}: an escape sequence reached the terminal"
+        assert "\x07" not in result.stdout, f"{argv or 'bare'}: a bell character reached the terminal"
+        # The payload's TEXT is not asserted absent, and must not be: the
+        # stripper removes the control characters and keeps the characters, so
+        # `]0;PWNED` is a legitimate rendering of a model field that contained
+        # it. Asserting "PWNED" is absent passes here only because the model
+        # column clips, which is a width away from being wrong.
         # The injected newline is what fabricates a row; the text may still be
         # shown, but it must not have arrived on a line of its own.
-        forged = [line for line in result.output.splitlines() if line.strip() == "FAKE-ROW"]
+        forged = [line for line in result.stdout.splitlines() if line.strip() == "FAKE-ROW"]
         assert not forged, f"{argv or 'bare'}: an injected newline forged a table row"
 
 

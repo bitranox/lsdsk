@@ -47,22 +47,22 @@ def test_display_config_raises_for_nonexistent_section_json(
 
 
 @pytest.mark.os_agnostic
-def test_display_human_renders_output(capsys: pytest.CaptureFixture[str]) -> None:
+def test_display_human_renders_output(capsys: pytest.CaptureFixture[str], strip_ansi: Callable[[str], str]) -> None:
     """Wrapper must produce human-readable output via lib_layered_config."""
     config = Config({"app_name": "myapp", "section": {"key": "val"}}, {})
     display_config(config, output_format=OutputFormat.HUMAN)
-    output = capsys.readouterr().out
+    output = strip_ansi(capsys.readouterr().out)
 
     assert 'app_name = "myapp"' in output
     assert "[section]" in output
 
 
 @pytest.mark.os_agnostic
-def test_display_json_renders_output(capsys: pytest.CaptureFixture[str]) -> None:
+def test_display_json_renders_output(capsys: pytest.CaptureFixture[str], strip_ansi: Callable[[str], str]) -> None:
     """Wrapper must produce JSON output via lib_layered_config."""
     config = Config({"section": {"key": "value"}}, {})
     display_config(config, output_format=OutputFormat.JSON)
-    output = capsys.readouterr().out
+    output = strip_ansi(capsys.readouterr().out)
 
     assert '"section"' in output
     assert '"key": "value"' in output
@@ -71,6 +71,7 @@ def test_display_json_renders_output(capsys: pytest.CaptureFixture[str]) -> None
 @pytest.mark.os_agnostic
 def test_display_human_renders_profile_in_provenance(
     capsys: pytest.CaptureFixture[str],
+    strip_ansi: Callable[[str], str],
     source_info_factory: Callable[..., SourceInfo],
 ) -> None:
     """Profile name must pass through to lib_layered_config."""
@@ -81,7 +82,7 @@ def test_display_human_renders_profile_in_provenance(
 
     display_config(config, output_format=OutputFormat.HUMAN, profile="production")
 
-    output = capsys.readouterr().out
+    output = strip_ansi(capsys.readouterr().out)
     assert "# layer:user profile:production" in output
 
 
@@ -89,36 +90,42 @@ def test_display_human_renders_profile_in_provenance(
 
 
 @pytest.mark.os_agnostic
-def test_display_config_displays_section_with_zero_value(capsys: pytest.CaptureFixture[str]) -> None:
+def test_display_config_displays_section_with_zero_value(
+    capsys: pytest.CaptureFixture[str], strip_ansi: Callable[[str], str]
+) -> None:
     """Section with integer zero value must display (not raise as 'not found')."""
     config = Config({"section": {"count": 0}}, {})
 
     display_config(config, output_format=OutputFormat.HUMAN, section="section")
 
-    output = capsys.readouterr().out
+    output = strip_ansi(capsys.readouterr().out)
     assert "count = 0" in output
 
 
 @pytest.mark.os_agnostic
-def test_display_config_displays_section_with_false_value(capsys: pytest.CaptureFixture[str]) -> None:
+def test_display_config_displays_section_with_false_value(
+    capsys: pytest.CaptureFixture[str], strip_ansi: Callable[[str], str]
+) -> None:
     """Section with boolean False value must display (not raise as 'not found')."""
     config = Config({"section": {"enabled": False}}, {})
 
     display_config(config, output_format=OutputFormat.HUMAN, section="section")
 
-    output = capsys.readouterr().out
+    output = strip_ansi(capsys.readouterr().out)
     # TOML uses lowercase 'false', not Python's 'False'
     assert "enabled = false" in output
 
 
 @pytest.mark.os_agnostic
-def test_display_config_json_displays_section_with_falsey_values(capsys: pytest.CaptureFixture[str]) -> None:
+def test_display_config_json_displays_section_with_falsey_values(
+    capsys: pytest.CaptureFixture[str], strip_ansi: Callable[[str], str]
+) -> None:
     """JSON format with falsey values must display (not raise as 'not found')."""
     config = Config({"section": {"count": 0, "enabled": False, "items": []}}, {})
 
     display_config(config, output_format=OutputFormat.JSON, section="section")
 
-    output = capsys.readouterr().out
+    output = strip_ansi(capsys.readouterr().out)
     assert '"count": 0' in output
     assert '"enabled": false' in output
     assert '"items": []' in output

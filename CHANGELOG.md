@@ -422,6 +422,25 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **The suite answers to its own environment, not the machine it runs on.** The
+  autouse fixture isolated the counter store and nothing else. It now redirects
+  the user CONFIG layer too - only transitively covered on Linux, and on
+  Windows `%APPDATA%` was never redirected at all, so a runner carrying a
+  per-user lsdsk config read it: 11 failures across 8 files, measured - and it
+  takes `FORCE_COLOR`, `NO_COLOR` and the terminal size out of the environment,
+  which are inputs rather than preferences. `FORCE_COLOR=1` reddened 22 tests
+  across 11 files, the sharpest being the control-character test, whose premise
+  is that no escape byte appears and which therefore could not tell a leaked
+  payload from Rich colouring its own table. That test now asserts on stdout
+  alone and carries a control proving the premise holds.
+
+- **The palette gate cannot pass on a screen with no colour on it.** Its two
+  halves were two tests, so `NO_COLOR=1` reddened the half requiring the
+  interactive palette to be drawn while the half requiring the printed palette
+  to be absent passed on a page carrying neither - the exact vacuity the pair
+  exists to refuse, and reachable by any `-k` selection. Both are asserted on
+  one picture now.
+
 - **`report` and `tui` say what to ask instead of `--format`.** Every other
   section offers `--format json`, so a caller reaching for it on these two has
   made a reasonable mistake; click's own "No such option" at exit `2` is

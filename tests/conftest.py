@@ -63,11 +63,11 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 
 
 @pytest.fixture(autouse=True)
-def counter_history_stays_out_of_the_real_store(
+def this_machine_cannot_reach_into_the_suite(
     tmp_path_factory: pytest.TempPathFactory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Give every test its own state directory, so none can reach the real store.
+    """Give every test its own state and config, and a colour answer of its own.
 
     Without this the suite reads - and an ordinary run WRITES - the developer's
     own ``~/.local/state/lsdsk/history.json``, so what a test sees depends on
@@ -77,18 +77,41 @@ def counter_history_stays_out_of_the_real_store(
     width tests failed on the length of that warning rather than on anything
     they were testing.
 
-    The three environment variables are redirected because
+    The first three environment variables are redirected because
     ``default_history_path`` reads exactly those and nothing else. Setting the
     ``[history] path`` key or its environment variable instead would isolate the
     store equally well and outrank the configuration under test in every test
     that sets one, which is the layer several of them exist to check. A test
-    that redirects these itself still wins, because its own monkeypatch runs
-    after this fixture.
+    that redirects any of these itself still wins, because its own monkeypatch
+    runs after this fixture - which is what keeps ``seed_user_config`` working,
+    and every test that sets a value the layered configuration is under test
+    for.
     """
     state = tmp_path_factory.mktemp("state")
     monkeypatch.setenv("XDG_STATE_HOME", str(state))  # Linux
     monkeypatch.setenv("LOCALAPPDATA", str(state))  # Windows
     monkeypatch.setenv("HOME", str(state))  # macOS, and the fallback on both others
+    # The user CONFIG layer, which the three above do not cover. On Linux it is
+    # only transitively covered - XDG_CONFIG_HOME defaults to $HOME/.config - so
+    # a developer or an image that exports it is unprotected; on Windows the user
+    # layer is %APPDATA%\\<vendor>\\<app>\\config.toml and APPDATA was never
+    # redirected at all, so a runner carrying a per-user lsdsk config read it.
+    # Measured with a plausible one: 11 failed across 8 files.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(state / "config"))
+    monkeypatch.setenv("APPDATA", str(state / "roaming"))
+    # And the colour answer, which is an INPUT to a third of these tests rather
+    # than a preference. Rich and click honour FORCE_COLOR even off a terminal,
+    # so `CliRunner(color=False)` does not stop ANSI reaching the captured
+    # output: measured, FORCE_COLOR=1 gives 22 failures across 11 files, and the
+    # sharpest is the control-character test, whose premise is that no escape
+    # byte appears - a premise that cannot tell a leaked payload from Rich
+    # colouring its own table. NO_COLOR is the same fault from the other side:
+    # it silences the palette the interactive gate requires to be DRAWN, leaving
+    # that gate's negative half passing vacuously. COLUMNS and LINES go too,
+    # because a layout measured against the developer's terminal is not one the
+    # suite chose.
+    for chosen_elsewhere in ("FORCE_COLOR", "NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE", "COLUMNS", "LINES"):
+        monkeypatch.delenv(chosen_elsewhere, raising=False)
 
 
 @pytest.fixture
