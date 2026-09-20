@@ -28,6 +28,12 @@ zur [README](README.md).
 | `lsdsk config-generate-examples` | Kommentierte Beispieldateien schreiben, ohne die laufende Konfiguration anzufassen                    |
 | `lsdsk info`                     | Version, Projektseite und die Angaben, die ein Fehlerbericht braucht                                  |
 
+Ein blosses `lsdsk` entscheidet zwischen beiden danach, ob stdin und stdout
+Terminals sind, denn irgendetwas muss `q` drücken können. `lsdsk tui` verlangt
+die interaktive Ansicht ausdrücklich, also VERWEIGERT der Befehl dort mit `22`
+und nennt `lsdsk report` - statt eine Ansicht zu öffnen, die niemand beenden
+kann, oder stillschweigend eine Seite auszugeben, nach der niemand gefragt hat.
+
 Jede Option unten ist global: sie steht vor dem Befehl und gilt für den Befehl,
 der folgt. `--expand-virtual` wird auch nach `topology`, `disks` und `tui`
 angenommen, weil genau das in der Zeile steht, die jene Geräte zusammenzählt.

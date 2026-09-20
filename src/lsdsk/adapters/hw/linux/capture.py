@@ -27,7 +27,7 @@ from typing import Annotated, Literal
 from pydantic import BeforeValidator, Field
 
 from ....domain.enums import Platform
-from ..capture import CaptureHeader, CaptureModel
+from ..capture import CaptureHeader, CaptureModel, DeviceText
 from ..decode.virtualization import VirtualizationEvidence
 
 # ``rotational`` is a kernel-published ``0``/``1`` text flag, unlike most of
@@ -113,16 +113,16 @@ class PciEntry(CaptureModel):
             from discarding it.
     """
 
-    class_code: str | None = Field(default=None, alias="class")
-    vendor: str | None = None
-    device: str | None = None
-    driver: str | None = None
-    current_link_speed: str | None = None
-    current_link_width: str | None = None
-    max_link_speed: str | None = None
-    max_link_width: str | None = None
-    path: str = ""
-    children: tuple[str, ...] = ()
+    class_code: DeviceText | None = Field(default=None, alias="class")
+    vendor: DeviceText | None = None
+    device: DeviceText | None = None
+    driver: DeviceText | None = None
+    current_link_speed: DeviceText | None = None
+    current_link_width: DeviceText | None = None
+    max_link_speed: DeviceText | None = None
+    max_link_width: DeviceText | None = None
+    path: DeviceText = ""
+    children: tuple[DeviceText, ...] = ()
     ahci: AhciRegisters | None = None
     ahci_error: str | None = None
     slot_implemented: bool | None = None

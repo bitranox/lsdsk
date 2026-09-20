@@ -396,3 +396,44 @@ def test_the_report_command_prints_the_page_where_a_bare_run_would_not(
 
     assert result.exit_code in (0, 1), result.output
     assert "linux-sas-hba" in result.output, "the page did not render"
+
+
+@pytest.mark.os_agnostic
+def test_the_tui_command_refuses_where_nothing_can_be_typed_at(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A bare run degrades off a terminal; the explicit command has to as well.
+
+    `run_default_view` has made this decision since the interactive view
+    existed, and `lsdsk tui` was the one door into it with no test at all.
+    Measured before the guard: `timeout 30 lsdsk ... tui </dev/null` left rc
+    124 with nothing on stdout and 48395 bytes on stderr, of which 2169 were
+    control characters - a machine that invokes it blocks forever with its
+    error channel filling. It reproduces with TERM=dumb, with TERM unset, and
+    in an ordinary pipeline.
+
+    It REFUSES rather than printing the page: the caller named this command,
+    and quietly giving them a different one is what `lsdsk report` is for. The
+    refusal says so.
+    """
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    from lsdsk.adapters.cli import cli
+
+    class RefuseToOpen:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("`lsdsk tui` opened the interactive view with no terminal to open it on")
+
+    monkeypatch.setattr(_sys.stdout, "isatty", lambda: False, raising=False)
+    monkeypatch.setattr(_sys.stdin, "isatty", lambda: False, raising=False)
+    monkeypatch.setattr("lsdsk.adapters.tui.LsdskApp", RefuseToOpen)
+
+    capture = _Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
+    result = cli_runner.invoke(cli, ["tui", "--replay", str(capture)], obj=production_factory)
+
+    assert result.exit_code == 22, f"exited {result.exit_code}, not the refusal: {result.output}"
+    assert "lsdsk report" in result.stderr, f"the refusal names no way forward:\n{result.stderr}"
+    assert "\x1b" not in result.stdout, "escape sequences reached a stream nobody is watching"

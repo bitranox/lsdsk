@@ -892,8 +892,26 @@ def cli_health(ctx: click.Context, replay: Path | None, output_format: OutputFor
 @_EXPAND_VIRTUAL_OPTION
 @click.pass_context
 def cli_tui(ctx: click.Context, replay: Path | None, expand_virtual: bool) -> None:
-    """Open the interactive view, with a page per question."""
+    """Open the interactive view, with a page per question.
+
+    Refuses where nothing can be typed at, rather than opening a view nobody
+    can quit. A bare `lsdsk` DEGRADES to the printed page in that case; this
+    command does not, because the caller named the interactive view and
+    printing something else under its name hides the mistake instead of
+    answering it. The refusal names `lsdsk report`, which IS that page.
+    """
     with lib_log_rich.runtime.bind(job_id="cli-tui", extra={"command": "tui"}):
+        # BOTH ends, the same test run_default_view makes: textual reads key
+        # events from stdin, so a view opened where nothing can press q never
+        # returns. Measured before this: `lsdsk tui </dev/null` ran until it was
+        # killed, with 48 KB of escape sequences on stderr and nothing on stdout.
+        if not (sys.stdout.isatty() and sys.stdin.isatty()):
+            fail(
+                "The interactive view needs a terminal on both stdin and stdout, and this run has neither.",
+                ExitCode.INVALID_ARGUMENT,
+                output_format=OutputFormat.HUMAN,
+                hint="Run `lsdsk report` for the same page as text.",
+            )
         # The interactive view has no machine-readable mode, so a refusal here is
         # always prose for the person in front of it.
         inventory = load_inventory(effective_replay(ctx, replay), output_format=OutputFormat.HUMAN)

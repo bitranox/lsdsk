@@ -30,6 +30,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from .base import DomainModel
+from .text import DeviceText
 from .thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
@@ -112,7 +113,7 @@ class Sample(DomainModel, frozen=True):
     """
 
     power_on_hours: int
-    captured_at: str
+    captured_at: DeviceText
     crc_errors: int | None = None
     reallocated_sectors: int | None = None
     pending_sectors: int | None = None
@@ -186,8 +187,8 @@ class DiskSeries(DomainModel, frozen=True):
         ()
     """
 
-    identity: str
-    model: str
+    identity: DeviceText
+    model: DeviceText
     samples: tuple[Sample, ...] = ()
 
 
@@ -203,7 +204,7 @@ class History(DomainModel, frozen=True):
         True
     """
 
-    hostname: str
+    hostname: DeviceText
     series: tuple[DiskSeries, ...] = ()
 
     def for_identity(self, identity: str) -> DiskSeries | None:

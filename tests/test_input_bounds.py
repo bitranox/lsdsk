@@ -23,7 +23,7 @@ from rich.console import Console
 
 from lsdsk.adapters.history.store import load_history
 from lsdsk.adapters.hw import capture as shared_capture
-from lsdsk.adapters.hw.capture import CaptureEnvelope, CaptureModel
+from lsdsk.adapters.hw.capture import MAX_DEVICE_TEXT, CaptureEnvelope, CaptureModel
 from lsdsk.adapters.hw.linux import capture as linux_capture
 from lsdsk.adapters.hw.snapshot import load
 from lsdsk.adapters.hw.windows import capture as windows_capture
@@ -966,3 +966,66 @@ def test_no_control_character_reaches_any_view_from_a_salted_capture(
         fmt = output_format if stream == "stdout" else "human"
         leaked = _control_characters(text, output_format=fmt)
         assert not leaked, f"{cell}: {len(leaked)} control characters reached {stream}: {[hex(ord(c)) for c in leaked]}"
+
+
+@pytest.mark.os_agnostic
+def test_a_device_identifier_longer_than_any_device_publishes_is_refused(tmp_path: Path) -> None:
+    """The file bound is not a bound on what one FIELD can do downstream.
+
+    A PCI vendor or device identifier is four hex characters as sysfs writes it
+    and a short name once resolved, but the capture models declared plain
+    `str`, so a single value inside the 64 MB file ceiling round-tripped
+    through the integer parse, the hex re-format and then the per-character
+    control-stripping generator. Measured at 1, 10, 25 and 50 MB: a consistent
+    12 to 13x memory multiplier, 664880 KB RSS against a 46440 KB baseline,
+    with 26,235,615 calls into the generator - so one within-cap field could
+    reach roughly 800 MB, against a module whose stated intent is an immediate
+    refusal rather than a machine that swaps itself to death.
+
+    Refused at the model, where the shape is already declared, and refused as a
+    configuration error like every other capture this version cannot read.
+    """
+    crafted = {
+        "schema": 2,
+        "platform": "linux",
+        "hostname": "box",
+        "kernel": "x",
+        "pci": {"0000:00:1f.2": {"vendor": "8" * (MAX_DEVICE_TEXT + 1), "device": "a182"}},
+    }
+    path = tmp_path / "huge-field.json"
+    path.write_text(json.dumps(crafted), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError):
+        load(path)
+
+    # The control: the same capture with a value of a length a device really
+    # publishes still loads, so the refusal is the length and not the shape.
+    crafted["pci"] = {"0000:00:1f.2": {"vendor": "8086", "device": "a182"}}
+    ordinary = tmp_path / "ordinary.json"
+    ordinary.write_text(json.dumps(crafted), encoding="utf-8")
+    assert load(ordinary).hostname == "box"
+
+
+@pytest.mark.os_agnostic
+def test_the_counter_store_cleans_the_text_it_carries_like_every_other_domain_field() -> None:
+    """The store is a file the caller points at, so its text is chosen elsewhere.
+
+    `Disk.model` and `Inventory.hostname` are `DeviceText` and strip, because
+    `domain/text.py` moved the cleaning onto the FIELD so that "a new field has
+    nothing to remember". `history.py` is the file that forgot: four of its
+    strings were plain `str` while carrying exactly the same kind of value, and
+    `DiskSeries.model` is documented as being for display.
+    """
+    from lsdsk.domain.history import DiskSeries
+
+    assert "\x1b" not in DiskSeries(identity="naa.1\x1b[31m", model="Model").identity
+    assert "\x1b" not in DiskSeries(identity="naa.1", model="Model\x1b]0;retitled\x07").model
+
+
+@pytest.mark.os_agnostic
+def test_the_store_s_hostname_and_timestamp_are_cleaned_too() -> None:
+    """The other two fields of the same shape, and the machine name is drawn."""
+    from lsdsk.domain.history import History, Sample
+
+    assert "\x1b" not in History(hostname="box\x1b[2J").hostname
+    assert "\x1b" not in Sample(power_on_hours=1, captured_at="2026-01-01\x1b[0m").captured_at

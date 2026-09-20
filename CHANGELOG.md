@@ -405,6 +405,32 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **`lsdsk tui` refuses where nothing can be typed at, instead of hanging.** A
+  bare `lsdsk` has always degraded to the printed page off a terminal, and the
+  explicit command had no such guard: measured, `lsdsk tui </dev/null` ran
+  until it was killed, with nothing on stdout and 48 KB of escape sequences on
+  stderr, and it reproduces with `TERM=dumb`, with `TERM` unset and in an
+  ordinary pipeline. It leaves `22` and names `lsdsk report`, which is that
+  page as text. It refuses rather than degrading because the caller asked for
+  the interactive view by name.
+
+- **A device identifier longer than any device publishes is refused.** The
+  capture models declared plain `str` for the PCI vendor, device, driver, class
+  and link-rate text, so one value inside the 64 MB file ceiling round-tripped
+  through an integer parse, a hex re-format and a per-character generator:
+  measured at 1, 10, 25 and 50 MB, a consistent 12 to 13x memory multiplier and
+  26 million generator calls, which a within-cap field could carry to roughly
+  800 MB - against a module whose stated intent is an immediate refusal. The
+  base64 payloads beside them keep their own shape, being decoded at fixed
+  offsets rather than walked.
+
+- **The counter store's text is cleaned like every other domain field.** A
+  drive identity, a model, a machine name and a timestamp read back from the
+  store were plain strings while their peers on `Disk` and `Inventory` strip
+  control characters, and the store is a file the caller points at. Latent
+  rather than live - five views over a seeded store showed no escape - but it
+  is the one trust boundary the field-level cleaning exists to make automatic.
+
 - **The envelope's `ok`, `skipped` and `readings_refused` are documented.**
   COMMANDS.md promises to cover the JSON envelope and described none of the
   three, so a caller reading `ok` for monitoring had no documented way to learn

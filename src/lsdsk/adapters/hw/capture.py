@@ -13,9 +13,26 @@ System Role:
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...domain.enums import Platform
+
+#: The longest a piece of text a DEVICE chose may be. Every one of these is an
+#: identifier, a name or a rate as the platform published it: four hex
+#: characters from sysfs, a model string, a driver name, `8.0 GT/s PCIe`. The
+#: bound is far above anything real and exists because the file ceiling is not a
+#: bound on what ONE field can do downstream - an identifier round-trips through
+#: an integer parse, a hex re-format and a per-character generator, which
+#: measured a 12 to 13x memory multiplier, so a single field inside the 64 MB
+#: file limit could reach roughly 800 MB. It does not cover the base64 payloads
+#: beside them: a 4096-byte IDENTIFY page encodes to more than this, and those
+#: are decoded at fixed offsets rather than walked per character.
+MAX_DEVICE_TEXT = 4096
+
+#: Text a device published, bounded. Optional fields spell it `DeviceText | None`.
+DeviceText = Annotated[str, Field(max_length=MAX_DEVICE_TEXT)]
 
 
 class CaptureModel(BaseModel):
@@ -78,4 +95,4 @@ class CaptureEnvelope(CaptureHeader):
     platform: Platform
 
 
-__all__ = ["CaptureEnvelope", "CaptureHeader", "CaptureModel"]
+__all__ = ["MAX_DEVICE_TEXT", "CaptureEnvelope", "CaptureHeader", "CaptureModel", "DeviceText"]

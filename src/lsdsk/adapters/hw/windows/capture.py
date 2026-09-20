@@ -22,7 +22,7 @@ from typing import Annotated, Literal
 from pydantic import BeforeValidator, Field
 
 from ....domain.enums import BusType, Platform
-from ..capture import CaptureHeader, CaptureModel
+from ..capture import CaptureHeader, CaptureModel, DeviceText
 from ..decode.virtualization import VirtualizationEvidence
 
 # The transport names the reader takes from STORAGE_DEVICE_DESCRIPTOR.BusType,
@@ -98,15 +98,15 @@ class PciEntry(CaptureModel):
         children: The instance identifiers of the devices below it.
     """
 
-    class_code: str | None = Field(default=None, alias="class")
-    vendor: str | None = None
-    device: str | None = None
-    name: str | None = None
-    driver: str | None = None
-    current_link_speed: str | None = None
-    current_link_width: str | None = None
-    max_link_speed: str | None = None
-    max_link_width: str | None = None
+    class_code: DeviceText | None = Field(default=None, alias="class")
+    vendor: DeviceText | None = None
+    device: DeviceText | None = None
+    name: DeviceText | None = None
+    driver: DeviceText | None = None
+    current_link_speed: DeviceText | None = None
+    current_link_width: DeviceText | None = None
+    max_link_speed: DeviceText | None = None
+    max_link_width: DeviceText | None = None
     slot_number: int | None = Field(default=None, ge=0, le=_UINT32_MAX)
     address: str | None = None
     parent: str | None = None
