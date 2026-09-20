@@ -10,7 +10,6 @@ Contents:
 from __future__ import annotations
 
 import sys
-import threading
 from typing import TYPE_CHECKING
 
 import click
@@ -157,6 +156,19 @@ def main(
     Provides the single entry point used by console scripts and
     ``python -m`` execution so that behaviour stays identical across transports.
 
+    It OWNS THE PROCESS and is called once, from the main thread. Everything it
+    does on the way out is process-wide: it restores the original streams,
+    restores ``lib_cli_exit_tools``' traceback setting, and shuts the logging
+    runtime down. Two of those three never had a thread guard, and the one that
+    did - skipping the logging shutdown off the main thread - was not thread
+    safety but the appearance of it on one act of three, untested in both
+    branches; its effect was that a caller on a worker thread never flushed the
+    logging runtime while the other two acts happened anyway. There is no such
+    caller: ``main`` is not in ``lsdsk.__all__``, it is reached from
+    ``entry.py`` and ``__main__.py``, and nothing in this source threads. So the
+    behaviour is now the same wherever it is called from, which
+    ``tests/test_main_owns_the_process.py`` holds.
+
     Args:
         argv: Optional sequence of CLI arguments. None uses sys.argv.
         restore_traceback: Whether to restore prior traceback configuration after execution.
@@ -184,9 +196,7 @@ def main(
     finally:
         if restore_traceback:
             restore_traceback_state(previous_state)
-        # Only shutdown logging from main thread to avoid killing logging for other threads.
-        is_main_thread = threading.current_thread() is threading.main_thread()
-        if is_main_thread and lib_log_rich.runtime.is_initialised():
+        if lib_log_rich.runtime.is_initialised():
             lib_log_rich.runtime.shutdown()
 
     # AFTER the logging shutdown, not around it: lib_log_rich is queue-based, so a

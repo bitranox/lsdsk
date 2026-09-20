@@ -7,6 +7,16 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **A run on a worker thread flushes the logging runtime like any other.** `main()`
+  skipped the logging shutdown when it was not on the main thread, which read as
+  thread safety and was not: the same call restored the original streams and
+  `lib_cli_exit_tools`' traceback setting for the whole process regardless, so
+  one process-wide act of three behaved differently and nothing said so. Its
+  effect was that a caller on a worker thread never flushed the logging runtime
+  at all. The guard is gone, both branches of it were untested, and `main()`
+  now says in as many words that it owns the process and is called once from the
+  main thread.
+
 - **A configuration this tool cannot load leaves `78`, and a refused directory
   leaves `13`.** Two mismatches in the configuration commands, each of which
   made a caller read one kind of failure as another.
