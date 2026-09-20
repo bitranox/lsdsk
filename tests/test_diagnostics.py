@@ -1363,3 +1363,38 @@ def test_an_unread_port_is_never_treated_as_a_capable_one(upstream: PcieLink | N
     for blamed in ("Reseat", "reseat", "cabling", "riser", "BIOS"):
         assert blamed not in text, f"blamed {blamed!r} for a link whose port was never measured: {text}"
     assert findings[0].severity is Severity.WARNING, "yellow, not red: nothing here is proven"
+
+
+@pytest.mark.os_agnostic
+def test_an_unread_end_can_only_make_this_figure_too_generous() -> None:
+    """The one place this project fills an unread end in, and why it is allowed.
+
+    `Controller.achievable_bandwidth_gbps` does what rule 3 forbids - it
+    answers from the end that WAS read - and every sibling refuses. The reason
+    it is allowed is the direction of the error, so the direction is what is
+    pinned: the true uplink is the lower of the two ends, so a figure taken
+    from one alone can only be too HIGH. The oversubscription rule reports when
+    demand EXCEEDS it, so an unread end can only silence a finding, never
+    invent one.
+
+    If this ever runs the other way, the rule begins inventing findings about
+    machines nobody measured, which is the failure the whole graded-severity
+    design exists to avoid.
+    """
+    card = PcieLink(max_speed_gtps=16.0, max_width=8)
+    slow_bridge = PcieLink(max_speed_gtps=8.0, max_width=4)
+    unread = PcieLink()
+
+    both_read = Controller(address="a", name="n", link=card, upstream=slow_bridge)
+    one_read = Controller(address="a", name="n", link=card, upstream=unread)
+
+    measured = both_read.achievable_bandwidth_gbps
+    assumed = one_read.achievable_bandwidth_gbps
+    assert measured is not None and assumed is not None, "the control: both arms must produce a figure"
+    assert assumed >= measured, (
+        f"an unread end produced {assumed}, BELOW the measured {measured} - the rule can now invent a finding"
+    )
+
+    # And the same claim where the bridge is absent rather than unreadable,
+    # which is the other way one end goes missing.
+    assert Controller(address="a", name="n", link=card).achievable_bandwidth_gbps == assumed

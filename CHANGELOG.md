@@ -422,6 +422,16 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **The one place an unread end is filled in says so, and the direction is
+  pinned.** `Controller.achievable_bandwidth_gbps` answers from the end that
+  WAS read, which every sibling refuses to do and which this project's own rule
+  3 forbids. It is allowed there for one reason - the true uplink is the lower
+  of the two ends, so a figure from one alone can only be too HIGH, and the
+  rule that consumes it reports when demand EXCEEDS it, so an unread end can
+  only silence a finding rather than invent one. That reasoning was nowhere and
+  nothing held it; it is in the docstring now, with a test that dies if the
+  direction ever reverses.
+
 - **The suite answers to its own environment, not the machine it runs on.** The
   autouse fixture isolated the counter store and nothing else. It now redirects
   the user CONFIG layer too - only transitively covered on Linux, and on

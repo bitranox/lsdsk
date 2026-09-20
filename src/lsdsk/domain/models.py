@@ -1115,9 +1115,27 @@ class Controller(DomainModel, frozen=True):
 
     @property
     def achievable_bandwidth_gbps(self) -> float | None:
-        """Best PCIe bandwidth this machine can give this controller.
+        """Best PCIe bandwidth this machine can give this controller, at best.
 
-        The lower of what the card supports and what its bridge supports.
+        The lower of what the card supports and what its bridge supports - and
+        where one of those was not read, what the other one says. That is the
+        opposite of what every sibling does: `InterfaceLink.achievable_gbps`
+        and `PcieLink.limiting_end` both refuse unless BOTH ends were read,
+        because filling one in from the other turns "we could not measure this"
+        into "the port is fine".
+
+        It is deliberate here, and only because of which direction the error
+        runs. The true uplink is `min(card, bridge)`, so a figure taken from one
+        end alone can only be too HIGH, never too low - it is an upper bound.
+        `diagnose_controller_oversubscription` reports when demand EXCEEDS it,
+        so an unread end can only silence a finding, never invent one, and a
+        finding it does report is true of the end that was read.
+
+        What that makes it unfit for is being SHOWN as the uplink, where a
+        reader takes it for a measurement of the link rather than a ceiling.
+        `test_an_unread_end_can_only_make_this_figure_too_generous` pins the
+        direction, because the moment it runs the other way the rule starts
+        inventing findings.
 
         Example:
             >>> card = PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=16.0, max_width=8)
