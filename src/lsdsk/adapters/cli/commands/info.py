@@ -81,4 +81,4 @@ def cli_fail() -> None:
         raise RuntimeError("I should fail")
 
 
-__all__ = ["cli_fail", "cli_info"]
+__all__ = ["InfoResult", "cli_fail", "cli_info"]

@@ -411,6 +411,12 @@ def format_kind(kind: DiskKind) -> str:
 
     "UNKNOWN" in a column reads as a value the drive reported, which it is not.
 
+    Args:
+        kind: The media kind the drive was classified as.
+
+    Returns:
+        The kind in upper case, or a dash where it was not known.
+
     Example:
         >>> format_kind(DiskKind.SSD)
         'SSD'
@@ -422,6 +428,12 @@ def format_kind(kind: DiskKind) -> str:
 
 def format_bus(bus: BusType) -> str:
     """Render a disk's bus, or a dash when it is not known.
+
+    Args:
+        bus: The transport the drive speaks.
+
+    Returns:
+        The bus in upper case, or a dash where it was not known.
 
     Example:
         >>> format_bus(BusType.SATA)
@@ -439,6 +451,13 @@ def format_pcie_generation(speed_gtps: float | None, width: int | None) -> str:
     with no blank inside it, because it is ONE value in one column: the space
     invited a reader to take the width for a separate field, and cost a
     character in every hop column on the page.
+
+    Args:
+        speed_gtps: The link's rate per lane, where it was read.
+        width: The link's lane count, where it was read.
+
+    Returns:
+        The closed figure, or a dash where either half was not read.
 
     Example:
         >>> format_pcie_generation(16.0, 4)
@@ -582,9 +601,23 @@ def pci_tag(kind: PciPortKind) -> str:
     return _PCI_KIND_TAG.get(kind, "")
 
 
-def hop_link_cells(
-    link: PcieLink, *, capability_present: bool | None = None, bandwidth: bool = False
-) -> tuple[Cell, Cell]:
+class HopPair(NamedTuple):
+    """The two styled cells of one fabric hop, in the order its columns are drawn.
+
+    Both fields are a :data:`Cell`, so a swap type-checks and reads correctly at
+    every call site - which is the one shape this project's own rule says to
+    name. It is a SECOND pair type rather than :class:`LinkPair` because the two
+    views disagree about the order and each is right for itself: the hop columns
+    are headed ``capable`` then ``running``, and the slot view draws the
+    negotiated figure first. Collapsing them into one type would silently invert
+    a column in whichever view lost, so the difference is carried in the names.
+    """
+
+    capable: Cell
+    running: Cell
+
+
+def hop_link_cells(link: PcieLink, *, capability_present: bool | None = None, bandwidth: bool = False) -> HopPair:
     """The capable and running columns for one hop of the fabric.
 
     Two columns, in the order the slot view uses, and three different facts in
@@ -614,7 +647,7 @@ def hop_link_cells(
             rather than a shorter one.
 
     Returns:
-        The (capable, running) styled cells. A column whose figure was not
+        The capable and running styled cells, named. A column whose figure was not
         read is styled :data:`STYLE_UNKNOWN`; a measured one carries none,
         because the styles that judge a link (below capability, failing) are
         the domain's severity verdicts and are carried by a marker on the row,
@@ -622,15 +655,15 @@ def hop_link_cells(
 
     Example:
         >>> hop_link_cells(PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4))
-        (('Gen3x4', ''), ('Gen3x4', ''))
+        HopPair(capable=('Gen3x4', ''), running=('Gen3x4', ''))
         >>> hop_link_cells(
         ...     PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=16.0, max_width=4), bandwidth=True
         ... )
-        (('Gen4x4 (7.88 GB/s)', ''), ('Gen3x4 (3.94 GB/s)', ''))
+        HopPair(capable=('Gen4x4 (7.88 GB/s)', ''), running=('Gen3x4 (3.94 GB/s)', ''))
         >>> hop_link_cells(PcieLink(), capability_present=False)
-        (('legacy', ''), ('legacy', ''))
+        HopPair(capable=('legacy', ''), running=('legacy', ''))
         >>> hop_link_cells(PcieLink(), capability_present=False, bandwidth=True)
-        (('legacy', ''), ('legacy', ''))
+        HopPair(capable=('legacy', ''), running=('legacy', ''))
         >>> hop_link_cells(PcieLink(), capability_present=None)[0] == (NOT_READ, STYLE_UNKNOWN)
         True
         >>> hop_link_cells(PcieLink(current_speed_gtps=16.0, current_width=2))[1]
@@ -647,8 +680,8 @@ def hop_link_cells(
         capable = with_bandwidth(capable, link.max_bandwidth_gbps)
         running = with_bandwidth(running, link.current_bandwidth_gbps)
     if capability_present is False:
-        return (LEGACY, ""), (LEGACY, "")
-    return (
+        return HopPair((LEGACY, ""), (LEGACY, ""))
+    return HopPair(
         (capable if capable != "-" else NOT_READ, STYLE_UNKNOWN if capable == "-" else ""),
         (running if running != "-" else NOT_READ, STYLE_UNKNOWN if running == "-" else ""),
     )
@@ -862,6 +895,9 @@ def style_for(severity: Severity | None) -> str:
 
 
 __all__ = [
+    "LEGACY",
+    "NOT_APPLICABLE",
+    "NOT_READ",
     "PRINTED",
     "SEVERITY_LABELS",
     "SEVERITY_MARKERS",
@@ -871,20 +907,28 @@ __all__ = [
     "STYLE_CAVEAT",
     "STYLE_CEILING",
     "STYLE_FAILING",
+    "STYLE_HEADER",
+    "STYLE_IDENTIFIER",
+    "STYLE_NOTE",
     "STYLE_OPPORTUNITY",
     "STYLE_UNKNOWN",
     "TEMPERATURE_HOT",
     "TEMPERATURE_WARM",
     "Cell",
+    "HopPair",
     "LinkPair",
     "Palette",
     "disk_style",
     "format_bandwidth",
+    "format_bus",
+    "format_kind",
+    "format_pcie_generation",
     "format_size",
     "format_size_both",
     "format_speed",
     "format_temperature",
     "format_wear",
+    "hop_legend",
     "hop_link_cells",
     "link_pair_cells",
     "link_style",

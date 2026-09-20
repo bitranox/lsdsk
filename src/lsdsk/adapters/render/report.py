@@ -259,6 +259,9 @@ def form_factor_note() -> str:
     most of its bus addresses wrong. Silence here would invite the reader to
     guess from the width, and an x4 port is just as likely a card slot as an M.2
     socket.
+
+    Returns:
+        The sentence a slot view prints under its table.
     """
     return (
         "Form factor is not reported: no readable source gives it, so an M.2 socket cannot be told "
@@ -420,6 +423,9 @@ def disk_cell_styles(
         disk: The disk to style.
         port: The PCIe port it sits in, when known.
         thresholds: What this run judges wear by.
+
+    Returns:
+        Column key to its style.
     """
     health = disk.health
     if disk.pcie is not None:
@@ -1059,19 +1065,27 @@ __all__ = [
     "DEFAULT_WIDTH",
     "DISK_COLUMNS",
     "HEALTH_NEEDING_SMART",
+    "SLOTS_NEEDING_ROOT",
     "SLOT_COLUMNS",
     "SUMMARY_LIMIT",
     "VIRTUAL_HEADING",
+    "disk_cell_styles",
     "disk_cells",
     "disk_row",
+    "environment_caveat",
     "findings_for",
+    "form_factor_note",
     "pcie_capability",
+    "privilege_note",
     "render_controller_disks",
     "render_findings",
     "render_header",
+    "render_slots",
+    "render_smart",
     "render_tree",
     "render_verdict",
     "serial_speed",
+    "slot_privilege_note",
     "slot_table_row",
     "slot_verdict",
     "virtual_note",

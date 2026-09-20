@@ -360,3 +360,114 @@ def test_every_action_result_can_read_the_wire_form_it_writes() -> None:
             unreadable.append(f"{result.__name__} emitted {wire} and could not read it back: {type(exc).__name__}")
 
     assert not unreadable, "result models that cannot parse their own wire form: " + "; ".join(unreadable)
+
+
+#: Where a module's public surface is declared, and where it is consumed.
+_SOURCE = Path(__file__).resolve().parent.parent / "src" / "lsdsk"
+_CONSUMERS = (_SOURCE, Path(__file__).resolve().parent, _SOURCE.parent.parent / "scripts")
+
+
+def _exported_and_public(path: Path) -> tuple[set[str] | None, set[str]]:
+    """What a module lists in `__all__`, and every public name it declares."""
+    import ast
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    exported: set[str] | None = None
+    public: set[str] = set()
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and any(getattr(target, "id", "") == "__all__" for target in node.targets)
+            and isinstance(node.value, ast.List)
+        ):
+            exported = {
+                element.value
+                for element in node.value.elts
+                if isinstance(element, ast.Constant) and isinstance(element.value, str)
+            }
+        if isinstance(node, ast.FunctionDef | ast.ClassDef) and not node.name.startswith("_"):
+            public.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and not target.id.startswith("_") and target.id != "__all__":
+                    public.add(target.id)
+        elif (
+            isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and not node.target.id.startswith("_")
+        ):
+            public.add(node.target.id)
+    return exported, public
+
+
+def _names_reached_from_elsewhere() -> dict[str, set[Path]]:
+    """Every name any file imports or reaches through a module, by the file that does."""
+    import ast
+    from collections import defaultdict
+
+    reached: dict[str, set[Path]] = defaultdict(set)
+    for root in _CONSUMERS:
+        for path in sorted(root.rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom):
+                    for alias in node.names:
+                        reached[alias.name].add(path)
+                elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                    reached[node.attr].add(path)
+    return reached
+
+
+@pytest.mark.os_agnostic
+def test_a_name_other_modules_reach_for_is_one_its_own_module_exports() -> None:
+    """`__all__` states the public surface, so it cannot omit what is consumed.
+
+    Measured before this: 66 names across 17 modules were imported or reached
+    through their module elsewhere and left out of its own `__all__` -
+    `theme.NOT_READ` and `theme.LEGACY`, every one of `layout`'s tree glyphs,
+    `models.pci_class_name`, `diagnostics.refine` and `ports.ReadHistory`
+    among them, three of which CLAUDE.md names as the vocabulary of a
+    documented law. A list that omits what is consumed is not a smaller
+    contract, it is a wrong one: `from lsdsk.application import GetConfig`
+    worked and `ReadHistory` did not, for no reason anybody chose.
+
+    The rule is deliberately not "every public name is exported": a module is
+    free to keep a name to itself. It is CONSUMPTION that makes a name part of
+    the surface, so the check asks what other files actually reach for.
+    """
+    unexported: dict[str, list[str]] = {}
+    reached = _names_reached_from_elsewhere()
+    for path in sorted(_SOURCE.rglob("*.py")):
+        exported, public = _exported_and_public(path)
+        if exported is None:
+            continue
+        missing = sorted(name for name in public - exported if any(other != path for other in reached.get(name, set())))
+        if missing:
+            unexported[str(path.relative_to(_SOURCE))] = missing
+
+    assert reached, "no name was found to be reached at all, so this asserted nothing"
+    assert not unexported, f"names consumed elsewhere and missing from their own __all__: {unexported}"
+
+
+@pytest.mark.os_agnostic
+def test_a_refused_capture_is_explained_in_this_tool_s_own_words(tmp_path: Path) -> None:
+    """Pydantic's report is a developer's document, not a refusal for a caller.
+
+    Interpolating `str(ValidationError)` put `tagged-union[LinuxCapture,
+    WindowsCapture]` in front of a reader, a pinned pydantic version in a URL
+    they were invited to follow, and a truncated slice of their own file -
+    four such blocks for an empty object. It does name the real cause, which is
+    why the fields and the reasons are kept; what goes is the framework's
+    packaging, which every other refusal in this tool does without.
+    """
+    crafted = tmp_path / "empty.json"
+    crafted.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ConfigurationError) as refused:
+        load(crafted)
+
+    said = str(refused.value)
+    assert "errors.pydantic.dev" not in said, f"a pydantic URL reached the caller:\n{said}"
+    assert "tagged-union" not in said, f"a pydantic internal type name reached the caller:\n{said}"
+    assert "input_value" not in said, f"pydantic's own field names reached the caller:\n{said}"
+    # And it still says WHAT is wrong, field by field, or the refusal is useless.
+    assert "schema" in said and "hostname" in said, f"the refusal names no field:\n{said}"
+    assert "required" in said.lower(), f"the refusal gives no reason:\n{said}"

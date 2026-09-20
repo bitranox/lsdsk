@@ -437,3 +437,33 @@ def test_the_tui_command_refuses_where_nothing_can_be_typed_at(
     assert result.exit_code == 22, f"exited {result.exit_code}, not the refusal: {result.output}"
     assert "lsdsk report" in result.stderr, f"the refusal names no way forward:\n{result.stderr}"
     assert "\x1b" not in result.stdout, "escape sequences reached a stream nobody is watching"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("command", ["report", "tui"])
+def test_a_command_with_no_machine_readable_form_says_what_to_ask_instead(
+    command: str,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+) -> None:
+    """A refusal that reads as a typo sends the caller looking for the typo.
+
+    Every other section offers `--format json`, so a caller reaching for it on
+    `report` or `tui` has made a reasonable mistake and needs the alternative
+    named. Click's own answer - "No such option: --format." at exit 2 - is
+    indistinguishable from a misspelling, and the reasoning for the omission
+    lived in the source where no caller reads it. `snapshot` already sets the
+    precedent, refusing a global `--replay` with a sentence and 22.
+    """
+    from pathlib import Path as _Path
+
+    from lsdsk.adapters.cli import cli
+
+    capture = _Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
+    result = cli_runner.invoke(cli, [command, "--format", "json", "--replay", str(capture)], obj=production_factory)
+
+    assert result.exit_code == 22, f"exited {result.exit_code}: {result.output}"
+    assert "--format" in result.stderr, f"the refusal does not name the option:\n{result.stderr}"
+    assert "snapshot" in result.stderr or "findings" in result.stderr, (
+        f"the refusal names nothing to ask instead:\n{result.stderr}"
+    )

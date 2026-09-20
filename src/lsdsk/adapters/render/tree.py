@@ -155,7 +155,7 @@ def density_note(density: TreeDensity, how_to_change: str = OPTION_HINT) -> str:
     return f"showing {_DENSITY_DRAWN[density]}; {how_to_change} to change the detail level"
 
 
-def hop_cells(node: PciNode, *, bandwidth: bool = False) -> tuple[theme.Cell, theme.Cell]:
+def hop_cells(node: PciNode, *, bandwidth: bool = False) -> theme.HopPair:
     """(capable, running) for one device's own hop, as a figure or a symbol.
 
     Asked of the NODE rather than of its link, because the difference between
@@ -173,7 +173,7 @@ def hop_cells(node: PciNode, *, bandwidth: bool = False) -> tuple[theme.Cell, th
             rather than a shorter one.
 
     Returns:
-        The (capable, running) cells.
+        The capable and running cells, named.
 
     Example:
         >>> from lsdsk.domain.models import PciNode, PcieLink
@@ -184,7 +184,7 @@ def hop_cells(node: PciNode, *, bandwidth: bool = False) -> tuple[theme.Cell, th
         ...         link=PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=8.0, max_width=4),
         ...     )
         ... )
-        (('Gen3x4', ''), ('Gen3x4', ''))
+        HopPair(capable=('Gen3x4', ''), running=('Gen3x4', ''))
         >>> hop_cells(
         ...     PciNode(
         ...         address="a",
@@ -193,10 +193,10 @@ def hop_cells(node: PciNode, *, bandwidth: bool = False) -> tuple[theme.Cell, th
         ...     ),
         ...     bandwidth=True,
         ... )
-        (('Gen3x4 (3.94 GB/s)', ''), ('Gen3x4 (3.94 GB/s)', ''))
-        >>> hop_cells(PciNode(address="a", name="b", pcie_capability_present=False))[0][0]
+        HopPair(capable=('Gen3x4 (3.94 GB/s)', ''), running=('Gen3x4 (3.94 GB/s)', ''))
+        >>> hop_cells(PciNode(address="a", name="b", pcie_capability_present=False)).capable[0]
         'legacy'
-        >>> hop_cells(PciNode(address="a", name="b"))[0][0]
+        >>> hop_cells(PciNode(address="a", name="b")).capable[0]
         '-'
     """
     return theme.hop_link_cells(node.link, capability_present=node.pcie_capability_present, bandwidth=bandwidth)
@@ -948,6 +948,15 @@ def disk_header_line(fabric: Fabric, layout: Layout, rules: str = "") -> Text:
     further right than they did in the old tree. It carries the same rules as
     the rows below it, so the block is one shape rather than a gap followed by
     a resumption.
+
+    Args:
+        fabric: The render call whose spine and header style the line follows.
+        layout: The fitted disk columns and their widths.
+        rules: The vertical rules live at this point in the tree, drawn in the
+            spine so a reader following one down the page does not lose it.
+
+    Returns:
+        The header line, ready to draw above a controller's disks.
     """
     line = Text()
     line.append(" " * _MARKER_WIDTH)
@@ -1001,6 +1010,7 @@ class FabricSection:
 
 __all__ = [
     "DEFAULT_VIEW",
+    "DEFAULT_WIDTH",
     "DEVICE_COLUMNS",
     "HOP_WIDE_WIDTH",
     "HOP_WIDTH",
@@ -1015,6 +1025,7 @@ __all__ = [
     "density_note",
     "device_fields",
     "device_header_line",
+    "disk_header_line",
     "fabric_lines",
     "hop_cells",
     "render_fabric",

@@ -318,6 +318,23 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
+- **`__all__` states the surface other modules actually reach for.** 66 names
+  across 17 modules were imported or reached through their own module
+  elsewhere and left out of its `__all__` - `theme.NOT_READ` and
+  `theme.LEGACY`, every one of `layout`'s tree glyphs, `models.pci_class_name`,
+  `diagnostics.refine` and `ports.ReadHistory` among them, three of which this
+  project's own CLAUDE.md names as the vocabulary of a documented law. A test
+  holds it, and asks what is CONSUMED rather than requiring every public name
+  to be exported: a module stays free to keep a name to itself.
+
+- **The two hop cells are named.** `hop_link_cells` and `hop_cells` both
+  returned a bare `tuple[Cell, Cell]` carrying `(capable, running)`, the only
+  same-typed anonymous pair returns left and exactly the pairing this project
+  records as historically crossed. `HopPair` names them, beside `LinkPair`
+  rather than merged with it, because the two views disagree about the order
+  and one type would silently invert a column in whichever lost.
+
+
 - **The shipped skill's exit-code table carries `141`, names the flag it blames
   for `22`, and says that the ranking does not move with `--format`.** The table
   stopped at `78`, so a caller consulting it to branch met an undocumented code
@@ -404,6 +421,29 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   package as untyped, and with it the seven make no difference.
 
 ### Fixed
+
+- **`report` and `tui` say what to ask instead of `--format`.** Every other
+  section offers `--format json`, so a caller reaching for it on these two has
+  made a reasonable mistake; click's own "No such option" at exit `2` is
+  indistinguishable from a typo and sent them looking for one. The reasoning
+  for the omission lived in the source where no caller reads it. Both now
+  refuse at `22` naming `lsdsk findings --format json`, the way `snapshot`
+  already refuses a global `--replay`.
+
+- **The future-schema refusal is the one a future-schema capture gets.** Its
+  test handed the loader a capture missing `hostname` and `kernel`, so the file
+  was refused for those and never reached the version check at all; the
+  assertion passed because the word "schema" appeared in the validation
+  library's own report, which the entry above has now removed. The capture is
+  complete apart from its version, and the refusal has to name both the version
+  it met and the range it reads.
+
+- **A refused capture is explained in this tool's own words.** The refusal
+  interpolated pydantic's whole report, so a reader met
+  `tagged-union[LinuxCapture,WindowsCapture]`, a pinned pydantic version in a
+  URL they were invited to follow and a truncated slice of their own file -
+  four such blocks for an empty object. It is one `<field>: <reason>` line per
+  problem now, and the full report is still reachable under `--traceback`.
 
 - **The configured wear thresholds reach the cells that draw wear.**
   `theme.format_wear` took the two figures as defaults bound at definition time

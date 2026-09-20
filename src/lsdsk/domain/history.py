@@ -728,6 +728,7 @@ __all__ = [
     "Sample",
     "Trend",
     "TrendVerdict",
+    "has_new_readings",
     "identity_of",
     "record",
     "sample_from",

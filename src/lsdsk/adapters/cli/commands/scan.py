@@ -91,6 +91,19 @@ _TREE_DENSITY_OPTION = option(
     "bridges and storage alone, those plus the devices sharing a bridge "
     "with them, or every device.",
 )
+#: Accepted and refused, on the two commands that have no machine-readable form.
+#: Hidden, because it is not an option either command offers; declared, because
+#: click's own "No such option" reads as a typo and sends the caller looking for
+#: one, when the answer is that a different command carries what they want.
+_REFUSED_FORMAT_OPTION = option(
+    "--format",
+    "output_format",
+    type=click.Choice(OutputFormat, case_sensitive=False),
+    default=None,
+    hidden=True,
+    help="Not offered here.",
+)
+
 _FORMAT_OPTION = option(
     "--format",
     "output_format",
@@ -102,7 +115,14 @@ _FORMAT_OPTION = option(
 
 
 def console_for_output(piped_width: int = PIPED_WIDTH) -> Console:
-    """Build a console that writes through the encoding-safe stream."""
+    """Build a console that writes through the encoding-safe stream.
+
+    Args:
+        piped_width: The width to lay out at when output is not a terminal.
+
+    Returns:
+        A console for this run's output.
+    """
     return Console(file=safe_console.safe_stream(), width=_width(piped_width), highlight=False)
 
 
@@ -206,6 +226,12 @@ def note(text: str) -> Text:
     Prose printed with a plain echo keeps its own length and runs off the side of
     a narrow terminal, while every table beside it fits itself. Sending it
     through the console makes the two behave alike.
+
+    Args:
+        text: The sentence to draw.
+
+    Returns:
+        The line, styled for the console to wrap.
     """
     return Text(text, style=theme.STYLE_UNKNOWN)
 
@@ -517,7 +543,13 @@ def _refusals_named(inventory: Inventory) -> list[str]:
 
 
 def emit_json(inventory: Inventory, findings: Sequence[Finding], command: CliCommand) -> None:
-    """Write the machine-readable envelope."""
+    """Write the machine-readable envelope.
+
+    Args:
+        inventory: The machine that was scanned.
+        findings: What the diagnosis produced.
+        command: Which command is emitting this, which the envelope names.
+    """
     envelope = build_envelope(inventory, findings, command)
     safe_console.echo(envelope.model_dump_json(indent=2))
 
@@ -583,6 +615,22 @@ def run_default_view(
         raise SystemExit(exit_code_for(findings))
 
 
+def _refuse_a_format_this_command_has_no_form_of(output_format: OutputFormat | None, *, instead: str) -> None:
+    """Refuse `--format` with the command that answers it, the way snapshot does.
+
+    Args:
+        output_format: What the caller asked for, or ``None`` when they did not.
+        instead: The command that carries this one's machine-readable form.
+    """
+    if output_format is None:
+        return
+    fail(
+        f"--format is not offered here: this command draws a page for a person. Run {instead} instead.",
+        ExitCode.INVALID_ARGUMENT,
+        output_format=OutputFormat.HUMAN,
+    )
+
+
 def run_default_report(
     replay: Path | None,
     *,
@@ -635,8 +683,9 @@ def run_default_report(
 
 @click.command("report", context_settings=CLICK_CONTEXT_SETTINGS)
 @_REPLAY_OPTION
+@_REFUSED_FORMAT_OPTION
 @click.pass_context
-def cli_report(ctx: click.Context, replay: Path | None) -> None:
+def cli_report(ctx: click.Context, replay: Path | None, output_format: OutputFormat | None) -> None:
     """Show the whole machine on one page, which every section below is part of.
 
     What a bare `lsdsk` prints when its output is not a terminal, asked for by
@@ -654,6 +703,7 @@ def cli_report(ctx: click.Context, replay: Path | None) -> None:
     elsewhere, not the analysis.
     """
     with lib_log_rich.runtime.bind(job_id="cli-report", extra={"command": "report"}):
+        _refuse_a_format_this_command_has_no_form_of(output_format, instead="`lsdsk findings --format json`")
         thresholds, display = resolve_tunables(ctx)
         run_default_report(
             effective_replay(ctx, replay),
@@ -895,8 +945,14 @@ def cli_health(ctx: click.Context, replay: Path | None, output_format: OutputFor
 @click.command("tui", context_settings=CLICK_CONTEXT_SETTINGS)
 @_REPLAY_OPTION
 @_EXPAND_VIRTUAL_OPTION
+@_REFUSED_FORMAT_OPTION
 @click.pass_context
-def cli_tui(ctx: click.Context, replay: Path | None, expand_virtual: bool) -> None:
+def cli_tui(
+    ctx: click.Context,
+    replay: Path | None,
+    expand_virtual: bool,
+    output_format: OutputFormat | None,
+) -> None:
     """Open the interactive view, with a page per question.
 
     Refuses where nothing can be typed at, rather than opening a view nobody
@@ -906,6 +962,7 @@ def cli_tui(ctx: click.Context, replay: Path | None, expand_virtual: bool) -> No
     answering it. The refusal names `lsdsk report`, which IS that page.
     """
     with lib_log_rich.runtime.bind(job_id="cli-tui", extra={"command": "tui"}):
+        _refuse_a_format_this_command_has_no_form_of(output_format, instead="`lsdsk findings --format json`")
         # BOTH ends, the same test run_default_view makes: textual reads key
         # events from stdin, so a view opened where nothing can press q never
         # returns. Measured before this: `lsdsk tui </dev/null` ran until it was
@@ -1024,16 +1081,27 @@ def cli_snapshot(ctx: click.Context, output: Path, output_format: OutputFormat) 
 
 
 __all__ = [
+    "Analysis",
     "build_envelope",
     "cli_controllers",
     "cli_disks",
     "cli_findings",
     "cli_health",
+    "cli_report",
+    "cli_slots",
+    "cli_smart",
     "cli_snapshot",
     "cli_topology",
     "cli_tui",
+    "console_for_output",
     "effective_replay",
+    "emit_json",
     "exit_code_for",
     "load_inventory",
+    "note",
+    "note_the_findings_this_page_left_out",
+    "resolve_history",
+    "resolve_tunables",
     "run_default_report",
+    "run_default_view",
 ]

@@ -568,11 +568,14 @@ def counter_legend(inventory: Inventory, history: History | None) -> str:
 
 __all__ = [
     "CONTROLLER_COLUMNS",
+    "DEFAULT_WIDTH",
     "DISK_COLUMNS",
     "HEALTH_COLUMNS",
     "OVERFLOW_WIDTH",
+    "RISING_MARK",
     "controller_table_row",
     "counter_cell",
+    "counter_legend",
     "counter_text",
     "disk_columns",
     "disk_table_row",

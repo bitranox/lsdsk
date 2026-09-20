@@ -1025,4 +1025,12 @@ class LsdskApp(App[None]):
         self._refresh_detail()
 
 
-__all__ = ["LsdskApp"]
+__all__ = [
+    "CONTROLLER_COLUMNS",
+    "DISK_COLUMNS",
+    "HEALTH_COLUMNS",
+    "PAGE_LABELS",
+    "SLOT_COLUMNS",
+    "TREND_PAGE_COLUMNS",
+    "LsdskApp",
+]

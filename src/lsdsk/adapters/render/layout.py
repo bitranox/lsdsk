@@ -304,4 +304,20 @@ def pad(value: str, width: int, align: Align) -> str:
     return value.rjust(width) if align is Align.RIGHT else value.ljust(width)
 
 
-__all__ = ["ELLIPSIS", "GAP", "GUTTER", "Column", "Layout", "clip", "fit", "natural_widths", "pad"]
+__all__ = [
+    "ELLIPSIS",
+    "GAP",
+    "GUTTER",
+    "TREE_BRANCH",
+    "TREE_DOWN",
+    "TREE_LAST",
+    "TREE_LEAD",
+    "TREE_PIPE",
+    "TREE_STOP",
+    "Column",
+    "Layout",
+    "clip",
+    "fit",
+    "natural_widths",
+    "pad",
+]

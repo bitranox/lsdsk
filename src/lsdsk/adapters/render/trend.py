@@ -367,6 +367,7 @@ def _series_for(disk: Disk, history: History) -> DiskSeries | None:
 
 __all__ = [
     "COUNTER_LABELS",
+    "DEFAULT_WIDTH",
     "TREND_COLUMNS",
     "VERDICT_WORDS",
     "WATCHED",

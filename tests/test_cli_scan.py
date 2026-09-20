@@ -135,14 +135,26 @@ def test_when_the_snapshot_has_the_wrong_schema_it_is_refused(
     cli_runner: CliRunner,
     production_factory: Callable[[], Any],
 ) -> None:
-    """Verify a snapshot from a future version is refused with a clear message."""
+    """Verify a snapshot from a future version is refused with a clear message.
+
+    The capture is COMPLETE apart from its version, which is the whole point:
+    with `hostname` and `kernel` left out it never reached the version check at
+    all - it was refused for the missing fields, and the assertion passed
+    because the word "schema" happened to appear in the validation library's
+    own report. The refusal now has to name the version it cannot read and the
+    range it can.
+    """
     bad = tmp_path / "future.json"
-    bad.write_text(json.dumps({"schema": 99, "platform": "linux"}), encoding="utf-8")
+    bad.write_text(
+        json.dumps({"schema": 99, "platform": "linux", "hostname": "box", "kernel": "x", "pci": {}}),
+        encoding="utf-8",
+    )
 
     result = cli_runner.invoke(cli_mod.cli, ["topology", "--replay", str(bad)], obj=production_factory)
 
     assert result.exit_code == ExitCode.CONFIG_ERROR
-    assert "schema" in result.output
+    assert "schema 99" in result.output, f"the refusal does not name the version it met:\n{result.output}"
+    assert "reads schema" in result.output, f"the refusal does not name the range it can read:\n{result.output}"
 
 
 @pytest.mark.os_agnostic

@@ -89,4 +89,6 @@ __all__ = [
     "GetDefaultConfigPath",
     "InitLogging",
     "PrintInfo",
+    "ReadHistory",
+    "WriteHistory",
 ]

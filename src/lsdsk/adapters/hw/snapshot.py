@@ -209,7 +209,7 @@ def save(capture: dict[str, Any], path: Path) -> None:
     try:
         parse_capture(capture)
     except ValidationError as error:
-        message = f"This reading is not one lsdsk understands, so it was not written: {error}"
+        message = f"This reading is not one lsdsk understands, so it was not written:\n{_what_is_wrong_with_it(error)}"
         raise ConfigurationError(message) from error
     body = json.dumps(capture, indent=2, sort_keys=True)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -288,9 +288,33 @@ def _write_in_place(path: Path, body: str) -> None:
         path.chmod(SNAPSHOT_FILE_MODE)
 
 
+def _what_is_wrong_with_it(error: ValidationError) -> str:
+    """Pydantic's report as this tool's own sentences, one per problem.
+
+    ``str(ValidationError)`` is a developer's document: it names the internal
+    union it tried (``tagged-union[LinuxCapture,WindowsCapture]``), quotes a
+    truncated slice of the caller's own file back at them, and invites them to
+    a URL carrying the pinned pydantic version. Four such blocks for an empty
+    object. What a caller needs is which field and why, which is what
+    ``errors()`` carries as data; the full report stays reachable as the
+    exception's ``__cause__``, which ``--traceback`` prints.
+
+    Args:
+        error: What the capture models refused.
+
+    Returns:
+        One indented ``<field>: <reason>`` line per problem.
+    """
+    lines: list[str] = []
+    for problem in error.errors():
+        where = ".".join(str(part) for part in problem["loc"]) or "the file"
+        lines.append(f"  {where}: {problem['msg']}")
+    return "\n".join(lines)
+
+
 def _not_a_snapshot(path: Path, error: ValidationError) -> ConfigurationError:
     """The refusal for a file whose content is not a snapshot this version reads."""
-    return ConfigurationError(f"{path} is not a snapshot lsdsk understands: {error}")
+    return ConfigurationError(f"{path} is not a snapshot lsdsk understands:\n{_what_is_wrong_with_it(error)}")
 
 
 def load(path: Path) -> Inventory:
@@ -343,6 +367,7 @@ def load(path: Path) -> Inventory:
 __all__ = [
     "OLDEST_READABLE_SCHEMA",
     "SCHEMA_VERSION",
+    "SNAPSHOT_FILE_MODE",
     "build_from",
     "collect",
     "current_platform",

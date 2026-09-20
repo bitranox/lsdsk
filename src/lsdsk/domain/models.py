@@ -1371,9 +1371,12 @@ __all__ = [
     "PciNode",
     "PcieLink",
     "PcieSlot",
+    "PortChild",
     "RefusedReading",
     "SmartAttribute",
+    "pci_class_name",
     "pcie_bandwidth_gbps",
     "pcie_generation",
+    "representative_occupant",
     "serial_bandwidth_gbps",
 ]

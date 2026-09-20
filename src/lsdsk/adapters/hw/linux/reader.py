@@ -824,6 +824,7 @@ __all__ = [
     "SgIoHeader",
     "ata_passthrough",
     "nvme_admin",
+    "parse_pcie_capability",
     "read_ahci_capabilities",
     "read_block",
     "read_classes",
