@@ -7,6 +7,26 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **Every command answers a departed reader with 141, including the three that
+  did not.** Measured with a reader closing the pipe without reading: the eight
+  section commands already left 141, while `lsdsk --version` left 1 - this tool's
+  code for an actionable finding, and the exact confusion the broken-pipe work
+  exists to remove - and `lsdsk --help` and `lsdsk info` left 120 with
+  "Exception ignored while flushing sys.stdout" on stderr. 120 is CPython's
+  interpreter-shutdown flush code: not an `ExitCode` member and named in no
+  document this tool ships. Three different mechanisms, each fixed where it
+  actually is. `info` wrote through `sys.stdout` directly and now goes through the
+  guarded sink. `--help` needed nothing of its own: its 7,111 bytes never left
+  Python's 8 KB block buffer, so `cli.main()` returned normally with both streams
+  untouched and only the interpreter's exit flush failed, and one guarded
+  `flush_stdout_or_leave` at the process boundary now delivers any such buffered
+  output while a handler can still see it break - which covers every command whose
+  output fits the buffer, not just help. `--version` is printed here now instead of
+  by click's `version_option`: click's `main()` catches that `EPIPE` itself and
+  calls `sys.exit(1)` regardless of `standalone_mode`, so it fired before anything
+  in this tool was reached. The version line is byte-identical and pinned by a
+  test, and no part of this reads a click private name.
+
 - **A closed reader leaves 141 on Windows too.** The three guards in
   `safe_console` caught `BrokenPipeError`, which covers `EPIPE` and `ESHUTDOWN`
   and is the whole of it on POSIX. On Windows a broken pipe can arrive as a plain

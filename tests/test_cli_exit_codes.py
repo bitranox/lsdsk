@@ -201,6 +201,36 @@ def test_a_diagnostic_run_exits_13_when_the_hardware_read_is_refused(
     assert "Permission denied" in result.output
 
 
+@pytest.mark.os_agnostic
+def test_the_version_line_is_exactly_what_it_has_always_been() -> None:
+    """The control for taking the version printer off click.
+
+    Writing it ourselves is only safe if the text does not move: the existing
+    subprocess test asserts the version NUMBER appears somewhere in stdout, which a
+    reworded line would still satisfy. This pins the whole line.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from lsdsk import __init__conf__
+
+    result = subprocess.run(
+        [sys.executable, "-m", "lsdsk", "--version"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=str(Path(__file__).parent.parent),
+        check=False,
+        timeout=60,
+    )
+
+    expected = f"{__init__conf__.shell_command} version {__init__conf__.version}\n"
+    assert result.stdout == expected, f"the version line changed: {result.stdout!r} is not {expected!r}"
+    assert result.returncode == 0, f"--version exited {result.returncode}"
+
+
 def _run_and_take_the_output_away(*, capture: Path, history: Path, argv: list[str], leaves: bool) -> tuple[int, int]:
     """Run a real lsdsk process and either read it out or walk away.
 
@@ -268,6 +298,23 @@ def _run_and_take_the_output_away(*, capture: Path, history: Path, argv: list[st
     [
         pytest.param(["findings", "--format", "json"], id="json, through safe_console.echo"),
         pytest.param(["report"], id="human, through rich's writer"),
+        # The third sink: the package metadata, which wrote to sys.stdout directly.
+        # Its output is far under the 8 KB block buffer, so nothing reached the OS
+        # until the interpreter's own exit flush - outside every handler - and the
+        # run left 120, CPython's shutdown-flush failure, which is not an ExitCode
+        # member and appears in no document.
+        pytest.param(["info"], id="metadata, through the package's own writer"),
+        # click's own two printers, each failing by a different mechanism and both
+        # measured before the fix. --version: click's main() catches the EPIPE
+        # itself (core.py, `except OSError` on errno.EPIPE), swaps both streams for
+        # a _PacifyFlushWrapper and exits 1 - regardless of standalone_mode, so it
+        # fires before any handler of ours is reached, and 1 is this tool's code for
+        # an actionable finding. --help: main() RETURNS NORMALLY with the streams
+        # untouched, because 7,111 bytes of help never left Python's 8 KB block
+        # buffer, and the interpreter's own exit flush then fails at 120 where
+        # nothing in the process can see it.
+        pytest.param(["--version"], id="version, through click's own printer"),
+        pytest.param(["--help"], id="help, buffered below the block size"),
     ],
 )
 def test_a_reader_that_leaves_early_gets_the_broken_pipe_code_not_the_findings_code(argv: list[str]) -> None:

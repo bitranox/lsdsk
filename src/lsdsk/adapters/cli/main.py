@@ -21,6 +21,7 @@ from lsdsk import __init__conf__
 
 from ..config.loader import get_config
 from ..config.tunables import DisplaySettings, get_display_settings
+from . import safe_console
 from .context import (
     apply_traceback_preferences,
     restore_traceback_state,
@@ -133,7 +134,11 @@ def main(
 
     previous_state = snapshot_traceback_state()
     try:
-        return _run_cli(argv, services_factory=services_factory)
+        # Through the flush, not straight out: a command whose output fits Python's
+        # block buffer has not touched the pipe yet, so the reader leaving would
+        # otherwise surface only in the interpreter's exit flush, at 120, outside
+        # every handler here. A successful flush returns the code unchanged.
+        return safe_console.flush_stdout_or_leave(_run_cli(argv, services_factory=services_factory))
     finally:
         if restore_traceback:
             restore_traceback_state(previous_state)

@@ -28,6 +28,8 @@ Contents
 * :func:`safe_stream` - the same protection for a writer this module does not
   own, such as the one a :class:`rich.console.Console` writes through
 * :func:`is_broken_pipe` - whether a failed write means the reader left
+* :func:`flush_stdout_or_leave` - deliver buffered output while a handler can
+  still see it fail
 """
 
 from __future__ import annotations
@@ -176,6 +178,38 @@ def is_broken_pipe(exc: BaseException, *, on_windows: bool | None = None) -> boo
         return True
     windows = sys.platform.startswith("win") if on_windows is None else on_windows
     return windows and isinstance(exc, OSError) and exc.errno in {errno.EINVAL, errno.EPIPE}
+
+
+def flush_stdout_or_leave(code: int) -> int:
+    """Deliver anything still buffered, answering 141 if the reader has gone.
+
+    Python block-buffers stdout off a terminal, so a command whose whole output
+    fits the buffer never touches the pipe while it runs. Measured: ``lsdsk --help``
+    wrote 7,111 bytes, ``cli.main()`` returned NORMALLY with both streams untouched,
+    and the interpreter's own exit flush then failed - leaving 120, CPython's
+    shutdown-flush code, which is not an :class:`ExitCode` member, appears in no
+    document this tool ships, and happens after every handler has run. Flushing here
+    moves that failure to a point the guard can still see.
+
+    Args:
+        code: What the run decided to leave with.
+
+    Returns:
+        That same code when the flush succeeds, so an ordinary run is untouched, and
+        ``BROKEN_PIPE`` when it does not.
+
+    Side Effects:
+        Flushes stdout, and points it at the null device if the reader has gone, so
+        the interpreter's own flush cannot fail afterwards and override this answer.
+    """
+    try:
+        sys.stdout.flush()
+    except OSError as exc:
+        if not is_broken_pipe(exc):
+            raise
+        _stop_writing_to_stdout()
+        return int(ExitCode.BROKEN_PIPE)
+    return code
 
 
 def ascii_fallback(text: str, encoding: str) -> str:
@@ -333,6 +367,7 @@ __all__ = [
     "ascii_fallback",
     "echo",
     "encode_safe",
+    "flush_stdout_or_leave",
     "is_broken_pipe",
     "safe_stream",
 ]

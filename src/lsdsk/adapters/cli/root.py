@@ -7,6 +7,7 @@ Contents:
     * :func:`cli` - Root command group with global options.
     * :func:`_report_keys_nothing_reads` - warn about a file key nothing reads.
     * :func:`_report_values_nothing_uses` - warn about a value nothing can use.
+    * :func:`_print_version` - the version line, written through the guarded sink.
 """
 
 from __future__ import annotations
@@ -26,12 +27,41 @@ from lsdsk.domain.enums import TreeDensity
 from . import safe_console
 from .constants import CLICK_CONTEXT_SETTINGS, TREE_DENSITY_TOKENS
 from .context import CLIContext, apply_traceback_preferences, store_cli_context
-from .typed_click import option, version_option
+from .typed_click import option
 
 if TYPE_CHECKING:
     from lib_layered_config import Config
 
     from lsdsk.composition import AppServices
+
+
+def _print_version(ctx: click.Context, param: click.Parameter, value: bool) -> None:
+    """Write the version line through the guarded sink and stop.
+
+    Our own printer rather than click's ``version_option``, which writes through
+    click's own echo: when that meets a reader that has gone, ``cli.main()`` catches
+    the ``EPIPE`` itself (``click/core.py``, ``except OSError`` on ``errno.EPIPE``),
+    swaps both streams for a ``_PacifyFlushWrapper`` and calls ``sys.exit(1)``. It
+    does that REGARDLESS of ``standalone_mode``, so it fires before anything here is
+    reached, and 1 is this tool's code for an actionable finding - measured, with
+    nothing on either stream to say otherwise. Writing it ourselves keeps the
+    failure where :func:`safe_console.echo` can answer it with 141.
+
+    The text is byte-identical to what click produced, pinned by
+    ``test_the_version_line_is_exactly_what_it_has_always_been``.
+
+    Args:
+        ctx: The Click context, used to stop once the version is printed.
+        param: The option Click is processing. Unused; part of the callback shape.
+        value: Whether the flag was given.
+
+    Side Effects:
+        Writes one line to stdout and ends the run.
+    """
+    if not value or ctx.resilient_parsing:
+        return
+    safe_console.echo(f"{__init__conf__.shell_command} version {__init__conf__.version}")
+    ctx.exit()
 
 
 def _report_keys_nothing_reads(config: Config) -> None:
@@ -123,10 +153,13 @@ def _apply_cli_overrides(config: Config, set_overrides: tuple[str, ...]) -> Conf
     context_settings=CLICK_CONTEXT_SETTINGS,
     invoke_without_command=True,
 )
-@version_option(
-    version=__init__conf__.version,
-    prog_name=__init__conf__.shell_command,
-    message=f"{__init__conf__.shell_command} version {__init__conf__.version}",
+@option(
+    "--version",
+    is_flag=True,
+    expose_value=False,
+    is_eager=True,
+    callback=_print_version,
+    help="Show the version and exit.",
 )
 @option(
     "--traceback/--no-traceback",

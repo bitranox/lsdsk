@@ -14,12 +14,19 @@ Contents
 System Role
 -----------
 Lives in the adapters/platform layer; CLI transports import these constants to
-present authoritative project information without invoking packaging APIs.
+present authoritative project information without invoking packaging APIs. It
+writes through ``adapters.cli.safe_console`` for the same reason every other view
+does - an unencodable glyph must degrade rather than abort, and a reader that
+leaves must leave 141 - which is an adapter importing an adapter, not a layer
+crossed.
+
+That import is made INSIDE :func:`print_info`, because at module scope it is a
+cycle: ``adapters.cli.__init__`` imports ``root``, and ``root`` reads
+``__init__conf__.title`` while building its command group, so the constants below
+are not bound yet and the import fails with a partially initialized module.
 """
 
 from __future__ import annotations
-
-import sys
 
 __all__ = [
     "LAYEREDCONF_APP",
@@ -87,4 +94,12 @@ def print_info() -> None:
     pad = max(len(label) for label, _ in fields)
     lines = [f"Info for {name}:", ""]
     lines.extend(f"    {label.ljust(pad)} = {value}" for label, value in fields)
-    sys.stdout.write("\n".join(lines) + "\n")
+    # Through the guarded sink, not sys.stdout: this text is a few hundred bytes,
+    # far under Python's 8 KB block buffer, so a raw write reached the OS only at
+    # the interpreter's own exit flush. A reader that had gone by then broke the
+    # pipe OUTSIDE every handler, and the run left 120 - CPython's shutdown-flush
+    # code, which is not an ExitCode member and appears in no document this tool
+    # ships. echo writes and flushes at a point the guard can still see.
+    from .adapters.cli import safe_console  # noqa: PLC0415 - deferred: breaks a cycle (see below)
+
+    safe_console.echo("\n".join(lines))
