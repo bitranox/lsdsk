@@ -52,8 +52,9 @@ def test_replaying_someone_elses_snapshot_never_records(
     store = tmp_path / "history.json"
     result = run(cli_runner, production_factory, "--history-file", str(store), "trend", "--replay", str(SNAPSHOT))
     # Without this the assertion below would pass just as happily if the command
-    # had crashed before ever reaching the recorder.
-    assert result.output.strip(), "the command produced no output, so it proved nothing"
+    # had crashed before ever reaching the recorder. stdout, not output: output
+    # merges stderr, so a log line would answer for the report.
+    assert result.stdout.strip(), f"the command produced no report, so it proved nothing: {result.output!r}"
     assert not store.exists()
 
 
@@ -836,7 +837,9 @@ def test_a_report_still_reports_when_its_store_cannot_be_written(
     result = run(cli_runner, production_factory, "--history-file", str(in_the_way / "history.json"), "findings")
 
     assert result.exit_code == 0, f"a store that could not be written cost the diagnosis: {result.exit_code}"
-    assert result.output.strip(), "the report itself is gone, which is the trade this warning exists to avoid"
+    # stdout, not output: the assertion below requires stderr to carry the
+    # warning, so against result.output this control could not fail.
+    assert result.stdout.strip(), "the report itself is gone, which is the trade this warning exists to avoid"
     assert "could not record counter history" in result.stderr, (
         f"a failed store write was silent, so the record can stop growing unnoticed: {result.stderr!r}"
     )
