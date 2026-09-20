@@ -79,6 +79,11 @@ _MILLIDEGREE = 1000
 # Sysfs block sizes are always counted in 512-byte units regardless of the
 # drive's real sector size.
 _SYSFS_SECTOR_BYTES = 512
+# The kernel's own sector_t is a 64-bit unsigned, so a capture naming more
+# sectors than this did not come from a block device. Bounded here rather
+# than on the model because a capture leaves values as the text the platform
+# published and decoding that text is this layer's tolerant job.
+_MAX_SYSFS_SECTORS = 2**64 - 1
 
 
 def parse_pcie_speed(text: str | None) -> float | None:
@@ -573,9 +578,17 @@ def _bus_of(identity: AtaIdentity | None, phy: SasPhyEntry | None) -> BusType:
 
 
 def _size_bytes(block: BlockEntry, identity: AtaIdentity | None) -> int | None:
-    """Return a disk's capacity, preferring the kernel's own figure."""
+    """Return a disk's capacity, preferring the kernel's own figure.
+
+    A sector count outside what the kernel could have published is read as
+    no reading at all, the same answer a size of ``Unknown`` already gets,
+    rather than multiplied into a capacity. Measured unbounded: a 40-digit
+    count printed ``4547473508864641327721086976PiB`` as a measurement, and a
+    320-digit one ended ``lsdsk disks`` in a bare OverflowError from the
+    float conversion inside the formatter while every other view exited 0.
+    """
     sectors = parse_int(block.size)
-    if sectors is not None:
+    if sectors is not None and 0 <= sectors <= _MAX_SYSFS_SECTORS:
         return sectors * _SYSFS_SECTOR_BYTES
     return identity.size_bytes if identity else None
 

@@ -39,6 +39,17 @@ from ..decode.virtualization import VirtualizationEvidence
 # because there are only ever the two values worth naming.
 _ROTATING_VALUES: dict[str, bool] = {"0": False, "1": True}
 
+# The widths of the registers and the kernel types these fields are read
+# from. They are facts from the specifications rather than policy, which is
+# why they sit at the parse: a capture is untrusted input, and a value wider
+# than its own source was never read from hardware. Unbounded, two of them
+# reached figures the tool then stated - a ports bitmap of 14,000 bits was
+# counted into "14000 ports, 13999 free", and a capacity past what a float
+# holds ended `lsdsk disks` in a bare OverflowError.
+_UINT32_MAX = 0xFFFFFFFF  # an AHCI register, and uid_t
+_PCIE_PORT_TYPE_MAX = 0xF  # the PCIe capability's Device/Port Type, 4 bits
+_PCIE_SLOT_NUMBER_MAX = 0x1FFF  # Slot Capabilities' Physical Slot Number, 13 bits
+
 
 def _rotating_of(value: object) -> object:
     """Parse the kernel's rotational flag into a bool, at the boundary.
@@ -67,8 +78,8 @@ class AhciRegisters(CaptureModel):
         ports_implemented: The ports-implemented bitmap.
     """
 
-    capability: int
-    ports_implemented: int
+    capability: int = Field(ge=0, le=_UINT32_MAX)
+    ports_implemented: int = Field(ge=0, le=_UINT32_MAX)
 
 
 class PciEntry(CaptureModel):
@@ -115,8 +126,8 @@ class PciEntry(CaptureModel):
     ahci: AhciRegisters | None = None
     ahci_error: str | None = None
     slot_implemented: bool | None = None
-    slot_number: int | None = None
-    pcie_port_type: int | None = None
+    slot_number: int | None = Field(default=None, ge=0, le=_PCIE_SLOT_NUMBER_MAX)
+    pcie_port_type: int | None = Field(default=None, ge=0, le=_PCIE_PORT_TYPE_MAX)
 
 
 class ClassEntry(CaptureModel):
@@ -340,7 +351,7 @@ class LinuxCapture(CaptureHeader):
     """
 
     platform: Literal[Platform.LINUX]
-    euid: int | None = None
+    euid: int | None = Field(default=None, ge=0, le=_UINT32_MAX)
     devices_accessible: bool = True
     environment: VirtualizationEvidence = VirtualizationEvidence()
     pci: dict[str, PciEntry]

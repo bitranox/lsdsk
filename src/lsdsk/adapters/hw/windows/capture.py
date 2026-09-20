@@ -61,6 +61,17 @@ def bus_type_of(value: object) -> object:
     return _BUS_TYPES.get(value, BusType.UNKNOWN) if isinstance(value, str) else value
 
 
+# The widths of the Win32 structures and properties these fields are read
+# from, for the reason the Linux ones carry theirs: a value wider than its
+# own source was never read from a disk. A length past a signed 64-bit one
+# did not print oddly, it pushed four columns off the disks table, so the
+# drive's serial and firmware disappeared rather than the number looking wrong.
+_UINT32_MAX = 0xFFFFFFFF  # DEVPKEY UINumber, read as a UINT32
+_LARGE_INTEGER_MAX = 2**63 - 1  # IOCTL_DISK_GET_LENGTH_INFO answers in one
+_SHORT_MIN = -(2**15)  # the temperature fields are each a ctypes.c_short
+_SHORT_MAX = 2**15 - 1
+
+
 class PciEntry(CaptureModel):
     """One PCI device, as SetupAPI describes it.
 
@@ -90,7 +101,7 @@ class PciEntry(CaptureModel):
     current_link_width: str | None = None
     max_link_speed: str | None = None
     max_link_width: str | None = None
-    slot_number: int | None = None
+    slot_number: int | None = Field(default=None, ge=0, le=_UINT32_MAX)
     address: str | None = None
     parent: str | None = None
     children: tuple[str, ...] = ()
@@ -121,9 +132,9 @@ class DiskTemperature(CaptureModel):
         critical_c: The drive's critical threshold.
     """
 
-    temperature_c: int | None = None
-    warning_c: int | None = None
-    critical_c: int | None = None
+    temperature_c: int | None = Field(default=None, ge=_SHORT_MIN, le=_SHORT_MAX)
+    warning_c: int | None = Field(default=None, ge=_SHORT_MIN, le=_SHORT_MAX)
+    critical_c: int | None = Field(default=None, ge=_SHORT_MIN, le=_SHORT_MAX)
 
 
 class HealthBlobs(CaptureModel):
@@ -182,7 +193,7 @@ class DiskEntry(CaptureModel):
     ancestors: tuple[str, ...] = ()
     node: str | None = None
     device: StorageDescriptor = StorageDescriptor()
-    size_bytes: int | None = None
+    size_bytes: int | None = Field(default=None, ge=0, le=_LARGE_INTEGER_MAX)
     rotating: bool | None = None
     temperature: DiskTemperature | None = None
     nvme: HealthBlobs | None = None

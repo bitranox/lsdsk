@@ -10,17 +10,23 @@ from __future__ import annotations
 
 import ast
 import io
+import json
 import os
 import sys
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, get_args
 
+import annotated_types
 import pytest
 from rich.console import Console
 
 from lsdsk.adapters.history.store import load_history
+from lsdsk.adapters.hw import capture as shared_capture
+from lsdsk.adapters.hw.capture import CaptureEnvelope, CaptureModel
+from lsdsk.adapters.hw.linux import capture as linux_capture
 from lsdsk.adapters.hw.snapshot import load
+from lsdsk.adapters.hw.windows import capture as windows_capture
 from lsdsk.adapters.render.tree import FabricView, render_fabric
 from lsdsk.adapters.textfile import MAX_INPUT_BYTES, read_text_bounded
 from lsdsk.domain.enums import TreeDensity
@@ -596,3 +602,195 @@ def test_only_one_module_turns_a_file_from_outside_into_json() -> None:
     assert _document_parse_sites() == [], (
         f"these parse a document outside the one module that refuses a repeated key: {_document_parse_sites()}"
     )
+
+
+#: The largest sector count the kernel's own ``sector_t`` can hold. A capture
+#: naming more than this did not come from a block device.
+_MAX_SECTORS = 2**64 - 1
+
+
+def _capture_with(*, size: str = "1024", ports_implemented: int = 0x3) -> str:
+    """A Linux capture of one AHCI controller and one drive behind it."""
+    return (
+        '{"schema": 2, "platform": "linux", "hostname": "crafted", "kernel": "6.1.0", '
+        '"pci": {"0000:00:17.0": {"class": "0x010601", "device": "0x1d02", "vendor": "0x8086", '
+        '"driver": "ahci", "path": "/sys/devices/pci0000:00/0000:00:17.0", '
+        f'"ahci": {{"capability": 3878747973, "ports_implemented": {ports_implemented}}}}}}}, '
+        f'"block": {{"sda": {{"size": "{size}", "device_path": '
+        '"/sys/devices/pci0000:00/0000:00:17.0/ata1/host0/target0:0:0/0:0:0:0"}}}'
+    )
+
+
+@pytest.mark.os_agnostic
+def test_a_ports_bitmap_wider_than_the_register_is_refused(tmp_path: Path) -> None:
+    """The port count is DERIVED, so an unbounded bitmap is a figure lsdsk invents.
+
+    AHCI's ports-implemented register is 32 bits wide, and the count comes from
+    counting its set bits. Measured with a bitmap of 14,000 bits:
+    ``lsdsk controllers`` reports ``14000`` ports and ``13999`` free, exit 0,
+    on a tool whose first rule is never to report what it did not measure. It is
+    not the capture's own claim being passed on, which is what every other wrong
+    value in a capture is - it is arithmetic on a value the register cannot hold.
+    """
+    crafted = tmp_path / "wide-bitmap.json"
+    crafted.write_text(_capture_with(ports_implemented=(1 << 14000) - 1), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError):
+        load(crafted)
+
+
+@pytest.mark.os_agnostic
+def test_a_bitmap_filling_the_register_is_still_read(tmp_path: Path) -> None:
+    """The control the arm above needs, at the largest value the register holds.
+
+    A bound one too tight would refuse a controller declaring all 32 ports and
+    nothing would say so, because the arm above passes either way.
+    """
+    crafted = tmp_path / "full-bitmap.json"
+    crafted.write_text(_capture_with(ports_implemented=0xFFFFFFFF), encoding="utf-8")
+
+    inventory = load(crafted)
+
+    assert inventory.controllers[0].port_count == 32, "the implemented-port count is not the bitmap's own"
+
+
+@pytest.mark.os_agnostic
+def test_a_sector_count_no_block_device_could_hold_reports_no_size(tmp_path: Path) -> None:
+    """A capacity is text on Linux, so the builder answers rather than the model.
+
+    Two measured consequences, both from the same missing bound. A 320-digit
+    sector count made ``lsdsk disks`` exit 1 printing a bare
+    ``OverflowError: int too large to convert to float`` while ``controllers``,
+    ``health`` and ``findings`` all exited 0 on the same capture. Well below
+    that, a 40-digit one printed ``4547473508864641327721086976PiB`` as a
+    measurement.
+
+    Read as "not measured" rather than refused, because a capture leaves values
+    as the text the platform published and decoding that text is the builder's
+    tolerant job - the same answer it already gives for a size of ``Unknown``.
+    """
+    crafted = tmp_path / "huge-size.json"
+    crafted.write_text(_capture_with(size="9" * 320), encoding="utf-8")
+
+    inventory = load(crafted)
+
+    assert inventory.disks[0].size_bytes is None, "a sector count no device could report became a capacity"
+
+
+@pytest.mark.os_agnostic
+def test_the_largest_sector_count_a_block_device_could_hold_is_still_a_size(tmp_path: Path) -> None:
+    """The control for the arm above, at the ceiling rather than past it."""
+    crafted = tmp_path / "largest-size.json"
+    crafted.write_text(_capture_with(size=str(_MAX_SECTORS)), encoding="utf-8")
+
+    inventory = load(crafted)
+
+    assert inventory.disks[0].size_bytes == _MAX_SECTORS * 512
+
+
+@pytest.mark.os_agnostic
+def test_a_windows_length_wider_than_the_api_that_reports_it_is_refused(tmp_path: Path) -> None:
+    """An unbounded length does not print oddly, it DELETES columns.
+
+    ``IOCTL_DISK_GET_LENGTH_INFO`` answers in a ``LARGE_INTEGER``, so a length
+    past a signed 64-bit one was never read from a disk. Measured with a
+    301-digit length on the ``windows-ahci`` capture, rendered at 400 columns:
+    the disks table lost ``serial``, ``firmware``, ``size`` and ``kind``, so the
+    drive's identity disappeared rather than the number looking wrong. It is the
+    same failure the WWN column is width-capped for, arriving through an integer.
+    """
+    crafted = tmp_path / "wide-length.json"
+    crafted.write_text(
+        json.dumps(
+            {
+                "schema": 2,
+                "platform": "win32",
+                "hostname": "crafted",
+                "kernel": "10.0.19045",
+                "pci": {},
+                "disks": {"one": {"node": "PhysicalDrive0", "size_bytes": 10**300}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError):
+        load(crafted)
+
+
+#: The one integer a capture carries that is NOT a reading, and the one that
+#: must stay unbounded: the loader compares it against the range this version
+#: reads so it can say a snapshot was written by a newer lsdsk. Bounded at the
+#: model, that clear answer would become "this is not a snapshot".
+_NOT_A_READING = "schema_version"
+
+
+def _capture_models() -> list[type[CaptureModel]]:
+    """Every model a capture is parsed into, found rather than listed.
+
+    Walked from the modules so a model added later is covered: a list written
+    here could only ever hold the models somebody remembered to add to it.
+    """
+    modules = (shared_capture, linux_capture, windows_capture)
+    found = {
+        value
+        for module in modules
+        for value in vars(module).values()
+        if isinstance(value, type) and issubclass(value, CaptureModel) and value is not CaptureModel
+    }
+    return sorted(found, key=lambda model: model.__name__)
+
+
+def _unbounded_int_fields() -> list[str]:
+    """Integer fields on a capture model with no upper bound."""
+    loose: list[str] = []
+    for model in _capture_models():
+        for name, field in model.model_fields.items():
+            if name == _NOT_A_READING or (int not in get_args(field.annotation) and field.annotation is not int):
+                continue
+            if not any(isinstance(entry, annotated_types.Le) for entry in field.metadata):
+                loose.append(f"{model.__name__}.{name}")
+    return sorted(set(loose))
+
+
+@pytest.mark.os_agnostic
+def test_every_integer_a_capture_carries_is_bounded_by_its_own_source() -> None:
+    """A width is a fact about the register or the API, so it belongs at the parse.
+
+    Every one of these is read from something with a width - a 32-bit AHCI
+    register, a 4-bit PCIe field, a ``c_short``, a ``LARGE_INTEGER`` - and a
+    value wider than its own source was never read from hardware. Two reached
+    figures the tool then stated as measurements: a ports bitmap of 14,000 bits
+    was counted into "14000 ports, 13999 free", and a length of 10**300 pushed
+    four columns off the disks table so a drive's serial and firmware vanished.
+
+    Asserted over every field rather than the two that were found, because the
+    next one added would be unbounded and nothing would say so until a capture
+    exercised it.
+    """
+    assert _unbounded_int_fields() == [], (
+        f"these carry no width from the source they are read from: {_unbounded_int_fields()}"
+    )
+
+
+@pytest.mark.os_agnostic
+def test_the_version_a_capture_declares_is_deliberately_not_bounded() -> None:
+    """The control for the rule above, which would otherwise read as complete.
+
+    A rule with one exception is a rule whose exception can be quietly widened.
+    This pins that the exception is exactly one field and that it is the one
+    named, so removing the bound from a reading cannot be excused by it.
+    """
+    envelope: dict[str, Any] = {
+        "schema": 10**300,
+        "platform": "linux",
+        "hostname": "crafted",
+        "kernel": "6.1.0",
+        "pci": {},
+        "block": {},
+    }
+
+    parsed = CaptureEnvelope.model_validate(envelope)
+
+    assert parsed.schema_version == 10**300, "the version a capture declares is no longer readable"
+    assert _NOT_A_READING in CaptureEnvelope.model_fields

@@ -7,6 +7,29 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **Every integer a capture carries is bounded by the width of its own source.**
+  A value wider than the register or the API it is read from was never read
+  from hardware, and unbounded, three reached the output. An AHCI
+  ports-implemented bitmap of 14,000 bits was counted into `14000 ports` and
+  `13999 free`, exit 0, on a tool whose first rule is never to report what it
+  did not measure. A capacity had two failures from one missing bound: a
+  40-digit sector count printed `4547473508864641327721086976PiB` as a
+  measurement, and a 320-digit one ended `lsdsk disks` in a bare
+  `OverflowError: int too large to convert to float` while `controllers`,
+  `health` and `findings` all exited 0 on the same capture. And a Windows
+  length of 10**300 did not print oddly at all: rendered at 400 columns it
+  pushed `serial`, `firmware`, `size` and `kind` off the disks table, so the
+  drive's identity disappeared rather than the number looking wrong - the same
+  failure the WWN column is width-capped for, arriving through an integer. The
+  widths are facts from the specifications rather than policy, so they sit at
+  the parse: 32 bits for an AHCI register and for `uid_t`, 4 for the PCIe
+  Device/Port Type, 13 for a Physical Slot Number, a `c_short` for each Windows
+  temperature and a `LARGE_INTEGER` for a disk length. A capacity is text on
+  Linux, so a sector count past what the kernel's own `sector_t` holds is read
+  as "not measured" by the builder, the answer a size of `Unknown` already
+  gets. The version a capture declares stays unbounded on purpose, so a
+  snapshot from a newer lsdsk is still refused as one rather than as malformed.
+
 - **A file that names one key twice is refused rather than half read.** JSON
   says nothing about an object repeating a key and CPython resolves it
   last-writer-wins with no signal, so a value was silently replaced by another
