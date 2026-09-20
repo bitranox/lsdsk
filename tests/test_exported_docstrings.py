@@ -66,12 +66,59 @@ def _raises(node: Func) -> bool:
     return any(isinstance(n, ast.Raise) and n.exc is not None for n in ast.walk(node))
 
 
+def _argument_names(node: Func) -> list[str]:
+    """Every parameter a caller can pass, in signature order."""
+    spec = node.args
+    named = [p.arg for p in (*spec.posonlyargs, *spec.args, *spec.kwonlyargs) if p.arg not in {"self", "cls"}]
+    if spec.vararg:
+        named.append(spec.vararg.arg)
+    if spec.kwarg:
+        named.append(spec.kwarg.arg)
+    return named
+
+
+def _documented_arguments(doc: str) -> set[str]:
+    """The parameter names an ``Args:`` block actually describes.
+
+    Entries are the lines at the block's own indent carrying a colon; anything
+    deeper is a continuation of the entry above, which is why the indent is
+    taken from the first entry rather than assumed.
+    """
+    lines = doc.splitlines()
+    start = next((i for i, line in enumerate(lines) if line.strip() == "Args:"), None)
+    if start is None:
+        return set()
+    header_indent = len(lines[start]) - len(lines[start].lstrip())
+    documented: set[str] = set()
+    entry_indent: int | None = None
+    for line in lines[start + 1 :]:
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        if indent <= header_indent:
+            break
+        if entry_indent is None:
+            entry_indent = indent
+        if indent != entry_indent or ":" not in line:
+            continue
+        documented.add(line.strip().split(":", 1)[0].strip().lstrip("*"))
+    return documented
+
+
 def _missing_sections(node: Func) -> list[str]:
-    """Which Google sections this function owes and does not have."""
+    """Which Google sections this function owes and does not have.
+
+    An ``Args:`` block that omits a parameter counts as owing it. Checking only
+    that the heading EXISTS is a weaker oracle than the rule requires, and it
+    passes over exactly the case where a signature grew and its docstring did
+    not - which is how a section stays present and stops being true.
+    """
     doc = ast.get_docstring(node) or ""
     owed: list[str] = []
     if _takes_arguments(node) and "Args:" not in doc:
         owed.append("Args")
+    elif undescribed := [a for a in _argument_names(node) if a not in _documented_arguments(doc)]:
+        owed.append(f"Args({', '.join(undescribed)})")
     if _returns_a_value(node) and "Returns:" not in doc:
         owed.append("Returns")
     if _raises(node) and "Raises:" not in doc:
@@ -123,6 +170,15 @@ def test_the_scan_can_actually_see_a_missing_section() -> None:
     node = full.body[0]
     assert isinstance(node, ast.FunctionDef)
     assert _missing_sections(node) == []
+
+    half = ast.parse(
+        "def f(a: int, b: int) -> None:\n"
+        '    """Does a thing.\n\n    Args:\n        a: A number.\n    """\n'
+        "    return None\n"
+    )
+    node = half.body[0]
+    assert isinstance(node, ast.FunctionDef)
+    assert _missing_sections(node) == ["Args(b)"], "a section that omits a parameter must not read as present"
 
 
 @pytest.mark.os_agnostic

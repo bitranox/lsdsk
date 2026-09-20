@@ -344,6 +344,7 @@ def _execute_deploy(
 
     Args:
         cli_ctx: CLI context containing services.
+        output_format: What the caller asked for, which decides how a failure answers.
         targets: Deployment target layers.
         force: Whether to overwrite existing files.
         profile: Optional profile name.
@@ -410,6 +411,7 @@ def _report_deployment_result(
         deployed_paths: List of paths where configs were deployed.
         profile: Optional profile name for display.
         set_permissions: Whether permissions were set.
+        output_format: What the caller asked for, which decides how the result is written.
     """
     if output_format is OutputFormat.JSON:
         emit_action(

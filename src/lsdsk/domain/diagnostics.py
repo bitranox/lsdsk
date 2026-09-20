@@ -1102,6 +1102,7 @@ def diagnose_firmware_consistency(
 
     Args:
         inventory: The machine to check.
+        thresholds: The judged figures, passed in so the domain reads no configuration itself.
 
     Returns:
         One finding per model that is not uniform.

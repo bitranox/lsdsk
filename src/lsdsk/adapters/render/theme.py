@@ -467,6 +467,8 @@ def format_temperature(
         celsius: The reading.
         warning: The drive's own warning threshold.
         critical: The drive's own critical threshold.
+        warm_band: The generic figure used when the drive declares no warning.
+        hot_band: The generic figure used when the drive declares no critical.
 
     Returns:
         The text and the style to render it in.

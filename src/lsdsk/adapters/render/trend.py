@@ -162,6 +162,7 @@ def worth_showing(kind: CounterKind, trend: Trend, wear_floor: int = WEAR_WORTH_
     Args:
         kind: Which counter this is.
         trend: What the samples support saying about it.
+        wear_floor: The wear percentage above which a drive earns a row on its own.
 
     Returns:
         Whether to render the row.
@@ -290,6 +291,7 @@ def render_trend(
         inventory: The machine.
         history: What has been recorded on earlier runs.
         width: Terminal width, which decides how many columns fit.
+        wear_floor: The wear percentage above which a drive earns a row on its own.
 
     Returns:
         The table, or an explanation of why there is nothing to show yet.
