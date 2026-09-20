@@ -9,6 +9,22 @@ device-tree calls need no privilege at all; only the passthrough commands that
 fetch SMART data require Administrator, and they degrade to nothing when it is
 absent.
 
+The integer widths are declared FIXED rather than taken from
+:mod:`ctypes.wintypes`, which reads them from the platform the interpreter is
+running on: ``DWORD`` there is ``c_ulong``, four bytes under Windows' LLP64 and
+eight under the LP64 that Linux and macOS use.  This module imports cleanly off
+Windows, as its callers promise, and with the ``wintypes`` widths it did so
+while computing a different offset for almost every structure below - so the one
+field offset in here that was paid for with hardware testing could not be pinned
+by any test on any runner this project has.  Declaring the widths the Windows
+ABI actually fixes reproduces the Windows layout everywhere, and changes nothing
+at all on Windows, where the two agree.
+
+The names stay the SDK's, for the same reason the structure names do: a reader
+must be able to match this file against MSDN line for line.  Only pointer-width
+types - ``HANDLE``, ``HWND`` and the string pointers - are still taken from
+``wintypes``, because those genuinely follow the machine.
+
 System Role:
     Adapter layer, Windows bindings.  Imported only on Windows.
 """
@@ -23,6 +39,15 @@ from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
 if TYPE_CHECKING:
     from collections.abc import Callable
     from contextlib import AbstractContextManager
+
+# The widths the Windows ABI fixes, spelled out so a structure has the same
+# layout wherever this file is imported. Identical to wintypes ON Windows.
+DWORD = ctypes.c_uint32
+ULONG = ctypes.c_uint32
+BOOL = ctypes.c_int32
+BOOLEAN = ctypes.c_uint8
+WORD = ctypes.c_uint16
+USHORT = ctypes.c_uint16
 
 # Device enumeration flags for SetupDiGetClassDevsW.
 DIGCF_PRESENT = 0x00000002
@@ -116,7 +141,7 @@ class GUID(ctypes.Structure):
     """A Windows GUID."""
 
     _fields_ = (
-        ("Data1", ctypes.c_ulong),
+        ("Data1", DWORD),
         ("Data2", ctypes.c_ushort),
         ("Data3", ctypes.c_ushort),
         ("Data4", ctypes.c_ubyte * 8),
@@ -126,16 +151,16 @@ class GUID(ctypes.Structure):
 class DEVPROPKEY(ctypes.Structure):
     """A device property key: a format GUID plus an identifier."""
 
-    _fields_ = (("fmtid", GUID), ("pid", ctypes.c_ulong))
+    _fields_ = (("fmtid", GUID), ("pid", ULONG))
 
 
 class SP_DEVINFO_DATA(ctypes.Structure):
     """Identifies one device in a device information set."""
 
     _fields_ = (
-        ("cbSize", wintypes.DWORD),
+        ("cbSize", DWORD),
         ("ClassGuid", GUID),
-        ("DevInst", wintypes.DWORD),
+        ("DevInst", DWORD),
         ("Reserved", ctypes.POINTER(ctypes.c_ulong)),
     )
 
@@ -144,9 +169,9 @@ class SP_DEVICE_INTERFACE_DATA(ctypes.Structure):
     """Identifies one device interface in a device information set."""
 
     _fields_ = (
-        ("cbSize", wintypes.DWORD),
+        ("cbSize", DWORD),
         ("InterfaceClassGuid", GUID),
-        ("Flags", wintypes.DWORD),
+        ("Flags", DWORD),
         ("Reserved", ctypes.POINTER(ctypes.c_ulong)),
     )
 
@@ -155,8 +180,8 @@ class STORAGE_PROPERTY_QUERY(ctypes.Structure):
     """The request header for IOCTL_STORAGE_QUERY_PROPERTY."""
 
     _fields_ = (
-        ("PropertyId", wintypes.DWORD),
-        ("QueryType", wintypes.DWORD),
+        ("PropertyId", DWORD),
+        ("QueryType", DWORD),
         ("AdditionalParameters", ctypes.c_ubyte * 1),
     )
 
@@ -165,18 +190,18 @@ class STORAGE_DEVICE_DESCRIPTOR(ctypes.Structure):
     """Identity of a storage device, with strings at trailing offsets."""
 
     _fields_ = (
-        ("Version", wintypes.DWORD),
-        ("Size", wintypes.DWORD),
+        ("Version", DWORD),
+        ("Size", DWORD),
         ("DeviceType", ctypes.c_ubyte),
         ("DeviceTypeModifier", ctypes.c_ubyte),
         ("RemovableMedia", ctypes.c_ubyte),
         ("CommandQueueing", ctypes.c_ubyte),
-        ("VendorIdOffset", wintypes.DWORD),
-        ("ProductIdOffset", wintypes.DWORD),
-        ("ProductRevisionOffset", wintypes.DWORD),
-        ("SerialNumberOffset", wintypes.DWORD),
-        ("BusType", wintypes.DWORD),
-        ("RawPropertiesLength", wintypes.DWORD),
+        ("VendorIdOffset", DWORD),
+        ("ProductIdOffset", DWORD),
+        ("ProductRevisionOffset", DWORD),
+        ("SerialNumberOffset", DWORD),
+        ("BusType", DWORD),
+        ("RawPropertiesLength", DWORD),
     )
 
 
@@ -184,9 +209,9 @@ class DEVICE_SEEK_PENALTY_DESCRIPTOR(ctypes.Structure):
     """Whether a device has a seek penalty, which distinguishes disk from SSD."""
 
     _fields_ = (
-        ("Version", wintypes.DWORD),
-        ("Size", wintypes.DWORD),
-        ("IncursSeekPenalty", wintypes.BOOLEAN),
+        ("Version", DWORD),
+        ("Size", DWORD),
+        ("IncursSeekPenalty", BOOLEAN),
     )
 
 
@@ -194,12 +219,12 @@ class STORAGE_TEMPERATURE_INFO(ctypes.Structure):
     """One temperature sensor's reading and its thresholds."""
 
     _fields_ = (
-        ("Index", wintypes.WORD),
+        ("Index", WORD),
         ("Temperature", ctypes.c_short),
         ("OverThreshold", ctypes.c_short),
         ("UnderThreshold", ctypes.c_short),
-        ("OverThresholdChanged", wintypes.BOOLEAN),
-        ("UnderThresholdChanged", wintypes.BOOLEAN),
+        ("OverThresholdChanged", BOOLEAN),
+        ("UnderThresholdChanged", BOOLEAN),
     )
 
 
@@ -207,13 +232,13 @@ class STORAGE_TEMPERATURE_DATA_DESCRIPTOR(ctypes.Structure):
     """The header of a temperature query response."""
 
     _fields_ = (
-        ("Version", wintypes.DWORD),
-        ("Size", wintypes.DWORD),
+        ("Version", DWORD),
+        ("Size", DWORD),
         ("CriticalTemperature", ctypes.c_short),
         ("WarningTemperature", ctypes.c_short),
-        ("InfoCount", wintypes.WORD),
+        ("InfoCount", WORD),
         ("Reserved0", ctypes.c_ubyte * 2),
-        ("Reserved1", ctypes.c_ulong * 2),
+        ("Reserved1", ULONG * 2),
         ("TemperatureInfo", STORAGE_TEMPERATURE_INFO * 1),
     )
 
@@ -222,16 +247,16 @@ class STORAGE_PROTOCOL_SPECIFIC_DATA(ctypes.Structure):
     """Selects a protocol-specific payload, such as an NVMe log page."""
 
     _fields_ = (
-        ("ProtocolType", wintypes.DWORD),
-        ("DataType", wintypes.DWORD),
-        ("ProtocolDataRequestValue", wintypes.DWORD),
-        ("ProtocolDataRequestSubValue", wintypes.DWORD),
-        ("ProtocolDataOffset", wintypes.DWORD),
-        ("ProtocolDataLength", wintypes.DWORD),
-        ("FixedProtocolReturnData", wintypes.DWORD),
-        ("ProtocolDataRequestSubValue2", wintypes.DWORD),
-        ("ProtocolDataRequestSubValue3", wintypes.DWORD),
-        ("ProtocolDataRequestSubValue4", wintypes.DWORD),
+        ("ProtocolType", DWORD),
+        ("DataType", DWORD),
+        ("ProtocolDataRequestValue", DWORD),
+        ("ProtocolDataRequestSubValue", DWORD),
+        ("ProtocolDataOffset", DWORD),
+        ("ProtocolDataLength", DWORD),
+        ("FixedProtocolReturnData", DWORD),
+        ("ProtocolDataRequestSubValue2", DWORD),
+        ("ProtocolDataRequestSubValue3", DWORD),
+        ("ProtocolDataRequestSubValue4", DWORD),
     )
 
 
@@ -239,15 +264,15 @@ class ATA_PASS_THROUGH_DIRECT(ctypes.Structure):
     """The request for IOCTL_ATA_PASS_THROUGH_DIRECT."""
 
     _fields_ = (
-        ("Length", wintypes.USHORT),
-        ("AtaFlags", wintypes.USHORT),
+        ("Length", USHORT),
+        ("AtaFlags", USHORT),
         ("PathId", ctypes.c_ubyte),
         ("TargetId", ctypes.c_ubyte),
         ("Lun", ctypes.c_ubyte),
         ("ReservedAsUchar", ctypes.c_ubyte),
-        ("DataTransferLength", wintypes.DWORD),
-        ("TimeOutValue", wintypes.DWORD),
-        ("ReservedAsUlong", wintypes.DWORD),
+        ("DataTransferLength", DWORD),
+        ("TimeOutValue", DWORD),
+        ("ReservedAsUlong", DWORD),
         ("DataBuffer", ctypes.c_void_p),
         ("PreviousTaskFile", ctypes.c_ubyte * 8),
         ("CurrentTaskFile", ctypes.c_ubyte * 8),
@@ -258,9 +283,9 @@ class STORAGE_DEVICE_NUMBER(ctypes.Structure):
     """Which PhysicalDrive number the operating system gave a disk."""
 
     _fields_ = (
-        ("DeviceType", wintypes.DWORD),
-        ("DeviceNumber", wintypes.DWORD),
-        ("PartitionNumber", wintypes.DWORD),
+        ("DeviceType", DWORD),
+        ("DeviceNumber", DWORD),
+        ("PartitionNumber", DWORD),
     )
 
 
@@ -268,7 +293,7 @@ class SCSI_ADDRESS(ctypes.Structure):
     """Where a device sits on its SCSI-style bus."""
 
     _fields_ = (
-        ("Length", wintypes.DWORD),
+        ("Length", DWORD),
         ("PortNumber", ctypes.c_ubyte),
         ("PathId", ctypes.c_ubyte),
         ("TargetId", ctypes.c_ubyte),
@@ -438,75 +463,75 @@ def configure_prototypes(setupapi: WinLibrary, cfgmgr32: WinLibrary, kernel32: W
         ctypes.POINTER(GUID),
         wintypes.LPCWSTR,
         wintypes.HWND,
-        wintypes.DWORD,
+        DWORD,
     )
-    setupapi.SetupDiEnumDeviceInfo.restype = wintypes.BOOL
+    setupapi.SetupDiEnumDeviceInfo.restype = BOOL
     setupapi.SetupDiEnumDeviceInfo.argtypes = (
         wintypes.HANDLE,
-        wintypes.DWORD,
+        DWORD,
         ctypes.POINTER(SP_DEVINFO_DATA),
     )
-    setupapi.SetupDiDestroyDeviceInfoList.restype = wintypes.BOOL
+    setupapi.SetupDiDestroyDeviceInfoList.restype = BOOL
     setupapi.SetupDiDestroyDeviceInfoList.argtypes = (wintypes.HANDLE,)
-    setupapi.SetupDiGetDevicePropertyW.restype = wintypes.BOOL
+    setupapi.SetupDiGetDevicePropertyW.restype = BOOL
     setupapi.SetupDiGetDevicePropertyW.argtypes = (
         wintypes.HANDLE,
         ctypes.POINTER(SP_DEVINFO_DATA),
         ctypes.POINTER(DEVPROPKEY),
-        ctypes.POINTER(wintypes.DWORD),
+        ctypes.POINTER(DWORD),
         ctypes.POINTER(ctypes.c_ubyte),
-        wintypes.DWORD,
-        ctypes.POINTER(wintypes.DWORD),
-        wintypes.DWORD,
+        DWORD,
+        ctypes.POINTER(DWORD),
+        DWORD,
     )
-    setupapi.SetupDiEnumDeviceInterfaces.restype = wintypes.BOOL
+    setupapi.SetupDiEnumDeviceInterfaces.restype = BOOL
     setupapi.SetupDiEnumDeviceInterfaces.argtypes = (
         wintypes.HANDLE,
         ctypes.c_void_p,
         ctypes.POINTER(GUID),
-        wintypes.DWORD,
+        DWORD,
         ctypes.POINTER(SP_DEVICE_INTERFACE_DATA),
     )
-    setupapi.SetupDiGetDeviceInterfaceDetailW.restype = wintypes.BOOL
+    setupapi.SetupDiGetDeviceInterfaceDetailW.restype = BOOL
     setupapi.SetupDiGetDeviceInterfaceDetailW.argtypes = (
         wintypes.HANDLE,
         ctypes.POINTER(SP_DEVICE_INTERFACE_DATA),
         ctypes.c_void_p,
-        wintypes.DWORD,
-        ctypes.POINTER(wintypes.DWORD),
+        DWORD,
+        ctypes.POINTER(DWORD),
         ctypes.POINTER(SP_DEVINFO_DATA),
     )
 
     # CM_* take a DEVINST, which is a DWORD, not a handle.
-    cfgmgr32.CM_Get_Device_IDW.restype = wintypes.DWORD
-    cfgmgr32.CM_Get_Device_IDW.argtypes = (wintypes.DWORD, wintypes.LPWSTR, ctypes.c_ulong, ctypes.c_ulong)
+    cfgmgr32.CM_Get_Device_IDW.restype = DWORD
+    cfgmgr32.CM_Get_Device_IDW.argtypes = (DWORD, wintypes.LPWSTR, ctypes.c_ulong, ctypes.c_ulong)
     for name in ("CM_Get_Parent", "CM_Get_Child", "CM_Get_Sibling"):
         entry = getattr(cfgmgr32, name)
-        entry.restype = wintypes.DWORD
-        entry.argtypes = (ctypes.POINTER(wintypes.DWORD), wintypes.DWORD, ctypes.c_ulong)
+        entry.restype = DWORD
+        entry.argtypes = (ctypes.POINTER(DWORD), DWORD, ctypes.c_ulong)
 
     kernel32.CreateFileW.restype = wintypes.HANDLE
     kernel32.CreateFileW.argtypes = (
         wintypes.LPCWSTR,
-        wintypes.DWORD,
-        wintypes.DWORD,
+        DWORD,
+        DWORD,
         ctypes.c_void_p,
-        wintypes.DWORD,
-        wintypes.DWORD,
+        DWORD,
+        DWORD,
         wintypes.HANDLE,
     )
-    kernel32.DeviceIoControl.restype = wintypes.BOOL
+    kernel32.DeviceIoControl.restype = BOOL
     kernel32.DeviceIoControl.argtypes = (
         wintypes.HANDLE,
-        wintypes.DWORD,
+        DWORD,
         ctypes.c_void_p,
-        wintypes.DWORD,
+        DWORD,
         ctypes.c_void_p,
-        wintypes.DWORD,
-        ctypes.POINTER(wintypes.DWORD),
+        DWORD,
+        ctypes.POINTER(DWORD),
         ctypes.c_void_p,
     )
-    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.restype = BOOL
     kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
 
 

@@ -680,9 +680,7 @@ class LsdskApp(App[None]):
             )
         self.query_one("#trend-body", Static).update(
             tui_palette.Recoloured(
-                render_trend(
-                    self.inventory, self.history, wear_floor=wear_floor, store_refusal=self.store_refusal
-                )
+                render_trend(self.inventory, self.history, wear_floor=wear_floor, store_refusal=self.store_refusal)
                 if not rows
                 else _note()
             )

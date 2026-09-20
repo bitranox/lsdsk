@@ -7,6 +7,23 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **The Win32 bindings have the layout Windows gives them on every runner.**
+  `ctypes.wintypes` takes its integer widths from the machine the interpreter is
+  running on, where `DWORD` is `c_ulong`: four bytes under Windows and eight
+  under Linux and macOS. So the bindings imported cleanly off Windows, as their
+  docstrings promise, while computing a different size for 12 of 13 structures
+  and putting `STORAGE_PROPERTY_QUERY.AdditionalParameters` at 16 rather than
+  the 8 the reader's own comment records from hardware testing - which is why no
+  runner this project has could hold that figure.
+
+  The widths the Windows ABI fixes are now declared fixed, under the SDK's own
+  names. Measured on a real Windows machine with the old file and the new one
+  loaded in the same run: the two agree there down to the byte, so this changes
+  nothing on Windows and corrects the layout everywhere else. The reader was
+  then driven end to end on that machine and read its drive's model, size and
+  bus unchanged. A test pins the table and sweeps the structure fields for a
+  width that follows the running machine, a pointer excepted.
+
 - **A Windows capture is named by the machine that took it.** Resolving a PCI
   vendor and device identifier to a readable name is a lookup in a file, not
   something the hardware says, and only the Linux reader recorded what it
