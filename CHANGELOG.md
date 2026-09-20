@@ -7,6 +7,40 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A departed reader silences the stream that actually left, and no longer costs
+  the caller the one fact it could act on.** Three defects in one path, each
+  measured by spawning a real process against a real pipe. (1) The guard pointed
+  STDOUT at the null device whichever stream had broken, so a closed stderr left
+  its own failed write to be retried at interpreter shutdown - outside every
+  handler - and `lsdsk config 2>&1 | head` answered 120, CPython's shutdown-flush
+  code, which is not an `ExitCode` member and appears in no document this tool
+  ships. `2>&1 | head` is the shape a monitoring check has. (2) `main()` RETURNS
+  its code, so the null device it had pointed fd 1 at outlived the call: a caller
+  that imports `main` and carries on got control back with everything it printed
+  going nowhere, in silence. (3) The `BrokenPipeError` raised while PRINTING a
+  usage error was raised inside the handler doing the printing, so it escaped
+  `main` entirely and `lsdsk nosuchcommand 2>&1 | head` reported 120 rather than
+  the usage error the caller had actually made.
+
+  The boundary flush now covers stderr as well as stdout and runs AFTER the
+  logging shutdown rather than before it, because `lib_log_rich` is queue-based
+  and a line logged during the run reaches stderr only when that drain runs.
+
+- **Which exit code wins when the reader left AND something else went wrong is now
+  a stated contract** (`outranks_a_departed_reader`), not an accident of which
+  handler ran last. A code saying the run could not START stands - 2, 13, 22, 78 -
+  because there was never any output for that reader to lose. A code saying what
+  the output CONTAINED yields to 141, because it was not delivered: leaving 1 for a
+  report cut off after five lines would tell a monitoring check it had received a
+  complete verdict. The two streams are ranked the same way at the write itself - a
+  departed STDOUT reader stops the run, a departed STDERR reader costs that one
+  diagnostic and leaves the verdict standing. Measured across the shapes: `lsdsk
+  nosuchcommand 2>&1 | head` went 120 to 2, `lsdsk config-deploy ... 2>&1 | head`
+  went 141 to 13, `lsdsk config --section nope 2>&-` went 120 to 22, and `lsdsk
+  report | head` on a machine with a finding stays 141.
+
+### Fixed
+
 - **Every command answers a departed reader with 141, including the three that
   did not.** Measured with a reader closing the pipe without reading: the eight
   section commands already left 141, while `lsdsk --version` left 1 - this tool's
@@ -19,7 +53,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   guarded sink. `--help` needed nothing of its own: its 7,111 bytes never left
   Python's 8 KB block buffer, so `cli.main()` returned normally with both streams
   untouched and only the interpreter's exit flush failed, and one guarded
-  `flush_stdout_or_leave` at the process boundary now delivers any such buffered
+  `flush_streams_or_leave` at the process boundary now delivers any such buffered
   output while a handler can still see it break - which covers every command whose
   output fits the buffer, not just help. `--version` is printed here now instead of
   by click's `version_option`: click's `main()` catches that `EPIPE` itself and

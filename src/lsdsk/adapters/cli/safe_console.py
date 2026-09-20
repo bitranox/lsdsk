@@ -28,20 +28,28 @@ Contents
 * :func:`safe_stream` - the same protection for a writer this module does not
   own, such as the one a :class:`rich.console.Console` writes through
 * :func:`is_broken_pipe` - whether a failed write means the reader left
-* :func:`flush_stdout_or_leave` - deliver buffered output while a handler can
+* :func:`flush_streams_or_leave` - deliver buffered output while a handler can
   still see it fail
+* :func:`restore_original_streams` - give a library caller back the descriptors
+  this module pointed at the null device
+* :func:`write_unless_the_reader_left` - attempt a diagnostic write without
+  letting a departed reader become the answer
 """
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import os
 import sys
-from typing import IO, Any, Final, NoReturn, TextIO, cast
+from typing import IO, TYPE_CHECKING, Any, Final, NoReturn, TextIO, cast
 
 import rich_click as click
 
-from .exit_codes import ExitCode
+from .exit_codes import ExitCode, outranks_a_departed_reader
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 ASCII_FALLBACKS: Final[dict[str, str]] = {
     "✓": "[OK]",  # check mark
@@ -95,25 +103,56 @@ def _stream_encoding(file: IO[Any] | None, *, err: bool = False) -> str | None:
     return encoding if isinstance(encoding, str) else None
 
 
-def _stop_writing_to_stdout() -> None:
-    """Point this process's stdout at the null device.
+#: Descriptors this module pointed at the null device, against what they named before.
+#:
+#: Process-global because a file DESCRIPTOR is, so recording it anywhere narrower
+#: would describe something other than the thing that was changed.
+_REDIRECTED_DESCRIPTORS: Final[dict[int, int]] = {}
 
-    Python flushes ``sys.stdout`` as the interpreter exits. On a pipe whose
-    reader has gone that raises a SECOND ``BrokenPipeError``, after the exit
-    code has already been decided, and prints "Exception ignored while flushing
-    sys.stdout" at somebody who did nothing wrong. Replacing the file
-    DESCRIPTOR rather than rebinding ``sys.stdout`` is what makes that hold: the
-    original stream object is still flushed on the way down, and it writes
-    through the descriptor.
 
-    A stdout with no descriptor - a test harness's buffer, a captured stream -
+def _stop_writing_to(stream: IO[Any] | None) -> None:
+    """Point the descriptor behind `stream` at the null device.
+
+    Python flushes ``sys.stdout`` and ``sys.stderr`` as the interpreter exits. On
+    a pipe whose reader has gone that raises a SECOND ``BrokenPipeError``, after
+    the exit code has already been decided, and prints "Exception ignored while
+    flushing sys.stdout" at somebody who did nothing wrong. Replacing the file
+    DESCRIPTOR rather than rebinding the module attribute is what makes that
+    hold: the original stream object is still flushed on the way down, and it
+    writes through the descriptor.
+
+    Only ``sys.stdout`` and ``sys.stderr`` are touched, because those two are the
+    whole reason this exists - they are what the interpreter flushes on its way
+    down. Redirecting any other stream a caller happened to pass would be this
+    module rearranging a file it does not own. Nulling the WRONG one of the two
+    is the defect this argument exists to stop: measured, a closed stderr pointed
+    stdout at the null device, which both discarded a report that was being read
+    perfectly well (8,876 bytes delivered as 1) and left stderr's own failed
+    write to be retried at shutdown, where 120 overrode the 141 just decided.
+
+    The stream is FLUSHED once redirected, which is what empties the buffer whose
+    retry would otherwise fail; it goes to the null device, so it cannot.
+
+    A stream with no descriptor - a test harness's buffer, a captured stream -
     needs none of this and is left alone.
+
+    Args:
+        stream: The stream whose write failed.
+
+    Side Effects:
+        Replaces a process file descriptor, recording what it named so
+        :func:`restore_original_streams` can put it back.
     """
-    try:
-        descriptor = sys.stdout.fileno()
-    except (AttributeError, OSError, ValueError):
+    if stream is None or (stream is not sys.stdout and stream is not sys.stderr):
         return
     try:
+        descriptor = stream.fileno()
+    except (AttributeError, OSError, ValueError):
+        return
+    if descriptor in _REDIRECTED_DESCRIPTORS:
+        return
+    try:
+        saved = os.dup(descriptor)
         null = os.open(os.devnull, os.O_WRONLY)
     except OSError:  # pragma: no cover - the null device is always openable
         return
@@ -121,9 +160,71 @@ def _stop_writing_to_stdout() -> None:
         os.dup2(null, descriptor)
     finally:
         os.close(null)
+    _REDIRECTED_DESCRIPTORS[descriptor] = saved
+    with contextlib.suppress(OSError, ValueError):
+        stream.flush()
 
 
-def _reader_went_away() -> NoReturn:
+def restore_original_streams() -> None:
+    """Put back every descriptor :func:`_stop_writing_to` redirected.
+
+    ``main`` RETURNS its exit code rather than exiting, so everything it did to
+    the process outlives the call. ``entry.py`` exits immediately afterwards and
+    never notices; a caller that imports ``main`` and carries on would get
+    control back with its own fd 1 pointed at the null device, and nothing would
+    raise to say so.
+
+    Safe to run on the way out of the real process too: the redirected stream was
+    flushed when it was redirected, so its buffer is empty and the interpreter's
+    own flush writes nothing through the descriptor this hands back.
+
+    Side Effects:
+        Restores process file descriptors and closes the saved duplicates.
+    """
+    while _REDIRECTED_DESCRIPTORS:
+        descriptor, saved = _REDIRECTED_DESCRIPTORS.popitem()
+        try:
+            os.dup2(saved, descriptor)
+        except OSError:  # pragma: no cover - the saved descriptor is this process's own
+            pass
+        finally:
+            with contextlib.suppress(OSError):
+                os.close(saved)
+
+
+def write_unless_the_reader_left(emit: Callable[[], None], *, err: bool = True) -> None:
+    """Run `emit`, and give up quietly if the reader of its stream has gone.
+
+    For a DIAGNOSTIC write on the way out of a run that has ALREADY decided its
+    exit code - click's usage message, a traceback. A broken pipe there must not
+    become the answer, and must not escape: the run's own code is what the caller
+    asked about, and it is a refusal, which
+    :func:`~.exit_codes.outranks_a_departed_reader` says stands.
+
+    Measured before this existed: ``lsdsk nosuchcommand 2>&1 | head`` left 120.
+    click raised ``UsageError``, the ``BrokenPipeError`` from printing it was
+    raised INSIDE the handler that was printing it, so it escaped ``_run_cli``
+    and then ``main`` itself, and the interpreter reported its own shutdown
+    flush failure instead of the usage error the caller needed.
+
+    Args:
+        emit: The write to attempt. It is expected to raise nothing but an
+            ``OSError`` for a stream that has gone.
+        err: Whether `emit` writes to stderr, which is where diagnostics go.
+
+    Side Effects:
+        Points the written stream at the null device when its reader has left,
+        so the interpreter's own exit flush cannot fail afterwards.
+    """
+    try:
+        emit()
+    except OSError as exc:
+        if not is_broken_pipe(exc):
+            raise
+        _stop_writing_to(sys.stderr if err else sys.stdout)
+
+
+def _reader_went_away(stream: IO[Any] | None) -> NoReturn:
     """Leave with the code that says the pipe closed, never the one that says a drive is failing.
 
     Raised rather than returned so it cannot be forgotten at a call site, and
@@ -133,8 +234,12 @@ def _reader_went_away() -> NoReturn:
     somebody piped the output into ``head`` is the defect; exiting before click
     can see an ``OSError`` is the fix, and ``SystemExit`` passes through its
     handler untouched.
+
+    Args:
+        stream: The stream whose write failed, so the descriptor that is
+            silenced is the one that actually broke.
     """
-    _stop_writing_to_stdout()
+    _stop_writing_to(stream)
     raise SystemExit(ExitCode.BROKEN_PIPE)
 
 
@@ -180,8 +285,35 @@ def is_broken_pipe(exc: BaseException, *, on_windows: bool | None = None) -> boo
     return windows and isinstance(exc, OSError) and exc.errno in {errno.EINVAL, errno.EPIPE}
 
 
-def flush_stdout_or_leave(code: int) -> int:
-    """Deliver anything still buffered, answering 141 if the reader has gone.
+def _delivered(stream: IO[Any] | None) -> bool:
+    """Flush `stream`, reporting whether its reader was still there.
+
+    Args:
+        stream: The stream to deliver.
+
+    Returns:
+        Whether the flush reached a reader. A stream that cannot be flushed at
+        all counts as delivered: there is no pipe behind it to break.
+
+    Raises:
+        OSError: When the flush failed for any reason other than the reader
+            leaving, which is a real error and belongs to the caller.
+    """
+    try:
+        if stream is not None:
+            stream.flush()
+    except ValueError:  # pragma: no cover - a closed test harness buffer
+        return True
+    except OSError as exc:
+        if not is_broken_pipe(exc):
+            raise
+        _stop_writing_to(stream)
+        return False
+    return True
+
+
+def flush_streams_or_leave(code: int) -> int:
+    """Deliver anything still buffered, ranking the answer against a departed reader.
 
     Python block-buffers stdout off a terminal, so a command whose whole output
     fits the buffer never touches the pipe while it runs. Measured: ``lsdsk --help``
@@ -191,25 +323,30 @@ def flush_stdout_or_leave(code: int) -> int:
     document this tool ships, and happens after every handler has run. Flushing here
     moves that failure to a point the guard can still see.
 
+    BOTH streams, not stdout alone. ``lsdsk ... 2>&1 | head`` is one pipe carrying
+    both, so the reader leaving breaks both at once, and a stderr write that failed
+    during the run leaves its bytes in the buffer to be retried at shutdown. Measured
+    before this flushed stderr too: 120, from exactly that retry.
+
+    What it answers with is :func:`~.exit_codes.outranks_a_departed_reader`: a code
+    saying the run could not start stands, a code saying what the output contained
+    yields to ``BROKEN_PIPE``.
+
     Args:
         code: What the run decided to leave with.
 
     Returns:
-        That same code when the flush succeeds, so an ordinary run is untouched, and
-        ``BROKEN_PIPE`` when it does not.
+        That same code when every flush succeeds, so an ordinary run is untouched.
 
     Side Effects:
-        Flushes stdout, and points it at the null device if the reader has gone, so
-        the interpreter's own flush cannot fail afterwards and override this answer.
+        Flushes stdout and stderr, and points either at the null device if its reader
+        has gone, so the interpreter's own flush cannot fail afterwards and override
+        this answer.
     """
-    try:
-        sys.stdout.flush()
-    except OSError as exc:
-        if not is_broken_pipe(exc):
-            raise
-        _stop_writing_to_stdout()
-        return int(ExitCode.BROKEN_PIPE)
-    return code
+    reached_a_reader = [_delivered(sys.stdout), _delivered(sys.stderr)]
+    if all(reached_a_reader):
+        return code
+    return code if outranks_a_departed_reader(code) else int(ExitCode.BROKEN_PIPE)
 
 
 def ascii_fallback(text: str, encoding: str) -> str:
@@ -272,12 +409,25 @@ def echo(message: object = "", *, file: IO[Any] | None = None, err: bool = False
     Writes to the given stream.
     """
     text = message if isinstance(message, str) else str(message)
+    target = file if file is not None else (sys.stderr if err else sys.stdout)
     try:
         click.echo(encode_safe(text, _stream_encoding(file, err=err)), file=file, err=err, nl=nl)
     except OSError as exc:
         if not is_broken_pipe(exc):
             raise
-        _reader_went_away()
+        if target is sys.stderr:
+            # A departed STDERR reader is not a reason to stop. stderr carries
+            # diagnostics about the run, never the run's own output, so nobody
+            # listening to it means this one message is lost and the command's
+            # own verdict still stands - which is the same ranking
+            # :func:`~.exit_codes.outranks_a_departed_reader` applies at the
+            # boundary. Aborting here instead answered `lsdsk config-deploy
+            # ... 2>&1 | head` with 141 and threw away the 13 that says exactly
+            # what went wrong. A departed STDOUT reader does stop the run: that
+            # stream IS what was asked for.
+            _stop_writing_to(target)
+            return
+        _reader_went_away(target)
 
 
 class _SafeWriter:
@@ -312,16 +462,17 @@ class _SafeWriter:
         except OSError as exc:
             if not is_broken_pipe(exc):
                 raise
-            _reader_went_away()
+            _reader_went_away(target)
 
     def flush(self) -> None:
         """Flush the current target."""
+        target = self._target()
         try:
-            self._target().flush()
+            target.flush()
         except OSError as exc:
             if not is_broken_pipe(exc):
                 raise
-            _reader_went_away()
+            _reader_went_away(target)
 
     def isatty(self) -> bool:
         """Report the target's tty-ness, so rich keeps its styling."""
@@ -367,7 +518,9 @@ __all__ = [
     "ascii_fallback",
     "echo",
     "encode_safe",
-    "flush_stdout_or_leave",
+    "flush_streams_or_leave",
     "is_broken_pipe",
+    "restore_original_streams",
     "safe_stream",
+    "write_unless_the_reader_left",
 ]

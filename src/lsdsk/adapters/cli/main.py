@@ -74,7 +74,10 @@ def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppSe
     except click.exceptions.Exit as exc:
         return exc.exit_code
     except click.ClickException as exc:
-        exc.show()
+        # Through the guard: the BrokenPipeError from printing a usage message is
+        # raised INSIDE this handler, so unguarded it escapes main() itself and the
+        # caller is told nothing about the usage error it actually made.
+        safe_console.write_unless_the_reader_left(exc.show)
         return exc.exit_code
     except SystemExit as exc:
         # A command raising SystemExit is stating the code it means to leave
@@ -96,7 +99,9 @@ def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppSe
         # nothing reads is a lie in the config file.
         display = _display_settings()
         length_limit = display.traceback_verbose_limit if tracebacks_enabled else display.traceback_summary_limit
-        lib_cli_exit_tools.print_exception_message(trace_back=tracebacks_enabled, length_limit=length_limit)
+        safe_console.write_unless_the_reader_left(
+            lambda: lib_cli_exit_tools.print_exception_message(trace_back=tracebacks_enabled, length_limit=length_limit)
+        )
         return lib_cli_exit_tools.get_system_exit_code(exc)
 
 
@@ -134,11 +139,7 @@ def main(
 
     previous_state = snapshot_traceback_state()
     try:
-        # Through the flush, not straight out: a command whose output fits Python's
-        # block buffer has not touched the pipe yet, so the reader leaving would
-        # otherwise surface only in the interpreter's exit flush, at 120, outside
-        # every handler here. A successful flush returns the code unchanged.
-        return safe_console.flush_stdout_or_leave(_run_cli(argv, services_factory=services_factory))
+        code = _run_cli(argv, services_factory=services_factory)
     finally:
         if restore_traceback:
             restore_traceback_state(previous_state)
@@ -146,6 +147,23 @@ def main(
         is_main_thread = threading.current_thread() is threading.main_thread()
         if is_main_thread and lib_log_rich.runtime.is_initialised():
             lib_log_rich.runtime.shutdown()
+
+    # AFTER the logging shutdown, not around it: lib_log_rich is queue-based, so a
+    # line logged during the run reaches stderr only when that drain runs. Flushing
+    # before it left those bytes in the buffer to be retried at interpreter
+    # shutdown, where the failure is outside every handler and reads as 120.
+    #
+    # Through the flush, not straight out: a command whose output fits Python's
+    # block buffer has not touched the pipe yet, so the reader leaving would
+    # otherwise surface only in that same exit flush. A successful flush returns
+    # the code unchanged.
+    try:
+        return safe_console.flush_streams_or_leave(code)
+    finally:
+        # Last of all: this hands back a descriptor that may be a pipe nobody is
+        # reading, so anything writing afterwards would raise where no handler is
+        # left. Until then such a write goes quietly to the null device.
+        safe_console.restore_original_streams()
 
 
 __all__ = ["main"]

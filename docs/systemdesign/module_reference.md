@@ -202,13 +202,37 @@ describes a ceiling rather than a fault. Anything above `1` means the command di
 | 22   | `INVALID_ARGUMENT`  | A named configuration section or `--profile` was rejected, or `snapshot` was given a global `--replay` |
 | 78   | `CONFIG_ERROR`      | A file is not a snapshot this version reads, or this platform has no hardware reader                   |
 
-Two more a caller will see are named in the enum (`SIGNAL_INT`, `BROKEN_PIPE`, `SIGNAL_TERM`)
-but are never raised by lsdsk itself:
+Two more a caller will see are named in the enum but come from elsewhere:
 
-| Code            | Source  | Meaning                                                                                       |
-|-----------------|---------|-----------------------------------------------------------------------------------------------|
-| 2               | Click   | A usage error: an unknown option or command, a missing argument, a bad choice, an absent path |
-| 130 / 141 / 143 | signals | Interrupt, broken pipe, terminate, translated by `lib_cli_exit_tools`                         |
+| Code      | Source  | Meaning                                                                                       |
+|-----------|---------|-----------------------------------------------------------------------------------------------|
+| 2         | Click   | A usage error: an unknown option or command, a missing argument, a bad choice, an absent path |
+| 130 / 143 | signals | Interrupt and terminate, translated by `lib_cli_exit_tools`                                   |
+
+`141` sits with neither of those, however much it looks like a signal code. Nothing
+translates a broken pipe: Click catches the `EPIPE` in its own `main` and calls
+`sys.exit(1)`, so `adapters/cli/safe_console` raises `141` itself at the write that
+fails, before Click can see it.
+
+**Which code wins when the reader leaves AND something else went wrong** is a
+contract, answered by `outranks_a_departed_reader`. A code saying the run could not
+START stands - 2, 13, 22 and 78 - because there was never any output for that reader
+to lose: a mistyped `--section` is a mistyped `--section` whether it was piped into
+`head` or into a file. A code saying what the output CONTAINED yields to `141`,
+because it was not delivered: `lsdsk report | head -5` on a failing machine has shown
+the reader five lines, and leaving `1` there would tell a monitoring check it had
+received a complete verdict.
+
+The two streams are ranked the same way at the write itself. A departed STDOUT reader
+stops the run, because that stream is what was asked for. A departed STDERR reader
+does not: stderr carries diagnostics ABOUT the run, so nobody listening to it costs
+that one message and leaves the command's own verdict standing.
+
+One limit is worth stating, because it looks like a breach of the rule and is not. The
+contract ranks a code the run DECIDED. A reader that leaves while a command is still
+writing gets `141` at that write, before any command code exists - which is why
+`lsdsk config --section nope | head` leaves `141` rather than `22`: that command
+prints a note to stdout before it looks the section up.
 
 `2` is worth stating carefully: it does NOT mean "the file was missing". Five different
 usage mistakes produce it, and `tests/test_cli_exit_codes.py` drives all five.

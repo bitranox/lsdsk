@@ -292,3 +292,46 @@ class TestWhatCountsAsTheReaderLeaving:
         assert raised.value.errno == errno.ENOSPC, (
             f"the guard replaced a disk-full error with errno {raised.value.errno}"
         )
+
+
+class TestWhatMainLeavesBehindForAnEmbeddingCaller:
+    """``main()`` RETURNS its code, so whatever it did to the process outlives the call."""
+
+    @pytest.mark.os_posix
+    def test_a_departed_reader_does_not_leave_the_caller_s_stdout_pointed_at_the_null_device(
+        self, tmp_path: Path
+    ) -> None:
+        """A library caller must get its own fd 1 back.
+
+        The guard against the interpreter's shutdown flush replaces the file
+        DESCRIPTOR, which is process-wide and permanent. ``entry.py`` exits
+        immediately afterwards so it never notices; a caller that imports
+        ``main`` and carries on gets control back with everything it prints
+        going to the null device, and nothing raises to say so.
+
+        Driven as a spawned program because the probe has to break its own fd 1,
+        which a test process sharing pytest's stdout cannot do.
+        """
+        import json
+
+        from lsdsk.adapters.cli.exit_codes import ExitCode
+
+        verdict = tmp_path / "verdict.json"
+        probe = Path(__file__).parent / "helpers" / "embedding_caller.py"
+        completed = subprocess.run(  # noqa: S603 - argv is built here, no shell
+            [sys.executable, str(probe), str(verdict), "--version"],
+            cwd=str(Path(__file__).parent.parent),
+            capture_output=True,
+            check=False,
+            timeout=120,
+        )
+
+        assert completed.returncode == 0, f"the probe itself failed: {completed.stderr.decode(errors='replace')}"
+        recorded = json.loads(verdict.read_text(encoding="utf-8"))
+        assert recorded["code"] == int(ExitCode.BROKEN_PIPE), (
+            f"the control: a broken fd 1 must reach the broken-pipe code, and left {recorded['code']}"
+        )
+        assert recorded["after"] == recorded["before"], (
+            "main() returned with fd 1 pointing somewhere else, so an embedding caller's own "
+            "output now goes to the null device in silence"
+        )

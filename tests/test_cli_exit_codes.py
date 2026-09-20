@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pytest
 
@@ -231,8 +231,23 @@ def test_the_version_line_is_exactly_what_it_has_always_been() -> None:
     assert result.returncode == 0, f"--version exited {result.returncode}"
 
 
-def _run_and_take_the_output_away(*, capture: Path, history: Path, argv: list[str], leaves: bool) -> tuple[int, int]:
-    """Run a real lsdsk process and either read it out or walk away.
+class _PipeRun(NamedTuple):
+    """What one spawned run left behind.
+
+    A NamedTuple rather than a bare triple because all three members are ``int``,
+    so a swap at a call site type-checks exactly as well as the right order does -
+    which is the rule this repo already applies to its own returns.
+    """
+
+    code: int
+    stdout_bytes: int
+    stderr_bytes: int
+
+
+def _run_and_take_the_output_away(
+    *, capture: Path, history: Path, argv: list[str], leaves: bool, stderr_leaves: bool = False
+) -> _PipeRun:
+    """Run a real lsdsk process and either read each stream out or walk away from it.
 
     Spawned rather than invoked in-process because the defect lives in the write
     to a real pipe: a ``CliRunner`` writes into a buffer that never closes, so
@@ -251,10 +266,14 @@ def _run_and_take_the_output_away(*, capture: Path, history: Path, argv: list[st
         argv: The subcommand and any format flag, which is what selects the sink
             under test - the human page renders through rich's writer, the JSON
             envelope through ``safe_console.echo``, and they are separate code.
-        leaves: Whether the reader closes the pipe instead of consuming it.
+        leaves: Whether the reader closes the stdout pipe instead of consuming it.
+        stderr_leaves: Whether it closes the stderr pipe too, which is the shape
+            ``lsdsk ... 2>&1 | head`` has - one pipe carrying both streams, so the
+            reader leaving breaks both at once.
 
     Returns:
-        The exit code, and how many bytes were read before leaving.
+        The exit code and how many bytes each stream delivered; a stream whose
+        reader left reports 0, since nothing was taken from it.
     """
     import os
     import subprocess
@@ -279,13 +298,18 @@ def _run_and_take_the_output_away(*, capture: Path, history: Path, argv: list[st
         env={**os.environ, "TERM": "dumb"},
     )
     assert process.stdout is not None, "the pipe this test is about was not created"
+    assert process.stderr is not None, "the stderr pipe this test is about was not created"
     try:
-        read = 0
+        # Both readers are settled BEFORE either stream is drained: closing one
+        # pipe after blocking on a read of the other deadlocks whenever the
+        # writer fills the pipe nobody is reading.
         if leaves:
             process.stdout.close()
-        else:
-            read = len(process.stdout.read())
-        return process.wait(timeout=120), read
+        if stderr_leaves:
+            process.stderr.close()
+        out = 0 if leaves else len(process.stdout.read())
+        err = 0 if stderr_leaves else len(process.stderr.read())
+        return _PipeRun(process.wait(timeout=120), out, err)
     finally:
         if process.poll() is None:  # pragma: no cover - only on a hang
             process.kill()
@@ -337,14 +361,139 @@ def test_a_reader_that_leaves_early_gets_the_broken_pipe_code_not_the_findings_c
     capture = Path(__file__).parent / "fixtures" / "hw" / "linux-minimal.json"
     history = Path(__file__).parent / "fixtures" / "hw" / "does-not-exist-history.json"
 
-    consumed, size = _run_and_take_the_output_away(capture=capture, history=history, argv=argv, leaves=False)
-    assert consumed == ExitCode.SUCCESS, "the control: this capture must exit 0 when its output is read"
-    assert size > 0, "the control wrote nothing, so the arm below would pass with no pipe to break"
+    control = _run_and_take_the_output_away(capture=capture, history=history, argv=argv, leaves=False)
+    assert control.code == ExitCode.SUCCESS, "the control: this capture must exit 0 when its output is read"
+    assert control.stdout_bytes > 0, "the control wrote nothing, so the arm below would pass with no pipe to break"
 
-    abandoned, _ = _run_and_take_the_output_away(capture=capture, history=history, argv=argv, leaves=True)
+    abandoned = _run_and_take_the_output_away(capture=capture, history=history, argv=argv, leaves=True).code
     assert abandoned == ExitCode.BROKEN_PIPE, (
         f"a reader that left early got {abandoned}, "
         f"and {int(ExitCode.GENERAL_ERROR)} is what an actionable finding leaves"
+    )
+
+
+#: Click's usage-error code, which this tool returns unchanged and its own enum
+#: therefore does not declare - see the note in :class:`ExitCode`.
+_CLICK_USAGE_ERROR = 2
+
+FINDINGS_CAPTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
+ABSENT_HISTORY = Path(__file__).parent / "fixtures" / "hw" / "does-not-exist-history.json"
+
+
+@pytest.mark.os_agnostic
+def test_a_reader_that_leaves_on_both_streams_is_still_answered_with_the_broken_pipe_code() -> None:
+    """`lsdsk ... 2>&1 | head` must not leave 120.
+
+    One pipe carrying both streams is the shape a monitoring check has, and the
+    reader leaving breaks both at once. Measured before this was fixed: 120,
+    CPython's interpreter-shutdown flush failure, which is not an
+    :class:`ExitCode` member and appears in no document this tool ships. The
+    cause is that the guard pointed STDOUT at the null device when it was STDERR
+    that broke, so stderr's own buffered write was retried at shutdown, outside
+    every handler, and overrode the 141 already decided.
+
+    ``config`` and not ``report``, because the defect needs a FAILED WRITE ON
+    STDERR and only this command makes one under the harness's flags - it logs
+    "Displaying configuration" there. Under ``report`` the stderr buffer is
+    empty, its shutdown flush cannot fail, and the arm passes against the broken
+    code. The control asserts both streams carried something so that can never
+    go unnoticed again.
+    """
+    argv = ["config"]
+    control = _run_and_take_the_output_away(capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=False)
+    assert control.code == ExitCode.SUCCESS, "the control: this capture must exit 0 when both streams are read"
+    assert control.stdout_bytes > 0, "the control wrote nothing to stdout, so there is no pipe to break"
+    assert control.stderr_bytes > 0, (
+        "the control wrote nothing to STDERR, so the shutdown flush this test is about cannot fail "
+        "and the arm below would pass against the broken code"
+    )
+
+    abandoned = _run_and_take_the_output_away(
+        capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=True, stderr_leaves=True
+    ).code
+    assert abandoned == ExitCode.BROKEN_PIPE, f"a reader that left on both streams got {abandoned}"
+
+
+@pytest.mark.os_agnostic
+def test_a_refusal_click_itself_printed_outranks_a_departed_reader() -> None:
+    """An unknown command is an unknown command whoever was reading.
+
+    The contract (user, 2026-09-20): a code saying the run could not START - 2,
+    13, 22, 78 - outranks the reader leaving, because there was never any output
+    for that reader to lose. A code saying what the output CONTAINED yields,
+    which is the test after this one.
+
+    This arm is click's OWN printer, reached before any command runs. Measured
+    before the fix: 120, because the ``BrokenPipeError`` from printing the usage
+    message was raised inside the handler that was printing it and escaped
+    ``main`` entirely.
+    """
+    argv = ["nosuchcommand"]
+    control = _run_and_take_the_output_away(capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=False)
+    assert control.code == _CLICK_USAGE_ERROR, f"the control: an unknown command must leave 2, and left {control.code}"
+    assert control.stderr_bytes > 0, (
+        "the control wrote nothing to stderr, so the write this test is about never happened"
+    )
+
+    abandoned = _run_and_take_the_output_away(
+        capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=True, stderr_leaves=True
+    ).code
+    assert abandoned == _CLICK_USAGE_ERROR, (
+        f"an unknown command piped into a reader that left got {abandoned}, so the one actionable fact reached nobody"
+    )
+
+
+@pytest.mark.os_agnostic
+def test_a_refusal_this_tool_printed_outranks_a_departed_stderr_reader() -> None:
+    """The same contract through this project's own writer rather than click's.
+
+    ``config --section`` finds its refusal itself and reports it with
+    :func:`~lsdsk.adapters.cli.safe_console.echo`. A departed STDERR reader must
+    not turn that into 141: stderr carries diagnostics ABOUT the run, never the
+    run's own output, so nobody listening to it costs this one message and
+    leaves the verdict standing. Measured before the fix: 120.
+
+    Only stderr's reader leaves here. With stdout's gone as well the answer is
+    141 and correctly so - this command prints a note to stdout BEFORE it looks
+    the section up, so the reader leaves before any refusal has been decided and
+    there is nothing for the contract to rank.
+    """
+    argv = ["config", "--section", "nonexistent_section_that_does_not_exist"]
+    control = _run_and_take_the_output_away(capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=False)
+    assert control.code == ExitCode.INVALID_ARGUMENT, (
+        f"the control: reading both streams must still give {int(ExitCode.INVALID_ARGUMENT)}, not {control.code}"
+    )
+    assert control.stderr_bytes > 0, "the control wrote nothing to stderr, so this arm has no write to break"
+
+    abandoned = _run_and_take_the_output_away(
+        capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=False, stderr_leaves=True
+    ).code
+    assert abandoned == ExitCode.INVALID_ARGUMENT, (
+        f"a mistyped --section whose stderr reader left got {abandoned}, so the one actionable fact reached nobody"
+    )
+
+
+@pytest.mark.os_agnostic
+def test_a_findings_verdict_yields_to_a_departed_reader() -> None:
+    """A verdict the reader never received must not be reported as delivered.
+
+    The other half of the same contract. 141 says "what you asked for was not
+    delivered", which is exactly true of a report cut off mid-stream; leaving 1
+    would tell a monitoring check it had received a complete verdict when it
+    received one line.
+    """
+    control = _run_and_take_the_output_away(
+        capture=FINDINGS_CAPTURE, history=ABSENT_HISTORY, argv=["report"], leaves=False
+    )
+    assert control.code == ExitCode.GENERAL_ERROR, (
+        f"the control: this capture must report a finding when read, and gave {control.code}"
+    )
+
+    abandoned = _run_and_take_the_output_away(
+        capture=FINDINGS_CAPTURE, history=ABSENT_HISTORY, argv=["report"], leaves=True
+    ).code
+    assert abandoned == ExitCode.BROKEN_PIPE, (
+        f"a truncated report left {abandoned}, which says the verdict arrived when it did not"
     )
 
 
