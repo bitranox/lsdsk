@@ -157,3 +157,138 @@ class TestTheRealCliSurvivesALegacyCodepage:
         )
         assert completed.returncode == 0, completed.stderr.decode("cp1252", "replace")
         assert b"UnicodeEncodeError" not in completed.stderr
+
+
+class TestWhatCountsAsTheReaderLeaving:
+    """A broken pipe does not look the same on both platforms.
+
+    ``BrokenPipeError`` is raised for ``EPIPE`` and ``ESHUTDOWN``. On Windows a
+    broken pipe can arrive as a plain ``OSError`` with ``EINVAL`` instead
+    (bpo-19612, bpo-30418), which a handler naming only ``BrokenPipeError`` never
+    sees.
+
+    What that cost was MEASURED on a real Windows box (Python 3.14.6, both arms
+    built from the same tree, the reader closing the pipe without reading):
+
+        the guard as it is now           -> 141
+        the predicate cut back to before -> 120
+
+    and each arm's control, a reader that consumes all 78,433 bytes, exited 0. So
+    the code a Windows caller got was 120, CPython's interpreter-shutdown flush
+    failure, which is not an ``ExitCode`` member and appears in no document. It was
+    NOT the 22 that reading the mapping alone predicts - ``get_system_exit_code``
+    does answer 22 for that errno, which the control arm below pins, but end to end
+    the shutdown flush fails afterwards and overrides the code already decided.
+    Either way the caller is told something that did not happen.
+
+    The platform is a PARAMETER of the predicate, so a Linux cell proves the
+    Windows branch. Nothing about these arms is skipped anywhere, which is the
+    point: the end-to-end pipe test that would catch this for real is
+    ``os_agnostic`` and has never run on a Windows cell, because the commit that
+    introduced the guard was never pushed.
+    """
+
+    @pytest.mark.os_agnostic
+    def test_the_errno_this_is_about_really_does_map_to_invalid_argument(self) -> None:
+        """The control for the whole class: without this, the arms below guard nothing.
+
+        It pins the MAPPING, not the end-to-end code. Measured on Windows the
+        unrecognised errno ended at 120 rather than 22, because the shutdown flush
+        fails after the mapping has answered; both are codes for a cause that did
+        not happen, and this arm is what keeps the class anchored to a real one.
+        """
+        import errno
+
+        import lib_cli_exit_tools
+
+        from lsdsk.adapters.cli.exit_codes import ExitCode
+
+        windows_shaped = OSError()
+        windows_shaped.errno = errno.EINVAL
+
+        assert lib_cli_exit_tools.get_system_exit_code(windows_shaped) == ExitCode.INVALID_ARGUMENT, (
+            "errno EINVAL no longer maps to 22, so this class is guarding a defect that has moved"
+        )
+        assert lib_cli_exit_tools.get_system_exit_code(BrokenPipeError()) == ExitCode.BROKEN_PIPE, (
+            "a plain BrokenPipeError no longer maps to 141, so the comparison below means nothing"
+        )
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.parametrize("on_windows", [True, False], ids=["on windows", "on posix"])
+    def test_a_broken_pipe_error_is_the_reader_leaving_on_every_platform(self, on_windows: bool) -> None:
+        """The one shape both platforms agree on, so neither branch may lose it."""
+        assert safe_console.is_broken_pipe(BrokenPipeError(), on_windows=on_windows)
+
+    @pytest.mark.os_agnostic
+    def test_an_einval_oserror_is_the_reader_leaving_only_on_windows(self) -> None:
+        """Both directions, because each is a different defect.
+
+        Read as the reader leaving on POSIX, a genuine ``EINVAL`` on a write would
+        be reported as exit 141 and the real error swallowed - which is why pip's
+        own predicate returns early unless it is on Windows, rather than accepting
+        the errno everywhere.
+        """
+        import errno
+
+        windows_shaped = OSError()
+        windows_shaped.errno = errno.EINVAL
+
+        assert safe_console.is_broken_pipe(windows_shaped, on_windows=True), (
+            "a Windows broken pipe was not recognised, so it still lands on exit 22 there"
+        )
+        assert not safe_console.is_broken_pipe(windows_shaped, on_windows=False), (
+            "a genuine EINVAL on POSIX was called a broken pipe, so a real write error exits 141"
+        )
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.parametrize("on_windows", [True, False], ids=["on windows", "on posix"])
+    def test_an_unrelated_oserror_is_never_the_reader_leaving(self, on_windows: bool) -> None:
+        """A full disk is not a closed pipe, on either platform."""
+        import errno
+
+        full = OSError()
+        full.errno = errno.ENOSPC
+
+        assert not safe_console.is_broken_pipe(full, on_windows=on_windows)
+
+    @pytest.mark.os_agnostic
+    def test_the_platform_is_read_at_the_call_when_nobody_names_it(self) -> None:
+        """The production call sites pass no platform, so the default must be live.
+
+        Bound at import instead, the answer would be frozen for the process, and
+        every arm above would still pass.
+        """
+        import errno
+
+        windows_shaped = OSError()
+        windows_shaped.errno = errno.EINVAL
+
+        assert safe_console.is_broken_pipe(windows_shaped) == sys.platform.startswith("win"), (
+            "the unnamed platform did not follow the interpreter this test is running on"
+        )
+
+    @pytest.mark.os_agnostic
+    def test_a_write_that_fails_for_another_reason_still_reaches_the_caller(self) -> None:
+        """The guard widens from BrokenPipeError to OSError, so it must not swallow the rest.
+
+        Without this, catching ``OSError`` to reach the Windows case would turn a
+        full disk into a silent exit 141 on every platform.
+        """
+        import errno
+
+        class _RefusesToWrite(io.TextIOWrapper):
+            """A stream whose write fails for a reason that is not the reader leaving."""
+
+            def write(self, text: str) -> int:
+                full = OSError()
+                full.errno = errno.ENOSPC
+                raise full
+
+        stream = _RefusesToWrite(io.BytesIO(), encoding="utf-8", errors="strict", newline="")
+
+        with pytest.raises(OSError) as raised:
+            safe_console.echo("anything", file=stream)
+
+        assert raised.value.errno == errno.ENOSPC, (
+            f"the guard replaced a disk-full error with errno {raised.value.errno}"
+        )

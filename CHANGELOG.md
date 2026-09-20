@@ -7,6 +7,22 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A closed reader leaves 141 on Windows too.** The three guards in
+  `safe_console` caught `BrokenPipeError`, which covers `EPIPE` and `ESHUTDOWN`
+  and is the whole of it on POSIX. On Windows a broken pipe can arrive as a plain
+  `OSError` carrying `EINVAL` (bpo-19612, bpo-30418), which those guards never
+  saw. Measured on a real Windows box, Python 3.14.6, two arms from one tree with
+  the reader closing the pipe without reading: 120 before, 141 after, each arm's
+  control consuming all 78,433 bytes and exiting 0. 120 is CPython's
+  interpreter-shutdown flush failure - not an `ExitCode` member and named in no
+  document - so a monitoring caller piping the output was told a cause that did
+  not happen. The errno is accepted only ON WINDOWS, which is what pip's own
+  predicate does: taken everywhere, a genuine `EINVAL` on a POSIX write would be
+  reported as a closed pipe and the real error swallowed. The platform is a
+  parameter of `is_broken_pipe`, so a Linux cell proves the Windows branch, and
+  each guard keeps a bare `raise` so an unrelated `OSError` still reaches the
+  caller with its traceback untouched.
+
 - **A configured value the tool cannot use is named on stderr, with the default
   that judged the machine instead.** The fallback itself is deliberate and
   stays - a malformed threshold must never stop somebody diagnosing a failing

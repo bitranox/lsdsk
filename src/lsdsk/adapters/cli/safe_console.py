@@ -27,10 +27,12 @@ Contents
 * :func:`echo` - the :func:`click.echo` replacement every module uses
 * :func:`safe_stream` - the same protection for a writer this module does not
   own, such as the one a :class:`rich.console.Console` writes through
+* :func:`is_broken_pipe` - whether a failed write means the reader left
 """
 
 from __future__ import annotations
 
+import errno
 import os
 import sys
 from typing import IO, Any, Final, NoReturn, TextIO, cast
@@ -134,6 +136,48 @@ def _reader_went_away() -> NoReturn:
     raise SystemExit(ExitCode.BROKEN_PIPE)
 
 
+def is_broken_pipe(exc: BaseException, *, on_windows: bool | None = None) -> bool:
+    """Whether a failed write means the reader went away.
+
+    ``BrokenPipeError`` covers ``EPIPE`` and ``ESHUTDOWN``, which is the whole of
+    it on POSIX. On Windows a broken pipe can arrive as a plain ``OSError``
+    carrying ``EINVAL`` instead (bpo-19612, bpo-30418), which a handler naming
+    only ``BrokenPipeError`` never sees. Measured on Windows (Python 3.14.6), a
+    reader closing the pipe left 120 without this - CPython's interpreter-shutdown
+    flush failure, which is not an ``ExitCode`` member and appears in no document -
+    and 141 with it. Reading the mapping alone predicts 22, since
+    ``get_system_exit_code`` passes that errno through and 22 is this tool's
+    ``INVALID_ARGUMENT``; end to end the shutdown flush fails afterwards and
+    overrides it. Either code tells the caller a cause that did not happen.
+
+    The errno is accepted only ON WINDOWS, which is also what pip's own
+    ``_is_broken_pipe_error`` does (it returns early unless ``WINDOWS``). Accepted
+    everywhere, a genuine ``EINVAL`` on a POSIX write would be reported as exit
+    141 with the real error swallowed.
+
+    Args:
+        exc: The exception a write raised.
+        on_windows: Whether to apply the Windows reading. Defaults to asking this
+            interpreter, and is a parameter so a Linux cell can prove the Windows
+            branch - the end-to-end pipe test that would catch it for real is the
+            one no Windows runner has executed.
+
+    Returns:
+        Whether to treat this as the reader leaving.
+
+    Example:
+        >>> is_broken_pipe(BrokenPipeError(), on_windows=False)
+        True
+        >>> invalid = OSError(); invalid.errno = errno.EINVAL
+        >>> is_broken_pipe(invalid, on_windows=True), is_broken_pipe(invalid, on_windows=False)
+        (True, False)
+    """
+    if isinstance(exc, BrokenPipeError):
+        return True
+    windows = sys.platform.startswith("win") if on_windows is None else on_windows
+    return windows and isinstance(exc, OSError) and exc.errno in {errno.EINVAL, errno.EPIPE}
+
+
 def ascii_fallback(text: str, encoding: str) -> str:
     """Rewrite `text` so it survives `encoding`.
 
@@ -196,7 +240,9 @@ def echo(message: object = "", *, file: IO[Any] | None = None, err: bool = False
     text = message if isinstance(message, str) else str(message)
     try:
         click.echo(encode_safe(text, _stream_encoding(file, err=err)), file=file, err=err, nl=nl)
-    except BrokenPipeError:
+    except OSError as exc:
+        if not is_broken_pipe(exc):
+            raise
         _reader_went_away()
 
 
@@ -229,14 +275,18 @@ class _SafeWriter:
         encoding = getattr(target, "encoding", None)
         try:
             return target.write(encode_safe(text, encoding if isinstance(encoding, str) else None))
-        except BrokenPipeError:
+        except OSError as exc:
+            if not is_broken_pipe(exc):
+                raise
             _reader_went_away()
 
     def flush(self) -> None:
         """Flush the current target."""
         try:
             self._target().flush()
-        except BrokenPipeError:
+        except OSError as exc:
+            if not is_broken_pipe(exc):
+                raise
             _reader_went_away()
 
     def isatty(self) -> bool:
@@ -283,5 +333,6 @@ __all__ = [
     "ascii_fallback",
     "echo",
     "encode_safe",
+    "is_broken_pipe",
     "safe_stream",
 ]
