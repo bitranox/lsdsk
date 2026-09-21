@@ -159,11 +159,25 @@ work order against hardware that is fine:
 - `legacy = no PCIe capability` - the device has no PCIe capability at all,
   which is an ordinary legacy PCI part. It is a reading, not a gap.
 
-The distinction matters because the two look alike and mean opposite things
+The distinction matters because those two look alike and mean opposite things
 about the EVIDENCE. `legacy` is a positive reading - the platform answered, and
 the answer was "this part has no PCIe capability". `-` is the platform declining
 to answer, so nothing has been established about that link either way. No rule
 fires on either, and no device is ever called slow on a symbol.
+
+**The detail panel adds two more, and each panel explains only the ones it
+drew.** A cell reading `n/a` is a value that CANNOT exist for that subject,
+which is not the same fact as a reading nobody took: the four numbered ATA
+attributes on an NVMe drive, which publishes one fixed log page and no attribute
+table at all, and the occupant fields of a socket the panel has just reported
+empty. Read as a missed reading it sends somebody looking for a fault.
+
+A figure written `<= Gen3x8 (7.88 GB/s)` is a CEILING rather than a placeholder.
+An uplink is the lower of what the card supports and what the bridge above it
+does, so with one end unread it is whatever the other end said and can only be
+too high. The end that WAS read is a real measurement, which is why the figure
+is marked instead of dashed. On Windows this is every PCIe controller, because
+Windows publishes a link capability for an endpoint and none for a bridge.
 
 **The marker column on the far left is the finding, not the link.** A `!` or `~`
 sits on the row a finding names, so a drive with a perfectly good link can carry
@@ -316,7 +330,10 @@ findings = diagnose(inventory)  # each has .severity, .subject, .title, .detail,
 Both calls raise `lsdsk.domain.errors.ConfigurationError` - `load` for a file
 that is unreadable, malformed, or not a snapshot this version parses, and
 `collect` for a platform with no hardware reader, which raises the
-`UnsupportedPlatformError` subclass. `collect` also lets a `PermissionError`
+`UnsupportedPlatformError` subclass. A path that is not there at all raises the
+`MissingFileError` subclass, so a caller that wants to tell an absent snapshot
+from a present but malformed one catches that before the base class rather than
+reading the message. `collect` also lets a `PermissionError`
 through when the read is refused outright, which is the exit 13 the CLI leaves.
 Catch `ConfigurationError` and `PermissionError` around either call in anything
 long-running.
@@ -340,9 +357,11 @@ callable on its own, which is how you run one without the rest:
 `diagnose_controller_link(controller, inventory)`,
 `diagnose_controller_oversubscription(controller, inventory)`,
 `diagnose_port_allocation(inventory)`, `diagnose_health(disk, series, thresholds)`
-and `diagnose_firmware_consistency(inventory, thresholds)`. `WEAR_WARNING_PERCENT`,
-`WEAR_CRITICAL_PERCENT` and `CRC_ERRORS_SIGNIFICANT` are the shipped figures those
-rules fall back to when no `Thresholds` is passed.
+and `diagnose_firmware_consistency(inventory, thresholds)`. `DEFAULT_THRESHOLDS` is
+what those rules fall back to when no `Thresholds` is passed, and its fields carry
+the shipped figures: `wear_warning_percent` 80, `wear_critical_percent` 95,
+`crc_errors_significant` 100. Build your own with `Thresholds(...)` and pass it,
+rather than reading a field off the default and comparing yourself.
 
 **`lsdsk.adapters.hw.snapshot` holds more than `load` and `collect`.**
 `read_current_machine()` returns the raw reading as a dict and `save(capture,

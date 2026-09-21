@@ -7,6 +7,25 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **An uplink resting on one reading says so.** A controller's `uplink carries`
+  figure is the lower of what the card supports and what the bridge above it
+  does, so where only one end was read it is whatever that end said and can only
+  be too high. It used to be drawn as a plain figure, indistinguishable from one
+  both ends agreed on. It now carries a `<=` ceiling marker, which the panel's
+  legend explains alongside the markers it already named, and the skill says the
+  same thing in the same words. It is marked rather than dashed because the end
+  that WAS read is a real measurement, and it is not a rare case: on Windows
+  every PCIe controller is this, the platform publishing a link capability for an
+  endpoint and none for a bridge.
+
+- **The interactive view grades by the configured thresholds.** A bare `lsdsk`
+  built the app without them, so its findings page and verdict banner judged
+  against the shipped 80/95/100 while the panes beside them coloured against the
+  file, and the exit code from the same invocation could disagree with the
+  screen. `lsdsk tui` was affected too, re-diagnosing twice without them. Both
+  entry points now build through a seam that declares the argument with no
+  default, so the type checker refuses a call site that forgets it.
+
 - **A run on a worker thread flushes the logging runtime like any other.** `main()`
   skipped the logging shutdown when it was not on the main thread, which read as
   thread safety and was not: the same call restored the original streams and
