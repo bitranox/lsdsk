@@ -148,13 +148,18 @@ Karte, die Bandbreite ungenutzt lässt, wird mit der Zahl benannt, ein Tausch is
 also offensichtlich, bevor Sie das Gehäuse öffnen.
 
 ```
-MSI MEG Z690 ACE (MS-7D27)   18 ports   3 free
-   port          slot  capable              running             occupant                        needs               verdict
-   0000:00:01.0  #1    Gen5x8 (31.50 GB/s)  Gen3x8 (7.88 GB/s)  AMD Hawaii XT [Radeon R9 290X]  Gen3x16 (15.76 GB/s)  in use (graphics)
-   0000:00:01.1  #2    Gen5x8 (31.50 GB/s)  Gen2x8 (4.00 GB/s)  Intel 82599ES 10G SFI/SFP+      Gen2x8 (4.00 GB/s)    spare 27.50 GB/s
-   0000:00:1d.0  #12   Gen3x4 (3.94 GB/s)   Gen3x4 (3.94 GB/s)  Samsung 980 PRO 2TB             Gen4x4 (7.88 GB/s)    port limits it
-   0000:00:1c.0  #0    Gen3x1 (0.98 GB/s)   -                   empty                           -                     FREE
+Micro-Star International Co., Ltd. MEG Z690 ACE (MS-7D27)   18 ports   3 free
+      port          slot  capable              running             occupant                                                                             needs                 verdict
+   0000:00:01.0  #1    Gen5x8 (31.50 GB/s)  Gen3x8 (7.88 GB/s)  Advanced Micro Devices, Inc. [AMD/ATI] Hawaii XT / Grenada XT [Radeon R9 290X/390X]  Gen3x16 (15.76 GB/s)  in use (graphics)
+   0000:00:01.1  #2    Gen5x8 (31.50 GB/s)  Gen2x8 (4.00 GB/s)  Intel Corporation 82599ES 10-Gigabit SFI/SFP+ Network Connection                     Gen2x8 (4.00 GB/s)    spare 27.50 GB/s
+   0000:00:1c.0  #0    Gen3x1 (0.98 GB/s)   -                   empty                                                                                -                     FREE
+   0000:00:1d.0  #12   Gen3x4 (3.94 GB/s)   Gen3x4 (3.94 GB/s)  Samsung Electronics Co Ltd NVMe SSD Controller PM9A1/PM9A3/980PRO                    Gen4x4 (7.88 GB/s)    port limits it
 ```
+
+Vier der achtzehn Anschlüsse dieser Platine, an einem Terminal, das breit genug
+für die Bandbreiten ist. Eine Bestückung wird von der PCI-Datenbank benannt und
+nicht vom Aufdruck auf dem Bauteil, sie erscheint also als Hersteller und Gerät,
+als die sich die Hardware selbst meldet.
 
 Es sagt nicht, ob ein Anschluss ein M.2-Sockel oder ein Kartensteckplatz ist,
 und das ist Absicht. Die Steckplatztabelle der Firmware ist das Einzige, was die

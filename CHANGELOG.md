@@ -441,6 +441,37 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **The documents describe the command line the tool actually has.** `lsdsk
+  --help` offers eighteen commands and the command reference documented sixteen
+  of them while opening with the words "every command, every global option":
+  `fail` and `logdemo` appeared in no document at all, and neither did `-h`,
+  `snapshot --output` or `logdemo --theme`. All five are documented now, in both
+  languages, and a guard keyed on the click tree holds it - the way the exit
+  codes have been held since one shipped undocumented, so a command or option
+  added later arrives carrying the requirement rather than waiting to be
+  remembered.
+
+- **A refusal the documents quote is one the tool can print.** CONFIG.md and its
+  German twin both published `not a whole number above zero` after the coercer
+  had started saying `not a whole number above zero, or too large to use`, so
+  the search that sentence exists to serve returned nothing. The reasons are
+  compared against the constants the code defines now.
+
+- **The `lsdsk slots` sample is real output.** FINDINGS.md and its German twin
+  named the board `MSI MEG Z690 ACE` and its occupants `Samsung 980 PRO 2TB`,
+  `AMD Hawaii XT [Radeon R9 290X]` and `Intel 82599ES 10G SFI/SFP+`. The
+  occupant column is the PCI database's own vendor and device string and has
+  never been any of those, and every figure beside the invented names was
+  correct, which is what made the block read as verified. It is now the tool's
+  own output, held against a live run.
+
+- **The pictures show the tool as it is.** All eight screenshots and the
+  animation were recorded before the detail panel learned to tell a value that
+  cannot exist from a reading nobody took, so every one of them showed an NVMe
+  drive's four ATA attributes and its attribute-table summary as `-` rather than
+  `n/a` - advertising a reader being sent to look for a fault that was never
+  there. Rebuilt from one recorded pass, as the script requires.
+
 - **Looking up a drive's PCIe port no longer costs a scan of every controller.**
   `Inventory.port_link_for` walked the controller list once per drive, and ten
   call sites ask it per drive - including the topology section a bare `lsdsk`

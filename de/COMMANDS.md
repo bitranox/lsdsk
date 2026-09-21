@@ -27,6 +27,13 @@ zur [README](README.md).
 | `lsdsk config-deploy`            | Die mitgelieferten Vorgaben dorthin schreiben, wo Sie sie bearbeiten können                           |
 | `lsdsk config-generate-examples` | Kommentierte Beispieldateien schreiben, ohne die laufende Konfiguration anzufassen                    |
 | `lsdsk info`                     | Version, Projektseite und die Angaben, die ein Fehlerbericht braucht                                  |
+| `lsdsk logdemo`                  | Eine Zeile je Protokollstufe, um die Protokollkonfiguration vorzuführen                               |
+| `lsdsk fail`                     | Bricht absichtlich ab, damit ein Aufrufer sieht, was dieses Werkzeug tut, wenn es scheitert           |
+
+Die letzten beiden beantworten nichts über Ihre Platten. `logdemo` führt die
+Protokollkonfiguration vor, und `fail` gibt es, damit der Fehlerpfad über den
+echten Einstiegspunkt geprüft werden kann; beide stehen hier, weil `lsdsk
+--help` sie anbietet und wer ihnen dort begegnet, sie hier finden soll.
 
 Ein blosses `lsdsk` entscheidet zwischen beiden danach, ob stdin und stdout
 Terminals sind, denn irgendetwas muss `q` drücken können. `lsdsk tui` verlangt
@@ -54,6 +61,7 @@ was sie zeichnet und wie Sie mehr anfordern.
 | `--env-file FILE`                                         | Diese `.env` lesen, statt vom Arbeitsverzeichnis aufwärts zu suchen              |
 | `--traceback` / `--no-traceback`                          | Im Fehlerfall den Python-Traceback ausgeben statt einer Zeile                    |
 | `--version`                                               | Die Version ausgeben und beenden                                                 |
+| `--help` / `-h`                                           | Die eigenen Optionen dieses Befehls ausgeben und beenden                         |
 
 `lsdsk disks` hat eine eigene Option. Die Spalte `wwn` ist auf
 `display.wwn_width` Zeichen begrenzt, weil eine NVMe-WWN fünfmal so lang ist wie
@@ -66,6 +74,10 @@ aus und legt die Tabelle breiter an als das Terminal, statt die Breite von den
 Spalten daneben abzuziehen: die Zeile läuft seitlich hinaus, und ein Pager
 schiebt sie (`lsdsk disks --full-wwn | less -S`). Der JSON-Umschlag trägt jede
 WWN immer vollständig, gleich was die menschenlesbare Ansicht angefordert hat.
+
+`lsdsk snapshot` braucht ein Ziel: `-o FILE`, ausgeschrieben `--output FILE`.
+`lsdsk logdemo` nimmt `--theme classic|dark|neon|pastel` und wählt damit, in
+welchem der mitgelieferten Protokollthemen die Vorschau dargestellt wird.
 
 `--format json` liefert einen maschinenlesbaren Umschlag, der den erzeugenden
 Befehl nennt, bei jedem Befehl, der Daten erzeugt, ausser `report`, dessen

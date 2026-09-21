@@ -491,7 +491,7 @@ the machine instead:
 
 ```
 $ lsdsk --set thresholds.wear_warning_percent=abc --set display.tree_density=bogus findings
-Warning: ignoring thresholds.wear_warning_percent=abc: not a whole number above zero. Using 80.
+Warning: ignoring thresholds.wear_warning_percent=abc: not a whole number above zero, or too large to use. Using 80.
 Warning: ignoring display.tree_density=bogus: not one of storage-only, storage-and-siblings, full. Using storage-only.
 ```
 

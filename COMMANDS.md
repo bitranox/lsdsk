@@ -27,6 +27,13 @@ Back to the [README](README.md).
 | `lsdsk config-deploy`            | Write the shipped defaults where you can edit them                                                 |
 | `lsdsk config-generate-examples` | Write commented example files without touching live config                                         |
 | `lsdsk info`                     | Version, homepage and the metadata a bug report needs                                              |
+| `lsdsk logdemo`                  | One line at each log level, to preview how logging is configured                                   |
+| `lsdsk fail`                     | Raises on purpose, so a caller can see what this tool does when it breaks                          |
+
+The last two answer nothing about your disks. `logdemo` previews the logging
+configuration and `fail` exists so the error path can be exercised through the
+real entry point; both are listed because `lsdsk --help` offers them and a
+reader who meets one there should find it here.
 
 A bare `lsdsk` decides between the two by whether both stdin and stdout are
 terminals, because something has to press `q`. `lsdsk tui` asks for the
@@ -54,6 +61,7 @@ how to ask for the rest.
 | `--env-file FILE`                                         | Read that `.env` rather than searching upward from the working directory |
 | `--traceback` / `--no-traceback`                          | Print the Python traceback on an error instead of one line               |
 | `--version`                                               | Print the version and exit                                               |
+| `--help` / `-h`                                           | Print that command's own options and exit                                |
 
 `lsdsk disks` takes one option of its own. The `wwn` column is held to
 `display.wwn_width` characters, because an NVMe WWN is five times the length of
@@ -66,6 +74,10 @@ than the terminal rather than buying the width from the columns beside it, so
 the row runs off the side and a pager scrolls it (`lsdsk disks --full-wwn |
 less -S`). The JSON envelope always carries every WWN in full, whatever the
 human view was asked for.
+
+`lsdsk snapshot` needs somewhere to write: `-o FILE`, spelled `--output FILE`
+in full. `lsdsk logdemo` takes `--theme classic|dark|neon|pastel`, which picks
+which of the shipped logging themes the preview renders in.
 
 `--format json` gives a machine-readable envelope naming the command that
 produced it, on every command that produces data except `report`, whose

@@ -128,13 +128,17 @@ needs, and a verdict. A free port is named, and a card leaving bandwidth unused
 is named with the figure, so a swap is obvious before you open the case.
 
 ```
-MSI MEG Z690 ACE (MS-7D27)   18 ports   3 free
-   port          slot  capable              running             occupant                        needs               verdict
-   0000:00:01.0  #1    Gen5x8 (31.50 GB/s)  Gen3x8 (7.88 GB/s)  AMD Hawaii XT [Radeon R9 290X]  Gen3x16 (15.76 GB/s)  in use (graphics)
-   0000:00:01.1  #2    Gen5x8 (31.50 GB/s)  Gen2x8 (4.00 GB/s)  Intel 82599ES 10G SFI/SFP+      Gen2x8 (4.00 GB/s)    spare 27.50 GB/s
-   0000:00:1d.0  #12   Gen3x4 (3.94 GB/s)   Gen3x4 (3.94 GB/s)  Samsung 980 PRO 2TB             Gen4x4 (7.88 GB/s)    port limits it
-   0000:00:1c.0  #0    Gen3x1 (0.98 GB/s)   -                   empty                           -                     FREE
+Micro-Star International Co., Ltd. MEG Z690 ACE (MS-7D27)   18 ports   3 free
+      port          slot  capable              running             occupant                                                                             needs                 verdict
+   0000:00:01.0  #1    Gen5x8 (31.50 GB/s)  Gen3x8 (7.88 GB/s)  Advanced Micro Devices, Inc. [AMD/ATI] Hawaii XT / Grenada XT [Radeon R9 290X/390X]  Gen3x16 (15.76 GB/s)  in use (graphics)
+   0000:00:01.1  #2    Gen5x8 (31.50 GB/s)  Gen2x8 (4.00 GB/s)  Intel Corporation 82599ES 10-Gigabit SFI/SFP+ Network Connection                     Gen2x8 (4.00 GB/s)    spare 27.50 GB/s
+   0000:00:1c.0  #0    Gen3x1 (0.98 GB/s)   -                   empty                                                                                -                     FREE
+   0000:00:1d.0  #12   Gen3x4 (3.94 GB/s)   Gen3x4 (3.94 GB/s)  Samsung Electronics Co Ltd NVMe SSD Controller PM9A1/PM9A3/980PRO                    Gen4x4 (7.88 GB/s)    port limits it
 ```
+
+Four of that board's eighteen ports, at a terminal wide enough to keep the
+bandwidths. An occupant is named by the PCI database rather than by the label on
+the part, so it reads as the vendor and device the hardware reports itself as.
 
 It does not say whether a port is an M.2 socket or a card slot, and that is
 deliberate. The firmware slot table is the only thing carrying form factor, and
