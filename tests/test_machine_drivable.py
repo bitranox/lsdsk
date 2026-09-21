@@ -20,6 +20,9 @@ if TYPE_CHECKING:
 
     from click.testing import CliRunner
 
+    from lsdsk.adapters.config.history import HistorySettings
+    from lsdsk.adapters.config.tunables import DisplaySettings
+
 # Commands with no data to structure: an interactive app, and the two template
 # vehicles the traceback and logging tests drive through the real entry point.
 # `report` is the whole page for a reader; a machine asking for the same machine
@@ -306,12 +309,22 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
     The terminal is patched rather than injected because it IS the external edge
     here - there is no seam to substitute, the question is literally what the
     operating system says about the file descriptor.
+
+    Everything else this router calls is the project's own, and each arrives
+    through a keyword parameter rather than being substituted by name. That is
+    not tidiness: the string-path version of this test asserted only THAT the
+    app was constructed, so it could not see that the construction omitted the
+    configured thresholds, and that defect shipped. Injection puts the call's
+    arguments in the test's hands.
     """
     import contextlib
     import sys as _sys
 
     from lsdsk.adapters.cli.commands import scan
     from lsdsk.adapters.cli.commands.history import HistoryRead
+    from lsdsk.adapters.cli.commands.scan import Analysis
+    from lsdsk.domain.history import History
+    from lsdsk.domain.thresholds import Thresholds
 
     # The logging runtime is a real external edge and refuses to bind
     # without an init() the CLI entry point normally performs.
@@ -320,52 +333,89 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
 
     monkeypatch.setattr("lib_log_rich.runtime.bind", no_binding)
 
-    from lsdsk.domain.history import History
-    from lsdsk.domain.models import Finding, Inventory
+    from lsdsk.domain.models import Inventory
 
     machine = Inventory(hostname="probe")
     # The real NamedTuple, not a stand-in with the fields this test happens to
     # need: a hand-built double keeps answering after the type grows a field,
     # so the code under test reads an attribute nobody gave it.
     read = HistoryRead(History(hostname="probe"), writable=False)
+    # Not the shipped figures: every one differs, so a call site that dropped
+    # the argument and fell back to the defaults cannot pass by coincidence.
+    configured = Thresholds(wear_warning_percent=11, wear_critical_percent=22, crc_errors_significant=33)
     called: list[str] = []
+    judged_by: list[Thresholds] = []
 
-    def note_report(*_args: object, **_kwargs: object) -> None:
+    # Each double carries the seam's own parameter NAMES, which is not a style
+    # choice: the Protocol checks them, so a double that drifts from the real
+    # signature is a type error here rather than a test that quietly stopped
+    # standing in for the thing it replaces.
+    def note_report(
+        replay: Path | None,
+        *,
+        settings: HistorySettings | None = None,
+        thresholds: Thresholds = configured,
+        display: DisplaySettings | None = None,
+    ) -> None:
+        del replay, settings, display
         called.append("report")
+        judged_by.append(thresholds)
 
-    def give_inventory(*_args: object, **_kwargs: object) -> tuple[Inventory, list[Finding]]:
-        return machine, []
+    def give_inventory(
+        replay: Path | None,
+        output_format: object,
+        settings: HistorySettings,
+        thresholds: Thresholds = configured,
+    ) -> Analysis:
+        del replay, output_format, settings, thresholds
+        return Analysis(machine, ())
 
-    def give_history(*_args: object, **_kwargs: object) -> HistoryRead:
+    def give_history(inventory: Inventory, settings: HistorySettings) -> HistoryRead:
+        del inventory, settings
         return read
 
     class StubApp:
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
+        def __init__(
+            self,
+            inventory: Inventory,
+            history: History | None = None,
+            *,
+            display: DisplaySettings | None = None,
+            store_refusal: str | None = None,
+            thresholds: Thresholds,
+        ) -> None:
+            del inventory, history, display, store_refusal
             called.append("tui")
+            judged_by.append(thresholds)
 
         def run(self) -> None:
             """The real one blocks on the terminal; this test is about which ran."""
 
     monkeypatch.setattr(_sys.stdout, "isatty", lambda: stdout_tty, raising=False)
     monkeypatch.setattr(_sys.stdin, "isatty", lambda: stdin_tty, raising=False)
-    monkeypatch.setattr(scan, "run_default_report", note_report)
-    monkeypatch.setattr("lsdsk.adapters.tui.LsdskApp", StubApp)
-    # analyse and read_history are imported inside the function, so they are
-    # attributes of their defining module rather than of scan.
-    monkeypatch.setattr("lsdsk.adapters.cli.commands.history.analyse", give_inventory)
-    monkeypatch.setattr("lsdsk.adapters.cli.commands.history.read_history", give_history)
+
+    seams = scan.Collaborators(
+        report=note_report,
+        open_view=StubApp,
+        analyse=give_inventory,
+        read_history=give_history,
+    )
 
     if expect == "tui":
         # The CODE is the claim. SystemExit's message here is the string "0",
         # so a match= would pin the OS's rendering of a success exit rather
         # than the fact that the TUI path left cleanly.
         with pytest.raises(SystemExit) as departure:
-            scan.run_default_view(None)
+            scan.run_default_view(None, thresholds=configured, seams=seams)
         assert departure.value.code == 0, departure.value
     else:
-        scan.run_default_view(None)
+        scan.run_default_view(None, thresholds=configured, seams=seams)
 
     assert called == [expect], f"expected the {expect} path, got {called}"
+    # Both arms: the configured values have to reach whichever half ran, or the
+    # findings page and the verdict banner grade against the shipped defaults
+    # while the panes beside them colour against the file.
+    assert judged_by == [configured], f"the {expect} path was handed {judged_by}, not the configured thresholds"
 
 
 @pytest.mark.os_agnostic

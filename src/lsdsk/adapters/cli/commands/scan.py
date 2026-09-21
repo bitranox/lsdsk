@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, Protocol
 
 import lib_log_rich.runtime
 import rich_click as click
@@ -55,6 +55,9 @@ from ..typed_click import option
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from lsdsk.adapters.history.store import HistoryRead
+    from lsdsk.domain.history import History
 
 logger = logging.getLogger(__name__)
 
@@ -554,12 +557,120 @@ def emit_json(inventory: Inventory, findings: Sequence[Finding], command: CliCom
     safe_console.echo(envelope.model_dump_json(indent=2))
 
 
+def somebody_is_sitting_at_it() -> bool:
+    """Answer whether a full-screen view has a terminal to open on.
+
+    BOTH ends, not just the output one: Textual reads key events from stdin, so
+    ``lsdsk < /dev/null`` would otherwise open a view nobody can quit.
+
+    One function rather than the same condition written at each of its two call
+    sites, which is how a change to one of them would go unnoticed. It is also
+    the one external edge in this router - the question is literally what the
+    operating system says about a file descriptor - so it is the thing a test
+    substitutes, where everything between it and the app is this project's own.
+
+    Returns:
+        True when both standard streams are terminals.
+    """
+    return sys.stdout.isatty() and sys.stdin.isatty()
+
+
+class InteractiveView(Protocol):
+    """What this module needs of the interactive view: that it can be opened."""
+
+    def run(self) -> None:
+        """Take over the terminal until the reader leaves it."""
+
+
+class OpensTheInteractiveView(Protocol):
+    """Build the interactive view around one already-collected machine.
+
+    Declared with ``thresholds`` and NO default, which is the whole point of
+    naming this seam: the app's own constructor defaults that argument, so a
+    call site that forgets it silently grades its findings and its verdict
+    banner against the shipped figures while the panes beside them colour
+    against the configured ones, and the exit code from the same invocation can
+    disagree with the screen. Spelling the seam this way makes the omission a
+    type error rather than something a test has to go looking for - and a test
+    cannot see it at all where the app is substituted by name.
+    """
+
+    def __call__(
+        self,
+        inventory: Inventory,
+        history: History | None,
+        *,
+        display: DisplaySettings,
+        store_refusal: str | None,
+        thresholds: Thresholds,
+    ) -> InteractiveView:
+        """Return the view, built but not yet opened."""
+        ...
+
+
+class PrintsThePage(Protocol):
+    """Render the whole machine as text, the way a bare run does off a terminal."""
+
+    def __call__(
+        self,
+        replay: Path | None,
+        *,
+        settings: HistorySettings | None = ...,
+        thresholds: Thresholds = ...,
+        display: DisplaySettings | None = ...,
+    ) -> None:
+        """Print the page and raise the exit the findings imply."""
+
+
+class ReadsTheMachine(Protocol):
+    """Read a machine or a replay and judge it, returning both halves."""
+
+    def __call__(
+        self,
+        replay: Path | None,
+        output_format: OutputFormat,
+        settings: HistorySettings,
+        thresholds: Thresholds = ...,
+    ) -> Analysis:
+        """Return the inventory and what the rules made of it."""
+        ...
+
+
+class ReadsTheHistory(Protocol):
+    """Load this machine's recorded counter history."""
+
+    def __call__(self, inventory: Inventory, settings: HistorySettings) -> HistoryRead:
+        """Return the history and whether the store can be written."""
+        ...
+
+
+class Collaborators(NamedTuple):
+    """The four functions the default view calls, as one named group.
+
+    Bundled rather than threaded separately for two reasons. Four more
+    parameters would take ``run_default_view`` to nine, past the width this
+    project holds its own signatures to; and they are always substituted
+    together, so passing them apart is the one place they could go out of step.
+
+    They exist so a test can drive the router without substituting a module
+    attribute by string path. That is not tidiness: the string-path version
+    could only assert THAT the app was built, so it could not see that the
+    construction omitted the configured thresholds, and that defect shipped.
+    """
+
+    report: PrintsThePage
+    open_view: OpensTheInteractiveView
+    analyse: ReadsTheMachine
+    read_history: ReadsTheHistory
+
+
 def run_default_view(
     replay: Path | None,
     *,
     settings: HistorySettings | None = None,
     thresholds: Thresholds = DEFAULT_THRESHOLDS,
     display: DisplaySettings | None = None,
+    seams: Collaborators | None = None,
 ) -> None:
     """Open the interactive view, or print the page when nothing can be typed at.
 
@@ -585,6 +696,8 @@ def run_default_view(
         settings: How counter history behaves for this run.
         thresholds: The values the rules judge by.
         display: The values the layout uses.
+        seams: The four functions this router calls, for a test that needs to
+            watch the calls. The real ones when it is not given.
 
     Raises:
         SystemExit: Always, carrying the exit code the findings imply.
@@ -598,21 +711,38 @@ def run_default_view(
     # notebook job hung for 900 seconds waiting for a keypress that had no
     # keyboard behind it. `script`, expect and pty-allocating job runners look
     # the same. That is what `lsdsk report` is for.
-    if not (sys.stdout.isatty() and sys.stdin.isatty()):
-        run_default_report(replay, settings=settings, thresholds=thresholds, display=display)
+    if not somebody_is_sitting_at_it():
+        page = seams.report if seams is not None else run_default_report
+        page(replay, settings=settings, thresholds=thresholds, display=display)
         return
 
-    from .history import analyse, read_history  # noqa: PLC0415 - deferred: history imports this module
-
+    called = seams if seams is not None else _the_real_collaborators()
     resolved = settings if settings is not None else get_history_settings(Config({}, {}))
     laid_out = display if display is not None else DisplaySettings()
     with lib_log_rich.runtime.bind(job_id="cli-tui", extra={"command": "tui"}):
-        inventory, findings = analyse(replay, OutputFormat.HUMAN, resolved, thresholds)
-        from lsdsk.adapters.tui import LsdskApp  # noqa: PLC0415 - keeps textual off the fast path
-
-        read = read_history(inventory, resolved)
-        LsdskApp(inventory, read.history, display=laid_out, store_refusal=read.refusal).run()
+        inventory, findings = called.analyse(replay, OutputFormat.HUMAN, resolved, thresholds)
+        read = called.read_history(inventory, resolved)
+        called.open_view(
+            inventory,
+            read.history,
+            display=laid_out,
+            store_refusal=read.refusal,
+            thresholds=thresholds,
+        ).run()
         raise SystemExit(exit_code_for(findings))
+
+
+def _the_real_collaborators() -> Collaborators:
+    """Resolve the production functions, deferring both imports as before.
+
+    Returns:
+        The four this module reaches for when nothing was substituted.
+    """
+    from lsdsk.adapters.tui import LsdskApp  # noqa: PLC0415 - keeps textual off the fast path
+
+    from .history import analyse, read_history  # noqa: PLC0415 - deferred: history imports this module
+
+    return Collaborators(report=run_default_report, open_view=LsdskApp, analyse=analyse, read_history=read_history)
 
 
 def _refuse_a_format_this_command_has_no_form_of(output_format: OutputFormat | None, *, instead: str) -> None:
@@ -967,7 +1097,7 @@ def cli_tui(
         # events from stdin, so a view opened where nothing can press q never
         # returns. Measured before this: `lsdsk tui </dev/null` ran until it was
         # killed, with 48 KB of escape sequences on stderr and nothing on stdout.
-        if not (sys.stdout.isatty() and sys.stdin.isatty()):
+        if not somebody_is_sitting_at_it():
             fail(
                 "The interactive view needs a terminal on both stdin and stdout, and this run has neither.",
                 ExitCode.INVALID_ARGUMENT,
@@ -978,6 +1108,13 @@ def cli_tui(
         # always prose for the person in front of it.
         inventory = load_inventory(effective_replay(ctx, replay), output_format=OutputFormat.HUMAN)
         from lsdsk.adapters.tui import LsdskApp  # noqa: PLC0415 - keeps textual off the fast path
+
+        # Through the seam rather than the class, so this construction is held
+        # to the same rule the bare-run one is: the seam declares thresholds
+        # with no default, and forgetting it here would grade the findings page
+        # against the shipped figures while the panes beside it use the
+        # configured ones.
+        open_view: OpensTheInteractiveView = LsdskApp
 
         # Without this the Trend page always says nothing has been recorded and
         # the Health page loses every rising mark, on a machine whose history is
@@ -990,7 +1127,7 @@ def cli_tui(
         # the same key the file sets rather than beside it.
         thresholds, laid_out = resolve_tunables(ctx)
         display = laid_out.with_changes(expand_virtual=effective_expand_virtual(ctx, expand_virtual))
-        LsdskApp(
+        open_view(
             inventory,
             read.history,
             display=display,
@@ -1082,6 +1219,12 @@ def cli_snapshot(ctx: click.Context, output: Path, output_format: OutputFormat) 
 
 __all__ = [
     "Analysis",
+    "Collaborators",
+    "InteractiveView",
+    "OpensTheInteractiveView",
+    "PrintsThePage",
+    "ReadsTheHistory",
+    "ReadsTheMachine",
     "build_envelope",
     "cli_controllers",
     "cli_disks",
@@ -1104,4 +1247,5 @@ __all__ = [
     "resolve_tunables",
     "run_default_report",
     "run_default_view",
+    "somebody_is_sitting_at_it",
 ]

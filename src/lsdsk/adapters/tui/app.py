@@ -354,7 +354,7 @@ class LsdskApp(App[None]):
         self.thresholds = thresholds
         self.history: History = history if history is not None else History(hostname=inventory.hostname)
         self.store_refusal = store_refusal
-        self.findings: tuple[Finding, ...] = diagnose(inventory, history=history)
+        self.findings: tuple[Finding, ...] = diagnose(inventory, history=history, thresholds=self.thresholds)
         #: The uncut WWN of each listed drive, by row key. The cell is clipped
         #: to the column width, so the whole of it has to be kept somewhere for
         #: the strip to show; reading it back off the cell would only return
@@ -1010,7 +1010,7 @@ class LsdskApp(App[None]):
         The history goes back in as well, or a rescan would quietly drop the
         escalation and de-escalation the first diagnosis had applied.
         """
-        self.findings = diagnose(self.inventory, history=self.history)
+        self.findings = diagnose(self.inventory, history=self.history, thresholds=self.thresholds)
         self.query_one("#verdict", Static).update(self.verdict_line())
         self._fill_findings()
         self._refill_tree()

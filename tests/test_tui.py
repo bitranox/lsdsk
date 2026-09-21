@@ -9,7 +9,7 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from rich.console import Console
@@ -35,6 +35,12 @@ from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import Align
 from lsdsk.domain.history import DiskSeries, History, Sample, identity_of
 from lsdsk.domain.models import Inventory, PciNode
+from lsdsk.domain.thresholds import Thresholds
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from click.testing import CliRunner
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
 
@@ -562,30 +568,56 @@ def _history_for(machine: Inventory) -> Any:
 
 
 @pytest.mark.os_agnostic
-def test_the_tui_command_hands_the_app_the_recorded_history() -> None:
-    """The app has always accepted history; the command never passed any.
+def test_the_tui_command_hands_the_app_the_recorded_history_and_the_configured_thresholds(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """What `lsdsk tui` hands the app, read off the real invocation.
 
-    Structural rather than behavioural because launching the real TUI from a
-    test would drive a terminal. The defect was pure wiring: every other view
-    read the store first, and this one built ``LsdskApp(inventory)``, so the
-    Trend page said "nothing recorded" on a machine whose history was on disk.
+    The defect this began as was pure wiring: every other view read the store
+    first and this one built ``LsdskApp(inventory)``, so the Trend page said
+    "nothing recorded" on a machine whose history was on disk. It was guarded
+    by walking the callback's AST for a call named ``LsdskApp``, which stopped
+    asserting anything the moment the construction went through a named seam
+    instead - a guard keyed on a spelling rather than on what reaches the app.
+
+    Driven through the real command instead, with the app itself substituted
+    because opening it takes over the terminal. That is the external edge here;
+    everything between the command and it is this project's own and runs for
+    real.
     """
-    import ast
-    import inspect
-
+    from lsdsk.adapters.cli import cli
     from lsdsk.adapters.cli.commands import scan
+    from lsdsk.domain.history import History
 
-    # cli_tui is a rich-click Command object; the function is its callback.
-    callback = scan.cli_tui.callback
-    assert callback is not None, "cli_tui has no callback, so this asserted nothing"
-    source = inspect.getsource(callback)
-    tree = ast.parse(source.lstrip())
-    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
-    names = {node.func.id for node in calls if isinstance(node.func, ast.Name)}
-    assert "read_history" in names, "cli_tui does not read the history store"
-    app_calls = [node for node in calls if isinstance(node.func, ast.Name) and node.func.id == "LsdskApp"]
-    assert app_calls, "cli_tui no longer builds the app"
-    assert len(app_calls[0].args) >= 2, "LsdskApp is built without history"
+    handed: dict[str, Any] = {}
+
+    class RecordingApp:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            handed["args"] = args
+            handed["kwargs"] = kwargs
+
+        def run(self) -> None:
+            """The real one blocks on the terminal."""
+
+    # The CliRunner installs its own streams inside invoke(), so patching this
+    # process's are not the ones the command asks. The predicate is the edge.
+    monkeypatch.setattr(scan, "somebody_is_sitting_at_it", lambda: True)
+    monkeypatch.setattr("lsdsk.adapters.tui.LsdskApp", RecordingApp)
+
+    result = cli_runner.invoke(
+        cli,
+        ["--set", "thresholds.wear_warning_percent=7", "tui", "--replay", str(FIXTURE)],
+        obj=production_factory,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert handed, "`lsdsk tui` never built the app"
+    assert isinstance(handed["args"][1], History), "the app is built without the recorded history"
+    passed = handed["kwargs"].get("thresholds")
+    assert passed is not None, "`lsdsk tui` builds the app without thresholds"
+    assert passed.wear_warning_percent == 7, f"the configured threshold did not reach the app: {passed}"
 
 
 @pytest.mark.os_agnostic
@@ -1565,3 +1597,49 @@ def test_only_one_place_turns_the_active_pane_id_into_a_page() -> None:
                 built_in.append(function.name)
 
     assert built_in == ["_active_page"], f"the active id becomes a page in {built_in}"
+
+
+@pytest.mark.os_agnostic
+def test_the_interactive_view_grades_its_findings_by_the_configured_thresholds() -> None:
+    """The findings the app carries are the configured ones, not the shipped ones.
+
+    Every pane that COLOURS a cell already read the configured figures, so a
+    view that diagnosed against the defaults put two judgements of one machine
+    on one screen: the health cell marked a drive and the findings page beside
+    it did not, and the exit code the same invocation returned agreed with
+    neither. Asserting on the app's own findings is what makes that visible;
+    asserting that the app was constructed cannot see it at all.
+    """
+    machine = inventory()
+    lenient = diagnose(machine)
+    severe = Thresholds(wear_warning_percent=1, wear_critical_percent=2)
+    # The control: these thresholds have to make a DIFFERENCE on this capture,
+    # or an app that ignored them entirely would still satisfy the assertion.
+    assert diagnose(machine, thresholds=severe) != lenient, "the fixture cannot tell the two gradings apart"
+
+    app = LsdskApp(machine, thresholds=severe)
+
+    assert app.findings == diagnose(machine, thresholds=severe), "the view diagnosed against the shipped defaults"
+    assert app.findings != lenient, "the view's findings are the default grading"
+
+
+@pytest.mark.asyncio
+@pytest.mark.os_agnostic
+async def test_a_rescan_keeps_grading_by_the_configured_thresholds() -> None:
+    """A rescan re-diagnoses, and it has to re-read the same figures the first pass did.
+
+    The rescan builds its findings in its own statement rather than reusing the
+    one that ran at mount, so it is a second place the thresholds can be
+    dropped, and dropping them there is invisible until somebody presses the
+    key.
+    """
+    machine = inventory()
+    severe = Thresholds(wear_warning_percent=1, wear_critical_percent=2)
+    expected = diagnose(machine, thresholds=severe)
+    assert expected != diagnose(machine), "the fixture cannot tell the two gradings apart"
+
+    app = LsdskApp(machine, thresholds=severe)
+    async with app.run_test(size=(180, 50)) as pilot:
+        await pilot.press("f9")
+        await pilot.pause()
+        assert app.findings == expected, "the rescan re-graded against the shipped defaults"
