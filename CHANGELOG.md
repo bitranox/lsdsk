@@ -441,6 +441,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **The suite renders the same way on a runner as it does here.** Two tests read
+  text the tool had rendered and compared it against a plain phrase, which holds
+  only while nothing colours the output. A GitHub runner is terminal-compatible
+  by rich's own test and a developer's pytest run is not, so both passed locally
+  and failed in CI, and the failure named neither cause: the wrapped-refusal
+  control could not rejoin a phrase whose halves were separated by a styled
+  border, and the structured-mode sweep found no `--format` in any of the
+  fourteen commands that have one. The suite now pins the terminal-compatibility
+  variables alongside the colour ones it already pinned, and the helper that
+  recovers prose from a panel strips the escapes as well as the border.
+
 - **The documents describe the command line the tool actually has.** `lsdsk
   --help` offers eighteen commands and the command reference documented sixteen
   of them while opening with the words "every command, every global option":

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -97,8 +98,12 @@ def test_when_set_override_has_nested_key_it_works(
     assert "8192" in result.stdout
 
 
+#: A CSI escape sequence, which a coloured panel interleaves with its border.
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
 def _panel_prose(rendered: str) -> str:
-    """The prose of a rich-click error panel, freed of the box that wraps it.
+    r"""The prose of a rich-click error panel, freed of the box that wraps it.
 
     The panel is drawn to the console width, and a phrase that does not fit is
     split across two of its lines - with a border glyph and a run of padding
@@ -111,8 +116,15 @@ def _panel_prose(rendered: str) -> str:
     The suite deletes ``COLUMNS`` for isolation, so no ordinary test here can
     meet a narrow console. The one below sets it back for its own invocation and
     is the only place this helper is shown doing anything.
+
+    The escapes come out first, and that half was missing. A coloured panel puts
+    a styled border between the halves of a split phrase, so removing the border
+    glyph alone leaves ``must \x1b[31m \x1b[0m contain '='`` - still not the
+    phrase. Locally nothing colours a captured run and the helper looked whole;
+    on a GitHub runner every rendered panel carries the escapes, which is where
+    this failed and nowhere else.
     """
-    return " ".join(rendered.replace("\u2502", " ").split())
+    return " ".join(_ANSI.sub("", rendered).replace("\u2502", " ").split())
 
 
 @pytest.mark.os_agnostic

@@ -110,7 +110,28 @@ def this_machine_cannot_reach_into_the_suite(
     # that gate's negative half passing vacuously. COLUMNS and LINES go too,
     # because a layout measured against the developer's terminal is not one the
     # suite chose.
-    for chosen_elsewhere in ("FORCE_COLOR", "NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE", "COLUMNS", "LINES"):
+    # TTY_COMPATIBLE is the same decision reached by a different door, and it is
+    # the one the runner walks through: rich reads it in `Console.is_terminal`
+    # ahead of any isatty call, and a GitHub runner is a terminal by that test
+    # while a developer's pytest run is not. So the suite rendered one way here
+    # and another way in CI, and two tests that read rendered text failed there
+    # and nowhere else - the refusal-wrapping control, whose panel gained the
+    # escapes its helper strips no border for, and the structured-mode sweep,
+    # which shells out for `--help` and then finds no `--format` in any of the
+    # fourteen commands that have one. Measured 2026-09-21: GITHUB_ACTIONS=true
+    # alone reproduces both on this machine, TTY_COMPATIBLE=1 alone does too,
+    # and CI=true alone does neither.
+    for chosen_elsewhere in (
+        "FORCE_COLOR",
+        "NO_COLOR",
+        "CLICOLOR",
+        "CLICOLOR_FORCE",
+        "COLUMNS",
+        "LINES",
+        "TTY_COMPATIBLE",
+        "GITHUB_ACTIONS",
+        "CI",
+    ):
         monkeypatch.delenv(chosen_elsewhere, raising=False)
 
 
