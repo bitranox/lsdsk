@@ -21,7 +21,7 @@ System Role:
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, Any, cast
 
 from ...domain.base import DomainModel
@@ -89,6 +89,13 @@ def rendered(value: object) -> str:
     A string is shown bare, because that is how they typed it after the ``=``;
     anything else gets its repr, so a table or a number is unmistakable.
 
+    A path is the exception, and it reaches here as the location that ended up in
+    force rather than as something the reader typed. Its repr names the class -
+    ``PosixPath('/var/x')`` - so the warning told a reader to look for a file by
+    a name no filesystem has. Only Windows caught it: the assertion compared
+    ``str(path)`` against the rendered text and passed everywhere the repr
+    happened to contain it, which stops being true once the separators differ.
+
     Args:
         value: The value as the configuration layer handed it over.
 
@@ -98,8 +105,15 @@ def rendered(value: object) -> str:
     Example:
         >>> rendered("abc"), rendered(3), rendered({})
         ('abc', '3', '{}')
+        >>> from pathlib import PurePosixPath
+        >>> rendered(PurePosixPath("/var/lib/lsdsk/history.json"))
+        '/var/lib/lsdsk/history.json'
     """
-    return value if isinstance(value, str) else repr(value)
+    if isinstance(value, str):
+        return value
+    if isinstance(value, PurePath):
+        return str(value)
+    return repr(value)
 
 
 #: The largest magnitude a configured number may carry.

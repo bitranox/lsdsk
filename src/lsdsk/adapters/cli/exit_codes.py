@@ -194,6 +194,14 @@ def code_for_an_unhandled_exception(exc: BaseException) -> int:
     resolves to, and only an exception the resolver could not place at all
     becomes :attr:`ExitCode.SOFTWARE_ERROR`.
 
+    A departed reader is taken out first, because on Windows it arrives as an
+    ``OSError`` this would otherwise take at its word. Writing to a closed pipe
+    reports ``EINVAL`` there rather than ``EPIPE``, click catches only ``EPIPE``
+    in its own printer, and the resolver then passes the errno through as 22 -
+    which :func:`outranks_a_departed_reader` says stands, so ``lsdsk --help |
+    head -1`` left 22 on Windows where every other platform leaves 141. The
+    Windows-only acceptance lives in :func:`~.safe_console.is_broken_pipe`.
+
     Args:
         exc: The exception that reached the last-resort handler.
 
@@ -206,6 +214,10 @@ def code_for_an_unhandled_exception(exc: BaseException) -> int:
         >>> code_for_an_unhandled_exception(KeyboardInterrupt())
         130
     """
+    from .safe_console import is_broken_pipe  # noqa: PLC0415 - import cycle: safe_console reads this module's codes
+
+    if is_broken_pipe(exc):
+        return int(ExitCode.BROKEN_PIPE)
     code = lib_cli_exit_tools.get_system_exit_code(exc)
     if code != int(ExitCode.GENERAL_ERROR) or isinstance(exc, OSError):
         return code

@@ -441,6 +441,28 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A refused path is named, not repr'd.** `rendered` gave every non-string its
+  repr, so the warning that says which location is in force reported
+  `PosixPath('/var/lib/lsdsk/history.json')` - a name no filesystem has. It was
+  invisible on POSIX because the assertion checked that `str(path)` appeared in
+  the rendered text and a repr contains it; on Windows the separators differ,
+  so only that platform ever failed. A path renders as itself now.
+
+- **A reader that leaves during `--help` leaves 141 on Windows too.** Writing to
+  a closed pipe reports `EINVAL` there rather than `EPIPE`, click catches only
+  `EPIPE` in its own printer, and the errno was then passed through as `22` -
+  which legitimately outranks a departed reader, so it stood. `lsdsk --help |
+  head -1` left `22` on Windows where every other platform leaves `141`. A
+  recognised broken pipe is taken out before the errno is read, using the
+  Windows-only acceptance that already existed.
+
+- **A wrong-case profile is only missing where the filesystem says so.** The arm
+  asserting that `--profile PROD` finds nothing asserted the platform rather
+  than the code: macOS's default volume opens the `prod` directory for it, so
+  the profile really did contribute and there was correctly nothing to warn
+  about. It probes the volume now rather than the platform name, since either
+  can be either.
+
 - **Four test files seeded a configuration home only Linux reads.** They set
   `XDG_CONFIG_HOME` while carrying `os_posix`, which includes macOS, where the
   loader reads `~/Library/Application Support` instead. So the seeded file was

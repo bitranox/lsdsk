@@ -64,12 +64,42 @@ def test_the_real_profile_is_what_the_fixture_says_it_is(config_root: Path) -> N
     assert get_config(profile="prodd").get(SETTING) != PROFILE_VALUE
 
 
+def _tells_names_apart_by_case(directory: Path) -> bool:
+    """Whether THIS filesystem distinguishes two names that differ only in case.
+
+    Probed rather than taken from the platform, because it is a property of the
+    VOLUME: macOS is case-insensitive by default and case-sensitive if the
+    volume was formatted that way, and a Linux mount can be either.
+
+    Args:
+        directory: A writable directory to make the probe in.
+
+    Returns:
+        Whether the upper-case spelling resolves to something else.
+    """
+    probe = directory / "case-probe"
+    probe.mkdir(exist_ok=True)
+    return not (directory / "CASE-PROBE").exists()
+
+
 @pytest.mark.os_posix
 @pytest.mark.parametrize("typed", ["prodd", "PROD"])
 def test_a_profile_nothing_answered_to_is_reported(
-    typed: str, config_root: Path, cli_runner: CliRunner, production_factory: Callable[[], Any]
+    typed: str,
+    config_root: Path,
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
 ) -> None:
-    """A near miss and a wrong case, which both read as a working run today."""
+    """A near miss and a wrong case, which both read as a working run today.
+
+    The wrong-case arm asks the filesystem a question only a case-sensitive one
+    answers. On macOS's default volume ``PROD`` opens the ``prod`` directory, so
+    the profile really did contribute and there is correctly nothing to warn
+    about - the arm was asserting the platform, not the code.
+    """
+    if typed == "PROD" and not _tells_names_apart_by_case(tmp_path):
+        pytest.skip("this filesystem opens prod for PROD, so that profile is found rather than missed")
     del config_root
     result = cli_runner.invoke(cli, ["--profile", typed, "config"], obj=production_factory)
     warned = " ".join((result.stderr or "").split())
