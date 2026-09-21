@@ -77,7 +77,33 @@ Vor dem Öffnen eines Pull Requests:
       Gleichschritt. `make bump-patch` erledigt alle vier;
       `tests/test_metadata_sync.py` schlägt fehl, wenn eines liegen bleibt.
 
-## 6. Sicherheit und Konfiguration
+## 6. Hardware, auf der wir nicht testen können
+
+Drei Aussagen in diesem Werkzeug stützen sich auf Hardware, die hier niemand
+besitzt, und diese Lücke lässt sich nicht durch mehr Code schließen. Wenn Ihnen
+eines dieser Geräte gehört, ist eine Aufzeichnung der ganze Beitrag:
+
+- **Ein Chipsatz, der als PCIe-Switch dient**, unter Linux und unter Windows.
+  Die reduzierten Baumdichten sind gegen vier Aufzeichnungen abgesichert, und
+  keine davon ist eine solche Platine; die Regel, die ein Teil hinter einem
+  Switch von einer im Switch eingebauten Funktion unterscheidet, ist nur in der
+  negativen Richtung gemessen. Je eine Aufzeichnung würde beides klären.
+- **Ein Windows-Rechner mit mehr als einem PCI-Segment.** Der Windows-Leser gibt
+  eine führende `0000` als Segment aus, und nichts fragt Windows danach. Auf
+  einem solchen Rechner teilen sich zwei Geräte dieselbe Adresszeichenkette, und
+  der Baum führt sie zusammen. Das Feld wegzulassen würde ein Format ändern, das
+  jede vorhandene Windows-Aufzeichnung verwendet, und ein ungetestetes Auslesen
+  des Segments würde einen neuen Pfad an genau die Anwender ausliefern, die am
+  wenigsten berichten können, was er getan hat. Deshalb wartet es auf eine
+  Maschine, die zeigen kann, was richtig ist.
+
+Erstellen Sie eine Aufzeichnung mit `lsdsk snapshot -o capture.json`. Sie hält
+fest, was der Kernel oder Windows über Ihre Controller und Laufwerke
+veröffentlicht hat, einschließlich Modell- und Seriennummern. Lesen Sie sie
+also, bevor Sie sie versenden: die Seriennummer eines Laufwerks steht an bis zu
+acht Stellen, und `tests/test_fixture_serials.py` hält fest, an welchen.
+
+## 7. Sicherheit und Konfiguration
 
 - Committen Sie niemals Geheimnisse. Tokens (Codecov, PyPI) gehören in `.env`
   (von git ignoriert) oder in die CI-Secrets.

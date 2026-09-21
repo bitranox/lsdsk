@@ -42,7 +42,30 @@ Before opening a PR, confirm the following:
 - [ ] No generated artefacts or virtual environments are committed.
 - [ ] Version bumps, when required, keep `pyproject.toml`, `CHANGELOG.md`, `src/lsdsk/__init__conf__.py` and `.claude-plugin/plugin.json` in step. `make bump-patch` does all four; `tests/test_metadata_sync.py` fails if one is left behind.
 
-## 6. Security & Configuration
+## 6. Hardware we cannot test on
+
+Three claims in this tool rest on hardware nobody here has, and the gap is not
+something more code can close. If you own one of these, a capture is the whole
+contribution:
+
+- **A chipset used as a PCIe switch**, on Linux and on Windows. The reduced tree
+  densities are asserted against four captures and none of them is such a board,
+  and the rule that tells a part behind a switch from a function built into it
+  is measured in the negative direction only. Both would be settled by one
+  capture of each.
+- **A Windows host with more than one PCI segment.** The Windows reader prints a
+  leading `0000` as the segment and nothing asks Windows for one, so on such a
+  host two devices share an address string and the tree merges them. Dropping
+  the field would change a format every existing Windows capture uses, and an
+  untested segment read would ship a new path to the users least able to report
+  what it did, so it waits for a machine that can show which is right.
+
+Take one with `lsdsk snapshot -o capture.json`. It records what the kernel or
+Windows published about your controllers and drives, including model and serial
+numbers, so read it before sending it: the serial of a drive is recorded in up
+to eight places and `tests/test_fixture_serials.py` documents where.
+
+## 7. Security & Configuration
 
 - Never commit secrets. Tokens (Codecov, PyPI) belong in `.env` (ignored by git) or CI secrets.
 - Logging runs through `lib_log_rich`'s scrubber. Printed configuration gets its own redaction pass in `adapters/config/secrets.py`, which is not on the logging path; add a sensitive-key pattern to whichever of the two covers your case rather than redacting at the call site.
