@@ -518,7 +518,7 @@ def test_listing_the_virtual_devices_fits_the_columns_around_them() -> None:
 @pytest.mark.os_agnostic
 @pytest.mark.parametrize("host", sorted(DENSITY_COUNTS))
 def test_a_reduced_density_draws_no_bridge_that_leads_away_from_storage(host: str) -> None:
-    """ "Storage and the bridges above it" means the bridges ABOVE IT.
+    """The phrase "Storage and the bridges above it" means the bridges ABOVE IT.
 
     Both reduced densities kept every class-06 device in the machine, so the
     view drew the whole bridge skeleton of the board - downstream ports leading

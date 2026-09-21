@@ -102,7 +102,7 @@ def find_pci_ids(search_paths: tuple[str, ...] = PCI_IDS_SEARCH_PATHS) -> Path |
 
 
 def parse_pci_ids(text: str) -> Database:
-    """Parse a ``pci.ids`` database.
+    r"""Parse a ``pci.ids`` database.
 
     The format nests by indentation: an unindented line opens a vendor, one tab
     of indent gives a device under it, and two tabs give a subsystem, which this
@@ -115,7 +115,7 @@ def parse_pci_ids(text: str) -> Database:
         A vendor-name map and a (vendor, device)-name map.
 
     Example:
-        >>> vendors, devices = parse_pci_ids("1000  Broadcom\\n\\t0097  SAS3008\\n")
+        >>> vendors, devices = parse_pci_ids("1000  Broadcom\n\t0097  SAS3008\n")
         >>> vendors[0x1000]
         'Broadcom'
         >>> devices[(0x1000, 0x0097)]

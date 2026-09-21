@@ -97,7 +97,7 @@ def _class_code(entry: PciEntry) -> int | None:
 
 
 def controller_of(ancestry: Sequence[str], pci: Mapping[str, PciEntry]) -> str | None:
-    """Return the nearest PCI device above a disk, which is the controller it hangs off.
+    r"""Return the nearest PCI device above a disk, which is the controller it hangs off.
 
     A disk's parent is a PCI device only when the controller's own driver
     presents the disk. Behind a USB bridge the parent is the mass-storage device,
@@ -115,10 +115,10 @@ def controller_of(ancestry: Sequence[str], pci: Mapping[str, PciEntry]) -> str |
 
     Example:
         >>> from lsdsk.adapters.hw.windows.capture import PciEntry
-        >>> pci = {"PCI\\\\VEN_8086&DEV_7AE0\\\\3": PciEntry()}
-        >>> controller_of(["USBSTOR\\\\DISK\\\\1", "USB\\\\ROOT_HUB30\\\\4", "PCI\\\\VEN_8086&DEV_7AE0\\\\3"], pci)
-        'PCI\\\\VEN_8086&DEV_7AE0\\\\3'
-        >>> controller_of(["ROOT\\\\VHDMP\\\\0000"], pci) is None
+        >>> pci = {"PCI\\VEN_8086&DEV_7AE0\\3": PciEntry()}
+        >>> controller_of(["USBSTOR\\DISK\\1", "USB\\ROOT_HUB30\\4", "PCI\\VEN_8086&DEV_7AE0\\3"], pci)
+        'PCI\\VEN_8086&DEV_7AE0\\3'
+        >>> controller_of(["ROOT\\VHDMP\\0000"], pci) is None
         True
     """
     return next((instance for instance in ancestry if instance in pci), None)

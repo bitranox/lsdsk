@@ -692,8 +692,11 @@ def hop_link_cells(link: PcieLink, *, capability_present: bool | None = None, ba
 
 
 class LinkPair(NamedTuple):
-    """The two styled cells of one link. Named because both fields are a
-    :data:`Cell`, so a type checker cannot catch them being swapped."""
+    """The two styled cells of one link.
+
+    Named because both fields are a :data:`Cell`, so a type checker cannot
+    catch them being swapped.
+    """
 
     running: Cell
     capable: Cell

@@ -42,7 +42,7 @@ def parse_int(text: str | None, base: int = 10) -> int | None:
 
 
 def decode_base64(value: str | None) -> bytes | None:
-    """Decode a binary structure a capture holds as base64.
+    r"""Decode a binary structure a capture holds as base64.
 
     Args:
         value: The recorded blob, or ``None`` when nothing was recorded.
@@ -52,7 +52,7 @@ def decode_base64(value: str | None) -> bytes | None:
 
     Example:
         >>> decode_base64("AAEC")
-        b'\\x00\\x01\\x02'
+        b'\x00\x01\x02'
         >>> decode_base64("not base64!") is None
         True
     """

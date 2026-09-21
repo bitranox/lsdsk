@@ -122,7 +122,7 @@ DUPLICATE_MARK = "#"
 
 
 def _root_bus(address: str) -> str:
-    """Return the root bus label a device address belongs to.
+    r"""Return the root bus label a device address belongs to.
 
     Args:
         address: A PCI address, such as ``0000:03:00.0``, or whatever the
@@ -139,7 +139,7 @@ def _root_bus(address: str) -> str:
         '10000:e1'
         >>> _root_bus("0000:03:00.0#2")
         '0000:03'
-        >>> _root_bus(r"PCI\\VEN_1AF4&DEV_1000\\3&13c0b0c5&0&50")
+        >>> _root_bus(r"PCI\VEN_1AF4&DEV_1000\3&13c0b0c5&0&50")
         'unplaced'
     """
     base = address.partition(DUPLICATE_MARK)[0]

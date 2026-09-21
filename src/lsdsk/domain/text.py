@@ -1,4 +1,4 @@
-"""Make text the hardware chose safe to print, at the value that carries it.
+r"""Make text the hardware chose safe to print, at the value that carries it.
 
 A model, serial, firmware revision, controller name or hostname is chosen by the
 hardware, not by this tool, and a snapshot carries whatever the machine that
@@ -22,7 +22,7 @@ System Role:
     so every layer may depend on it.
 
 Example:
-    >>> device_text("Evil\\x1b[31mDRIVE\\x1b[0m")
+    >>> device_text("Evil\x1b[31mDRIVE\x1b[0m")
     'Evil[31mDRIVE[0m'
 """
 
@@ -41,7 +41,7 @@ __all__ = ["DeviceText", "OptionalDeviceText", "device_text", "first_reported"]
 
 
 def device_text(value: str) -> str:
-    """Strip control characters from a string the hardware chose.
+    r"""Strip control characters from a string the hardware chose.
 
     Args:
         value: Text as the device or a capture reported it.
@@ -51,9 +51,9 @@ def device_text(value: str) -> str:
         trimmed.
 
     Example:
-        >>> device_text("Evil\\x1b[31mDRIVE\\x1b[0m")
+        >>> device_text("Evil\x1b[31mDRIVE\x1b[0m")
         'Evil[31mDRIVE[0m'
-        >>> device_text("two\\nrows")
+        >>> device_text("two\nrows")
         'tworows'
         >>> device_text("  Samsung SSD 860 EVO  ")
         'Samsung SSD 860 EVO'
@@ -62,7 +62,7 @@ def device_text(value: str) -> str:
 
 
 def _clean_optional(value: str | None) -> str | None:
-    """Clean a field that may be absent, leaving absence alone.
+    r"""Clean a field that may be absent, leaving absence alone.
 
     Args:
         value: Text as the device reported it, or ``None`` where it reported
@@ -76,14 +76,14 @@ def _clean_optional(value: str | None) -> str | None:
     Example:
         >>> _clean_optional(None) is None
         True
-        >>> _clean_optional("13.00\\x1b[5m")
+        >>> _clean_optional("13.00\x1b[5m")
         '13.00[5m'
     """
     return None if value is None else device_text(value)
 
 
 def first_reported(*values: str | None) -> str | None:
-    """Return the first of several spellings the machine actually reported.
+    r"""Return the first of several spellings the machine actually reported.
 
     A drive's model, serial and firmware are each published in more than one
     place - a decoded IDENTIFY structure, the platform's own text, sometimes a

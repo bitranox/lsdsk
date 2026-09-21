@@ -175,7 +175,7 @@ def test_fail_command_raises_runtime_error(
     cli_runner: CliRunner,
     production_factory: Callable[[], Any],
 ) -> None:
-    """fail command raises RuntimeError."""
+    """Fail command raises RuntimeError."""
     result: Result = cli_runner.invoke(cli_mod.cli, ["fail"], obj=production_factory)
 
     assert result.exit_code != 0
@@ -187,7 +187,7 @@ def test_info_command_displays_project_metadata(
     cli_runner: CliRunner,
     production_factory: Callable[[], Any],
 ) -> None:
-    """info command displays project name and version."""
+    """Info command displays project name and version."""
     result: Result = cli_runner.invoke(cli_mod.cli, ["info"], obj=production_factory)
 
     assert result.exit_code == 0

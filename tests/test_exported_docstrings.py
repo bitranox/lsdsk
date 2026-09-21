@@ -12,7 +12,8 @@ docstring IS its ``--help`` text: with an ``Args:`` section added to
 ``cli_info``, ``lsdsk info --help`` printed
 
     Print resolved metadata so users can inspect installation details.
-    Args:
+
+Args:
     ctx: The click context carrying the services factory.
     output_format: Whether to print the human table or the JSON envelope.
 
@@ -210,3 +211,63 @@ def test_no_command_docstring_carries_a_google_section_because_it_is_the_help_te
         if section in (ast.get_docstring(node) or "")
     }
     assert not leaked, f"a command's docstring is its --help text, and these carry a Google section: {leaked}"
+
+
+@pytest.mark.os_agnostic
+def test_every_docstring_free_method_in_a_carved_file_is_a_protocol_stub() -> None:
+    """The premise of the D102/D105 carve, checked rather than trusted.
+
+    Three files waive "undocumented public method" in pyproject, and the reason
+    is narrow: a callable Protocol's member is a signature with an ``...`` body,
+    documented by the class above it, so a docstring there is a second copy of
+    the class's. That reason holds only while every exempt site really is such a
+    stub - and an exemption's whole cost, in this repo's own words, is that it
+    blinds the gate to the NEXT violation of the rule it waives.
+
+    So this asks what ruff can no longer ask in those files: a method with no
+    docstring must be declared directly on a Protocol subclass and have a body
+    of exactly ``...``. A real method added to any of them fails here instead.
+
+    The carved files are read from pyproject rather than listed, so adding a
+    fourth cannot slip past this. Patterns are expanded, and only what lands
+    under ``src`` is judged: ``tests/*.py`` waives D102 as well, on a different
+    reason entirely - a test's NAME is its documentation - which is stated at
+    that carve and is not a claim about Protocols.
+    """
+    import tomllib
+
+    root = Path(__file__).resolve().parent.parent
+    with (root / "pyproject.toml").open("rb") as handle:
+        ignores = tomllib.load(handle)["tool"]["ruff"]["lint"]["per-file-ignores"]
+
+    patterns = sorted(path for path, rules in ignores.items() if "D102" in rules or "D105" in rules)
+    assert patterns, "the control: nothing waives D102/D105, so this asserted nothing"
+
+    carved = sorted({module for pattern in patterns for module in root.glob(pattern) if SRC in module.parents})
+    assert carved, f"the control: none of {patterns} expanded to a file under src"
+
+    offenders: list[str] = []
+    checked = 0
+    for module in carved:
+        relative = module.relative_to(root)
+        tree = ast.parse(module.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            on_a_protocol = any(isinstance(base, ast.Name) and base.id == "Protocol" for base in node.bases)
+            for member in node.body:
+                if not isinstance(member, ast.FunctionDef) or ast.get_docstring(member) is not None:
+                    continue
+                checked += 1
+                body = member.body
+                is_stub = (
+                    len(body) == 1
+                    and isinstance(body[0], ast.Expr)
+                    and isinstance(body[0].value, ast.Constant)
+                    and body[0].value.value is Ellipsis
+                )
+                if not (on_a_protocol and is_stub):
+                    offenders.append(f"{relative}:{member.lineno} {node.name}.{member.name}")
+
+    assert checked, "the control: no undocumented method was found, so the carve covers nothing"
+    assert not offenders, f"undocumented and NOT a protocol stub, so the D102 carve does not cover it: {offenders}"

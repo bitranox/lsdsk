@@ -34,7 +34,7 @@ def test_module_entry_executes_cli_and_shows_help(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """python -m invocation with --help shows usage and exits 0."""
+    """Python -m invocation with --help shows usage and exits 0."""
     monkeypatch.setattr(sys, "argv", ["lsdsk", "--help"], raising=False)
 
     with pytest.raises(SystemExit) as exc:

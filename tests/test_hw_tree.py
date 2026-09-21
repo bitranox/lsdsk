@@ -289,8 +289,10 @@ def test_a_domain_wider_than_four_digits_keeps_its_children_under_it() -> None:
 
 @pytest.mark.os_agnostic
 def test_a_device_with_no_pci_address_is_placed_apart_rather_than_on_a_bus() -> None:
-    """Windows publishes no address for some devices; the builder falls back
-    to the instance identifier, which has no bus in it to derive.
+    """Windows publishes no address for some devices.
+
+    The builder falls back to the instance identifier, which has no bus in it
+    to derive.
 
     Splitting one on its last colon produced the empty string, so every such
     device shared one root labelled with nothing at all - a blank line in the

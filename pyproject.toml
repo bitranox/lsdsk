@@ -127,6 +127,7 @@ select = [
   "FBT",         # boolean trap (boolean positional args)
   "PLR",         # pylint refactor
   "PLW",         # pylint warnings
+  "D",           # pydocstyle, under the google convention set below
 ]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -155,15 +156,29 @@ runtime-evaluated-base-classes = [
 # Tests: assert is standard, test fixtures have passwords, magic values are clearer inline, temp paths are fine.
 # PLC0415: local/deferred imports are a deliberate test idiom - several tests import inside the test
 # body to exercise import-time and cache behaviour, so moving them to module top would defeat intent.
-"tests/*.py" = ["T20", "S101", "S105", "S106", "S108", "FBT001", "FBT003", "PLR0913", "PLR0917", "PLR2004", "PLC0415"]
+# D102/D103 ONLY, and only here: a test's NAME is its documentation in this repo -
+# test_an_unread_capability_ranks_last_so_it_never_describes_a_port says more than a
+# summary line would, so requiring one buys a second copy of the name. Measured before
+# the carve: 94 D findings under tests/, 89 of them these two rules. Every other D rule
+# stays live here, so a docstring that IS written is still held to the convention.
+"tests/*.py" = ["T20", "S101", "S105", "S106", "S108", "FBT001", "FBT003", "PLR0913", "PLR0917", "PLR2004", "PLC0415", "D102", "D103"]
 # CLI: Click framework injects boolean params; commands have many options
 "src/lsdsk/adapters/cli/**/*.py" = ["FBT001", "FBT002", "PLR0913"]
 # Win32 bindings: the structures keep the exact names the Windows SDK gives them,
 # so a reader can match this file against the SDK headers and MSDN line for line.
 # Renaming them to CapWords would make that impossible for no gain.
-"src/lsdsk/adapters/hw/windows/winapi.py" = ["N801"]
+"src/lsdsk/adapters/hw/windows/winapi.py" = ["N801", "D102", "D105"]
 # The Windows reader mirrors Win32 call signatures, which are wide by nature.
 "src/lsdsk/adapters/hw/windows/reader.py" = ["PLR0913", "PLR0917"]
+# A callable Protocol's member is documented by the CLASS above it: the stub is
+# a signature with an `...` body and nothing else to say, so a docstring there
+# is a second copy of the class's. D102/D105 only, in the three files that
+# declare Protocols, and the carve is not taken on trust -
+# test_every_docstring_free_method_in_a_carved_file_is_a_protocol_stub proves
+# every exempt site really is one, so a real method added to these files is
+# still caught.
+"src/lsdsk/application/ports.py" = ["PLR0913", "D102"]
+"src/lsdsk/adapters/tui/typed_table.py" = ["D102"]
 # Protocols/adapters: many-param signatures by design
 "src/lsdsk/application/*.py" = ["PLR0913"]
 "src/lsdsk/adapters/config/*.py" = ["PLR0913"]

@@ -67,7 +67,7 @@ class TestTheKernelDecidesWhatIsVirtual:
         assert read_block(sysfs / "block")["sda"].get("virtual") is not True
 
     def test_a_kernel_virtual_device_is_read_rather_than_dropped(self, sysfs: Path) -> None:
-        """zram is RAM, so it reports no transport and no counters, forever.
+        """Zram is RAM, so it reports no transport and no counters, forever.
 
         Dropping it made it disappear from a machine that has it, which reads
         as hardware that is not there rather than as hardware with nothing to

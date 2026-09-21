@@ -707,8 +707,11 @@ class TestTheDiskPageKeepsALongIdentifierReachable:
         return str(app.query_one("#wwn-full", Static).content)
 
     async def test_a_long_wwn_is_cut_to_the_configured_width_and_marked(self) -> None:
-        """Cut, and saying so. A value that reads as whole when it is not sends
-        somebody looking for a drive by an identifier missing its tail."""
+        """Cut, and saying so.
+
+        A value that reads as whole when it is not sends somebody looking for a
+        drive by an identifier missing its tail.
+        """
         machine = inventory()
         disk = next(d for d in machine.disks if d.wwn and len(d.wwn) > DEFAULT_WWN_WIDTH)
         assert disk.wwn is not None
@@ -876,8 +879,11 @@ class TestTheDiskPageKeepsALongIdentifierReachable:
             assert self._strip(app).scroll_x < moved, "the back key must move it back"
 
     async def test_a_configured_width_reaches_both_the_cell_and_the_strip(self) -> None:
-        """One key, both halves. A width honoured by one of them would put the
-        control on values the column did not cut, or leave cut ones without."""
+        """One key, both halves.
+
+        A width honoured by one of them would put the control on values the
+        column did not cut, or leave cut ones without.
+        """
         machine = inventory()
         disk = next(d for d in machine.disks if d.wwn and len(d.wwn) > DEFAULT_WWN_WIDTH)
         app = LsdskApp(machine, display=DisplaySettings(wwn_width=12))
@@ -1425,7 +1431,7 @@ class TestTheTrendPageIsATable:
     @pytest.mark.os_agnostic
     @pytest.mark.asyncio
     async def test_without_a_recorded_past_the_page_explains_itself_instead_of_showing_an_empty_table(self) -> None:
-        """ "Nothing has moved" and "nothing was recorded" are different answers.
+        """The phrases "Nothing has moved" and "nothing was recorded" differ.
 
         An empty table says neither, so the table is hidden and the explanation
         the printed view gives takes the whole page.

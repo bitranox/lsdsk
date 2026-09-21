@@ -1,4 +1,4 @@
-"""Encode-safe console output.
+r"""Encode-safe console output.
 
 Purpose
 -------
@@ -10,7 +10,7 @@ Why
 Console output is a sink with an encoding the program does not choose. Python
 hands stdout to a Windows console at codepage 1252 with ``errors="strict"``, so
 writing ``✓`` raises ``UnicodeEncodeError: 'charmap' codec can't encode
-character '\\u2713'`` and the command exits non-zero -- after its real work has
+character '\u2713'`` and the command exits non-zero -- after its real work has
 already succeeded, which is the part that misleads. ``click.echo`` does not
 protect against this; the exception propagates.
 

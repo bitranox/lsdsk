@@ -232,7 +232,7 @@ def test_the_default_page_contains_every_section_a_command_can_show() -> None:
 def test_a_refusal_never_reports_an_expectation_that_rounded_to_nothing(
     span_hours: int, expected: float, must_not_say: str
 ) -> None:
-    """ "only 0.0 were due" says the opposite of what it means.
+    """The phrase "only 0.0 were due" says the opposite of what it means.
 
     Both readings come from one machine: an NVMe drive on its first recording,
     where no power-on hours have elapsed, and a SATA drive with one lifetime CRC
@@ -365,8 +365,9 @@ def test_every_palette_colour_is_legible_on_every_background() -> None:
 
 @pytest.mark.os_agnostic
 def test_nothing_in_the_palette_uses_the_faint_attribute() -> None:
-    """``dim`` buys emphasis by removing contrast, which is the one thing a
-    diagnostic must not spend.
+    """``dim`` buys emphasis by removing contrast.
+
+    That is the one thing a diagnostic must not spend.
 
     Kept separate from the contrast test because it cannot be measured the same
     way: faint is applied by the terminal after the colour is chosen, so a hex

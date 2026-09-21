@@ -119,12 +119,12 @@ def seed_user_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Callable[[str], Path]:
-    """Write a user-level config file where THIS platform's loader looks for it.
+    r"""Write a user-level config file where THIS platform's loader looks for it.
 
     A test that seeds `XDG_CONFIG_HOME` and asserts the file was read is a Linux
     test wearing an os_agnostic marker: macOS reads
     ``~/Library/Application Support/<vendor>/<app>`` and Windows reads
-    ``%APPDATA%\\<vendor>\\<app>``, so on those runners the file is never found,
+    ``%APPDATA%\<vendor>\<app>``, so on those runners the file is never found,
     the command renders nothing, and the assertion passes or fails for a reason
     that has nothing to do with what it meant to test.
 
@@ -223,7 +223,6 @@ def production_factory() -> Callable[[], AppServices]:
             result = cli_runner.invoke(cli, ["info"], obj=production_factory)
             assert result.exit_code == 0
     """
-
     return build_production
 
 

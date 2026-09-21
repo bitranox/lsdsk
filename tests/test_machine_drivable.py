@@ -249,12 +249,12 @@ def test_the_structured_config_never_prints_a_secret(tmp_path: Path) -> None:
 
 @pytest.mark.os_agnostic
 def test_no_help_screen_shows_developer_content(cli_runner: CliRunner, production_factory: Callable[[], Any]) -> None:
-    """Five of seventeen screens rendered doctest lines and two literal markers.
+    r"""Five of seventeen screens rendered doctest lines and two literal markers.
 
     A doctest inside a Click-decorated docstring is never collected, because the
     decorator makes the object a Command and doctest walks a function's
     ``__doc__``. So those lines could never fail, rotted silently, and were
-    rendered verbatim to users, one of them naming a test file. ``\\b`` is
+    rendered verbatim to users, one of them naming a test file. ``\b`` is
     Click's no-rewrap marker only as a real control character; in an r-string it
     is backslash plus b, which Click does not recognise and prints as-is.
     """

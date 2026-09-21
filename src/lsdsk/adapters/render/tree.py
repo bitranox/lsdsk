@@ -454,8 +454,10 @@ class Fabric:
         return complete
 
     def drawn(self) -> list[tuple[PciNode, int]]:
-        """Every drawn device with its level, parents before children, address
-        order within a parent."""
+        """Every drawn device with its level.
+
+        Parents before children, address order within a parent.
+        """
         out: list[tuple[PciNode, int]] = []
         for root in self.roots:
             out.extend(self._descendants(root))
@@ -818,8 +820,10 @@ def render_fabric(
     view: FabricView = DEFAULT_VIEW,
     thresholds: Thresholds = DEFAULT_THRESHOLDS,
 ) -> RenderableType:
-    """The whole topology section: the root-down fabric, the disks on each of
-    its storage controllers, and the kernel-virtual tally behind them.
+    """The whole topology section.
+
+    The root-down fabric, the disks on each of its storage controllers, and the
+    kernel-virtual tally behind them.
 
     Built from :func:`fabric_lines`, which the interactive page also reads, so
     the printed tree and the selectable one are one tree.
@@ -1002,6 +1006,18 @@ class FabricSection:
         view: FabricView = DEFAULT_VIEW,
         thresholds: Thresholds = DEFAULT_THRESHOLDS,
     ) -> None:
+        """Hold what the section draws, without measuring anything yet.
+
+        Nothing is laid out here on purpose: a window's width is known only
+        once the layout has run, and changes again on every resize, so the
+        measuring happens when Rich asks this to render.
+
+        Args:
+            inventory: The machine to draw.
+            findings: What the rules said about it, for the severity markers.
+            view: Density, the virtual tally, and how a reader asks for more.
+            thresholds: What this run judges by.
+        """
         self.inventory = inventory
         self.findings = findings
         self.view = view

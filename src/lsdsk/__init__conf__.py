@@ -75,13 +75,12 @@ def print_info() -> None:
     Side Effects
         Writes to ``stdout``.
 
-    Examples
+    Examples:
     --------
     >>> print_info()  # doctest: +ELLIPSIS
     Info for lsdsk:
     ...
     """
-
     fields = [
         ("name", name),
         ("title", title),

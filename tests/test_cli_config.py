@@ -165,7 +165,6 @@ def test_when_config_deploy_supports_multiple_targets(
     inject_deploy_configuration: Callable[[Callable[..., list[Path]]], Callable[[], Any]],
 ) -> None:
     """Verify config-deploy accepts multiple --target options."""
-
     path1 = tmp_path / "config1.toml"
     path2 = tmp_path / "config2.toml"
     path1.touch()
