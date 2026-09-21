@@ -66,7 +66,7 @@ def _panels(machine: Inventory, findings: Sequence[Finding]) -> list[tuple[str, 
     records = [("machine", detail.machine_detail(machine))]
     records += [(f"disk {disk.path}", detail.disk_detail(disk, machine)) for disk in machine.disks]
     records += [(f"controller {one.address}", detail.controller_detail(one, machine)) for one in machine.controllers]
-    records += [(f"node {node.address}", detail.node_detail(node, machine)) for node in machine.pci_tree]
+    records += [(f"node {node.address}", detail.node_detail(node)) for node in machine.pci_tree]
     records += [(f"slot {slot.address}", detail.slot_detail(slot, machine)) for slot in machine.slots]
     return [(label, _text(detail.render_detail(record, findings))) for label, record in records]
 

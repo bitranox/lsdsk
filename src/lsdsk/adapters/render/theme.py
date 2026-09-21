@@ -681,9 +681,13 @@ def hop_link_cells(link: PcieLink, *, capability_present: bool | None = None, ba
         running = with_bandwidth(running, link.current_bandwidth_gbps)
     if capability_present is False:
         return HopPair((LEGACY, ""), (LEGACY, ""))
+    # No ternary picking NOT_READ: it IS "-", so the two arms were the same
+    # value and 0 of 32 branches across the captures ever changed one. What the
+    # comparison really decides is the STYLE, and it is spelled NOT_READ so the
+    # marker has one name here as everywhere else.
     return HopPair(
-        (capable if capable != "-" else NOT_READ, STYLE_UNKNOWN if capable == "-" else ""),
-        (running if running != "-" else NOT_READ, STYLE_UNKNOWN if running == "-" else ""),
+        (capable, STYLE_UNKNOWN if capable == NOT_READ else ""),
+        (running, STYLE_UNKNOWN if running == NOT_READ else ""),
     )
 
 

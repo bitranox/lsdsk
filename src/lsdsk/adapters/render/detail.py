@@ -252,7 +252,7 @@ def controller_detail(controller: Controller, inventory: Inventory) -> Detail:
     return Detail(heading, groups, (FindingScope(controller.address),))
 
 
-def node_detail(node: PciNode, inventory: Inventory) -> Detail:
+def node_detail(node: PciNode) -> Detail:
     """The whole record of one device on the PCI fabric.
 
     A finding never names a bare PCI address, only a controller's, so a bridge
@@ -261,16 +261,22 @@ def node_detail(node: PciNode, inventory: Inventory) -> Detail:
 
     Args:
         node: The fabric device to describe.
-        inventory: The machine it sits in.
 
     Returns:
         The record, its groups in reading order.
+
+    Note:
+        It takes no ``inventory``, unlike its siblings here: every value it
+        draws is the node's own, so the parameter was forwarded to a private
+        helper that deleted it on its first line. The family shape is a real
+        reason where the machine is READ - ``slot_detail`` needs it for
+        whatever occupies the port - and not where it is only carried.
     """
     heading = ((node.address, theme.STYLE_IDENTIFIER), (node.name, ""))
     groups = (
         DetailGroup(DEVICE, _node_device_values(node)),
         DetailGroup(LINK, _node_link_values(node)),
-        DetailGroup(PLACE, _node_place_values(node, inventory)),
+        DetailGroup(PLACE, _node_place_values(node)),
     )
     return Detail(heading, groups, (FindingScope(node.address),))
 
@@ -687,9 +693,8 @@ def _node_link_values(node: PciNode) -> tuple[tuple[str, Cell], ...]:
     return _pcie_values(node.link)
 
 
-def _node_place_values(node: PciNode, inventory: Inventory) -> tuple[tuple[str, Cell], ...]:
+def _node_place_values(node: PciNode) -> tuple[tuple[str, Cell], ...]:
     """Where a device sits: what carries it, what it carries, which socket."""
-    del inventory
     slot = node.physical_slot_number
     return (
         ("behind", _said(node.parent_address)),

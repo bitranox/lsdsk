@@ -930,7 +930,7 @@ class LsdskApp(App[None]):
             controller = next((one for one in self.inventory.controllers if one.address == subject.address), None)
             if controller is not None:
                 return detail.controller_detail(controller, self.inventory)
-            return detail.node_detail(subject, self.inventory)
+            return detail.node_detail(subject)
         return None
 
     def action_toggle_detail(self) -> None:

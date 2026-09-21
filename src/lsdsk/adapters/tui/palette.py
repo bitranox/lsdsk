@@ -26,7 +26,7 @@ System Role:
 from __future__ import annotations
 
 from dataclasses import fields
-from functools import cache
+from functools import lru_cache
 from typing import TYPE_CHECKING, Final
 
 from rich.style import Style
@@ -53,7 +53,10 @@ PALETTE: Final = theme.Palette(
 )
 
 
-@cache
+# Bounded rather than @cache, for the reason tree._header_cells is: the key is
+# a caller-supplied palette, so nothing in the type stops the cache growing.
+# One palette ships, and the tests build a second.
+@lru_cache(maxsize=4)
 def _pairs(palette: theme.Palette) -> tuple[tuple[str, str], ...]:
     """Every printed hue and its counterpart, computed once per palette.
 

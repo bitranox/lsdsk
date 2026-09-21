@@ -30,7 +30,7 @@ System Role:
 
 from __future__ import annotations
 
-from functools import cache
+from functools import lru_cache
 from typing import TYPE_CHECKING, NamedTuple
 
 from rich.console import Group
@@ -228,7 +228,11 @@ DEVICE_COLUMNS: tuple[Column, ...] = (
 )
 
 
-@cache
+# Bounded rather than @cache: the key is a caller-supplied style string, so an
+# unbounded cache grows with whatever is passed. Two styles ship - print's bare
+# `bold` and the interactive palette's hue - and the ceiling only decides when a
+# title is rebuilt, never what it says.
+@lru_cache(maxsize=8)
 def _header_cells(style: str) -> Mapping[str, theme.Cell]:
     """The device column titles, drawn in one style.
 

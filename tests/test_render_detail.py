@@ -190,7 +190,7 @@ def test_a_device_with_no_pcie_capability_says_legacy_rather_than_showing_a_blan
     machine = _machine("linux-sas-hba")
     legacy = [node for node in machine.pci_tree if node.pcie_capability_present is False]
     assert legacy, "the fixture no longer carries a device without a PCIe capability"
-    panel = _drawn(detail.render_detail(detail.node_detail(legacy[0], machine), diagnose(machine)))
+    panel = _drawn(detail.render_detail(detail.node_detail(legacy[0]), diagnose(machine)))
     assert theme.LEGACY in panel
 
 
@@ -203,7 +203,7 @@ def test_every_record_the_panel_can_show_renders_at_every_width(host: str) -> No
     records = [detail.machine_detail(machine)]
     records += [detail.disk_detail(disk, machine) for disk in machine.disks]
     records += [detail.controller_detail(one, machine) for one in machine.controllers]
-    records += [detail.node_detail(node, machine) for node in machine.pci_tree]
+    records += [detail.node_detail(node) for node in machine.pci_tree]
     records += [detail.slot_detail(slot, machine) for slot in machine.slots]
     for record in records:
         for width in (40, 80, 118, 200):
