@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from enum import StrEnum
 from typing import TYPE_CHECKING, cast
 
@@ -267,6 +267,46 @@ def _section_refusal_for(raw: str, override: ConfigOverride, meant: str) -> str:
     return f"Invalid override {raw!r}: there is no section [{override.section}]. Did you mean [{meant}]?"
 
 
+def _refuse_a_shape_two_overrides_disagree_on(parsed: Sequence[tuple[str, ConfigOverride]]) -> None:
+    """Refuse a pair of overrides where one names a key path inside the other.
+
+    ``--set a.b=DEBUG --set a.b.c=1`` asks for ``a.b`` to be a string and for it
+    to be a mapping with a ``c`` in it, and no configuration can be both. The two
+    ORDERS used to fail differently and neither was a usage error: written this
+    way the merge raised ``TypeError``, which the command handlers do not catch,
+    so a mistake in the command line left exit 22 and a bare Python type name
+    instead of the exit 2 and the hint every other malformed ``--set`` gets.
+    Reversed, nothing was raised at all - the scalar simply replaced the mapping
+    the first flag had built, and ``lsdsk config`` then reported the survivor as
+    in force, which is the inert-value-reads-as-applied failure this package has
+    a whole module to prevent.
+
+    Judged over the whole SET before anything is merged, so both orders are one
+    refusal rather than two behaviours: the mistake is the pair, and which one
+    was typed first says nothing about which was meant.
+
+    Args:
+        parsed: Each override as typed, beside its parsed form.
+
+    Raises:
+        ValueError: If any override's dotted path is a strict prefix of
+            another's, naming both so the reader can find them in their own
+            command line.
+    """
+    paths = [((one.section, *one.key_path), raw) for raw, one in parsed]
+    for shorter, shorter_raw in paths:
+        for longer, longer_raw in paths:
+            if len(shorter) >= len(longer) or longer[: len(shorter)] != shorter:
+                continue
+            inside = ".".join(longer)
+            outside = ".".join(shorter)
+            msg = (
+                f"Invalid override {longer_raw!r}: {inside!r} asks for {outside!r} to hold "
+                f"a mapping, and {shorter_raw!r} sets it to a value. Set one or the other."
+            )
+            raise ValueError(msg)
+
+
 def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
     """Deep-merge CLI overrides into a Config instance.
 
@@ -283,8 +323,9 @@ def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
 
     Raises:
         ValueError: If any override string is malformed, names a SECTION one
-            typo away from an owned one, or names a key that an owned section
-            does not have. The owned sections are the three whose key set is
+            typo away from an owned one, names a key that an owned section
+            does not have, or names a key path inside another override's key.
+            The owned sections are the three whose key set is
             exactly a model's, so an unknown key there is a typo and inert -
             which reads identically to a setting that was applied. The section
             is judged first because the key check cannot see a wrong one: it
@@ -310,8 +351,11 @@ def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
 
     overrides: dict[str, dict[str, object]] = {}
     overridden: set[str] = set()
-    for raw in raw_overrides:
-        parsed = parse_override(raw)
+    every = [(raw, parse_override(raw)) for raw in raw_overrides]
+    # Before anything is merged: a later flag can otherwise overwrite the mapping
+    # an earlier one built, and silently.
+    _refuse_a_shape_two_overrides_disagree_on(every)
+    for raw, parsed in every:
         dotted = ".".join((parsed.section, *parsed.key_path))
         # The section is judged FIRST, because the key check cannot see a wrong
         # one: unknown_owned_key answers None for every section this tool does

@@ -207,3 +207,60 @@ def test_when_no_set_overrides_config_is_unchanged(
 
     assert result.exit_code == 0
     assert "WARNING" in result.output
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    "order",
+    [
+        pytest.param(("display.wwn_width=30", "display.wwn_width.extra=1"), id="the value first"),
+        pytest.param(("display.wwn_width.extra=1", "display.wwn_width=30"), id="the mapping first"),
+    ],
+)
+def test_two_overrides_that_disagree_on_a_shape_are_a_usage_error_either_way(
+    order: tuple[str, str],
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+) -> None:
+    """One key cannot be both a value and a mapping, whichever way round it is typed.
+
+    Written one way this used to raise ``TypeError`` out of the merge, which no
+    command handler catches, so a mistake in the command line left exit 22 and a
+    bare Python type name where every other malformed ``--set`` gets exit 2 and a
+    hint. Reversed it raised nothing at all: the scalar replaced the mapping and
+    ``lsdsk config`` reported the survivor as in force.
+    """
+    result: Result = cli_runner.invoke(
+        cli_mod.cli,
+        ["--set", order[0], "--set", order[1], "config"],
+        obj=production_factory,
+    )
+
+    assert result.exit_code == 2, f"exited {result.exit_code}, not the usage error:\n{result.output}"
+    prose = _panel_prose(result.stderr)
+    assert "to hold a mapping" in prose, prose
+    # Both halves of the pair, so the reader can find them in their own command
+    # line rather than being told only about the one that was noticed second.
+    assert "display.wwn_width.extra" in prose, prose
+    assert "display.wwn_width=30" in prose, prose
+
+
+@pytest.mark.os_agnostic
+def test_a_nested_override_beside_an_unrelated_one_still_applies(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+) -> None:
+    """The control: the refusal fires on a real prefix, not on any two overrides.
+
+    A check written as "one path starts with another's text" would refuse this
+    pair, because ``wwn_width`` is a prefix of ``wwn_width_extra`` as a string
+    and is not one as a key path.
+    """
+    result: Result = cli_runner.invoke(
+        cli_mod.cli,
+        ["--set", "display.wwn_width=30", "--set", "display.expand_virtual=true", "config"],
+        obj=production_factory,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "30" in result.output, result.output
