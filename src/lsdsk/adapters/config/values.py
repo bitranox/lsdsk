@@ -33,8 +33,8 @@ if TYPE_CHECKING:
 #: What each coercer takes, worded for somebody reading it off a terminal beside
 #: the value that was refused. Phrased as what the setting wants rather than what
 #: the value is, because the reader already has the value in front of them.
-REASON_POSITIVE_INT = "not a whole number above zero"
-REASON_POSITIVE_FLOAT = "not a number above zero"
+REASON_POSITIVE_INT = "not a whole number above zero, or too large to use"
+REASON_POSITIVE_FLOAT = "not a number above zero, or too large to use"
 REASON_FLAG = "not true or false"
 REASON_PATH = "not a path"
 
@@ -70,7 +70,7 @@ class RejectedValue(DomainModel, frozen=True):
 
     Example:
         >>> RejectedValue(dotted="display.wwn_width", raw="abc", reason=REASON_POSITIVE_INT, used="24").as_sentence()
-        'Warning: ignoring display.wwn_width=abc: not a whole number above zero. Using 24.'
+        'Warning: ignoring display.wwn_width=abc: not a whole number above zero, or too large to use. Using 24.'
     """
 
     dotted: str
@@ -102,6 +102,24 @@ def rendered(value: object) -> str:
     return value if isinstance(value, str) else repr(value)
 
 
+#: The largest magnitude a configured number may carry.
+#:
+#: This module's whole guarantee is that a value it cannot use falls back rather
+#: than failing the run, and an unbounded one breaks that from the other side: a
+#: legal 64-bit TOML integer in ``display.wwn_width`` reaches ``str.ljust`` in
+#: the layout and asks for an allocation of that size, which is a crash rather
+#: than a fallback. Every ``[display]`` width and limit and every ``[thresholds]``
+#: count reads through the two coercers below, so one ceiling covers them all.
+#:
+#: A billion is far above anything a terminal, a percentage, a sample count or a
+#: span in hours can mean - a billion hours is 114,000 years - and far above the
+#: largest figure the config-key harness drives a key to, which is a hundred
+#: million. The history store bounds its own numbers separately and much higher,
+#: because what it holds is a decoded hardware counter rather than something
+#: somebody typed.
+MAX_CONFIGURED_MAGNITUDE = 10**9
+
+
 def accepts_positive_int(raw: object) -> bool:
     """Whether a configured value is usable as a count.
 
@@ -117,8 +135,10 @@ def accepts_positive_int(raw: object) -> bool:
     Example:
         >>> accepts_positive_int(1), accepts_positive_int(0), accepts_positive_int(True)
         (True, False, False)
+        >>> accepts_positive_int(10**9 + 1)
+        False
     """
-    return not isinstance(raw, bool) and isinstance(raw, int) and raw > 0
+    return not isinstance(raw, bool) and isinstance(raw, int) and 0 < raw <= MAX_CONFIGURED_MAGNITUDE
 
 
 def positive_int(raw: object, default: int) -> int:
@@ -140,6 +160,8 @@ def accepts_positive_float(raw: object) -> bool:
     Example:
         >>> accepts_positive_float(2.5), accepts_positive_float("2.5")
         (True, False)
+        >>> accepts_positive_float(1e30)
+        False
 
     Args:
         raw: The configured value, of whatever type the file produced.
@@ -147,7 +169,7 @@ def accepts_positive_float(raw: object) -> bool:
     Returns:
         Whether it can be used as it stands.
     """
-    return not isinstance(raw, bool) and isinstance(raw, (int, float)) and raw > 0
+    return not isinstance(raw, bool) and isinstance(raw, (int, float)) and 0 < raw <= MAX_CONFIGURED_MAGNITUDE
 
 
 def positive_float(raw: object, default: float) -> float:
@@ -290,7 +312,7 @@ class SectionValues:
         >>> values.positive_int("wwn_width", 24)
         24
         >>> values.rejected[0].as_sentence()
-        'Warning: ignoring display.wwn_width=abc: not a whole number above zero. Using 24.'
+        'Warning: ignoring display.wwn_width=abc: not a whole number above zero, or too large to use. Using 24.'
     """
 
     def __init__(self, section: str, config: Config) -> None:

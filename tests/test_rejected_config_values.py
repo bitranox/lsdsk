@@ -393,3 +393,58 @@ def test_the_adapter_guard_the_domain_floor_stands_behind_is_itself_tested() -> 
     assert positive_int(0, 5) == 5, "a zero span reached the divisor"
     assert positive_int(-3, 5) == 5
     assert positive_int(2, 5) == 2, "the control: a usable value is still taken"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        pytest.param("display.wwn_width", str(2**63 - 1), id="a legal 64-bit width"),
+        pytest.param("display.piped_width", str(10**9 + 1), id="just past the ceiling"),
+        pytest.param("thresholds.quiet_expected_min", "1e30", id="a float past the ceiling"),
+    ],
+)
+def test_a_magnitude_no_terminal_could_mean_falls_back_rather_than_reaching_the_layout(
+    key: str,
+    value: str,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+) -> None:
+    """A number too big to use is refused the way an unusable one is.
+
+    This module's guarantee is that a value it cannot use falls back rather than
+    failing the run, and an unbounded one broke that from the other side: every
+    `[display]` width reads through these coercers and lands in `layout.pad`,
+    where `value.ljust(width)` asks for an allocation of exactly that size. A
+    legal 64-bit TOML integer is reachable from a config file, from `--set`, and
+    from any environment layer mapped onto the key.
+    """
+    result = cli_runner.invoke(
+        cli_mod.cli,
+        ["--set", f"{key}={value}", "config"],
+        obj=production_factory,
+    )
+
+    assert result.exit_code == 0, f"the run did not survive the value:\n{result.output}"
+    assert "too large to use" in result.stderr, f"nothing said the value was ignored:\n{result.stderr}"
+
+
+@pytest.mark.os_agnostic
+def test_the_largest_figure_the_key_harness_drives_is_still_accepted(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+) -> None:
+    """The control: the ceiling refuses only magnitudes nothing real can mean.
+
+    A hundred million is the largest value any key is driven to elsewhere in
+    this suite, so a ceiling below it would be a silent behaviour change rather
+    than a bound on nonsense.
+    """
+    result = cli_runner.invoke(
+        cli_mod.cli,
+        ["--set", "thresholds.crc_errors_significant=100000000", "config"],
+        obj=production_factory,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "too large to use" not in result.stderr, f"a legitimate figure was refused:\n{result.stderr}"
