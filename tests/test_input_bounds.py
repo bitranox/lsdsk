@@ -1098,3 +1098,62 @@ def test_the_store_s_hostname_and_timestamp_are_cleaned_too() -> None:
 
     assert "\x1b" not in History(hostname="box\x1b[2J").hostname
     assert "\x1b" not in Sample(power_on_hours=1, captured_at="2026-01-01\x1b[0m").captured_at
+
+
+@pytest.mark.os_agnostic
+def test_diagnosing_a_machine_at_the_input_ceiling_does_not_cost_minutes() -> None:
+    """A capture under the documented size limit cannot burn the CPU for minutes.
+
+    `diagnose` used to be quadratic in disks times controllers, from two
+    independent searches: the hunt for a faster free port rebuilt the rate of
+    every controller from the whole disk list for every drive, and the hunt for
+    a swap partner walked every disk to reject it. Neither is reachable from
+    real hardware, where 500 drives on 20 controllers is sub-millisecond. Both
+    are reachable from one `--replay` file: `textfile.py` records about 8 KB per
+    drive, so the 64 MB `MAX_INPUT_BYTES` admits several thousand.
+
+    Measured here on this shape, 3200 drives on 200 controllers: 58.1 seconds
+    before, 0.16 after. The ceiling below is two orders of magnitude above the
+    measurement and one below the old cost, so it separates the two on any
+    machine that can run the suite at all rather than pinning a speed.
+
+    The shape matters as much as the size. Every port has to be the SAME speed,
+    or the search returns on the first faster controller it meets and never
+    reaches the cost this is about; and each drive has to sit AT its port's
+    maximum and below its own, or the rule reports the slow link and returns
+    before the search starts.
+
+    It guards the AGGREGATE, not any one index: reverting the per-controller
+    rate map alone leaves 1.2 seconds here and this still passes, because the
+    disk index absorbs it. Mutating both together is what kills it, and that is
+    the arm this was proved on.
+    """
+    # The one test in this module that measures anything.
+    import time
+
+    from lsdsk.domain.diagnostics import diagnose
+    from lsdsk.domain.models import Controller, Disk, InterfaceLink, Inventory
+
+    controllers = tuple(
+        Controller(address=f"0000:{index:02x}:00.0", name="c", port_count=16, ports_used=1) for index in range(200)
+    )
+    disks = tuple(
+        Disk(
+            node=f"sd{index}",
+            path=f"/dev/sd{index}",
+            model="m",
+            controller_address=f"0000:{index % 200:02x}:00.0",
+            link=InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=12.0, port_max_gbps=6.0),
+        )
+        for index in range(3200)
+    )
+    machine = Inventory(hostname="h", disks=disks, controllers=controllers)
+
+    started = time.perf_counter()
+    findings = diagnose(machine)
+    took = time.perf_counter() - started
+
+    # The control: this shape has to REACH the rules, or a fast run would mean
+    # only that nothing ran. One finding per drive is what it produces.
+    assert len(findings) == len(disks), f"the shape produced {len(findings)} findings, so it missed the rules"
+    assert took < 10.0, f"diagnosing {len(disks)} drives on {len(controllers)} controllers took {took:.1f}s"

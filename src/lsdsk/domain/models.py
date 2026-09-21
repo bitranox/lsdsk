@@ -12,6 +12,7 @@ System Role:
 
 from __future__ import annotations
 
+from functools import cached_property
 from math import inf
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -22,7 +23,7 @@ from .enums import BusType, ControllerKind, DiskKind, Environment, PciPortKind, 
 from .text import DeviceText, OptionalDeviceText
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
 # Usable bandwidth of one PCIe lane in one direction, in GB/s, per link speed in
 # GT/s.  These are not raw signalling rates: they already account for the line
@@ -1364,7 +1365,78 @@ class Inventory(DomainModel, frozen=True):
             >>> [d.node for d in inv.disks_on("0000:03:00.0")]
             ['sda']
         """
-        return tuple(disk for disk in self.disks if disk.controller_address == controller_address)
+        return self._disks_by_controller.get(controller_address, ())
+
+    def fastest_port_rate_on(self, controller_address: str) -> float | None:
+        """Return the best port rate any drive on one controller reports.
+
+        Args:
+            controller_address: PCI address to match.
+
+        Returns:
+            The fastest rate read on that controller, or ``None`` where no disk
+            on it published one.
+
+        Example:
+            >>> link = InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=12.0)
+            >>> disk = Disk(node="sda", path="/dev/sda", model="m", controller_address="a", link=link)
+            >>> Inventory(hostname="h", disks=(disk,)).fastest_port_rate_on("a")
+            12.0
+            >>> Inventory(hostname="h", disks=(disk,)).fastest_port_rate_on("b") is None
+            True
+        """
+        return self._fastest_port_rate_by_controller.get(controller_address)
+
+    @cached_property
+    def _fastest_port_rate_by_controller(self) -> Mapping[str | None, float]:
+        """The best port rate read on each controller, once per machine.
+
+        Looking for a faster free port asks this of every controller for every
+        drive, and computing it from the drives each time makes that search cost
+        the whole disk list however the disks are indexed. Held here it costs
+        one pass.
+
+        Returns:
+            Each controller address against the fastest port rate on it,
+            omitting a controller whose disks published none.
+        """
+        best: dict[str | None, float] = {}
+        for disk in self.disks:
+            rate = disk.link.port_max_gbps
+            if rate is None:
+                continue
+            current = best.get(disk.controller_address)
+            if current is None or rate > current:
+                best[disk.controller_address] = rate
+        return best
+
+    @cached_property
+    def _disks_by_controller(self) -> Mapping[str | None, tuple[Disk, ...]]:
+        """Group the disks by the controller each hangs off, once per machine.
+
+        A plain scan per lookup is O(disks), and every caller that asks it does
+        so inside a loop over the controllers: the port-allocation rules, the
+        controller table, the detail panel and the fabric tree all do. That made
+        the whole of `diagnose` quadratic in disks times controllers, measured
+        at 67.7 seconds for 3200 disks on 200 controllers through the real
+        function, and reachable from one `--replay` file well under the 64 MB
+        input ceiling. This is the same index `adapters/hw/fabric.py` documents
+        building once for the same reason.
+
+        Computed on first use and kept, which a frozen model supports: it is not
+        a field, so it is absent from `model_dump` and the instance stays
+        hashable.
+
+        Returns:
+            Each controller address against the disks on it, in inventory order.
+            A disk whose controller was not read lands under ``None``, which no
+            lookup by address can reach - the same disk the plain scan never
+            returned either.
+        """
+        grouped: dict[str | None, list[Disk]] = {}
+        for disk in self.disks:
+            grouped.setdefault(disk.controller_address, []).append(disk)
+        return {address: tuple(disks) for address, disks in grouped.items()}
 
     def drives_on(self, controller_address: str) -> tuple[Disk, ...]:
         """Return one disk per physical drive attached to one controller.

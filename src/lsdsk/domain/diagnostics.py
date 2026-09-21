@@ -39,7 +39,7 @@ from .models import (
 from .thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from .history import DiskSeries, Trend
     from .thresholds import Thresholds
@@ -658,9 +658,10 @@ def _faster_free_port(disk: Disk, inventory: Inventory) -> str | None:
         free = controller.ports_free
         if not free:
             continue
-        attached = inventory.disks_on(controller.address)
-        rates = [d.link.port_max_gbps for d in attached if d.link.port_max_gbps is not None]
-        if rates and max(rates) > port_max:
+        # The machine holds this rate, rather than it being recomputed from the
+        # disk list for every controller of every drive.
+        best = inventory.fastest_port_rate_on(controller.address)
+        if best is not None and best > port_max:
             return f"{controller.name} at {controller.address}"
     return None
 
@@ -686,12 +687,18 @@ def diagnose_port_allocation(inventory: Inventory) -> list[Finding]:
     starved = [disk for disk in inventory.disks if disk.link.is_port_limited]
     findings: list[Finding] = []
     taken: set[str] = set()
+    # Once for the machine rather than once per starved drive. A drive that
+    # cannot outrun its own port can never be the partner in a swap, and on any
+    # real machine that is nearly all of them, so the search walked the whole
+    # disk list to reject it every time - the second of the two quadratics in
+    # this module, and the one that survives fixing the first.
+    holders = _drives_holding_more_port_than_they_can_use(inventory)
 
     for disk in starved:
         port_max, drive_max = disk.link.port_max_gbps, disk.link.drive_max_gbps
         if port_max is None or drive_max is None:
             continue
-        partner = _wasteful_holder(inventory, needs=drive_max, offers=port_max, taken=taken)
+        partner = _wasteful_holder(holders, needs=drive_max, offers=port_max, taken=taken)
         if partner is None:
             continue
         taken.add(partner.node)
@@ -711,11 +718,35 @@ def diagnose_port_allocation(inventory: Inventory) -> list[Finding]:
     return findings
 
 
-def _wasteful_holder(inventory: Inventory, *, needs: float, offers: float, taken: set[str]) -> Disk | None:
-    """Find a drive holding a port faster than it can use.
+def _drives_holding_more_port_than_they_can_use(inventory: Inventory) -> tuple[Disk, ...]:
+    """Narrow the machine to the drives that could ever be the partner in a swap.
+
+    The condition is the part of the swap test that depends on the candidate
+    alone: both figures read, and the drive slower than the port it occupies.
+    Everything else the test asks is about the pair.
 
     Args:
         inventory: The machine to search.
+
+    Returns:
+        The drives worth testing against a starved one, in inventory order.
+    """
+    return tuple(
+        disk
+        for disk in inventory.disks
+        if disk.link.drive_max_gbps is not None
+        and disk.link.port_max_gbps is not None
+        and disk.link.drive_max_gbps < disk.link.port_max_gbps
+    )
+
+
+def _wasteful_holder(holders: Sequence[Disk], *, needs: float, offers: float, taken: set[str]) -> Disk | None:
+    """Find a drive holding a port faster than it can use.
+
+    Args:
+        holders: The drives that hold more port than they can use, narrowed
+            once for the machine by
+            :func:`_drives_holding_more_port_than_they_can_use`.
         needs: The speed the starved drive wants from the port it would take.
         offers: The speed of the port the starved drive would hand over.
         taken: Drives already promised to another swap.
@@ -723,12 +754,16 @@ def _wasteful_holder(inventory: Inventory, *, needs: float, offers: float, taken
     Returns:
         A drive that would lose nothing by trading places, or ``None``.
     """
-    for candidate in inventory.disks:
+    for candidate in holders:
         link = candidate.link
-        if candidate.node in taken or link.drive_max_gbps is None or link.port_max_gbps is None:
+        if candidate.node in taken:
             continue
-        # It must gain the starved drive what it wanted, and lose nothing itself.
-        if link.port_max_gbps >= needs and link.drive_max_gbps <= offers and link.drive_max_gbps < link.port_max_gbps:
+        # Both figures are known here, and the drive is slower than its port.
+        # What remains is the pair: it must gain the starved drive what it
+        # wanted, and lose nothing itself.
+        if link.port_max_gbps is None or link.drive_max_gbps is None:  # pragma: no cover - narrowed already
+            continue
+        if link.port_max_gbps >= needs and link.drive_max_gbps <= offers:
             return candidate
     return None
 
