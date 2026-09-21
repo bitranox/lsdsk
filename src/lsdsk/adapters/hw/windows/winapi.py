@@ -49,6 +49,15 @@ BOOLEAN = ctypes.c_uint8
 WORD = ctypes.c_uint16
 USHORT = ctypes.c_uint16
 
+# The cbSize SetupDiGetDeviceInterfaceDetailW expects in its detail buffer, and
+# it is the BUILD's rather than a constant of the API: the struct is a DWORD
+# followed by a WCHAR array, so it is 8 where a pointer is 8 bytes, and 6 on
+# x86, where setupapi.h puts it under pragma pack(1). This is the one width
+# here that follows the RUNNING machine deliberately - the types above are
+# fixed precisely so they do not - because it describes the caller rather than
+# the wire, and the caller is whichever Python this is.
+SP_DEVICE_INTERFACE_DETAIL_DATA_W_CBSIZE = 8 if ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_uint64) else 6
+
 # Device enumeration flags for SetupDiGetClassDevsW.
 DIGCF_PRESENT = 0x00000002
 DIGCF_ALLCLASSES = 0x00000004

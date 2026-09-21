@@ -14,6 +14,7 @@ System Role:
 from __future__ import annotations
 
 import contextlib
+import errno
 import json
 import os
 import sys
@@ -272,7 +273,7 @@ def _write_through(descriptor: int, body: str, *, sync: bool) -> None:
 
 
 def _write_in_place(path: Path, body: str) -> None:
-    """Write without a temporary file, still refusing a symlink at the destination.
+    """Write without a temporary file, refusing a symlink as far as the OS allows.
 
     ``O_NOFOLLOW`` fails rather than opening the target of a symlink, which is
     the whole of what the rename bought against a hostile destination. What is
@@ -280,8 +281,20 @@ def _write_in_place(path: Path, body: str) -> None:
     rename would have left the previous one. That trade is only ever taken on a
     path where no temporary file could be created, so the alternative is not
     writing at all.
+
+    The refusal is not the same strength everywhere, and the sentence above used
+    to claim it was. Windows has no ``O_NOFOLLOW`` - the ``getattr`` default is
+    0 there, so the flag silently contributed nothing and a symlink at the
+    destination was followed. It gets a check-then-open instead, which is a
+    genuinely weaker guarantee: the link can be created between the check and
+    the open, where ``O_NOFOLLOW`` is decided by the kernel at the open itself.
+    Weaker is what is available; claiming it is the same is what was wrong.
     """
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    follow_refused_by_the_kernel = getattr(os, "O_NOFOLLOW", 0)
+    if not follow_refused_by_the_kernel and path.is_symlink():
+        message = f"{path} is a symbolic link"
+        raise OSError(errno.ELOOP, message, str(path))
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | follow_refused_by_the_kernel
     descriptor = os.open(path, flags, SNAPSHOT_FILE_MODE)
     _write_through(descriptor, body, sync=False)
     with contextlib.suppress(OSError):

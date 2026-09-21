@@ -166,6 +166,22 @@ class _DeviceTree:
         show in a listing. The bus number and the packed device address are both
         plain integers, so the conventional address can be rebuilt from them
         without parsing the localised location sentence.
+
+        The leading ``0000`` is the PCI SEGMENT and is not read - nothing here
+        asks Windows for one. On a single-segment machine, which is every
+        machine this has been run on, it is right. On a multi-segment one it is
+        a guess that makes two different devices share one address string, and
+        an address is what the fabric keys devices by, so they would merge. The
+        Linux side does read the domain, and both tree builders accept four
+        digits OR MORE because an Intel VMD re-enumerates its drives into
+        0x10000 - so the width is not the problem here, the missing reading is.
+
+        Left as it is because no multi-segment Windows machine is available to
+        anyone working on this, and both alternatives are worse UNVERIFIED:
+        dropping the field changes the address format every committed Windows
+        fixture and every Windows reader of this tool already uses, and reading
+        a segment property that cannot be tested would ship an untried code
+        path to exactly the users who cannot report what it did.
         """
         bus = self._uint_property(handle, info, api.DEVICE_PROPERTY_FMTID, api.DEVICE_PROP_BUSNUMBER)
         address = self._uint_property(handle, info, api.DEVICE_PROPERTY_FMTID, api.DEVICE_PROP_ADDRESS)
@@ -316,9 +332,13 @@ class _DeviceTree:
         if required.value == 0:
             return None, None
         buffer = ctypes.create_string_buffer(required.value)
-        # SP_DEVICE_INTERFACE_DETAIL_DATA_W begins with its own size, which is
-        # 8 on 64-bit builds because of the alignment of the trailing string.
-        ctypes.memmove(buffer, ctypes.byref(wintypes.DWORD(8)), 4)
+        # SP_DEVICE_INTERFACE_DETAIL_DATA_W begins with its own size, and that
+        # size is the BUILD's rather than a constant - see the constant's own
+        # note. Hardcoded to the 64-bit figure, a 32-bit Python returned NO
+        # disks at all: SetupDiGetDeviceInterfaceDetailW refuses the call
+        # outright rather than answering wrongly, so it would have read as a
+        # machine with no storage rather than as an error.
+        ctypes.memmove(buffer, ctypes.byref(wintypes.DWORD(api.SP_DEVICE_INTERFACE_DETAIL_DATA_W_CBSIZE)), 4)
         info = api.SP_DEVINFO_DATA()
         info.cbSize = ctypes.sizeof(api.SP_DEVINFO_DATA)
         ok = self.setupapi.SetupDiGetDeviceInterfaceDetailW(

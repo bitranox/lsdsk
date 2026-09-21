@@ -9,6 +9,7 @@ that passed it still has to respect once its contents reach a renderer.
 from __future__ import annotations
 
 import ast
+import errno
 import io
 import json
 import os
@@ -344,6 +345,42 @@ def test_snapshot_still_writes_where_no_temporary_file_can_be_made(tmp_path: Pat
     finally:
         tmp_path.chmod(0o700)
     assert victim.read_text(encoding="utf-8") == "MUST-SURVIVE", "the fallback followed a symlink"
+
+
+@pytest.mark.os_posix
+def test_the_in_place_write_refuses_a_symlink_where_the_kernel_will_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows has no O_NOFOLLOW, so the flag contributed 0 and the link was followed.
+
+    The docstring claimed the refusal without qualifying the platform, which is
+    the shape that hides a missing guard: the POSIX test above passes, and
+    nothing asks what happens where the flag does not exist.
+
+    os.O_NOFOLLOW is deleted rather than the code branched on a platform string,
+    so the arm runs the SAME function a Windows caller reaches - the attribute's
+    absence IS the condition. It is a stdlib constant, which is the external
+    edge monkeypatching is for.
+
+    The guarantee is weaker there and the test says which one it is: a
+    check-then-open, so the arm below proves the refusal happens, not that it
+    is atomic.
+    """
+    from lsdsk.adapters.hw import snapshot as snapshot_module
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("MUST-SURVIVE", encoding="utf-8")
+    link = tmp_path / "link.json"
+    link.symlink_to(victim)
+
+    monkeypatch.delattr(os, "O_NOFOLLOW", raising=True)
+    assert not hasattr(os, "O_NOFOLLOW"), "the control: the flag is still there, so the POSIX path ran"
+
+    with pytest.raises(OSError) as refusal:
+        snapshot_module._write_in_place(link, "REPLACED")
+
+    assert refusal.value.errno == errno.ELOOP, refusal.value
+    assert victim.read_text(encoding="utf-8") == "MUST-SURVIVE", "the fallback followed the symlink"
 
 
 @pytest.mark.os_agnostic
