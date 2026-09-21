@@ -1157,3 +1157,46 @@ def test_diagnosing_a_machine_at_the_input_ceiling_does_not_cost_minutes() -> No
     # only that nothing ran. One finding per drive is what it produces.
     assert len(findings) == len(disks), f"the shape produced {len(findings)} findings, so it missed the rules"
     assert took < 10.0, f"diagnosing {len(disks)} drives on {len(controllers)} controllers took {took:.1f}s"
+
+
+@pytest.mark.os_agnostic
+def test_a_finding_cleans_its_own_text_like_every_other_domain_model() -> None:
+    """`Finding` is inside the sanitiser invariant, not beside it.
+
+    `domain/text.py` states the design in its own docstring: cleaning on the
+    FIELD is what makes it hold, so a new builder, a new platform or a new field
+    has nothing to remember. `Finding` was the one text-carrying domain model
+    outside it, and it is the model rendered directly in every view.
+
+    Nothing built today reaches it - every construction interpolates values
+    already cleaned upstream - so this guards the NEXT one: a finding built from
+    a configuration value, a command-line argument or an exception message. The
+    end-to-end salting test cannot see that case, because it salts capture
+    fields.
+    """
+    from lsdsk.domain.enums import Severity
+    from lsdsk.domain.models import Finding
+
+    salted = Finding(
+        severity=Severity.WARNING,
+        subject="/dev/sda\x1b[31m",
+        title="a title with \x1b]0;a terminal title\x07 in it",
+        detail="two\x00lines\x1b[2J",
+        action="\x07do this",
+    )
+
+    for field, value in (
+        ("subject", salted.subject),
+        ("title", salted.title),
+        ("detail", salted.detail),
+        ("action", salted.action or ""),
+    ):
+        assert "\x1b" not in value, f"an escape survived in {field}: {value!r}"
+        assert "\x00" not in value, f"a NUL survived in {field}: {value!r}"
+        assert "\x07" not in value, f"a bell survived in {field}: {value!r}"
+
+    # The control: cleaning keeps the text, it does not blank the field, and an
+    # already-clean value passes through unchanged.
+    assert "do this" in (salted.action or ""), salted.action
+    plain = Finding(severity=Severity.HINT, subject="s", title="t", detail="d", action="a")
+    assert (plain.subject, plain.title, plain.detail, plain.action) == ("s", "t", "d", "a")

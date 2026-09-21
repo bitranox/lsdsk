@@ -1244,16 +1244,26 @@ class Finding(DomainModel, frozen=True):
         detail: The measurement that triggered it.
         action: What to do about it, or ``None`` when nothing can be done.
 
+    The four text fields are cleaned on the FIELD, like every other text-carrying
+    field in this package, rather than by whoever writes a finding. Every one
+    built today interpolates values already cleaned upstream, so nothing changes
+    for them - ``device_text`` is idempotent. What the annotation buys is the
+    next one: a finding built from a configuration value, a command-line
+    argument or an exception message would otherwise reintroduce the thing
+    ``domain/text.py`` exists to prevent, and the end-to-end salting test could
+    not see it, because it salts CAPTURE fields and this is the one model that
+    is rendered directly in every view.
+
     Example:
         >>> Finding(severity=Severity.WARNING, subject="/dev/sdb", title="SATA link below drive capability").severity
         <Severity.WARNING: 'warning'>
     """
 
     severity: Severity
-    subject: str
-    title: str
-    detail: str = ""
-    action: str | None = None
+    subject: DeviceText
+    title: DeviceText
+    detail: DeviceText = ""
+    action: OptionalDeviceText = None
 
 
 class Inventory(DomainModel, frozen=True):
