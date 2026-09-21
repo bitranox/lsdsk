@@ -147,6 +147,24 @@ runtime-evaluated-base-classes = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# Every entry here was measured 2026-09-21 against an isolated config that
+# repeats the select and omits these ignores. That is the only way to see one:
+# `ruff check --select RULE path` still applies the ignore and reports success
+# whether the rule would fire or not.
+#
+# Eight entries fired NOWHERE and are gone: PLR0913 and PLR0917 on
+# windows/reader.py, whose widest signature is 5 and so under both thresholds
+# although the acceptance said "the width is the API's"; PLR0913 on ports.py,
+# application/*.py, config/*.py and memory/*.py; FBT002 on the CLI tree; and
+# S106 on tests. An inert waiver buys nothing and blinds the gate to the next
+# real violation of the rule it names - on windows/reader.py, code no local run
+# exercises, that would have reached CI and users unreviewed.
+#
+# Expand the pattern the way RUFF does when measuring, or the answer is wrong in
+# the safe-looking direction. `tests/*.py` covers tests/e2e/ and tests/helpers/
+# here, where a naive glob whose `*` stops at a slash does not - measured by
+# dropping T20 as inert and watching the gate report the two prints in
+# tests/e2e/hostprobe.py that the waiver had been covering all along.
 # Notebooks: unused imports are often intentional for side effects. F821 covers
 # `_exit_code`, an IPython builtin that only exists in a running kernel and is
 # how a notebook checks that a `!` command actually succeeded; S101 allows the
@@ -161,15 +179,13 @@ runtime-evaluated-base-classes = [
 # summary line would, so requiring one buys a second copy of the name. Measured before
 # the carve: 94 D findings under tests/, 89 of them these two rules. Every other D rule
 # stays live here, so a docstring that IS written is still held to the convention.
-"tests/*.py" = ["T20", "S101", "S105", "S106", "S108", "FBT001", "FBT003", "PLR0913", "PLR0917", "PLR2004", "PLC0415", "D102", "D103"]
+"tests/*.py" = ["T20", "S101", "S105", "S108", "FBT001", "FBT003", "PLR0913", "PLR0917", "PLR2004", "PLC0415", "D102", "D103"]
 # CLI: Click framework injects boolean params; commands have many options
-"src/lsdsk/adapters/cli/**/*.py" = ["FBT001", "FBT002", "PLR0913"]
+"src/lsdsk/adapters/cli/**/*.py" = ["FBT001", "PLR0913"]
 # Win32 bindings: the structures keep the exact names the Windows SDK gives them,
 # so a reader can match this file against the SDK headers and MSDN line for line.
 # Renaming them to CapWords would make that impossible for no gain.
 "src/lsdsk/adapters/hw/windows/winapi.py" = ["N801", "D102", "D105"]
-# The Windows reader mirrors Win32 call signatures, which are wide by nature.
-"src/lsdsk/adapters/hw/windows/reader.py" = ["PLR0913", "PLR0917"]
 # A callable Protocol's member is documented by the CLASS above it: the stub is
 # a signature with an `...` body and nothing else to say, so a docstring there
 # is a second copy of the class's. D102/D105 only, in the three files that
@@ -177,12 +193,8 @@ runtime-evaluated-base-classes = [
 # test_every_docstring_free_method_in_a_carved_file_is_a_protocol_stub proves
 # every exempt site really is one, so a real method added to these files is
 # still caught.
-"src/lsdsk/application/ports.py" = ["PLR0913", "D102"]
+"src/lsdsk/application/ports.py" = ["D102"]
 "src/lsdsk/adapters/tui/typed_table.py" = ["D102"]
-# Protocols/adapters: many-param signatures by design
-"src/lsdsk/application/*.py" = ["PLR0913"]
-"src/lsdsk/adapters/config/*.py" = ["PLR0913"]
-"src/lsdsk/adapters/memory/*.py" = ["PLR0913"]
 
 [tool.pyright]
 typeCheckingMode = "strict"
