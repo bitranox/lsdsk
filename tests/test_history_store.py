@@ -482,3 +482,32 @@ def test_a_realistic_magnitude_is_still_accepted(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert load_history(store, hostname="box").series, "the bound rejected a value real hardware can report"
+
+
+@pytest.mark.os_agnostic
+def test_a_corrupt_history_store_is_explained_in_this_tool_s_own_words(tmp_path: Path) -> None:
+    """The store refuses the way the snapshot loader does, having the same problem.
+
+    Both are JSON-backed and pydantic-validated, and both can meet a file
+    somebody hand-edited or a write that was cut short. The snapshot loader goes
+    out of its way to keep pydantic's packaging away from a caller; this one
+    interpolated `str(ValidationError)`, so the pinned version's URL, the
+    internal model name and a slice of the caller's own file reached stderr from
+    every command that reads history.
+    """
+    store = tmp_path / "history.json"
+    store.write_text(
+        json.dumps({"schema_version": 1, "hostname": 42, "series": "not a list"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError) as refused:
+        load_history(store, hostname="probe")
+
+    said = str(refused.value)
+    assert "errors.pydantic.dev" not in said, f"a pydantic URL reached the caller:\n{said}"
+    assert "input_value" not in said, f"pydantic's own field names reached the caller:\n{said}"
+    assert "HistoryFile" not in said, f"an internal model name reached the caller:\n{said}"
+    # And it still says WHAT is wrong, field by field, or the refusal is useless.
+    assert "hostname" in said and "series" in said, f"the refusal names no field:\n{said}"
+    assert "valid string" in said, f"the refusal gives no reason:\n{said}"

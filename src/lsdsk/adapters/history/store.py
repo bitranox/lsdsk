@@ -43,6 +43,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from ...domain.errors import ConfigurationError, MissingFileError
 from ...domain.history import DiskSeries, History, Sample
 from ..textfile import read_json_bounded
+from ..validation import what_is_wrong_with_it
 
 HISTORY_SCHEMA_VERSION = 1
 
@@ -220,7 +221,11 @@ def load_history(path: Path, *, hostname: str) -> History:
     try:
         stored = HistoryFile.model_validate(payload)
     except ValidationError as error:
-        message = f"{path} is not a history store lsdsk understands: {error}"
+        # The same refusal the snapshot loader gives, for the same reason: the
+        # raw report names an internal model, quotes a slice of the caller's own
+        # file back at them and carries the pinned pydantic version's URL. The
+        # whole of it stays reachable through --traceback.
+        message = f"{path} is not a history store lsdsk understands:\n{what_is_wrong_with_it(error)}"
         raise ConfigurationError(message) from error
 
     if stored.schema_version != HISTORY_SCHEMA_VERSION:
