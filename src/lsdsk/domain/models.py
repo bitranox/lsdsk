@@ -1355,10 +1355,25 @@ class Inventory(DomainModel, frozen=True):
         """
         if disk.pcie is None or disk.controller_address is None:
             return None
-        for controller in self.controllers:
-            if controller.address == disk.controller_address:
-                return controller.upstream
-        return None
+        controller = self._controller_by_address.get(disk.controller_address)
+        return controller.upstream if controller is not None else None
+
+    @cached_property
+    def _controller_by_address(self) -> Mapping[str, Controller]:
+        """The controllers keyed by address, once per machine.
+
+        The same reason as :attr:`_disks_by_controller`, from the other side.
+        ``port_link_for`` is asked once per drive by ten call sites, including
+        the topology section a bare ``lsdsk`` draws, and it was a scan over the
+        controller list. On NVMe that is the worst case rather than the mild
+        one: a drive is its own controller, so the list it scans grows with the
+        drives, and the whole thing is quadratic in a machine whose only
+        unusual property is having many NVMe drives.
+
+        Returns:
+            Each controller address against its controller.
+        """
+        return {controller.address: controller for controller in self.controllers}
 
     def disks_on(self, controller_address: str) -> tuple[Disk, ...]:
         """Return the disks attached to one controller.

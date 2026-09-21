@@ -32,7 +32,7 @@ from lsdsk.domain.history import History, has_new_readings, record
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 from .. import safe_console
-from ..constants import CLICK_CONTEXT_SETTINGS
+from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION
 from ..envelope import ActionResult, emit_action, fail
 from ..exit_codes import ExitCode
 from ..typed_click import option
@@ -356,14 +356,7 @@ class RecordResult(ActionResult):
 
 
 @click.command("record", context_settings=CLICK_CONTEXT_SETTINGS)
-@option(
-    "--format",
-    "output_format",
-    type=click.Choice(OutputFormat, case_sensitive=False),
-    default=OutputFormat.HUMAN.value,
-    show_default=True,
-    help="Human-readable output, or JSON for another program to consume.",
-)
+@FORMAT_OPTION
 @option(
     "--replay",
     "replay",
@@ -439,14 +432,7 @@ def cli_record(ctx: click.Context, replay: Path | None, output_format: OutputFor
     default=None,
     help="Render a snapshot captured earlier instead of reading this machine.",
 )
-@option(
-    "--format",
-    "output_format",
-    type=click.Choice(OutputFormat, case_sensitive=False),
-    default=OutputFormat.HUMAN.value,
-    show_default=True,
-    help="Human-readable output, or JSON for another program to consume.",
-)
+@FORMAT_OPTION
 @click.pass_context
 def cli_trend(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Show what each error counter is doing over time, not just its total.

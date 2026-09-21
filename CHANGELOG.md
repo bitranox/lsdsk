@@ -441,6 +441,43 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **Looking up a drive's PCIe port no longer costs a scan of every controller.**
+  `Inventory.port_link_for` walked the controller list once per drive, and ten
+  call sites ask it per drive - including the topology section a bare `lsdsk`
+  draws. On NVMe that is the worst case rather than the mild one, because a
+  drive is its own controller, so the list it scanned grew with the drives. It
+  is a dict lookup now, on an index built once per machine.
+
+- **A descriptor is no longer leaked when the null device cannot be opened.**
+  The broken-pipe path took a `dup` and opened `/dev/null` in one `try`, so a
+  failure on the second left the first neither closed nor recorded. The one
+  realistic trigger is descriptor exhaustion, which is when leaking one more is
+  worst.
+
+- **A sysfs attribute is bounded like every other read of foreign data.** The
+  two sysfs readers used unbounded reads, with binary attributes then base64
+  encoded into the capture. They stop at a megabyte now, and an attribute past
+  it is reported as not read rather than refusing the run, so one odd device
+  cannot end a scan of the machine.
+
+### Changed
+
+- **A finding's text is cleaned on the field, like every other text a device
+  chose.** No output moves - every finding built today already interpolates
+  cleaned values - but a finding built from a configuration value, a
+  command-line argument or an exception message is now covered too.
+
+- **The capture models declare `frozen` as a class keyword**, which is what
+  makes the type checker enforce it; a subclass that omits it is now an error
+  rather than quietly mutable.
+
+- **`--format` is declared once** in the shared CLI constants instead of being
+  hand-rolled in four commands, so its help text, default and case-sensitivity
+  cannot drift apart.
+
+- **`lsdsk.adapters.hw.decode.describe_pci_device` is gone.** It was an alias
+  every caller bypassed by reaching `pciids.describe` directly. Call that.
+
 - **Two `--set` flags that disagree on a shape are a usage error, in either
   order.** `--set a.b=DEBUG --set a.b.c=1` asks for one key to be a string and
   to be a mapping, and the two orders failed differently: written that way the

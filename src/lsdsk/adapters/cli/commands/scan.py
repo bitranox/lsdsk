@@ -47,7 +47,7 @@ from lsdsk.domain.models import Controller, Disk, Finding, Inventory, PcieSlot, 
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 
 from .. import safe_console
-from ..constants import CLICK_CONTEXT_SETTINGS, TREE_DENSITY_TOKENS
+from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION, TREE_DENSITY_TOKENS
 from ..context import get_cli_context
 from ..envelope import ActionResult, emit_action, fail
 from ..exit_codes import ExitCode
@@ -105,15 +105,6 @@ _REFUSED_FORMAT_OPTION = option(
     default=None,
     hidden=True,
     help="Not offered here.",
-)
-
-_FORMAT_OPTION = option(
-    "--format",
-    "output_format",
-    type=click.Choice(OutputFormat, case_sensitive=False),
-    default=OutputFormat.HUMAN.value,
-    show_default=True,
-    help="Human-readable output, or JSON for another program to consume.",
 )
 
 
@@ -845,7 +836,7 @@ def cli_report(ctx: click.Context, replay: Path | None, output_format: OutputFor
 
 @click.command("topology", context_settings=CLICK_CONTEXT_SETTINGS)
 @_REPLAY_OPTION
-@_FORMAT_OPTION
+@FORMAT_OPTION
 @_EXPAND_VIRTUAL_OPTION
 @_TREE_DENSITY_OPTION
 @click.pass_context
@@ -915,7 +906,7 @@ def effective_tree_density(ctx: click.Context, tree_density: str | None) -> Tree
 
 @click.command("smart", context_settings=CLICK_CONTEXT_SETTINGS)
 @_REPLAY_OPTION
-@_FORMAT_OPTION
+@FORMAT_OPTION
 @click.pass_context
 def cli_smart(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Show every disk's SMART attributes against its own thresholds."""
@@ -935,7 +926,7 @@ def cli_smart(ctx: click.Context, replay: Path | None, output_format: OutputForm
 
 @click.command("findings", context_settings=CLICK_CONTEXT_SETTINGS)
 @_REPLAY_OPTION
-@_FORMAT_OPTION
+@FORMAT_OPTION
 @click.pass_context
 def cli_findings(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Explain every problem and improvement in full."""
@@ -954,7 +945,7 @@ def cli_findings(ctx: click.Context, replay: Path | None, output_format: OutputF
 
 @click.command("controllers", context_settings=CLICK_CONTEXT_SETTINGS)
 @_REPLAY_OPTION
-@_FORMAT_OPTION
+@FORMAT_OPTION
 @click.pass_context
 def cli_controllers(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """List storage controllers, their PCIe placement and their free ports."""
@@ -976,7 +967,7 @@ def cli_controllers(ctx: click.Context, replay: Path | None, output_format: Outp
 
 @click.command("slots", context_settings=CLICK_CONTEXT_SETTINGS)
 @_REPLAY_OPTION
-@_FORMAT_OPTION
+@FORMAT_OPTION
 @click.pass_context
 def cli_slots(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Show the mainboard's PCIe ports, what occupies them and what is free."""
@@ -996,7 +987,7 @@ def cli_slots(ctx: click.Context, replay: Path | None, output_format: OutputForm
 
 @click.command("disks", context_settings=CLICK_CONTEXT_SETTINGS)
 @_REPLAY_OPTION
-@_FORMAT_OPTION
+@FORMAT_OPTION
 @_EXPAND_VIRTUAL_OPTION
 @_FULL_WWN_OPTION
 @click.pass_context
@@ -1037,7 +1028,7 @@ def cli_disks(
 
 @click.command("health", context_settings=CLICK_CONTEXT_SETTINGS)
 @_REPLAY_OPTION
-@_FORMAT_OPTION
+@FORMAT_OPTION
 @click.pass_context
 def cli_health(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Show wear, temperature, hours and error counters for every disk."""
@@ -1138,7 +1129,7 @@ def cli_tui(
 
 
 @click.command("snapshot", context_settings=CLICK_CONTEXT_SETTINGS)
-@_FORMAT_OPTION
+@FORMAT_OPTION
 @option(
     "--output",
     "-o",

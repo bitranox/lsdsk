@@ -26,7 +26,7 @@ from lsdsk.domain.enums import ActionCommand, DeployTarget, OutputFormat
 from lsdsk.domain.errors import ConfigurationError
 
 from .. import safe_console
-from ..constants import CLICK_CONTEXT_SETTINGS
+from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION
 from ..context import CLIContext, get_cli_context
 from ..envelope import ActionResult, MappingResult, emit_action, fail
 from ..exit_codes import ExitCode
@@ -257,14 +257,7 @@ def _parse_octal_mode(ctx: click.Context, param: click.Parameter, value: str | N
 
 
 @click.command("config-deploy", context_settings=CLICK_CONTEXT_SETTINGS)
-@option(
-    "--format",
-    "output_format",
-    type=click.Choice(OutputFormat, case_sensitive=False),
-    default=OutputFormat.HUMAN.value,
-    show_default=True,
-    help="Human-readable output, or JSON for another program to consume.",
-)
+@FORMAT_OPTION
 @option(
     "--target",
     "targets",
@@ -463,14 +456,7 @@ def _report_deployment_result(
 
 
 @click.command("config-generate-examples", context_settings=CLICK_CONTEXT_SETTINGS)
-@option(
-    "--format",
-    "output_format",
-    type=click.Choice(OutputFormat, case_sensitive=False),
-    default=OutputFormat.HUMAN.value,
-    show_default=True,
-    help="Human-readable output, or JSON for another program to consume.",
-)
+@FORMAT_OPTION
 @option("--destination", type=click.Path(file_okay=False), required=True, help="Directory to write example files")
 @option("--force", is_flag=True, default=False, help="Overwrite existing files")
 @click.pass_context
