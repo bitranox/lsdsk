@@ -13,6 +13,7 @@ import errno
 import io
 import json
 import os
+import re
 import sys
 import threading
 from pathlib import Path
@@ -288,6 +289,13 @@ def test_malformed_json_is_refused_as_configuration_not_raised(tmp_path: Path, l
     A huge integer literal raises a bare ``ValueError`` and deep nesting raises
     ``RecursionError``. Both escaped the handler as tracebacks under the wrong
     exit codes, 22 and 1, where every other malformed file is refused with 78.
+
+    Whether the nesting arm still overflows is CPython's choice, not this
+    project's, and it moved inside one minor release: 3.14.5 overflows the
+    decoder, 3.14.7 parses the document and lets validation refuse it. Both
+    refusals are a ``ConfigurationError`` naming this file, which is the whole
+    contract, so that is what is asserted - a sentence harvested from whichever
+    interpreter happened to be installed is not.
     """
     crafted = tmp_path / "bad.json"
     crafted.write_text(body.format(digits="9" * 20000, deep="[" * 60000 + "]" * 60000), encoding="utf-8")
@@ -297,7 +305,7 @@ def test_malformed_json_is_refused_as_configuration_not_raised(tmp_path: Path, l
     # limit, not the JSON grammar; the nesting case overflows the decoder's
     # stack. What both share, and what this test is actually about, is that
     # neither escapes as a raw ValueError: the reader wraps it.
-    with pytest.raises(ConfigurationError, match="Could not read the snapshot at"):
+    with pytest.raises(ConfigurationError, match=re.escape(str(crafted))):
         load(crafted)
 
 

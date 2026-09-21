@@ -35,13 +35,17 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture
-def unreadable_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A configuration home whose user file is not valid TOML."""
-    root = tmp_path / "xdg"
-    (root / "lsdsk").mkdir(parents=True)
-    broken = root / "lsdsk" / "config.toml"
+def unreadable_config(user_config_dir: Path) -> Path:
+    """A configuration home whose user file is not valid TOML.
+
+    Seeded where THIS platform's loader looks. Under ``XDG_CONFIG_HOME`` the
+    file was invisible on macOS, so the run loaded cleanly and left `0` where
+    this asserts `78` - a pass or fail decided by the runner rather than by the
+    code.
+    """
+    user_config_dir.mkdir(parents=True, exist_ok=True)
+    broken = user_config_dir / "config.toml"
     broken.write_text("this is not = valid toml [[[\n", encoding="utf-8")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(root))
     from lsdsk.adapters.config.loader import get_config
 
     get_config.cache_clear()

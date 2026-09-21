@@ -200,7 +200,7 @@ def test_a_near_miss_section_is_refused_rather_than_ignored(
     assert meant in result.output, f"the refusal did not name [{meant}], which is the section the reader meant"
 
 
-def _run_with_config(*, config_home: Path, history: Path, capture: Path) -> tuple[int, str, str]:
+def _run_with_config(*, history: Path, capture: Path) -> tuple[int, str, str]:
     """Run a real lsdsk process against a config directory of this test's own.
 
     Spawned rather than invoked in-process because the layered loader caches its
@@ -208,8 +208,13 @@ def _run_with_config(*, config_home: Path, history: Path, capture: Path) -> tupl
     an in-process arm would either read the developer's own config or assert
     against a cache the test filled itself.
 
+    The user layer is seeded by the ``user_config_dir`` fixture, which points
+    THIS platform's own variable at a directory of the test's own; the child
+    inherits it. Handing the child ``XDG_CONFIG_HOME`` instead seeded a
+    directory macOS never reads, so the arm that must warn produced no warning
+    there and its silent control passed for the wrong reason.
+
     Args:
-        config_home: What to hand the run as ``XDG_CONFIG_HOME``.
         history: A counter store of this test's own.
         capture: The snapshot to replay.
 
@@ -240,7 +245,7 @@ def _run_with_config(*, config_home: Path, history: Path, capture: Path) -> tupl
         encoding="utf-8",
         errors="replace",
         cwd=str(_Path(__file__).parent.parent),
-        env={**os.environ, "TERM": "dumb", "XDG_CONFIG_HOME": str(config_home)},
+        env={**os.environ, "TERM": "dumb"},
         check=False,
         timeout=120,
     )
@@ -257,6 +262,7 @@ def _run_with_config(*, config_home: Path, history: Path, capture: Path) -> tupl
 )
 def test_a_mistyped_key_in_a_config_file_is_reported_rather_than_ignored(
     tmp_path: Path,
+    user_config_dir: Path,
     key: str,
     warns: bool,
 ) -> None:
@@ -273,12 +279,12 @@ def test_a_mistyped_key_in_a_config_file_is_reported_rather_than_ignored(
     """
     from pathlib import Path as _Path
 
-    config_home = tmp_path / "config"
-    (config_home / "lsdsk" / "config.d").mkdir(parents=True)
-    (config_home / "lsdsk" / "config.d" / "90-probe.toml").write_text(f"[thresholds]\n{key} = 1\n", encoding="utf-8")
+    probe_dir = user_config_dir / "config.d"
+    probe_dir.mkdir(parents=True, exist_ok=True)
+    (probe_dir / "90-probe.toml").write_text(f"[thresholds]\n{key} = 1\n", encoding="utf-8")
     capture = _Path(__file__).parent / "fixtures" / "hw" / _CAPTURE
 
-    code, out, err = _run_with_config(config_home=config_home, history=tmp_path / "h.json", capture=capture)
+    code, out, err = _run_with_config(history=tmp_path / "h.json", capture=capture)
 
     assert out, "the run produced no stdout, so neither arm asserted anything"
     if warns:

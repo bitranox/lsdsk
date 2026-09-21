@@ -449,7 +449,7 @@ def test_deploy_configuration_passes_mode_overrides_to_library(
 
 
 @pytest.mark.os_posix
-def test_a_custom_mode_reaches_the_bits_on_disk(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_custom_mode_reaches_the_bits_on_disk(user_config_dir: Path) -> None:
     """The whole feature, through the real library, ending at stat().
 
     Every other test of this stops one layer short: the CLI-level ones capture
@@ -465,21 +465,19 @@ def test_a_custom_mode_reaches_the_bits_on_disk(tmp_path: Path, monkeypatch: pyt
     if os.geteuid() == 0:
         pytest.skip("root's deployment modes are not the ones asked for")
 
-    root = tmp_path / "xdg"
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(root))
     deployed = deploy_configuration(
         DeployRequest(targets=(DeployTarget.USER,), dir_mode=0o750, file_mode=0o640, set_permissions=True)
     )
 
     assert deployed, "nothing was written, so the modes below would assert nothing"
-    directory = root / "lsdsk"
+    directory = user_config_dir
     assert stat.S_IMODE(directory.stat().st_mode) == 0o750, oct(stat.S_IMODE(directory.stat().st_mode))
     for written in deployed:
         assert stat.S_IMODE(written.stat().st_mode) == 0o640, f"{written}: {oct(stat.S_IMODE(written.stat().st_mode))}"
 
 
 @pytest.mark.os_posix
-def test_the_shipped_modes_are_not_the_custom_ones(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_shipped_modes_are_not_the_custom_ones(user_config_dir: Path) -> None:
     """The control for the test above.
 
     If the defaults happened to be 750 and 640 it would pass against a build
@@ -489,12 +487,10 @@ def test_the_shipped_modes_are_not_the_custom_ones(tmp_path: Path, monkeypatch: 
     if os.geteuid() == 0:
         pytest.skip("root's deployment modes are not the ones asked for")
 
-    root = tmp_path / "xdg"
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(root))
     deployed = deploy_configuration(DeployRequest(targets=(DeployTarget.USER,), set_permissions=True))
 
     assert deployed
-    assert stat.S_IMODE((root / "lsdsk").stat().st_mode) != 0o750
+    assert stat.S_IMODE(user_config_dir.stat().st_mode) != 0o750
     assert stat.S_IMODE(deployed[0].stat().st_mode) != 0o640
 
 

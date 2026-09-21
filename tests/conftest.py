@@ -153,27 +153,57 @@ def seed_user_config(
     written out here, so a rename cannot leave the tests seeding a directory
     nothing reads.
     """
-    from lsdsk import __init__conf__
 
     def _seed(text: str) -> Path:
-        if sys.platform == "darwin":
-            root = tmp_path / "home"
-            support = root / "Library" / "Application Support"
-            path = support / __init__conf__.LAYEREDCONF_VENDOR / __init__conf__.LAYEREDCONF_APP / "config.toml"
-            monkeypatch.setenv("HOME", str(root))
-        elif sys.platform == "win32":
-            root = tmp_path / "appdata"
-            path = root / __init__conf__.LAYEREDCONF_VENDOR / __init__conf__.LAYEREDCONF_APP / "config.toml"
-            monkeypatch.setenv("APPDATA", str(root))
-        else:
-            root = tmp_path / "xdg"
-            path = root / __init__conf__.LAYEREDCONF_SLUG / "config.toml"
-            monkeypatch.setenv("XDG_CONFIG_HOME", str(root))
+        path = _user_config_dir(tmp_path, monkeypatch) / "config.toml"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
         return path
 
     return _seed
+
+
+def _user_config_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    r"""The directory THIS platform's loader reads a user-level config from.
+
+    One decider with two readers, because the split was written out once and a
+    second test wrote its own copy that only knew about XDG. That copy seeded
+    a directory macOS does not read, so ten profile tests asserted against the
+    shipped defaults there and failed for a reason with nothing to do with
+    profiles - on the runner only, and only once the failures above them were
+    cleared away.
+
+    The identifiers come from the application's own metadata rather than being
+    written out here, so a rename cannot leave a test seeding a directory
+    nothing reads.
+
+    Args:
+        tmp_path: The test's own directory, which the root is built under.
+        monkeypatch: Used to point the platform's variable at that root.
+
+    Returns:
+        The directory holding ``config.toml``, and under it ``profile/<name>/``.
+    """
+    from lsdsk import __init__conf__
+
+    if sys.platform == "darwin":
+        root = tmp_path / "home"
+        monkeypatch.setenv("HOME", str(root))
+        support = root / "Library" / "Application Support"
+        return support / __init__conf__.LAYEREDCONF_VENDOR / __init__conf__.LAYEREDCONF_APP
+    if sys.platform == "win32":
+        root = tmp_path / "appdata"
+        monkeypatch.setenv("APPDATA", str(root))
+        return root / __init__conf__.LAYEREDCONF_VENDOR / __init__conf__.LAYEREDCONF_APP
+    root = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(root))
+    return root / __init__conf__.LAYEREDCONF_SLUG
+
+
+@pytest.fixture
+def user_config_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Where this platform reads a user-level config from, as a fixture."""
+    return _user_config_dir(tmp_path, monkeypatch)
 
 
 def _load_dotenv() -> None:

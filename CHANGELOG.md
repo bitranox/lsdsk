@@ -441,6 +441,24 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **Four test files seeded a configuration home only Linux reads.** They set
+  `XDG_CONFIG_HOME` while carrying `os_posix`, which includes macOS, where the
+  loader reads `~/Library/Application Support` instead. So the seeded file was
+  invisible there and ten cells failed on every macOS runner for a reason with
+  nothing to do with what they test: a malformed file that raised nothing and
+  left `0` where `78` was asserted, deployment modes read off a directory
+  nothing had written, a profile that resolved to the shipped `24` rather than
+  the seeded `9`, and a config-file warning that never fired while its own
+  silent control passed. The platform split now lives in one place that all of
+  them read, and a guard refuses a second copy.
+
+- **A refusal is asserted by the file it names, not by one interpreter's
+  sentence.** The deep-nesting arm of the malformed-JSON test matched "Could
+  not read the snapshot at", which is what CPython 3.14.5 produces; on 3.14.7
+  the same document parses and is refused by validation instead, with a
+  different sentence. Both are a `ConfigurationError` naming the file, which is
+  the contract the test is about, so that is what it asserts now.
+
 - **The suite renders the same way on a runner as it does here.** Two tests read
   text the tool had rendered and compared it against a plain phrase, which holds
   only while nothing colours the output. A GitHub runner is terminal-compatible

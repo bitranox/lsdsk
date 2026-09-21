@@ -36,15 +36,19 @@ PROFILE_VALUE = 9
 
 
 @pytest.fixture
-def config_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    """A configuration home holding one real profile called ``prod``."""
-    root = tmp_path / "xdg"
-    profile_dir = root / "lsdsk" / "profile" / "prod"
+def config_root(user_config_dir: Path) -> Iterator[Path]:
+    """A configuration home holding one real profile called ``prod``.
+
+    Built where THIS platform's loader looks rather than under ``XDG_CONFIG_HOME``,
+    which only Linux reads. Seeded the old way these tests passed here and failed
+    on every macOS runner, reading the shipped 24 instead of the fixture's 9 -
+    a failure about the seeded directory, not about profiles.
+    """
+    profile_dir = user_config_dir / "profile" / "prod"
     profile_dir.mkdir(parents=True)
     (profile_dir / "config.toml").write_text(f"[display]\nwwn_width = {PROFILE_VALUE}\n", encoding="utf-8")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(root))
     get_config.cache_clear()
-    yield root
+    yield user_config_dir
     get_config.cache_clear()
 
 
@@ -107,16 +111,14 @@ def test_the_layers_a_profile_contributed_are_read_from_provenance(config_root: 
 
 
 @pytest.mark.os_posix
-def test_an_empty_profile_directory_counts_as_naming_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_empty_profile_directory_counts_as_naming_nothing(user_config_dir: Path) -> None:
     """The case a directory check would call a success.
 
     It is listed as an existing profile, because a reader who made the
     directory meant that name - but nothing loaded from it, so the run is
     reporting defaults and must say so.
     """
-    root = tmp_path / "xdg"
-    (root / "lsdsk" / "profile" / "hollow").mkdir(parents=True)
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(root))
+    (user_config_dir / "profile" / "hollow").mkdir(parents=True)
     get_config.cache_clear()
     try:
         assert "hollow" in existing_profiles()
