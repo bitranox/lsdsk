@@ -1200,3 +1200,37 @@ def test_a_finding_cleans_its_own_text_like_every_other_domain_model() -> None:
     assert "do this" in (salted.action or ""), salted.action
     plain = Finding(severity=Severity.HINT, subject="s", title="t", detail="d", action="a")
     assert (plain.subject, plain.title, plain.detail, plain.action) == ("s", "t", "d", "a")
+
+
+@pytest.mark.os_linux
+def test_a_sysfs_attribute_past_the_ceiling_is_not_read_rather_than_read_whole(tmp_path: Path) -> None:
+    """The two sysfs reads are bounded like every other read of foreign data.
+
+    `textfile.py` states the discipline as covering every read of data this tool
+    did not write, and these two were the exception: `read_text()` and
+    `read_bytes()`, both unbounded, with the blob then base64-encoded into the
+    capture and the emitted JSON. Ordinary text attributes are one page, but the
+    binary ones are `bin_attribute` files whose content comes from the device.
+
+    It is NOT READ rather than refused: this runs per device on a live scan, and
+    one odd attribute must not end the diagnosis of the hardware in front of
+    somebody. `None` is what every unreadable attribute already answers.
+    """
+    from lsdsk.adapters.hw.linux.reader import (
+        MAX_SYSFS_BYTES,
+        _read_blob,  # pyright: ignore[reportPrivateUsage] - the bound lives on the private reader; remove if it is ever published
+        _read_text,  # pyright: ignore[reportPrivateUsage] - likewise
+    )
+
+    small = tmp_path / "model"
+    small.write_text("a drive\n", encoding="utf-8")
+    huge = tmp_path / "vpd"
+    huge.write_bytes(b"\xff" * (MAX_SYSFS_BYTES + 1))
+
+    # The control: an ordinary attribute still reads, so a pair of Nones below
+    # would not be the bound doing its job but the reader being broken.
+    assert _read_text(small) == "a drive"
+    assert _read_blob(small) is not None
+
+    assert _read_text(huge) is None, "an oversized attribute was read as text"
+    assert _read_blob(huge) is None, "an oversized attribute was base64-encoded into the capture"

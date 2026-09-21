@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from ...domain.enums import Platform
 
@@ -35,7 +35,7 @@ MAX_DEVICE_TEXT = 4096
 DeviceText = Annotated[str, Field(max_length=MAX_DEVICE_TEXT)]
 
 
-class CaptureModel(BaseModel):
+class CaptureModel(BaseModel, frozen=True, extra="ignore"):
     """Base for every part of a capture.
 
     Frozen, because a capture records what was read and nothing downstream may
@@ -44,12 +44,17 @@ class CaptureModel(BaseModel):
     refused passthrough, context kept for a bug report), and a snapshot written
     by a newer reader has to keep loading. A key a model DOES name must hold the
     type it names, or the capture is refused.
+
+    Declared as CLASS KEYWORDS rather than a ``model_config`` dict, the same way
+    :class:`lsdsk.domain.base.DomainModel` is and for the same reason: pyright
+    reads only the keyword, so with the dict it holds every subclass unhashable,
+    and a subclass that forgets ``frozen`` is an error instead of a quietly
+    mutable class. Nothing here is put in a set today, which is exactly why the
+    difference was invisible.
     """
 
-    model_config = ConfigDict(frozen=True, extra="ignore")
 
-
-class CaptureHeader(CaptureModel):
+class CaptureHeader(CaptureModel, frozen=True):
     """The keys every capture has, whichever platform wrote it.
 
     Every field without a default is REQUIRED, and that is the guard. Given
@@ -74,7 +79,7 @@ class CaptureHeader(CaptureModel):
     captured_at: str | None = None
 
 
-class CaptureEnvelope(CaptureHeader):
+class CaptureEnvelope(CaptureHeader, frozen=True):
     """The header of a snapshot of either platform.
 
     Read on its own before the platform model is chosen, so a file that is not a

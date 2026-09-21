@@ -247,20 +247,64 @@ def smart_log_selector(length: int = 512, log_id: int = NVME_SMART_LOG_ID) -> in
     return ((length // 4 - 1) << 16) | log_id
 
 
+#: What one sysfs attribute may carry before this tool stops reading it.
+#:
+#: Every other read of data this tool did not write goes through
+#: :mod:`lsdsk.adapters.textfile` or the pci.ids decompressed-size bound, and
+#: that module's docstring states the discipline as covering all of them. These
+#: two were the exception, resting on the kernel and the driver behaving rather
+#: than on the tool's own limit. An ordinary text attribute is one page; the
+#: binary ones are ``bin_attribute`` files, which carry no such guarantee - a
+#: VPD region is one, and its content comes from the device. A megabyte is three
+#: orders of magnitude above anything real here and far below a size that would
+#: matter, so it refuses only what a misbehaving or hostile device produces.
+#:
+#: Stat cannot decide it: sysfs reports 4096 for an attribute whatever it holds,
+#: so the size has to come from the read itself.
+MAX_SYSFS_BYTES = 1024 * 1024
+
+
 def _read_text(path: Path) -> str | None:
-    """Read one sysfs attribute, returning ``None`` when it cannot be read."""
+    """Read one sysfs attribute, returning ``None`` when it cannot be read.
+
+    An attribute past :data:`MAX_SYSFS_BYTES` is not read rather than refused:
+    this runs per device on a live scan, and one odd attribute must not end the
+    diagnosis of the hardware in front of somebody. ``None`` is what every
+    unreadable attribute already answers.
+
+    Args:
+        path: The attribute to read.
+
+    Returns:
+        Its stripped text, or ``None`` where it could not be read or is too big.
+    """
     try:
-        return path.read_text(errors="replace").strip()
+        with path.open("r", errors="replace") as handle:
+            raw = handle.read(MAX_SYSFS_BYTES + 1)
     except OSError:
         return None
+    if len(raw) > MAX_SYSFS_BYTES:
+        return None
+    return raw.strip()
 
 
 def _read_blob(path: Path) -> str | None:
-    """Read one sysfs binary attribute as base64, or ``None``."""
+    """Read one sysfs binary attribute as base64, or ``None``.
+
+    Args:
+        path: The attribute to read.
+
+    Returns:
+        Its base64 text, or ``None`` where it could not be read or is too big.
+    """
     try:
-        return base64.b64encode(path.read_bytes()).decode("ascii")
+        with path.open("rb") as handle:
+            raw = handle.read(MAX_SYSFS_BYTES + 1)
     except OSError:
         return None
+    if len(raw) > MAX_SYSFS_BYTES:
+        return None
+    return base64.b64encode(raw).decode("ascii")
 
 
 def _read_attrs(base: Path, names: tuple[str, ...]) -> dict[str, str]:
@@ -817,6 +861,7 @@ def read_system() -> dict[str, Any]:
 __all__ = [
     "ATA_IDENTIFY_DEVICE",
     "ATA_SMART",
+    "MAX_SYSFS_BYTES",
     "NVME_IOCTL_ADMIN_CMD",
     "SG_IO",
     "AhciReading",

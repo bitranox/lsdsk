@@ -10,7 +10,6 @@ from __future__ import annotations
 from .ata_identify import AtaIdentity, decode_identify, decode_vpd_ata_information
 from .ata_smart import build_health, decode_attributes, decode_health
 from .nvme import NvmeIdentity, decode_identify_controller, decode_smart_log
-from .pciids import describe as describe_pci_device
 
 __all__ = [
     "AtaIdentity",
@@ -22,5 +21,4 @@ __all__ = [
     "decode_identify_controller",
     "decode_smart_log",
     "decode_vpd_ata_information",
-    "describe_pci_device",
 ]

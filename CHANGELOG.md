@@ -441,6 +441,39 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **Two `--set` flags that disagree on a shape are a usage error, in either
+  order.** `--set a.b=DEBUG --set a.b.c=1` asks for one key to be a string and
+  to be a mapping, and the two orders failed differently: written that way the
+  merge raised `TypeError`, which no handler catches, so the run left exit 22
+  and a bare Python type name instead of the exit 2 and the hint every other
+  malformed `--set` gets. Reversed, nothing was raised at all and the scalar
+  silently replaced the mapping the first flag had built, with `lsdsk config`
+  then reporting the survivor as in force. Both are now one refusal naming both
+  halves of the pair.
+
+- **A configured number too large to use falls back instead of reaching the
+  layout.** `display.wwn_width` and every other `[display]` width and
+  `[thresholds]` count accepted any positive value, so a legal 64-bit TOML
+  integer reached `str.ljust` and asked for an allocation of that size. This
+  module's guarantee is that a value it cannot use falls back rather than
+  failing the run; anything above a billion is now reported as ignored, the way
+  an unusable one already was.
+
+- **A corrupt history store refuses in this tool's own words.** The refusal
+  interpolated pydantic's whole report, so the pinned version's URL, an internal
+  model name and a slice of the caller's own file reached stderr from every
+  command that reads history. It now names the field and the reason, one line
+  each, exactly as the snapshot loader has always done. The full report is still
+  reachable through `--traceback`.
+
+- **Diagnosing a large replay no longer costs minutes.** Two searches inside
+  `diagnose` were quadratic in disks times controllers. Neither is reachable
+  from real hardware, where 500 drives on 20 controllers is sub-millisecond, but
+  one `--replay` file under the documented 64 MB ceiling holds several thousand
+  drives: 3200 on 200 controllers took 58 seconds and now takes 0.16, with the
+  output unchanged on every committed capture. The controller table, the detail
+  panel and the fabric tree share the index and get the same improvement.
+
 - **The one place an unread end is filled in says so, and the direction is
   pinned.** `Controller.achievable_bandwidth_gbps` answers from the end that
   WAS read, which every sibling refuses to do and which this project's own rule

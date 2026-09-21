@@ -111,6 +111,7 @@ module exists that is not listed here, or a listed path does not exist.
 ### Adapters - shared
 
 - `src/lsdsk/adapters/textfile.py` - Reading a JSON file that came from somewhere else, without trusting its size.
+- `src/lsdsk/adapters/validation.py` - Pydantic's refusal as this tool's own sentences, shared by both JSON-backed stores.
 
 ### Adapters - logging
 

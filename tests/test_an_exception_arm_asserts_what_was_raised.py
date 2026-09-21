@@ -25,10 +25,67 @@ def _is_raises(call: ast.expr) -> bool:
     return isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "raises"
 
 
-def _reads(name: str, inside: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """Whether `name` is ever READ in `inside`, rather than only bound."""
+def _derived_from(name: str, inside: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    """Every local name carrying what `name` holds, `name` included.
+
+    A test routinely lifts the captured exception into a local first -
+    ``said = str(refused.value)`` - and then asserts on THAT, so asking only
+    about the captured name would report those arms as asserting nothing.
+
+    Walked to a fixed point, because a name can be lifted twice.
+
+    Args:
+        name: The name the raises block bound.
+        inside: The function to read.
+
+    Returns:
+        The names that carry it.
+    """
+    carried = {name}
+    while True:
+        grew = False
+        for node in ast.walk(inside):
+            if not isinstance(node, ast.Assign):
+                continue
+            mentions = {
+                part.id
+                for part in ast.walk(node.value)
+                if isinstance(part, ast.Name) and isinstance(part.ctx, ast.Load)
+            }
+            if not (mentions & carried):
+                continue
+            for target in node.targets:
+                for part in ast.walk(target):
+                    if isinstance(part, ast.Name) and part.id not in carried:
+                        carried.add(part.id)
+                        grew = True
+        if not grew:
+            return carried
+
+
+def _asserted_on(name: str, inside: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Whether what `name` holds reaches an ``assert`` in `inside`.
+
+    Reading the name is not enough, and that is the whole point of this guard:
+    ``with pytest.raises(X) as exc: ...`` followed by ``print(exc.value)`` reads
+    it and still cannot fail for the reason the arm was written, which is the
+    exact class this exists to catch.
+
+    Args:
+        name: The name the raises block bound.
+        inside: The function to read.
+
+    Returns:
+        Whether an ``assert`` statement mentions it, or a name lifted from it.
+    """
+    carried = _derived_from(name, inside)
     return any(
-        isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, ast.Load) for node in ast.walk(inside)
+        isinstance(node, ast.Assert)
+        and any(
+            isinstance(part, ast.Name) and part.id in carried and isinstance(part.ctx, ast.Load)
+            for part in ast.walk(node)
+        )
+        for node in ast.walk(inside)
     )
 
 
@@ -53,7 +110,7 @@ def _unasserted_arms() -> tuple[list[str], int]:
                     if any(keyword.arg == "match" for keyword in call.keywords):
                         continue
                     bound = item.optional_vars
-                    if isinstance(bound, ast.Name) and _reads(bound.id, function):
+                    if isinstance(bound, ast.Name) and _asserted_on(bound.id, function):
                         continue
                     offenders.append(f"{path.relative_to(TESTS)}:{block.lineno}")
     return offenders, total
@@ -78,3 +135,46 @@ def test_every_exception_arm_asserts_something_about_what_it_caught() -> None:
         f"{len(offenders)} of {total} pytest.raises blocks assert nothing about what was raised, "
         f"so they cannot fail for the reason they were written: {offenders}"
     )
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("body", "expected", "why"),
+    [
+        pytest.param("assert exc.value.code == 2", True, "asserted directly", id="asserted directly"),
+        pytest.param(
+            "said = str(exc.value)\n    assert 'no' in said",
+            True,
+            "lifted once, then asserted",
+            id="lifted once",
+        ),
+        pytest.param(
+            "said = str(exc.value)\n    shown = said.lower()\n    assert 'no' in shown",
+            True,
+            "lifted twice, then asserted",
+            id="lifted twice",
+        ),
+        pytest.param("print(exc.value)", False, "read but never asserted on", id="merely read"),
+        pytest.param(
+            "said = str(exc.value)\n    print(said)",
+            False,
+            "lifted and then only printed",
+            id="lifted and printed",
+        ),
+        pytest.param("assert 1 == 1", False, "an assert that does not mention it", id="an unrelated assert"),
+    ],
+)
+def test_the_predicate_can_answer_both_ways(body: str, expected: bool, why: str) -> None:
+    """The guard's own control: it has to say NO to the shape it exists to catch.
+
+    Before this, reading the bound name anywhere in the function counted as
+    asserting on it, so `print(exc.value)` satisfied the guard while still being
+    an arm that cannot fail for the reason it was written. A checker that
+    answers YES to everything is indistinguishable from a clean suite.
+    """
+    source = f"def t():\n    with pytest.raises(ValueError) as exc:\n        go()\n    {body}\n"
+    tree = ast.parse(source)
+    function = tree.body[0]
+    assert isinstance(function, ast.FunctionDef)
+
+    assert _asserted_on("exc", function) is expected, f"{why}: got {not expected}"

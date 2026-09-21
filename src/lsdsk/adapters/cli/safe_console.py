@@ -151,10 +151,19 @@ def _stop_writing_to(stream: IO[Any] | None) -> None:
         return
     if descriptor in _REDIRECTED_DESCRIPTORS:
         return
+    # Two acquisitions, so two scopes: taken together, a failure on the second
+    # returned with the first neither closed nor recorded, which means nothing
+    # closes it later either. The realistic way the second fails is descriptor
+    # exhaustion, which is exactly when leaking one more is worst, and this runs
+    # on the broken-pipe error path.
     try:
         saved = os.dup(descriptor)
+    except OSError:  # pragma: no cover - dup of a live descriptor
+        return
+    try:
         null = os.open(os.devnull, os.O_WRONLY)
     except OSError:  # pragma: no cover - the null device is always openable
+        os.close(saved)
         return
     try:
         os.dup2(null, descriptor)

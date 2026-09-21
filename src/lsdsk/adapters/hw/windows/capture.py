@@ -78,7 +78,7 @@ _SHORT_MIN = -(2**15)  # the temperature fields are each a ctypes.c_short
 _SHORT_MAX = 2**15 - 1
 
 
-class PciEntry(CaptureModel):
+class PciEntry(CaptureModel, frozen=True):
     """One PCI device, as SetupAPI describes it.
 
     Attributes:
@@ -113,7 +113,7 @@ class PciEntry(CaptureModel):
     children: tuple[str, ...] = ()
 
 
-class StorageDescriptor(CaptureModel):
+class StorageDescriptor(CaptureModel, frozen=True):
     """The identity strings a disk's storage descriptor carries.
 
     Attributes:
@@ -129,7 +129,7 @@ class StorageDescriptor(CaptureModel):
     rev: str | None = None
 
 
-class DiskTemperature(CaptureModel):
+class DiskTemperature(CaptureModel, frozen=True):
     """The temperature the storage stack offered, with the drive's own thresholds.
 
     Attributes:
@@ -143,7 +143,7 @@ class DiskTemperature(CaptureModel):
     critical_c: int | None = Field(default=None, ge=_SHORT_MIN, le=_SHORT_MAX)
 
 
-class HealthBlobs(CaptureModel):
+class HealthBlobs(CaptureModel, frozen=True):
     """What passthrough returned for one disk, base64 encoded.
 
     The ``*_error`` fields are the other half of every payload field: the reader
@@ -176,7 +176,7 @@ class HealthBlobs(CaptureModel):
     smart_thresholds_error: str | None = None
 
 
-class DiskEntry(CaptureModel):
+class DiskEntry(CaptureModel, frozen=True):
     """One disk.
 
     Attributes:
@@ -207,7 +207,7 @@ class DiskEntry(CaptureModel):
     error: str | None = None
 
 
-class WindowsCapture(CaptureHeader):
+class WindowsCapture(CaptureHeader, frozen=True):
     """A whole Windows reading.
 
     Attributes:

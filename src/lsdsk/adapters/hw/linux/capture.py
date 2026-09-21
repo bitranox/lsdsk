@@ -70,7 +70,7 @@ def _rotating_of(value: object) -> object:
     return _ROTATING_VALUES.get(value) if isinstance(value, str) else value
 
 
-class AhciRegisters(CaptureModel):
+class AhciRegisters(CaptureModel, frozen=True):
     """The two AHCI registers a privileged run read from the controller itself.
 
     Attributes:
@@ -82,7 +82,7 @@ class AhciRegisters(CaptureModel):
     ports_implemented: int = Field(ge=0, le=_UINT32_MAX)
 
 
-class PciEntry(CaptureModel):
+class PciEntry(CaptureModel, frozen=True):
     """One PCI device, as sysfs and its configuration space describe it.
 
     Attributes:
@@ -130,7 +130,7 @@ class PciEntry(CaptureModel):
     pcie_port_type: int | None = Field(default=None, ge=0, le=_PCIE_PORT_TYPE_MAX)
 
 
-class ClassEntry(CaptureModel):
+class ClassEntry(CaptureModel, frozen=True):
     """What every sysfs class entry carries.
 
     Attributes:
@@ -141,7 +141,7 @@ class ClassEntry(CaptureModel):
     path: str = ""
 
 
-class ScsiHostEntry(ClassEntry):
+class ScsiHostEntry(ClassEntry, frozen=True):
     """A SCSI host, which is where an HBA publishes its own identity.
 
     Attributes:
@@ -153,7 +153,7 @@ class ScsiHostEntry(ClassEntry):
     version_fw: str | None = None
 
 
-class SasPhyEntry(ClassEntry):
+class SasPhyEntry(ClassEntry, frozen=True):
     """A SAS phy.
 
     Attributes:
@@ -165,7 +165,7 @@ class SasPhyEntry(ClassEntry):
     maximum_linkrate_hw: str | None = None
 
 
-class AtaLinkEntry(ClassEntry):
+class AtaLinkEntry(ClassEntry, frozen=True):
     """A libata link.
 
     Attributes:
@@ -177,7 +177,7 @@ class AtaLinkEntry(ClassEntry):
     sata_spd_max: str | None = None
 
 
-class NvmeClassEntry(ClassEntry):
+class NvmeClassEntry(ClassEntry, frozen=True):
     """An NVMe controller's sysfs identity, readable without privilege.
 
     Attributes:
@@ -191,7 +191,7 @@ class NvmeClassEntry(ClassEntry):
     firmware_rev: str | None = None
 
 
-class HwmonEntry(ClassEntry):
+class HwmonEntry(ClassEntry, frozen=True):
     """A hardware monitor.
 
     Attributes:
@@ -201,7 +201,7 @@ class HwmonEntry(ClassEntry):
     temp1_input: str | None = None
 
 
-class SysfsClasses(CaptureModel):
+class SysfsClasses(CaptureModel, frozen=True):
     """The sysfs classes that describe storage topology, each keyed by device name.
 
     Attributes:
@@ -221,7 +221,7 @@ class SysfsClasses(CaptureModel):
     hwmon: dict[str, HwmonEntry] = Field(default_factory=dict[str, HwmonEntry])
 
 
-class QueueAttributes(CaptureModel):
+class QueueAttributes(CaptureModel, frozen=True):
     """A block device's queue attributes.
 
     Attributes:
@@ -234,7 +234,7 @@ class QueueAttributes(CaptureModel):
     rotational: Annotated[bool | None, BeforeValidator(_rotating_of)] = None
 
 
-class DeviceAttributes(CaptureModel):
+class DeviceAttributes(CaptureModel, frozen=True):
     """The attributes of the SCSI or SATA device behind a block node.
 
     Attributes:
@@ -248,7 +248,7 @@ class DeviceAttributes(CaptureModel):
     wwid: str | None = None
 
 
-class VpdPages(CaptureModel):
+class VpdPages(CaptureModel, frozen=True):
     """The vital product data pages read without privilege, base64 encoded.
 
     Attributes:
@@ -258,7 +258,7 @@ class VpdPages(CaptureModel):
     vpd_pg89: str | None = None
 
 
-class BlockEntry(CaptureModel):
+class BlockEntry(CaptureModel, frozen=True):
     """One block device.
 
     Attributes:
@@ -284,7 +284,7 @@ class BlockEntry(CaptureModel):
     hwmon: tuple[str, ...] = ()
 
 
-class AtaBlobs(CaptureModel):
+class AtaBlobs(CaptureModel, frozen=True):
     """What ATA passthrough returned for one disk, base64 encoded.
 
     The ``*_error`` fields are the other half of every payload field: the reader
@@ -313,7 +313,7 @@ class AtaBlobs(CaptureModel):
     smart_thresholds_error: str | None = None
 
 
-class NvmeBlobs(CaptureModel):
+class NvmeBlobs(CaptureModel, frozen=True):
     """What NVMe admin passthrough returned for one disk, base64 encoded.
 
     Attributes:
@@ -331,7 +331,7 @@ class NvmeBlobs(CaptureModel):
     smart_log_error: str | None = None
 
 
-class LinuxCapture(CaptureHeader):
+class LinuxCapture(CaptureHeader, frozen=True):
     """A whole Linux reading.
 
     Attributes:

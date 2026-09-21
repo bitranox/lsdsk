@@ -7,6 +7,7 @@ keeps the next output line someone adds covered by construction.
 
 from __future__ import annotations
 
+import errno
 import io
 import os
 import subprocess
@@ -368,3 +369,44 @@ def test_a_guarded_diagnostic_write_swallows_a_departed_reader_and_nothing_else(
         raise SystemExit(ExitCode.BROKEN_PIPE)
 
     safe_console.write_unless_the_reader_left(leaves_because_the_reader_did)
+
+
+@pytest.mark.os_posix
+def test_a_refused_null_device_leaves_no_descriptor_behind(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The dup taken first is released when the open after it fails.
+
+    Both acquisitions once sat in one `try`, so a raise on the second returned
+    with the first neither closed nor recorded in `_REDIRECTED_DESCRIPTORS`,
+    which means nothing closed it later either. The realistic way the second
+    fails is descriptor exhaustion, which is exactly when leaking one more is
+    worst, and this runs on the broken-pipe error path.
+
+    `os.open` is the operating system, which is the one kind of collaborator
+    this project substitutes rather than injects.
+
+    The count is taken as the LOWEST FREE descriptor, which POSIX guarantees is
+    what an open returns: a leak moves it up by one, and nothing else here does.
+    """
+    _os = os
+
+    def lowest_free() -> int:
+        probe = _os.open(_os.devnull, _os.O_WRONLY)
+        _os.close(probe)
+        return probe
+
+    # The control: the measurement has to be able to SEE a leak, or the
+    # assertion below passes against a broken instrument.
+    before = lowest_free()
+    leaked = _os.dup(1)
+    assert lowest_free() > before, "the probe cannot see a held descriptor, so it proves nothing"
+    _os.close(leaked)
+    assert lowest_free() == before, "the probe did not settle back"
+
+    def refuse(*_args: object, **_kwargs: object) -> int:
+        raise OSError(errno.EMFILE, "too many open files")
+
+    monkeypatch.setattr(_os, "open", refuse)
+    safe_console._stop_writing_to(sys.stdout)  # pyright: ignore[reportPrivateUsage] - the redirect is private by design; remove if it is ever published
+    monkeypatch.undo()
+
+    assert lowest_free() == before, "a descriptor survived the refused redirect"
