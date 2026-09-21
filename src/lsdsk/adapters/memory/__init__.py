@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 from .config import (
     deploy_configuration_in_memory,
     display_config_in_memory,
+    generate_examples_in_memory,
     get_config_in_memory,
 )
 from .info import print_info_in_memory, reset_info_in_memory
@@ -32,11 +33,13 @@ if TYPE_CHECKING:
     from lsdsk.application.ports import (
         DeployConfiguration,
         DisplayConfig,
+        GenerateExamples,
         GetConfig,
         InitLogging,
     )
 
     _assert_get_config: GetConfig = get_config_in_memory
+    _assert_generate_examples: GenerateExamples = generate_examples_in_memory
     _assert_deploy_configuration: DeployConfiguration = deploy_configuration_in_memory
     _assert_display_config: DisplayConfig = display_config_in_memory
     _assert_init_logging: InitLogging = init_logging_in_memory
@@ -44,6 +47,7 @@ if TYPE_CHECKING:
 __all__ = [
     "deploy_configuration_in_memory",
     "display_config_in_memory",
+    "generate_examples_in_memory",
     "get_config_in_memory",
     "init_logging_in_memory",
     "print_info_in_memory",

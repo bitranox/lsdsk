@@ -434,6 +434,42 @@ def inject_deploy_with_profile_capture(
 
 
 @pytest.fixture
+def inject_generate_examples() -> Callable[[Callable[..., list[Path]]], Callable[[], AppServices]]:
+    """Return a factory with a custom generate_examples function.
+
+    The seam the config-generate-examples tests were missing. Six of them
+    replaced ``lsdsk.adapters.cli.commands.config.generate_examples`` - the
+    command module's own attribute - so what they proved was that the command
+    forwards a flag to a function the test had installed, and nothing about the
+    one the command really calls. This injects at the container instead, which
+    is where every sibling adapter call already arrives.
+
+    Returns:
+        A function that takes the stand-in and returns a services factory.
+
+    Example:
+        def test_force_is_forwarded(
+            cli_runner: CliRunner,
+            inject_generate_examples: Callable[..., Callable[[], AppServices]],
+        ) -> None:
+            seen = []
+            def spy(destination, **kwargs) -> list[Path]:
+                seen.append(kwargs)
+                return []
+            factory = inject_generate_examples(spy)
+            cli_runner.invoke(cli, ["config-generate-examples", "--destination", "/tmp", "--force"], obj=factory)
+            assert seen[0]["force"] is True
+    """
+
+    def _inject(generate_fn: Callable[..., list[Path]]) -> Callable[[], AppServices]:
+        prod = build_production()
+        test_services = replace(prod, generate_examples=generate_fn)
+        return lambda: test_services
+
+    return _inject
+
+
+@pytest.fixture
 def inject_deploy_configuration() -> Callable[[Callable[..., list[Path]]], Callable[[], AppServices]]:
     """Return a factory with a custom deploy_configuration function.
 

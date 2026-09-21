@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import lib_log_rich.runtime
 import rich_click as click
-from lib_layered_config import Config, generate_examples, redact_mapping
+from lib_layered_config import Config, redact_mapping
 
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.overrides import apply_overrides
@@ -487,11 +487,16 @@ def cli_config_generate_examples(
     By default, existing files are not overwritten. Use --force to overwrite.
 
     """
+    # Through the container, like every other adapter call these commands make.
+    # Reached directly, the six tests that cover this command could only replace
+    # the module's own attribute, so each proved that the command forwards a
+    # flag to a function the test installed.
+    cli_ctx = get_cli_context(ctx)
     extra = {"command": ActionCommand.CONFIG_GENERATE_EXAMPLES.value, "destination": destination, "force": force}
     with lib_log_rich.runtime.bind(job_id="cli-config-generate-examples", extra=extra):
         logger.info("Generating example configuration files", extra={"destination": destination, "force": force})
         try:
-            paths = generate_examples(
+            paths = cli_ctx.services.generate_examples(
                 destination=destination,
                 slug=__init__conf__.LAYEREDCONF_SLUG,
                 vendor=__init__conf__.LAYEREDCONF_VENDOR,

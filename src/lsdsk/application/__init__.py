@@ -12,6 +12,7 @@ from __future__ import annotations
 from .ports import (
     DeployConfiguration,
     DisplayConfig,
+    GenerateExamples,
     GetConfig,
     InitLogging,
 )
@@ -19,6 +20,7 @@ from .ports import (
 __all__ = [
     "DeployConfiguration",
     "DisplayConfig",
+    "GenerateExamples",
     "GetConfig",
     "InitLogging",
 ]

@@ -52,6 +52,31 @@ def deploy_configuration_in_memory(request: DeployRequest) -> list[Path]:
     return []
 
 
+def generate_examples_in_memory(
+    destination: str | Path,
+    *,
+    slug: str,
+    vendor: str,
+    app: str,
+    force: bool = False,
+) -> list[Path]:
+    """Simulate writing example files -- no filesystem changes, returns empty list.
+
+    Args:
+        destination: Accepted and ignored.
+        slug: Accepted and ignored.
+        vendor: Accepted and ignored.
+        app: Accepted and ignored.
+        force: Accepted and ignored.
+
+    Returns:
+        An empty list, since nothing was written. That is the "all files already
+        exist" answer as far as the command is concerned, which is the safe one
+        for a double: it prints a sentence and writes nothing.
+    """
+    return []
+
+
 def display_config_in_memory(
     config: Config,
     *,
@@ -72,5 +97,6 @@ def display_config_in_memory(
 __all__ = [
     "deploy_configuration_in_memory",
     "display_config_in_memory",
+    "generate_examples_in_memory",
     "get_config_in_memory",
 ]

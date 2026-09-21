@@ -59,6 +59,25 @@ class DeployConfiguration(Protocol):
     def __call__(self, request: DeployRequest) -> list[Path]: ...
 
 
+class GenerateExamples(Protocol):
+    """Write example configuration files into a directory.
+
+    Here because six tests cross it. Every other adapter call the config
+    commands make already arrives through the container, and this one did not,
+    so those tests reached into the command module and replaced its own
+    attribute - proving that the command forwards a flag to a function the test
+    installed, and nothing about the one it really calls.
+
+    The signature is the library's, ``platform`` excepted: nothing here passes
+    it, and a port states what the caller needs rather than everything the
+    implementation offers.
+    """
+
+    def __call__(
+        self, destination: str | Path, *, slug: str, vendor: str, app: str, force: bool = ...
+    ) -> list[Path]: ...
+
+
 class DisplayConfig(Protocol):
     """Display the provided configuration in the requested format."""
 
@@ -76,6 +95,7 @@ class InitLogging(Protocol):
 __all__ = [
     "DeployConfiguration",
     "DisplayConfig",
+    "GenerateExamples",
     "GetConfig",
     "InitLogging",
     "PrintInfo",

@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from click.testing import CliRunner, Result
     from lib_layered_config import Config
 
+    from lsdsk.composition import AppServices
     from lsdsk.domain.deployment import DeployRequest
 
 
@@ -320,24 +321,23 @@ def test_when_config_displays_token_and_secret_keys_it_redacts_them(
 def test_when_config_generate_examples_is_invoked_it_creates_files(
     cli_runner: CliRunner,
     tmp_path: Any,
-    monkeypatch: pytest.MonkeyPatch,
-    production_factory: Callable[[], Any],
+    inject_generate_examples: Callable[[Callable[..., list[Path]]], Callable[[], AppServices]],
 ) -> None:
     """Verify config-generate-examples creates files in the target directory."""
     created_file = tmp_path / "example.toml"
     created_file.touch()
 
     def mock_generate_examples(
-        destination: str | Path, *, slug: str, vendor: str, app: str, force: bool = False, platform: str | None = None
+        destination: str | Path, *, slug: str, vendor: str, app: str, force: bool = False
     ) -> list[Path]:
         return [created_file]
 
-    monkeypatch.setattr("lsdsk.adapters.cli.commands.config.generate_examples", mock_generate_examples)
+    factory = inject_generate_examples(mock_generate_examples)
 
     result: Result = cli_runner.invoke(
         cli_mod.cli,
         ["config-generate-examples", "--destination", str(tmp_path)],
-        obj=production_factory,
+        obj=factory,
     )
 
     assert result.exit_code == 0
@@ -349,22 +349,21 @@ def test_when_config_generate_examples_is_invoked_it_creates_files(
 def test_when_config_generate_examples_has_no_files_it_informs_user(
     cli_runner: CliRunner,
     tmp_path: Any,
-    monkeypatch: pytest.MonkeyPatch,
-    production_factory: Callable[[], Any],
+    inject_generate_examples: Callable[[Callable[..., list[Path]]], Callable[[], AppServices]],
 ) -> None:
     """Verify config-generate-examples reports when all files already exist."""
 
     def mock_generate_examples(
-        destination: str | Path, *, slug: str, vendor: str, app: str, force: bool = False, platform: str | None = None
+        destination: str | Path, *, slug: str, vendor: str, app: str, force: bool = False
     ) -> list[Path]:
         return []
 
-    monkeypatch.setattr("lsdsk.adapters.cli.commands.config.generate_examples", mock_generate_examples)
+    factory = inject_generate_examples(mock_generate_examples)
 
     result: Result = cli_runner.invoke(
         cli_mod.cli,
         ["config-generate-examples", "--destination", str(tmp_path)],
-        obj=production_factory,
+        obj=factory,
     )
 
     assert result.exit_code == 0
@@ -388,8 +387,7 @@ def test_when_config_generate_examples_missing_destination_it_fails(
 def test_when_config_generate_examples_with_force_it_passes_force_flag(
     cli_runner: CliRunner,
     tmp_path: Any,
-    monkeypatch: pytest.MonkeyPatch,
-    production_factory: Callable[[], Any],
+    inject_generate_examples: Callable[[Callable[..., list[Path]]], Callable[[], AppServices]],
 ) -> None:
     """Verify config-generate-examples passes --force flag to generate_examples."""
     captured_force: list[bool] = []
@@ -397,17 +395,17 @@ def test_when_config_generate_examples_with_force_it_passes_force_flag(
     created_file.touch()
 
     def mock_generate_examples(
-        destination: str | Path, *, slug: str, vendor: str, app: str, force: bool = False, platform: str | None = None
+        destination: str | Path, *, slug: str, vendor: str, app: str, force: bool = False
     ) -> list[Path]:
         captured_force.append(force)
         return [created_file]
 
-    monkeypatch.setattr("lsdsk.adapters.cli.commands.config.generate_examples", mock_generate_examples)
+    factory = inject_generate_examples(mock_generate_examples)
 
     result: Result = cli_runner.invoke(
         cli_mod.cli,
         ["config-generate-examples", "--destination", str(tmp_path), "--force"],
-        obj=production_factory,
+        obj=factory,
     )
 
     assert result.exit_code == 0
@@ -418,8 +416,7 @@ def test_when_config_generate_examples_with_force_it_passes_force_flag(
 def test_when_config_generate_examples_without_force_it_defaults_to_false(
     cli_runner: CliRunner,
     tmp_path: Any,
-    monkeypatch: pytest.MonkeyPatch,
-    production_factory: Callable[[], Any],
+    inject_generate_examples: Callable[[Callable[..., list[Path]]], Callable[[], AppServices]],
 ) -> None:
     """Verify config-generate-examples defaults force=False."""
     captured_force: list[bool] = []
@@ -427,17 +424,17 @@ def test_when_config_generate_examples_without_force_it_defaults_to_false(
     created_file.touch()
 
     def mock_generate_examples(
-        destination: str | Path, *, slug: str, vendor: str, app: str, force: bool = False, platform: str | None = None
+        destination: str | Path, *, slug: str, vendor: str, app: str, force: bool = False
     ) -> list[Path]:
         captured_force.append(force)
         return [created_file]
 
-    monkeypatch.setattr("lsdsk.adapters.cli.commands.config.generate_examples", mock_generate_examples)
+    factory = inject_generate_examples(mock_generate_examples)
 
     result: Result = cli_runner.invoke(
         cli_mod.cli,
         ["config-generate-examples", "--destination", str(tmp_path)],
-        obj=production_factory,
+        obj=factory,
     )
 
     assert result.exit_code == 0
@@ -448,22 +445,21 @@ def test_when_config_generate_examples_without_force_it_defaults_to_false(
 def test_when_config_generate_examples_encounters_error_it_exits_with_general_error(
     cli_runner: CliRunner,
     tmp_path: Any,
-    monkeypatch: pytest.MonkeyPatch,
-    production_factory: Callable[[], Any],
+    inject_generate_examples: Callable[[Callable[..., list[Path]]], Callable[[], AppServices]],
 ) -> None:
     """Verify config-generate-examples handles exceptions gracefully."""
 
     def mock_generate_examples(
-        destination: str | Path, *, slug: str, vendor: str, app: str, force: bool = False, platform: str | None = None
+        destination: str | Path, *, slug: str, vendor: str, app: str, force: bool = False
     ) -> list[Path]:
         raise OSError("Disk full")
 
-    monkeypatch.setattr("lsdsk.adapters.cli.commands.config.generate_examples", mock_generate_examples)
+    factory = inject_generate_examples(mock_generate_examples)
 
     result: Result = cli_runner.invoke(
         cli_mod.cli,
         ["config-generate-examples", "--destination", str(tmp_path)],
-        obj=production_factory,
+        obj=factory,
     )
 
     assert result.exit_code == 1  # GENERAL_ERROR
@@ -474,8 +470,7 @@ def test_when_config_generate_examples_encounters_error_it_exits_with_general_er
 def test_when_config_generate_examples_it_passes_correct_metadata(
     cli_runner: CliRunner,
     tmp_path: Any,
-    monkeypatch: pytest.MonkeyPatch,
-    production_factory: Callable[[], Any],
+    inject_generate_examples: Callable[[Callable[..., list[Path]]], Callable[[], AppServices]],
 ) -> None:
     """Verify config-generate-examples passes correct slug, vendor, app from __init__conf__."""
     from lsdsk import __init__conf__
@@ -485,17 +480,17 @@ def test_when_config_generate_examples_it_passes_correct_metadata(
     created_file.touch()
 
     def mock_generate_examples(
-        destination: str | Path, *, slug: str, vendor: str, app: str, force: bool = False, platform: str | None = None
+        destination: str | Path, *, slug: str, vendor: str, app: str, force: bool = False
     ) -> list[Path]:
         captured_params.append({"slug": slug, "vendor": vendor, "app": app, "destination": str(destination)})
         return [created_file]
 
-    monkeypatch.setattr("lsdsk.adapters.cli.commands.config.generate_examples", mock_generate_examples)
+    factory = inject_generate_examples(mock_generate_examples)
 
     result: Result = cli_runner.invoke(
         cli_mod.cli,
         ["config-generate-examples", "--destination", str(tmp_path)],
-        obj=production_factory,
+        obj=factory,
     )
 
     assert result.exit_code == 0

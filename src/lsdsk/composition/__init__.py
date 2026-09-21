@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from lib_layered_config import generate_examples
+
 from .. import __init__conf__
 from ..adapters.config.deploy import deploy_configuration
 from ..adapters.config.display import display_config
@@ -21,6 +23,7 @@ if TYPE_CHECKING:
     from ..application.ports import (
         DeployConfiguration,
         DisplayConfig,
+        GenerateExamples,
         GetConfig,
         InitLogging,
         PrintInfo,
@@ -28,6 +31,7 @@ if TYPE_CHECKING:
 
     _assert_print_info: PrintInfo = __init__conf__.print_info
     _assert_get_config: GetConfig = get_config
+    _assert_generate_examples: GenerateExamples = generate_examples
     _assert_deploy_configuration: DeployConfiguration = deploy_configuration
     _assert_display_config: DisplayConfig = display_config
     _assert_init_logging: InitLogging = init_logging
@@ -38,6 +42,7 @@ class AppServices:
     """Frozen container holding all application port implementations."""
 
     get_config: GetConfig
+    generate_examples: GenerateExamples
     deploy_configuration: DeployConfiguration
     display_config: DisplayConfig
     init_logging: InitLogging
@@ -52,6 +57,7 @@ def build_production() -> AppServices:
     """
     return AppServices(
         get_config=get_config,
+        generate_examples=generate_examples,
         deploy_configuration=deploy_configuration,
         display_config=display_config,
         init_logging=init_logging,
@@ -68,6 +74,7 @@ def build_testing() -> AppServices:
     from ..adapters.memory import (  # noqa: PLC0415 - deferred: keeps in-memory test doubles out of the production import path
         deploy_configuration_in_memory,
         display_config_in_memory,
+        generate_examples_in_memory,
         get_config_in_memory,
         init_logging_in_memory,
         print_info_in_memory,
@@ -75,6 +82,7 @@ def build_testing() -> AppServices:
 
     return AppServices(
         get_config=get_config_in_memory,
+        generate_examples=generate_examples_in_memory,
         deploy_configuration=deploy_configuration_in_memory,
         display_config=display_config_in_memory,
         init_logging=init_logging_in_memory,
@@ -88,6 +96,7 @@ __all__ = [
     "build_testing",
     "deploy_configuration",
     "display_config",
+    "generate_examples",
     "get_config",
     "init_logging",
 ]
