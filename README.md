@@ -1,6 +1,6 @@
 # lsdsk
 
-**English** | [Deutsch](de/README.md)
+**English** | [Deutsch](https://github.com/bitranox/lsdsk/blob/main/de/README.md)
 
 <!-- Badges -->
 [![CI](https://github.com/bitranox/lsdsk/actions/workflows/default_cicd_public.yml/badge.svg)](https://github.com/bitranox/lsdsk/actions/workflows/default_cicd_public.yml)
@@ -35,12 +35,12 @@ Windows.
 ## QUICKSTART
 
 The command below needs `uv` and nothing else; if `uv` is not installed yet,
-[INSTALL.md](INSTALL.md#easiest-install-and-run-with-uv) documents the one-line installer for
+[INSTALL.md](https://github.com/bitranox/lsdsk/blob/main/INSTALL.md#easiest-install-and-run-with-uv) documents the one-line installer for
 Linux, macOS and Windows.
 
 For full information run `lsdsk` as root or Administrator. Without those rights you lose SMART
 wear, the error counters, PCIe connector detection and the SATA controllers' port count. The
-details are in [INSTALL.md](INSTALL.md#what-needs-root).
+details are in [INSTALL.md](https://github.com/bitranox/lsdsk/blob/main/INSTALL.md#what-needs-root).
 
 The usual invocation is `uvx lsdsk@latest` - uv then installs the newest version in a virtual
 environment. The rest of this document writes the short form `lsdsk` for readability.
@@ -62,15 +62,15 @@ reasoning.
 
 Number keys switch between the pages, `Tab` cycles, and every page is also a subcommand, so `lsdsk health` prints exactly what page 4 shows.
 
-![The lsdsk interactive view: eight pages, the tree density cycling, the detail panel, and a table being scrolled](docs/media/lsdsk-demo.gif)
+![The lsdsk interactive view: eight pages, the tree density cycling, the detail panel, and a table being scrolled](https://raw.githubusercontent.com/bitranox/lsdsk/main/docs/media/lsdsk-demo.gif)
 
 Six of the eight pages carry a cursor, and a panel under the table gives the
 detail: every value the row had no column for, and the findings that go with it.
-[PAGES.md](PAGES.md) describes all eight pages in detail.
+[PAGES.md](https://github.com/bitranox/lsdsk/blob/main/PAGES.md) describes all eight pages in detail.
 
 Through a pipe, into a file, or with the command `lsdsk report`, the program
 prints text instead, most important findings first.
-[REPORT.md](REPORT.md) documents that report.
+[REPORT.md](https://github.com/bitranox/lsdsk/blob/main/REPORT.md) documents that report.
 
 ## Privileges
 
@@ -140,22 +140,22 @@ Every command lsdsk issues is a read. It never writes to a device or a controlle
 
 ## Documentation
 
-| Document                                                                       | What it covers                                                                       |
-|--------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
-| [PAGES.md](PAGES.md)                                                           | The eight pages and the key bindings                                                 |
-| [REPORT.md](REPORT.md)                                                         | The one-page report                                                                  |
-| [COMMANDS.md](COMMANDS.md)                                                     | Every command and global option, the JSON envelope, and the exit codes               |
-| [FINDINGS.md](FINDINGS.md)                                                     | What it reports, and what evidence each rule needs                                   |
-| [WHY.md](WHY.md)                                                               | The problem it was written for, and the two cases easiest to get wrong without it    |
-| [INSTALL.md](INSTALL.md)                                                       | Installing it, and what works unprivileged versus what needs root                    |
-| [CONFIG.md](CONFIG.md)                                                         | Every configuration key, the layered sources, and the env-var forms                  |
-| [DEVELOPMENT.md](DEVELOPMENT.md)                                               | Working on lsdsk: the gate, the test lanes, capturing a fixture                      |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                                             | How to propose a change                                                              |
-| [SECURITY.md](SECURITY.md)                                                     | Reporting a vulnerability                                                            |
-| [CHANGELOG.md](CHANGELOG.md)                                                   | What changed, and when                                                               |
-| [docs/systemdesign/module_reference.md](docs/systemdesign/module_reference.md) | Every module, the layer rule, the CLI commands and the exit codes                    |
-| [ai-transparency.md](ai-transparency.md)                                       | Where an AI assistant was used, what was verified on real hardware, and what was not |
-| [ai-stance.md](ai-stance.md)                                                   | Why the project takes that position                                                  |
+| Document                                                                                                                   | What it covers                                                                       |
+|----------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
+| [PAGES.md](https://github.com/bitranox/lsdsk/blob/main/PAGES.md)                                                           | The eight pages and the key bindings                                                 |
+| [REPORT.md](https://github.com/bitranox/lsdsk/blob/main/REPORT.md)                                                         | The one-page report                                                                  |
+| [COMMANDS.md](https://github.com/bitranox/lsdsk/blob/main/COMMANDS.md)                                                     | Every command and global option, the JSON envelope, and the exit codes               |
+| [FINDINGS.md](https://github.com/bitranox/lsdsk/blob/main/FINDINGS.md)                                                     | What it reports, and what evidence each rule needs                                   |
+| [WHY.md](https://github.com/bitranox/lsdsk/blob/main/WHY.md)                                                               | The problem it was written for, and the two cases easiest to get wrong without it    |
+| [INSTALL.md](https://github.com/bitranox/lsdsk/blob/main/INSTALL.md)                                                       | Installing it, and what works unprivileged versus what needs root                    |
+| [CONFIG.md](https://github.com/bitranox/lsdsk/blob/main/CONFIG.md)                                                         | Every configuration key, the layered sources, and the env-var forms                  |
+| [DEVELOPMENT.md](https://github.com/bitranox/lsdsk/blob/main/DEVELOPMENT.md)                                               | Working on lsdsk: the gate, the test lanes, capturing a fixture                      |
+| [CONTRIBUTING.md](https://github.com/bitranox/lsdsk/blob/main/CONTRIBUTING.md)                                             | How to propose a change                                                              |
+| [SECURITY.md](https://github.com/bitranox/lsdsk/blob/main/SECURITY.md)                                                     | Reporting a vulnerability                                                            |
+| [CHANGELOG.md](https://github.com/bitranox/lsdsk/blob/main/CHANGELOG.md)                                                   | What changed, and when                                                               |
+| [docs/systemdesign/module_reference.md](https://github.com/bitranox/lsdsk/blob/main/docs/systemdesign/module_reference.md) | Every module, the layer rule, the CLI commands and the exit codes                    |
+| [ai-transparency.md](https://github.com/bitranox/lsdsk/blob/main/ai-transparency.md)                                       | Where an AI assistant was used, what was verified on real hardware, and what was not |
+| [ai-stance.md](https://github.com/bitranox/lsdsk/blob/main/ai-stance.md)                                                   | Why the project takes that position                                                  |
 
 ## Licence
 

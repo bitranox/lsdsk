@@ -138,6 +138,16 @@ def test_no_german_page_links_to_an_english_page_that_has_a_german_twin() -> Non
     assert not escaped, f"German pages linking back to English pages that have a German version: {escaped}"
 
 
+#: Where an English page may point at its German twin.
+#:
+#: Two spellings, because one English page is PUBLISHED: pypi.org embeds the
+#: file named by ``[project].readme`` at a URL with no repository under it, so
+#: every relative target on that page is dead and the switcher there has to be
+#: absolute. The German side keeps the relative form throughout - it is not
+#: published anywhere, and relative is what makes it work in a checkout.
+_SWITCHER_TARGETS: Final[tuple[str, ...]] = ("de/{name}", "https://github.com/bitranox/lsdsk/blob/main/de/{name}")
+
+
 @pytest.mark.os_agnostic
 def test_every_page_carries_the_language_switcher() -> None:
     """The switcher is the only way between the two sets, and it is hand-written."""
@@ -145,7 +155,7 @@ def test_every_page_carries_the_language_switcher() -> None:
     for name in TRANSLATED:
         english = (ROOT / name).read_text(encoding="utf-8")
         german = (GERMAN / name).read_text(encoding="utf-8")
-        if f"**English** | [Deutsch](de/{name})" not in english:
+        if not any(f"**English** | [Deutsch]({form.format(name=name)})" in english for form in _SWITCHER_TARGETS):
             missing.append(name)
         if f"[English](../{name}) | **Deutsch**" not in german:
             missing.append(f"de/{name}")

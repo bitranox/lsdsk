@@ -202,3 +202,57 @@ def test_the_pages_document_names_a_key_for_every_action_the_interactive_view_bi
         and not any(f"`{key}`" in pages for key in _keys_as_typed(binding.key))
     ]
     assert not unreachable, f"{PAGES.name} names no key for: " + ", ".join(unreachable)
+
+
+@pytest.mark.os_agnostic
+def test_the_published_long_description_has_no_link_a_reader_on_pypi_cannot_follow() -> None:
+    """PyPI embeds this file verbatim; a relative target there resolves to nothing.
+
+    The wheel's METADATA carries the file named by ``[project].readme`` with
+    ``Description-Content-Type: text/markdown``, and pypi.org renders it at a URL
+    that has no repository under it. So every relative target on the published
+    page is dead - which was the whole Documentation table, both INSTALL deep
+    links, the German switcher and the demo GIF the page opens with.
+
+    Keyed on pyproject rather than on the name README.md, because the file that
+    gets published is whichever one that key names.
+
+    This does NOT bind the German README: it is not published to PyPI, and its
+    relative links are what make it work in a checkout.
+    """
+    import tomllib
+
+    with (ROOT / "pyproject.toml").open("rb") as handle:
+        published = ROOT / tomllib.load(handle)["project"]["readme"]
+
+    targets = re.findall(r"!?\[[^\]]*\]\(([^)]+)\)", published.read_text(encoding="utf-8"))
+    assert targets, "the control: no link was found at all, so this asserted nothing"
+
+    unreachable = sorted({t for t in targets if not t.startswith(("http://", "https://", "#", "mailto:"))})
+    assert not unreachable, f"{published.name} carries targets pypi.org cannot resolve: {unreachable}"
+
+
+@pytest.mark.os_agnostic
+def test_every_repository_link_in_the_long_description_names_a_file_that_is_there() -> None:
+    """Absolute is not the same as correct: a blob URL for a deleted file is a 404.
+
+    Nothing offline can check a URL, so this checks the half that is knowable
+    here - that each github.com/raw.githubusercontent target this repo points at
+    names a path the repository actually tracks. The alternative is a page whose
+    links all look right and half of which lead nowhere.
+    """
+    prefixes = (
+        "https://github.com/bitranox/lsdsk/blob/main/",
+        "https://raw.githubusercontent.com/bitranox/lsdsk/main/",
+    )
+    targets = re.findall(r"!?\[[^\]]*\]\(([^)]+)\)", README.read_text(encoding="utf-8"))
+    own = [t for t in targets if t.startswith(prefixes)]
+    assert own, "the control: no link points into this repository, so this asserted nothing"
+
+    missing = sorted(
+        relative
+        for target in own
+        for relative in [target.split("/main/", 1)[1].split("#", 1)[0]]
+        if not (ROOT / relative).exists()
+    )
+    assert not missing, f"the README links to paths this repo does not have: {missing}"
