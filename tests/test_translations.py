@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -82,13 +84,75 @@ def test_every_tracked_root_document_is_translated_excluded_or_pending() -> None
 
     Without this, adding a page means adding one that no reader of German ever
     learns about, and nothing anywhere records the decision not to translate it.
+
+    The set comes from git rather than from the filesystem, because the claim is
+    about what a CLONE has.  Globbing the root and subtracting a hand-kept list
+    of developer-only files reddened this gate on every machine that had rotated
+    a ``handover.prev.md``, while CI stayed green.
     """
-    on_disk = {path.name for path in ROOT.glob("*.md")} - set(MANIFEST.LOCAL_ONLY)
+    tracked = MANIFEST.tracked_root_documents(ROOT)
     placed = set(MANIFEST.TRANSLATED) | set(MANIFEST.EXCLUDED)
-    unplaced = sorted(on_disk - placed)
+    unplaced = sorted(tracked - placed)
 
     assert not unplaced, f"neither translated nor excluded in scripts/translation_manifest.py: {unplaced}"
-    assert on_disk, "the control: no root documents were found, so this asserted nothing"
+    assert tracked, "the control: no tracked root documents were found, so this asserted nothing"
+
+
+def _git(repo: Path, *argv: str) -> None:
+    """Run one git command in a throwaway repository, refusing a failure."""
+    git = shutil.which("git")
+    assert git is not None, "git is not on PATH, so this test cannot build its subject"
+    done = subprocess.run(  # noqa: S603 - a fixed argv, no shell
+        [git, "-C", str(repo), *argv],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert done.returncode == 0, f"git {' '.join(argv)} failed: {done.stderr.strip()}"
+
+
+@pytest.mark.os_agnostic
+def test_a_gitignored_root_document_is_not_expected_of_a_clone(tmp_path: Path) -> None:
+    """A developer-only document at the root cannot red the completeness gate.
+
+    This is the regression.  The predicate used to glob the root and subtract a
+    hand-written frozenset, so the first gitignored document added after that
+    set was written counted as an untranslated page: ``handover.prev.md``
+    reddened the whole suite 75 seconds after a passing run, and CI could not
+    see it because a clone never has the file.
+
+    The subject is a real repository rather than a double, because the claim
+    under test is what git answers.  ``git ls-files`` reads the index, so the
+    arms need an ``add`` and no commit, and therefore no identity configured.
+    """
+    _git(tmp_path, "init", "-b", "main")
+    (tmp_path / ".gitignore").write_text("ignored.md\n", encoding="utf-8")
+    (tmp_path / "tracked.md").write_text("# tracked\n", encoding="utf-8")
+    (tmp_path / "ignored.md").write_text("# ignored\n", encoding="utf-8")
+    (tmp_path / "de").mkdir()
+    (tmp_path / "de" / "tracked.md").write_text("# nested\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+
+    found = MANIFEST.tracked_root_documents(tmp_path)
+
+    assert "tracked.md" in found, "the control: a tracked root document must be found, or this asserts nothing"
+    assert "ignored.md" not in found, "a gitignored root document is not part of what a clone has"
+    assert found == {"tracked.md"}, f"only tracked root Markdown belongs here, got {sorted(found)}"
+
+
+@pytest.mark.os_agnostic
+def test_listing_the_tracked_documents_refuses_rather_than_answering_empty(tmp_path: Path) -> None:
+    """Outside a repository the answer is a refusal, never an empty set.
+
+    An empty answer would satisfy the completeness check vacuously, which is
+    the shape that passes while examining nothing.  The sibling control above
+    proves a real repository answers non-empty, so this arm cannot be green for
+    the wrong reason.
+    """
+    with pytest.raises(RuntimeError, match="could not list the tracked files"):
+        MANIFEST.tracked_root_documents(tmp_path)
 
 
 @pytest.mark.os_agnostic

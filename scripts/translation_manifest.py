@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import shutil
+import subprocess
 import tomllib
 from pathlib import Path
 from typing import Final
@@ -34,7 +36,6 @@ from rich.console import Console
 __all__ = [
     "EXCLUDED",
     "GERMAN",
-    "LOCAL_ONLY",
     "MANIFEST",
     "ROOT",
     "TRANSLATED",
@@ -43,6 +44,7 @@ __all__ = [
     "main",
     "recorded",
     "render_manifest",
+    "tracked_root_documents",
 ]
 
 #: Printing goes through rich rather than ``print``, which the lint rules refuse.
@@ -81,11 +83,56 @@ EXCLUDED: Final[dict[str, str]] = {
     ),
 }
 
-#: Documents that exist only on a developer machine.  They are gitignored, so a
-#: clone does not have them and the completeness check must not expect them.
-LOCAL_ONLY: Final[frozenset[str]] = frozenset(
-    {"CLAUDE.md", "CLAUDE.local.md", "OPEN-WORK.md", "handover.md", "EXECUTION-USER-REVIEW.md"}
-)
+
+def tracked_root_documents(root: Path) -> frozenset[str]:
+    """The root-level Markdown documents git tracks.
+
+    The completeness check is about the documents a CLONE has, and that is
+    exactly the set git tracks.  Reading the filesystem instead and subtracting
+    a hand-written list of developer-only files keeps the same fact twice: the
+    list goes stale the moment a new gitignored document appears at the root,
+    and the failure then names the new document rather than the stale list.
+    That is not hypothetical - a rotated ``handover.prev.md`` reddened this
+    gate 75 seconds after the run that had just passed.
+
+    Args:
+        root: The repository to ask.  Passed rather than defaulted so a test
+            can point it at a throwaway repository and exercise the real git.
+
+    Returns:
+        Every tracked ``*.md`` sitting directly at ``root``, by bare name.
+
+    Raises:
+        RuntimeError: If git is absent or cannot answer.  An empty answer would
+            otherwise be indistinguishable from a repository holding no
+            documents at all, which is the shape that passes while checking
+            nothing.
+
+    Examples:
+        >>> "README.md" in tracked_root_documents(ROOT)
+        True
+        >>> any("/" in name for name in tracked_root_documents(ROOT))
+        False
+    """
+    git = shutil.which("git")
+    if git is None:
+        msg = "git is not on PATH, so the tracked root documents cannot be listed"
+        raise RuntimeError(msg)
+    listing = subprocess.run(  # noqa: S603 - a fixed argv, no shell
+        [git, "-C", str(root), "-c", "core.quotePath=false", "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if listing.returncode != 0:
+        msg = f"git could not list the tracked files of {root}: {listing.stderr.strip()}"
+        raise RuntimeError(msg)
+    # -z because the default quotes any non-ASCII path ("a/\303\244.md"), which
+    # would silently drop a document rather than reporting it.
+    names = (entry for entry in listing.stdout.split("\0") if entry)
+    return frozenset(name for name in names if "/" not in name and name.endswith(".md"))
 
 
 def digest_of(path: Path) -> str:
