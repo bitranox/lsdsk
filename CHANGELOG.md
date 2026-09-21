@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.3.0] 2026-09-21 09:14:01
+
 ### Added
 
 - **An uplink resting on one reading says so.** A controller's `uplink carries`
