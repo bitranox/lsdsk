@@ -13,7 +13,6 @@ from .ports import (
     DeployConfiguration,
     DisplayConfig,
     GetConfig,
-    GetDefaultConfigPath,
     InitLogging,
 )
 
@@ -21,6 +20,5 @@ __all__ = [
     "DeployConfiguration",
     "DisplayConfig",
     "GetConfig",
-    "GetDefaultConfigPath",
     "InitLogging",
 ]

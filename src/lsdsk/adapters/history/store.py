@@ -261,8 +261,8 @@ def save_history(history: History, path: Path) -> None:
         pydantic.ValidationError: If the history does not satisfy the stored
             schema. No caller has reached this - a ``History`` is validated at
             its own construction and ``HistoryFile`` declares the same field
-            types - but the re-validation is real, so the WriteHistory port can
-            raise it and a caller catching only ``OSError`` would not see it.
+            types - but the re-validation is real, so a caller catching only
+            ``OSError`` would not see it.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     stored = HistoryFile(schema=HISTORY_SCHEMA_VERSION, hostname=history.hostname, series=history.series)

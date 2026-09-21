@@ -423,11 +423,11 @@ def test_a_name_other_modules_reach_for_is_one_its_own_module_exports() -> None:
     Measured before this: 66 names across 17 modules were imported or reached
     through their module elsewhere and left out of its own `__all__` -
     `theme.NOT_READ` and `theme.LEGACY`, every one of `layout`'s tree glyphs,
-    `models.pci_class_name`, `diagnostics.refine` and `ports.ReadHistory`
-    among them, three of which CLAUDE.md names as the vocabulary of a
-    documented law. A list that omits what is consumed is not a smaller
-    contract, it is a wrong one: `from lsdsk.application import GetConfig`
-    worked and `ReadHistory` did not, for no reason anybody chose.
+    `models.pci_class_name` and `diagnostics.refine` among them, three of which
+    CLAUDE.md names as the vocabulary of a documented law. A list that omits
+    what is consumed is not a smaller contract, it is a wrong one: a name the
+    render layer draws with every row was not importable by the name its own
+    module publishes, for no reason anybody chose.
 
     The rule is deliberately not "every public name is exported": a module is
     free to keep a name to itself. It is CONSUMPTION that makes a name part of

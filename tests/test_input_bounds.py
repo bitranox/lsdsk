@@ -358,16 +358,18 @@ def test_the_in_place_write_refuses_a_symlink_where_the_kernel_will_not(
     nothing asks what happens where the flag does not exist.
 
     os.O_NOFOLLOW is deleted rather than the code branched on a platform string,
-    so the arm runs the SAME function a Windows caller reaches - the attribute's
+    so this runs the SAME path a Windows caller reaches - the attribute's
     absence IS the condition. It is a stdlib constant, which is the external
-    edge monkeypatching is for.
+    edge monkeypatching is for. Driven through ``save`` like its sibling, with
+    the same unwritable directory forcing the fallback, so what is proved is
+    what a caller gets rather than what a private function does.
 
-    The guarantee is weaker there and the test says which one it is: a
-    check-then-open, so the arm below proves the refusal happens, not that it
-    is atomic.
+    The guarantee there is weaker and the test says which one: a check-then-open,
+    so this proves the refusal happens, not that it is atomic.
     """
-    from lsdsk.adapters.hw import snapshot as snapshot_module
+    from lsdsk.adapters.hw.snapshot import save
 
+    capture: dict[str, Any] = {"schema": 2, "platform": "linux", "hostname": "box", "kernel": "x", "pci": {}}
     victim = tmp_path / "victim.txt"
     victim.write_text("MUST-SURVIVE", encoding="utf-8")
     link = tmp_path / "link.json"
@@ -376,8 +378,12 @@ def test_the_in_place_write_refuses_a_symlink_where_the_kernel_will_not(
     monkeypatch.delattr(os, "O_NOFOLLOW", raising=True)
     assert not hasattr(os, "O_NOFOLLOW"), "the control: the flag is still there, so the POSIX path ran"
 
-    with pytest.raises(OSError) as refusal:
-        snapshot_module._write_in_place(link, "REPLACED")
+    tmp_path.chmod(0o500)
+    try:
+        with pytest.raises(OSError) as refusal:
+            save(capture, link)
+    finally:
+        tmp_path.chmod(0o700)
 
     assert refusal.value.errno == errno.ELOOP, refusal.value
     assert victim.read_text(encoding="utf-8") == "MUST-SURVIVE", "the fallback followed the symlink"

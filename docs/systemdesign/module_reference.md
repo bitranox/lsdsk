@@ -119,7 +119,6 @@ module exists that is not listed here, or a listed path does not exist.
 ### Adapters - in-memory, for tests
 
 - `src/lsdsk/adapters/memory/config.py` - In-memory configuration adapters for testing.
-- `src/lsdsk/adapters/memory/history.py` - In-memory counter history, for tests and for the testing composition root.
 - `src/lsdsk/adapters/memory/info.py` - An in-memory stand-in for printing the package's own metadata.
 - `src/lsdsk/adapters/memory/logging.py` - In-memory logging adapter for testing.
 

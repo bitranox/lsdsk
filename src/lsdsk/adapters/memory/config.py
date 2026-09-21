@@ -7,8 +7,6 @@ no lib_layered_config.
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from lib_layered_config import Config
@@ -16,6 +14,8 @@ from lib_layered_config import Config
 from ...domain.enums import OutputFormat
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from ...domain.deployment import DeployRequest
 
 
@@ -36,15 +36,6 @@ def get_config_in_memory(
         A Config with no layers, so every setting falls back to its shipped value.
     """
     return Config({}, {})
-
-
-def get_default_config_path_in_memory() -> Path:
-    """Return a synthetic path (not a real file).
-
-    Returns:
-        A path nothing is written to, so a test cannot reach the developer's own.
-    """
-    return Path(tempfile.gettempdir()) / "lsdsk" / "defaultconfig.toml"
 
 
 def deploy_configuration_in_memory(request: DeployRequest) -> list[Path]:
@@ -82,5 +73,4 @@ __all__ = [
     "deploy_configuration_in_memory",
     "display_config_in_memory",
     "get_config_in_memory",
-    "get_default_config_path_in_memory",
 ]
