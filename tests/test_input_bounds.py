@@ -101,7 +101,7 @@ def test_a_file_exactly_at_the_limit_is_still_read(tmp_path: Path) -> None:
 @pytest.mark.os_agnostic
 def test_an_unreadable_path_is_reported_as_configuration_not_as_oserror(tmp_path: Path) -> None:
     """The caller catches ConfigurationError; a bare OSError would escape it."""
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError, match="Could not read a snapshot at"):
         read_text_bounded(tmp_path / "absent.json", what="a snapshot")
 
 
@@ -128,7 +128,7 @@ def test_a_path_under_a_regular_file_is_absent_rather_than_merely_unreadable(tmp
     in_the_way = tmp_path / "not-a-directory"
     in_the_way.write_text("", encoding="utf-8")
 
-    with pytest.raises(MissingFileError):
+    with pytest.raises(MissingFileError, match="Could not read a history store at"):
         read_text_bounded(in_the_way / "store.json", what="a history store")
 
     with pytest.raises(ConfigurationError) as refused:
@@ -141,7 +141,9 @@ def test_a_path_under_a_regular_file_is_absent_rather_than_merely_unreadable(tmp
 @pytest.mark.os_agnostic
 def test_a_directory_handed_to_the_reader_is_refused_cleanly(tmp_path: Path) -> None:
     """stat() succeeds on a directory, so the read is what has to refuse it."""
-    with pytest.raises(ConfigurationError):
+    # The wrapping is the claim: a directory gives IsADirectoryError, and the
+    # caller must meet it as this tool's own error rather than a raw OSError.
+    with pytest.raises(ConfigurationError, match="Could not read a snapshot at"):
         read_text_bounded(tmp_path, what="a snapshot")
 
 
@@ -289,7 +291,13 @@ def test_malformed_json_is_refused_as_configuration_not_raised(tmp_path: Path, l
     """
     crafted = tmp_path / "bad.json"
     crafted.write_text(body.format(digits="9" * 20000, deep="[" * 60000 + "]" * 60000), encoding="utf-8")
-    with pytest.raises(ConfigurationError):
+    # Measured rather than assumed, and per PARAMETRIZATION - the two payloads
+    # are refused by different machinery and a pattern taken from one arm fails
+    # the other. The digits case trips CPython's integer string-conversion
+    # limit, not the JSON grammar; the nesting case overflows the decoder's
+    # stack. What both share, and what this test is actually about, is that
+    # neither escapes as a raw ValueError: the reader wraps it.
+    with pytest.raises(ConfigurationError, match="Could not read the snapshot at"):
         load(crafted)
 
 
@@ -304,7 +312,7 @@ def test_the_pci_id_database_is_read_through_the_same_bound(tmp_path: Path) -> N
     from lsdsk.adapters.hw.decode import pciids
 
     huge = _sparse_file(tmp_path / "pci.ids", MAX_INPUT_BYTES + 1)
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError, match="far larger than a PCI ID database ever is"):
         read_text_bounded(huge, what="a PCI ID database", errors="replace")
 
     # And the module itself no longer reads a path directly. Asserted against
@@ -340,10 +348,14 @@ def test_snapshot_still_writes_where_no_temporary_file_can_be_made(tmp_path: Pat
     link.symlink_to(victim)
     tmp_path.chmod(0o500)
     try:
-        with pytest.raises(OSError):
+        # The errno is the claim, not the OS's wording: ELOOP is O_NOFOLLOW
+        # refusing to open the link, and any other OSError here would mean the
+        # fallback failed for an unrelated reason while the test read as green.
+        with pytest.raises(OSError) as refusal:
             save(capture, link)
     finally:
         tmp_path.chmod(0o700)
+    assert refusal.value.errno == errno.ELOOP, refusal.value
     assert victim.read_text(encoding="utf-8") == "MUST-SURVIVE", "the fallback followed a symlink"
 
 
@@ -725,7 +737,7 @@ def test_a_ports_bitmap_wider_than_the_register_is_refused(tmp_path: Path) -> No
     crafted = tmp_path / "wide-bitmap.json"
     crafted.write_text(_capture_with(ports_implemented=(1 << 14000) - 1), encoding="utf-8")
 
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError, match="ports_implemented"):
         load(crafted)
 
 
@@ -804,7 +816,7 @@ def test_a_windows_length_wider_than_the_api_that_reports_it_is_refused(tmp_path
         encoding="utf-8",
     )
 
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError, match="size_bytes"):
         load(crafted)
 
 
@@ -1052,7 +1064,7 @@ def test_a_device_identifier_longer_than_any_device_publishes_is_refused(tmp_pat
     path = tmp_path / "huge-field.json"
     path.write_text(json.dumps(crafted), encoding="utf-8")
 
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError, match="at most 4096"):
         load(path)
 
     # The control: the same capture with a value of a length a device really

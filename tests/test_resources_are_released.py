@@ -78,7 +78,11 @@ def test_a_failed_write_in_place_closes_the_descriptor_it_opened(tmp_path: Path,
     tmp_path.chmod(0o500)
     before = _next_free_descriptor()
     try:
-        with pytest.raises(OSError):
+        # The injected message, as its sibling above pins it: the refusal has
+        # to be the one the fixture arranged, or the descriptor count after it
+        # says nothing and the test reads as green having measured a different
+        # failure entirely.
+        with pytest.raises(OSError, match="no stream for this descriptor"):
             snapshot.save(CAPTURE, destination)
     finally:
         tmp_path.chmod(0o700)

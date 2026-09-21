@@ -87,7 +87,7 @@ def test_a_store_that_cannot_be_read_is_refused_rather_than_reported_absent(tmp_
     closed.chmod(0o000)
 
     try:
-        with pytest.raises(ConfigurationError):
+        with pytest.raises(ConfigurationError, match="Could not read a history store at"):
             load_history(store, hostname="box")
     finally:
         closed.chmod(0o700)

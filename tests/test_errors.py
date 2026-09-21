@@ -54,7 +54,7 @@ def test_an_unsupported_platform_is_still_caught_as_a_configuration_error(monkey
     """
     monkeypatch.setattr(snapshot.sys, "platform", "sunos5")
 
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError, match="cannot read hardware on 'sunos5'"):
         snapshot.collect()
 
 

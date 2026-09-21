@@ -69,7 +69,7 @@ def test_a_cli_density_token_is_its_value_casefolded(density: TreeDensity) -> No
     # What lands downstream must be the VALUE the config and the options share,
     # whatever the member's Python identity: the tokens are strings, and the
     # converter has no member to reach into.
-    with pytest.raises(click.exceptions.BadParameter):
+    with pytest.raises(click.exceptions.BadParameter, match="'storage_and_siblings' is not one of"):
         choice.convert("storage_and_siblings", parameter, context)
 
 

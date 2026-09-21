@@ -356,8 +356,12 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
     monkeypatch.setattr("lsdsk.adapters.cli.commands.history.read_history", give_history)
 
     if expect == "tui":
-        with pytest.raises(SystemExit):
+        # The CODE is the claim. SystemExit's message here is the string "0",
+        # so a match= would pin the OS's rendering of a success exit rather
+        # than the fact that the TUI path left cleanly.
+        with pytest.raises(SystemExit) as departure:
             scan.run_default_view(None)
+        assert departure.value.code == 0, departure.value
     else:
         scan.run_default_view(None)
 

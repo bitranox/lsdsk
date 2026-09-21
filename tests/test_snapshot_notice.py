@@ -103,7 +103,7 @@ def test_a_reading_load_would_refuse_is_never_written(tmp_path: Path) -> None:
     }
     target = tmp_path / "capture.json"
 
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError, match="not one lsdsk understands"):
         snapshot_adapter.save(malformed, target)
 
     assert not target.exists(), "a reading `load` would refuse was still written to disk"

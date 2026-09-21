@@ -135,5 +135,5 @@ def test_validate_profile_accepts_custom_max_length(clear_config_cache: None) ->
     validate_profile("abcdefghij", max_length=10)
 
     # Invalid at custom length 10
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="exceeds maximum length of 10"):
         validate_profile("abcdefghijk", max_length=10)

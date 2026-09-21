@@ -416,7 +416,7 @@ def test_a_file_that_is_not_a_capture_is_refused_not_described(payload: dict[str
 
     path = tmp_path / "not-a-capture.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError, match="is not a snapshot lsdsk understands"):
         load(path)
 
 

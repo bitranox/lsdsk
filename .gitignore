@@ -203,6 +203,10 @@ CLAUDE.local.md
 EXECUTION-USER-REVIEW.md
 handover.md
 OPEN-WORK.md
+# The outgoing copy taken before one of the above is rewritten wholesale. Ignored
+# for the same reason its original is; it exists so a damaged rewrite has
+# something to be diffed against, which git cannot provide for an ignored file.
+*.prev.md
 
 # Session working notes (never committed)
 .remember/

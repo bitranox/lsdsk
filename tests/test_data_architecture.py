@@ -305,7 +305,7 @@ def test_an_action_result_refuses_a_field_it_does_not_declare() -> None:
 
     from lsdsk.adapters.cli.commands.history import RecordResult
 
-    with pytest.raises(pydantic.ValidationError):
+    with pytest.raises(pydantic.ValidationError, match="drivs"):
         RecordResult.model_validate({"recorded": True, "store": "/tmp/h.json", "drives": 2, "drivs": 3})
 
 

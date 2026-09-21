@@ -158,7 +158,7 @@ def test_the_config_can_turn_recording_off_without_blinding_the_verdict(
 def test_the_settings_object_is_frozen() -> None:
     """One settled answer per run; nothing downstream may edit it."""
     settings = HistorySettings(path=Path("/tmp/h.json"))
-    with pytest.raises((TypeError, ValueError)):
+    with pytest.raises((TypeError, ValueError), match="frozen"):
         settings.enabled = False  # type: ignore[misc]  # the point of the test
 
 
