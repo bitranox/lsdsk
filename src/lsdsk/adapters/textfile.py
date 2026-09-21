@@ -5,8 +5,12 @@ the counter history at ``--history-file``. Both are validated against a Pydantic
 model, but validation happens *after* ``read_text`` has already materialised the
 whole file, so a schema guard cannot defend against the file simply being huge.
 Pointing ``--replay`` at a disk image rather than a capture is a typo, not an
-attack, and the answer it deserves is an immediate "that is not a capture"
-rather than a machine that swaps itself to death first.
+attack, and the answer it deserves is an immediate "that is not a capture".
+
+What the ceiling bounds is the FILE, and the footprint it buys is several times
+that - see :data:`MAX_INPUT_BYTES`, which carries the measurement. A file just
+under the ceiling is a second of work and a few hundred megabytes, not a
+constant-time refusal.
 
 System Role:
     Adapter-layer input boundary shared by the snapshot and history stores.
@@ -32,6 +36,24 @@ if TYPE_CHECKING:
 # drive. This leaves room for a machine with hundreds of drives and still
 # refuses a mistyped path to a log or a disk image in constant time. A history
 # store is smaller again, being bounded to MAX_SAMPLES_PER_DRIVE per drive.
+#
+# It bounds the FILE and not the footprint, and the difference is worth stating
+# because the sentence above reads as if it were the same thing. A parsed
+# document is a Python object per entry, so the cost is linear in ENTRY COUNT
+# with a large constant, and an entry can be as short as a dozen bytes.
+# Measured 2026-09-21 on this machine with a capture-shaped map of small
+# objects: 1 MB cost 6 MB of resident memory, 5 MB cost 28 MB, 20 MB cost
+# 107 MB and 1.06s, and 61 MB cost 308 MB. A denser document costs more again -
+# a reviewer measured 2.06 GB for 61 MB against a differently shaped one - so
+# treat these as the shape of the curve rather than as a ceiling.
+#
+# Left as it is rather than bounded per map. Refusing above an entry COUNT
+# would need a number that no real machine can exceed, and that number is not
+# measurable from the four captures here: the largest has 19 drives, and a
+# ceiling guessed from it would refuse a storage server rather than a typo.
+# A second of work and a few hundred megabytes for a mistyped path is a poor
+# answer and not a dangerous one, and the refusal above the ceiling is still
+# the one stat it always was.
 MAX_INPUT_BYTES = 64 * 1024 * 1024
 
 
@@ -46,6 +68,10 @@ def read_text_bounded(path: Path, *, what: str, errors: str = "strict") -> str:
     itself also stops one byte past the ceiling and refuses there. A stream
     under the ceiling still loads, which is what keeps
     ``--replay <(ssh host lsdsk snapshot -o -)`` working.
+
+    A file UNDER the ceiling is read whole, and what it costs once parsed is
+    :data:`MAX_INPUT_BYTES`'s to say: the ceiling bounds the file, not the
+    footprint.
 
     Args:
         path: The file to read.
