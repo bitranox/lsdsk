@@ -784,6 +784,14 @@ LEGACY = "legacy"
 #: markers a panel drew are named under it.
 NOT_APPLICABLE = "n/a"
 
+#: What a figure carries when it is a CEILING rather than a measurement: the
+#: two ends it is the lower of were not both read, so it can only be too high.
+#: A THIRD symbol, because the other two say a value is absent and this one
+#: qualifies a value that is present - drawn flat, the figure claims a
+#: measurement that was never taken. ASCII rather than a glyph, so no console
+#: needs a fallback for it. Whichever markers a panel drew are named under it.
+AT_MOST = "<="
+
 #: What each symbol means, keyed by the token the column actually prints, so
 #: the legend cannot explain a word the view does not use.
 _HOP_MEANINGS: Final[dict[str, str]] = {
@@ -902,6 +910,7 @@ def style_for(severity: Severity | None) -> str:
 
 
 __all__ = [
+    "AT_MOST",
     "LEGACY",
     "NOT_APPLICABLE",
     "NOT_READ",

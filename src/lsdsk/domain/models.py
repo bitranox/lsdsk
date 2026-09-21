@@ -1150,6 +1150,42 @@ class Controller(DomainModel, frozen=True):
         candidates = [value for value in (own, upstream) if value is not None]
         return min(candidates) if candidates else None
 
+    @property
+    def achievable_bandwidth_from_one_end_only(self) -> bool:
+        """Whether :attr:`achievable_bandwidth_gbps` rests on a single reading.
+
+        The companion to that property's exception, and the reason a view can
+        honour it. The figure is `min(card, bridge)`; with one end unread it is
+        whatever the other end said, so it is an upper bound rather than a
+        measurement, and a view that prints it flat tells a reader the uplink
+        was measured when half of it was not.
+
+        This is not the same as having no bridge. A controller hanging off the
+        root complex has nothing above it to read, so its own link IS the
+        uplink and the answer is False - a distinction worth keeping, because
+        collapsing the two would mark every such controller as approximate.
+
+        It matters most where nobody here can see it: Windows publishes a PCIe
+        link capability for an ENDPOINT and none at all for a BRIDGE, and the
+        Windows builder attaches an upstream link whenever a parent exists. So
+        on real Windows hardware this is true of every PCIe controller, and it
+        is true of none in the committed captures, whose own link is unread too.
+
+        Example:
+            >>> read = PcieLink(max_speed_gtps=8.0, max_width=8)
+            >>> unread = PcieLink()
+            >>> Controller(address="a", name="n", link=read, upstream=unread).achievable_bandwidth_from_one_end_only
+            True
+            >>> Controller(address="a", name="n", link=read, upstream=read).achievable_bandwidth_from_one_end_only
+            False
+            >>> Controller(address="a", name="n", link=read).achievable_bandwidth_from_one_end_only
+            False
+        """
+        if self.upstream is None:
+            return False
+        ends = (self.link.max_bandwidth_gbps, self.upstream.max_bandwidth_gbps)
+        return sum(end is not None for end in ends) == 1
+
 
 class Disk(DomainModel, frozen=True):
     """One physical disk, wherever it hangs.

@@ -120,6 +120,7 @@ MODEL_NOTE: Final = "about every drive of this model"
 #: symbol the reader cannot see.
 UNREAD_LEGEND: Final = "- not read"
 NOT_APPLICABLE_LEGEND: Final = "n/a does not apply"
+AT_MOST_LEGEND: Final = "<= at most: one end was not read"
 
 #: What each marker means, keyed by the token a panel actually prints, so the
 #: legend cannot explain a symbol the view does not use. The order is the order
@@ -127,7 +128,14 @@ NOT_APPLICABLE_LEGEND: Final = "n/a does not apply"
 _MARKER_MEANINGS: Final[dict[str, str]] = {
     theme.NOT_READ: UNREAD_LEGEND,
     theme.NOT_APPLICABLE: NOT_APPLICABLE_LEGEND,
+    theme.AT_MOST: AT_MOST_LEGEND,
 }
+
+#: The markers that QUALIFY a value rather than replace it, so they are found at
+#: the front of a cell instead of being the whole of it. Kept as a set of the
+#: tokens themselves: a fourth marker of either kind is one edit, and putting a
+#: qualifier in the wrong set makes its legend silently stop appearing.
+_PREFIX_MARKERS: Final[frozenset[str]] = frozenset({theme.AT_MOST})
 
 #: The counters an ATA drive publishes as numbered SMART attributes. NVMe has no
 #: attribute table at all - it publishes one fixed log page - so no reading of
@@ -453,13 +461,22 @@ def _markers_drawn(groups: Iterable[DetailGroup]) -> list[str]:
     """Which markers this panel drew, in the order the legend names them.
 
     Read off the cells, which is sound here and would not be if the cells were
-    all dashes: the marker IS the classification. A builder chose between the
-    two from the model - the drive's bus, whether the socket is occupied - so
-    this reads a decision that was already taken rather than re-deriving one
-    from formatted text.
+    all dashes: the marker IS the classification. A builder chose between them
+    from the model - the drive's bus, whether the socket is occupied, whether
+    both ends of a link were read - so this reads a decision that was already
+    taken rather than re-deriving one from formatted text.
+
+    A qualifier is matched at the FRONT of a cell rather than against the whole
+    of it, because it stands in front of a value instead of replacing one. An
+    equality test would find it never, and its legend would be the one thing
+    the panel drew and did not explain.
     """
     drawn = {text for group in groups for _name, (text, _style) in group.values}
-    return [marker for marker in _MARKER_MEANINGS if marker in drawn]
+    return [
+        marker
+        for marker in _MARKER_MEANINGS
+        if marker in drawn or (marker in _PREFIX_MARKERS and any(text.startswith(f"{marker} ") for text in drawn))
+    ]
 
 
 def _absent() -> Cell:
@@ -672,7 +689,7 @@ def _port_values(
         ("free", (tables.counter_text(controller.ports_free), "")),
         ("drives", (str(len(attached)), "")),
         ("peak demand", _gbytes(demand)),
-        ("uplink carries", _gbytes(controller.achievable_bandwidth_gbps)),
+        ("uplink carries", _uplink(controller)),
     )
 
 
@@ -776,12 +793,41 @@ def _gbytes(value: float | None) -> Cell:
     return ("-", theme.STYLE_UNKNOWN) if value is None else (theme.format_bandwidth(value), "")
 
 
+def _uplink(controller: Controller) -> Cell:
+    """What this controller's uplink carries, marked when it is a ceiling.
+
+    The figure is the lower of what the card supports and what its bridge does,
+    and with one of those unread it is whatever the other said - an upper bound.
+    Drawn flat it reads as a measurement of the link, which is the direction
+    this project's own rule about unread ends exists to stop, and it is not a
+    rare case: on Windows a bridge publishes no link capability at all, so every
+    PCIe controller there is this.
+
+    Not dashed, because the end that WAS read is a real measurement and the
+    reader loses it. Marked instead, with :data:`theme.AT_MOST` and the legend
+    entry the panel prints under whichever markers it drew.
+
+    Args:
+        controller: The controller the panel is describing.
+
+    Returns:
+        The cell, qualified when only one end was read.
+    """
+    value = controller.achievable_bandwidth_gbps
+    if value is None:
+        return _gbytes(None)
+    if not controller.achievable_bandwidth_from_one_end_only:
+        return (theme.format_bandwidth(value), "")
+    return (f"{theme.AT_MOST} {theme.format_bandwidth(value)}", theme.STYLE_UNKNOWN)
+
+
 def _hex(value: int | None, digits: int) -> Cell:
     """A numeric id as the hex every other tool prints it in."""
     return ("-", theme.STYLE_UNKNOWN) if value is None else (f"0x{value:0{digits}x}", "")
 
 
 __all__ = [
+    "AT_MOST_LEGEND",
     "COUNTERS",
     "DEVICE",
     "GROUP_LABELS",

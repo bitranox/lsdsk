@@ -455,3 +455,37 @@ def test_an_empty_socket_does_not_report_the_occupant_it_has_none_of_as_unread()
     assert theme.NOT_APPLICABLE not in _slot_panel(machine, occupied), (
         "an occupied socket marks something as not applicable, so the mark is not about the occupant"
     )
+
+
+@pytest.mark.os_agnostic
+def test_an_uplink_resting_on_one_reading_is_marked_as_a_ceiling() -> None:
+    """The figure is min(card, bridge); with one end unread it can only be too high.
+
+    Both arms are here because either alone proves nothing. The control draws a
+    controller with BOTH ends read and requires the plain figure - without it a
+    panel that marked everything would pass. The subject leaves the bridge
+    unread and requires the marker AND its legend, because a symbol the panel
+    does not explain is what the legend mechanism exists to prevent.
+
+    Not a hypothetical shape: Windows publishes a link capability for an
+    endpoint and none for a bridge, so on real Windows hardware this is every
+    PCIe controller. It is none of them in the committed captures, whose own
+    link is unread too, which is why this is built rather than replayed.
+    """
+    from lsdsk.domain.models import Controller, Inventory
+
+    read = PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8)
+    both = Controller(address="0000:01:00.0", name="Measured HBA", link=read, upstream=read)
+    one = Controller(address="0000:02:00.0", name="Half-measured HBA", link=read, upstream=PcieLink())
+
+    machine = Inventory(hostname="example", controllers=(both, one))
+    findings = diagnose(machine)
+
+    measured = _drawn(detail.render_detail(detail.controller_detail(both, machine), findings))
+    assert "uplink carries" in measured, "the control: the row is gone, so neither arm means anything"
+    assert theme.AT_MOST not in measured, "a controller with both ends read was marked as a ceiling"
+    assert detail.AT_MOST_LEGEND not in measured
+
+    ceiling = _drawn(detail.render_detail(detail.controller_detail(one, machine), findings))
+    assert f"{theme.AT_MOST} " in ceiling, "an unread bridge was drawn as a measured uplink"
+    assert detail.AT_MOST_LEGEND in ceiling, "the marker was drawn and never explained"
