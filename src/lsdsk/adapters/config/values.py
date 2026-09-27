@@ -87,7 +87,10 @@ def rendered(value: object) -> str:
     """A configured value as a reader would recognise it.
 
     A string is shown bare, because that is how they typed it after the ``=``;
-    anything else gets its repr, so a table or a number is unmistakable.
+    anything else gets its repr, so a table or a number is unmistakable. A bool
+    is spelled the way the file and ``--set`` spell it, because Python's
+    ``True`` beside a refusal saying "not true or false" is two words for one
+    value.
 
     A path is the exception, and it reaches here as the location that ended up in
     force rather than as something the reader typed. Its repr names the class -
@@ -108,11 +111,15 @@ def rendered(value: object) -> str:
         >>> from pathlib import PurePosixPath
         >>> rendered(PurePosixPath("/var/lib/lsdsk/history.json"))
         '/var/lib/lsdsk/history.json'
+        >>> rendered(True), rendered(False)
+        ('true', 'false')
     """
     if isinstance(value, str):
         return value
     if isinstance(value, PurePath):
         return str(value)
+    if isinstance(value, bool):
+        return "true" if value else "false"
     return repr(value)
 
 

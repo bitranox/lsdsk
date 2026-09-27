@@ -243,7 +243,7 @@ def test_a_refused_path_is_reported_even_when_the_command_line_overrides_it(
     assert [r.dotted for r in reading.rejected] == ["history.path"], (
         "an unusable history.path went unreported because the command line overrode it"
     )
-    assert str(override) in reading.rejected[0].used, (
+    assert reading.rejected[0].used == str(override), (
         f"the warning named {reading.rejected[0].used!r} rather than the location actually in force"
     )
     assert reading.settings.path == override, "the override must still win"

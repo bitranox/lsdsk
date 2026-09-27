@@ -7,6 +7,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A refused true or false is spelled the way it was typed.** `--set
+  display.expand_virtual=yes` answered "not true or false. Using False.", two
+  spellings of one value in one sentence, and a `true` typed into a number key
+  came back as `True`. Both now read `true` and `false`, as the file and
+  `--set` write them.
+
 - **A reader leaving on Windows is silent, as it is everywhere else.** Windows
   reports a write to a closed pipe as `EINVAL`, and the exit code already read
   141 for it, but the last-resort handler printed `OSError: [Errno 22] Invalid
