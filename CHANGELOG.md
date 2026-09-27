@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.3.1] 2026-09-28 01:24:32
+
 ### Fixed
 
 - **The skill and the module reference name every cause of 13, 22 and 78.**
