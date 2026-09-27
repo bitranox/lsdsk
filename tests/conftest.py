@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import re
 import sys
 from dataclasses import fields, replace
@@ -131,8 +132,49 @@ def this_machine_cannot_reach_into_the_suite(
         "TTY_COMPATIBLE",
         "GITHUB_ACTIONS",
         "CI",
+        # The rest of what rich and rich-click read, taken from their sources
+        # rather than from what has failed so far: PY_COLORS forces colour the way
+        # FORCE_COLOR does and reproduced the structured-mode failure alone.
+        "PY_COLORS",
+        "TTY_INTERACTIVE",
+        "TERMINAL_WIDTH",
+        "JUPYTER_COLUMNS",
+        "JUPYTER_LINES",
+        "RICH_CLICK_THEME",
     ):
         monkeypatch.delenv(chosen_elsewhere, raising=False)
+    _no_configuration_layer_reaches_in(state, monkeypatch)
+
+
+def _no_configuration_layer_reaches_in(state: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Close the configuration layers the user-config redirect above leaves open.
+
+    The app and host layers read fixed system directories - ``/etc/xdg/lsdsk``
+    and ``/etc/lsdsk``, ``%ProgramData%``, ``/Library/Application Support`` -
+    which exist on any machine where ``config-deploy --target app`` has run. The
+    library's ``LIB_LAYERED_CONFIG_*`` variables move those roots and outrank the
+    ``HOME`` and ``APPDATA`` redirected above, and the ``LSDSK___`` environment
+    layer outranks every file. Measured: either
+    ``LSDSK___THRESHOLDS__WEAR_WARNING_PERCENT=1`` or an ``ETC`` root holding the
+    same key failed three threshold tests. The system roots are pointed at an
+    empty directory rather than removed, because unset they fall back to the
+    real ones; a test that deploys to one sets its own, which still wins.
+
+    Args:
+        state: This test's own directory.
+        monkeypatch: Used to move the roots and clear the variables.
+    """
+    from lsdsk import __init__conf__
+
+    empty = state / "system"
+    for root in ("LIB_LAYERED_CONFIG_ETC", "LIB_LAYERED_CONFIG_PROGRAMDATA", "LIB_LAYERED_CONFIG_MAC_APP_ROOT"):
+        monkeypatch.setenv(root, str(empty))
+    user_roots = ("LIB_LAYERED_CONFIG_APPDATA", "LIB_LAYERED_CONFIG_LOCALAPPDATA", "LIB_LAYERED_CONFIG_MAC_HOME_ROOT")
+    for user_root in user_roots:
+        monkeypatch.delenv(user_root, raising=False)
+    prefix = f"{__init__conf__.LAYEREDCONF_SLUG.upper()}___"
+    for name in [name for name in os.environ if name.startswith(prefix)]:
+        monkeypatch.delenv(name)
 
 
 @pytest.fixture
