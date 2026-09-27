@@ -7,6 +7,7 @@ marked test reads as guarded in the source and runs on every platform anyway.
 
 from __future__ import annotations
 
+import ast
 import sys
 import tomllib
 from pathlib import Path
@@ -62,6 +63,11 @@ def test_each_rule_admits_exactly_the_platform_it_names() -> None:
         assert admitted == expected[marker], f"{marker} admits {sorted(admitted)}"
 
 
+#: Assembled rather than written, so this file never contains the token its
+#: own sweep looks for; spelled out, the guard reported itself as the offender.
+_CONFIG_HOME = "XDG_" + "CONFIG_HOME"
+
+
 def test_no_test_seeds_the_linux_config_home_itself() -> None:
     r"""A test that sets `XDG_CONFIG_HOME` is a Linux test whatever marker it wears.
 
@@ -82,30 +88,68 @@ def test_no_test_seeds_the_linux_config_home_itself() -> None:
     branches on the platform - and this refuses a second copy. Prose did not
     hold it; the same mistake was made four times.
     """
-    import re
-    from pathlib import Path
-
     tests_dir = Path(__file__).parent
-    offenders: list[str] = []
-    # A real seeding, not a mention: the name passed to an env-setting call.
-    # The variable's name is assembled rather than written, so this file does not
-    # contain the token it sweeps for. Spelled out, the guard matched its own
-    # control and reported itself as the offender - a scanner has to stay out of
-    # its own corpus.
-    variable = "XDG_" + "CONFIG_HOME"
-    seeding = re.compile(rf"""(setenv|environ\[|environ\.setdefault)\s*\(?\s*["']{variable}["']""")
-    for source in sorted(tests_dir.rglob("*.py")):
-        if source.name == "conftest.py":
-            continue
-        if seeding.search(source.read_text(encoding="utf-8")):
-            offenders.append(str(source.relative_to(tests_dir)))
+    offenders = sorted(
+        str(source.relative_to(tests_dir))
+        for source in tests_dir.rglob("*.py")
+        if source.name != "conftest.py" and _names_the_config_home(source.read_text(encoding="utf-8"))
+    )
 
     assert not offenders, (
         "these seed the Linux config home directly, so they cannot hold on macOS or Windows; "
         f"use the user_config_dir fixture instead: {offenders}"
     )
 
-    # The control: the pattern must be able to find one, built the same way.
-    assert seeding.search(f'monkeypatch.setenv("{variable}", str(root))'), (
-        "the control: this pattern cannot recognise a real seeding, so the sweep above asserts nothing"
+
+@pytest.mark.parametrize(
+    ("source", "seeds"),
+    [
+        pytest.param(f'monkeypatch.setenv("{_CONFIG_HOME}", str(root))', True, id="setenv"),
+        pytest.param(
+            f'subprocess.run(argv, env={{**os.environ, "{_CONFIG_HOME}": str(root)}})', True, id="an env dict"
+        ),
+        pytest.param(f"os.environ.update({_CONFIG_HOME}=str(root))", True, id="a keyword"),
+        pytest.param(f'monkeypatch.setitem(os.environ, "{_CONFIG_HOME}", str(root))', True, id="setitem"),
+        pytest.param(f'NAME = "{_CONFIG_HOME}"', True, id="held in a constant"),
+        pytest.param(f'def test_x():\n    """Reads {_CONFIG_HOME} on Linux."""', False, id="a docstring mention"),
+        pytest.param('monkeypatch.setenv("XDG_STATE_HOME", str(root))', False, id="a different variable"),
+    ],
+)
+def test_the_config_home_sweep_sees_every_way_to_seed_it(source: str, *, seeds: bool) -> None:
+    """The control, one arm per shape a seeding has taken or can take.
+
+    The first version matched ``setenv`` and ``environ[`` by regex, and one of
+    the four files it was written for seeded through a ``subprocess.run`` env
+    dict, which the regex could not see: rerun over the four offenders as they
+    were, it found three.
+    """
+    assert _names_the_config_home(source) is seeds
+
+
+def _names_the_config_home(text: str) -> bool:
+    """Whether source code names the Linux config home anywhere but a docstring.
+
+    Read by the parser rather than a pattern, so every way to hand an
+    environment the name counts - a call argument, a dict key, a keyword, a
+    constant - and prose describing it does not.
+
+    Args:
+        text: Python source.
+
+    Returns:
+        Whether the name appears as a value or a keyword outside a docstring.
+    """
+    tree = ast.parse(text)
+    docstrings = {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+    }
+    return any(
+        (isinstance(node, ast.Constant) and node.value == _CONFIG_HOME and id(node) not in docstrings)
+        or (isinstance(node, ast.keyword) and node.arg == _CONFIG_HOME)
+        for node in ast.walk(tree)
     )
