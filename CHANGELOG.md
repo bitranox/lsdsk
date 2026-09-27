@@ -7,6 +7,13 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **The skill and the module reference name every cause of 13, 22 and 78.**
+  Only COMMANDS.md had learned the 1.3.0 causes, so the skill told an agent that
+  a `78` after editing a configuration file meant a bad snapshot, and a `22` from
+  `report --format json` sent it looking for a `--profile` nobody passed. Both
+  tables now carry every cause, and a test pins each cause per row so a new one
+  cannot reach one document and not the others.
+
 - **A refused true or false is spelled the way it was typed.** `--set
   display.expand_virtual=yes` answered "not true or false. Using False.", two
   spellings of one value in one sentence, and a `true` typed into a number key

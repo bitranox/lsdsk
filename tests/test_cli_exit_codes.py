@@ -160,6 +160,35 @@ def test_every_code_the_tool_can_raise_is_documented_where_a_caller_reads() -> N
         assert "`9999`" not in prose, "the control: this check cannot report a code as absent"
 
 
+def _row_for(path: Path, code: int) -> str:
+    """The table row that states what `code` means in `path`, or an empty string."""
+    row = re.compile(rf"^\|\s*`?{code}`?\s*\|")
+    return next((line for line in path.read_text(encoding="utf-8").splitlines() if row.match(line)), "")
+
+
+#: Every cause each refusal code has, by a phrase its row must carry. The guard
+#: above asks that each CODE is documented and cannot see a code gaining a cause:
+#: 1.3.0 gave 78 a malformed configuration and 13 config-generate-examples, and
+#: only COMMANDS.md learned either, so the skill told an agent that a bad TOML
+#: file was a bad snapshot. A new cause is added here with the test driving it.
+DOCUMENTED_CAUSES: dict[int, tuple[str, ...]] = {
+    13: ("config-deploy", "config-generate-examples", "snapshot"),
+    22: ("--section", "--profile", "--replay", "`report`", "`tui`", "--format"),
+    78: ("configuration", "snapshot", "hardware reader"),
+}
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("document", ["skills/lsdsk/SKILL.md", "docs/systemdesign/module_reference.md"])
+@pytest.mark.parametrize(("code", "phrase"), [(c, p) for c, ps in DOCUMENTED_CAUSES.items() for p in ps])
+def test_each_exit_code_table_names_every_cause_of_the_code(document: str, code: int, phrase: str) -> None:
+    """A row naming some of a code's causes sends a caller to the wrong one."""
+    row = _row_for(REPO / document, code)
+
+    assert row, f"{document} has no row for {code}, so this asserted nothing"
+    assert phrase in row, f"{document}'s row for {code} does not name {phrase!r}: {row.strip()}"
+
+
 @pytest.mark.os_agnostic
 def test_the_exit_codes_the_docs_promise_are_the_ones_the_code_defines() -> None:
     """README and the skill both publish this contract; a caller branches on it."""
