@@ -745,10 +745,12 @@ def _refuse_a_format_this_command_has_no_form_of(output_format: OutputFormat | N
     """
     if output_format is None:
         return
+    # The refusal answers in the format the caller asked for: a `--format json`
+    # pipeline that gets an empty stdout cannot tell this from no data at all.
     fail(
         f"--format is not offered here: this command draws a page for a person. Run {instead} instead.",
         ExitCode.INVALID_ARGUMENT,
-        output_format=OutputFormat.HUMAN,
+        output_format=output_format,
     )
 
 

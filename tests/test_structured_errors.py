@@ -71,6 +71,20 @@ OUTPUT_PLACEHOLDER = "<the output path this test is given>"
             "snapshot",
             id="a command refusing an option that does not apply to it",
         ),
+        pytest.param(
+            ["report", "--replay", str(CAPTURE), "--format", "json"],
+            ExitCode.INVALID_ARGUMENT,
+            "INVALID_ARGUMENT",
+            "report",
+            id="a page for a person refusing a format it has no form of",
+        ),
+        pytest.param(
+            ["tui", "--replay", str(CAPTURE), "--format", "json"],
+            ExitCode.INVALID_ARGUMENT,
+            "INVALID_ARGUMENT",
+            "tui",
+            id="the interactive page refusing the same way",
+        ),
     ],
 )
 def test_a_failing_json_run_emits_one_error_object_on_stdout(
