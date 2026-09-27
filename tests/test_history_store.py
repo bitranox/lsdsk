@@ -411,7 +411,12 @@ def test_the_default_path_is_not_the_config_directory(monkeypatch: pytest.Monkey
     monkeypatch.setattr("sys.platform", "linux")
     monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
-    assert ".config" not in str(default_history_path())
+    # As in the test above: Path.home() reads USERPROFILE on Windows, so without
+    # it this resolved the runner's real home and passed without testing anything.
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    resolved = default_history_path()
+    assert resolved.is_relative_to(tmp_path), f"{resolved} is not under the home this test set"
+    assert ".config" not in resolved.parts
 
 
 def test_the_default_path_is_per_user_on_windows(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
