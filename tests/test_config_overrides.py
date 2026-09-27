@@ -457,3 +457,24 @@ def test_lsdsk_config_names_the_cli_as_the_source_of_an_override(
 
     assert "wwn_width = 8" in result.output, result.output
     assert _layer_reported_for(result.output, "wwn_width") == "cli"
+
+
+@pytest.mark.os_agnostic
+def test_lsdsk_config_credits_a_value_nobody_overrode_to_the_file_it_came_from(
+    cli_runner: CliRunner, production_factory: Callable[[], Any]
+) -> None:
+    """The other half: redacting for display must not relabel what it redacts.
+
+    The display pass rebuilt the Config through ``with_overrides``, which from
+    lib_layered_config 5.7.0 credits every key it is handed to the override
+    layer, so ``lsdsk config`` named "override" as the source of every value in
+    the file, the shipped defaults included. The suite's user layer is empty, so
+    a key nobody set must come from the shipped defaults.
+    """
+    from lsdsk.adapters.cli import cli
+
+    result = cli_runner.invoke(
+        cli, ["--set", "display.wwn_width=8", "config", "--section", "display"], obj=production_factory
+    )
+
+    assert _layer_reported_for(result.output, "piped_width") == "defaults", result.output

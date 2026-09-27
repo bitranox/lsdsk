@@ -7,6 +7,13 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **`lsdsk config` names where each value came from again.** From
+  lib_layered_config 5.7.0 it named `override` as the source of every value,
+  the shipped defaults included, and a `--set` value lost its `cli` label. The
+  view redacts secrets before printing and did it through `with_overrides`,
+  which that release changed to credit every key it is handed to the override
+  layer. The redacted copy now carries each value's original source.
+
 - **A capture cannot make a view take minutes or gigabytes through one name.**
   Every text field a capture carries is bounded now, where only the PCI fields
   were: a resolved device name, a disk's model, serial and firmware, a board

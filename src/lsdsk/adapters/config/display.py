@@ -14,6 +14,7 @@ from lib_layered_config import Config
 from lib_layered_config import OutputFormat as LibOutputFormat
 from lib_layered_config import display_config as _lib_display
 
+from lsdsk.adapters.config.overrides import with_provenance_kept
 from lsdsk.adapters.config.secrets import redact_secrets
 from lsdsk.domain.enums import OutputFormat
 
@@ -60,11 +61,11 @@ def display_config(
     # boundary, so `SmtpPassword`, `dbPassword` and `db_pass` printed in full.
     # Redacting first is idempotent: the library's pass then sees a value that
     # is already the placeholder.
-    # Through with_overrides rather than by rebuilding the Config, because that
-    # is the public seam and it carries the provenance map with it; constructing
-    # a fresh Config dropped provenance, and the human view prints which layer
-    # each value came from.
-    safe = config.with_overrides(redact_secrets(config.as_dict()))
+    # The human view prints which layer each value came from, so the redacted
+    # copy must keep every origin. Not through with_overrides: from
+    # lib_layered_config 5.7.0 that credits every key it is handed to the
+    # override layer, which named "override" as the source of every value.
+    safe = with_provenance_kept(config, redact_secrets(config.as_dict()))
     lib_format = LibOutputFormat(output_format.value)
     _lib_display(safe, output_format=lib_format, section=section, profile=profile, console=console)
 

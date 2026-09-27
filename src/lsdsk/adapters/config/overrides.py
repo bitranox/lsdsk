@@ -232,6 +232,30 @@ def _provenance_naming_the_cli(
     return provenance
 
 
+def with_provenance_kept(config: Config, data: Mapping[str, object]) -> Config:
+    """A Config holding ``data`` that credits every key to where ``config`` got it.
+
+    For a pass that changes values without changing where they came from, such as
+    redacting secrets before display. ``Config.with_overrides`` cannot do this: from
+    lib_layered_config 5.7.0 it records every key it is handed as the ``override``
+    layer, so handing it the whole mapping credited every value to an override.
+
+    Args:
+        config: The Config whose provenance is kept.
+        data: The values to hold, keyed the same way as ``config``.
+
+    Returns:
+        A new Config with ``data`` and ``config``'s origin for each of its keys.
+
+    Examples:
+        >>> from lib_layered_config import Config
+        >>> cfg = Config({"s": {"k": 1}}, {"s.k": {"layer": "defaults", "path": "/d.toml", "key": "s.k"}})
+        >>> with_provenance_kept(cfg, {"s": {"k": "***"}}).origin("s.k")["layer"]
+        'defaults'
+    """
+    return Config(data, _provenance_naming_the_cli(config, data, frozenset()))
+
+
 def _refusal_for(raw: str, override: ConfigOverride) -> str:
     """Explain a key this tool does not read, naming the one that was probably meant.
 
@@ -384,4 +408,5 @@ __all__ = [
     "apply_overrides",
     "coerce_value",
     "parse_override",
+    "with_provenance_kept",
 ]
