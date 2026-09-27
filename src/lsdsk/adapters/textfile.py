@@ -67,7 +67,7 @@ def read_text_bounded(path: Path, *, what: str, errors: str = "strict") -> str:
     ``/proc`` report a size of 0 whatever they go on to deliver, so the read
     itself also stops one byte past the ceiling and refuses there. A stream
     under the ceiling still loads, which is what keeps
-    ``--replay <(ssh host lsdsk snapshot -o -)`` working.
+    ``--replay <(ssh host cat capture.json)`` working.
 
     A file UNDER the ceiling is read whole, and what it costs once parsed is
     :data:`MAX_INPUT_BYTES`'s to say: the ceiling bounds the file, not the

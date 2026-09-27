@@ -738,6 +738,71 @@ def test_a_code_the_resolver_derived_from_the_exception_is_not_relabelled_as_a_c
 
 
 @pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("platform", "expected"), [("win32", ExitCode.BROKEN_PIPE), ("linux", ExitCode.INVALID_ARGUMENT)]
+)
+def test_a_departed_reader_on_windows_leaves_141_and_the_same_errno_elsewhere_stands(
+    platform: str, expected: ExitCode, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows reports a write to a closed pipe as EINVAL, and only Windows does.
+
+    The arm above passes with or without the Windows reading, because the
+    library already maps a ``BrokenPipeError`` to 141 by itself. So the reading
+    that made ``lsdsk --help | more`` leave 141 on Windows rather than 22 was
+    held by nothing on any cell. ``sys.platform`` is the edge patched: it is the
+    interpreter's own answer, and the resolver asks it at call time.
+    """
+    import errno
+    import sys
+
+    from lsdsk.adapters.cli.exit_codes import code_for_an_unhandled_exception
+
+    monkeypatch.setattr(sys, "platform", platform)
+
+    assert code_for_an_unhandled_exception(OSError(errno.EINVAL, "Invalid argument")) == expected
+
+
+class _ClosedPipe:
+    """A stdout whose reader has left, the way Windows reports it: EINVAL."""
+
+    encoding = "utf-8"
+
+    def write(self, text: str) -> int:
+        import errno
+
+        raise OSError(errno.EINVAL, "Invalid argument")
+
+    def flush(self) -> None:
+        return None
+
+    def isatty(self) -> bool:
+        return False
+
+
+@pytest.mark.os_agnostic
+def test_a_reader_leaving_on_windows_is_not_reported_as_an_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The code was right and stderr still said ``OSError: [Errno 22] Invalid argument``.
+
+    A person paging ``lsdsk --help`` through ``more`` and quitting early did
+    nothing wrong, and on POSIX the same event is silent. The last-resort handler
+    printed the exception before resolving the code, so Windows alone told them
+    an argument was invalid.
+    """
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    capsys.readouterr()
+    monkeypatch.setattr(sys, "stdout", _ClosedPipe())
+
+    code = cli_mod.main(["--help"], services_factory=build_production)
+
+    assert code == ExitCode.BROKEN_PIPE
+    assert "Invalid argument" not in capsys.readouterr().err
+
+
+@pytest.mark.os_agnostic
 def test_a_crash_stands_whoever_was_reading_because_it_says_nothing_about_the_output() -> None:
     """The contract (user, 2026-09-20), extended to the code added the same day.
 

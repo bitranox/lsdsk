@@ -129,20 +129,38 @@ def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppSe
         # Catch BaseException (not just Exception) to handle SystemExit, KeyboardInterrupt,
         # and all errors at the CLI boundary. This ensures consistent error formatting via
         # lib_cli_exit_tools regardless of exception type. Intentional, not a bug.
-        tracebacks_enabled = bool(getattr(lib_cli_exit_tools.config, "traceback", False))
-        apply_traceback_preferences(tracebacks_enabled)
-        # Read from configuration rather than the module constants: the two keys
-        # are documented in the shipped [display] section, and a documented key
-        # nothing reads is a lie in the config file.
-        display = _display_settings()
-        length_limit = display.traceback_verbose_limit if tracebacks_enabled else display.traceback_summary_limit
-        safe_console.write_unless_the_reader_left(
-            lambda: lib_cli_exit_tools.print_exception_message(trace_back=tracebacks_enabled, length_limit=length_limit)
-        )
-        # Not lib_cli_exit_tools.get_system_exit_code directly: its fallback for an
-        # exception it cannot place is 1, which is this tool's answer for a machine
-        # that needs attention. Nothing reaching here is that.
-        return code_for_an_unhandled_exception(exc)
+        return _answer_an_unhandled_exception(exc)
+
+
+def _answer_an_unhandled_exception(exc: BaseException) -> int:
+    """Report an exception that escaped every command, and name the code to leave with.
+
+    Args:
+        exc: The exception that reached the last-resort handler.
+
+    Returns:
+        The exit code the process should leave with.
+    """
+    # Not lib_cli_exit_tools.get_system_exit_code directly: its fallback for an
+    # exception it cannot place is 1, which is this tool's answer for a machine
+    # that needs attention. Nothing reaching here is that.
+    code = code_for_an_unhandled_exception(exc)
+    if safe_console.is_broken_pipe(exc):
+        # The reader left, which is the whole answer and is silent on POSIX. On
+        # Windows it arrives as a plain OSError carrying EINVAL, and printing it
+        # told somebody who quit their pager that an argument was invalid.
+        return code
+    tracebacks_enabled = bool(getattr(lib_cli_exit_tools.config, "traceback", False))
+    apply_traceback_preferences(tracebacks_enabled)
+    # Read from configuration rather than the module constants: the two keys
+    # are documented in the shipped [display] section, and a documented key
+    # nothing reads is a lie in the config file.
+    display = _display_settings()
+    length_limit = display.traceback_verbose_limit if tracebacks_enabled else display.traceback_summary_limit
+    safe_console.write_unless_the_reader_left(
+        lambda: lib_cli_exit_tools.print_exception_message(trace_back=tracebacks_enabled, length_limit=length_limit)
+    )
+    return code
 
 
 def main(

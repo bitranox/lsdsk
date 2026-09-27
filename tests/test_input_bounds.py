@@ -502,7 +502,7 @@ def test_a_stream_whose_directory_entry_understates_it_is_still_bounded(tmp_path
 def test_a_stream_that_fits_is_still_read_whatever_its_directory_entry_says(tmp_path: Path) -> None:
     """The control, and the reason the bound is a read rather than a refusal.
 
-    ``--replay <(ssh host lsdsk snapshot -o -)`` hands this tool a FIFO on
+    ``--replay <(ssh host cat capture.json)`` hands this tool a FIFO on
     purpose. Refusing everything that is not a regular file would close the
     hole and take that with it, so a stream under the limit must still load.
     """

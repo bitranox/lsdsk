@@ -7,6 +7,13 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A reader leaving on Windows is silent, as it is everywhere else.** Windows
+  reports a write to a closed pipe as `EINVAL`, and the exit code already read
+  141 for it, but the last-resort handler printed `OSError: [Errno 22] Invalid
+  argument` first, so quitting a pager early told the user an argument was wrong.
+  The arm that makes Windows leave 141 rather than 22 is now tested on every
+  platform; before, deleting it failed nothing.
+
 - **`lsdsk config` names where each value came from again.** From
   lib_layered_config 5.7.0 it named `override` as the source of every value,
   the shipped defaults included, and a `--set` value lost its `cli` label. The
@@ -1086,7 +1093,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   file that reports a real size. The read now also stops one byte past the
   ceiling and refuses there, which is the shape `read_bundled_pci_ids` already
   used for the decompressed database. A stream UNDER the ceiling still loads, so
-  `--replay <(ssh host lsdsk snapshot -o -)` keeps working; refusing everything
+  `--replay <(ssh host cat capture.json)` keeps working; refusing everything
   that is not a regular file would have closed the hole and taken that with it.
   The refusal from the second check states no figure, because the read stopped
   early and the size is not something that branch measured.
