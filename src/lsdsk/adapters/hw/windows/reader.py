@@ -29,6 +29,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ....domain.enums import BusType, Platform
+from ..capture import MAX_DEVICE_TEXT
 from ..decode import pciids
 from ..snapshot import SCHEMA_VERSION
 from . import winapi as api
@@ -290,14 +291,20 @@ class _DeviceTree:
         return int.from_bytes(raw[:4], "little")
 
     def _string_property(self, handle: int, info: api.SP_DEVINFO_DATA, fmtid: str, pid: int) -> str | None:
-        """Read one string device property."""
+        """Read one string device property, or ``None`` past the capture's bound.
+
+        A driver chooses the length, so one past :data:`MAX_DEVICE_TEXT` is not
+        read rather than stored: stored, the capture model would refuse the
+        whole scan over it.
+        """
         result = self._property(handle, info, fmtid, pid)
         if result is None:
             return None
         prop_type, raw = result
         if prop_type != api.DEVPROP_TYPE_STRING:
             return None
-        return raw.decode("utf-16-le", errors="replace").rstrip("\x00").strip() or None
+        text = raw.decode("utf-16-le", errors="replace").rstrip("\x00").strip()
+        return text if 0 < len(text) <= MAX_DEVICE_TEXT else None
 
     def disk_interfaces(self) -> list[tuple[str, list[str]]]:
         """Return every disk's interface path and the instances above it, nearest first."""

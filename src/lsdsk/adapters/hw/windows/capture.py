@@ -22,7 +22,7 @@ from typing import Annotated, Literal
 from pydantic import BeforeValidator, Field
 
 from ....domain.enums import BusType, Platform
-from ..capture import CaptureHeader, CaptureModel, DeviceText
+from ..capture import CaptureHeader, CaptureModel, DeviceText, EncodedPayload
 from ..decode.virtualization import VirtualizationEvidence
 
 # The transport names the reader takes from STORAGE_DEVICE_DESCRIPTOR.BusType,
@@ -108,9 +108,9 @@ class PciEntry(CaptureModel, frozen=True):
     max_link_speed: DeviceText | None = None
     max_link_width: DeviceText | None = None
     slot_number: int | None = Field(default=None, ge=0, le=_UINT32_MAX)
-    address: str | None = None
-    parent: str | None = None
-    children: tuple[str, ...] = ()
+    address: DeviceText | None = None
+    parent: DeviceText | None = None
+    children: tuple[DeviceText, ...] = ()
 
 
 class StorageDescriptor(CaptureModel, frozen=True):
@@ -124,9 +124,9 @@ class StorageDescriptor(CaptureModel, frozen=True):
     """
 
     bus_type: Annotated[BusType, BeforeValidator(bus_type_of)] = BusType.UNKNOWN
-    model: str | None = None
-    serial: str | None = None
-    rev: str | None = None
+    model: DeviceText | None = None
+    serial: DeviceText | None = None
+    rev: DeviceText | None = None
 
 
 class DiskTemperature(CaptureModel, frozen=True):
@@ -164,16 +164,16 @@ class HealthBlobs(CaptureModel, frozen=True):
         smart_thresholds_error: Why SMART READ THRESHOLDS was refused.
     """
 
-    identify: str | None = None
-    identify_controller: str | None = None
-    smart_log: str | None = None
-    smart_data: str | None = None
-    smart_thresholds: str | None = None
-    identify_error: str | None = None
-    identify_controller_error: str | None = None
-    smart_log_error: str | None = None
-    smart_data_error: str | None = None
-    smart_thresholds_error: str | None = None
+    identify: EncodedPayload | None = None
+    identify_controller: EncodedPayload | None = None
+    smart_log: EncodedPayload | None = None
+    smart_data: EncodedPayload | None = None
+    smart_thresholds: EncodedPayload | None = None
+    identify_error: DeviceText | None = None
+    identify_controller_error: DeviceText | None = None
+    smart_log_error: DeviceText | None = None
+    smart_data_error: DeviceText | None = None
+    smart_thresholds_error: DeviceText | None = None
 
 
 class DiskEntry(CaptureModel, frozen=True):
@@ -195,16 +195,16 @@ class DiskEntry(CaptureModel, frozen=True):
             else here was read.
     """
 
-    parent: str | None = None
-    ancestors: tuple[str, ...] = ()
-    node: str | None = None
+    parent: DeviceText | None = None
+    ancestors: tuple[DeviceText, ...] = ()
+    node: DeviceText | None = None
     device: StorageDescriptor = StorageDescriptor()
     size_bytes: int | None = Field(default=None, ge=0, le=_LARGE_INTEGER_MAX)
     rotating: bool | None = None
     temperature: DiskTemperature | None = None
     nvme: HealthBlobs | None = None
     ata: HealthBlobs | None = None
-    error: str | None = None
+    error: DeviceText | None = None
 
 
 class WindowsCapture(CaptureHeader, frozen=True):
@@ -227,9 +227,9 @@ class WindowsCapture(CaptureHeader, frozen=True):
     elevated: bool = False
     devices_accessible: bool = True
     environment: VirtualizationEvidence = VirtualizationEvidence()
-    pci: dict[str, PciEntry]
-    pci_names: dict[str, str] = Field(default_factory=dict[str, str])
-    disks: dict[str, DiskEntry] = Field(default_factory=dict[str, DiskEntry])
+    pci: dict[DeviceText, PciEntry]
+    pci_names: dict[DeviceText, DeviceText] = Field(default_factory=dict[DeviceText, DeviceText])
+    disks: dict[DeviceText, DiskEntry] = Field(default_factory=dict[DeviceText, DiskEntry])
 
 
 __all__ = [

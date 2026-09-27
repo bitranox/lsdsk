@@ -17,7 +17,7 @@ import re
 import sys
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast, get_args
+from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin
 
 import annotated_types
 import pytest
@@ -25,7 +25,7 @@ from rich.console import Console
 
 from lsdsk.adapters.history.store import load_history
 from lsdsk.adapters.hw import capture as shared_capture
-from lsdsk.adapters.hw.capture import MAX_DEVICE_TEXT, CaptureEnvelope, CaptureModel
+from lsdsk.adapters.hw.capture import MAX_DEVICE_TEXT, CaptureEnvelope, CaptureModel, DeviceText
 from lsdsk.adapters.hw.linux import capture as linux_capture
 from lsdsk.adapters.hw.snapshot import load
 from lsdsk.adapters.hw.windows import capture as windows_capture
@@ -36,7 +36,7 @@ from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.models import Inventory, PciNode
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from click.testing import CliRunner
 
@@ -883,6 +883,74 @@ def test_every_integer_a_capture_carries_is_bounded_by_its_own_source() -> None:
     )
 
 
+def _loose_strings(annotation: Any, metadata: Sequence[Any] = ()) -> int:
+    """How many `str` positions in an annotation carry no maximum length.
+
+    Walks every place a string can sit in a capture - an optional, a tuple, a
+    mapping's KEY as well as its value - because a bound on the value alone
+    leaves the key free to carry the same payload.
+    """
+    if annotation is str:
+        return 0 if any(isinstance(entry, annotated_types.MaxLen) for entry in metadata) else 1
+    if get_origin(annotation) is Annotated:
+        inner, *extras = get_args(annotation)
+        found = [*metadata, *extras, *(item for extra in extras for item in getattr(extra, "metadata", ()))]
+        return _loose_strings(inner, found)
+    return sum(_loose_strings(argument) for argument in get_args(annotation) if argument is not Ellipsis)
+
+
+def _unbounded_text_fields() -> list[str]:
+    """Text fields on a capture model with no maximum length, in any position."""
+    return sorted(
+        f"{model.__name__}.{name}"
+        for model in _capture_models()
+        for name, field in model.model_fields.items()
+        if _loose_strings(field.annotation, field.metadata)
+    )
+
+
+@pytest.mark.os_agnostic
+def test_every_string_a_capture_carries_is_bounded() -> None:
+    """The integer rule above, for text: one field inside the file cap is not bounded by it.
+
+    `pci_names` was a plain `dict[str, str]` while every field beside it was
+    `DeviceText`, and a resolved name is looked up once per device that shares
+    its id. Measured: 500 devices sharing one id named by a 1 MB string took
+    27 s and 569 MB to draw, against 0.46 s and 50 MB for a short name, and it
+    grows with the product, so a few megabytes of capture reached gigabytes.
+    Disk models, serials, firmware and board names were loose the same way.
+
+    Asserted over every field and every position in it, so the next field added
+    as a bare `str` fails here rather than waiting for a capture to find it.
+    """
+    loose = _unbounded_text_fields()
+    assert loose == [], f"these carry text with no maximum length: {loose}"
+
+
+@pytest.mark.os_agnostic
+def test_the_string_guard_sees_a_loose_key_and_a_loose_optional() -> None:
+    """The control: the walker must answer both ways, in every position it claims."""
+    assert _loose_strings(dict[str, DeviceText]) == 1, "an unbounded mapping KEY went unseen"
+    assert _loose_strings(str | None) == 1, "an unbounded optional went unseen"
+    assert _loose_strings(tuple[str, ...]) == 1, "an unbounded tuple member went unseen"
+    assert _loose_strings(dict[DeviceText, DeviceText | None]) == 0, "a bounded mapping was reported loose"
+    assert _loose_strings(tuple[DeviceText, ...]) == 0, "a bounded tuple was reported loose"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("where", ["value", "key"])
+def test_a_device_name_longer_than_any_device_publishes_is_refused(tmp_path: Path, where: str) -> None:
+    """The end-to-end arm: the oversized name is refused at load, not drawn."""
+    long_text = "A" * (MAX_DEVICE_TEXT + 1)
+    names = {"8086:a182": long_text} if where == "value" else {long_text: "Intel"}
+    crafted = {"schema": 2, "platform": "linux", "hostname": "box", "kernel": "x", "pci": {}, "pci_names": names}
+    path = tmp_path / "huge-name.json"
+    path.write_text(json.dumps(crafted), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="at most 4096"):
+        load(path)
+
+
 @pytest.mark.os_agnostic
 def test_the_version_a_capture_declares_is_deliberately_not_bounded() -> None:
     """The control for the rule above, which would otherwise read as complete.
@@ -1242,3 +1310,32 @@ def test_a_sysfs_attribute_past_the_ceiling_is_not_read_rather_than_read_whole(t
 
     assert _read_text(huge) is None, "an oversized attribute was read as text"
     assert _read_blob(huge) is None, "an oversized attribute was base64-encoded into the capture"
+
+
+@pytest.mark.os_agnostic
+def test_a_live_attribute_past_the_capture_bound_is_not_read_rather_than_ending_the_scan(tmp_path: Path) -> None:
+    """The reader stops where the capture model does, so a live scan never refuses itself.
+
+    Bounding the capture's text left the reader keeping anything up to a
+    megabyte, so one attribute longer than the model allows would have been
+    read, then refused on parse, and the whole scan ended at exit 78 over it.
+    The control is the longest value the kernel can publish: `sysfs_emit`
+    formats into one page, so an attribute is at most 4095 characters plus its
+    newline, and every real one must still be kept.
+    """
+    from lsdsk.adapters.hw.linux.capture import LinuxCapture
+    from lsdsk.adapters.hw.linux.reader import read_block
+
+    for node, model in (("sda", "A" * (MAX_DEVICE_TEXT + 1)), ("sdb", "B" * (MAX_DEVICE_TEXT - 1))):
+        device = tmp_path / node / "device"
+        device.mkdir(parents=True)
+        (tmp_path / node / "size").write_text("100\n", encoding="utf-8")
+        (device / "model").write_text(f"{model}\n", encoding="utf-8")
+
+    block = read_block(tmp_path)
+    parsed = LinuxCapture.model_validate(
+        {"schema": 2, "platform": "linux", "hostname": "box", "kernel": "x", "pci": {}, "block": block}
+    )
+
+    assert parsed.block["sda"].device.model is None, "an attribute past the capture bound was kept"
+    assert parsed.block["sdb"].device.model == "B" * (MAX_DEVICE_TEXT - 1), "a page-sized attribute was dropped"

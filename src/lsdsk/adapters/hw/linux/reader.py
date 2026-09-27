@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from ....domain.enums import Platform
+from ..capture import MAX_DEVICE_TEXT, MAX_PAYLOAD_BYTES
 from ..decode import ahci, pciids
 from ..decode.virtualization import container_markers_in_mounts
 from ..snapshot import SCHEMA_VERSION
@@ -264,7 +265,7 @@ def smart_log_selector(length: int = 512, log_id: int = NVME_SMART_LOG_ID) -> in
 MAX_SYSFS_BYTES = 1024 * 1024
 
 
-def _read_text(path: Path) -> str | None:
+def _read_text(path: Path, *, limit: int = MAX_SYSFS_BYTES) -> str | None:
     """Read one sysfs attribute, returning ``None`` when it cannot be read.
 
     An attribute past :data:`MAX_SYSFS_BYTES` is not read rather than refused:
@@ -274,18 +275,38 @@ def _read_text(path: Path) -> str | None:
 
     Args:
         path: The attribute to read.
+        limit: The most characters it may carry. The default suits a file that
+            is only parsed here; an attribute stored in a capture passes the
+            capture's own bound instead, through :func:`_read_attribute`.
 
     Returns:
         Its stripped text, or ``None`` where it could not be read or is too big.
     """
     try:
         with path.open("r", errors="replace") as handle:
-            raw = handle.read(MAX_SYSFS_BYTES + 1)
+            raw = handle.read(limit + 1)
     except OSError:
         return None
-    if len(raw) > MAX_SYSFS_BYTES:
+    if len(raw) > limit:
         return None
     return raw.strip()
+
+
+def _read_attribute(path: Path) -> str | None:
+    """Read one sysfs attribute that goes into a capture, at the capture's bound.
+
+    The kernel caps a text attribute at one page, so a real one always fits; a
+    larger one is not read, the same way an oversized attribute always was. Read
+    to the megabyte instead, it would reach the capture model and be refused
+    there, ending the whole scan over one attribute.
+
+    Args:
+        path: The attribute to read.
+
+    Returns:
+        Its stripped text, or ``None`` where it could not be read or is too big.
+    """
+    return _read_text(path, limit=MAX_DEVICE_TEXT)
 
 
 def _read_blob(path: Path) -> str | None:
@@ -299,10 +320,10 @@ def _read_blob(path: Path) -> str | None:
     """
     try:
         with path.open("rb") as handle:
-            raw = handle.read(MAX_SYSFS_BYTES + 1)
+            raw = handle.read(MAX_PAYLOAD_BYTES + 1)
     except OSError:
         return None
-    if len(raw) > MAX_SYSFS_BYTES:
+    if len(raw) > MAX_PAYLOAD_BYTES:
         return None
     return base64.b64encode(raw).decode("ascii")
 
@@ -311,7 +332,7 @@ def _read_attrs(base: Path, names: tuple[str, ...]) -> dict[str, str]:
     """Read a fixed set of attributes from one sysfs directory."""
     values: dict[str, str] = {}
     for name in names:
-        value = _read_text(base / name)
+        value = _read_attribute(base / name)
         if value:
             values[name] = value
     return values
@@ -672,13 +693,13 @@ def read_block(root: Path = Path("/sys/block")) -> dict[str, dict[str, Any]]:
     if not root.is_dir():
         return disks
     for node in _entries(root):
-        entry: dict[str, Any] = {"size": _read_text(node / "size")}
+        entry: dict[str, Any] = {"size": _read_attribute(node / "size")}
         if _is_kernel_virtual(node, root):
             entry["virtual"] = True
         # The stable identifier lives at block level for NVMe and at device level
         # for SCSI and SATA, and both are readable without any privilege.
         for name in ("wwid", "uuid"):
-            value = _read_text(node / name)
+            value = _read_attribute(node / name)
             if value:
                 entry[name] = value
         entry["queue"] = _read_attrs(node / "queue", BLOCK_QUEUE_ATTRS)

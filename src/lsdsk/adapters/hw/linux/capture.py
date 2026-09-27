@@ -27,7 +27,7 @@ from typing import Annotated, Literal
 from pydantic import BeforeValidator, Field
 
 from ....domain.enums import Platform
-from ..capture import CaptureHeader, CaptureModel, DeviceText
+from ..capture import CaptureHeader, CaptureModel, DeviceText, EncodedPayload
 from ..decode.virtualization import VirtualizationEvidence
 
 # ``rotational`` is a kernel-published ``0``/``1`` text flag, unlike most of
@@ -124,7 +124,7 @@ class PciEntry(CaptureModel, frozen=True):
     path: DeviceText = ""
     children: tuple[DeviceText, ...] = ()
     ahci: AhciRegisters | None = None
-    ahci_error: str | None = None
+    ahci_error: DeviceText | None = None
     slot_implemented: bool | None = None
     slot_number: int | None = Field(default=None, ge=0, le=_PCIE_SLOT_NUMBER_MAX)
     pcie_port_type: int | None = Field(default=None, ge=0, le=_PCIE_PORT_TYPE_MAX)
@@ -138,7 +138,7 @@ class ClassEntry(CaptureModel, frozen=True):
             hangs off.
     """
 
-    path: str = ""
+    path: DeviceText = ""
 
 
 class ScsiHostEntry(ClassEntry, frozen=True):
@@ -149,8 +149,8 @@ class ScsiHostEntry(ClassEntry, frozen=True):
         version_fw: The HBA firmware version.
     """
 
-    board_name: str | None = None
-    version_fw: str | None = None
+    board_name: DeviceText | None = None
+    version_fw: DeviceText | None = None
 
 
 class SasPhyEntry(ClassEntry, frozen=True):
@@ -161,8 +161,8 @@ class SasPhyEntry(ClassEntry, frozen=True):
         maximum_linkrate_hw: The fastest rate the phy hardware supports.
     """
 
-    negotiated_linkrate: str | None = None
-    maximum_linkrate_hw: str | None = None
+    negotiated_linkrate: DeviceText | None = None
+    maximum_linkrate_hw: DeviceText | None = None
 
 
 class AtaLinkEntry(ClassEntry, frozen=True):
@@ -173,8 +173,8 @@ class AtaLinkEntry(ClassEntry, frozen=True):
         sata_spd_max: The fastest speed libata allows on the link.
     """
 
-    sata_spd: str | None = None
-    sata_spd_max: str | None = None
+    sata_spd: DeviceText | None = None
+    sata_spd_max: DeviceText | None = None
 
 
 class NvmeClassEntry(ClassEntry, frozen=True):
@@ -186,9 +186,9 @@ class NvmeClassEntry(ClassEntry, frozen=True):
         firmware_rev: The firmware revision.
     """
 
-    model: str | None = None
-    serial: str | None = None
-    firmware_rev: str | None = None
+    model: DeviceText | None = None
+    serial: DeviceText | None = None
+    firmware_rev: DeviceText | None = None
 
 
 class HwmonEntry(ClassEntry, frozen=True):
@@ -198,7 +198,7 @@ class HwmonEntry(ClassEntry, frozen=True):
         temp1_input: The first temperature, in thousandths of a degree.
     """
 
-    temp1_input: str | None = None
+    temp1_input: DeviceText | None = None
 
 
 class SysfsClasses(CaptureModel, frozen=True):
@@ -213,12 +213,12 @@ class SysfsClasses(CaptureModel, frozen=True):
         hwmon: Hardware monitors.
     """
 
-    scsi_host: dict[str, ScsiHostEntry] = Field(default_factory=dict[str, ScsiHostEntry])
-    sas_phy: dict[str, SasPhyEntry] = Field(default_factory=dict[str, SasPhyEntry])
-    ata_link: dict[str, AtaLinkEntry] = Field(default_factory=dict[str, AtaLinkEntry])
-    ata_port: dict[str, ClassEntry] = Field(default_factory=dict[str, ClassEntry])
-    nvme: dict[str, NvmeClassEntry] = Field(default_factory=dict[str, NvmeClassEntry])
-    hwmon: dict[str, HwmonEntry] = Field(default_factory=dict[str, HwmonEntry])
+    scsi_host: dict[DeviceText, ScsiHostEntry] = Field(default_factory=dict[DeviceText, ScsiHostEntry])
+    sas_phy: dict[DeviceText, SasPhyEntry] = Field(default_factory=dict[DeviceText, SasPhyEntry])
+    ata_link: dict[DeviceText, AtaLinkEntry] = Field(default_factory=dict[DeviceText, AtaLinkEntry])
+    ata_port: dict[DeviceText, ClassEntry] = Field(default_factory=dict[DeviceText, ClassEntry])
+    nvme: dict[DeviceText, NvmeClassEntry] = Field(default_factory=dict[DeviceText, NvmeClassEntry])
+    hwmon: dict[DeviceText, HwmonEntry] = Field(default_factory=dict[DeviceText, HwmonEntry])
 
 
 class QueueAttributes(CaptureModel, frozen=True):
@@ -243,9 +243,9 @@ class DeviceAttributes(CaptureModel, frozen=True):
         wwid: The world-wide identifier.
     """
 
-    model: str | None = None
-    rev: str | None = None
-    wwid: str | None = None
+    model: DeviceText | None = None
+    rev: DeviceText | None = None
+    wwid: DeviceText | None = None
 
 
 class VpdPages(CaptureModel, frozen=True):
@@ -255,7 +255,7 @@ class VpdPages(CaptureModel, frozen=True):
         vpd_pg89: The ATA Information page, which embeds the IDENTIFY data.
     """
 
-    vpd_pg89: str | None = None
+    vpd_pg89: EncodedPayload | None = None
 
 
 class BlockEntry(CaptureModel, frozen=True):
@@ -273,15 +273,15 @@ class BlockEntry(CaptureModel, frozen=True):
         hwmon: The resolved paths of the hardware monitors the device owns.
     """
 
-    size: str | None = None
+    size: DeviceText | None = None
     virtual: bool = False
-    wwid: str | None = None
-    uuid: str | None = None
+    wwid: DeviceText | None = None
+    uuid: DeviceText | None = None
     queue: QueueAttributes = QueueAttributes()
     device: DeviceAttributes = DeviceAttributes()
-    device_path: str = ""
+    device_path: DeviceText = ""
     vpd: VpdPages = VpdPages()
-    hwmon: tuple[str, ...] = ()
+    hwmon: tuple[DeviceText, ...] = ()
 
 
 class AtaBlobs(CaptureModel, frozen=True):
@@ -304,13 +304,13 @@ class AtaBlobs(CaptureModel, frozen=True):
         smart_thresholds_error: Why SMART READ THRESHOLDS was refused.
     """
 
-    identify: str | None = None
-    smart_data: str | None = None
-    smart_thresholds: str | None = None
-    error: str | None = None
-    identify_error: str | None = None
-    smart_data_error: str | None = None
-    smart_thresholds_error: str | None = None
+    identify: EncodedPayload | None = None
+    smart_data: EncodedPayload | None = None
+    smart_thresholds: EncodedPayload | None = None
+    error: DeviceText | None = None
+    identify_error: DeviceText | None = None
+    smart_data_error: DeviceText | None = None
+    smart_thresholds_error: DeviceText | None = None
 
 
 class NvmeBlobs(CaptureModel, frozen=True):
@@ -324,11 +324,11 @@ class NvmeBlobs(CaptureModel, frozen=True):
         smart_log_error: Why the health log was refused.
     """
 
-    identify_controller: str | None = None
-    smart_log: str | None = None
-    error: str | None = None
-    identify_controller_error: str | None = None
-    smart_log_error: str | None = None
+    identify_controller: EncodedPayload | None = None
+    smart_log: EncodedPayload | None = None
+    error: DeviceText | None = None
+    identify_controller_error: DeviceText | None = None
+    smart_log_error: DeviceText | None = None
 
 
 class LinuxCapture(CaptureHeader, frozen=True):
@@ -354,12 +354,12 @@ class LinuxCapture(CaptureHeader, frozen=True):
     euid: int | None = Field(default=None, ge=0, le=_UINT32_MAX)
     devices_accessible: bool = True
     environment: VirtualizationEvidence = VirtualizationEvidence()
-    pci: dict[str, PciEntry]
-    pci_names: dict[str, str] = Field(default_factory=dict[str, str])
+    pci: dict[DeviceText, PciEntry]
+    pci_names: dict[DeviceText, DeviceText] = Field(default_factory=dict[DeviceText, DeviceText])
     classes: SysfsClasses = SysfsClasses()
-    block: dict[str, BlockEntry] = Field(default_factory=dict[str, BlockEntry])
-    ata: dict[str, AtaBlobs] = Field(default_factory=dict[str, AtaBlobs])
-    nvme: dict[str, NvmeBlobs] = Field(default_factory=dict[str, NvmeBlobs])
+    block: dict[DeviceText, BlockEntry] = Field(default_factory=dict[DeviceText, BlockEntry])
+    ata: dict[DeviceText, AtaBlobs] = Field(default_factory=dict[DeviceText, AtaBlobs])
+    nvme: dict[DeviceText, NvmeBlobs] = Field(default_factory=dict[DeviceText, NvmeBlobs])
 
 
 __all__ = [

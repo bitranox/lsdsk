@@ -5,6 +5,24 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A capture cannot make a view take minutes or gigabytes through one name.**
+  Every text field a capture carries is bounded now, where only the PCI fields
+  were: a resolved device name, a disk's model, serial and firmware, a board
+  name, a path, a mapping's keys. `pci_names` was the costly one, because a name
+  is looked up once per device that shares its id - 500 devices sharing one id
+  named by a 1 MB string took 27 s and 569 MB to draw. Such a capture is refused
+  at load with exit `78`, naming the field. The binary pages beside them carry
+  their own bound, and both live readers stop at the same limits, so an
+  attribute past them is not read rather than ending the scan.
+
+- **`report` and `tui` refuse `--format json` in JSON.** They draw a page for a
+  person and refuse `--format` at exit `22`, naming `lsdsk findings --format
+  json`. The refusal went to stderr only, so a `--format json` pipeline got an
+  empty stdout, which every other refusal already avoids. It now emits the same
+  `{"ok": false, ...}` object on stdout.
+
 ## [1.3.0] 2026-09-21 09:14:01
 
 ### Added

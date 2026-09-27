@@ -26,13 +26,30 @@ from ...domain.enums import Platform
 #: bound on what ONE field can do downstream - an identifier round-trips through
 #: an integer parse, a hex re-format and a per-character generator, which
 #: measured a 12 to 13x memory multiplier, so a single field inside the 64 MB
-#: file limit could reach roughly 800 MB. It does not cover the base64 payloads
-#: beside them: a 4096-byte IDENTIFY page encodes to more than this, and those
-#: are decoded at fixed offsets rather than walked per character.
+#: file limit could reach roughly 800 MB, and a resolved device name is looked
+#: up once per device sharing its id, which multiplies it again. It does not
+#: cover the base64 payloads beside them: a 4096-byte IDENTIFY page encodes to
+#: more than this, so those carry their own bound below.
 MAX_DEVICE_TEXT = 4096
 
-#: Text a device published, bounded. Optional fields spell it `DeviceText | None`.
+#: The largest page a reader stores, decoded. A VPD page's two-byte length field
+#: allows 65,539 bytes, so the ceiling cannot sit at 64 KiB; it is the megabyte
+#: the Linux reader already stops a binary sysfs attribute at, so nothing a live
+#: read keeps is refused when that same capture is parsed. A page is decoded at
+#: fixed offsets, once per drive, so its length is not multiplied downstream.
+MAX_PAYLOAD_BYTES = 1024 * 1024
+
+#: The same ceiling as base64 text, which is how a capture stores a page.
+MAX_ENCODED_PAYLOAD = 4 * -(-MAX_PAYLOAD_BYTES // 3)
+
+#: Text a capture carries - a name, identifier, rate, path or a reader's refusal -
+#: bounded. Optional fields spell it `DeviceText | None`, and a mapping bounds its
+#: KEY with it as well as its value, since a key can carry the same payload.
 DeviceText = Annotated[str, Field(max_length=MAX_DEVICE_TEXT)]
+
+#: A binary page as base64, bounded. Decoded at fixed offsets rather than walked
+#: per character, which is why it may be longer than :data:`DeviceText`.
+EncodedPayload = Annotated[str, Field(max_length=MAX_ENCODED_PAYLOAD)]
 
 
 class CaptureModel(BaseModel, frozen=True, extra="ignore"):
@@ -74,9 +91,9 @@ class CaptureHeader(CaptureModel, frozen=True):
     """
 
     schema_version: int = Field(alias="schema")
-    hostname: str
-    kernel: str
-    captured_at: str | None = None
+    hostname: DeviceText
+    kernel: DeviceText
+    captured_at: DeviceText | None = None
 
 
 class CaptureEnvelope(CaptureHeader, frozen=True):
@@ -100,4 +117,13 @@ class CaptureEnvelope(CaptureHeader, frozen=True):
     platform: Platform
 
 
-__all__ = ["MAX_DEVICE_TEXT", "CaptureEnvelope", "CaptureHeader", "CaptureModel", "DeviceText"]
+__all__ = [
+    "MAX_DEVICE_TEXT",
+    "MAX_ENCODED_PAYLOAD",
+    "MAX_PAYLOAD_BYTES",
+    "CaptureEnvelope",
+    "CaptureHeader",
+    "CaptureModel",
+    "DeviceText",
+    "EncodedPayload",
+]
