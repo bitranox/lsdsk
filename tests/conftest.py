@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import lib_cli_exit_tools
+import lib_log_rich.runtime
 import pytest
 from click.testing import CliRunner
 from lib_layered_config import Config
@@ -175,6 +176,26 @@ def _no_configuration_layer_reaches_in(state: Path, monkeypatch: pytest.MonkeyPa
     prefix = f"{__init__conf__.LAYEREDCONF_SLUG.upper()}___"
     for name in [name for name in os.environ if name.startswith(prefix)]:
         monkeypatch.delenv(name)
+
+
+@pytest.fixture(autouse=True)
+def no_logging_runtime_outlives_its_test() -> Iterator[None]:
+    """Put the process-wide logging runtime back down after every test.
+
+    ``init_logging`` initialises lib_log_rich once per process and then keeps it,
+    and attaches stdlib logging to it, so whichever test first initialises it
+    decides the console level for every test after. A test that sets
+    ``lib_log_rich.console_level=DEBUG`` then left DEBUG in force, and from
+    lib_layered_config 5.7.0 - which logs its load at DEBUG - that printed into
+    the next test's stderr ahead of the refusal it asserts on. Measured with a
+    probe: the malformed-configuration test failed on every POSIX CI cell, the
+    runtime at level 10 set by the DEBUG test, and passed wherever an earlier
+    test happened to take the runtime down first - so it passed under
+    ``make test`` and failed under CI's marker expression.
+    """
+    yield
+    if lib_log_rich.runtime.is_initialised():
+        lib_log_rich.runtime.shutdown()
 
 
 @pytest.fixture

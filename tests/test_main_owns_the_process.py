@@ -31,18 +31,6 @@ def run_and_report(argv: list[str], into: dict[str, Any]) -> None:
     into["logging_initialised"] = lib_log_rich.runtime.is_initialised()
 
 
-@pytest.fixture(autouse=True)
-def _leave_the_runtime_down() -> Any:
-    """Put the logging runtime back down between tests.
-
-    These tests are about a process-wide act, so one of them leaving the runtime
-    up would decide the next one's answer.
-    """
-    yield
-    if lib_log_rich.runtime.is_initialised():
-        lib_log_rich.runtime.shutdown()
-
-
 @pytest.mark.os_agnostic
 def test_a_run_leaves_the_logging_runtime_down() -> None:
     """The baseline, on the main thread, and the control for the test below."""
