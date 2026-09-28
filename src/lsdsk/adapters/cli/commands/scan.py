@@ -630,7 +630,9 @@ def somebody_is_sitting_at_it() -> bool:
     Which streams it asks, and why, is :func:`streams_that_are_not_terminals`.
 
     Returns:
-        True when stdin, stdout and stderr are all terminals.
+        True when every stream the view needs on this platform is a terminal:
+        stdin, stdout and stderr on POSIX, where the view draws on stderr, and
+        stdin and stdout on Windows, where it draws on stdout.
     """
     return not streams_that_are_not_terminals()
 
@@ -651,6 +653,27 @@ def _and_joined(names: Sequence[str]) -> str:
     if len(names) == 1:
         return names[0]
     return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+#: How many things "both" covers; one more and a sentence says "all".
+_A_PAIR = 2
+
+
+def _each_of(count: int) -> str:
+    """The word that says a requirement holds for every one of `count` things.
+
+    Args:
+        count: How many things the sentence names, at least two.
+
+    Returns:
+        ``both`` for two and ``all`` for more, since "all" of two reads as if a
+        third had been left out of the list.
+
+    Example:
+        >>> _each_of(2), _each_of(3)
+        ('both', 'all')
+    """
+    return "both" if count == _A_PAIR else "all"
 
 
 class InteractiveView(Protocol):
@@ -1174,19 +1197,20 @@ def cli_tui(
     """
     with lib_log_rich.runtime.bind(job_id="cli-tui", extra={"command": "tui"}):
         _refuse_a_format_this_command_has_no_form_of(output_format, instead="`lsdsk findings --format json`")
-        # All three streams, the same test run_default_view makes: textual
-        # reads key events from stdin, so a view opened where nothing can press
-        # q never returns, and it draws on stderr, so a view opened there with
-        # stderr redirected is one nobody sees. Measured before each: `lsdsk tui
-        # </dev/null` ran until it was killed, with 48 KB of escape sequences on
-        # stderr and nothing on stdout, and `lsdsk tui 2>err.log` at a terminal
-        # left the screen unchanged and waited for a blind q.
+        # Every stream the view needs, the same test run_default_view makes:
+        # textual reads key events from stdin, so a view opened where nothing
+        # can press q never returns, and off Windows it draws on stderr, so a
+        # view opened there with stderr redirected is one nobody sees. Measured
+        # before each: `lsdsk tui </dev/null` ran until it was killed, with 48 KB
+        # of escape sequences on stderr and nothing on stdout, and `lsdsk tui
+        # 2>err.log` at a terminal left the screen unchanged and waited for a
+        # blind q.
         if not somebody_is_sitting_at_it():
             missing = streams_that_are_not_terminals()
             verb = "is" if len(missing) == 1 else "are"
             needed = names_of_the_streams_the_view_needs()
             fail(
-                f"The interactive view needs {_and_joined(needed)} all to be terminals, "
+                f"The interactive view needs {_and_joined(needed)} {_each_of(len(needed))} to be terminals, "
                 f"and this run's {_and_joined(missing)} {verb} not.",
                 ExitCode.INVALID_ARGUMENT,
                 output_format=OutputFormat.HUMAN,

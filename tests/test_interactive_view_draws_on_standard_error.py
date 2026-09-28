@@ -25,12 +25,17 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pytest
 
 from lsdsk.adapters.cli.commands import scan
 from lsdsk.adapters.cli.exit_codes import ExitCode
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from click.testing import CliRunner
 
 if sys.platform != "win32":
     import pty
@@ -187,3 +192,39 @@ def test_the_streams_the_view_needs_follow_the_platform_it_draws_on(
     monkeypatch.setattr(sys, "platform", platform)
 
     assert scan.names_of_the_streams_the_view_needs() == needed
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("platform", "requirement"),
+    [
+        ("linux", "needs standard input, standard output and standard error all to be terminals"),
+        # Two streams are "both", and a sentence saying "all" of two reads as if
+        # a third had been left out of the list.
+        ("win32", "needs standard input and standard output both to be terminals"),
+    ],
+)
+def test_the_tui_refusal_counts_the_streams_it_names(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    requirement: str,
+) -> None:
+    """The refusal's quantifier agrees with how many streams this platform asks about."""
+    from lsdsk.adapters.cli import cli
+
+    class RefuseToOpen:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("`lsdsk tui` opened the interactive view with no terminal to open it on")
+
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: False, raising=False)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising=False)
+    monkeypatch.setattr("lsdsk.adapters.tui.LsdskApp", RefuseToOpen)
+    monkeypatch.setattr(sys, "platform", platform)
+
+    result = cli_runner.invoke(cli, ["tui", "--replay", str(FIXTURE)], obj=production_factory)
+
+    assert result.exit_code == ExitCode.INVALID_ARGUMENT, f"exited {result.exit_code}: {result.output}"
+    said = " ".join(result.stderr.split())
+    assert requirement in said, f"the refusal does not say {requirement!r}:\n{result.stderr}"
