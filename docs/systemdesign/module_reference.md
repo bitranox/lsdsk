@@ -210,7 +210,7 @@ broke while it ran.
 | 22   | `INVALID_ARGUMENT`  | `config --section` named no section, a `--profile` was rejected, `snapshot` was given a global `--replay` or `-o -` with `--format json` or while the logging console writes to stdout, or `report` or `tui` was given `--format` |
 | 70   | `SOFTWARE_ERROR`    | An error inside this tool: an exception no command handled, which is a bug rather than a finding                                                                                                                                  |
 | 74   | `IO_ERROR`          | A write failed for a reason other than permission: a `snapshot` or `record` destination, a `config-deploy` or `config-generate-examples` file, or standard output itself refusing the output or closed                            |
-| 78   | `CONFIG_ERROR`      | A configuration file cannot be loaded, a file is not a snapshot this version reads, or this platform has no hardware reader                                                                                                       |
+| 78   | `CONFIG_ERROR`      | A configuration file cannot be loaded, a file is not a snapshot this version reads, the counter-history store `record` would write cannot be read, or this platform has no hardware reader                                        |
 
 Two more are named in the enum and decided elsewhere:
 

@@ -415,9 +415,11 @@ non-zero code; a hint is a ceiling, not a fault.
 hardware says, so never read their code as a verdict about the machine. They are
 not always `0`, though: one that cannot write what it was asked to write leaves
 `13` when it lacked permission and `74` for any other reason, with one stderr
-line saying which. For `record`, which prints nothing at all in human mode when
-it succeeds, that code is what a timer reads. Neither an internal error nor a
-failed write is one of the things `1` can mean: a crash leaves `70` and output
+line saying which. `record` also leaves `78` when the counter-history store it
+would add to cannot be read, because it keeps that store rather than replacing
+it and the record has stopped growing. For `record`, which prints nothing at all
+in human mode when it succeeds, that code is what a timer reads. Neither an
+internal error nor a failed write is one of the things `1` can mean: a crash leaves `70` and output
 that could not be written leaves `74`, so a check can act on `1` as a verdict
 without reading stderr first to find out whether the tool merely broke or its
 output never arrived. A crash
@@ -434,7 +436,7 @@ nothing, or a truncated report if the crash landed mid-write.
 | `22`  | `lsdsk config --section` named a section that does not exist, a `--profile` was rejected, `snapshot` was given a global `--replay`, or `-o -` together with `--format json` (the capture and the envelope would both be stdout) or while the logging console writes to stdout too, or `--format` was given to `report` or `tui`, which draw a page for a person - `findings --format json` is their machine-readable form - or `tui` was run where stdin, stdout or (on Linux and macOS) stderr is not a terminal. `--set SECTION.KEY=VALUE` is a different option and is not what produces this                                                                                                                                                                                                                                  |
 | `70`  | An error inside `lsdsk` itself: an exception no command handled. A bug to report and never a statement about the machine, so route it to whoever owns the tool rather than to storage. An unhandled `OSError` keeps its own code instead, because its errno means something - EPERM is itself `1`; a write that fails is `74`, not its errno                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `74`  | A write this tool was asked to make failed for a reason other than permission - a full disk, a path that cannot exist: a `snapshot` destination, the counter-history file `record` writes, the files `config-deploy` or `config-generate-examples` writes, or - for a command whose output IS standard output - standard output refusing it or closed (`lsdsk findings > /full/disk/report.txt`, `lsdsk findings >&-`). `snapshot -o <file>` needs no standard output and succeeds without one; when standard output refuses the line reporting the capture, the run leaves `74` although the capture landed, and that line says so: `wrote the capture to <file>, but standard output refused the line saying so`. Never a verdict about the machine - some output did not arrive. One stderr line names the destination and why |
-| `78`  | A configuration file this tool cannot load, such as malformed TOML in `config.d`; a file that is not a snapshot this version reads; or a platform with no hardware reader                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `78`  | A configuration file this tool cannot load, such as malformed TOML in `config.d`; a file that is not a snapshot this version reads; a counter-history store `record` cannot read, which it keeps untouched and adds nothing to; or a platform with no hardware reader                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `141` | The process reading the output closed the pipe before the command finished. Neither a verdict nor a refusal; see the ranking below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 **`2` does not mean the file was missing.** It is the CLI framework's usage
@@ -470,8 +472,10 @@ cannot disagree.
 still did something.** `lsdsk record --format json` whose store cannot be written
 exits `13` and still prints its action envelope - `ok` false, `data` naming the
 store and how many drives were read, and the refusal as a sentence in `skipped` -
-rather than the `error` object above. So a caller reading `error.type` alone sees
-nothing here: read `ok` first, then `skipped` for why.
+rather than the `error` object above. A store `record` cannot read answers the
+same way at `78`: `ok` false, `recorded` false, the reason in `skipped`. So a
+caller reading `error.type` alone sees nothing here: read `ok` first, then
+`skipped` for why.
 
 **`141` is what a departed reader leaves, and which code wins does not depend on
 the format.** `lsdsk findings ... | head -5` leaves `141` rather than the verdict
@@ -569,9 +573,12 @@ On stderr you get `Warning: ignoring counter history: <why>` followed by
 `Not recording this run, so <path> is left as it is.` The causes are a store
 belonging to a different hostname, one written by a newer lsdsk, one too large
 to read, and one that is not valid JSON. Two things follow, and both matter to
-whoever is paged. The hardware is still diagnosed and the exit code still
-reflects the findings, so this is not a failed run. And the file is INTACT:
-nothing was overwritten, so there is nothing to restore from backup, and the
+whoever is paged. On a reporting command the hardware is still diagnosed and the
+exit code still reflects the findings, so this is not a failed run. `record` is
+the exception, because storing the reading is its whole job: it prints those
+same two lines, then a third, `Error: left the existing store at <path> alone,
+because it could not be read: <why>`, and leaves `78`. And the file is INTACT: nothing was overwritten, so there is
+nothing to restore from backup, and the
 counters simply stop accumulating until somebody acts. To resume recording,
 move the file aside or point `--history-file` somewhere else - a renamed host
 is the common cause, because the default path carries no hostname.

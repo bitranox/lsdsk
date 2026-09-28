@@ -109,7 +109,8 @@ write this tool was asked to make failed for a reason other than permission - a
 full disk, a destination that cannot exist, a standard output that refused the
 output or is closed; `78` for a
 configuration this tool cannot load, a file that is not a snapshot this version
-reads, or a platform with no hardware reader. Treat anything above `1` as "did not answer the question".
+reads, a counter-history store `record` cannot read, or a platform with no
+hardware reader. Treat anything above `1` as "did not answer the question".
 
 `70` exists so that a monitoring check can tell a failing drive from a broken
 tool. Both left `1` before it, and the only way to tell which you had was to read
@@ -150,12 +151,14 @@ nothing at all: a `jq` pipeline could not tell it from a command that produced
 no data, and the message explaining why was on the stream it was not reading.
 
 `lsdsk record` says which of its outcomes happened rather than one sentence for
-all of them, because two of them mean the record has stopped growing: nothing new
-to store, a store belonging to another machine or one that cannot be read, and a
-write that failed. The last is the only one of those that leaves a code - `13`
-when the filesystem refused permission and `1` for any other write failure, the
-same split `snapshot` makes - because the human form of `record` is silent by
-design, so a timer that is not parsing JSON has nothing else to go on.
+all of them, because they mean different things: nothing new to store, which is
+healthy; a store belonging to another machine or one that cannot be read, which
+`record` keeps rather than replaces; and a write that failed. The last two mean
+the record has stopped growing, and each leaves a code - `78` for a store that
+cannot be read, and for a failed write `13` when the filesystem refused
+permission and `74` for any other reason, the same split `snapshot` makes -
+because the human form of `record` is silent by design, so a timer that is not
+parsing JSON has nothing else to go on.
 
 `lsdsk --no-record record` is refused at `22` rather than obeyed. On every other
 command the flag means "judge the counters against the store without adding this

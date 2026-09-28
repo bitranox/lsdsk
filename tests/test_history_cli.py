@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from lsdsk.adapters.cli import cli
+from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.history.store import load_history
 from lsdsk.domain.enums import CliCommand
 from lsdsk.domain.history import TrendVerdict
@@ -608,8 +609,21 @@ def test_a_store_that_cannot_be_read_is_never_overwritten(
 
     result = run(cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(SNAPSHOT))
 
-    assert result.exit_code == 0, f"{label}: the hardware must still be diagnosed"
     assert store.read_bytes() == before, f"{label}: the unreadable store was replaced"
+    # Kept AND refused: a store `record` may not replace means the record has
+    # stopped growing, and `record` is silent in its human form, so the code is
+    # the only thing a timer sees. It left 0 once, identical to a run with
+    # nothing new, and a sampler could stop recording for good without a signal.
+    assert result.exit_code == ExitCode.CONFIG_ERROR, f"{label}: an unreadable store left {result.exit_code}"
+    assert str(store) in result.stderr, f"{label}: the failure does not name the store: {result.stderr!r}"
+
+    code, envelope, _ = _record_json(
+        cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(SNAPSHOT)
+    )
+    assert code == ExitCode.CONFIG_ERROR, f"{label}: the machine-readable mode left {code} for the same store"
+    assert envelope["ok"] is False, f"{label}: a store that could not be read cannot report ok"
+    assert envelope["data"]["recorded"] is False, f"{label}: nothing was recorded"
+    assert store.read_bytes() == before, f"{label}: the JSON run replaced the unreadable store"
 
 
 @pytest.mark.os_agnostic
@@ -720,8 +734,6 @@ def test_every_reason_record_stored_nothing_gets_its_own_sentence(
 
     # Refused rather than skipped, and the distinction matters to a timer: a
     # skipped sentence rides on a successful run, and this one is a failure.
-    from lsdsk.adapters.cli.exit_codes import ExitCode
-
     off_envelope = json.loads(off.stdout)
     assert off.exit_code == ExitCode.INVALID_ARGUMENT, off.output
     assert "skipped" not in off_envelope, off_envelope
@@ -747,8 +759,6 @@ def test_a_record_that_could_not_write_leaves_a_code_a_timer_can_see(
     branch portably: it raises EEXIST or ENOTDIR rather than a permission error,
     so the code cannot coincide with the permission arm below.
     """
-    from lsdsk.adapters.cli.exit_codes import ExitCode
-
     in_the_way = tmp_path / "not-a-directory"
     in_the_way.write_text("", encoding="utf-8")
     store = in_the_way / "history.json"
@@ -783,8 +793,6 @@ def test_a_record_the_filesystem_refuses_leaves_the_permission_code(
     so the test writes into the directory itself and skips only when that
     succeeds - which is the condition, where ``geteuid() == 0`` is a proxy for it.
     """
-    from lsdsk.adapters.cli.exit_codes import ExitCode
-
     closed = tmp_path / "closed"
     closed.mkdir(mode=0o500)
     try:

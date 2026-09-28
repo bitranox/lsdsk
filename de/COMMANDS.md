@@ -114,8 +114,8 @@ Schreibvorgang, den das Werkzeug ausführen sollte, aus einem anderen Grund als
 fehlenden Rechten scheiterte - ein volles Ziel, ein Ziel, das es nicht geben kann,
 eine Standardausgabe, die die Ausgabe ablehnte oder geschlossen ist; `78` für eine
 Konfiguration, die dieses Werkzeug nicht laden kann, für eine Datei, die keine
-von dieser Fassung lesbare Aufnahme ist, oder für eine Plattform ohne
-Hardwareleser. Behandeln Sie alles über `1` als "hat die Frage
+von dieser Fassung lesbare Aufnahme ist, für einen Zählerverlauf, den `record`
+nicht lesen kann, oder für eine Plattform ohne Hardwareleser. Behandeln Sie alles über `1` als "hat die Frage
 nicht beantwortet".
 
 `70` gibt es, damit eine Überwachungsprüfung eine ausfallende Platte von einem
@@ -161,13 +161,16 @@ unterscheiden, der keine Daten erzeugte, und die Meldung mit dem Grund lag auf
 dem Strom, den sie nicht las.
 
 `lsdsk record` nennt, welches seiner Ergebnisse eingetreten ist, statt eines
-Satzes für alle, denn zwei davon bedeuten, dass der Verlauf nicht mehr wächst:
-nichts Neues zum Ablegen, ein Speicher, der zu einer anderen Maschine gehört oder
-nicht gelesen werden kann, und ein fehlgeschlagener Schreibvorgang. Nur der
-letzte davon hinterlässt einen Code - `13`, wenn das Dateisystem die Rechte
-verweigert, und `1` bei jedem anderen Schreibfehler, dieselbe Aufteilung wie bei
-`snapshot` -, denn die menschenlesbare Form von `record` schweigt absichtlich, ein
-Timer ohne JSON-Auswertung hat also sonst keinen Anhaltspunkt.
+Satzes für alle, denn sie bedeuten Verschiedenes: nichts Neues zum Ablegen, was
+in Ordnung ist; ein Speicher, der zu einer anderen Maschine gehört oder nicht
+gelesen werden kann, den `record` behält statt ersetzt; und ein fehlgeschlagener
+Schreibvorgang. Die letzten beiden bedeuten, dass der Verlauf nicht mehr wächst,
+und jeder hinterlässt einen Code - `78` für einen Speicher, der nicht gelesen
+werden kann, und bei einem fehlgeschlagenen Schreibvorgang `13`, wenn das
+Dateisystem die Rechte verweigert, und `74` bei jedem anderen Grund, dieselbe
+Aufteilung wie bei `snapshot` -, denn die menschenlesbare Form von `record`
+schweigt absichtlich, ein Timer ohne JSON-Auswertung hat also sonst keinen
+Anhaltspunkt.
 
 `lsdsk --no-record record` wird mit `22` abgelehnt statt befolgt. Bei jedem
 anderen Befehl bedeutet die Option „die Zähler gegen den Speicher beurteilen,

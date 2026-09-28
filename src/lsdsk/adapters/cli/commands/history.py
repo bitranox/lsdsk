@@ -189,15 +189,19 @@ def why_nothing_was_stored(attempt: RecordAttempt, path: Path) -> str | None:
 def record_exit_code(attempt: RecordAttempt) -> ExitCode:
     """The code ``record`` leaves for `attempt`.
 
-    A write that FAILED is the only non-zero answer: the other outcomes are the
-    store being left alone on purpose, which is what the command is for. It has
-    to be non-zero somewhere, because ``record`` prints nothing at all in human
-    mode and the code is then the only channel a timer has - measured before this,
-    a store that could not be written left 0 and said nothing on either stream.
+    Non-zero exactly when the record has stopped growing: a write that failed, and
+    a store that could not be read and so may not be replaced. Nothing new to add
+    is the store left alone on purpose, which is what the command is for. It has
+    to be non-zero there, because ``record`` prints nothing at all in human mode
+    and the code is then the only channel a timer has - measured before this, a
+    store that could not be written, and one that could not be read, both left 0
+    and said nothing on stdout.
 
-    The split follows ``snapshot`` rather than the errno, which would collide:
-    EACCES is 13 and so is this tool's own permission code, while ENOSPC is 28,
-    which means nothing here.
+    The write split follows ``snapshot`` rather than the errno, which would
+    collide: EACCES is 13 and so is this tool's own permission code, while ENOSPC
+    is 28, which means nothing here. An unreadable store is 78, the code this tool
+    already gives a file it cannot use, and not 74: nothing was written, so an
+    I/O code would send somebody looking at the wrong half of the operation.
 
     Args:
         attempt: What came of the write.
@@ -208,16 +212,22 @@ def record_exit_code(attempt: RecordAttempt) -> ExitCode:
     Example:
         >>> record_exit_code(RecordAttempt(RecordOutcome.NOTHING_NEW))
         <ExitCode.SUCCESS: 0>
+        >>> record_exit_code(RecordAttempt(RecordOutcome.STORE_NOT_READABLE, "malformed"))
+        <ExitCode.CONFIG_ERROR: 78>
         >>> record_exit_code(RecordAttempt(RecordOutcome.NOT_PERMITTED, "denied"))
         <ExitCode.PERMISSION_DENIED: 13>
         >>> record_exit_code(RecordAttempt(RecordOutcome.COULD_NOT_WRITE, "full"))
         <ExitCode.IO_ERROR: 74>
     """
-    if attempt.outcome is RecordOutcome.NOT_PERMITTED:
-        return ExitCode.PERMISSION_DENIED
-    if attempt.outcome is RecordOutcome.COULD_NOT_WRITE:
-        return ExitCode.IO_ERROR
-    return ExitCode.SUCCESS
+    match attempt.outcome:
+        case RecordOutcome.STORE_NOT_READABLE:
+            return ExitCode.CONFIG_ERROR
+        case RecordOutcome.NOT_PERMITTED:
+            return ExitCode.PERMISSION_DENIED
+        case RecordOutcome.COULD_NOT_WRITE:
+            return ExitCode.IO_ERROR
+        case RecordOutcome.RECORDED | RecordOutcome.NOTHING_NEW | RecordOutcome.RECORDING_OFF:
+            return ExitCode.SUCCESS
 
 
 def warn_if_the_store_was_not_written(attempt: RecordAttempt) -> None:

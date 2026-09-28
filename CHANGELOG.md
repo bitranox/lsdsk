@@ -5,6 +5,22 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.5.0] 2026-09-28 23:32:21
+
+### Changed
+
+- **`lsdsk record` exits `78` when the counter store it would add to cannot be
+  read.** It already kept such a store rather than replacing it, but left `0`,
+  which is what a run with nothing new to store leaves too - and the human form
+  of `record` prints nothing, so a scheduled sampler could stop recording for
+  good without a single signal. A store that is malformed, truncated, belongs
+  to another machine or is written by a newer version now leaves `78`, the
+  code this tool gives any file it cannot use, with the reason on stderr and
+  `ok: false` in the JSON envelope. `74` would have been the wrong cause:
+  nothing was written. `report` and `health`, which record only incidentally,
+  still warn and carry on. If a timer runs `record` and alerts on its exit
+  code, a store it cannot read now raises that alert.
+
 ### Fixed
 
 - **A SATA drive behind a USB bridge reports its counters on Windows.** The
