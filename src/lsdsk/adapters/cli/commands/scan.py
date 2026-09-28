@@ -1136,6 +1136,33 @@ def cli_tui(
 STANDARD_OUTPUT = "-"
 
 
+class _CaptureDestination(NamedTuple):
+    """Where a capture goes, and the name every message calls it by.
+
+    Two fields that travel together, so a message cannot name a destination
+    other than the one written. The name is the ``-o`` argument AS TYPED, not
+    ``str(path)``: pathlib folds ``./-`` into ``-``, which is the spelling of
+    standard output, so a file named ``-`` was reported as ``Wrote -`` and
+    ``"path": "-"`` - a name that, fed back, means stdin or stdout rather than
+    the file. As typed, it is the spelling the caller already knows reaches the
+    file, and every other path reads exactly as it was given.
+
+    Attributes:
+        path: The file to write, or None for standard output.
+        named: What a message calls it.
+    """
+
+    path: Path | None
+    named: str
+
+
+def _destination_for(output: str) -> _CaptureDestination:
+    """Read the raw ``-o`` argument into a destination."""
+    if output == STANDARD_OUTPUT:
+        return _CaptureDestination(path=None, named="standard output")
+    return _CaptureDestination(path=Path(output), named=output)
+
+
 @click.command("snapshot", context_settings=CLICK_CONTEXT_SETTINGS)
 @FORMAT_OPTION
 @option(
@@ -1176,15 +1203,15 @@ def cli_snapshot(ctx: click.Context, output: str, output_format: OutputFormat) -
                 ExitCode.INVALID_ARGUMENT,
                 output_format=output_format,
             )
-        destination = None if output == STANDARD_OUTPUT else Path(output)
-        if destination is None and output_format is OutputFormat.JSON:
+        destination = _destination_for(output)
+        if destination.path is None and output_format is OutputFormat.JSON:
             fail(
                 "-o - writes the capture to standard output, which is where --format json puts its "
                 "result too. Write the capture to a file to get the envelope, or drop --format json.",
                 ExitCode.INVALID_ARGUMENT,
                 output_format=output_format,
             )
-        if destination is None and sys.stdout is None:
+        if destination.path is None and sys.stdout is None:
             # Started with descriptor 1 closed (`>&-`), or detached as pythonw
             # and Windows services start: the interpreter then has no stdout at
             # all, and click.echo returns silently for None - so the capture
@@ -1200,14 +1227,13 @@ def cli_snapshot(ctx: click.Context, output: str, output_format: OutputFormat) -
         raise SystemExit(ExitCode.SUCCESS)
 
 
-def _write_capture(destination: Path | None, output_format: OutputFormat) -> None:
-    """Read this machine and write the capture to `destination`, or to stdout for None.
+def _write_capture(destination: _CaptureDestination, output_format: OutputFormat) -> None:
+    """Read this machine and write the capture to `destination`.
 
     Args:
-        destination: The file to write, or None for standard output.
+        destination: The file to write, or standard output.
         output_format: How a refusal is reported.
     """
-    named = "standard output" if destination is None else str(destination)
     # One handler for both halves: serialise() parses the reading through the
     # same models load() reads it back with, so it refuses a reading this tool
     # could never replay - and that refusal deserves the same clean exit code
@@ -1215,10 +1241,10 @@ def _write_capture(destination: Path | None, output_format: OutputFormat) -> Non
     # through to the top-level handler as an unexpected exception.
     try:
         capture = snapshot_adapter.read_current_machine()
-        if destination is None:
+        if destination.path is None:
             safe_console.echo(snapshot_adapter.serialise(capture))
         else:
-            snapshot_adapter.save(capture, destination)
+            snapshot_adapter.save(capture, destination.path)
     except ConfigurationError as error:
         fail(str(error), ExitCode.CONFIG_ERROR, output_format=output_format)
     # save() declares OSError and it is the destination's, not the
@@ -1230,26 +1256,26 @@ def _write_capture(destination: Path | None, output_format: OutputFormat) -> Non
     # error, and "-o /dev/full" left 28, which is nothing here at all.
     except PermissionError as error:
         fail(
-            f"not allowed to write the capture to {named}: {error}",
+            f"not allowed to write the capture to {destination.named}: {error}",
             ExitCode.PERMISSION_DENIED,
             output_format=output_format,
         )
     except OSError as error:
         fail(
-            f"could not write the capture to {named}: {error}",
+            f"could not write the capture to {destination.named}: {error}",
             ExitCode.GENERAL_ERROR,
             output_format=output_format,
         )
 
 
-def _report_the_capture(destination: Path | None, output_format: OutputFormat) -> None:
+def _report_the_capture(destination: _CaptureDestination, output_format: OutputFormat) -> None:
     """Say where the capture went and what it carries.
 
     Args:
-        destination: The file written, or None when the capture went to stdout.
+        destination: The file written, or standard output.
         output_format: Whether stdout carries the result envelope.
     """
-    if destination is None:
+    if destination.path is None:
         # Stdout IS the capture here, so the only line that can go there is
         # none at all: a "Wrote" line ahead of the document would make the
         # redirected file one ``--replay`` refuses.
@@ -1262,14 +1288,14 @@ def _report_the_capture(destination: Path | None, output_format: OutputFormat) -
     if output_format is OutputFormat.JSON:
         emit_action(
             ActionCommand.SNAPSHOT,
-            SnapshotResult(path=str(destination), schema_version=snapshot_adapter.SCHEMA_VERSION),
+            SnapshotResult(path=destination.named, schema_version=snapshot_adapter.SCHEMA_VERSION),
         )
     else:
-        safe_console.echo(f"Wrote {destination}")
+        safe_console.echo(f"Wrote {destination.named}")
     # On stderr in both modes, so stdout stays exactly what a script parses:
     # the path line in human mode, the envelope in JSON mode.
     safe_console.echo(
-        f"Note: {destination} holds every drive's serial number and this machine's hostname. "
+        f"Note: {destination.named} holds every drive's serial number and this machine's hostname. "
         "Treat it as identifying data before sharing it.",
         err=True,
     )

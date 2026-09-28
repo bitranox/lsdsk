@@ -156,3 +156,53 @@ def test_a_reading_load_would_refuse_never_reaches_standard_output(
 
     assert result.exit_code == ExitCode.CONFIG_ERROR, result.output
     assert '"hostname"' not in result.stdout, "a reading load would refuse was written to stdout"
+
+
+@pytest.mark.os_agnostic
+def test_a_file_named_dash_is_reported_by_the_spelling_that_reaches_it(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``-o ./-`` must not be reported as ``-``, which is now the spelling of stdout.
+
+    pathlib folds ``./-`` into ``-``, so a report built from the converted path
+    said ``Wrote -`` and put ``"path": "-"`` in the envelope: fed back to
+    ``--replay`` or to any tool that reads a dash as stdin, it names the wrong
+    thing. The report carries the argument as it was typed.
+    """
+    _read_a_committed_capture(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+
+    human = cli_runner.invoke(cli, ["snapshot", "-o", "./-"], obj=production_factory)
+    structured = cli_runner.invoke(cli, ["snapshot", "-o", "./-", "--format", "json"], obj=production_factory)
+
+    assert human.exit_code == 0, human.output
+    assert human.stdout == "Wrote ./-\n", human.stdout
+    assert "Note: ./- holds" in human.stderr, human.stderr
+    assert structured.exit_code == 0, structured.output
+    reported = cast("dict[str, Any]", json.loads(structured.stdout))["data"]["path"]
+    assert reported == "./-", f"the envelope reports {reported!r}"
+
+    replayed = cli_runner.invoke(cli, ["--replay", reported, "--no-record", "disks"], obj=production_factory)
+    original = cli_runner.invoke(cli, ["--replay", str(CAPTURE), "--no-record", "disks"], obj=production_factory)
+    assert "linux-minimal" in original.stdout, "the control rendered nothing to compare against"
+    assert (replayed.exit_code, replayed.stdout) == (original.exit_code, original.stdout), replayed.output
+
+
+@pytest.mark.os_agnostic
+def test_an_ordinary_path_is_still_reported_as_it_was_given(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The control: the report of a path with nothing to fold stays that path."""
+    _read_a_committed_capture(monkeypatch)
+    target = tmp_path / "capture.json"
+
+    result = cli_runner.invoke(cli, ["snapshot", "-o", str(target), "--format", "json"], obj=production_factory)
+
+    assert result.exit_code == 0, result.output
+    assert cast("dict[str, Any]", json.loads(result.stdout))["data"]["path"] == str(target)
