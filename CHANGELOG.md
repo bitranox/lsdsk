@@ -19,6 +19,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A `history.path` that names no location falls back instead of crashing.**
+  `~name` for a user the machine does not have made the run die with
+  `RuntimeError: Could not determine home directory` and exit `70`; a path
+  holding a NUL byte got as far as the file system. Both are now refused like
+  any other unusable value: one warning naming the key, and the per-user state
+  file (or `--history-file`) is used.
 - **Standard output that refuses a write is said once, with no traceback.**
   `lsdsk --version > /dev/full`, `lsdsk findings > /dev/full` and
   `snapshot -o - > /dev/full` printed a traceback, then "Exception ignored while

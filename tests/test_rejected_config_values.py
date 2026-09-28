@@ -21,7 +21,6 @@ named would pass just as well against a build that warns about every value it re
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 import pytest
@@ -49,6 +48,7 @@ from lsdsk.domain.enums import TreeDensity
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
     from click.testing import CliRunner, Result
     from lib_layered_config import Config
@@ -226,6 +226,27 @@ def test_a_rejected_history_value_is_named_as_well(
     assert "history.max_samples_per_drive" in result.stderr, "a refused history value named no key"
 
 
+@pytest.mark.os_posix
+def test_a_history_path_naming_an_unknown_user_falls_back_rather_than_crashing(
+    clear_config_cache: None,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+) -> None:
+    """``~name`` for a user this machine lacks made ``expanduser`` raise out of the coercer.
+
+    The run died with ``RuntimeError: Could not determine home directory`` and exit 70,
+    which is the one thing a configured value must never do to somebody diagnosing a
+    failing drive. POSIX only, because only there does ``~name`` consult a user
+    database; Windows substitutes the name into the current home without asking.
+    """
+    result = _invoke(cli_runner, production_factory, tmp_path / "h.json", "history.path=~lsdsk-no-such-user-e9f1/h")
+
+    assert result.exception is None or isinstance(result.exception, SystemExit), repr(result.exception)
+    assert result.exit_code != 70, f"the refused path crashed the run: {result.stderr}"
+    assert "Warning: ignoring history.path=" in result.stderr, "the refused path fell back in silence"
+
+
 @pytest.mark.os_agnostic
 def test_a_refused_path_is_reported_even_when_the_command_line_overrides_it(
     config_factory: Callable[[dict[str, Any]], Config],
@@ -265,6 +286,15 @@ def test_a_refused_path_is_reported_even_when_the_command_line_overrides_it(
         pytest.param("history", "max_samples_per_drive", "abc", 7, id="history positive_int"),
         pytest.param("history", "enabled", "yes", False, id="history flag"),
         pytest.param("history", "path", 3, "", id="history path"),
+        pytest.param("history", "path", "/state/a\x00b.json", "", id="history path holding a NUL"),
+        pytest.param(
+            "history",
+            "path",
+            "~lsdsk-no-such-user-e9f1/h.json",
+            "~/h.json",
+            id="history path naming an unknown user",
+            marks=pytest.mark.os_posix,
+        ),
     ],
 )
 def test_every_coercer_reports_the_value_it_refuses_and_stays_quiet_on_one_it_takes(
@@ -438,12 +468,10 @@ def test_tree_density_of_agrees_with_its_own_predicate_over_arbitrary_text(raw: 
 @pytest.mark.os_agnostic
 @given(
     raw=st.one_of(
-        # A leading "~name" is excluded: Path.expanduser() looks the name up
-        # via the platform's user database and raises RuntimeError for one
-        # that does not exist, which is a real gap in path_or_none's own
-        # fallback contract (a config value can carry any text) rather than
-        # a property this test can assert either way from here.
-        st.text(max_size=30).filter(lambda raw: not raw.strip().startswith("~")),
+        # "~name" is generated on purpose: an unknown name made expanduser()
+        # raise out of the coercer, so the property has to hold over it too.
+        st.text(max_size=30),
+        st.text(max_size=30).map(lambda raw: "~" + raw),
         st.integers(),
         st.floats(allow_nan=False),
         st.booleans(),
@@ -465,7 +493,7 @@ def test_path_or_none_agrees_with_accepts_path_over_arbitrary_values(raw: object
     if not raw.strip():
         assert path_or_none(raw) is None, f"{raw!r} is blank and must mean the platform default, not a location"
     else:
-        assert path_or_none(raw) == Path(raw).expanduser()
+        assert path_or_none(raw) is not None, f"{raw!r} was accepted but named no location"
 
 
 @pytest.mark.os_agnostic

@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 REASON_POSITIVE_INT = "not a whole number above zero, or too large to use"
 REASON_POSITIVE_FLOAT = "not a number above zero, or too large to use"
 REASON_FLAG = "not true or false"
-REASON_PATH = "not a path"
+REASON_PATH = "not a path, or names a user this machine does not have"
 
 #: What a refused location falls back to, said rather than resolved (see ``path``).
 USED_PLATFORM_STATE_FILE = "the per-user state file"
@@ -282,11 +282,35 @@ def tree_density_of(raw: object, default: TreeDensity) -> TreeDensity:
     return TreeDensity(cast("str", raw).strip().casefold())
 
 
-def accepts_path(raw: object) -> bool:
-    """Whether a configured value is usable as a file location.
+def _expanded(text: str) -> Path | None:
+    """The location a non-blank configured string names, or None when it names none.
 
-    Any string is, blank included: an empty string is how the shipped default says
-    "use the state directory", so it is a deliberate value rather than a refused one.
+    Two strings name no location however they are used. A NUL byte cannot reach
+    any operating system's file API, and ``~name`` for a user this machine does not
+    have makes ``expanduser`` raise ``RuntimeError`` - and ``ValueError`` when the
+    name itself holds a NUL. Both used to escape the coercer as a traceback and exit
+    70, which is the one outcome a configured value must never cause.
+
+    Args:
+        text: The configured string, not blank.
+
+    Returns:
+        The expanded location, or ``None``.
+    """
+    if "\x00" in text:
+        return None
+    try:
+        return Path(text).expanduser()
+    except (RuntimeError, ValueError):
+        return None
+
+
+def accepts_path(raw: object) -> bool:
+    r"""Whether a configured value is usable as a file location.
+
+    Any string that names a location is, blank included: an empty string is how the
+    shipped default says "use the state directory", so it is a deliberate value
+    rather than a refused one.
 
     Args:
         raw: The configured value, of whatever type the file produced.
@@ -297,16 +321,20 @@ def accepts_path(raw: object) -> bool:
     Example:
         >>> accepts_path(""), accepts_path("~/h.json"), accepts_path(3)
         (True, True, False)
+        >>> accepts_path("a\x00b")
+        False
     """
-    return isinstance(raw, str)
+    if not isinstance(raw, str):
+        return False
+    return not raw.strip() or _expanded(raw) is not None
 
 
 def path_or_none(raw: object) -> Path | None:
-    """A configured location, or None to mean "wherever this platform keeps state".
+    r"""A configured location, or None to mean "wherever this platform keeps state".
 
     Example:
-        >>> path_or_none("  "), path_or_none(3)
-        (None, None)
+        >>> path_or_none("  "), path_or_none(3), path_or_none("a\x00b")
+        (None, None, None)
 
     Args:
         raw: The configured value.
@@ -316,7 +344,7 @@ def path_or_none(raw: object) -> Path | None:
     """
     if not accepts_path(raw) or not cast("str", raw).strip():
         return None
-    return Path(cast("str", raw)).expanduser()
+    return _expanded(cast("str", raw))
 
 
 class SectionValues:
