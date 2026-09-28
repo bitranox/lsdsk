@@ -759,7 +759,7 @@ class _SafeWriter:
         return encoding if isinstance(encoding, str) else None
 
 
-def safe_stream(*, err: bool = False) -> IO[str]:
+def safe_stream(*, err: bool = False) -> TextIO:
     """Wrap a stream so unencodable text degrades instead of raising.
 
     Use for a writer handed to a third-party renderer. For this project's own
@@ -773,12 +773,14 @@ def safe_stream(*, err: bool = False) -> IO[str]:
     a ``BrokenPipeError`` to handle: the failure is answered here, on the stream
     that really broke.
 
-    The return is typed as the ``IO[str]`` rich's ``Console(file=...)`` declares,
-    rather than left as ``Any``. ``_SafeWriter`` implements the four members
-    rich actually calls - ``write``, ``flush``, ``isatty``, ``encoding`` - and
-    nothing else of the ABC, which is why the type has to be asserted here
-    rather than inferred; asserting it once at this boundary is what keeps the
-    call site typed, where ``Any`` erased the whole console.
+    The return is typed as ``TextIO``, which is what
+    ``lib_cli_exit_tools.print_exception_message(stream=...)`` declares and is
+    an ``IO[str]``, which is what rich's ``Console(file=...)`` declares, rather
+    than left as ``Any``. ``_SafeWriter`` implements the four members rich
+    actually calls - ``write``, ``flush``, ``isatty``, ``encoding`` - and nothing
+    else of the ABC, which is why the type has to be asserted here rather than
+    inferred; asserting it once at this boundary is what keeps the call site
+    typed, where ``Any`` erased the whole console.
 
     It takes no stream, only which of the two to follow, the way :func:`echo`
     does. A stream handed in is the value it had when the renderer was built,
@@ -793,7 +795,7 @@ def safe_stream(*, err: bool = False) -> IO[str]:
     Returns:
         A writer with ``write``/``flush``/``isatty``/``encoding``.
     """
-    return cast("IO[str]", _SafeWriter(err=err))
+    return cast("TextIO", _SafeWriter(err=err))
 
 
 class _SafeTee:

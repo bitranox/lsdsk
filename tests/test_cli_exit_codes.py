@@ -636,6 +636,38 @@ def test_a_refusal_this_tool_printed_outranks_a_departed_stderr_reader() -> None
 
 
 @pytest.mark.os_agnostic
+def test_a_crash_whose_stderr_reader_left_still_leaves_the_crash_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A departed stderr reader costs the crash report, never the code saying it crashed.
+
+    The report is rendered by ``lib_cli_exit_tools.print_exception_message``,
+    which builds a rich console on the stream it is handed and on the RAW
+    ``sys.stderr`` when handed none. rich's ``Console.on_broken_pipe`` then points
+    STDOUT at the null device and raises ``SystemExit(1)`` - this tool's code for
+    a machine that needs attention. Measured before the report was routed through
+    the guarded writer: ``lsdsk fail 2>&1 >/dev/null | { exec <&-; sleep 3; }``
+    left 1 in two runs of three and 70 with stderr read.
+
+    The log line ``fail`` writes goes to STDOUT here, because it is the third
+    run's race: logged on the queue worker, it can reach the departed pipe first,
+    and the guarded writer then points stderr at the null device, so the crash
+    report behind it breaks nothing. With the log elsewhere the report is the
+    only write stderr gets, and the arm fails every time on the defect.
+    """
+    monkeypatch.setenv("LOG_CONSOLE_STREAM", "stdout")
+    argv = ["fail"]
+    control = _run_and_take_the_output_away(capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=False)
+    assert control.code == ExitCode.SOFTWARE_ERROR, f"the control: a crash read in full left {control.code}"
+    assert control.stderr_bytes > 0, "the control wrote no crash report, so this arm has no write to break"
+
+    abandoned = _run_and_take_the_output_away(
+        capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=False, stderr_leaves=True
+    ).code
+    assert abandoned == ExitCode.SOFTWARE_ERROR, (
+        f"a crash whose stderr reader left got {abandoned}, which reads as a finding about the machine"
+    )
+
+
+@pytest.mark.os_agnostic
 def test_a_closed_stderr_does_not_discard_the_report_on_stdout() -> None:
     """Losing the stream nobody was reading must not cost the reader the report.
 

@@ -199,8 +199,17 @@ def _answer_an_unhandled_exception(exc: BaseException) -> int:
     # nothing reads is a lie in the config file.
     display = _display_settings()
     length_limit = display.traceback_verbose_limit if tracebacks_enabled else display.traceback_summary_limit
+    # On the guarded writer, never the default: handed no stream the library
+    # builds its rich console on the RAW stderr, and rich's on_broken_pipe answers
+    # a departed stderr reader by pointing STDOUT at the null device and raising
+    # SystemExit(1) - this tool's code for a machine that needs attention.
+    # Measured: `lsdsk fail` with stderr's reader gone left 1 or 120, never 70.
     safe_console.write_unless_the_reader_left(
-        lambda: lib_cli_exit_tools.print_exception_message(trace_back=tracebacks_enabled, length_limit=length_limit)
+        lambda: lib_cli_exit_tools.print_exception_message(
+            trace_back=tracebacks_enabled,
+            length_limit=length_limit,
+            stream=safe_console.safe_stream(err=True),
+        )
     )
     return code
 
