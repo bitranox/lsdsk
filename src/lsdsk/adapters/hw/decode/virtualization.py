@@ -25,6 +25,13 @@ from typing import NamedTuple
 
 from ....domain.enums import Environment
 
+# Not TYPE-checking only, whatever TC001 assumes of a bare dataclass: Pydantic
+# resolves `VirtualizationEvidence`'s field annotations with its own
+# `get_type_hints` call when it parses this dataclass as a nested capture
+# field, and that needs `DeviceText` present in this module's real globals,
+# not only inside a `TYPE_CHECKING` block ruff would never execute.
+from ..capture import DeviceText  # noqa: TC001 - runtime-resolved by pydantic, see above
+
 # Container runtimes, matched against the ``container=`` variable in PID 1's
 # environment and against control-group paths.
 _CONTAINER_MARKERS: dict[str, str] = {
@@ -120,7 +127,15 @@ class VirtualizationEvidence:
 
     A capture's ``environment`` section is parsed straight into this, for a live
     run and a replay alike, so a value of the wrong type is refused where the
-    reading enters rather than guessed at here.
+    reading enters rather than guessed at here. Every text field carries the
+    same :data:`~lsdsk.adapters.hw.capture.DeviceText` bound every other piece
+    of device text does, so a capture's OWN typing (a plain dataclass built for
+    pure classification, not a :class:`~lsdsk.adapters.hw.capture.CaptureModel`)
+    cannot leave one field unbounded: a value nested here still parses through
+    Pydantic wherever a :class:`~lsdsk.adapters.hw.linux.capture.LinuxCapture`
+    or a :class:`~lsdsk.adapters.hw.windows.capture.WindowsCapture` is built,
+    since Pydantic validates a plain dataclass field the same way it validates
+    one of its own models.
 
     Attributes:
         container_marker: The ``container=`` value from PID 1's environment, or
@@ -138,16 +153,16 @@ class VirtualizationEvidence:
             environment is unreadable, which it is for an ordinary user.
     """
 
-    container_marker: str = ""
-    container_files: tuple[str, ...] = ()
-    cgroup: str = ""
-    mount_markers: str = ""
-    dmi_vendor: str = ""
-    dmi_product: str = ""
-    dmi_board_vendor: str = ""
-    dmi_board_name: str = ""
+    container_marker: DeviceText = ""
+    container_files: tuple[DeviceText, ...] = ()
+    cgroup: DeviceText = ""
+    mount_markers: DeviceText = ""
+    dmi_vendor: DeviceText = ""
+    dmi_product: DeviceText = ""
+    dmi_board_vendor: DeviceText = ""
+    dmi_board_name: DeviceText = ""
     hypervisor_flag: bool = False
-    hypervisor_type: str = ""
+    hypervisor_type: DeviceText = ""
 
 
 def _match(haystack: str, markers: dict[str, str]) -> str | None:

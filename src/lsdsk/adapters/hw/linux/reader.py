@@ -810,15 +810,22 @@ def read_environment() -> dict[str, Any]:
         evidence["container_files"] = [_CONTAINER_MARKER_FILES[path] for path in present]
 
     # systemd records the runtime here and leaves it world readable, which is
-    # what makes a container detectable without being root.
-    runtime = _read_text(Path("/run/systemd/container"))
+    # what makes a container detectable without being root. Read at the
+    # capture's own bound, the same as every other value stored here: this
+    # text reaches `VirtualizationEvidence`, which now carries the same
+    # `DeviceText` bound the rest of a capture does, so an over-limit read
+    # must degrade to "not read" here rather than end the scan at the model.
+    runtime = _read_attribute(Path("/run/systemd/container"))
     if runtime and "container_marker" not in evidence:
         evidence["container_marker"] = runtime
 
-    cgroup = _read_text(Path("/proc/1/cgroup"))
+    cgroup = _read_attribute(Path("/proc/1/cgroup"))
     if cgroup:
         evidence["cgroup"] = cgroup
 
+    # The raw mount table is not itself stored - only the short marker names
+    # `container_markers_in_mounts` extracts from it - so it keeps the wider
+    # sysfs-attribute bound rather than the capture's own.
     markers = container_markers_in_mounts(_read_text(Path("/proc/self/mountinfo")) or "")
     if markers:
         evidence["mount_markers"] = markers
@@ -830,7 +837,7 @@ def read_environment() -> dict[str, Any]:
         ("dmi_board_name", "/sys/class/dmi/id/board_name"),
         ("hypervisor_type", "/sys/hypervisor/type"),
     ):
-        value = _read_text(Path(path))
+        value = _read_attribute(Path(path))
         if value:
             evidence[key] = value
 

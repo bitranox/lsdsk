@@ -9,6 +9,7 @@ that passed it still has to respect once its contents reach a renderer.
 from __future__ import annotations
 
 import ast
+import dataclasses
 import errno
 import io
 import json
@@ -17,10 +18,11 @@ import re
 import sys
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin, get_type_hints
 
 import annotated_types
 import pytest
+from pydantic import BaseModel
 from rich.console import Console
 
 from lsdsk.adapters.history.store import load_history
@@ -883,20 +885,65 @@ def test_every_integer_a_capture_carries_is_bounded_by_its_own_source() -> None:
     )
 
 
-def _loose_strings(annotation: Any, metadata: Sequence[Any] = ()) -> int:
+@dataclasses.dataclass(frozen=True)
+class _PlantedNestedDataclass:
+    """Shaped like `VirtualizationEvidence`: a plain dataclass with one loose field.
+
+    Planted so a control can prove the walker steps INTO a nested dataclass
+    rather than stopping at the field that names it - which is exactly the
+    shape `VirtualizationEvidence` has as `LinuxCapture.environment` and
+    `WindowsCapture.environment`.
+    """
+
+    loose: str = ""
+    bounded: DeviceText = ""
+
+
+class _PlantedNestedModel(BaseModel):
+    """The same control, for a nested `BaseModel` that is not itself walked directly."""
+
+    loose: str = ""
+    bounded: DeviceText = ""
+
+
+def _loose_strings(annotation: Any, metadata: Sequence[Any] = (), *, _seen: frozenset[type] = frozenset()) -> int:
     """How many `str` positions in an annotation carry no maximum length.
 
     Walks every place a string can sit in a capture - an optional, a tuple, a
     mapping's KEY as well as its value - because a bound on the value alone
-    leaves the key free to carry the same payload.
+    leaves the key free to carry the same payload. It also DESCENDS into a
+    nested type's own fields (a pydantic ``BaseModel`` or a plain dataclass),
+    rather than stopping at the field that names it: a capture model's field
+    can be typed as a dataclass built for pure classification (no bound of its
+    own), and a walker that only reads generic type arguments sees no `str`
+    there at all, because a plain class has none. ``_seen`` guards a type
+    that refers to itself, which nothing here does today but which the next
+    nested type might.
     """
     if annotation is str:
         return 0 if any(isinstance(entry, annotated_types.MaxLen) for entry in metadata) else 1
     if get_origin(annotation) is Annotated:
         inner, *extras = get_args(annotation)
         found = [*metadata, *extras, *(item for extra in extras for item in getattr(extra, "metadata", ()))]
-        return _loose_strings(inner, found)
-    return sum(_loose_strings(argument) for argument in get_args(annotation) if argument is not Ellipsis)
+        return _loose_strings(inner, found, _seen=_seen)
+    if isinstance(annotation, type) and annotation not in _seen:
+        # An explicit `type[object]` variable, not `annotation` itself, is what
+        # is handed to `dataclasses`/`typing` below: narrowing `Any` still
+        # leaves it partially unknown under strict, and this is where that
+        # gets resolved rather than waived.
+        checked: type[object] = annotation
+        nested = _seen | {checked}
+        if issubclass(checked, BaseModel):
+            return sum(
+                _loose_strings(field.annotation, field.metadata, _seen=nested)
+                for field in checked.model_fields.values()
+            )
+        if dataclasses.is_dataclass(checked):
+            hints = get_type_hints(checked, include_extras=True)
+            return sum(
+                _loose_strings(hints.get(field.name, field.type), _seen=nested) for field in dataclasses.fields(checked)
+            )
+    return sum(_loose_strings(argument, _seen=_seen) for argument in get_args(annotation) if argument is not Ellipsis)
 
 
 def _unbounded_text_fields() -> list[str]:
@@ -938,6 +985,22 @@ def test_the_string_guard_sees_a_loose_key_and_a_loose_optional() -> None:
 
 
 @pytest.mark.os_agnostic
+def test_the_string_guard_descends_into_a_nested_dataclass_or_model() -> None:
+    """The control for the gap `VirtualizationEvidence` fell through.
+
+    A field typed as a plain class - a dataclass built for pure classification,
+    or a `BaseModel` embedded rather than walked directly - carries no `str` as
+    far as `get_args` is concerned, because a plain class is not generic. The
+    walker has to step INTO such a type's own fields, or a bare `str` field on
+    it is invisible to every capture-model sweep, which is exactly how
+    `VirtualizationEvidence.cgroup` and its siblings went unbounded.
+    """
+    assert _loose_strings(_PlantedNestedDataclass) == 1, "a loose str inside a nested dataclass went unseen"
+    assert _loose_strings(_PlantedNestedModel) == 1, "a loose str inside a nested model went unseen"
+    assert _loose_strings(_PlantedNestedDataclass | None) == 1, "an optional nested dataclass went unseen"
+
+
+@pytest.mark.os_agnostic
 @pytest.mark.parametrize("where", ["value", "key"])
 def test_a_device_name_longer_than_any_device_publishes_is_refused(tmp_path: Path, where: str) -> None:
     """The end-to-end arm: the oversized name is refused at load, not drawn."""
@@ -945,6 +1008,31 @@ def test_a_device_name_longer_than_any_device_publishes_is_refused(tmp_path: Pat
     names = {"8086:a182": long_text} if where == "value" else {long_text: "Intel"}
     crafted = {"schema": 2, "platform": "linux", "hostname": "box", "kernel": "x", "pci": {}, "pci_names": names}
     path = tmp_path / "huge-name.json"
+    path.write_text(json.dumps(crafted), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="at most 4096"):
+        load(path)
+
+
+@pytest.mark.os_agnostic
+def test_a_huge_virtualization_field_inside_the_environment_section_is_refused(tmp_path: Path) -> None:
+    """The end-to-end arm for the nested-dataclass gap: `environment.cgroup` is bounded too.
+
+    `VirtualizationEvidence` is a plain dataclass, not a `CaptureModel`, and it
+    sits behind `LinuxCapture.environment` and `WindowsCapture.environment`.
+    Before it carried the bounded `DeviceText` type on its own fields, a
+    capture whose `environment.cgroup` ran to millions of characters parsed
+    and was accepted whole.
+    """
+    crafted = {
+        "schema": 2,
+        "platform": "linux",
+        "hostname": "box",
+        "kernel": "x",
+        "pci": {},
+        "environment": {"cgroup": "A" * (MAX_DEVICE_TEXT + 1)},
+    }
+    path = tmp_path / "huge-environment.json"
     path.write_text(json.dumps(crafted), encoding="utf-8")
 
     with pytest.raises(ConfigurationError, match="at most 4096"):
@@ -1339,3 +1427,54 @@ def test_a_live_attribute_past_the_capture_bound_is_not_read_rather_than_ending_
 
     assert parsed.block["sda"].device.model is None, "an attribute past the capture bound was kept"
     assert parsed.block["sdb"].device.model == "B" * (MAX_DEVICE_TEXT - 1), "a page-sized attribute was dropped"
+
+
+@pytest.mark.os_agnostic
+def test_the_virtualization_reads_stop_at_the_capture_bound_not_the_megabyte(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`read_environment` stores through the capture's own bound, not the wider sysfs one.
+
+    These values reach `LinuxCapture.environment`, and Pydantic parses that
+    field into `VirtualizationEvidence` the same way it parses any other
+    section, so a value past `MAX_DEVICE_TEXT` must degrade to "not read" at
+    the reader - read at the wider `MAX_SYSFS_BYTES` limit and only refused
+    later, it would end the whole scan over one file, which is what happened
+    to `block.*.device.model` before sweep 6 fixed it there.
+    `/proc/self/mountinfo` and `/proc/cpuinfo` are the two reads that are NOT
+    stored whole (only a short derived marker is kept), so they keep the
+    wider bound and are asserted to stay on it. The seam under test is the
+    `limit` `_read_text` is actually called with, read straight from the
+    real function's own call rather than re-implemented here.
+    """
+    from lsdsk.adapters.hw.linux import reader as linux_reader
+
+    calls: list[tuple[Path, int]] = []
+    real_text = linux_reader._read_text  # pyright: ignore[reportPrivateUsage] - the seam under test
+
+    def spy_text(path: Path, *, limit: int = linux_reader.MAX_SYSFS_BYTES) -> str | None:
+        calls.append((path, limit))
+        return real_text(path, limit=limit)
+
+    monkeypatch.setattr(linux_reader, "_read_text", spy_text)
+
+    linux_reader.read_environment()
+
+    seen = dict(calls)
+    bounded_paths = {
+        Path("/run/systemd/container"),
+        Path("/proc/1/cgroup"),
+        Path("/sys/class/dmi/id/sys_vendor"),
+        Path("/sys/class/dmi/id/product_name"),
+        Path("/sys/class/dmi/id/board_vendor"),
+        Path("/sys/class/dmi/id/board_name"),
+        Path("/sys/hypervisor/type"),
+    }
+    wide_paths = {Path("/proc/self/mountinfo"), Path("/proc/cpuinfo")}
+
+    assert bounded_paths <= seen.keys(), f"a stored path was never read at all: {bounded_paths - seen.keys()}"
+    assert all(seen[path] == MAX_DEVICE_TEXT for path in bounded_paths), (
+        f"a value stored in the capture was read at the wider sysfs bound: {seen}"
+    )
+    assert wide_paths <= seen.keys(), f"an unstored path was never read at all: {wide_paths - seen.keys()}"
+    assert all(seen[path] == linux_reader.MAX_SYSFS_BYTES for path in wide_paths), (
+        f"a value that is never stored moved onto the narrower bound: {seen}"
+    )
