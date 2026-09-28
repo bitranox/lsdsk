@@ -7,8 +7,10 @@ Two privilege tiers, as on Linux:
     * unprivileged: the device tree, PCIe link state from the PCI device
       properties, disk identity and bus type from ``IOCTL_STORAGE_QUERY_PROPERTY``,
       capacity, solid-state versus rotating, and often temperature
-    * Administrator: ATA SMART through ``IOCTL_ATA_PASS_THROUGH_DIRECT`` and the
-      NVMe health log through ``IOCTL_STORAGE_PROTOCOL_COMMAND``
+    * Administrator: ATA SMART through ``IOCTL_ATA_PASS_THROUGH_DIRECT``, or
+      wrapped in SAT through ``IOCTL_SCSI_PASS_THROUGH`` for a drive behind a USB
+      bridge or SAS adapter, and the NVMe health log through
+      ``IOCTL_STORAGE_PROTOCOL_COMMAND``
 
 Every command issued is a read.  Nothing is ever written to a device.
 
@@ -29,6 +31,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ....domain.enums import BusType, Platform
+from ..ata_commands import (
+    ATA_IDENTIFY_DEVICE,
+    ATA_SMART,
+    SMART_LBA_SIGNATURE,
+    SMART_READ_DATA,
+    SMART_READ_THRESHOLDS,
+    ata_pass_through_16,
+)
 from ..capture import MAX_DEVICE_TEXT
 from ..decode import pciids
 from ..snapshot import SCHEMA_VERSION
@@ -37,12 +47,6 @@ from .capture import bus_type_of
 
 # PCI hardware identifiers look like PCI\VEN_8086&DEV_A182&SUBSYS_...&REV_11.
 _HARDWARE_ID = re.compile(r"PCI\\VEN_([0-9A-F]{4})&DEV_([0-9A-F]{4})", re.IGNORECASE)
-
-# ATA commands, all read-only, matching the Linux reader.
-ATA_IDENTIFY_DEVICE = 0xEC
-ATA_SMART = 0xB0
-SMART_READ_DATA = 0xD0
-SMART_READ_THRESHOLDS = 0xD1
 
 _SECTOR_BYTES = 512
 _IOCTL_TIMEOUT_SECONDS = 10
@@ -507,6 +511,80 @@ def ata_passthrough(
     return bytes(buffer), 0
 
 
+#: How much sense data a refused SAT command may return.
+_SENSE_BYTES = 32
+
+
+class _SatRequest(ctypes.Structure):
+    """One SCSI passthrough request with its sense and data buffers after it.
+
+    The buffered form of ``IOCTL_SCSI_PASS_THROUGH`` names its buffers by their
+    offset into this block, so they travel in it rather than as pointers, and
+    no alignment the adapter demands of a direct buffer applies.
+    """
+
+    _fields_ = (
+        ("request", api.SCSI_PASS_THROUGH),
+        ("filler", api.ULONG),
+        ("sense", ctypes.c_ubyte * _SENSE_BYTES),
+        ("data", ctypes.c_ubyte * _SECTOR_BYTES),
+    )
+
+
+def sat_passthrough(
+    kernel32: api.WinLibrary, handle: int, *, command: int, feature: int = 0, lba: int = 0
+) -> tuple[bytes, str | None]:
+    """Issue one read-only ATA command wrapped in SAT, for a drive the ATA ioctl cannot reach.
+
+    Behind a USB bridge or a SAS adapter a SATA drive is a SCSI device, and the
+    storage stack refuses ``IOCTL_ATA_PASS_THROUGH`` for it (Win32 error 1). The
+    same ATA command wrapped in the SCSI ATA PASS-THROUGH command reaches it
+    through the bridge's own translator - measured on a USB SATA SSD that
+    refused every ATA passthrough and answered IDENTIFY and SMART READ DATA this
+    way.
+
+    Args:
+        kernel32: The typed facade over the Win32 entry points.
+        handle: A handle opened for passthrough.
+        command: The ATA command code.
+        feature: The features register.
+        lba: The LBA registers, which SMART uses as a signature.
+
+    Returns:
+        The sector the drive returned and ``None``, or empty bytes and why it
+        was refused: the Win32 error when the ioctl failed, the SCSI status
+        when the translator rejected the command.
+    """
+    block = ata_pass_through_16(command=command, feature=feature, lba=lba)
+    request = _SatRequest()
+    request.request.Length = ctypes.sizeof(api.SCSI_PASS_THROUGH)
+    request.request.CdbLength = len(block)
+    request.request.SenseInfoLength = _SENSE_BYTES
+    request.request.DataIn = api.SCSI_IOCTL_DATA_IN
+    request.request.DataTransferLength = _SECTOR_BYTES
+    request.request.TimeOutValue = _IOCTL_TIMEOUT_SECONDS
+    request.request.DataBufferOffset = _SatRequest.data.offset
+    request.request.SenseInfoOffset = _SatRequest.sense.offset
+    ctypes.memmove(request.request.Cdb, block, len(block))
+
+    returned = wintypes.DWORD()
+    ok = kernel32.DeviceIoControl(
+        handle,
+        api.IOCTL_SCSI_PASS_THROUGH,
+        ctypes.byref(request),
+        ctypes.sizeof(request),
+        ctypes.byref(request),
+        ctypes.sizeof(request),
+        ctypes.byref(returned),
+        None,
+    )
+    if not ok:
+        return b"", f"Win32 error {api.last_error()}"
+    if request.request.ScsiStatus:
+        return b"", f"SCSI status 0x{request.request.ScsiStatus:02X}"
+    return bytes(request.data), None
+
+
 def nvme_protocol_data(
     kernel32: api.WinLibrary, handle: int, *, data_type: int, request_value: int, length: int
 ) -> bytes:
@@ -652,7 +730,7 @@ def read_disk(kernel32: api.WinLibrary, path: str, ancestors: list[str]) -> dict
         if bus is BusType.NVME:
             entry["nvme"] = _read_nvme(kernel32, handle)
         elif passthrough:
-            entry["ata"] = _read_ata(kernel32, handle)
+            entry["ata"] = read_ata(kernel32, handle)
         else:
             entry["ata"] = {"identify_error": "needs Administrator to open the device for passthrough"}
     finally:
@@ -680,20 +758,38 @@ def _read_nvme(kernel32: api.WinLibrary, handle: int) -> dict[str, str]:
     return record
 
 
-def _read_ata(kernel32: api.WinLibrary, handle: int) -> dict[str, str]:
-    """Read the ATA identity and SMART structures."""
+def read_ata(kernel32: api.WinLibrary, handle: int) -> dict[str, str]:
+    """Read the ATA identity and SMART structures.
+
+    The ATA ioctl is asked first, because it is how the storage stack reaches a
+    drive on an ATA transport. Where it refuses, the same command goes through
+    SAT, which is how a drive behind a USB bridge or a SAS adapter is reached;
+    a reading refused both ways records both reasons.
+
+    Args:
+        kernel32: The typed facade over the Win32 entry points.
+        handle: A handle opened for passthrough.
+
+    Returns:
+        Each structure base64-encoded under its label, or the refusal under
+        ``<label>_error``, shaped for the capture model to type.
+    """
     record: dict[str, str] = {}
     for label, command, feature in (
         ("identify", ATA_IDENTIFY_DEVICE, 0),
         ("smart_data", ATA_SMART, SMART_READ_DATA),
         ("smart_thresholds", ATA_SMART, SMART_READ_THRESHOLDS),
     ):
-        lba = 0xC24F00 if command == ATA_SMART else 0
+        lba = SMART_LBA_SIGNATURE if command == ATA_SMART else 0
         payload, error = ata_passthrough(kernel32, handle, command=command, feature=feature, lba=lba)
+        refused = f"passthrough refused, Win32 error {error}"
+        if not payload:
+            payload, sat_refusal = sat_passthrough(kernel32, handle, command=command, feature=feature, lba=lba)
+            refused = f"{refused}; SAT refused, {sat_refusal}"
         if payload:
             record[label] = base64.b64encode(payload).decode("ascii")
         else:
-            record[f"{label}_error"] = f"passthrough refused, Win32 error {error}"
+            record[f"{label}_error"] = refused
     return record
 
 
@@ -757,15 +853,13 @@ def read_system() -> dict[str, Any]:
 
 
 __all__ = [
-    "ATA_IDENTIFY_DEVICE",
-    "ATA_SMART",
-    "SMART_READ_DATA",
-    "SMART_READ_THRESHOLDS",
     "ata_passthrough",
     "is_elevated",
     "nvme_protocol_data",
     "query_property",
+    "read_ata",
     "read_disk",
     "read_environment",
     "read_system",
+    "sat_passthrough",
 ]

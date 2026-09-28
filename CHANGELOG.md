@@ -5,6 +5,18 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A SATA drive behind a USB bridge reports its counters on Windows.** The
+  storage stack refuses the ATA passthrough ioctl for a drive it reaches as a
+  SCSI device, so a USB SSD reported no identity from its own firmware and no
+  SMART counters at all - every reading refused with Win32 error 1. Where the
+  ATA ioctl refuses, the same command now goes through SAT's ATA PASS-THROUGH
+  via `IOCTL_SCSI_PASS_THROUGH`, which the bridge translates; measured on a
+  USB SATA SSD that answered IDENTIFY and SMART READ DATA that way. A reading
+  refused both ways names both reasons. The Linux reader, which already spoke
+  SAT, now builds the command from the same shared code.
+
 ## [1.4.1] 2026-09-28 18:13:30
 
 ### Changed

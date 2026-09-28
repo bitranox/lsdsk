@@ -48,6 +48,7 @@ module exists that is not listed here, or a listed path does not exist.
 
 ### Adapters - hardware, shared
 
+- `src/lsdsk/adapters/hw/ata_commands.py` - The ATA commands both readers issue, and the SAT block that carries one to a drive behind a USB bridge or SAS adapter.
 - `src/lsdsk/adapters/hw/capture.py` - What every capture carries, whichever platform wrote it.
 - `src/lsdsk/adapters/hw/fabric.py` - Assemble the PCI fabric tree both platforms map onto.
 - `src/lsdsk/adapters/hw/refusals.py` - Turn the error text a reader recorded into domain values.

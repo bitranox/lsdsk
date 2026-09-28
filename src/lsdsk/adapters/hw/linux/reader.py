@@ -38,6 +38,14 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from ....domain.enums import Platform
+from ..ata_commands import (
+    ATA_IDENTIFY_DEVICE,
+    ATA_SMART,
+    SMART_LBA_SIGNATURE,
+    SMART_READ_DATA,
+    SMART_READ_THRESHOLDS,
+    ata_pass_through_16,
+)
 from ..capture import MAX_DEVICE_TEXT, MAX_PAYLOAD_BYTES
 from ..decode import ahci, pciids
 from ..decode.virtualization import container_markers_in_mounts
@@ -49,14 +57,6 @@ from ..snapshot import SCHEMA_VERSION
 SG_IO = 0x2285
 SG_DXFER_FROM_DEV = -3
 NVME_IOCTL_ADMIN_CMD = 0xC0484E41
-
-# ATA commands, all read-only.
-ATA_IDENTIFY_DEVICE = 0xEC
-ATA_SMART = 0xB0
-SMART_READ_DATA = 0xD0
-SMART_READ_THRESHOLDS = 0xD1
-# SMART commands carry a fixed signature in the LBA mid and high registers.
-SMART_LBA_SIGNATURE = 0xC24F00
 
 # NVMe admin opcodes and the SMART/Health log page identifier.
 NVME_IDENTIFY = 0x06
@@ -125,32 +125,6 @@ class NvmePassthruCommand(ctypes.Structure):
     )
 
 
-def _ata_passthrough_cdb(*, command: int, feature: int, lba: int, count: int) -> ctypes.Array[ctypes.c_ubyte]:
-    """Build a 16-byte SCSI ATA PASS-THROUGH command block.
-
-    The 16-byte form splits each ATA register into a high and a low byte so that
-    48-bit addressing fits, which is why the LBA bytes are not contiguous.
-    """
-    cdb = (ctypes.c_ubyte * 16)()
-    cdb[0] = 0x85  # ATA PASS-THROUGH(16)
-    cdb[1] = 4 << 1  # PIO data-in protocol
-    cdb[2] = 0x0E  # transfer a sector count, in blocks, from the device
-    cdb[3] = (feature >> 8) & 0xFF
-    cdb[4] = feature & 0xFF
-    cdb[5] = (count >> 8) & 0xFF
-    cdb[6] = count & 0xFF
-    cdb[7] = (lba >> 24) & 0xFF
-    cdb[8] = lba & 0xFF
-    cdb[9] = (lba >> 32) & 0xFF
-    cdb[10] = (lba >> 8) & 0xFF
-    cdb[11] = (lba >> 40) & 0xFF
-    cdb[12] = (lba >> 16) & 0xFF
-    cdb[13] = 0x00
-    cdb[14] = command
-    cdb[15] = 0x00
-    return cdb
-
-
 def ata_passthrough(fd: int, *, command: int, feature: int = 0, lba: int = 0, count: int = 1) -> bytes:
     """Issue one read-only ATA command and return its data.
 
@@ -169,7 +143,8 @@ def ata_passthrough(fd: int, *, command: int, feature: int = 0, lba: int = 0, co
     """
     buffer = ctypes.create_string_buffer(_SECTOR_BYTES * max(count, 1))
     sense = ctypes.create_string_buffer(32)
-    cdb = _ata_passthrough_cdb(command=command, feature=feature, lba=lba, count=count)
+    block = ata_pass_through_16(command=command, feature=feature, lba=lba, count=count)
+    cdb = (ctypes.c_ubyte * len(block)).from_buffer_copy(block)
 
     header = SgIoHeader()
     header.interface_id = ord("S")
@@ -887,8 +862,6 @@ def read_system() -> dict[str, Any]:
 
 
 __all__ = [
-    "ATA_IDENTIFY_DEVICE",
-    "ATA_SMART",
     "MAX_SYSFS_BYTES",
     "NVME_IOCTL_ADMIN_CMD",
     "SG_IO",

@@ -80,7 +80,11 @@ IOCTL_STORAGE_PROTOCOL_COMMAND = 0x002DD480
 IOCTL_DISK_GET_LENGTH_INFO = 0x0007405C
 IOCTL_SCSI_GET_ADDRESS = 0x00041018
 IOCTL_ATA_PASS_THROUGH_DIRECT = 0x0004D030
+IOCTL_SCSI_PASS_THROUGH = 0x0004D004
 IOCTL_STORAGE_GET_DEVICE_NUMBER = 0x002D1080
+
+# SCSI_PASS_THROUGH.DataIn.
+SCSI_IOCTL_DATA_IN = 1
 
 # STORAGE_PROPERTY_ID values.
 STORAGE_DEVICE_PROPERTY = 0
@@ -285,6 +289,32 @@ class ATA_PASS_THROUGH_DIRECT(ctypes.Structure):
         ("DataBuffer", ctypes.c_void_p),
         ("PreviousTaskFile", ctypes.c_ubyte * 8),
         ("CurrentTaskFile", ctypes.c_ubyte * 8),
+    )
+
+
+class SCSI_PASS_THROUGH(ctypes.Structure):
+    """The request for IOCTL_SCSI_PASS_THROUGH, with its buffers after it.
+
+    ``DataBufferOffset`` is a ``ULONG_PTR``, an integer as wide as a pointer, so
+    it is declared as the pointer type: that is the one width allowed to follow
+    the machine, and it puts the structure at 56 bytes on x64 - measured - and
+    44 on 32-bit Windows.
+    """
+
+    _fields_ = (
+        ("Length", USHORT),
+        ("ScsiStatus", ctypes.c_ubyte),
+        ("PathId", ctypes.c_ubyte),
+        ("TargetId", ctypes.c_ubyte),
+        ("Lun", ctypes.c_ubyte),
+        ("CdbLength", ctypes.c_ubyte),
+        ("SenseInfoLength", ctypes.c_ubyte),
+        ("DataIn", ctypes.c_ubyte),
+        ("DataTransferLength", ULONG),
+        ("TimeOutValue", ULONG),
+        ("DataBufferOffset", ctypes.c_void_p),
+        ("SenseInfoOffset", ULONG),
+        ("Cdb", ctypes.c_ubyte * 16),
     )
 
 
@@ -624,6 +654,7 @@ __all__ = [
     "IOCTL_ATA_PASS_THROUGH_DIRECT",
     "IOCTL_DISK_GET_LENGTH_INFO",
     "IOCTL_SCSI_GET_ADDRESS",
+    "IOCTL_SCSI_PASS_THROUGH",
     "IOCTL_STORAGE_GET_DEVICE_NUMBER",
     "IOCTL_STORAGE_PROTOCOL_COMMAND",
     "IOCTL_STORAGE_QUERY_PROPERTY",
@@ -642,6 +673,8 @@ __all__ = [
     "PROPERTY_STANDARD_QUERY",
     "PROTOCOL_TYPE_NVME",
     "SCSI_ADDRESS",
+    "SCSI_IOCTL_DATA_IN",
+    "SCSI_PASS_THROUGH",
     "SP_DEVICE_INTERFACE_DATA",
     "SP_DEVICE_INTERFACE_DETAIL_DATA_W_CBSIZE",
     "SP_DEVINFO_DATA",
@@ -656,6 +689,7 @@ __all__ = [
     "STORAGE_PROTOCOL_SPECIFIC_DATA",
     "STORAGE_TEMPERATURE_DATA_DESCRIPTOR",
     "SYSTEM_BIOS_KEY",
+    "ULONG",
     "WinFunction",
     "WinLibraries",
     "WinLibrary",

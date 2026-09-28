@@ -141,3 +141,22 @@ def test_the_sweep_above_can_still_find_what_it_searches_for() -> None:
         if isinstance(inner, ast.Attribute) and inner.attr == "c_ulong"
     ]
     assert found == ["c_ulong"], "the sweep's own shape no longer matches a field it must catch"
+
+
+@pytest.mark.os_agnostic
+def test_the_scsi_passthrough_request_carries_its_one_pointer_width_field_where_windows_does() -> None:
+    """``DataBufferOffset`` is a ULONG_PTR, so it alone follows the machine.
+
+    Measured on x64 Windows: the structure is 56 bytes. Stated as the layout
+    rather than as 56, so a 32-bit runner asserts its own 44 instead of failing.
+    """
+    word = ctypes.sizeof(ctypes.c_void_p)
+    offset = api.SCSI_PASS_THROUGH.DataBufferOffset.offset
+    fields_before = 20
+
+    assert offset == -(-fields_before // word) * word
+    assert api.SCSI_PASS_THROUGH.SenseInfoOffset.offset == offset + word
+    assert api.SCSI_PASS_THROUGH.Cdb.offset == offset + word + 4
+    assert ctypes.sizeof(api.SCSI_PASS_THROUGH) == -(-(offset + word + 4 + 16) // word) * word
+    if word == 8:
+        assert ctypes.sizeof(api.SCSI_PASS_THROUGH) == 56
