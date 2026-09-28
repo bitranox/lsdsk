@@ -118,15 +118,27 @@ def _stream_encoding(file: IO[Any] | None, *, err: bool = False) -> str | None:
 #: would describe something other than the thing that was changed.
 _REDIRECTED_DESCRIPTORS: Final[dict[int, int]] = {}
 
-#: What a stdout write met on a thread other than the main one, oldest first.
+#: What a stdout write met where raising could not answer it, oldest first.
 #:
-#: lib_log_rich writes on a queue worker thread, and an exception raised there
-#: ends that thread and nothing else: ``SystemExit(141)`` never reached the exit
-#: code, and the worker it killed left every later log line undelivered and the
-#: shutdown drain waiting out its whole stop timeout. So a failure met off the
-#: main thread is recorded here instead, and :func:`flush_streams_or_leave`
+#: Two places, one reason. lib_log_rich writes on a queue worker thread, and an
+#: exception raised there ends that thread and nothing else: ``SystemExit(141)``
+#: never reached the exit code, and the worker it killed left every later log
+#: line undelivered and the shutdown drain waiting out its whole stop timeout.
+#: And on ANY thread the library calls its console inside ``except Exception``,
+#: so a refusal raised there was swallowed: measured, ``LOG_CONSOLE_STREAM=stdout
+#: lsdsk logdemo > /dev/full`` left 0 with nothing on stderr, because stdout had
+#: already been pointed at the null device and every later write succeeded. So
+#: such a failure is recorded here instead, and :func:`flush_streams_or_leave`
 #: answers it on the main thread, after the logging shutdown has drained.
-_FAILED_OFF_THE_MAIN_THREAD: Final[list[tuple[_Delivery, OSError]]] = []
+_RECORDED_STANDARD_OUTPUT_FAILURES: Final[list[tuple[_Delivery, OSError]]] = []
+
+#: Set once the sentence saying stdout refused a write has been written this run.
+#:
+#: The same refusal can reach two answering paths - a log line's from the record
+#: above, the command's own from the last-resort handler, when a stdout that does
+#: not exist refuses both - and each wrote the sentence. One refused destination
+#: is one fact, so it is said once whichever path gets there first.
+_STANDARD_OUTPUT_FAILURE_SAID: Final[threading.Event] = threading.Event()
 
 
 def _stop_writing_to(stream: IO[Any] | io.IOBase | None) -> None:
@@ -209,14 +221,15 @@ def restore_original_streams() -> None:
     Side Effects:
         Restores process file descriptors and closes the saved duplicates, puts
         back each None :func:`stand_in_for_missing_standard_streams` replaced,
-        and forgets any stdout failure recorded off the main thread, so the next
-        run in the same process starts from nothing.
+        and forgets any stdout failure recorded and whether one was said, so the
+        next run in the same process starts from nothing.
     """
     if isinstance(sys.stdout, _MissingStandardOutput):
         sys.stdout = None
     if isinstance(sys.stderr, _MissingStandardError):
         sys.stderr = None
-    _FAILED_OFF_THE_MAIN_THREAD.clear()
+    _RECORDED_STANDARD_OUTPUT_FAILURES.clear()
+    _STANDARD_OUTPUT_FAILURE_SAID.clear()
     while _REDIRECTED_DESCRIPTORS:
         descriptor, saved = _REDIRECTED_DESCRIPTORS.popitem()
         try:
@@ -351,34 +364,49 @@ def _answer_a_failed_standard_output_write(target: IO[Any] | io.IOBase | None, e
         UnwritableStandardOutputError: On the main thread, when stdout refused
             the write for another reason.
     """
-    broken = is_broken_pipe(exc)
     if threading.current_thread() is not threading.main_thread():
-        _stop_writing_to(target)
-        _FAILED_OFF_THE_MAIN_THREAD.append((_Delivery.READER_LEFT if broken else _Delivery.NOT_WRITTEN, exc))
+        _record_a_failed_standard_output_write(target, exc)
         return
-    if broken:
+    if is_broken_pipe(exc):
         _reader_went_away(target)
     raise _refused_by_standard_output(target, exc) from exc
 
 
-def _answer_what_failed_off_the_main_thread(already: set[_Delivery]) -> set[_Delivery]:
-    """Hand the final flush what stdout met off the main thread, and say a refusal once.
+def _record_a_failed_standard_output_write(target: IO[Any] | io.IOBase | None, exc: OSError) -> None:
+    """Silence stdout after a failed write and keep the failure for the final flush.
+
+    For a write whose caller cannot be trusted with a raise: the logging
+    worker, where it ends one thread, and the logging console on any thread,
+    where the library catches ``Exception`` around it and carries on.
 
     Args:
-        already: What flushing the streams themselves came to, so a refusal
-            that flush already reported is not reported twice.
+        target: The stream whose write failed, which is ``sys.stdout``.
+        exc: What the write raised.
+
+    Side Effects:
+        Points stdout at the null device, so nothing retries the bytes, and
+        appends to the record :func:`flush_streams_or_leave` reads.
+    """
+    _stop_writing_to(target)
+    _RECORDED_STANDARD_OUTPUT_FAILURES.append(
+        (_Delivery.READER_LEFT if is_broken_pipe(exc) else _Delivery.NOT_WRITTEN, exc)
+    )
+
+
+def _answer_what_was_recorded() -> set[_Delivery]:
+    """Hand the final flush what stdout met where it could not be raised, and say a refusal.
 
     Returns:
         How each recorded failure ended, as the flush would have put it.
 
     Side Effects:
         Empties the record, and writes one sentence to stderr for the first
-        refusal when the flush did not already write it.
+        refusal, unless the run has already said it.
     """
-    recorded = list(_FAILED_OFF_THE_MAIN_THREAD)
-    _FAILED_OFF_THE_MAIN_THREAD.clear()
+    recorded = list(_RECORDED_STANDARD_OUTPUT_FAILURES)
+    _RECORDED_STANDARD_OUTPUT_FAILURES.clear()
     refusals = [exc for outcome, exc in recorded if outcome is _Delivery.NOT_WRITTEN]
-    if refusals and _Delivery.NOT_WRITTEN not in already:
+    if refusals:
         say_standard_output_failed(UnwritableStandardOutputError(refusals[0].errno, refusals[0].strerror))
     return {outcome for outcome, _ in recorded}
 
@@ -570,12 +598,18 @@ def say_standard_output_failed(exc: OSError) -> None:
     and through the guard that lets a departed stderr reader cost this sentence
     and nothing else.
 
+    Said once per run, whichever path reaches it first: one destination that
+    refused is one fact, however many writes it refused.
+
     Args:
         exc: The error the write raised.
 
     Side Effects:
-        Writes one line to stderr.
+        Writes one line to stderr, the first time in a run.
     """
+    if _STANDARD_OUTPUT_FAILURE_SAID.is_set():
+        return
+    _STANDARD_OUTPUT_FAILURE_SAID.set()
     write_unless_the_reader_left(lambda: echo(f"Error: could not write to standard output: {exc}", err=True))
 
 
@@ -646,9 +680,10 @@ def flush_streams_or_leave(code: int) -> int:
     ``lsdsk --version > /dev/full`` printed a traceback and left 120, because the
     error escaped here and the interpreter then retried the same bytes.
 
-    A stdout failure the logging worker met off the main thread is answered here
-    too, from the record :func:`_answer_a_failed_standard_output_write` kept: it
-    could not be raised where it happened.
+    A stdout failure the logging console met, on the worker or on the main
+    thread, is answered here too, from the record
+    :func:`_record_a_failed_standard_output_write` kept: raised where it
+    happened, it ended one thread or was swallowed by the library.
 
     Args:
         code: What the run decided to leave with.
@@ -662,7 +697,7 @@ def flush_streams_or_leave(code: int) -> int:
         fail afterwards and override this answer.
     """
     outcomes = {_delivered(sys.stdout), _delivered(sys.stderr)}
-    outcomes |= _answer_what_failed_off_the_main_thread(outcomes)
+    outcomes |= _answer_what_was_recorded()
     if outcomes <= {_Delivery.DELIVERED, _Delivery.DIAGNOSTIC_LOST} or outranks_a_departed_reader(code):
         return code
     if _Delivery.NOT_WRITTEN in outcomes:
@@ -776,10 +811,17 @@ class _SafeWriter:
         writer held None, and None was also how it was told to follow stdout, so
         every log line meant for stderr was written into the JSON on stdout.
         A stream missing at write time gets the same stand-in ``main`` installs.
+
+        A stdout failure is RAISED for a renderer, whose caller answers it, and
+        RECORDED for the logging console, whose caller - lib_log_rich - catches
+        ``Exception`` around every console write and would swallow it.
     """
 
-    def __init__(self, *, err: bool) -> None:
+    def __init__(self, *, err: bool, records_failures: bool = False) -> None:
         self._err = err
+        self._answer = (
+            _record_a_failed_standard_output_write if records_failures else _answer_a_failed_standard_output_write
+        )
 
     def _target(self) -> TextIO | io.TextIOBase:
         stream = sys.stderr if self._err else sys.stdout
@@ -803,7 +845,7 @@ class _SafeWriter:
             if self._err:
                 _lose_the_diagnostic()
                 return len(text)
-            _answer_a_failed_standard_output_write(target, exc)
+            self._answer(target, exc)
             return len(text)
 
     def flush(self) -> None:
@@ -815,7 +857,7 @@ class _SafeWriter:
             if self._err:
                 _lose_the_diagnostic()
                 return
-            _answer_a_failed_standard_output_write(target, exc)
+            self._answer(target, exc)
 
     def isatty(self) -> bool:
         """Report the target's tty-ness, so rich keeps its styling."""
@@ -828,7 +870,7 @@ class _SafeWriter:
         return encoding if isinstance(encoding, str) else None
 
 
-def safe_stream(*, err: bool = False) -> TextIO:
+def safe_stream(*, err: bool = False, records_failures: bool = False) -> TextIO:
     """Wrap a stream so unencodable text degrades instead of raising.
 
     Use for a writer handed to a third-party renderer. For this project's own
@@ -860,11 +902,15 @@ def safe_stream(*, err: bool = False) -> TextIO:
         err: Follow ``sys.stderr`` instead of ``sys.stdout``. Either is read as
             it is at each write, which is what a module-level renderer needs so
             test harnesses can still capture the output.
+        records_failures: Keep a stdout failure for :func:`flush_streams_or_leave`
+            rather than raising it, on every thread. For the logging console,
+            whose library catches ``Exception`` around each write it makes, so a
+            raised refusal was swallowed and the run left 0.
 
     Returns:
         A writer with ``write``/``flush``/``isatty``/``encoding``.
     """
-    return cast("TextIO", _SafeWriter(err=err))
+    return cast("TextIO", _SafeWriter(err=err, records_failures=records_failures))
 
 
 class _SafeTee:
@@ -876,14 +922,15 @@ class _SafeTee:
         broke - pointing STDOUT at the null device when only stderr's reader
         left. Each half here is a :class:`_SafeWriter`, so a departed stdout
         reader leaves 141 and a departed stderr reader costs stderr alone. On
-        the main thread the 141 is raised at the write; on the logging worker,
-        where a raise would end only that thread, it is recorded and the final
-        flush answers it. Either way the stderr half is written: a stdout
-        failure raised from the first half used to skip the second.
+        the main thread the 141 is raised at the write unless the tee records
+        its failures; on the logging worker, where a raise would end only that
+        thread, it is recorded either way and the final flush answers it. The
+        stderr half is written whatever stdout did: a stdout failure raised from
+        the first half used to skip the second.
     """
 
-    def __init__(self) -> None:
-        self._halves = (_SafeWriter(err=False), _SafeWriter(err=True))
+    def __init__(self, *, records_failures: bool = False) -> None:
+        self._halves = (_SafeWriter(err=False, records_failures=records_failures), _SafeWriter(err=True))
 
     def write(self, text: str) -> int:
         """Write `text` to both halves, stdout first.
@@ -917,14 +964,18 @@ class _SafeTee:
         return self._halves[0].encoding
 
 
-def safe_stream_to_both() -> IO[str]:
+def safe_stream_to_both(*, records_failures: bool = False) -> IO[str]:
     """The writer :func:`safe_stream` is, for a renderer that writes to both streams.
+
+    Args:
+        records_failures: Keep a stdout failure for the final flush rather than
+            raising it, as :func:`safe_stream` does for the logging console.
 
     Returns:
         A writer with ``write``/``flush``/``isatty``/``encoding`` that follows
         ``sys.stdout`` and ``sys.stderr`` at each write.
     """
-    return cast("IO[str]", _SafeTee())
+    return cast("IO[str]", _SafeTee(records_failures=records_failures))
 
 
 __all__ = [

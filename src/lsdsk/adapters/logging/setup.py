@@ -108,10 +108,15 @@ def _build_runtime_config(config: Config) -> lib_log_rich.runtime.RuntimeConfig:
 #: own, and the second writes nowhere. ``both`` is here, not with them: it is a
 #: plain setting like the other two, and left to the library it becomes a tee over
 #: the RAW streams, so a departed stderr reader sent stdout to the null device.
+#:
+#: Each RECORDS a stdout failure rather than raising it: the library writes to its
+#: console inside ``except Exception``, so a refusal raised there was swallowed and
+#: the run left 0 with its output lost (``LOG_CONSOLE_STREAM=stdout lsdsk logdemo >
+#: /dev/full``). The final flush answers the record instead.
 _GUARDED_WRITERS: Final[Mapping[ConsoleStream, Callable[[], IO[str]]]] = {
-    ConsoleStream.STDOUT: safe_console.safe_stream,
-    ConsoleStream.STDERR: partial(safe_console.safe_stream, err=True),
-    ConsoleStream.BOTH: safe_console.safe_stream_to_both,
+    ConsoleStream.STDOUT: partial(safe_console.safe_stream, records_failures=True),
+    ConsoleStream.STDERR: partial(safe_console.safe_stream, err=True, records_failures=True),
+    ConsoleStream.BOTH: partial(safe_console.safe_stream_to_both, records_failures=True),
 }
 
 

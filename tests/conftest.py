@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from lsdsk.domain.deployment import DeployRequest
 
 
+from lsdsk.adapters.cli import safe_console
 from lsdsk.composition import AppServices, build_production
 
 # Which platforms each os_* marker declares its test valid on. A marker that is
@@ -196,6 +197,20 @@ def no_logging_runtime_outlives_its_test() -> Iterator[None]:
     yield
     if lib_log_rich.runtime.is_initialised():
         lib_log_rich.runtime.shutdown()
+
+
+@pytest.fixture(autouse=True)
+def no_stream_answer_outlives_its_test() -> Iterator[None]:
+    """Put back what ``safe_console`` keeps per run, after every test.
+
+    ``main`` does this on its way out, and a test driving ``flush_streams_or_leave``
+    or ``say_standard_output_failed`` directly never reaches that. The sentence
+    saying stdout refused is said once per run, so a test that said it and left
+    silenced the next test's sentence, and a recorded failure it left would be
+    answered in the next test's flush.
+    """
+    yield
+    safe_console.restore_original_streams()
 
 
 @pytest.fixture
