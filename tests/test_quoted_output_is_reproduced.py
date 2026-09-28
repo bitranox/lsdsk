@@ -47,6 +47,8 @@ from __future__ import annotations
 
 import re
 import shlex
+import shutil
+import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NamedTuple
@@ -64,14 +66,52 @@ if TYPE_CHECKING:
 REPO = Path(__file__).resolve().parent.parent
 FIXTURES = Path("tests") / "fixtures" / "hw"
 
-#: The documents whose fenced blocks are read: every page at the top of the
-#: repository and its German twin, and the shipped skill. Globbed rather than
-#: listed, so a new page is guarded from the commit that adds it.
-SCANNED = (
-    *sorted(path.relative_to(REPO).as_posix() for path in REPO.glob("*.md")),
-    *sorted(path.relative_to(REPO).as_posix() for path in (REPO / "de").glob("*.md")),
-    "skills/lsdsk/SKILL.md",
-)
+
+def _tracked_pages() -> list[str]:
+    """Every Markdown page git tracks at the top of the repository or in ``de/``.
+
+    Asked of git rather than globbed, because the guard is about the documents a
+    CLONE has. A glob also reads the gitignored working files a developer keeps
+    beside them - ``CLAUDE.md``, a handover - so the guard passed in a clean
+    worktree and failed in the checkout it was merged into, naming a file no
+    reader of the repository will ever see.
+
+    Returns:
+        The pages, as repository-relative POSIX paths.
+
+    Raises:
+        RuntimeError: If git is absent or cannot answer. An empty answer would read
+            as a repository with no pages, which is the shape that checks nothing.
+    """
+    git = shutil.which("git")
+    if git is None:
+        msg = "git is not on PATH, so the tracked pages cannot be listed"
+        raise RuntimeError(msg)
+    listing = subprocess.run(  # noqa: S603 - argv is built here, no shell
+        [git, "-C", str(REPO), "-c", "core.quotePath=false", "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if listing.returncode != 0:
+        msg = f"git could not list the tracked files of {REPO}: {listing.stderr.strip()}"
+        raise RuntimeError(msg)
+    # -z because the default quotes any non-ASCII path, which would drop a page
+    # silently rather than report it.
+    names = [name for name in listing.stdout.split("\0") if name.endswith(".md")]
+    pages = sorted(name for name in names if "/" not in name or (name.startswith("de/") and name.count("/") == 1))
+    if not pages:
+        msg = f"git listed no pages in {REPO}"
+        raise RuntimeError(msg)
+    return pages
+
+
+#: The documents whose fenced blocks are read: every tracked page at the top of
+#: the repository and its German twin, and the shipped skill. Listed from git
+#: rather than written out, so a new page is guarded from the commit that adds it.
+SCANNED = (*_tracked_pages(), "skills/lsdsk/SKILL.md")
 
 #: Info strings that mark a block as input a reader types or writes, never output.
 INPUT_LANGUAGES = frozenset({"bash", "sh", "shell", "powershell", "ps1", "toml", "python"})
