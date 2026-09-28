@@ -100,6 +100,16 @@ include = [
     "src/lsdsk/adapters/hw/decode/pci.ids.gz",
 ]
 
+[tool.hatch.build.targets.sdist]
+# .gitignore lists .claude/, yet a git worktree nested under .claude/worktrees/
+# put its .env.example into a locally built sdist: hatchling matches each FILE
+# against the patterns, and .gitignore's `!.env.example` is a file-level match,
+# which outranks a directory pattern, so the negation re-included every copy at
+# any depth. A file-level pattern anchored at the root does not lose that way,
+# and the root .env.example is still shipped. CI builds from a clean clone, so
+# no release carried one; this makes a local build agree with it.
+exclude = ["/.claude/**"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"
