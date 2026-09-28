@@ -476,18 +476,20 @@ def test_a_refused_capture_is_explained_in_this_tool_s_own_words(tmp_path: Path)
 
 
 @pytest.mark.os_agnostic
-def test_a_changed_copy_refuses_a_misspelt_field_where_model_copy_would_not() -> None:
+def test_a_changed_copy_refuses_a_misspelt_field_by_either_spelling() -> None:
     """``with_changes`` exists for this refusal, so it is held here and not only by a doctest.
 
-    The control is the reason for the method: pydantic's own ``model_copy``
-    takes the same typo without a word and leaves the real field alone. The
-    real spelling must still go through, or refusing everything would pass.
+    Pydantic's own ``model_copy`` takes the same typo without a word and leaves
+    the real field alone, so ``DomainModel`` routes its ``update`` through
+    ``with_changes``: both spellings must refuse. The real spelling must still
+    go through both, or refusing everything would pass.
     """
     controller = Controller(address="0000:01:00.0", name="HBA", ports_used=1)
 
     with pytest.raises(ValidationError, match="prots_used"):
         controller.with_changes(prots_used=3)
+    with pytest.raises(ValidationError, match="prots_used"):
+        controller.model_copy(update={"prots_used": 3})
 
-    silently = controller.model_copy(update={"prots_used": 3})
-    assert silently.ports_used == 1, "the control: model_copy started refusing, so the method may have no purpose"
     assert controller.with_changes(ports_used=3).ports_used == 3
+    assert controller.model_copy(update={"ports_used": 3}).ports_used == 3
