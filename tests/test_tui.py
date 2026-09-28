@@ -30,6 +30,7 @@ from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui import app as app_module
 from lsdsk.adapters.tui import palette as tui_palette
 from lsdsk.adapters.tui.app import DISK_COLUMNS as TUI_DISK_COLUMNS
+from lsdsk.adapters.tui.long_page import LongPage
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import Align
@@ -148,7 +149,7 @@ async def test_the_smart_page_needs_no_selection_to_reach() -> None:
         await pilot.pause()
 
         assert app.query_one(TabbedContent).active == "smart"
-        assert app.query_one("#smart-body", Static) is not None, "the page carries its own content"
+        assert app.query_one("#smart-body", LongPage).line_count > 0, "the page carries its own content"
 
 
 @pytest.mark.os_agnostic
@@ -492,7 +493,7 @@ async def test_a_page_without_a_table_still_scrolls() -> None:
         await pilot.press("5")
         await pilot.pause()
 
-        body = app.query("#smart VerticalScroll").first()
+        body = app.query_one("#smart-body", LongPage)
         assert body.max_scroll_y > 0, "the fixture must make this page taller than the terminal"
         before = body.scroll_offset.y
         await pilot.press("down", "down", "down")
