@@ -101,14 +101,73 @@ include = [
 ]
 
 [tool.hatch.build.targets.sdist]
-# .gitignore lists .claude/, yet a git worktree nested under .claude/worktrees/
-# put its .env.example into a locally built sdist: hatchling matches each FILE
-# against the patterns, and .gitignore's `!.env.example` is a file-level match,
-# which outranks a directory pattern, so the negation re-included every copy at
-# any depth. A file-level pattern anchored at the root does not lose that way,
-# and the root .env.example is still shipped. CI builds from a clean clone, so
-# no release carried one; this makes a local build agree with it.
-exclude = ["/.claude/**"]
+# An allowlist, because .gitignore cannot be relied on to keep a local build
+# clean. hatchling drops EVERY .gitignore pattern when the project root itself
+# matches one of them (load_vcs_exclusion_patterns returns an empty list), and a
+# git worktree checked out under .claude/worktrees/ has a root path that matches
+# `.claude/`. A build there shipped every ignored file in the tree: .env,
+# handover.md, OPEN-WORK.md, the .hypothesis/ database. Built from the main
+# checkout the patterns do apply, but a nested worktree's files were still
+# walked, and `!.env.example` re-included each copy of that file at any depth.
+# Only what is listed here is walked, so neither can reach an sdist. The list is
+# the set of top-level entries git tracks, which is exactly what a clean clone
+# (CI) ships; tests/test_sdist_contents.py holds that equality. A name listed
+# here as a FILE is shipped whatever `exclude` says, so a state file must never
+# be added to it.
+only-include = [
+    ".claude-plugin",
+    ".devcontainer",
+    ".env.example",
+    ".gitattributes",
+    ".github",
+    ".gitignore",
+    ".qlty",
+    ".snyk",
+    "CHANGELOG.md",
+    "COMMANDS.md",
+    "CONFIG.md",
+    "CONTRIBUTING.md",
+    "DEVELOPMENT.md",
+    "FINDINGS.md",
+    "INSTALL.md",
+    "LICENSE",
+    "Makefile",
+    "NOTICE",
+    "PAGES.md",
+    "README.md",
+    "REPORT.md",
+    "SECURITY.md",
+    "WHY.md",
+    "ai-stance.md",
+    "ai-transparency.md",
+    "codecov.yml",
+    "de",
+    "docs",
+    "notebooks",
+    "pyproject.toml",
+    "pyrightconfig.darwin.json",
+    "pyrightconfig.windows.json",
+    "scripts",
+    "skills",
+    "src",
+    "tests",
+]
+# The directories above are walked, and in a worktree nothing from .gitignore
+# applies inside them either, so a state file, a secret or a tool's cache
+# written INTO one of them is dropped here by name. Bytecode and __pycache__
+# are hatchling's own defaults.
+exclude = [
+    ".env",
+    ".hypothesis/",
+    ".ipynb_checkpoints/",
+    "*.log",
+    "*.prev.md",
+    "CLAUDE.md",
+    "CLAUDE.local.md",
+    "EXECUTION-USER-REVIEW.md",
+    "OPEN-WORK.md",
+    "handover.md",
+]
 
 [tool.ruff]
 line-length = 120
