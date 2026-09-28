@@ -549,22 +549,66 @@ def emit_json(inventory: Inventory, findings: Sequence[Finding], command: CliCom
     safe_console.echo(envelope.model_dump_json(indent=2))
 
 
+def streams_that_are_not_terminals() -> list[str]:
+    """Name each standard stream the interactive view needs that is not a terminal.
+
+    All THREE, not stdin and stdout alone. Textual reads key events from stdin,
+    so ``lsdsk < /dev/null`` would open a view nobody can quit. And its POSIX
+    driver DRAWS on ``sys.__stderr__``, not on stdout, so ``lsdsk 2>err.log`` at
+    a terminal opened a view nobody could see: measured, the screen stayed on
+    the shell's text, 161,934 bytes of escape sequences went into the file, and
+    the run ended only on a blind ``q``; with ``2>&-`` there was nothing to draw
+    on at all. It is asked as ``sys.__stderr__`` because that is the object the
+    driver writes to - ``sys.stderr`` may be a stand-in this tool installed.
+    Textual's Windows driver draws on stdout instead, and stderr is required
+    there as well: one rule on every platform, so a driver that moves its
+    drawing cannot reopen the blank screen.
+
+    Returns:
+        ``"standard input"``, ``"standard output"`` and ``"standard error"``,
+        each included when that stream is missing or not a terminal. Empty when
+        somebody is sitting at all three.
+    """
+    streams = (
+        ("standard input", sys.stdin),
+        ("standard output", sys.stdout),
+        ("standard error", sys.__stderr__),
+    )
+    return [name for name, stream in streams if not (stream is not None and stream.isatty())]
+
+
 def somebody_is_sitting_at_it() -> bool:
     """Answer whether a full-screen view has a terminal to open on.
-
-    BOTH ends, not just the output one: Textual reads key events from stdin, so
-    ``lsdsk < /dev/null`` would otherwise open a view nobody can quit.
 
     One function rather than the same condition written at each of its two call
     sites, which is how a change to one of them would go unnoticed. It is also
     the one external edge in this router - the question is literally what the
     operating system says about a file descriptor - so it is the thing a test
     substitutes, where everything between it and the app is this project's own.
+    Which streams it asks, and why, is :func:`streams_that_are_not_terminals`.
 
     Returns:
-        True when both standard streams are terminals.
+        True when stdin, stdout and stderr are all terminals.
     """
-    return bool(sys.stdout and sys.stdout.isatty() and sys.stdin and sys.stdin.isatty())
+    return not streams_that_are_not_terminals()
+
+
+def _and_joined(names: Sequence[str]) -> str:
+    """Join `names` as prose: ``a``, ``a and b``, ``a, b and c``.
+
+    Args:
+        names: At least one name.
+
+    Returns:
+        The names in one phrase.
+
+    Example:
+        >>> _and_joined(["standard input", "standard error"])
+        'standard input and standard error'
+    """
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])} and {names[-1]}"
 
 
 class InteractiveView(Protocol):
@@ -694,7 +738,8 @@ def run_default_view(
     Raises:
         SystemExit: Always, carrying the exit code the findings imply.
     """
-    # BOTH ends, not just stdout: something has to press q.
+    # All three streams, not just stdout: something has to press q, and the
+    # view draws on stderr (see streams_that_are_not_terminals).
     #
     # This CANNOT tell a person from an automation that allocates a terminal.
     # Measured in a Jupyter kernel: IPython runs `!cmd` under pexpect, which
@@ -1087,13 +1132,19 @@ def cli_tui(
     """
     with lib_log_rich.runtime.bind(job_id="cli-tui", extra={"command": "tui"}):
         _refuse_a_format_this_command_has_no_form_of(output_format, instead="`lsdsk findings --format json`")
-        # BOTH ends, the same test run_default_view makes: textual reads key
-        # events from stdin, so a view opened where nothing can press q never
-        # returns. Measured before this: `lsdsk tui </dev/null` ran until it was
-        # killed, with 48 KB of escape sequences on stderr and nothing on stdout.
+        # All three streams, the same test run_default_view makes: textual
+        # reads key events from stdin, so a view opened where nothing can press
+        # q never returns, and it draws on stderr, so a view opened there with
+        # stderr redirected is one nobody sees. Measured before each: `lsdsk tui
+        # </dev/null` ran until it was killed, with 48 KB of escape sequences on
+        # stderr and nothing on stdout, and `lsdsk tui 2>err.log` at a terminal
+        # left the screen unchanged and waited for a blind q.
         if not somebody_is_sitting_at_it():
+            missing = streams_that_are_not_terminals()
+            verb = "is" if len(missing) == 1 else "are"
             fail(
-                "The interactive view needs a terminal on both stdin and stdout, and this run has neither.",
+                "The interactive view needs standard input, output and error all to be terminals "
+                f"(it draws on standard error), and this run's {_and_joined(missing)} {verb} not.",
                 ExitCode.INVALID_ARGUMENT,
                 output_format=OutputFormat.HUMAN,
                 hint="Run `lsdsk report` for the same page as text.",
@@ -1386,4 +1437,5 @@ __all__ = [
     "run_default_report",
     "run_default_view",
     "somebody_is_sitting_at_it",
+    "streams_that_are_not_terminals",
 ]

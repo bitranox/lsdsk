@@ -36,8 +36,10 @@ configuration and `fail` exists so the error path can be exercised through the
 real entry point; both are listed because `lsdsk --help` offers them and a
 reader who meets one there should find it here.
 
-A bare `lsdsk` decides between the two by whether both stdin and stdout are
-terminals, because something has to press `q`. `lsdsk tui` asks for the
+A bare `lsdsk` decides between the two by whether stdin, stdout and stderr are
+all terminals: something has to press `q`, and the view draws on stderr, so
+`lsdsk 2>err.log` at a terminal prints the page rather than drawing a view
+into the file. `lsdsk tui` asks for the
 interactive view by name, so where that is not true it REFUSES at `22` and
 names `lsdsk report`, rather than opening a view nobody can quit or quietly
 printing a page the caller did not ask for.
