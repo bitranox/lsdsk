@@ -38,6 +38,7 @@ from ..render import detail, layout, report, tables, theme
 from ..render.tree import fabric_lines
 from ..render.trend import TREND_COLUMNS, render_trend, trend_rows
 from . import palette as tui_palette
+from .long_page import LongPage
 from .typed_table import raising_table_id, rows_of
 
 if TYPE_CHECKING:
@@ -410,10 +411,13 @@ class LsdskApp(App[None]):
                         yield Static(id="wwn-full")
             with TabPane("Health", id=CliCommand.HEALTH.value):
                 yield DataTable[str](id="health-table", zebra_stripes=True, cursor_type="row")
-            with TabPane("SMART", id=CliCommand.SMART.value), VerticalScroll():
-                yield Static(id="smart-body")
-            with TabPane("Findings", id=CliCommand.FINDINGS.value), VerticalScroll():
-                yield Static(id="findings-body")
+            # Each a page that grows with the machine, so each is laid out once
+            # per width and drawn a window at a time rather than rendered whole
+            # every time it is shown.
+            with TabPane("SMART", id=CliCommand.SMART.value):
+                yield LongPage(id="smart-body")
+            with TabPane("Findings", id=CliCommand.FINDINGS.value):
+                yield LongPage(id="findings-body")
             with TabPane("Slots", id=CliCommand.SLOTS.value), Vertical():
                 yield DataTable[str](id="slot-table", zebra_stripes=True, cursor_type="row")
                 yield Static(tui_palette.Recoloured(report.form_factor_note()), id="slot-note")
@@ -462,7 +466,7 @@ class LsdskApp(App[None]):
 
     def _fill_smart(self) -> None:
         """Draw the SMART page, in this view's palette."""
-        self.query_one("#smart-body", Static).update(tui_palette.Recoloured(report.render_smart(self.inventory)))
+        self.query_one("#smart-body", LongPage).update(tui_palette.Recoloured(report.render_smart(self.inventory)))
 
     def _fill_findings(self) -> None:
         """Draw the findings page, in this view's palette.
@@ -471,7 +475,7 @@ class LsdskApp(App[None]):
         it was written differently: the palette reached the rescan's copy and
         not the one a reader actually opens the app on.
         """
-        self.query_one("#findings-body", Static).update(tui_palette.Recoloured(report.render_findings(self.findings)))
+        self.query_one("#findings-body", LongPage).update(tui_palette.Recoloured(report.render_findings(self.findings)))
 
     def verdict_line(self) -> str:
         """Summarise the findings in one line for the banner.
@@ -748,7 +752,7 @@ class LsdskApp(App[None]):
         one, so focusing the first match found would hand the keyboard to the
         hidden one on every capture that has a fabric.
         """
-        for selector in (f"#{pane} DataTable", f"#{pane} OptionList", f"#{pane} VerticalScroll"):
+        for selector in (f"#{pane} DataTable", f"#{pane} OptionList", f"#{pane} LongPage", f"#{pane} VerticalScroll"):
             shown = [widget for widget in self.query(selector) if widget.display]
             if shown:
                 shown[0].focus()

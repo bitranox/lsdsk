@@ -32,10 +32,12 @@ from .models import (
     Finding,
     Inventory,
     PcieSlot,
+    pci_bus_of,
     pci_class_name,
     pcie_bandwidth_gbps,
     pcie_generation,
     serial_bandwidth_gbps,
+    shared_maker,
 )
 from .thresholds import DEFAULT_THRESHOLDS
 
@@ -118,9 +120,11 @@ def _board_generation(controller: Controller, inventory: Inventory) -> int | Non
     do. Conflating the two once read an occupied Gen4 port as an absent one and
     advised buying a PCIe 4.0 board for a machine that was already PCIe 5.0.
     """
-    speeds = [slot.link.max_speed_gtps for slot in inventory.slots if slot.link.max_speed_gtps is not None]
-    if controller.upstream is not None and controller.upstream.max_speed_gtps is not None:
-        speeds.append(controller.upstream.max_speed_gtps)
+    # The machine holds its fastest port, rather than every capped controller
+    # walking the ports for it. Folded with the upstream last, as a max over the
+    # ports followed by the upstream always folded it.
+    upstream = None if controller.upstream is None else controller.upstream.max_speed_gtps
+    speeds = [speed for speed in (inventory.fastest_slot_speed_gtps, upstream) if speed is not None]
     return pcie_generation(max(speeds)) if speeds else None
 
 
@@ -137,15 +141,18 @@ def _best_port_for(controller: Controller, inventory: Inventory) -> tuple[PcieSl
     since it says more about what the board is.
     """
     best: tuple[PcieSlot, float] | None = None
-    for slot in inventory.slots:
-        if slot.address == controller.upstream_address:
-            continue
+    for slot in inventory.placement_candidates(besides=controller.upstream_address, admits=_any_port):
         gain = _gain_in(slot, controller)
         if gain is None:
             continue
         if best is None or (gain, slot.capability_gbps or 0.0) > (best[1], best[0].capability_gbps or 0.0):
             best = (slot, gain)
     return best
+
+
+def _any_port(_slot: PcieSlot) -> bool:
+    """Admit every port, for the search that judges the board rather than a free seat."""
+    return True
 
 
 def _achievable_pcie(controller: Controller) -> tuple[float | None, int | None]:
@@ -199,15 +206,13 @@ def _best_slot(
         return None
     best: PcieSlot | None = None
     best_bandwidth = current
-    for slot in inventory.slots:
-        # Skip the port this controller already sits behind, by the address it
-        # records for that port. Matching the port's OCCUPANT instead missed it
-        # whenever a sibling represented the port, and then offered the card the
-        # seat it is already in as somewhere better to be.
-        if slot.address == controller.upstream_address:
-            continue
-        if not candidates(slot):
-            continue
+    # The port this controller already sits behind is skipped by the address it
+    # records for that port. Matching the port's OCCUPANT instead missed it
+    # whenever a sibling represented the port, and then offered the card the
+    # seat it is already in as somewhere better to be. The machine hands over
+    # one port per group of interchangeable ones rather than every port, which
+    # is what keeps this search from costing the whole port list per controller.
+    for slot in inventory.placement_candidates(besides=controller.upstream_address, admits=candidates):
         gain = _gain_in(slot, controller)
         if gain is not None and gain > best_bandwidth:
             best, best_bandwidth = slot, gain
@@ -653,18 +658,10 @@ def _faster_free_port(disk: Disk, inventory: Inventory) -> str | None:
     drive_max = disk.link.drive_max_gbps
     if port_max is None or drive_max is None:
         return None
-    for controller in inventory.controllers:
-        if controller.address == disk.controller_address:
-            continue
-        free = controller.ports_free
-        if not free:
-            continue
-        # The machine holds this rate, rather than it being recomputed from the
-        # disk list for every controller of every drive.
-        best = inventory.fastest_port_rate_on(controller.address)
-        if best is not None and best > port_max:
-            return f"{controller.name} at {controller.address}"
-    return None
+    # The machine indexes its controllers by their fastest port, rather than
+    # every capped drive walking all of them.
+    found = inventory.first_controller_with_a_free_port_faster_than(port_max, besides=disk.controller_address)
+    return None if found is None else f"{found.name} at {found.address}"
 
 
 def diagnose_port_allocation(inventory: Inventory) -> list[Finding]:
@@ -1286,41 +1283,6 @@ def diagnose_firmware_consistency(
     return findings
 
 
-def _bus_of(address: str) -> str | None:
-    """Return the domain and bus of a PCI address, which every port of one switch shares.
-
-    Example:
-        >>> _bus_of("0000:08:0d.0")
-        '0000:08'
-        >>> _bus_of("unparsed") is None
-        True
-    """
-    bus, separator, _ = address.rpartition(":")
-    return bus if separator and bus else None
-
-
-def _bus_is_behind_a_bridge(bus: str, inventory: Inventory) -> bool:
-    """Whether a bus is the secondary bus of a bridge this scan recorded.
-
-    Port records exist only for bridges, and each names as its occupant the
-    first device on the bus below it, so a record whose occupant sits on this
-    bus is the bridge the bus hangs behind: the upstream port of a switch, or a
-    root port above a multi-function device. A root bus has no such record,
-    because nothing above a root complex is a bridge. The bus number cannot
-    stand in for this test, since a machine with more than one root complex
-    numbers its root buses other than 00.
-
-    Example:
-        >>> from lsdsk.domain.models import PcieLink
-        >>> upstream = PcieSlot(address="0000:07:00.0", link=PcieLink(), occupied=True, occupant_address="0000:08:00.0")
-        >>> _bus_is_behind_a_bridge("0000:08", Inventory(hostname="h", slots=(upstream,)))
-        True
-        >>> _bus_is_behind_a_bridge("0000:00", Inventory(hostname="h", slots=(upstream,)))
-        False
-    """
-    return any(_bus_of(slot.occupant_address or "") == bus for slot in inventory.slots)
-
-
 def _port_holding(controller: Controller, inventory: Inventory) -> PcieSlot | None:
     """Return the port a controller sits behind, or ``None`` when it names none.
 
@@ -1334,110 +1296,7 @@ def _port_holding(controller: Controller, inventory: Inventory) -> PcieSlot | No
     """
     if controller.upstream_address is None:
         return None
-    return next((slot for slot in inventory.slots if slot.address == controller.upstream_address), None)
-
-
-def _shared_maker(port_vendor: int | None, device_vendor: int | None) -> int | None:
-    """Return the vendor a port shares with a device behind it, or ``None``.
-
-    A function built into switch silicon carries the switch maker's vendor
-    identifier, as does the internal port in front of it. A separate part behind
-    that port carries its own maker's. An identifier that was not read on either
-    side is no evidence either way.
-
-    Example:
-        >>> _shared_maker(0x1022, 0x1022)
-        4130
-        >>> _shared_maker(0x1022, 0x10EC) is None
-        True
-        >>> _shared_maker(None, 0x1022) is None
-        True
-    """
-    if port_vendor is None or device_vendor != port_vendor:
-        return None
-    return port_vendor
-
-
-def _switch_function_maker(port: PcieSlot) -> int | None:
-    """Return the vendor a port shares with what sits behind it, which is how a switch's own function reads.
-
-    About the device the port DESCRIBES, which is the one hardest to displace of
-    however many sit behind it. To ask the same question of a particular
-    controller, compare its own vendor with the port's through
-    :func:`_shared_maker`, because the device describing the port may be a
-    sibling.
-
-    Example:
-        >>> from lsdsk.domain.models import PcieLink
-        >>> _switch_function_maker(PcieSlot(address="a", link=PcieLink(), vendor=0x1022, occupant_vendor=0x1022))
-        4130
-        >>> _switch_function_maker(
-        ...     PcieSlot(address="a", link=PcieLink(), vendor=0x1022, occupant_vendor=0x10EC)
-        ... ) is None
-        True
-        >>> _switch_function_maker(PcieSlot(address="a", link=PcieLink(), occupant_vendor=0x1022)) is None
-        True
-    """
-    return _shared_maker(port.vendor, port.occupant_vendor)
-
-
-def _port_capability_denies_a_function(port: PcieSlot) -> bool:
-    """Whether this port's own capability rules out switch silicon behind it.
-
-    The vendor check cannot separate a chipset's built-in SATA function from a
-    genuinely Gen1 x1 card of the same maker plugged into that chipset's switch.
-    The port in front of each can: an INTERNAL port publishes the floor as its
-    own capability, a real downstream port publishes the switch's. Measured in
-    this repository's ``linux-sas-hba`` capture, an Intel network controller at
-    the floor sits behind an Intel port reading 5.0 GT/s x1.
-
-    A port whose capability was not read denies nothing. Windows exposes no
-    bridge capability at all without a kernel driver, so there the vendor check
-    stays the only evidence and this returns ``False`` for every port.
-
-    Example:
-        >>> from lsdsk.domain.models import PcieLink
-        >>> _port_capability_denies_a_function(
-        ...     PcieSlot(
-        ...         address="a", link=PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=5.0, max_width=1)
-        ...     )
-        ... )
-        True
-        >>> _port_capability_denies_a_function(
-        ...     PcieSlot(
-        ...         address="a", link=PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=2.5, max_width=1)
-        ...     )
-        ... )
-        False
-        >>> _port_capability_denies_a_function(PcieSlot(address="a", link=PcieLink()))
-        False
-    """
-    return port.link.capability_is_known and not port.link.capability_is_at_floor
-
-
-def _ports_beside(controller: Controller, inventory: Inventory) -> tuple[PcieSlot, ...]:
-    """Return the other ports on the switch whose downstream port holds this controller.
-
-    Ports of one switch share a bus, so the bus of the port this controller
-    occupies names the group, but only once that bus is shown to hang behind a
-    bridge. Ports on a root bus share a number and nothing else: each is an
-    independent slot, so a reading beside one says nothing about another. Empty
-    when no port holds the controller, which is every scan that read no port
-    records, and when nothing proves its port is behind a bridge.
-    """
-    own_port = _port_holding(controller, inventory)
-    if own_port is None:
-        return ()
-    bus = _bus_of(own_port.address)
-    if bus is None or not _bus_is_behind_a_bridge(bus, inventory):
-        return ()
-    return tuple(
-        slot
-        for slot in inventory.slots
-        if slot.address != own_port.address
-        and slot.occupant_address != controller.address
-        and _bus_of(slot.address) == bus
-    )
+    return inventory.slot_at(controller.upstream_address)
 
 
 def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None:
@@ -1479,29 +1338,30 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
     own_port = _port_holding(controller, inventory)
     if not controller.link.is_at_floor or own_port is None:
         return None
-    if _port_capability_denies_a_function(own_port):
+    if own_port.capability_denies_a_function:
         return None
     # The controller's OWN vendor against its port's, never the port's occupant:
     # that occupant is whichever device behind the port is hardest to displace,
     # which need not be this controller.
-    maker = _shared_maker(own_port.vendor, controller.vendor)
+    maker = shared_maker(own_port.vendor, controller.vendor)
     if maker is None:
         return None
-    beside = _ports_beside(controller, inventory)
-    twin = next(
-        (
-            slot
-            for slot in beside
-            if slot.occupant_link is not None
-            and slot.occupant_link.is_at_floor
-            and _switch_function_maker(slot) == maker
-            and not _port_capability_denies_a_function(slot)
-        ),
-        None,
-    )
-    passes_real_links = any(
-        slot.occupant_link is not None and slot.occupant_link.is_running_above_floor for slot in beside
-    )
+    # Ports of one switch share a bus, so the bus of the port this controller
+    # occupies names the group, but only once that bus is shown to hang behind a
+    # bridge. Ports on a root bus share a number and nothing else: each is an
+    # independent slot, so a reading beside one says nothing about another.
+    bus = pci_bus_of(own_port.address)
+    if bus is None or not inventory.bus_is_behind_a_bridge(bus):
+        return None
+
+    def beside(slot: PcieSlot) -> bool:
+        return slot.address != own_port.address and slot.occupant_address != controller.address
+
+    # The machine holds each switch's readings grouped, rather than every
+    # controller at the floor walking the ports around it: a switch carrying
+    # many such functions made that walk cost the square of them.
+    twin = next((slot for slot in inventory.floor_functions_on(bus, maker) if beside(slot)), None)
+    passes_real_links = any(beside(slot) for slot in inventory.ports_running_above_floor_on(bus))
     return twin if passes_real_links else None
 
 
