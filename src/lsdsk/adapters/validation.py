@@ -6,18 +6,86 @@ What such a caller needs is which field and why. What ``str(ValidationError)``
 gives them is a developer's document, so the two stores that have this problem
 share one answer to it rather than each deciding again.
 
+Both stores also bound how many ENTRIES one collection in them may hold, for
+the reason :data:`MAX_ENTRIES` records, and share that bound here for the same
+reason they share the sentences.
+
 Contents:
     * :func:`what_is_wrong_with_it` - one ``<field>: <reason>`` line per problem
+    * :data:`MAX_ENTRIES` - the most entries one collection in either file holds
+    * :func:`at_most_entries` - the check, as a before-validator
+    * :data:`BOUNDED` - that check, ready to put in an ``Annotated`` type
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Sized
+from typing import TYPE_CHECKING, Final
+
+from pydantic import BeforeValidator
+from pydantic_core import PydanticCustomError
 
 if TYPE_CHECKING:
     from pydantic import ValidationError
 
-__all__ = ["what_is_wrong_with_it"]
+__all__ = ["BOUNDED", "MAX_ENTRIES", "at_most_entries", "what_is_wrong_with_it"]
+
+#: The most entries one collection in a capture or a history store may hold.
+#:
+#: The file ceiling bounds BYTES, and what a parsed document costs is linear in
+#: its ENTRY count with a large constant, because every entry becomes several
+#: Python objects and then a model: measured, 200,000 empty PCI entries in a
+#: 4 MB capture made ``findings`` take 7 s and 703 MB, and 4.5 million in 58.5 MB
+#: took 156 s and 14.4 GB. So the count is bounded as well, before any entry is
+#: validated.
+#:
+#: 65,536 is the whole function space of one PCI segment (256 buses x 32 devices
+#: x 8 functions), which no collection a machine publishes approaches: the
+#: largest in the committed captures is 95 PCI functions, and a storage server
+#: with thousands of multipath LUNs or zvols stays an order of magnitude under
+#: it. A history store's series are the drives a machine has ever seen, and a
+#: series is thinned to a few hundred samples. At the bound, a collection costs
+#: a second or two rather than minutes.
+MAX_ENTRIES: Final = 65_536
+
+
+def at_most_entries(value: object) -> object:
+    """Refuse a collection holding more than :data:`MAX_ENTRIES` entries.
+
+    Run BEFORE the entries are validated, which is the point: pydantic's own
+    ``max_length`` on a mapping counts after validating every entry, so the
+    whole cost the bound exists to avoid is paid before it refuses.
+
+    Args:
+        value: The raw collection, as the file or the caller handed it.
+
+    Returns:
+        ``value`` unchanged. Anything that is not a sized collection passes
+        through to the field's own validation, which refuses it by type.
+
+    Raises:
+        PydanticCustomError: If ``value`` holds more than :data:`MAX_ENTRIES`
+            entries. It reaches the caller as one ``<field>: <reason>`` line.
+
+    Example:
+        >>> at_most_entries({"a": 1})
+        {'a': 1}
+        >>> at_most_entries([0] * (MAX_ENTRIES + 1))
+        Traceback (most recent call last):
+            ...
+        pydantic_core._pydantic_core.PydanticCustomError: holds 65537 entries, more than ...
+    """
+    if isinstance(value, Sized) and not isinstance(value, str | bytes) and len(value) > MAX_ENTRIES:
+        raise PydanticCustomError(
+            "too_many_entries",
+            "holds {count} entries, more than the {limit} lsdsk reads in one place",
+            {"count": len(value), "limit": MAX_ENTRIES},
+        )
+    return value
+
+
+#: :func:`at_most_entries` as the metadata of an ``Annotated`` collection type.
+BOUNDED: Final = BeforeValidator(at_most_entries)
 
 
 def what_is_wrong_with_it(error: ValidationError) -> str:

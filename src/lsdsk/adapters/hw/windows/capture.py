@@ -22,7 +22,7 @@ from typing import Annotated, Literal
 from pydantic import BeforeValidator, Field
 
 from ....domain.enums import BusType, Platform
-from ..capture import CaptureHeader, CaptureModel, DeviceText, EncodedPayload
+from ..capture import CaptureHeader, CaptureModel, DeviceText, EncodedPayload, Entries, EntryMap
 from ..decode.virtualization import VirtualizationEvidence
 
 # The transport names the reader takes from STORAGE_DEVICE_DESCRIPTOR.BusType,
@@ -110,7 +110,7 @@ class PciEntry(CaptureModel, frozen=True):
     slot_number: int | None = Field(default=None, ge=0, le=_UINT32_MAX)
     address: DeviceText | None = None
     parent: DeviceText | None = None
-    children: tuple[DeviceText, ...] = ()
+    children: Entries[DeviceText] = ()
 
 
 class StorageDescriptor(CaptureModel, frozen=True):
@@ -196,7 +196,7 @@ class DiskEntry(CaptureModel, frozen=True):
     """
 
     parent: DeviceText | None = None
-    ancestors: tuple[DeviceText, ...] = ()
+    ancestors: Entries[DeviceText] = ()
     node: DeviceText | None = None
     device: StorageDescriptor = StorageDescriptor()
     size_bytes: int | None = Field(default=None, ge=0, le=_LARGE_INTEGER_MAX)
@@ -227,9 +227,9 @@ class WindowsCapture(CaptureHeader, frozen=True):
     elevated: bool = False
     devices_accessible: bool = True
     environment: VirtualizationEvidence = VirtualizationEvidence()
-    pci: dict[DeviceText, PciEntry]
-    pci_names: dict[DeviceText, DeviceText] = Field(default_factory=dict[DeviceText, DeviceText])
-    disks: dict[DeviceText, DiskEntry] = Field(default_factory=dict[DeviceText, DiskEntry])
+    pci: EntryMap[DeviceText, PciEntry]
+    pci_names: EntryMap[DeviceText, DeviceText] = Field(default_factory=dict[DeviceText, DeviceText])
+    disks: EntryMap[DeviceText, DiskEntry] = Field(default_factory=dict[DeviceText, DiskEntry])
 
 
 __all__ = [

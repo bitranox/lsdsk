@@ -37,16 +37,18 @@ import errno
 import json
 import os
 import sys
+from collections.abc import Mapping, Sequence, Sized
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Annotated, Any, NamedTuple, cast
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, BeforeValidator, Field, ValidationError, field_validator
+from pydantic_core import PydanticCustomError
 
 from ...domain.errors import ConfigurationError, MissingFileError
 from ...domain.history import DiskSeries, History, Sample, thin
 from ..atomicfile import replace_atomically
 from ..textfile import MAX_INPUT_BYTES, fits_a_bounded_read, read_json_bounded
-from ..validation import what_is_wrong_with_it
+from ..validation import BOUNDED, MAX_ENTRIES, what_is_wrong_with_it
 
 HISTORY_SCHEMA_VERSION = 1
 
@@ -84,6 +86,46 @@ _APP = "lsdsk"
 _FILENAME = "history.json"
 
 
+def _samples_within_bounds(value: object) -> object:
+    """Refuse a series holding more samples than one collection may.
+
+    Reads the raw series - a mapping from the file, or a ``DiskSeries`` a caller
+    is about to write - because it runs before the series are validated, which
+    is what keeps a million-sample series from being built only to be thinned.
+
+    Args:
+        value: The raw ``series`` field.
+
+    Returns:
+        ``value`` unchanged. Anything that is not a list of series passes
+        through to the field's own validation, which refuses it by type.
+
+    Raises:
+        PydanticCustomError: If a series holds more than
+            :data:`~lsdsk.adapters.validation.MAX_ENTRIES` samples.
+    """
+    _refuse_an_oversized_series(value)
+    return value
+
+
+def _refuse_an_oversized_series(value: object) -> None:
+    """The walk :func:`_samples_within_bounds` makes, over whatever shape it was handed."""
+    if not isinstance(value, list | tuple):
+        return
+    for entry in cast("Sequence[object]", value):
+        if isinstance(entry, Mapping):
+            fields = cast("Mapping[str, object]", entry)
+            identity, samples = fields.get("identity"), fields.get("samples")
+        else:
+            identity, samples = getattr(entry, "identity", None), getattr(entry, "samples", None)
+        if isinstance(samples, list | tuple) and len(cast("Sized", samples)) > MAX_ENTRIES:
+            raise PydanticCustomError(
+                "too_many_entries",
+                "the series '{identity}' holds {count} samples, more than the {limit} lsdsk reads in one place",
+                {"identity": str(identity), "count": len(cast("Sized", samples)), "limit": MAX_ENTRIES},
+            )
+
+
 class HistoryFile(BaseModel):
     """The on-disk shape, and the only place a stored file is trusted.
 
@@ -94,7 +136,12 @@ class HistoryFile(BaseModel):
     Attributes:
         schema_version: Format version. The wire key is ``schema``.
         hostname: The machine these samples were taken on.
-        series: One series per drive.
+        series: One series per drive. At most
+            :data:`~lsdsk.adapters.validation.MAX_ENTRIES` of them, each of at
+            most that many samples, both counted before anything in them is
+            validated. The samples are bounded HERE rather than on the domain's
+            own ``DiskSeries``, because the domain cannot know the file's limit
+            and ``record`` builds series the configuration sizes.
 
     Example:
         >>> HistoryFile(hostname="box").schema_version
@@ -105,7 +152,7 @@ class HistoryFile(BaseModel):
 
     schema_version: int = Field(default=HISTORY_SCHEMA_VERSION, alias="schema")
     hostname: str
-    series: tuple[DiskSeries, ...] = ()
+    series: Annotated[tuple[DiskSeries, ...], BOUNDED, BeforeValidator(_samples_within_bounds)] = ()
 
     @field_validator("series")
     @classmethod
@@ -285,13 +332,20 @@ def save_history(history: History, path: Path) -> None:
             replaced, or the store would be larger than :func:`load_history`
             reads (``errno.EFBIG``). The previous store is untouched in every
             case.
-        pydantic.ValidationError: If the history does not satisfy the stored
-            schema. No caller has reached this - a ``History`` is validated at
-            its own construction and ``HistoryFile`` declares the same field
-            types - but the re-validation is real, so a caller catching only
-            ``OSError`` would not see it.
+
+            A history the reader's own model refuses - more series or samples
+            than :data:`~lsdsk.adapters.validation.MAX_ENTRIES`, a figure past
+            the stored magnitude - is refused the same way (``errno.EINVAL``)
+            rather than as a ``ValidationError``, which no caller catches.
     """
-    stored = HistoryFile(schema=HISTORY_SCHEMA_VERSION, hostname=history.hostname, series=history.series)
+    try:
+        stored = HistoryFile(schema=HISTORY_SCHEMA_VERSION, hostname=history.hostname, series=history.series)
+    except ValidationError as error:
+        message = (
+            "the history would not be a store the history reader accepts, so nothing was written "
+            f"and the previous store is kept:\n{what_is_wrong_with_it(error)}"
+        )
+        raise OSError(errno.EINVAL, message, str(path)) from error
     # Compact rather than indented: indentation is a third of a full series'
     # size and nobody reads this file by eye.
     body = stored.model_dump_json(by_alias=True)

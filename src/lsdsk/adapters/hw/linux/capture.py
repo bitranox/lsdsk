@@ -27,7 +27,7 @@ from typing import Annotated, Literal
 from pydantic import BeforeValidator, Field
 
 from ....domain.enums import Platform
-from ..capture import CaptureHeader, CaptureModel, DeviceText, EncodedPayload
+from ..capture import CaptureHeader, CaptureModel, DeviceText, EncodedPayload, Entries, EntryMap
 from ..decode.virtualization import VirtualizationEvidence
 
 # ``rotational`` is a kernel-published ``0``/``1`` text flag, unlike most of
@@ -122,7 +122,7 @@ class PciEntry(CaptureModel, frozen=True):
     max_link_speed: DeviceText | None = None
     max_link_width: DeviceText | None = None
     path: DeviceText = ""
-    children: tuple[DeviceText, ...] = ()
+    children: Entries[DeviceText] = ()
     ahci: AhciRegisters | None = None
     ahci_error: DeviceText | None = None
     slot_implemented: bool | None = None
@@ -213,12 +213,12 @@ class SysfsClasses(CaptureModel, frozen=True):
         hwmon: Hardware monitors.
     """
 
-    scsi_host: dict[DeviceText, ScsiHostEntry] = Field(default_factory=dict[DeviceText, ScsiHostEntry])
-    sas_phy: dict[DeviceText, SasPhyEntry] = Field(default_factory=dict[DeviceText, SasPhyEntry])
-    ata_link: dict[DeviceText, AtaLinkEntry] = Field(default_factory=dict[DeviceText, AtaLinkEntry])
-    ata_port: dict[DeviceText, ClassEntry] = Field(default_factory=dict[DeviceText, ClassEntry])
-    nvme: dict[DeviceText, NvmeClassEntry] = Field(default_factory=dict[DeviceText, NvmeClassEntry])
-    hwmon: dict[DeviceText, HwmonEntry] = Field(default_factory=dict[DeviceText, HwmonEntry])
+    scsi_host: EntryMap[DeviceText, ScsiHostEntry] = Field(default_factory=dict[DeviceText, ScsiHostEntry])
+    sas_phy: EntryMap[DeviceText, SasPhyEntry] = Field(default_factory=dict[DeviceText, SasPhyEntry])
+    ata_link: EntryMap[DeviceText, AtaLinkEntry] = Field(default_factory=dict[DeviceText, AtaLinkEntry])
+    ata_port: EntryMap[DeviceText, ClassEntry] = Field(default_factory=dict[DeviceText, ClassEntry])
+    nvme: EntryMap[DeviceText, NvmeClassEntry] = Field(default_factory=dict[DeviceText, NvmeClassEntry])
+    hwmon: EntryMap[DeviceText, HwmonEntry] = Field(default_factory=dict[DeviceText, HwmonEntry])
 
 
 class QueueAttributes(CaptureModel, frozen=True):
@@ -281,7 +281,7 @@ class BlockEntry(CaptureModel, frozen=True):
     device: DeviceAttributes = DeviceAttributes()
     device_path: DeviceText = ""
     vpd: VpdPages = VpdPages()
-    hwmon: tuple[DeviceText, ...] = ()
+    hwmon: Entries[DeviceText] = ()
 
 
 class AtaBlobs(CaptureModel, frozen=True):
@@ -354,12 +354,12 @@ class LinuxCapture(CaptureHeader, frozen=True):
     euid: int | None = Field(default=None, ge=0, le=_UINT32_MAX)
     devices_accessible: bool = True
     environment: VirtualizationEvidence = VirtualizationEvidence()
-    pci: dict[DeviceText, PciEntry]
-    pci_names: dict[DeviceText, DeviceText] = Field(default_factory=dict[DeviceText, DeviceText])
+    pci: EntryMap[DeviceText, PciEntry]
+    pci_names: EntryMap[DeviceText, DeviceText] = Field(default_factory=dict[DeviceText, DeviceText])
     classes: SysfsClasses = SysfsClasses()
-    block: dict[DeviceText, BlockEntry] = Field(default_factory=dict[DeviceText, BlockEntry])
-    ata: dict[DeviceText, AtaBlobs] = Field(default_factory=dict[DeviceText, AtaBlobs])
-    nvme: dict[DeviceText, NvmeBlobs] = Field(default_factory=dict[DeviceText, NvmeBlobs])
+    block: EntryMap[DeviceText, BlockEntry] = Field(default_factory=dict[DeviceText, BlockEntry])
+    ata: EntryMap[DeviceText, AtaBlobs] = Field(default_factory=dict[DeviceText, AtaBlobs])
+    nvme: EntryMap[DeviceText, NvmeBlobs] = Field(default_factory=dict[DeviceText, NvmeBlobs])
 
 
 __all__ = [

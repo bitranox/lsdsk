@@ -7,10 +7,10 @@ whole file, so a schema guard cannot defend against the file simply being huge.
 Pointing ``--replay`` at a disk image rather than a capture is a typo, not an
 attack, and the answer it deserves is an immediate "that is not a capture".
 
-What the ceiling bounds is the FILE, and the footprint it buys is several times
-that - see :data:`MAX_INPUT_BYTES`, which carries the measurement. A file just
-under the ceiling is a second of work and a few hundred megabytes, not a
-constant-time refusal.
+What the ceiling bounds is the FILE. The footprint is decided by how many
+ENTRIES the file holds, which the models bound separately - see
+:data:`MAX_INPUT_BYTES` for the measurement and
+:data:`lsdsk.adapters.validation.MAX_ENTRIES` for that second bound.
 
 System Role:
     Adapter-layer input boundary shared by the snapshot and history stores.
@@ -57,23 +57,16 @@ _BOM_CODECS: Final[tuple[tuple[bytes, str], ...]] = (
 # are also WRITTEN by this tool, and each writer refuses a file past this ceiling
 # (fits_a_bounded_read), so nothing it writes is one it cannot read back.
 #
-# It bounds the FILE and not the footprint, and the difference is worth stating
-# because the sentence above reads as if it were the same thing. A parsed
-# document is a Python object per entry, so the cost is linear in ENTRY COUNT
-# with a large constant, and an entry can be as short as a dozen bytes.
-# Measured 2026-09-21 on this machine with a capture-shaped map of small
-# objects: 1 MB cost 6 MB of resident memory, 5 MB cost 28 MB, 20 MB cost
-# 107 MB and 1.06s, and 61 MB cost 308 MB. A denser document costs more again -
-# a reviewer measured 2.06 GB for 61 MB against a differently shaped one - so
-# treat these as the shape of the curve rather than as a ceiling.
-#
-# Left as it is rather than bounded per map. Refusing above an entry COUNT
-# would need a number that no real machine can exceed, and that number is not
-# measurable from the four captures here: the largest has 19 drives, and a
-# ceiling guessed from it would refuse a storage server rather than a typo.
-# A second of work and a few hundred megabytes for a mistyped path is a poor
-# answer and not a dangerous one, and the refusal above the ceiling is still
-# the one stat it always was.
+# It bounds the FILE and not the footprint. A parsed document is several Python
+# objects and then a model per entry, so the cost is linear in ENTRY COUNT with a
+# constant of a few hundred, and an entry can be as short as a dozen bytes:
+# 200,000 empty PCI entries in a 4 MB capture cost `findings` 7 s and 703 MB,
+# and 4.5 million in 58.5 MB cost 156 s and 14.4 GB. So every collection either
+# model declares is ALSO bounded in entries, before any entry is validated, by
+# lsdsk.adapters.validation.MAX_ENTRIES; that constant carries the figure and
+# why no real machine approaches it. Between the two bounds a file costs at most
+# a few seconds and a few hundred megabytes, and a document past either is
+# refused in this tool's own words.
 MAX_INPUT_BYTES = 64 * 1024 * 1024
 
 
