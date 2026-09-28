@@ -27,6 +27,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   size, against 12,021 before. The markers drawn are unchanged: the index keeps
   critical over warning over hint for each subject exactly as the per-row search
   did.
+- **The swap search finds a starved drive's partner without scanning every
+  candidate.** Each drive capped by its own port walked every drive holding more
+  port than it could use, so the rule cost the product of the two: exactly
+  (n/2)^2 candidate reads for n drives split evenly with no swap to find,
+  0.010, 0.045, 0.17 and 0.66 seconds at 500, 1,000, 2,000 and 4,000 drives on
+  this host. The candidates are grouped by their own speed, which SATA's
+  IDENTIFY allows three values of, and each group finds its first port fast
+  enough from a tree: the same machines take 0.0005 to 0.006 seconds, and
+  4,000 drives read a drive's link 28,000 times against 4,024,000. The
+  swaps proposed are identical, partner for partner and in the same order,
+  including two drives carrying one name being promised together.
 
 ### Fixed
 

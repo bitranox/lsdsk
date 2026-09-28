@@ -21,7 +21,8 @@ System Role:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import math
+from typing import TYPE_CHECKING, NamedTuple
 
 from .enums import ControllerKind, Severity
 from .history import CounterKind, History, identity_of, trend_for
@@ -686,22 +687,19 @@ def diagnose_port_allocation(inventory: Inventory) -> list[Finding]:
     """
     starved = [disk for disk in inventory.disks if disk.link.is_port_limited]
     findings: list[Finding] = []
-    taken: set[str] = set()
-    # Once for the machine rather than once per starved drive. A drive that
-    # cannot outrun its own port can never be the partner in a swap, and on any
-    # real machine that is nearly all of them, so the search walked the whole
-    # disk list to reject it every time - the second of the two quadratics in
-    # this module, and the one that survives fixing the first.
-    holders = _drives_holding_more_port_than_they_can_use(inventory)
+    # Indexed once for the machine rather than searched once per starved drive:
+    # a scan of every candidate for every starved drive makes the rule cost the
+    # product of the two, and a replay is untrusted input that can carry
+    # thousands of each.
+    partners = _SwapPartners(_drives_holding_more_port_than_they_can_use(inventory))
 
     for disk in starved:
         port_max, drive_max = disk.link.port_max_gbps, disk.link.drive_max_gbps
         if port_max is None or drive_max is None:
             continue
-        partner = _wasteful_holder(holders, needs=drive_max, offers=port_max, taken=taken)
+        partner = partners.take(needs=drive_max, offers=port_max)
         if partner is None:
             continue
-        taken.add(partner.node)
         findings.append(
             Finding(
                 severity=Severity.WARNING,
@@ -718,7 +716,21 @@ def diagnose_port_allocation(inventory: Inventory) -> list[Finding]:
     return findings
 
 
-def _drives_holding_more_port_than_they_can_use(inventory: Inventory) -> tuple[Disk, ...]:
+class _Holder(NamedTuple):
+    """A drive that holds more port than it can use, with both figures read.
+
+    Attributes:
+        disk: The drive.
+        drive_max: The fastest it can go.
+        port_max: The fastest the port it holds can go, above ``drive_max``.
+    """
+
+    disk: Disk
+    drive_max: float
+    port_max: float
+
+
+def _drives_holding_more_port_than_they_can_use(inventory: Inventory) -> tuple[_Holder, ...]:
     """Narrow the machine to the drives that could ever be the partner in a swap.
 
     The condition is the part of the swap test that depends on the candidate
@@ -732,7 +744,7 @@ def _drives_holding_more_port_than_they_can_use(inventory: Inventory) -> tuple[D
         The drives worth testing against a starved one, in inventory order.
     """
     return tuple(
-        disk
+        _Holder(disk, disk.link.drive_max_gbps, disk.link.port_max_gbps)
         for disk in inventory.disks
         if disk.link.drive_max_gbps is not None
         and disk.link.port_max_gbps is not None
@@ -740,32 +752,122 @@ def _drives_holding_more_port_than_they_can_use(inventory: Inventory) -> tuple[D
     )
 
 
-def _wasteful_holder(holders: Sequence[Disk], *, needs: float, offers: float, taken: set[str]) -> Disk | None:
-    """Find a drive holding a port faster than it can use.
+class _FirstPortAtLeast:
+    """Holders of one drive speed, naming the first whose port is fast enough.
 
-    Args:
-        holders: The drives that hold more port than they can use, narrowed
-            once for the machine by
-            :func:`_drives_holding_more_port_than_they_can_use`.
-        needs: The speed the starved drive wants from the port it would take.
-        offers: The speed of the port the starved drive would hand over.
-        taken: Drives already promised to another swap.
+    A max tree over their port speeds in inventory order: the first port of at
+    least a given speed is found by stepping into the left half whenever that
+    half holds one, so a question costs the height of the tree rather than a
+    walk along the list. A taken holder's leaf drops to minus infinity, which no
+    starved drive's need can meet - that need is above the port the drive sits
+    on, so it is above minus infinity.
 
-    Returns:
-        A drive that would lose nothing by trading places, or ``None``.
+    Example:
+        >>> ports = _FirstPortAtLeast(positions=(4, 7, 9), ports=(3.0, 12.0, 6.0))
+        >>> ports.first_at_least(6.0)
+        7
+        >>> ports.remove(1)
+        >>> ports.first_at_least(6.0)
+        9
+        >>> ports.first_at_least(24.0) is None
+        True
     """
-    for candidate in holders:
-        link = candidate.link
-        if candidate.node in taken:
-            continue
-        # Both figures are known here, and the drive is slower than its port.
-        # What remains is the pair: it must gain the starved drive what it
-        # wanted, and lose nothing itself.
-        if link.port_max_gbps is None or link.drive_max_gbps is None:  # pragma: no cover - narrowed already
-            continue
-        if link.port_max_gbps >= needs and link.drive_max_gbps <= offers:
-            return candidate
-    return None
+
+    def __init__(self, positions: Sequence[int], ports: Sequence[float]) -> None:
+        """Build the tree over one group of holders.
+
+        Args:
+            positions: Each holder's place among all holders, in inventory order.
+            ports: Each holder's port speed, in the same order.
+        """
+        self._positions = tuple(positions)
+        self._leaves = 1 << max(len(ports) - 1, 0).bit_length()
+        self._best = [-math.inf] * (2 * self._leaves)
+        self._best[self._leaves : self._leaves + len(ports)] = ports
+        for node in range(self._leaves - 1, 0, -1):
+            self._best[node] = max(self._best[2 * node], self._best[2 * node + 1])
+
+    def first_at_least(self, needs: float) -> int | None:
+        """The place of the first untaken holder whose port gives ``needs``, or ``None``."""
+        # Minus infinity marks a taken or padding leaf, so a need that low would
+        # land on one. No starved drive needs that little, and NaN meets nothing.
+        if not self._best[1] >= needs > -math.inf:
+            return None
+        node = 1
+        while node < self._leaves:
+            node = 2 * node if self._best[2 * node] >= needs else 2 * node + 1
+        return self._positions[node - self._leaves]
+
+    def remove(self, leaf: int) -> None:
+        """Take one holder out, by its index within this group."""
+        node = self._leaves + leaf
+        self._best[node] = -math.inf
+        while node > 1:
+            node //= 2
+            self._best[node] = max(self._best[2 * node], self._best[2 * node + 1])
+
+
+class _SwapPartners:
+    """Every possible swap partner, indexed so a starved drive finds its match without a scan.
+
+    The answer is the one a first-match scan in inventory order gives: the
+    EARLIEST untaken holder whose port gives the starved drive what it needs
+    and whose own speed fits the port it would be handed. The holders are
+    grouped by their own speed, which SATA's IDENTIFY decoding allows three
+    values of, and each group answers "first port fast enough" from a tree, so
+    a question costs a tree walk per group rather than a read per holder.
+
+    A promise is made per NODE, as the scan's ``taken`` set made it: a capture
+    is untrusted and can carry two drives of one name, and promising one of
+    them promises both.
+    """
+
+    def __init__(self, holders: Sequence[_Holder]) -> None:
+        """Group and index the holders.
+
+        Args:
+            holders: The possible partners, from
+                :func:`_drives_holding_more_port_than_they_can_use`.
+        """
+        self._holders = tuple(holders)
+        grouped: dict[float, list[int]] = {}
+        for position, holder in enumerate(self._holders):
+            grouped.setdefault(holder.drive_max, []).append(position)
+        groups: list[tuple[float, _FirstPortAtLeast]] = []
+        self._leaf_of: dict[int, tuple[_FirstPortAtLeast, int]] = {}
+        for drive in sorted(grouped):
+            members = grouped[drive]
+            tree = _FirstPortAtLeast(members, [self._holders[at].port_max for at in members])
+            groups.append((drive, tree))
+            self._leaf_of.update({at: (tree, leaf) for leaf, at in enumerate(members)})
+        self._groups = tuple(groups)
+        self._by_node: dict[str, list[int]] = {}
+        for position, holder in enumerate(self._holders):
+            self._by_node.setdefault(holder.disk.node, []).append(position)
+
+    def take(self, *, needs: float, offers: float) -> Disk | None:
+        """Promise the first fitting partner to a starved drive, or find none.
+
+        Args:
+            needs: The speed the starved drive wants from the port it would take.
+            offers: The speed of the port the starved drive would hand over.
+
+        Returns:
+            A drive that would lose nothing by trading places, or ``None``.
+        """
+        found = self._first_fitting(needs=needs, offers=offers)
+        if found is None:
+            return None
+        partner = self._holders[found].disk
+        for position in self._by_node.pop(partner.node):
+            tree, leaf = self._leaf_of[position]
+            tree.remove(leaf)
+        return partner
+
+    def _first_fitting(self, *, needs: float, offers: float) -> int | None:
+        """The earliest place, across every group whose speed fits ``offers``."""
+        answers = (tree.first_at_least(needs) for drive, tree in self._groups if drive <= offers)
+        return min((place for place in answers if place is not None), default=None)
 
 
 #: The severities most urgent first, which is `Severity`'s own declaration
