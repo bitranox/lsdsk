@@ -76,7 +76,14 @@ class _Run(NamedTuple):
     read_the_machine: bool
 
 
-def _launch(argv: list[str], *, stdout: IO[bytes] | int, tmp_path: Path, close_stdout: bool = False) -> _Run:
+def _launch(
+    argv: list[str],
+    *,
+    stdout: IO[bytes] | int,
+    tmp_path: Path,
+    close_stdout: bool = False,
+    log_stream: str | None = None,
+) -> _Run:
     """Run lsdsk in a child process with `stdout` as its standard output.
 
     Args:
@@ -85,6 +92,8 @@ def _launch(argv: list[str], *, stdout: IO[bytes] | int, tmp_path: Path, close_s
         tmp_path: This test's directory, for the marker file.
         close_stdout: Start the child with descriptor 1 closed, which is what
             ``>&-`` does and what a detached launch leaves.
+        log_stream: What ``LOG_CONSOLE_STREAM`` names, or None to leave the
+            logging console where the environment already puts it.
 
     Returns:
         The exit code, what stdout carried when it was a pipe, stderr, and
@@ -96,7 +105,7 @@ def _launch(argv: list[str], *, stdout: IO[bytes] | int, tmp_path: Path, close_s
         stdout=stdout,
         stderr=subprocess.PIPE,
         cwd=str(Path(__file__).parent.parent),
-        env={**os.environ, "TERM": "dumb"},
+        env={**os.environ, "TERM": "dumb", **({} if log_stream is None else {"LOG_CONSOLE_STREAM": log_stream})},
         # The only way to hand a child a CLOSED descriptor 1: a redirect cannot
         # express it, and Popen reopens anything it is given.
         preexec_fn=(lambda: os.close(1)) if close_stdout else None,
@@ -290,6 +299,84 @@ def test_a_snapshot_to_a_file_says_the_capture_landed_when_standard_output_refus
     said = _lines_about_standard_output(run.stderr)
     assert len(said) == 1, f"expected one sentence about standard output, got {said!r} in {run.stderr!r}"
     assert str(target) in said[0], f"the sentence does not say the capture landed: {said[0]!r}"
+
+
+class _LoggedCase(NamedTuple):
+    argv: list[str]
+    #: A line the logging console writes, so the control can prove the log
+    #: really went to stdout and the refusing arm has something to refuse.
+    logged: str
+
+
+#: Commands whose log lines reach stdout ahead of their own output. The first two
+#: log on the MAIN thread - the demo builds its runtime without a queue, and the
+#: setting turns the run's own queue off - which is where lib_log_rich catches
+#: ``Exception`` around its console and the refusal was swallowed. The third logs
+#: on the queue worker, the path that was already answered, kept as the arm the
+#: other two must now agree with.
+_LOGGED_CASES = {
+    "logdemo, logged on the main thread": _LoggedCase(["logdemo"], logged="Information message"),
+    "info, queue off": _LoggedCase(
+        ["--set", "lib_log_rich.queue_enabled=false", "info"], logged="Displaying package information"
+    ),
+    "info, queue on": _LoggedCase(["info"], logged="Displaying package information"),
+}
+
+
+@pytest.mark.os_linux
+@pytest.mark.parametrize("case", list(_LOGGED_CASES.values()), ids=list(_LOGGED_CASES))
+def test_a_log_line_standard_output_refuses_is_said_once_and_leaves_io_error(case: _LoggedCase, tmp_path: Path) -> None:
+    """``LOG_CONSOLE_STREAM=stdout lsdsk logdemo > /dev/full`` leaves 74, like every other refused write.
+
+    On the main thread the guarded writer raised the refusal inside the logging
+    console, where lib_log_rich catches ``Exception`` and carries on. stdout had
+    already been pointed at the null device by then, so every later write
+    succeeded, the final flush found nothing wrong, and the run left 0 with
+    nothing on stderr - a monitor told its output landed when none of it did.
+    """
+    argv = [*_history_isolated(tmp_path), *case.argv]
+    control = _launch(argv, stdout=subprocess.PIPE, tmp_path=tmp_path, log_stream="stdout")
+    assert case.logged.encode() in control.stdout, "the log line never reached stdout, so nothing here can refuse it"
+    assert control.code == ExitCode.SUCCESS, f"the control left {control.code}: {control.stderr!r}"
+
+    with Path("/dev/full").open("wb") as full:
+        run = _launch(argv, stdout=full, tmp_path=tmp_path, log_stream="stdout")
+
+    assert "Traceback" not in run.stderr, run.stderr
+    said = _lines_about_standard_output(run.stderr)
+    assert len(said) == 1, f"expected one sentence about standard output, got {said!r} in {run.stderr!r}"
+    assert f"[Errno {errno.ENOSPC}]" in said[0], f"the sentence does not say why: {said[0]!r}"
+    assert run.code == ExitCode.IO_ERROR, f"exit {run.code}; stderr: {run.stderr!r}"
+
+
+@pytest.mark.os_posix
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["info"], id="queue on"),
+        pytest.param(["--set", "lib_log_rich.queue_enabled=false", "info"], id="queue off"),
+    ],
+)
+def test_a_closed_standard_output_under_a_log_is_said_once(argv: list[str], tmp_path: Path) -> None:
+    """A log line and the command's own output refused by one closed stdout is one fact.
+
+    Both writes are refused - the stand-in for a missing stdout refuses every
+    write, so silencing it after the first changes nothing - and each was
+    answered on its own path: the log line's from the record the final flush
+    reads, the command's from the last-resort handler. The same sentence
+    appeared twice.
+    """
+    run = _launch(
+        [*_history_isolated(tmp_path), *argv],
+        stdout=subprocess.DEVNULL,
+        tmp_path=tmp_path,
+        close_stdout=True,
+        log_stream="stdout",
+    )
+
+    said = _lines_about_standard_output(run.stderr)
+    assert len(said) == 1, f"expected one sentence about standard output, got {said!r} in {run.stderr!r}"
+    assert run.code == ExitCode.IO_ERROR, f"exit {run.code}; stderr: {run.stderr!r}"
 
 
 @pytest.mark.os_agnostic

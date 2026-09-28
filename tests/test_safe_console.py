@@ -7,11 +7,13 @@ keeps the next output line someone adds covered by construction.
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import io
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -411,3 +413,52 @@ def test_a_refused_null_device_leaves_no_descriptor_behind(monkeypatch: pytest.M
     monkeypatch.undo()
 
     assert lowest_free() == before, "a descriptor survived the refused redirect"
+
+
+@pytest.mark.os_posix
+def test_two_threads_silencing_one_stream_duplicate_its_descriptor_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The main thread and the logging worker can both meet a failed stdout at once.
+
+    Both then silence it. The membership check and the record were separate
+    steps with nothing between them, so both threads could pass the check, both
+    duplicate the descriptor, and the second record overwrite the first - whose
+    duplicate nothing closes afterwards, not even ``restore_original_streams``.
+
+    `os.dup` is the operating system, the one kind of collaborator this project
+    substitutes rather than injects. The barrier inside it holds whichever
+    thread arrives first until the other arrives too, which is what makes the
+    interleaving certain rather than lucky; with the check and the record under
+    one lock the second thread never arrives, and the barrier times out.
+    """
+    stream = (tmp_path / "stdout.txt").open("w", encoding="utf-8")
+    monkeypatch.setattr(sys, "stdout", stream)
+    real_dup = os.dup
+    duplicated: list[int] = []
+    both_inside = threading.Barrier(2, timeout=0.5)
+
+    def dup_once_both_are_inside(descriptor: int) -> int:
+        duplicated.append(descriptor)
+        with contextlib.suppress(threading.BrokenBarrierError):
+            both_inside.wait()
+        return real_dup(descriptor)
+
+    monkeypatch.setattr(os, "dup", dup_once_both_are_inside)
+    start_together = threading.Barrier(2, timeout=10)
+
+    def silence() -> None:
+        start_together.wait()
+        safe_console._stop_writing_to(stream)  # pyright: ignore[reportPrivateUsage] - the redirect is private by design; remove if it is ever published
+
+    threads = [threading.Thread(target=silence) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    try:
+        assert not any(thread.is_alive() for thread in threads), "a thread never came back from silencing the stream"
+        assert duplicated == [stream.fileno()], f"the descriptor was duplicated {len(duplicated)} times"
+    finally:
+        safe_console.restore_original_streams()
+        stream.close()

@@ -24,6 +24,7 @@ import os
 import subprocess
 import sys
 import threading
+from functools import partial
 from typing import IO, TYPE_CHECKING, NamedTuple
 
 import pytest
@@ -195,3 +196,45 @@ def test_the_run_is_still_the_main_thread_s_to_end(monkeypatch: pytest.MonkeyPat
     safe_console.restore_original_streams()
 
     assert leaving.value.code == ExitCode.BROKEN_PIPE
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("stdout", "code", "said"),
+    [
+        pytest.param(_DepartedReader, ExitCode.BROKEN_PIPE, False, id="the reader left"),
+        pytest.param(_FullDisk, ExitCode.IO_ERROR, True, id="the disk is full"),
+    ],
+)
+@pytest.mark.parametrize(
+    "writer",
+    [
+        pytest.param(partial(safe_console.safe_stream, records_failures=True), id="stdout"),
+        pytest.param(partial(safe_console.safe_stream_to_both, records_failures=True), id="both"),
+    ],
+)
+def test_the_logging_console_records_a_stdout_failure_on_the_main_thread_too(
+    stdout: type[io.StringIO],
+    code: ExitCode,
+    said: bool,
+    writer: Callable[[], IO[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The logging console's writer never raises, because its caller swallows what it raises.
+
+    lib_log_rich writes to its console inside ``except Exception``, so on the
+    main thread - the demo, or a run with the queue off - a raised refusal was
+    lost and the run left 0. The end-to-end arm needs ``/dev/full``; this holds
+    the same rule on every platform.
+    """
+    stderr = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", stdout())
+    monkeypatch.setattr(sys, "stderr", stderr)
+
+    logging_writer = writer()
+    logging_writer.write("a log line\n")
+    logging_writer.flush()
+    answered = safe_console.flush_streams_or_leave(int(ExitCode.SUCCESS))
+
+    assert answered == code, f"the run left {answered}"
+    assert ("standard output" in stderr.getvalue()) is said, stderr.getvalue()
