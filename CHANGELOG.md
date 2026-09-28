@@ -7,6 +7,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
+- **`snapshot -o -` writes the capture to standard output.** It used to exit 0
+  saying `Wrote -` and leave a file literally named `-` in the working
+  directory, holding every drive's serial number. A dash now means stdout, as it
+  does for every Unix tool, so a remote machine's capture comes home in one
+  line: `ssh host lsdsk snapshot -o - > capture.json`, or straight into
+  `--replay <(ssh host lsdsk snapshot -o -)`. The capture is validated before
+  any of it is written, exactly as a file is, and the identity notice goes to
+  stderr. A file that really is called `-` is still reachable as `./-`.
+  `-o -` with `--format json` is refused at `22`, because the capture and the
+  result envelope would both be standard output.
+
 - **A write that could not happen leaves `74` (EX_IOERR), never `1`.** On a
   reporting command `1` is the verdict that a warning or a critical was found,
   so a monitoring check whose output disk filled up would page somebody about a
@@ -96,21 +107,6 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   A multi-megabyte cgroup or DMI string was parsed and kept in full. A live run
   now reads each one at the capture's own bound and records an over-long one as
   not read, and a capture file carrying one is refused at `78`.
-
-## [1.4.0] 2026-09-28 02:50:38
-
-### Changed
-
-- **`snapshot -o -` writes the capture to standard output.** It used to exit 0
-  saying `Wrote -` and leave a file literally named `-` in the working
-  directory, holding every drive's serial number. A dash now means stdout, as it
-  does for every Unix tool, so a remote machine's capture comes home in one
-  line: `ssh host lsdsk snapshot -o - > capture.json`, or straight into
-  `--replay <(ssh host lsdsk snapshot -o -)`. The capture is validated before
-  any of it is written, exactly as a file is, and the identity notice goes to
-  stderr. A file that really is called `-` is still reachable as `./-`.
-  `-o -` with `--format json` is refused at `22`, because the capture and the
-  result envelope would both be standard output.
 
 ## [1.3.1] 2026-09-28 01:24:32
 
