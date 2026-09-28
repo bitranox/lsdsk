@@ -20,15 +20,20 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
+from lsdsk.adapters.hw.linux.capture import AtaBlobs, NvmeBlobs
+from lsdsk.adapters.hw.windows.capture import DiskEntry, HealthBlobs
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from click.testing import CliRunner
+    from pydantic import BaseModel
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 
@@ -89,6 +94,193 @@ def capture_with(fixture: str, mutate: Callable[[dict[str, Any]], None], destina
 def refusal_lines(envelope: dict[str, Any]) -> list[str]:
     """The skipped entries that carry the planted reason."""
     return [entry for entry in envelope["skipped"] if REFUSAL in entry]
+
+
+def _refusal_fields(model: type[BaseModel]) -> list[tuple[str, str]]:
+    """Every refusal field a capture model carries, paired with its reading name.
+
+    Read from the model's own ``model_fields`` rather than hand-listed, so a
+    refusal field added to a capture model is covered here without this file
+    changing. ``error`` (the whole device could not be opened) reads as
+    ``device``, matching what every builder passes to ``refusals_of``; every
+    other ``*_error`` field reads as its own name with underscores turned to
+    hyphens, which is the same rule.
+
+    Args:
+        model: A capture model that carries one or more refusal fields.
+
+    Returns:
+        One ``(field_name, reading_name)`` pair per refusal field.
+    """
+    fields: list[tuple[str, str]] = []
+    for name in model.model_fields:
+        if name == "error":
+            fields.append((name, "device"))
+        elif name.endswith("_error"):
+            fields.append((name, name.removesuffix("_error").replace("_", "-")))
+    return fields
+
+
+def _plant_refusal(entry: dict[str, Any], field: str) -> None:
+    """Plant one refusal field into a payload entry, as a real reader would.
+
+    A reader writes a payload field or its ``*_error`` twin, never both, so the
+    companion payload is dropped rather than left sitting beside a reason for
+    its own absence. Planting ``error`` (the whole device refused) clears
+    everything else on the entry, because nothing else was read either.
+
+    Args:
+        entry: The JSON object for one device's readings, mutated in place.
+        field: The refusal field to plant, from :func:`_refusal_fields`.
+    """
+    if field == "error":
+        for key in list(entry):
+            del entry[key]
+        entry["error"] = REFUSAL
+        return
+    entry.pop(field.removesuffix("_error"), None)
+    entry[field] = REFUSAL
+
+
+@dataclass(frozen=True)
+class _RefusalCase:
+    """One refusal field to plant, and where in a capture it lives.
+
+    Attributes:
+        kind: Which container in the capture holds the field - see
+            :func:`_container_for`.
+        fixture: The committed capture to copy and mutate.
+        field: The capture-model field name to plant.
+        reading: The reading name it must surface as, in ``skipped`` and in
+            ``readings_refused``.
+    """
+
+    kind: str
+    fixture: str
+    field: str
+    reading: str
+
+
+def _container_for(data: dict[str, Any], kind: str) -> tuple[dict[str, Any], str]:
+    """Find the JSON object one refusal field is planted into, and its subject.
+
+    Args:
+        data: The decoded capture.
+        kind: Which shape of capture this is, from :class:`_RefusalCase`.
+
+    Returns:
+        The object to plant a refusal field into, and the node or path the
+        planted device is keyed by in the capture (used only to pick a stable,
+        already-existing device rather than to invent one).
+    """
+    if kind == "linux-ata":
+        node = sorted(data["ata"])[0]
+        return data["ata"][node], node
+    if kind == "linux-nvme":
+        node = sorted(data["nvme"])[0]
+        return data["nvme"][node], node
+    if kind == "windows-health":
+        path = sorted(data["disks"])[0]
+        return data["disks"][path]["ata"], path
+    if kind == "windows-device":
+        path = sorted(data["disks"])[0]
+        return data["disks"][path], path
+    msg = f"unknown case kind: {kind}"
+    raise AssertionError(msg)
+
+
+_CASES: tuple[_RefusalCase, ...] = (
+    *(
+        _RefusalCase(kind="linux-ata", fixture="linux-sas-hba.json", field=field, reading=reading)
+        for field, reading in _refusal_fields(AtaBlobs)
+    ),
+    *(
+        _RefusalCase(kind="linux-nvme", fixture="linux-nvme-board.json", field=field, reading=reading)
+        for field, reading in _refusal_fields(NvmeBlobs)
+    ),
+    *(
+        _RefusalCase(kind="windows-health", fixture="windows-ahci.json", field=field, reading=reading)
+        for field, reading in _refusal_fields(HealthBlobs)
+    ),
+    *(
+        _RefusalCase(kind="windows-device", fixture="windows-ahci.json", field=field, reading=reading)
+        for field, reading in _refusal_fields(DiskEntry)
+    ),
+)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("case", _CASES, ids=[f"{case.kind}:{case.field}" for case in _CASES])
+def test_every_refusal_field_reaches_skipped_and_readings_refused(
+    case: _RefusalCase,
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+) -> None:
+    """Every refusal field a capture model carries surfaces both ways.
+
+    Parametrized over every ``*_error`` field :func:`_refusal_fields` reads off
+    the three disk capture models (never hand-listed), so a field one builder
+    forgets to pass into ``refusals_of`` fails here rather than surviving a
+    mutation pass silently. The read direction matters as much as the write:
+    a field dropped between the typed capture and ``readings_refused`` is
+    invisible to a test that only plants the JSON and checks it parses.
+    """
+
+    def plant(data: dict[str, Any]) -> None:
+        entry, _ = _container_for(data, case.kind)
+        _plant_refusal(entry, case.field)
+
+    capture = capture_with(case.fixture, plant, tmp_path)
+    envelope = envelope_of(capture, cli_runner, production_factory)
+
+    named = refusal_lines(envelope)
+    assert any(entry.startswith(f"{case.reading}: ") for entry in named), (
+        f"{case.reading} is not in skipped: {envelope['skipped']}"
+    )
+
+    devices = [*envelope["data"]["disks"], *envelope["data"]["virtual_disks"]]
+    carried = [
+        refused
+        for device in devices
+        for refused in device["readings_refused"]
+        if refused["reading"] == case.reading and refused["reason"] == REFUSAL
+    ]
+    assert carried, f"no disk carries {case.reading} in readings_refused: {devices}"
+
+
+@pytest.mark.os_agnostic
+def test_a_virtual_disks_refusal_is_named_in_skipped(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+) -> None:
+    """A kernel-virtual device's refusal is named too, not only a physical one.
+
+    ``_refusals_named`` walks ``(*inventory.disks, *inventory.virtual_disks)``,
+    and the virtual half has no other test proving it is read: dropping it from
+    that tuple would still pass every other test in this file, because none of
+    them plants a refusal on a device the reader put under the kernel's
+    virtual tree. ``loop0`` is such a device in ``linux-minimal.json``, and it
+    is built through the same ``_build_ata_disk`` as a physical drive, so an
+    ``ata`` entry keyed by its node plants a refusal on it exactly as it would
+    on ``sda``.
+    """
+
+    def plant(data: dict[str, Any]) -> None:
+        data["ata"]["loop0"] = {"error": REFUSAL}
+
+    capture = capture_with("linux-minimal.json", plant, tmp_path)
+    envelope = envelope_of(capture, cli_runner, production_factory)
+
+    named = refusal_lines(envelope)
+    assert any("loop0" in entry and entry.startswith("device: ") for entry in named), (
+        f"the virtual device's refusal is not in skipped: {envelope['skipped']}"
+    )
+
+    virtual = [disk for disk in envelope["data"]["virtual_disks"] if disk["node"] == "loop0"]
+    assert virtual, f"loop0 is not among the virtual disks: {envelope['data']['virtual_disks']}"
+    assert virtual[0]["readings_refused"] == [{"reading": "device", "reason": REFUSAL}], virtual[0]["readings_refused"]
 
 
 @pytest.mark.os_agnostic
