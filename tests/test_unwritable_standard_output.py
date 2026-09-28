@@ -282,9 +282,7 @@ def test_a_snapshot_to_a_file_says_the_capture_landed_when_standard_output_refus
     target = tmp_path / "capture.json"
 
     with Path("/dev/full").open("wb") as full:
-        run = _launch(
-            ["snapshot", "-o", str(target), "--format", output_format], stdout=full, tmp_path=tmp_path
-        )
+        run = _launch(["snapshot", "-o", str(target), "--format", output_format], stdout=full, tmp_path=tmp_path)
 
     assert run.code == ExitCode.IO_ERROR, f"exit {run.code}; stderr: {run.stderr!r}"
     assert target.stat().st_size > 0, "the capture file is empty, so the control this test rests on failed"
