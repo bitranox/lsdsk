@@ -7,6 +7,27 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
+- **A machine with thousands of controllers or drives is diagnosed through
+  indexes rather than a walk per subject.** Finding a better slot for a capped
+  card, the ports beside a function at the PCIe floor, and a faster free port
+  for a port-capped drive each walked every port or every controller once per
+  subject. Measured on 250 to 2,000 bridge-and-AHCI pairs, `findings` took 0.31
+  to 22.2 seconds; it now takes 0.01 to 0.10. Port-capped drives at 250 to
+  4,000 took 0.02 to 11.7 seconds and now take 0.01 to 0.13. The findings are
+  byte-identical on every committed capture and a 6,000-machine fuzz corpus.
+- **The interactive SMART and findings pages are rendered once per width.**
+  Textual measured and redrew the whole page five times on opening, three on a
+  resize and twice on a rescan. Opening the SMART page of 1,000 drives took 3.4
+  seconds and now takes 0.8; a resize there took 2.2 and now takes 0.7. What a
+  reader sees is unchanged, cell for cell.
+- **The counter history is written as compact JSON.** A full series costs 212 KB
+  instead of 295 KB, so a machine can keep about 40 percent more drives before
+  the store reaches the size lsdsk reads.
+- **The source distribution is an allowlist of the files git tracks.** An sdist
+  built inside a git worktree under `.claude/` applied no `.gitignore` pattern
+  at all and shipped whatever lay in the checkout, `.env` and the working state
+  files included.
+
 - **`snapshot -o -` writes the capture to standard output.** It used to exit 0
   saying `Wrote -` and leave a file literally named `-` in the working
   directory, holding every drive's serial number. A dash now means stdout, as it
@@ -65,6 +86,53 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   including two drives carrying one name being promised together.
 
 ### Fixed
+
+- **A standard error that refuses a write costs only the diagnostic.** With
+  stderr on a full disk (`2>/dev/full`, `ENOSPC`, `EIO`) the first warning's
+  failure escaped, the run left `120` - a code no document lists - and stdout
+  carried nothing; a `findings --format json` report of 160,723 bytes was lost.
+  The report and the command's own code now stand.
+- **A crash whose stderr reader has gone leaves `70`.** It left `1`, the code
+  for a warning found on the machine, because the crash report was printed on
+  an unguarded console whose broken-pipe handler exits with `1`.
+- **A bare `lsdsk` prints the page, and `lsdsk tui` refuses with `22`, where the
+  view would draw into something that is not a terminal.** On Linux and macOS
+  the view draws on stderr, so `lsdsk 2>err.log` at a terminal opened a view
+  nobody could see - the screen stayed on the shell, 161,934 bytes of escape
+  sequences went into the file, and only a blind `q` ended it - and `2>&-`
+  hung. On Windows the view draws on stdout, so a redirected stderr keeps it.
+- **With the logging console on stdout or both, a departed stdout reader leaves
+  `141`.** The failure met the logging library's worker thread, where the
+  `141` never reached the exit code: the thread died, every later log line was
+  dropped and the shutdown waited out the queue's stop timeout. A full disk
+  there now leaves `74`.
+- **`lsdsk logdemo` previews logging on the guarded console.** With stderr's
+  reader gone it left `141` and an empty stdout.
+- **Capture text is always drawn as text.** A hostname carrying Rich markup
+  such as `box[/bold]` ended `controllers`, `disks`, `health`, `report`, `trend`
+  and the default page with `70`, and `[link=...]` became a terminal hyperlink.
+- **A refused capture or counter store quotes its keys inert and lists a bounded
+  number of problems.** A crafted key reached the terminal raw, so an OSC
+  sequence in it could retitle the window, write the clipboard or plant a
+  hyperlink; control characters are now shown as visible `\xNN` escapes, each
+  quoted key is cut at 80 characters, and the refusal lists 20 problems and
+  then `and N more`, where 100,000 crafted entries made 12 MB of stderr.
+- **Captures and counter stores are refused when one collection holds more than
+  65,536 entries.** Cost follows the entry count rather than the bytes: 200,000
+  empty PCI entries in a 4 MB capture took `findings` 7 seconds and 703 MB.
+  The refusal leaves `78` and names the collection.
+- **lsdsk never writes a history store or snapshot it could not read back.**
+  With a few hundred drives at a full series the store outgrew the read limit; every later run then
+  ignored it and `record` went on exiting `0` while nothing was kept. A store
+  or snapshot too large is now refused before it is written (`74`) and the old
+  one is kept.
+- **A history store is held to the sample cap as it is read.** A hand-made or
+  foreign store with more samples per drive than `max_samples_per_drive` slowed
+  every page (6.6 seconds for two series of 50,000); it is thinned on load as
+  `record` would have thinned it.
+- **A history save that failed while opening its temporary file closes the
+  descriptor.** Each failure leaked one.
+- **A copy of a domain value never answers from its original's cached index.**
 
 - **A bad `--profile` or an unreadable configuration file answers in JSON when
   JSON was asked for.** Both are refused before the subcommand parses its own
