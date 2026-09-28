@@ -120,6 +120,14 @@ def _stream_encoding(file: IO[Any] | None, *, err: bool = False) -> str | None:
 #: would describe something other than the thing that was changed.
 _REDIRECTED_DESCRIPTORS: Final[dict[int, int]] = {}
 
+#: Held across the check, the redirect and its record in :data:`_REDIRECTED_DESCRIPTORS`.
+#:
+#: The main thread and the logging worker can meet one failed stream at the same
+#: moment. Unlocked, both passed the membership check, both duplicated the
+#: descriptor, and the second record overwrote the first - leaving a duplicate
+#: that nothing, :func:`restore_original_streams` included, ever closed.
+_REDIRECTING: Final[threading.Lock] = threading.Lock()
+
 #: What a stdout write met where raising could not answer it, oldest first.
 #:
 #: Two places, one reason. lib_log_rich writes on a queue worker thread, and an
@@ -182,8 +190,24 @@ def _stop_writing_to(stream: IO[Any] | io.IOBase | None) -> None:
         descriptor = stream.fileno()
     except (AttributeError, OSError, ValueError):
         return
+    with _REDIRECTING:
+        if not _redirect_to_the_null_device(descriptor):
+            return
+    with contextlib.suppress(OSError, ValueError):
+        stream.flush()
+
+
+def _redirect_to_the_null_device(descriptor: int) -> bool:
+    """Point `descriptor` at the null device, recording what it named; the caller holds the lock.
+
+    Args:
+        descriptor: The descriptor to redirect.
+
+    Returns:
+        Whether it was redirected now, rather than already or not at all.
+    """
     if descriptor in _REDIRECTED_DESCRIPTORS:
-        return
+        return False
     # Two acquisitions, so two scopes: taken together, a failure on the second
     # returned with the first neither closed nor recorded, which means nothing
     # closes it later either. The realistic way the second fails is descriptor
@@ -192,19 +216,18 @@ def _stop_writing_to(stream: IO[Any] | io.IOBase | None) -> None:
     try:
         saved = os.dup(descriptor)
     except OSError:  # pragma: no cover - dup of a live descriptor
-        return
+        return False
     try:
         null = os.open(os.devnull, os.O_WRONLY)
     except OSError:  # pragma: no cover - the null device is always openable
         os.close(saved)
-        return
+        return False
     try:
         os.dup2(null, descriptor)
     finally:
         os.close(null)
     _REDIRECTED_DESCRIPTORS[descriptor] = saved
-    with contextlib.suppress(OSError, ValueError):
-        stream.flush()
+    return True
 
 
 def restore_original_streams() -> None:
@@ -232,15 +255,16 @@ def restore_original_streams() -> None:
         sys.stderr = None
     _RECORDED_STANDARD_OUTPUT_FAILURES.clear()
     _STANDARD_OUTPUT_FAILURE_SAID.clear()
-    while _REDIRECTED_DESCRIPTORS:
-        descriptor, saved = _REDIRECTED_DESCRIPTORS.popitem()
-        try:
-            os.dup2(saved, descriptor)
-        except OSError:  # pragma: no cover - the saved descriptor is this process's own
-            pass
-        finally:
-            with contextlib.suppress(OSError):
-                os.close(saved)
+    with _REDIRECTING:
+        while _REDIRECTED_DESCRIPTORS:
+            descriptor, saved = _REDIRECTED_DESCRIPTORS.popitem()
+            try:
+                os.dup2(saved, descriptor)
+            except OSError:  # pragma: no cover - the saved descriptor is this process's own
+                pass
+            finally:
+                with contextlib.suppress(OSError):
+                    os.close(saved)
 
 
 def _lose_the_diagnostic() -> None:
