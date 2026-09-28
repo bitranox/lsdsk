@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.4.0] 2026-09-28 02:50:38
+
 ### Changed
 
 - **`snapshot -o -` writes the capture to standard output.** It used to exit 0
