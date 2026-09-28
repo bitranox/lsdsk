@@ -46,7 +46,7 @@ from pydantic_core import PydanticCustomError
 
 from ...domain.errors import ConfigurationError, MissingFileError
 from ...domain.history import DiskSeries, History, Sample, thin
-from ...domain.text import visible_text
+from ...domain.text import MAX_DEVICE_TEXT, visible_text
 from ..atomicfile import replace_atomically
 from ..textfile import MAX_INPUT_BYTES, fits_a_bounded_read, read_json_bounded
 from ..validation import BOUNDED, MAX_ENTRIES, what_is_wrong_with_it
@@ -136,7 +136,10 @@ class HistoryFile(BaseModel):
 
     Attributes:
         schema_version: Format version. The wire key is ``schema``.
-        hostname: The machine these samples were taken on.
+        hostname: The machine these samples were taken on, at most
+            :data:`~lsdsk.domain.text.MAX_DEVICE_TEXT` characters like every
+            other string in the store. Bounded but not cleaned: a store for
+            another machine is refused quoting the name as the file spelled it.
         series: One series per drive. At most
             :data:`~lsdsk.adapters.validation.MAX_ENTRIES` of them, each of at
             most that many samples, both counted before anything in them is
@@ -152,7 +155,7 @@ class HistoryFile(BaseModel):
     model_config = {"populate_by_name": True}
 
     schema_version: int = Field(default=HISTORY_SCHEMA_VERSION, alias="schema")
-    hostname: str
+    hostname: Annotated[str, Field(max_length=MAX_DEVICE_TEXT)]
     series: Annotated[tuple[DiskSeries, ...], BOUNDED, BeforeValidator(_samples_within_bounds)] = ()
 
     @field_validator("series")

@@ -18,6 +18,7 @@ from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.history.store import load_history
 from lsdsk.domain.enums import CliCommand
 from lsdsk.domain.history import TrendVerdict
+from lsdsk.domain.text import MAX_DEVICE_TEXT
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -582,6 +583,24 @@ def _seed_foreign_store(path: Path) -> int:
         ("another machine's store", None),
         ("malformed json", '{"schema": 1, "hostname": "linux-sas-hba", "series": [ NOT JSON'),
         ("a truncated store", "{"),
+        # Every other piece of this store is valid and names this machine, so the
+        # length is the only reason it can be refused.
+        pytest.param(
+            "an identity past the device-text bound",
+            json.dumps(
+                {
+                    "schema": 1,
+                    "hostname": "linux-sas-hba",
+                    "series": [{"identity": "n" * (MAX_DEVICE_TEXT + 1), "model": "X", "samples": []}],
+                }
+            ),
+            id="identity-past-the-bound",
+        ),
+        pytest.param(
+            "a hostname past the device-text bound",
+            json.dumps({"schema": 1, "hostname": "h" * (MAX_DEVICE_TEXT + 1), "series": []}),
+            id="hostname-past-the-bound",
+        ),
     ],
 )
 def test_a_store_that_cannot_be_read_is_never_overwritten(

@@ -18,23 +18,11 @@ from typing import Annotated, TypeVar
 from pydantic import BaseModel, Field
 
 from ...domain.enums import Platform
+from ...domain.text import MAX_DEVICE_TEXT
 from ..validation import BOUNDED
 
 _Key = TypeVar("_Key")
 _Value = TypeVar("_Value")
-
-#: The longest a piece of text a DEVICE chose may be. Every one of these is an
-#: identifier, a name or a rate as the platform published it: four hex
-#: characters from sysfs, a model string, a driver name, `8.0 GT/s PCIe`. The
-#: bound is far above anything real and exists because the file ceiling is not a
-#: bound on what ONE field can do downstream - an identifier round-trips through
-#: an integer parse, a hex re-format and a per-character generator, which
-#: measured a 12 to 13x memory multiplier, so a single field inside the 64 MB
-#: file limit could reach roughly 800 MB, and a resolved device name is looked
-#: up once per device sharing its id, which multiplies it again. It does not
-#: cover the base64 payloads beside them: a 4096-byte IDENTIFY page encodes to
-#: more than this, so those carry their own bound below.
-MAX_DEVICE_TEXT = 4096
 
 #: The largest page a reader stores, decoded. A VPD page's two-byte length field
 #: allows 65,539 bytes, so the ceiling cannot sit at 64 KiB; it is the megabyte
@@ -55,6 +43,11 @@ MAX_ENCODED_PAYLOAD = 4 * -(-MAX_PAYLOAD_BYTES // 3)
 #: Text a capture carries - a name, identifier, rate, path or a reader's refusal -
 #: bounded. Optional fields spell it `DeviceText | None`, and a mapping bounds its
 #: KEY with it as well as its value, since a key can carry the same payload.
+#: The bound is :data:`lsdsk.domain.text.MAX_DEVICE_TEXT`, where the reason for
+#: its size is recorded; it is the domain's so a capture and the domain models
+#: it becomes cannot disagree about it. It does not cover the base64 payloads
+#: beside this text: a 4096-byte IDENTIFY page encodes to more than this, so
+#: those carry their own bound, :data:`EncodedPayload`.
 DeviceText = Annotated[str, Field(max_length=MAX_DEVICE_TEXT)]
 
 #: A binary page as base64, bounded. Decoded at fixed offsets rather than walked
