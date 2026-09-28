@@ -42,6 +42,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from ...domain.errors import ConfigurationError, MissingFileError
 from ...domain.history import DiskSeries, History, Sample
+from ...domain.text import visible_text
 from ..textfile import read_json_bounded
 from ..validation import what_is_wrong_with_it
 
@@ -238,9 +239,11 @@ def load_history(path: Path, *, hostname: str) -> History:
     if stored.hostname != hostname:
         # Serial numbers are only unique in practice, and a virtual machine will
         # hand out a synthetic one that its neighbours share. Merging two
-        # machines' stores would splice unrelated drives onto one series.
+        # machines' stores would splice unrelated drives onto one series. The
+        # stored name is quoted as the file wrote it, so it is quoted inert and
+        # cut short: repr kept its escapes harmless but not its length.
         message = (
-            f"{path} holds history for {stored.hostname!r}, not for {hostname!r}. "
+            f"{path} holds history for '{visible_text(stored.hostname)}', not for '{visible_text(hostname)}'. "
             "Point --history-file somewhere else rather than mixing two machines."
         )
         raise ConfigurationError(message)

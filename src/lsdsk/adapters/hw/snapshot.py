@@ -147,7 +147,10 @@ def build_from(reading: object) -> Inventory:
     try:
         capture = parse_capture(reading)
     except ValidationError as error:
-        message = f"This reading is not one lsdsk understands: {error}"
+        # Told the way a refused replay is: a live reading's keys are the
+        # machine's own names, as untrusted as a capture's, and the raw report
+        # carried them with their control characters and a line per problem.
+        message = f"This reading is not one lsdsk understands:\n{what_is_wrong_with_it(error)}"
         raise ConfigurationError(message) from error
     return _inventory_of(capture)
 

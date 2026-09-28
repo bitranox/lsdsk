@@ -160,11 +160,16 @@ def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, 
     widths = layout.widths
     chosen = layout.columns
 
+    # The title names the machine and the caption can name its devices, both
+    # chosen by whoever produced the capture. A string handed to Rich here is
+    # parsed as MARKUP, so a hostname of ``box[/bold]`` stopped the run with a
+    # MarkupError and a ``[link=...]`` one became a hyperlink; a Text is drawn
+    # as the characters it holds, on every console, the TUI's included.
     table = Table(
-        title=title,
+        title=Text(title),
         title_justify="left",
         title_style="bold",
-        caption=caption or None,
+        caption=Text(caption) if caption else None,
         caption_justify="left",
         caption_style=theme.STYLE_UNKNOWN,
         box=None,

@@ -27,6 +27,7 @@ import json
 from typing import TYPE_CHECKING, Any, Final
 
 from lsdsk.domain.errors import ConfigurationError, MissingFileError
+from lsdsk.domain.text import visible_text
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -281,7 +282,9 @@ def _object_without_repeated_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any
     entry: dict[str, Any] = {}
     for key, value in pairs:
         if key in entry:
-            message = f"the key {key!r} is given twice in one object"
+            # Quoted inert and cut short: the key is the file's, so it can carry
+            # an escape sequence or be most of the file.
+            message = f"the key '{visible_text(key)}' is given twice in one object"
             raise ValueError(message)
         entry[key] = value
     return entry
