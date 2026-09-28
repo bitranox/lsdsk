@@ -13,7 +13,7 @@ System Role:
 from __future__ import annotations
 
 from functools import cached_property
-from math import inf
+from math import inf, isnan
 from typing import TYPE_CHECKING, NamedTuple
 
 from pydantic import Field
@@ -23,7 +23,7 @@ from .enums import BusType, ControllerKind, DiskKind, Environment, PciPortKind, 
 from .text import DeviceText, OptionalDeviceText
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
 # Usable bandwidth of one PCIe lane in one direction, in GB/s, per link speed in
 # GT/s.  These are not raw signalling rates: they already account for the line
@@ -419,6 +419,53 @@ class PcieLink(DomainModel, frozen=True):
         return None
 
 
+def pci_bus_of(address: str) -> str | None:
+    """Return the domain and bus of a PCI address, which every port of one switch shares.
+
+    Args:
+        address: A PCI address such as ``0000:08:0d.0``.
+
+    Returns:
+        The address up to its last colon, or ``None`` when there is none.
+
+    Example:
+        >>> pci_bus_of("0000:08:0d.0")
+        '0000:08'
+        >>> pci_bus_of("unparsed") is None
+        True
+    """
+    bus, separator, _ = address.rpartition(":")
+    return bus if separator and bus else None
+
+
+def shared_maker(port_vendor: int | None, device_vendor: int | None) -> int | None:
+    """Return the vendor a port shares with a device behind it, or ``None``.
+
+    A function built into switch silicon carries the switch maker's vendor
+    identifier, as does the internal port in front of it. A separate part behind
+    that port carries its own maker's. An identifier that was not read on either
+    side is no evidence either way.
+
+    Args:
+        port_vendor: The vendor of the port.
+        device_vendor: The vendor of a device behind it.
+
+    Returns:
+        The vendor both carry, or ``None`` when they differ or the port's is unread.
+
+    Example:
+        >>> shared_maker(0x1022, 0x1022)
+        4130
+        >>> shared_maker(0x1022, 0x10EC) is None
+        True
+        >>> shared_maker(None, 0x1022) is None
+        True
+    """
+    if port_vendor is None or device_vendor != port_vendor:
+        return None
+    return port_vendor
+
+
 class PortChild(NamedTuple):
     """One device behind a port, as much of it as choosing between them needs.
 
@@ -630,6 +677,54 @@ class PcieSlot(DomainModel, frozen=True):
             return False
         need, capability = self.occupant_need_gbps, self.capability_gbps
         return need is not None and capability is not None and need < capability
+
+    @property
+    def switch_function_maker(self) -> int | None:
+        """The vendor this port shares with what sits behind it, which is how a switch's own function reads.
+
+        About the device the port DESCRIBES, which is the one hardest to displace
+        of however many sit behind it. To ask the same question of a particular
+        controller, compare its own vendor with the port's through
+        :func:`shared_maker`, because the device describing the port may be a
+        sibling.
+
+        Example:
+            >>> PcieSlot(address="a", link=PcieLink(), vendor=0x1022, occupant_vendor=0x1022).switch_function_maker
+            4130
+            >>> realtek = PcieSlot(address="a", link=PcieLink(), vendor=0x1022, occupant_vendor=0x10EC)
+            >>> realtek.switch_function_maker is None
+            True
+            >>> PcieSlot(address="a", link=PcieLink(), occupant_vendor=0x1022).switch_function_maker is None
+            True
+        """
+        return shared_maker(self.vendor, self.occupant_vendor)
+
+    @property
+    def capability_denies_a_function(self) -> bool:
+        """Whether this port's own capability rules out switch silicon behind it.
+
+        The vendor check cannot separate a chipset's built-in SATA function from
+        a genuinely Gen1 x1 card of the same maker plugged into that chipset's
+        switch. The port in front of each can: an INTERNAL port publishes the
+        floor as its own capability, a real downstream port publishes the
+        switch's. Measured in this repository's ``linux-sas-hba`` capture, an
+        Intel network controller at the floor sits behind an Intel port reading
+        5.0 GT/s x1.
+
+        A port whose capability was not read denies nothing. Windows exposes no
+        bridge capability at all without a kernel driver, so there the vendor
+        check stays the only evidence and this is ``False`` for every port.
+
+        Example:
+            >>> gen2 = PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=5.0, max_width=1)
+            >>> PcieSlot(address="a", link=gen2).capability_denies_a_function
+            True
+            >>> PcieSlot(address="a", link=PcieLink(max_speed_gtps=2.5, max_width=1)).capability_denies_a_function
+            False
+            >>> PcieSlot(address="a", link=PcieLink()).capability_denies_a_function
+            False
+        """
+        return self.link.capability_is_known and not self.link.capability_is_at_floor
 
     @property
     def occupant_description(self) -> str:
@@ -1266,6 +1361,75 @@ class Finding(DomainModel, frozen=True):
     action: OptionalDeviceText = None
 
 
+class _PlacedSlot(NamedTuple):
+    """A port and where it stands in the machine's port list.
+
+    Attributes:
+        position: Its index in :attr:`Inventory.slots`.
+        slot: The port.
+    """
+
+    position: int
+    slot: PcieSlot
+
+
+class _FirstAbove:
+    """Values in order, naming the first above a threshold that is not skipped.
+
+    A max tree over the values: a subtree whose best does not beat the
+    threshold is never entered, so a question costs a descent rather than a walk
+    along the list, plus one more descent for each skipped value that would
+    otherwise have been the answer. A NaN beats nothing, so it is held as minus
+    infinity, which beats nothing either - a max over a NaN depends on the order
+    it is taken in and would hide a real value beside it.
+
+    Example:
+        >>> rates = _FirstAbove([3.0, 12.0, 6.0])
+        >>> rates.first_above(4.0, skip=lambda at: False)
+        1
+        >>> rates.first_above(4.0, skip=lambda at: at == 1)
+        2
+        >>> rates.first_above(12.0, skip=lambda at: False) is None
+        True
+    """
+
+    def __init__(self, values: Sequence[float]) -> None:
+        """Build the tree.
+
+        Args:
+            values: The values, in the order the answer is the first of.
+        """
+        self._leaves = 1 << max(len(values) - 1, 0).bit_length()
+        self._best = [-inf] * (2 * self._leaves)
+        self._best[self._leaves : self._leaves + len(values)] = [-inf if isnan(value) else value for value in values]
+        for node in range(self._leaves - 1, 0, -1):
+            self._best[node] = max(self._best[2 * node], self._best[2 * node + 1])
+
+    def first_above(self, threshold: float, *, skip: Callable[[int], bool]) -> int | None:
+        """The position of the first value strictly above ``threshold`` that ``skip`` does not refuse.
+
+        Args:
+            threshold: What the value has to beat. A NaN is beaten by nothing.
+            skip: Refuses a position by index.
+
+        Returns:
+            The position, or ``None`` when no value qualifies.
+        """
+        pending = [1]
+        while pending:
+            node = pending.pop()
+            if not self._best[node] > threshold:
+                continue
+            if node >= self._leaves:
+                position = node - self._leaves
+                if not skip(position):
+                    return position
+                continue
+            # The right half is taken only once the left one has nothing.
+            pending.extend((2 * node + 1, 2 * node))
+        return None
+
+
 class Inventory(DomainModel, frozen=True):
     """Everything one scan found on one machine.
 
@@ -1374,6 +1538,278 @@ class Inventory(DomainModel, frozen=True):
             Each controller address against its controller.
         """
         return {controller.address: controller for controller in self.controllers}
+
+    def slot_at(self, address: str) -> PcieSlot | None:
+        """Return the port recorded at one address, the first where a capture names it twice.
+
+        Args:
+            address: PCI address of the port.
+
+        Returns:
+            The port, or ``None`` when no port was recorded there.
+
+        Example:
+            >>> port = PcieSlot(address="0000:00:01.0", link=PcieLink())
+            >>> Inventory(hostname="h", slots=(port,)).slot_at("0000:00:01.0") is port
+            True
+            >>> Inventory(hostname="h", slots=(port,)).slot_at("0000:00:02.0") is None
+            True
+        """
+        return self._slot_by_address.get(address)
+
+    @cached_property
+    def _slot_by_address(self) -> Mapping[str, PcieSlot]:
+        """The ports keyed by address, once per machine, keeping the first of a repeated one.
+
+        Every controller asks for the port it sits behind, and a walk of the
+        ports per controller made a machine cost the product of the two.
+
+        Returns:
+            Each port address against the first port recorded at it.
+        """
+        ports: dict[str, PcieSlot] = {}
+        for slot in self.slots:
+            ports.setdefault(slot.address, slot)
+        return ports
+
+    @property
+    def fastest_slot_speed_gtps(self) -> float | None:
+        """The highest speed any port on this machine supports, in GT/s, or ``None`` if none was read.
+
+        Folded in port order exactly as ``max`` folds it, so a crafted capture
+        carrying a NaN gets the answer a ``max`` over the ports always gave.
+
+        Example:
+            >>> fast = PcieSlot(address="a", link=PcieLink(max_speed_gtps=16.0))
+            >>> slow = PcieSlot(address="b", link=PcieLink(max_speed_gtps=8.0))
+            >>> Inventory(hostname="h", slots=(slow, fast)).fastest_slot_speed_gtps
+            16.0
+            >>> Inventory(hostname="h").fastest_slot_speed_gtps is None
+            True
+        """
+        return self._fastest_slot_speed
+
+    @cached_property
+    def _fastest_slot_speed(self) -> float | None:
+        """The fold behind :attr:`fastest_slot_speed_gtps`, once per machine.
+
+        Private, as every cached index here is: a public name would land among
+        the values ``dict(model)`` yields, and :meth:`DomainModel.with_changes`
+        would hand it back to validation as a field the model does not have.
+        """
+        speeds = [slot.link.max_speed_gtps for slot in self.slots if slot.link.max_speed_gtps is not None]
+        return max(speeds) if speeds else None
+
+    def bus_is_behind_a_bridge(self, bus: str) -> bool:
+        """Whether a bus is the secondary bus of a bridge this scan recorded.
+
+        Port records exist only for bridges, and each names as its occupant the
+        first device on the bus below it, so a record whose occupant sits on
+        this bus is the bridge the bus hangs behind: the upstream port of a
+        switch, or a root port above a multi-function device. A root bus has no
+        such record, because nothing above a root complex is a bridge. The bus
+        number cannot stand in for this test, since a machine with more than
+        one root complex numbers its root buses other than 00.
+
+        Args:
+            bus: Domain and bus, as :func:`pci_bus_of` gives them.
+
+        Returns:
+            Whether a recorded bridge has its occupant on that bus.
+
+        Example:
+            >>> upstream = PcieSlot(
+            ...     address="0000:07:00.0", link=PcieLink(), occupied=True, occupant_address="0000:08:00.0"
+            ... )
+            >>> Inventory(hostname="h", slots=(upstream,)).bus_is_behind_a_bridge("0000:08")
+            True
+            >>> Inventory(hostname="h", slots=(upstream,)).bus_is_behind_a_bridge("0000:00")
+            False
+        """
+        return bus in self._bridged_buses
+
+    @cached_property
+    def _bridged_buses(self) -> frozenset[str | None]:
+        """The bus of every port's occupant, once per machine."""
+        return frozenset(pci_bus_of(slot.occupant_address or "") for slot in self.slots)
+
+    def floor_functions_on(self, bus: str, maker: int) -> tuple[PcieSlot, ...]:
+        """Return the ports on one bus that hold one maker's own switch function at the PCIe floor.
+
+        Each is a port whose occupant reads the floor as both its running and
+        capable link, carries the vendor of the port in front of it, and whose
+        own capability does not rule switch silicon out - the three readings a
+        function built into a switch gives. They are the evidence a controller
+        at the floor on the same switch is judged by.
+
+        Args:
+            bus: Domain and bus of the switch's ports.
+            maker: The vendor the port and its occupant must both carry.
+
+        Returns:
+            Those ports, in inventory order.
+        """
+        return self._floor_functions_by_bus.get((bus, maker), ())
+
+    @cached_property
+    def _floor_functions_by_bus(self) -> Mapping[tuple[str | None, int], tuple[PcieSlot, ...]]:
+        """Group the ports holding a switch's own function at the floor by bus and maker, once per machine.
+
+        Asked once per controller at the floor, and a walk of the switch's ports
+        each time made a switch cost the square of the functions on it.
+
+        Returns:
+            Each bus and maker against those ports, in inventory order.
+        """
+        grouped: dict[tuple[str | None, int], list[PcieSlot]] = {}
+        for slot in self.slots:
+            maker = slot.switch_function_maker
+            occupant = slot.occupant_link
+            if maker is None or occupant is None or not occupant.is_at_floor or slot.capability_denies_a_function:
+                continue
+            grouped.setdefault((pci_bus_of(slot.address), maker), []).append(slot)
+        return {key: tuple(slots) for key, slots in grouped.items()}
+
+    def ports_running_above_floor_on(self, bus: str) -> tuple[PcieSlot, ...]:
+        """Return the ports on one bus whose occupant negotiated a link above the PCIe floor.
+
+        One of them shows the switch passes real links on rather than being
+        narrow everywhere.
+
+        Args:
+            bus: Domain and bus of the switch's ports.
+
+        Returns:
+            Those ports, in inventory order.
+        """
+        return self._ports_running_above_floor_by_bus.get(bus, ())
+
+    @cached_property
+    def _ports_running_above_floor_by_bus(self) -> Mapping[str | None, tuple[PcieSlot, ...]]:
+        """Group the ports whose occupant runs above the floor by bus, once per machine."""
+        grouped: dict[str | None, list[PcieSlot]] = {}
+        for slot in self.slots:
+            if slot.occupant_link is not None and slot.occupant_link.is_running_above_floor:
+                grouped.setdefault(pci_bus_of(slot.address), []).append(slot)
+        return {bus: tuple(slots) for bus, slots in grouped.items()}
+
+    def placement_candidates(self, *, besides: str | None, admits: Callable[[PcieSlot], bool]) -> tuple[PcieSlot, ...]:
+        """Return every port a search for a better seat could choose, one per group of interchangeable ports.
+
+        Ports that read identically to every placement search - the same
+        capability, the same move and swap standing, the same need of their
+        occupant - are judged identically by it, and a search that prefers the
+        earliest of equals can only ever choose the FIRST of them. So a search
+        over these answers exactly what a search over every port answers, and
+        costs the number of distinct port shapes rather than the number of
+        ports. Asked once per controller, the walk of every port was what made
+        a machine cost the product of its controllers and its ports.
+
+        That equivalence holds only for a test that reads nothing of a port but
+        what the grouping reads: :attr:`PcieLink.max_speed_gtps` and
+        :attr:`PcieLink.max_width` of its link, :attr:`PcieSlot.is_move_target`,
+        :attr:`PcieSlot.is_swap_candidate` and, for a swap candidate,
+        :attr:`PcieSlot.occupant_need_gbps`. A search reading more has to be
+        added to :attr:`_placement_groups` first.
+
+        Args:
+            besides: The address of the port the searching controller already
+                sits behind, which is never a candidate.
+            admits: The search's own test of a port.
+
+        Returns:
+            The first admitted port of each group that is not at ``besides``,
+            in inventory order.
+
+        Example:
+            >>> link = PcieLink(max_speed_gtps=8.0, max_width=4)
+            >>> ports = tuple(PcieSlot(address=f"0000:00:0{i}.0", link=link) for i in range(3))
+            >>> inventory = Inventory(hostname="h", slots=ports)
+            >>> [slot.address for slot in inventory.placement_candidates(besides=None, admits=lambda slot: True)]
+            ['0000:00:00.0']
+            >>> [
+            ...     slot.address
+            ...     for slot in inventory.placement_candidates(besides="0000:00:00.0", admits=lambda slot: True)
+            ... ]
+            ['0000:00:01.0']
+        """
+        chosen: list[_PlacedSlot] = []
+        for group in self._placement_groups:
+            if not admits(group[0].slot):
+                continue
+            first = next((placed for placed in group if placed.slot.address != besides), None)
+            if first is not None:
+                chosen.append(first)
+        return tuple(placed.slot for placed in sorted(chosen, key=lambda placed: placed.position))
+
+    @cached_property
+    def _placement_groups(self) -> tuple[tuple[_PlacedSlot, ...], ...]:
+        """Group the ports by everything a placement search reads of them, once per machine.
+
+        Returns:
+            The groups, each in inventory order with every port's position kept.
+        """
+        grouped: dict[tuple[object, ...], list[_PlacedSlot]] = {}
+        for position, slot in enumerate(self.slots):
+            swap = slot.is_swap_candidate
+            key = (
+                slot.link.max_speed_gtps,
+                slot.link.max_width,
+                slot.is_move_target,
+                swap,
+                slot.occupant_need_gbps if swap else None,
+            )
+            grouped.setdefault(key, []).append(_PlacedSlot(position, slot))
+        return tuple(tuple(group) for group in grouped.values())
+
+    def first_controller_with_a_free_port_faster_than(self, rate: float, *, besides: str | None) -> Controller | None:
+        """Return the first controller with a free port and a port faster than ``rate``.
+
+        The earliest in inventory order, as a walk of the controllers finds it,
+        but through an index: a drive capped by its port asks this once, and
+        walking every controller per drive made a machine of one drive per
+        controller cost the square of its controllers.
+
+        Args:
+            rate: The port rate to beat, in Gb/s.
+            besides: The address of the drive's own controller, which never
+                counts.
+
+        Returns:
+            The controller, or ``None`` when none has both.
+
+        Example:
+            >>> fast = InterfaceLink(port_max_gbps=6.0)
+            >>> free = Controller(address="b", name="free", port_count=4, ports_used=1)
+            >>> inventory = Inventory(
+            ...     hostname="h",
+            ...     controllers=(free,),
+            ...     disks=(Disk(node="sdb", path="/dev/sdb", model="m", controller_address="b", link=fast),),
+            ... )
+            >>> inventory.first_controller_with_a_free_port_faster_than(3.0, besides="a") is free
+            True
+            >>> inventory.first_controller_with_a_free_port_faster_than(3.0, besides="b") is None
+            True
+        """
+        candidates, rates = self._controllers_with_a_free_port
+        position = rates.first_above(rate, skip=lambda at: candidates[at].address == besides)
+        return None if position is None else candidates[position]
+
+    @cached_property
+    def _controllers_with_a_free_port(self) -> tuple[tuple[Controller, ...], _FirstAbove]:
+        """The controllers with a free port and a read port rate, in order, with their rates indexed.
+
+        Returns:
+            Those controllers, and a search over their fastest port rates.
+        """
+        candidates: list[Controller] = []
+        rates: list[float] = []
+        for controller in self.controllers:
+            rate = self.fastest_port_rate_on(controller.address)
+            if controller.ports_free and rate is not None:
+                candidates.append(controller)
+                rates.append(rate)
+        return tuple(candidates), _FirstAbove(rates)
 
     def disks_on(self, controller_address: str) -> tuple[Disk, ...]:
         """Return the disks attached to one controller.
@@ -1525,9 +1961,11 @@ __all__ = [
     "PortChild",
     "RefusedReading",
     "SmartAttribute",
+    "pci_bus_of",
     "pci_class_name",
     "pcie_bandwidth_gbps",
     "pcie_generation",
     "representative_occupant",
     "serial_bandwidth_gbps",
+    "shared_maker",
 ]
