@@ -45,6 +45,21 @@ def write_through(descriptor: int, body: str, *, sync: bool) -> None:
             character device does not: ``fsync`` on one fails with ``EINVAL``
             rather than meaning anything.
 
+    Raises:
+        OSError: If ``os.fdopen``, the write, the flush, ``fsync`` or the close
+            fails - a full disk, an I/O error, or ``EINVAL`` from ``fsync`` on a
+            character device when ``sync`` is set. The original exception
+            propagates unchanged, and the descriptor is closed either way.
+            Both callers let it through: :func:`replace_atomically` removes its
+            temporary file first, and the snapshot writer's in-place path
+            reports it as the failed write it is.
+        UnicodeEncodeError: If ``body`` holds a character UTF-8 cannot encode,
+            which is a lone surrogate. Neither caller can produce one - both
+            bodies are JSON a serialiser wrote, and ``json.dumps`` and pydantic
+            each escape or refuse a surrogate - so this is a contract for a new
+            caller rather than a path anything takes today. The descriptor is
+            closed here too.
+
     Example:
         >>> import tempfile
         >>> from pathlib import Path

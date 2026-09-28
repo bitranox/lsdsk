@@ -287,6 +287,13 @@ def write_unless_the_reader_left(emit: Callable[[], None], *, err: bool = True) 
             ``OSError`` for a stream that has gone.
         err: Whether `emit` writes to stderr, which is where diagnostics go.
 
+    Raises:
+        SystemExit: Re-raised unchanged when `emit` leaves with any code other
+            than :attr:`~.exit_codes.ExitCode.BROKEN_PIPE`. Only that code is
+            the departed-reader shape of the event this function absorbs; any
+            other is an exit something inside `emit` decided on, and swallowing
+            it would replace that decision with the run's earlier one.
+
     Side Effects:
         Points the written stream at the null device when its reader has left,
         so the interpreter's own exit flush cannot fail afterwards.
