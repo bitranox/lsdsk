@@ -45,12 +45,23 @@ SMART_READ_THRESHOLDS = 0xD1
 #: The fixed LBA-mid and LBA-high values every SMART command must carry.
 SMART_LBA_SIGNATURE = 0xC24F00
 
-#: The SAT operation code for the 16-byte form, which splits each register into
-#: a high and a low byte so 48-bit addressing fits.
+#: The SAT operation code for the 16-byte form. It is the form a USB SATA bridge
+#: was measured answering, and the one both readers send, although every command
+#: lsdsk issues is a 28-bit one that the 12-byte form could also carry.
 ATA_PASS_THROUGH_16 = 0x85
 
 #: SAT's PROTOCOL field value for a PIO data-in command, shifted into bits 1-4.
+#: Bit 0, EXTEND, stays clear: the command is a 28-bit one, so the translator
+#: ignores the high half of every register pair.
 _PIO_DATA_IN = 4 << 1
+
+#: The widest LBA a 28-bit command carries: 24 bits in LBA low/mid/high, and
+#: bits 27:24 in the low nibble of the DEVICE register.
+_LBA_28_LIMIT = 1 << 28
+
+#: The widest value an 8-bit register carries, which is what the features and
+#: sector count registers are in a 28-bit command.
+_BYTE_LIMIT = 1 << 8
 
 #: T_DIR=1 (from the device), BYT_BLOK=1 (count in blocks), T_LENGTH=2 (the
 #: length is in the sector count field): transfer ``count`` sectors to the host.
@@ -58,17 +69,27 @@ _SECTORS_FROM_THE_DEVICE = 0x0E
 
 
 def ata_pass_through_16(*, command: int, feature: int = 0, lba: int = 0, count: int = 1) -> bytes:
-    """Build the ATA PASS-THROUGH(16) block for one read-only PIO data-in command.
+    """Build the ATA PASS-THROUGH(16) block for one read-only 28-bit PIO data-in command.
+
+    EXTEND is clear, so the translator issues a 28-bit command and ignores the
+    high byte of every register pair; nothing is written there, and a value that
+    would need one is refused rather than silently truncated.
 
     Args:
         command: The ATA command code.
-        feature: The features register.
-        lba: The LBA registers, which SMART uses as a fixed signature.
-        count: How many 512-byte sectors the command returns.
+        feature: The features register, one byte.
+        lba: The LBA registers, which SMART uses as a fixed signature. At most
+            28 bits: bits 27:24 go in the low nibble of the DEVICE register.
+        count: How many 512-byte sectors the command returns, one byte.
 
     Returns:
-        The 16 bytes of the command block. The device register is left at zero,
-        which SAT translators accept for these commands.
+        The 16 bytes of the command block. The upper nibble of the DEVICE
+        register is left at zero, which SAT translators accept for these
+        commands.
+
+    Raises:
+        ValueError: If ``lba``, ``feature`` or ``count`` does not fit the 28-bit
+            command's registers.
 
     Example:
         >>> ata_pass_through_16(command=ATA_IDENTIFY_DEVICE).hex()
@@ -77,21 +98,37 @@ def ata_pass_through_16(*, command: int, feature: int = 0, lba: int = 0, count: 
         >>> smart[4], smart[10], smart[12], smart[14]
         (208, 79, 194, 176)
     """
+    _require_within(name="lba", value=lba, limit=_LBA_28_LIMIT)
+    _require_within(name="feature", value=feature, limit=_BYTE_LIMIT)
+    _require_within(name="count", value=count, limit=_BYTE_LIMIT)
     block = bytearray(16)
     block[0] = ATA_PASS_THROUGH_16
     block[1] = _PIO_DATA_IN
     block[2] = _SECTORS_FROM_THE_DEVICE
-    block[3] = (feature >> 8) & 0xFF
-    block[4] = feature & 0xFF
-    block[5] = (count >> 8) & 0xFF
-    block[6] = count & 0xFF
-    # Each LBA byte's EXTEND half precedes its low half, which is why the three
-    # low bytes land at 8, 10 and 12 rather than side by side.
-    block[7] = (lba >> 24) & 0xFF
+    # Each register's EXTEND half (bytes 3, 5, 7, 9, 11) precedes its low half and
+    # stays zero, which is why the low bytes land at 4, 6, 8, 10 and 12 rather
+    # than side by side.
+    block[4] = feature
+    block[6] = count
     block[8] = lba & 0xFF
-    block[9] = (lba >> 32) & 0xFF
     block[10] = (lba >> 8) & 0xFF
-    block[11] = (lba >> 40) & 0xFF
     block[12] = (lba >> 16) & 0xFF
+    block[13] = (lba >> 24) & 0x0F
     block[14] = command
     return bytes(block)
+
+
+def _require_within(*, name: str, value: int, limit: int) -> None:
+    """Refuse a register value the 28-bit command has no room for.
+
+    Args:
+        name: The argument's name, which the message starts with.
+        value: The value asked for.
+        limit: One past the largest value the register carries.
+
+    Raises:
+        ValueError: If ``value`` is negative or not below ``limit``.
+    """
+    if not 0 <= value < limit:
+        msg = f"{name} {value:#x} does not fit a 28-bit ATA command (limit {limit - 1:#x})"
+        raise ValueError(msg)

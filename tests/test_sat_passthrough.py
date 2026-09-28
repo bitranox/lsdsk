@@ -40,13 +40,35 @@ def test_the_command_blocks_are_the_ones_a_real_bridge_answered() -> None:
 
 
 @pytest.mark.os_agnostic
-def test_a_48_bit_lba_and_a_wide_count_land_in_their_extend_bytes() -> None:
-    block = ata.ata_pass_through_16(command=0x25, feature=0x1234, lba=0x0A0B0C0D0E0F, count=0x0102)
+def test_a_28_bit_lba_puts_its_top_nibble_in_the_device_byte_and_writes_no_extend_byte() -> None:
+    """The block is a 28-bit command, so LBA 27:24 belongs in DEVICE and nothing in the EXTEND half.
 
-    assert (block[3], block[4]) == (0x12, 0x34)
-    assert (block[5], block[6]) == (0x01, 0x02)
-    assert (block[7], block[9], block[11]) == (0x0C, 0x0B, 0x0A)
-    assert (block[8], block[10], block[12]) == (0x0F, 0x0E, 0x0D)
+    With EXTEND clear a translator issues a 28-bit command and ignores bytes 3, 5,
+    7, 9 and 11, so a value written there is silently dropped and LBA 27:24 has
+    to travel in the low nibble of the DEVICE byte instead.
+    """
+    block = ata.ata_pass_through_16(command=0x20, feature=0xAB, lba=0x0A0B0C0D, count=0xFF)
+
+    assert block[1] & 0x01 == 0, "EXTEND is set, so this is no longer the 28-bit command it is documented as"
+    assert (block[4], block[6]) == (0xAB, 0xFF)
+    assert (block[8], block[10], block[12]) == (0x0D, 0x0C, 0x0B)
+    assert block[13] == 0x0A
+    assert (block[3], block[5], block[7], block[9], block[11]) == (0, 0, 0, 0, 0)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("arguments", "named"),
+    [
+        pytest.param({"lba": 1 << 28}, "lba", id="an LBA past 28 bits"),
+        pytest.param({"count": 256}, "count", id="a count past one byte"),
+        pytest.param({"feature": 0x100}, "feature", id="a feature past one byte"),
+        pytest.param({"lba": -1}, "lba", id="a negative LBA"),
+    ],
+)
+def test_a_register_value_a_28_bit_command_cannot_carry_is_refused(arguments: dict[str, int], named: str) -> None:
+    with pytest.raises(ValueError, match=rf"^{named} "):
+        ata.ata_pass_through_16(command=0x20, **arguments)
 
 
 #: What the fake ATA ioctl returns when it answers in full.
