@@ -21,6 +21,7 @@ from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import theme
 from lsdsk.adapters.render.full import render_full
 from lsdsk.adapters.render.report import severity_index
+from lsdsk.adapters.render.tree import render_fabric
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import Severity
 from lsdsk.domain.models import Finding, Inventory
@@ -84,15 +85,23 @@ def _walks_to_render(count: int, *, with_fabric: bool) -> int:
     machine, findings = _scaled(count, with_fabric=with_fabric)
     console = Console(width=160, no_color=True)
     _CountedFindings.walks = 0
-    with console.capture() as capture:
+    with console.capture():
         console.print(render_full(machine, findings, 160))
     walks = _CountedFindings.walks
-    page = capture.get()
-    marked = [line for line in page.splitlines() if "/dev/sdz" in line and theme.marker_for(Severity.WARNING) in line]
-    # The control: every drive's warning reached a row somewhere on the page.
-    # Without it an arm that drew no markers at all would walk the findings
-    # the same number of times at any size and pass for the wrong reason.
-    assert len(marked) >= count, f"only {len(marked)} of {count} drives carried their marker"
+    # The control: every drive's warning reached a row of the TOPOLOGY section,
+    # which is the tree this arm is named for - the fabric, or the
+    # disk-and-controller tree a capture with no PCI reading gets. Without it an
+    # arm that drew no markers at all would walk the findings the same number of
+    # times at any size and pass for the wrong reason. Counted over the section
+    # alone, because the disks and health tables further down the page mark
+    # every drive too, and a count over the whole page stayed satisfied by them
+    # with every marker gone from the tree.
+    with console.capture() as section:
+        console.print(render_fabric(machine, tuple(findings), 160))
+    marked = [
+        line for line in section.get().splitlines() if "/dev/sdz" in line and theme.marker_for(Severity.WARNING) in line
+    ]
+    assert len(marked) == count, f"only {len(marked)} of {count} drives carried their marker in the tree"
     return walks
 
 
