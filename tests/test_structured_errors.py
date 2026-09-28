@@ -305,3 +305,88 @@ def test_a_code_no_exit_member_names_is_reported_as_the_code_itself() -> None:
     assert error_type_for(int(ExitCode.CONFIG_ERROR)) == "CONFIG_ERROR"
     assert error_type_for(2) == "USAGE_ERROR"
     assert error_type_for(99) == "EXIT_99"
+
+
+@pytest.fixture
+def malformed_config(user_config_dir: Path) -> Path:
+    """A user configuration file that is not valid TOML, where this platform reads one."""
+    user_config_dir.mkdir(parents=True, exist_ok=True)
+    broken = user_config_dir / "config.toml"
+    broken.write_text("[display\n", encoding="utf-8")
+    from lsdsk.adapters.config.loader import get_config
+
+    get_config.cache_clear()
+    return broken
+
+
+_ROOT_REFUSALS = [
+    pytest.param(["--profile", "bad/name"], ExitCode.INVALID_ARGUMENT, "bad/name", id="a profile with a slash"),
+    pytest.param(["--profile", "p" * 65], ExitCode.INVALID_ARGUMENT, "64", id="a profile past the length limit"),
+]
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(("root", "code", "names"), _ROOT_REFUSALS)
+def test_a_refusal_in_the_root_group_answers_in_json_when_the_command_line_asked_for_it(
+    root: list[str],
+    code: ExitCode,
+    names: str,
+    production_factory: Callable[[], Any],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A refusal raised before the subcommand runs still answers in its format.
+
+    The root group validates the profile before any subcommand parses its own
+    ``--format``, and that refusal escaped as a plain exception: the code was
+    right and stdout was EMPTY, which is the silence the envelope exists to end.
+    A click refusal raised at the same point already answered, so this was one
+    class of failure left behind rather than a place no answer could come from.
+    """
+    code_left, out, err = _refused_command_line(
+        [*root, "disks", "--replay", str(CAPTURE), "--format", "json"], production_factory, capsys
+    )
+
+    assert code_left == code, f"left {code_left}; stderr was {err!r}"
+    payload = json.loads(out)
+    assert payload["ok"] is False
+    assert payload["command"] == "disks", f"the envelope names {payload['command']!r} rather than the command run"
+    assert payload["error"]["type"] == code.name, f"the typed error is {payload['error']['type']!r}"
+    assert names in payload["error"]["message"], f"the message {payload['error']['message']!r} says nothing useful"
+    assert err.startswith("Error:"), f"the prose on stderr is {err!r}, not a refusal a person recognises"
+
+
+@pytest.mark.os_posix
+def test_a_malformed_configuration_file_answers_in_json_when_the_command_line_asked_for_it(
+    malformed_config: Path,
+    production_factory: Callable[[], Any],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The configuration is loaded in the root group too, and refused the same way."""
+    code, out, err = _refused_command_line(
+        ["disks", "--replay", str(CAPTURE), "--format", "json"], production_factory, capsys
+    )
+
+    assert code == ExitCode.CONFIG_ERROR, f"left {code}; stderr was {err!r}"
+    payload = json.loads(out)
+    assert payload["ok"] is False
+    assert payload["command"] == "disks"
+    assert payload["error"]["type"] == "CONFIG_ERROR"
+    assert str(malformed_config.name) in payload["error"]["message"]
+    assert err.startswith("Error:")
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(("root", "code", "names"), _ROOT_REFUSALS)
+def test_a_refusal_in_the_root_group_keeps_stdout_empty_unless_json_was_asked_for(
+    root: list[str],
+    code: ExitCode,
+    names: str,
+    production_factory: Callable[[], Any],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The control: the same refusal in the human default puts nothing on stdout."""
+    code_left, out, err = _refused_command_line([*root, "disks", "--replay", str(CAPTURE)], production_factory, capsys)
+
+    assert code_left == code
+    assert out == "", f"stdout carried {out!r} although no format was asked for"
+    assert names in err

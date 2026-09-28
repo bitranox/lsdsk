@@ -247,6 +247,42 @@ def asked_for_json(args: Sequence[str]) -> bool:
     return chosen is not None and chosen.casefold() == OutputFormat.JSON.value.casefold()
 
 
+class RefusedBeforeTheRun(SystemExit):
+    """A refusal the root group makes before the subcommand has parsed its options.
+
+    The root group validates the profile and loads the configuration before any
+    subcommand runs, and click has already taken the subcommand's arguments off
+    the group's context by then, so no ``--format`` can be read where the
+    refusal happens. The entry point still holds the command line, so the
+    refusal travels up to it: :func:`~.main._run_cli` adds the failure envelope
+    when that command line asked for JSON. Answered in prose alone, such a run
+    left the right code and an EMPTY stdout, which a ``--format json`` pipeline
+    cannot tell from a command that produced no data.
+
+    A ``SystemExit`` rather than click's own refusal, because rich-click draws
+    click's refusals as a boxed panel under click's standalone mode and the
+    plain ``Error:`` line is what every refusal here prints.
+
+    Attributes:
+        exit_code: The code to leave with.
+        message: The refusal, as one sentence, with no ``Error:`` prefix.
+        command: The subcommand that was about to run, or ``None``.
+    """
+
+    def __init__(self, message: str, *, code: ExitCode, command: str | None) -> None:
+        """Carry the refusal to the entry point.
+
+        Args:
+            message: The refusal, as one sentence, with no ``Error:`` prefix.
+            code: The exit code the process leaves with.
+            command: The subcommand that was about to run, or ``None``.
+        """
+        super().__init__(int(code))
+        self.exit_code = int(code)
+        self.message = message
+        self.command = command
+
+
 def emit_error(command: str, code: int, message: str) -> None:
     """Write the failure envelope for `command` as one object on stdout.
 
@@ -319,6 +355,7 @@ __all__ = [
     "ErrorDetail",
     "ErrorEnvelope",
     "MappingResult",
+    "RefusedBeforeTheRun",
     "asked_for_json",
     "emit_action",
     "emit_error",

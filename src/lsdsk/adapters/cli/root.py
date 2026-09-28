@@ -22,6 +22,7 @@ from lib_layered_config import ConfigError
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.history import read_history_settings
 from lsdsk.adapters.config.known_keys import nearest_known_key, unknown_owned_keys
+from lsdsk.adapters.config.loader import validate_profile
 from lsdsk.adapters.config.overrides import apply_overrides
 from lsdsk.adapters.config.profiles import contributed_layers, existing_profiles, nearest_profile
 from lsdsk.adapters.config.tunables import read_display_settings, read_thresholds
@@ -30,10 +31,13 @@ from lsdsk.domain.enums import TreeDensity
 from . import safe_console
 from .constants import CLICK_CONTEXT_SETTINGS, TREE_DENSITY_TOKENS
 from .context import CLIContext, apply_traceback_preferences, store_cli_context
+from .envelope import RefusedBeforeTheRun
 from .exit_codes import ExitCode
 from .typed_click import option
 
 if TYPE_CHECKING:
+    from typing import NoReturn
+
     from lib_layered_config import Config
 
     from lsdsk.composition import AppServices
@@ -96,7 +100,7 @@ def _report_keys_nothing_reads(config: Config) -> None:
         safe_console.echo(f"Warning: ignoring {dotted}: [{section}] has no such key.{meant}", err=True)
 
 
-def _load_or_refuse(services: AppServices, *, profile: str | None, env_file: str | None) -> Config:
+def _load_or_refuse(ctx: click.Context, services: AppServices, *, profile: str | None, env_file: str | None) -> Config:
     """Load the configuration, or refuse as a CONFIGURATION error and say so.
 
     A configuration file this tool cannot parse used to escape as the layered
@@ -110,11 +114,17 @@ def _load_or_refuse(services: AppServices, *, profile: str | None, env_file: str
     the library's own error type is caught, so a bug here still reaches the
     handler that honours ``--traceback``.
 
-    The message goes to stderr in prose rather than through the envelope,
-    because the failure happens in the root group: the subcommand's
-    ``--format`` has not been parsed yet, so there is no format to answer in.
+    A profile whose NAME the library refuses is refused here too, as ``22``,
+    before anything is read. Validated on its own rather than by catching what
+    the loader raises, because the loader signals a bad name with a plain
+    ``ValueError`` and catching that around the whole load would turn any bug
+    inside it into a refusal with no traceback.
+
+    Both refusals answer through :func:`_refuse_before_the_run`, in JSON where
+    the subcommand's own arguments asked for it.
 
     Args:
+        ctx: The root group's context, holding the subcommand and its arguments.
         services: The wired adapters, whose loader is called.
         profile: The profile asked for on the command line.
         env_file: An explicit ``.env`` path, or ``None``.
@@ -123,13 +133,43 @@ def _load_or_refuse(services: AppServices, *, profile: str | None, env_file: str
         The merged configuration.
 
     Raises:
-        SystemExit: With ``CONFIG_ERROR`` when the configuration cannot load.
+        RefusedBeforeTheRun: With ``INVALID_ARGUMENT`` for a profile name the
+            library refuses, and ``CONFIG_ERROR`` when the configuration cannot
+            load.
     """
+    if profile is not None:
+        try:
+            validate_profile(profile)
+        except ValueError as error:
+            _refuse_before_the_run(ctx, str(error), ExitCode.INVALID_ARGUMENT)
     try:
         return services.get_config(profile=profile, dotenv_path=env_file)
     except ConfigError as error:
-        safe_console.echo(f"Error: {error}", err=True)
-        raise SystemExit(ExitCode.CONFIG_ERROR) from None
+        _refuse_before_the_run(ctx, str(error), ExitCode.CONFIG_ERROR)
+
+
+def _refuse_before_the_run(ctx: click.Context, message: str, code: ExitCode) -> NoReturn:
+    """Refuse from the root group: the sentence now, the envelope at the entry point.
+
+    The sentence goes to stderr here. The envelope cannot: click has taken the
+    subcommand's arguments off this context before the group's callback runs, so
+    whether JSON was asked for is only known where the command line is, and
+    :class:`~.envelope.RefusedBeforeTheRun` carries the refusal there.
+
+    Not :func:`~.envelope.fail`, which names the command from the CURRENT
+    context - here the root group, where the envelope should name the
+    subcommand that was about to run.
+
+    Args:
+        ctx: The root group's context.
+        message: The refusal, as one sentence, with no ``Error:`` prefix.
+        code: The exit code to leave with, whose name becomes the error type.
+
+    Raises:
+        RefusedBeforeTheRun: Always, with `code`.
+    """
+    safe_console.echo(f"Error: {message}", err=True)
+    raise RefusedBeforeTheRun(message, code=code, command=ctx.invoked_subcommand) from None
 
 
 def _report_profile_that_named_nothing(config: Config, profile: str | None) -> None:
@@ -336,7 +376,7 @@ def cli(
     # cast, not a type: ignore - Click types ``obj`` as Any, and this project
     # closes such gaps with a cast to the real type (see typed_click.py).
     services = cast("AppServices", ctx.obj())
-    config = _load_or_refuse(services, profile=profile, env_file=env_file)
+    config = _load_or_refuse(ctx, services, profile=profile, env_file=env_file)
     _report_profile_that_named_nothing(config, profile)
     _report_keys_nothing_reads(config)
     config = _apply_cli_overrides(config, set_overrides)

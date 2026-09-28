@@ -66,6 +66,16 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **A bad `--profile` or an unreadable configuration file answers in JSON when
+  JSON was asked for.** Both are refused before the subcommand parses its own
+  options, and both left the right code (`22` and `78`) with nothing at all on
+  stdout, so a `--format json` pipeline could not tell them from a command that
+  produced no data - the silence the failure envelope exists to end, and which a
+  mistyped option at the same point no longer had. They now print the same
+  `{"ok": false, "command": ..., "error": {...}}` object, naming the subcommand
+  that was about to run. A profile name the library refuses also reads
+  `Error: profile contains invalid characters: ...` on stderr instead of
+  `ValueError: ...`.
 - **A `history.path` that names no location falls back instead of crashing.**
   `~name` for a user the machine does not have made the run die with
   `RuntimeError: Could not determine home directory` and exit `70`; a path

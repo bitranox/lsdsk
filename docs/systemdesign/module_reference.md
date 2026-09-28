@@ -234,10 +234,10 @@ failure differently from the log line beside it. The `type` is
 `error_type_for(code)`, which answers with the member's own name, not a second
 vocabulary, so a new code cannot be added without its name arriving with it.
 
-A command line click REFUSES is answered the same way, and is the one failure
-class where the format cannot be read from a parameter: click raises before any
-command callback runs, so nothing has processed `--format` and no subcommand
-context holds it. `envelope.asked_for_json` therefore reads the command line
+A command line click REFUSES is answered the same way, and is one of the two
+failure classes where the format cannot be read from a parameter: click raises
+before any command callback runs, so nothing has processed `--format` and no
+subcommand context holds it. `envelope.asked_for_json` therefore reads the command line
 itself, which is the only place that intent survives - both spellings click
 accepts, the value case-insensitively, the last one winning as click does, and
 nothing past a bare `--`. It is the single reader of `--format` that can disagree
@@ -247,6 +247,16 @@ flag, as in `--replay --format json`, where click takes `--format` as
 `--replay`'s value. Which command failed is NOT read from the command line: it
 comes from `exc.ctx.info_name`, which is the subcommand for an error inside one
 and the program name for an unknown command.
+
+The other class is a refusal the ROOT GROUP makes - a profile name the library
+refuses (`22`) or a configuration file it cannot parse (`78`) - which happens
+before the subcommand parses its options. click has already taken the
+subcommand's arguments off the group's context by then, so the root writes the
+sentence to stderr and raises `envelope.RefusedBeforeTheRun`, a `SystemExit`
+carrying the message and `ctx.invoked_subcommand`; `main._run_cli`, which still
+holds the command line, adds the envelope when `asked_for_json` says so. It is a
+`SystemExit` rather than click's own refusal because rich-click boxes click's
+refusals under standalone mode, splitting a long path across the box.
 
 `141` sits with neither of those, however much it looks like a signal code. Nothing
 translates a broken pipe: Click catches the `EPIPE` in its own `main` and calls

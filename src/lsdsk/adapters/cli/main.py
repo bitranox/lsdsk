@@ -33,6 +33,8 @@ if TYPE_CHECKING:
 
     from lsdsk.composition import AppServices
 
+    from .envelope import RefusedBeforeTheRun
+
 
 def _display_settings() -> DisplaySettings:
     """Layout settings for the error path, falling back to the shipped ones.
@@ -83,6 +85,41 @@ def _answer_a_refused_command_line(exc: click.ClickException, args: Sequence[str
     )
 
 
+def _answer_a_refusal_before_the_run(exc: RefusedBeforeTheRun, args: Sequence[str]) -> None:
+    """Add the failure envelope for a refusal the root group made, if JSON was asked for.
+
+    The sentence is already on stderr; the root group wrote it. Read from the
+    command line for the same reason as :func:`_answer_a_refused_command_line`:
+    no subcommand has parsed its ``--format`` when the root group refuses.
+
+    Args:
+        exc: The refusal the root group raised.
+        args: The command line, without the program name.
+    """
+    from .envelope import UNNAMED_COMMAND, asked_for_json, emit_error  # noqa: PLC0415 - deferred: see above
+
+    if asked_for_json(args):
+        safe_console.write_unless_the_reader_left(
+            lambda: emit_error(exc.command or UNNAMED_COMMAND, exc.exit_code, exc.message),
+            err=False,
+        )
+
+
+def _code_a_command_chose(exc: SystemExit) -> int:
+    """The exit code a ``SystemExit`` states: ``None`` is 0, a non-integer is 1.
+
+    Args:
+        exc: The ``SystemExit`` a command raised.
+
+    Returns:
+        The code to leave with.
+    """
+    code = exc.code
+    if code is None:
+        return 0
+    return code if isinstance(code, int) else 1
+
+
 def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppServices]) -> int:
     """Execute the CLI with exception handling.
 
@@ -93,6 +130,7 @@ def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppSe
     Returns:
         Exit code produced by the command.
     """
+    from .envelope import RefusedBeforeTheRun  # noqa: PLC0415 - deferred with the command tree below
     from .root import cli  # noqa: PLC0415 - deferred: lazy-loads the command tree so importing main stays cheap
 
     # Use Click's native invocation with obj parameter since lib_cli_exit_tools.run_cli
@@ -121,10 +159,9 @@ def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppSe
         # with, which is ordinary control flow: `scan` exits 1 when it finds
         # something wrong. Falling through to the handler below would print
         # "SystemExit: 1" at the user as though the tool had broken.
-        code = exc.code
-        if code is None:
-            return 0
-        return code if isinstance(code, int) else 1
+        if isinstance(exc, RefusedBeforeTheRun):
+            _answer_a_refusal_before_the_run(exc, args)
+        return _code_a_command_chose(exc)
     except BaseException as exc:
         # Catch BaseException (not just Exception) to handle SystemExit, KeyboardInterrupt,
         # and all errors at the CLI boundary. This ensures consistent error formatting via
