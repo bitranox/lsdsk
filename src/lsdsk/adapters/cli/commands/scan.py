@@ -575,11 +575,31 @@ def streams_that_are_not_terminals() -> list[str]:
         on it, ``"standard error"``, each included when that stream is missing
         or not a terminal. Empty when somebody is sitting at every one of them.
     """
-    streams = [("standard input", sys.stdin), ("standard output", sys.stdout)]
+    return [name for name, stream in _streams_the_view_needs() if not (stream is not None and stream.isatty())]
+
+
+def names_of_the_streams_the_view_needs() -> list[str]:
+    """Name every standard stream the interactive view needs on this platform.
+
+    Returns:
+        ``"standard input"`` and ``"standard output"``, and ``"standard error"``
+        where the view draws on it - so a refusal names the requirement that
+        holds here rather than another platform's.
+    """
+    return [name for name, _ in _streams_the_view_needs()]
+
+
+def _streams_the_view_needs() -> list[tuple[str, TextIO | None]]:
+    """Pair each stream the interactive view needs with its name.
+
+    Returns:
+        stdin and stdout, then the drawing stream where it is a third one.
+    """
+    streams: list[tuple[str, TextIO | None]] = [("standard input", sys.stdin), ("standard output", sys.stdout)]
     drawing = _drawing_stream()
     if drawing is not None:
         streams.append(drawing)
-    return [name for name, stream in streams if not (stream is not None and stream.isatty())]
+    return streams
 
 
 def _drawing_stream() -> tuple[str, TextIO | None] | None:
@@ -1164,9 +1184,10 @@ def cli_tui(
         if not somebody_is_sitting_at_it():
             missing = streams_that_are_not_terminals()
             verb = "is" if len(missing) == 1 else "are"
+            needed = names_of_the_streams_the_view_needs()
             fail(
-                "The interactive view needs standard input, output and error all to be terminals "
-                f"(it draws on standard error), and this run's {_and_joined(missing)} {verb} not.",
+                f"The interactive view needs {_and_joined(needed)} all to be terminals, "
+                f"and this run's {_and_joined(missing)} {verb} not.",
                 ExitCode.INVALID_ARGUMENT,
                 output_format=OutputFormat.HUMAN,
                 hint="Run `lsdsk report` for the same page as text.",
@@ -1452,6 +1473,7 @@ __all__ = [
     "emit_json",
     "exit_code_for",
     "load_inventory",
+    "names_of_the_streams_the_view_needs",
     "note",
     "note_the_findings_this_page_left_out",
     "resolve_history",

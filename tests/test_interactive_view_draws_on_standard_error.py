@@ -29,6 +29,7 @@ from typing import NamedTuple
 
 import pytest
 
+from lsdsk.adapters.cli.commands import scan
 from lsdsk.adapters.cli.exit_codes import ExitCode
 
 if sys.platform != "win32":
@@ -167,3 +168,22 @@ def test_tui_refuses_where_its_stderr_is_not_a_terminal(stderr: str, tmp_path: P
     assert run.code == ExitCode.INVALID_ARGUMENT, f"exit {run.code}"
     if stderr == "file":
         assert b"standard error" in run.stderr, f"the refusal does not say which stream: {run.stderr[-400:]!r}"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("platform", "needed"),
+    [
+        ("linux", ["standard input", "standard output", "standard error"]),
+        ("darwin", ["standard input", "standard output", "standard error"]),
+        # Textual's Windows driver draws on stdout, so stderr is no requirement
+        # there, and a refusal naming it would state another platform's rule.
+        ("win32", ["standard input", "standard output"]),
+    ],
+)
+def test_the_streams_the_view_needs_follow_the_platform_it_draws_on(
+    monkeypatch: pytest.MonkeyPatch, platform: str, needed: list[str]
+) -> None:
+    monkeypatch.setattr(sys, "platform", platform)
+
+    assert scan.names_of_the_streams_the_view_needs() == needed
