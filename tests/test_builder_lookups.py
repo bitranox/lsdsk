@@ -4,12 +4,14 @@ Three of them used to walk a whole capture-controlled map for every disk, so a
 capture cost the PRODUCT of its disks and its class entries. The arms below are
 scaling arms rather than wall-clock ones: they double a capture and require the
 work to roughly double with it, because the claim is about complexity and a
-figure that passes on this machine says nothing about a slower one.
+figure that passes on this machine says nothing about a slower one. The work is
+COUNTED, as calls, rather than timed, so a loaded host cannot move it.
 """
 
 from __future__ import annotations
 
-import time
+import sys
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -24,15 +26,18 @@ from lsdsk.adapters.hw.linux.capture import (
 )
 from lsdsk.domain.enums import Platform
 
-#: Enough disks for a per-disk scan to dominate and few enough for an indexed
-#: build to stay instant. Measured before the fix, 2,000 against 4,000 disks
-#: took 0.18s and 0.69s on the ATA arm and 0.16s and 0.60s on the NVMe one.
-_SCALED_DISK_COUNT = 2_000
+if TYPE_CHECKING:
+    from types import FrameType
+
+#: Enough disks for a per-disk scan to dominate the count. The arms count work
+#: rather than time, so the size need not outrun a slow runner's noise.
+_SCALED_DISK_COUNT = 1_000
 
 #: How many times the doubled capture may cost the single one. A per-disk scan
-#: of a per-capture map quadruples on a doubling and measured 3.8 on both arms;
-#: an indexed lookup doubles. Three sits between the two, nearer the defect than
-#: the fix so a slow runner's noise cannot fail it.
+#: of a per-capture map quadruples on a doubling; an indexed lookup doubles.
+#: Three sits between the two. Counted rather than timed, the fixed build
+#: measures 2.00 and 2.06 and the pre-fix one 3.54 and 3.82 (2026-09-28), so neither
+#: side sits near the line.
 _ACCEPTABLE_GROWTH = 3.0
 
 
@@ -106,20 +111,40 @@ def _capture(*, block: dict[str, BlockEntry], classes: SysfsClasses) -> LinuxCap
     )
 
 
-def _seconds_to_build(capture: LinuxCapture, expected: int, runs: int = 2) -> float:
-    """The FASTEST of several builds of one capture.
+def _calls_to_build(capture: LinuxCapture, expected: int) -> int:
+    """How many Python and C calls building one capture makes.
 
-    The fastest rather than the mean, for the reason the fabric's arms take it:
-    a one-off pause on a shared runner only ever inflates a reading, and a pause
-    in the smaller arm would make the growth below look better than it is.
+    Counted with a profile hook rather than timed. Both arms used to race the
+    wall clock, and on a shared host at load 27 to 42 the FIXED build measured a
+    3.8 growth - the defect's own figure - in six full runs while passing alone
+    every time: a timing ratio of a 30 ms arm cannot tell a slow neighbour from a
+    quadratic loop. A call count is the same on every run, every platform and
+    every load. A generator resuming counts as a call, so the per-disk scans this
+    guards against - generator expressions over a whole map - are counted by the
+    frame.
+
+    Args:
+        capture: The capture to build.
+        expected: How many disks the build must produce.
+
+    Returns:
+        The number of calls made while building it.
     """
-    measured: list[float] = []
-    for _run in range(runs):
-        started = time.perf_counter()
+    calls = 0
+
+    def count(_frame: FrameType, event: str, _arg: object) -> None:
+        nonlocal calls
+        if event in {"call", "c_call"}:
+            calls += 1
+
+    previous = sys.getprofile()
+    sys.setprofile(count)
+    try:
         disks = build_disks(capture)
-        measured.append(time.perf_counter() - started)
-        assert len(disks) == expected, f"the build produced {len(disks)} of {expected} disks, so the timing is wrong"
-    return min(measured)
+    finally:
+        sys.setprofile(previous)
+    assert len(disks) == expected, f"the build produced {len(disks)} of {expected} disks, so the count is wrong"
+    return calls
 
 
 @pytest.mark.os_agnostic
@@ -131,13 +156,13 @@ def test_doubling_a_sata_capture_does_not_quadruple_what_it_costs_to_build() -> 
     own generator. A capture is untrusted input admitted up to 64 MB, which is
     hundreds of thousands of entries, so the ceiling on the product is hours.
     """
-    single = _seconds_to_build(_ata_capture(_SCALED_DISK_COUNT), _SCALED_DISK_COUNT)
-    doubled = _seconds_to_build(_ata_capture(_SCALED_DISK_COUNT * 2), _SCALED_DISK_COUNT * 2)
+    single = _calls_to_build(_ata_capture(_SCALED_DISK_COUNT), _SCALED_DISK_COUNT)
+    doubled = _calls_to_build(_ata_capture(_SCALED_DISK_COUNT * 2), _SCALED_DISK_COUNT * 2)
 
-    assert single > 0, "the smaller arm measured no time at all, so the growth below means nothing"
+    assert single > _SCALED_DISK_COUNT, f"the smaller arm made {single} calls, so the counter never ran"
     assert doubled < single * _ACCEPTABLE_GROWTH, (
-        f"doubling {_SCALED_DISK_COUNT} SATA disks took {doubled:.3f}s against {single:.3f}s, "
-        f"a growth of {doubled / single:.1f} where a linear build grows by 2"
+        f"doubling {_SCALED_DISK_COUNT} SATA disks took {doubled} calls against {single}, "
+        f"a growth of {doubled / single:.2f} where a linear build grows by 2"
     )
 
 
@@ -149,13 +174,13 @@ def test_doubling_an_nvme_capture_does_not_quadruple_what_it_costs_to_build() ->
     the class-entry scan, over 15,940,134 prefix comparisons, and the hardware
     monitors added a scan of their own on top of it.
     """
-    single = _seconds_to_build(_nvme_capture(_SCALED_DISK_COUNT), _SCALED_DISK_COUNT)
-    doubled = _seconds_to_build(_nvme_capture(_SCALED_DISK_COUNT * 2), _SCALED_DISK_COUNT * 2)
+    single = _calls_to_build(_nvme_capture(_SCALED_DISK_COUNT), _SCALED_DISK_COUNT)
+    doubled = _calls_to_build(_nvme_capture(_SCALED_DISK_COUNT * 2), _SCALED_DISK_COUNT * 2)
 
-    assert single > 0, "the smaller arm measured no time at all, so the growth below means nothing"
+    assert single > _SCALED_DISK_COUNT, f"the smaller arm made {single} calls, so the counter never ran"
     assert doubled < single * _ACCEPTABLE_GROWTH, (
-        f"doubling {_SCALED_DISK_COUNT} NVMe namespaces took {doubled:.3f}s against {single:.3f}s, "
-        f"a growth of {doubled / single:.1f} where a linear build grows by 2"
+        f"doubling {_SCALED_DISK_COUNT} NVMe namespaces took {doubled} calls against {single}, "
+        f"a growth of {doubled / single:.2f} where a linear build grows by 2"
     )
 
 
