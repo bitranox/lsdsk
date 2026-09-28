@@ -55,7 +55,13 @@ class GetConfig(Protocol):
 
 
 class DeployConfiguration(Protocol):
-    """Deploy default configuration to the layers one request names."""
+    """Deploy default configuration to the layers one request names.
+
+    Raises ``PermissionError`` for a layer it may not write, ``OSError`` for any
+    other failed write, ``ValueError`` for a rejected profile name, and
+    :class:`~lsdsk.domain.errors.ConfigurationError` for a configuration it
+    cannot use. The command maps each to its own exit code.
+    """
 
     def __call__(self, request: DeployRequest) -> list[Path]: ...
 

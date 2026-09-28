@@ -95,6 +95,30 @@ def test_when_config_deploy_cannot_write_its_files_it_exits_with_io_error(
 
 
 @pytest.mark.os_agnostic
+def test_when_config_deploy_meets_a_configuration_it_cannot_use_it_exits_with_config_error(
+    cli_runner: CliRunner,
+    inject_deploy_configuration: Callable[[Callable[..., list[Path]]], Callable[[], Any]],
+) -> None:
+    """A deploy port reporting a configuration problem leaves 78, as every other command does.
+
+    It left 1, which a reporting command means as "a warning or a critical was
+    found", so a script provisioning a host read a broken configuration as a
+    drive fault.
+    """
+    from lsdsk.domain.errors import ConfigurationError
+
+    def mock_deploy(request: DeployRequest) -> list[Any]:
+        raise ConfigurationError("the bundled configuration does not parse")
+
+    factory = inject_deploy_configuration(mock_deploy)
+
+    result: Result = cli_runner.invoke(cli_mod.cli, ["config-deploy", "--target", "user"], obj=factory)
+
+    assert result.exit_code == ExitCode.CONFIG_ERROR, result.stderr
+    assert "does not parse" in result.stderr
+
+
+@pytest.mark.os_agnostic
 def test_every_declared_exit_code_is_one_the_tool_can_actually_produce() -> None:
     """A code nothing raises is a promise to a caller that cannot be kept.
 

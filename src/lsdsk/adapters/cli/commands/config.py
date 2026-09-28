@@ -414,22 +414,22 @@ def _execute_deploy(
     except ValueError as exc:
         logger.error("Rejected profile name", extra={"error": str(exc)})
         _fail_after_output(str(exc), ExitCode.INVALID_ARGUMENT, output_format=output_format)
-    # OSError and ConfigurationError are what deployment legitimately fails
-    # with: a full disk, a read-only target, a config that will not resolve.
+    # OSError is what deployment legitimately fails with - a full disk, a
+    # read-only target - and ConfigurationError is what the port may report for
+    # a configuration it cannot use; the shipped adapter raises only the first.
     # Anything else is a bug in lsdsk, and catching it here would print it as a
     # one-line user error and swallow the traceback that --traceback asked for,
     # leaving the only copy of it in the log. Let it reach the handler in
-    # main.py, which is what honours the flag. A write that failed leaves the
-    # code every other failed write leaves, never 1, which a reporting command
-    # means as "a warning or a critical was found".
+    # main.py, which is what honours the flag. Neither answer is 1, which a
+    # reporting command means as "a warning or a critical was found": a failed
+    # write leaves the code every failed write leaves, and a configuration
+    # problem the code every other command leaves for one.
     except OSError as exc:
         logger.error("Failed to deploy configuration", extra={"error": str(exc), "error_type": type(exc).__name__})
         _fail_after_output(f"Failed to deploy configuration: {exc}", ExitCode.IO_ERROR, output_format=output_format)
     except ConfigurationError as exc:
         logger.error("Failed to deploy configuration", extra={"error": str(exc), "error_type": type(exc).__name__})
-        _fail_after_output(
-            f"Failed to deploy configuration: {exc}", ExitCode.GENERAL_ERROR, output_format=output_format
-        )
+        _fail_after_output(f"Failed to deploy configuration: {exc}", ExitCode.CONFIG_ERROR, output_format=output_format)
 
 
 def _report_deployment_result(
