@@ -16,6 +16,7 @@ import stat
 from pathlib import Path
 
 import pytest
+from workcount import work_to_run
 
 from lsdsk.adapters.history.store import (
     HISTORY_FILE_MODE,
@@ -26,7 +27,7 @@ from lsdsk.adapters.history.store import (
     save_history,
 )
 from lsdsk.domain.errors import ConfigurationError
-from lsdsk.domain.history import DiskSeries, History, Sample, record, thin
+from lsdsk.domain.history import CounterKind, DiskSeries, History, Sample, record, thin, trend_for
 from lsdsk.domain.models import Disk, Health
 
 T0 = "2026-08-05T01:23:00+00:00"
@@ -516,3 +517,55 @@ def test_a_corrupt_history_store_is_explained_in_this_tool_s_own_words(tmp_path:
     # And it still says WHAT is wrong, field by field, or the refusal is useless.
     assert "hostname" in said and "series" in said, f"the refusal names no field:\n{said}"
     assert "valid string" in said, f"the refusal gives no reason:\n{said}"
+
+
+# --------------------------------------------------------------------------
+# The cap holds on the way IN, not only on the way out
+# --------------------------------------------------------------------------
+
+
+def _stored_with(store: Path, count: int) -> DiskSeries:
+    """Write a one-drive store of `count` hourly samples, past any cap, and load it back.
+
+    Written through `save_history` rather than `record`, which is the point: the
+    store is a file a user points at, so nothing guarantees `record` made it.
+    """
+    samples = tuple(sample(1_000 + hour, errors=hour // 100) for hour in range(count))
+    save_history(history_of(*samples), store)
+    return load_history(store, hostname="box").series[0]
+
+
+@pytest.mark.os_agnostic
+def test_a_series_past_the_cap_is_thinned_as_it_is_loaded(store: Path) -> None:
+    """A store `record` did not write is held to the cap `record` would have kept.
+
+    Measured before the load thinned: two series of 50,000 samples made
+    `report` take 6.6 s and 2,566,016 calls to `Sample.counter`.
+    """
+    count = MAX_SAMPLES_PER_DRIVE * 4
+    written = tuple(sample(1_000 + hour, errors=hour // 100) for hour in range(count))
+
+    loaded = _stored_with(store, count).samples
+
+    assert loaded == thin(written, MAX_SAMPLES_PER_DRIVE), "the load kept something other than what record keeps"
+    assert loaded[0] == written[0] and loaded[-1] == written[-1], "the baseline or the newest reading was lost"
+
+
+@pytest.mark.os_agnostic
+def test_judging_a_loaded_store_costs_the_same_however_far_past_the_cap_it_grew(tmp_path: Path) -> None:
+    """Counted rather than timed: the judgement reads the capped series, so doubling the file changes nothing.
+
+    Before the load thinned, the work doubled with the file, so the two arms
+    differed by a factor of two rather than not at all.
+    """
+
+    def judged(count: int) -> int:
+        series = _stored_with(tmp_path / f"{count}.json", count)
+        _, work = work_to_run(lambda: [trend_for(series, kind) for kind in CounterKind])
+        return work
+
+    single = judged(MAX_SAMPLES_PER_DRIVE * 4)
+    doubled = judged(MAX_SAMPLES_PER_DRIVE * 8)
+
+    assert single > MAX_SAMPLES_PER_DRIVE, f"the smaller arm did {single} units of work, so the counter never ran"
+    assert doubled < single * 1.1, f"doubling a store past the cap took {doubled} units of work against {single}"

@@ -93,7 +93,8 @@ def read_history(inventory: Inventory, settings: HistorySettings) -> HistoryRead
         What has been recorded, and whether the file may be replaced.
     """
     try:
-        return HistoryRead(load_history(settings.path, hostname=inventory.hostname), writable=True)
+        loaded = load_history(settings.path, hostname=inventory.hostname, cap=settings.max_samples_per_drive)
+        return HistoryRead(loaded, writable=True)
     except ConfigurationError as error:
         # Said once per run. `health` reads the store twice, once through
         # `analyse` and once for the table, and printed the whole refusal twice.

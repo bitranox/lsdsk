@@ -43,7 +43,7 @@ from typing import Any, NamedTuple
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from ...domain.errors import ConfigurationError, MissingFileError
-from ...domain.history import DiskSeries, History, Sample
+from ...domain.history import DiskSeries, History, Sample, thin
 from ..atomicfile import replace_atomically
 from ..textfile import MAX_INPUT_BYTES, fits_a_bounded_read, read_json_bounded
 from ..validation import what_is_wrong_with_it
@@ -176,15 +176,25 @@ def default_history_path() -> Path:
     return root / _APP / _FILENAME
 
 
-def load_history(path: Path, *, hostname: str) -> History:
+def load_history(path: Path, *, hostname: str, cap: int = MAX_SAMPLES_PER_DRIVE) -> History:
     """Read the store, or start an empty one.
+
+    Each series is thinned to ``cap`` on the way in, exactly as ``record``
+    thins it on the way out. The store is a file a user points
+    ``--history-file`` at, so nothing guarantees ``record`` wrote it, and every
+    judgement walks a drive's whole series once per counter: two series of
+    50,000 samples made ``report`` take 6.6 s. Thinning is idempotent, so a
+    series ``record`` wrote under the same cap is returned unchanged.
 
     Args:
         path: The store file.
         hostname: The machine being read now.
+        cap: The most samples any one drive keeps, which is the configured
+            ``max_samples_per_drive``.
 
     Returns:
-        What has been recorded for this machine.
+        What has been recorded for this machine, each series at most ``cap``
+        samples long.
 
     Raises:
         ConfigurationError: If the file is unreadable, malformed, written by a
@@ -248,7 +258,14 @@ def load_history(path: Path, *, hostname: str) -> History:
         )
         raise ConfigurationError(message)
 
-    return History(hostname=stored.hostname, series=stored.series)
+    return History(hostname=stored.hostname, series=tuple(_capped(series, cap) for series in stored.series))
+
+
+def _capped(series: DiskSeries, cap: int) -> DiskSeries:
+    """The series as ``record`` would keep it under ``cap``."""
+    if len(series.samples) <= cap:
+        return series
+    return series.with_changes(samples=thin(series.samples, cap))
 
 
 def save_history(history: History, path: Path) -> None:
@@ -309,17 +326,18 @@ def _refuse_what_the_reader_would_refuse(body: str, path: Path) -> None:
         raise OSError(errno.EFBIG, message, str(path))
 
 
-def read_history(*, hostname: str, path: Path | None = None) -> History:
+def read_history(*, hostname: str, path: Path | None = None, cap: int = MAX_SAMPLES_PER_DRIVE) -> History:
     """Read the store at the configured location.
 
     Args:
         hostname: The machine being read now.
         path: Override the default location.
+        cap: The most samples any one drive keeps.
 
     Returns:
         What has been recorded for this machine.
     """
-    return load_history(path or default_history_path(), hostname=hostname)
+    return load_history(path or default_history_path(), hostname=hostname, cap=cap)
 
 
 def write_history(history: History, *, path: Path | None = None) -> None:
