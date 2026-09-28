@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Final, cast
 
 import lib_log_rich.config
 import lib_log_rich.runtime
-from lib_log_rich.domain import LogLevel
+from lib_log_rich.domain import ConsoleStream, LogLevel
 from lib_log_rich.domain.palettes import CONSOLE_STYLE_THEMES
 from lib_log_rich.runtime import RichConsoleAdapter
 from pydantic import BaseModel, ConfigDict
@@ -108,10 +108,10 @@ def _build_runtime_config(config: Config) -> lib_log_rich.runtime.RuntimeConfig:
 #: own, and the second writes nowhere. ``both`` is here, not with them: it is a
 #: plain setting like the other two, and left to the library it becomes a tee over
 #: the RAW streams, so a departed stderr reader sent stdout to the null device.
-_GUARDED_WRITERS: Final[Mapping[str, Callable[[], IO[str]]]] = {
-    "stdout": safe_console.safe_stream,
-    "stderr": partial(safe_console.safe_stream, err=True),
-    "both": safe_console.safe_stream_to_both,
+_GUARDED_WRITERS: Final[Mapping[ConsoleStream, Callable[[], IO[str]]]] = {
+    ConsoleStream.STDOUT: safe_console.safe_stream,
+    ConsoleStream.STDERR: partial(safe_console.safe_stream, err=True),
+    ConsoleStream.BOTH: safe_console.safe_stream_to_both,
 }
 
 
@@ -143,19 +143,21 @@ def _guarded_console(appearance: ConsoleAppearance) -> RichConsoleAdapter:
         The console adapter the library would have built, on the guarded writer
         where the stream is one this can guard.
     """
-    stream = str(appearance.stream.value)
+    stream = appearance.stream
     target = cast("IO[str] | None", appearance.stream_target)
     guarded = _GUARDED_WRITERS.get(stream)
     if guarded is not None:
         target = guarded()
-        stream = "custom"
+        stream = ConsoleStream.CUSTOM
     return RichConsoleAdapter(
         force_color=appearance.force_color,
         no_color=appearance.no_color,
         styles=appearance.styles,
         format_preset=appearance.format_preset,
         format_template=appearance.format_template,
-        stream=stream,
+        # The adapter's parameter is text, so the member crosses as its value here
+        # and nowhere earlier.
+        stream=stream.value,
         stream_target=target,
     )
 

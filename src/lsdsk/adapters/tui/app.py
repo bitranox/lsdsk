@@ -365,6 +365,11 @@ class LsdskApp(App[None]):
         #: for the disk page and the health page from one lookup rather than two
         #: that could disagree about which drive a row is.
         self._disk_of: dict[str, Disk] = {}
+        #: The drive each trend row is about, by the row's key. A trend row is
+        #: one COUNTER of one drive, so its key has to name both to be unique;
+        #: the panel answers for the drive, and looks it up here rather than
+        #: taking the key apart again.
+        self._disk_of_trend_row: dict[str, Disk] = {}
         #: Where each table's cursor was left. Recorded for EVERY table, not only
         #: the visible one, because switching page moves no cursor and raises no
         #: row event: without this the panel would keep answering for the page
@@ -648,9 +653,9 @@ class LsdskApp(App[None]):
         if page is CliCommand.SLOTS:
             slot = next((one for one in self.inventory.slots if one.address == key), None)
             return None if slot is None else detail.slot_detail(slot, self.inventory)
-        # A trend row is one COUNTER of one drive, so its key names both; the
-        # record is the drive's, because that is what the row is about.
-        disk = self._disk_of.get(key.split("|")[0] if page is CliCommand.TREND else key)
+        # A trend row is one COUNTER of one drive; the record is the drive's,
+        # because that is what the row is about.
+        disk = self._disk_of_trend_row.get(key) if page is CliCommand.TREND else self._disk_of.get(key)
         return None if disk is None else detail.disk_detail(disk, self.inventory, self.history, self.thresholds)
 
     def _show_detail(self, record: Detail | None) -> None:
@@ -693,11 +698,11 @@ class LsdskApp(App[None]):
         wear_floor = self.display_settings.wear_row_floor_percent
         rows = trend_rows(self.inventory, self.history, wear_floor)
         self.query_one("#trend-table", DataTable).display = bool(rows)
+        self._disk_of_trend_row = {}
         for row in rows:
-            table.add_row(
-                *(_cell(*row.cells[column.key]) for column in TREND_COLUMNS),
-                key=f"{row.disk.node}|{row.kind.value}",
-            )
+            key = f"{row.disk.node}|{row.kind.value}"
+            self._disk_of_trend_row[key] = row.disk
+            table.add_row(*(_cell(*row.cells[column.key]) for column in TREND_COLUMNS), key=key)
         self.query_one("#trend-body", Static).update(
             tui_palette.Recoloured(
                 render_trend(self.inventory, self.history, wear_floor=wear_floor, store_refusal=self.store_refusal)
