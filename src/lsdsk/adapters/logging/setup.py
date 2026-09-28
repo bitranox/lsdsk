@@ -6,6 +6,7 @@ eliminating duplication between module entry (__main__.py) and console script
 
 Contents:
     * :func:`init_logging` - idempotent logging initialization with layered config.
+    * :func:`run_log_demo` - one line per severity, on the same guarded console.
     * :func:`_build_runtime_config` - constructs RuntimeConfig from layered sources.
 
 System Role:
@@ -21,6 +22,8 @@ from typing import TYPE_CHECKING, Final, cast
 
 import lib_log_rich.config
 import lib_log_rich.runtime
+from lib_log_rich.domain import LogLevel
+from lib_log_rich.domain.palettes import CONSOLE_STYLE_THEMES
 from lib_log_rich.runtime import RichConsoleAdapter
 from pydantic import BaseModel, ConfigDict
 
@@ -198,7 +201,76 @@ def init_logging(config: Config) -> None:
     lib_log_rich.runtime.attach_std_logging()
 
 
+#: The preview's lines, one per severity, worded as lib_log_rich's own demo words them.
+_DEMO_LINES: Final[tuple[tuple[LogLevel, str], ...]] = (
+    (LogLevel.DEBUG, "Debug message"),
+    (LogLevel.INFO, "Information message"),
+    (LogLevel.WARNING, "Warning message"),
+    (LogLevel.ERROR, "Error message"),
+    (LogLevel.CRITICAL, "Critical message"),
+)
+
+
+def run_log_demo(theme: str) -> str:
+    """Log one line per severity in `theme`, through the console every run logs through.
+
+    ``lib_log_rich.logdemo()`` would do the same with a runtime it builds
+    itself, and that runtime has no ``console_adapter_factory``: rich writes
+    straight to the raw stream, so its ``on_broken_pipe`` was back in charge for
+    the one command that exists to preview logging. Measured through
+    ``lsdsk logdemo`` with stderr's reader gone and stdout read: 141 and 0 bytes
+    of stdout, where every other command's log line costs that line alone. So
+    the runtime is built here, with the settings the library's demo uses and
+    :func:`_guarded_console` as its console. ``LOG_CONSOLE_STREAM`` still
+    applies, as it does to the library's demo.
+
+    The caller must have shut the run's own runtime down: one runtime at a time
+    is the library's rule.
+
+    Args:
+        theme: A name from ``lib_log_rich.domain.palettes.CONSOLE_STYLE_THEMES``.
+
+    Returns:
+        The theme's key as the library spells it.
+
+    Raises:
+        KeyError: When `theme` names no palette the library publishes. The
+            command line refuses one before this is reached.
+
+    Side Effects:
+        Initialises the logging runtime, writes five lines to the console and
+        shuts the runtime down again.
+    """
+    key = theme.strip().lower()
+    styles = dict(CONSOLE_STYLE_THEMES[key])
+    lib_log_rich.runtime.init(
+        lib_log_rich.runtime.RuntimeConfig(
+            service="logdemo",
+            environment=f"demo-{key}",
+            console_level=LogLevel.DEBUG,
+            backend_level=LogLevel.CRITICAL,
+            enable_ring_buffer=False,
+            # On the calling thread, as the library's demo runs it: the preview
+            # is over when this returns, with nothing left in a queue.
+            queue_enabled=False,
+            force_color=True,
+            console_styles=styles,
+            console_theme=key,
+            console_adapter_factory=_guarded_console,
+        )
+    )
+    try:
+        with lib_log_rich.runtime.bind(job_id=f"logdemo-{key}", request_id="demo"):
+            logger = lib_log_rich.runtime.getLogger("logdemo")
+            for level, message in _DEMO_LINES:
+                logger.log(level, "[%s] %s", key, message, extra={"theme": key, "level": level.severity})
+    finally:
+        lib_log_rich.runtime.shutdown()
+    return key
+
+
 __all__ = [
     "LoggingConfigModel",
     "init_logging",
+    "run_log_demo",
 ]

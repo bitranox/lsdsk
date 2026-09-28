@@ -668,6 +668,33 @@ def test_a_crash_whose_stderr_reader_left_still_leaves_the_crash_code(monkeypatc
 
 
 @pytest.mark.os_agnostic
+def test_the_log_demo_answers_a_departed_stderr_reader_like_every_other_writer() -> None:
+    """``logdemo`` previews logging on the same guarded console the run itself logs through.
+
+    lib_log_rich's own ``logdemo()`` builds a runtime of its own, on the RAW
+    streams, after the command has shut the guarded one down - so the one
+    command that exists to show what logging does was the one command whose
+    logging a departed stderr reader could still end. Measured before it built
+    its runtime with the guarded console: stderr's reader gone left 141 with 0
+    bytes on stdout, against 0 and the completion line with stderr read.
+    """
+    argv = ["logdemo"]
+    control = _run_and_take_the_output_away(capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=False)
+    assert control.code == ExitCode.SUCCESS, f"the control: the demo read in full left {control.code}"
+    assert control.stderr_bytes > 0, "the control logged nothing to stderr, so this arm has no write to break"
+    assert control.stdout_bytes > 0, "the control printed nothing to stdout, so this arm has nothing to lose"
+
+    kept = _run_and_take_the_output_away(
+        capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=False, stderr_leaves=True
+    )
+    assert kept.code == ExitCode.SUCCESS, f"a departed stderr reader turned the demo's 0 into {kept.code}"
+    assert kept.stdout_bytes == control.stdout_bytes, (
+        f"a departed stderr reader cost stdout {control.stdout_bytes - kept.stdout_bytes} of its "
+        f"{control.stdout_bytes} bytes"
+    )
+
+
+@pytest.mark.os_agnostic
 def test_a_closed_stderr_does_not_discard_the_report_on_stdout() -> None:
     """Losing the stream nobody was reading must not cost the reader the report.
 

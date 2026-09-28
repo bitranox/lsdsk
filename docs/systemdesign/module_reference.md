@@ -308,7 +308,10 @@ never sees a `BrokenPipeError` to handle, and the failure is answered on the str
 that really broke. Deciding it by rewriting `console_stream` in the settings does
 not hold: the library reads the variable ahead of the configuration and overrides
 it. Nothing third-party is patched, and a stream of `custom` or `none` is left as
-configured.
+configured. `logdemo` previews logging through a runtime of its own, and builds that
+one with `_guarded_console` too (`run_log_demo`): the library's `logdemo()` has no
+factory, and on the raw streams a departed stderr reader left `141` and discarded
+stdout for the one command that exists to show what logging does.
 
 The library writes on a queue WORKER thread, where a raise ends that thread and
 nothing else: a `SystemExit(141)` there never reached the exit code, and the worker
