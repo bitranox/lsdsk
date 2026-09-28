@@ -9,6 +9,7 @@ that passed it still has to respect once its contents reach a renderer.
 from __future__ import annotations
 
 import ast
+import base64
 import dataclasses
 import errno
 import io
@@ -27,7 +28,14 @@ from rich.console import Console
 
 from lsdsk.adapters.history.store import load_history
 from lsdsk.adapters.hw import capture as shared_capture
-from lsdsk.adapters.hw.capture import MAX_DEVICE_TEXT, CaptureEnvelope, CaptureModel, DeviceText
+from lsdsk.adapters.hw.capture import (
+    MAX_DEVICE_TEXT,
+    MAX_ENCODED_PAYLOAD,
+    MAX_PAYLOAD_BYTES,
+    CaptureEnvelope,
+    CaptureModel,
+    DeviceText,
+)
 from lsdsk.adapters.hw.linux import capture as linux_capture
 from lsdsk.adapters.hw.snapshot import load
 from lsdsk.adapters.hw.windows import capture as windows_capture
@@ -1037,6 +1045,77 @@ def test_a_huge_virtualization_field_inside_the_environment_section_is_refused(t
 
     with pytest.raises(ConfigurationError, match="at most 4096"):
         load(path)
+
+
+def _crafted_with_payload(encoded: str) -> dict[str, Any]:
+    """A minimal capture whose one ATA blob carries `encoded` as its IDENTIFY page."""
+    return {
+        "schema": 2,
+        "platform": "linux",
+        "hostname": "box",
+        "kernel": "x",
+        "pci": {},
+        "ata": {"sda": {"identify": encoded}},
+    }
+
+
+@pytest.mark.os_agnostic
+def test_a_payload_encoding_exactly_the_stated_ceiling_is_accepted(tmp_path: Path) -> None:
+    """`MAX_PAYLOAD_BYTES` names RAW bytes, and the ceiling it implies is reachable, not just close.
+
+    Nothing asserted that `MAX_ENCODED_PAYLOAD` is the ceiling the comment
+    claims - only that SOME `MaxLen` exists. A raw page of exactly the stated
+    size must still parse whole: this is the accepted arm.
+    """
+    encoded = base64.b64encode(b"\xab" * MAX_PAYLOAD_BYTES).decode("ascii")
+    assert len(encoded) == MAX_ENCODED_PAYLOAD, "the fixture no longer sits exactly at the stated ceiling"
+
+    path = tmp_path / "at-the-ceiling.json"
+    path.write_text(json.dumps(_crafted_with_payload(encoded)), encoding="utf-8")
+
+    parsed = load(path)
+
+    assert isinstance(parsed, Inventory)
+
+
+@pytest.mark.os_agnostic
+def test_a_payload_past_the_encoded_ceiling_is_refused(tmp_path: Path) -> None:
+    """The refused arm: an encoded page wider than `MAX_ENCODED_PAYLOAD` is not a capture lsdsk accepts.
+
+    Three raw bytes past `MAX_PAYLOAD_BYTES` is the smallest input that
+    actually WIDENS the base64 text, because of the slack the control below
+    holds: a raw page one or two bytes over the stated ceiling still encodes
+    to the SAME length, so it would pass here for the wrong reason.
+    """
+    encoded = base64.b64encode(b"\xab" * (MAX_PAYLOAD_BYTES + 3)).decode("ascii")
+    assert len(encoded) > MAX_ENCODED_PAYLOAD, "the fixture no longer exceeds the stated ceiling"
+
+    path = tmp_path / "past-the-ceiling.json"
+    path.write_text(json.dumps(_crafted_with_payload(encoded)), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match=f"at most {MAX_ENCODED_PAYLOAD}"):
+        load(path)
+
+
+@pytest.mark.os_agnostic
+def test_the_encoded_ceiling_admits_at_most_two_raw_bytes_of_quantisation_slack() -> None:
+    """The control the two tests above rely on: base64 groups three raw bytes into four characters.
+
+    A raw payload one or two bytes past `MAX_PAYLOAD_BYTES` encodes to the
+    IDENTICAL length as one exactly at it, because base64 only grows its
+    output once a full three-byte group is complete. Three bytes past is
+    where the encoded length first actually exceeds `MAX_ENCODED_PAYLOAD`,
+    which is why the refused-arm test above uses `+3` rather than `+1`.
+    """
+    at_ceiling = len(base64.b64encode(b"\xab" * MAX_PAYLOAD_BYTES))
+    one_over = len(base64.b64encode(b"\xab" * (MAX_PAYLOAD_BYTES + 1)))
+    two_over = len(base64.b64encode(b"\xab" * (MAX_PAYLOAD_BYTES + 2)))
+    three_over = len(base64.b64encode(b"\xab" * (MAX_PAYLOAD_BYTES + 3)))
+
+    assert at_ceiling == MAX_ENCODED_PAYLOAD
+    assert one_over == MAX_ENCODED_PAYLOAD, "one raw byte of slack no longer widens nothing"
+    assert two_over == MAX_ENCODED_PAYLOAD, "two raw bytes of slack no longer widen nothing"
+    assert three_over > MAX_ENCODED_PAYLOAD, "three raw bytes over no longer crosses the ceiling"
 
 
 @pytest.mark.os_agnostic

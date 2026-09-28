@@ -39,7 +39,13 @@ MAX_DEVICE_TEXT = 4096
 #: fixed offsets, once per drive, so its length is not multiplied downstream.
 MAX_PAYLOAD_BYTES = 1024 * 1024
 
-#: The same ceiling as base64 text, which is how a capture stores a page.
+#: :data:`MAX_PAYLOAD_BYTES` in the base64 text a capture actually stores a
+#: page as: four characters per three raw bytes, rounded up to a whole group.
+#: It is not an EXACT twin of the raw ceiling, because base64 only grows its
+#: output once a full three-byte group completes - a raw payload one or two
+#: bytes past :data:`MAX_PAYLOAD_BYTES` encodes to this same length, so this
+#: bound admits up to two raw bytes of quantisation slack past the stated
+#: ceiling. A third byte over is what first exceeds it.
 MAX_ENCODED_PAYLOAD = 4 * -(-MAX_PAYLOAD_BYTES // 3)
 
 #: Text a capture carries - a name, identifier, rate, path or a reader's refusal -
