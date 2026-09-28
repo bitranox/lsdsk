@@ -49,18 +49,32 @@ def test_a_48_bit_lba_and_a_wide_count_land_in_their_extend_bytes() -> None:
     assert (block[8], block[10], block[12]) == (0x0F, 0x0E, 0x0D)
 
 
+#: What the fake ATA ioctl returns when it answers in full.
+ATA_SECTOR = b"\x11" * 512
+
+
 class FakeKernel32:
     """``kernel32`` as the reader sees it: one ``DeviceIoControl`` per request.
 
-    The ATA ioctl answers per ``ata_answers``; the SCSI passthrough answers per
-    ``sat_answers``, keyed by the ATA command inside the SAT block, with a
-    sector, a SCSI status, or ``None`` for an ioctl failure.
+    The ATA ioctl answers per ``ata_answers`` with ``ata_sector``; the SCSI
+    passthrough answers per ``sat_answers``, keyed by the ATA command inside the
+    SAT block, with the bytes moved, a SCSI status, or ``None`` for an ioctl
+    failure. Whatever bytes it answers with, it writes their count back into
+    ``DataTransferLength``, because that is what the kernel does: an empty or
+    short answer is a transfer that moved less than the sector asked for.
     """
 
-    def __init__(self, *, ata_answers: bool, sat_answers: Callable[[int], bytes | int | None]) -> None:
+    def __init__(
+        self,
+        *,
+        ata_answers: bool,
+        sat_answers: Callable[[int], bytes | int | None],
+        ata_sector: bytes = ATA_SECTOR,
+    ) -> None:
         """Answer the ATA ioctl or refuse it, and the SAT one through ``sat_answers``."""
         self.ata_answers = ata_answers
         self.sat_answers = sat_answers
+        self.ata_sector = ata_sector
         self.sat_blocks: list[bytes] = []
 
     def DeviceIoControl(  # noqa: N802 - the Win32 entry point's own name
@@ -71,7 +85,8 @@ class FakeKernel32:
             request = cast("api.ATA_PASS_THROUGH_DIRECT", getattr(in_buffer, "_obj"))  # noqa: B009 - CArgObject
             if not self.ata_answers:
                 return 0
-            ctypes.memmove(request.DataBuffer, b"\x11" * 512, 512)
+            ctypes.memmove(request.DataBuffer, self.ata_sector, len(self.ata_sector))
+            request.DataTransferLength = len(self.ata_sector)
             return 1
         if code == api.IOCTL_SCSI_PASS_THROUGH:
             holder = getattr(in_buffer, "_obj")  # noqa: B009 - CArgObject
@@ -84,6 +99,7 @@ class FakeKernel32:
                 holder.request.ScsiStatus = answer
                 return 1
             ctypes.memmove(holder.data, answer, len(answer))
+            holder.request.DataTransferLength = len(answer)
             return 1
         pytest.fail(f"an ioctl the ATA read should not issue: 0x{code:08X}")
 
@@ -116,7 +132,7 @@ def test_a_drive_the_ata_ioctl_reaches_is_never_asked_through_sat() -> None:
 
     record = _read(fake)
 
-    assert base64.b64decode(record["identify"]) == b"\x11" * 512
+    assert base64.b64decode(record["identify"]) == ATA_SECTOR
     assert fake.sat_blocks == [], "SAT was asked although the ATA ioctl answered"
 
 
@@ -137,3 +153,51 @@ def test_a_reading_refused_both_ways_records_both_reasons(answer: int | None, na
     for reason in record.values():
         assert reason.startswith("passthrough refused, Win32 error "), reason
         assert named in reason, reason
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("moved", "named"),
+    [
+        pytest.param(0, "SAT refused, 0 of 512 bytes returned", id="GOOD status with no data"),
+        pytest.param(100, "SAT refused, 100 of 512 bytes returned", id="a short transfer"),
+    ],
+)
+def test_a_translator_that_moves_less_than_a_sector_records_a_refusal_not_a_reading(moved: int, named: str) -> None:
+    """A GOOD status is not a sector: the zeros left in the buffer are no drive's answer.
+
+    Before this was checked, a translator answering GOOD with no data stored an
+    all-zero sector as the drive's identity and SMART table, with no refusal, so
+    the scan reported complete over readings nobody took.
+    """
+    fake = FakeKernel32(ata_answers=False, sat_answers=lambda command: _sector_for(command)[:moved])
+
+    record = _read(fake)
+
+    assert set(record) == {"identify_error", "smart_data_error", "smart_thresholds_error"}, record
+    for reason in record.values():
+        assert named in reason, reason
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("moved", [pytest.param(0, id="no data"), pytest.param(100, id="a short transfer")])
+def test_an_ata_ioctl_that_moves_less_than_a_sector_falls_through_to_sat(moved: int) -> None:
+    fake = FakeKernel32(ata_answers=True, sat_answers=_sector_for, ata_sector=ATA_SECTOR[:moved])
+
+    record = _read(fake)
+
+    assert base64.b64decode(record["identify"]) == _sector_for(ata.ATA_IDENTIFY_DEVICE)
+    assert base64.b64decode(record["smart_data"]) == _sector_for(ata.ATA_SMART)
+    assert not any(key.endswith("_error") for key in record), record
+    assert len(fake.sat_blocks) == 3, "a short ATA transfer was kept instead of asking SAT"
+
+
+@pytest.mark.os_agnostic
+def test_a_short_transfer_both_ways_names_both_shortfalls() -> None:
+    fake = FakeKernel32(ata_answers=True, sat_answers=lambda _command: b"", ata_sector=ATA_SECTOR[:100])
+
+    record = _read(fake)
+
+    assert set(record) == {"identify_error", "smart_data_error", "smart_thresholds_error"}, record
+    for reason in record.values():
+        assert reason == "passthrough refused, 100 of 512 bytes returned; SAT refused, 0 of 512 bytes returned", reason

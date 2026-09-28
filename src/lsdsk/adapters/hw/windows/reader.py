@@ -456,9 +456,35 @@ def _descriptor_strings(raw: bytes) -> dict[str, str]:
     return {key: value for key, value in values.items() if value}
 
 
+def _shortfall(moved: int) -> str | None:
+    """Say why a transfer that moved less than a whole sector is not a reading.
+
+    Both passthrough requests carry ``DataTransferLength`` in and out: the kernel
+    overwrites it with the bytes the device actually moved. A command can end
+    with a success status having moved nothing - a translator answering GOOD to a
+    command it did not carry out - and the buffer then still holds the zeros it
+    was allocated with, which decode as a drive with no identity and no counters.
+
+    Args:
+        moved: The ``DataTransferLength`` the kernel returned.
+
+    Returns:
+        ``None`` for a whole sector, otherwise the refusal text naming the count.
+
+    Example:
+        >>> _shortfall(512) is None
+        True
+        >>> _shortfall(0)
+        '0 of 512 bytes returned'
+    """
+    if moved == _SECTOR_BYTES:
+        return None
+    return f"{moved} of {_SECTOR_BYTES} bytes returned"
+
+
 def ata_passthrough(
     kernel32: api.WinLibrary, handle: int, *, command: int, feature: int = 0, lba: int = 0
-) -> tuple[bytes, int]:
+) -> tuple[bytes, str | None]:
     """Issue one read-only ATA command through the Windows passthrough ioctl.
 
     Args:
@@ -469,10 +495,11 @@ def ata_passthrough(
         lba: The LBA register, where the command takes one.
 
     Returns:
-        The data returned and the Win32 error code, which is zero on success.
-        The code matters: a driver that does not implement passthrough at all
-        and a request this code built wrongly both return nothing, and only the
-        error tells them apart.
+        The sector the drive returned and ``None``, or empty bytes and why it
+        was refused: the Win32 error when the ioctl failed, which matters because
+        a driver that does not implement passthrough at all and a request this
+        code built wrongly both return nothing and only the error tells them
+        apart, or the byte count when the call succeeded without moving a sector.
     """
     buffer = ctypes.create_string_buffer(_SECTOR_BYTES)
     request = api.ATA_PASS_THROUGH_DIRECT()
@@ -507,8 +534,11 @@ def ata_passthrough(
         None,
     )
     if not ok:
-        return b"", api.last_error()
-    return bytes(buffer), 0
+        return b"", f"Win32 error {api.last_error()}"
+    shortfall = _shortfall(request.DataTransferLength)
+    if shortfall:
+        return b"", shortfall
+    return bytes(buffer), None
 
 
 #: How much sense data a refused SAT command may return.
@@ -553,7 +583,8 @@ def sat_passthrough(
     Returns:
         The sector the drive returned and ``None``, or empty bytes and why it
         was refused: the Win32 error when the ioctl failed, the SCSI status
-        when the translator rejected the command.
+        when the translator rejected the command, the byte count when it
+        accepted the command without moving a sector.
     """
     block = ata_pass_through_16(command=command, feature=feature, lba=lba)
     request = _SatRequest()
@@ -582,6 +613,9 @@ def sat_passthrough(
         return b"", f"Win32 error {api.last_error()}"
     if request.request.ScsiStatus:
         return b"", f"SCSI status 0x{request.request.ScsiStatus:02X}"
+    shortfall = _shortfall(request.request.DataTransferLength)
+    if shortfall:
+        return b"", shortfall
     return bytes(request.data), None
 
 
@@ -781,8 +815,8 @@ def read_ata(kernel32: api.WinLibrary, handle: int) -> dict[str, str]:
         ("smart_thresholds", ATA_SMART, SMART_READ_THRESHOLDS),
     ):
         lba = SMART_LBA_SIGNATURE if command == ATA_SMART else 0
-        payload, error = ata_passthrough(kernel32, handle, command=command, feature=feature, lba=lba)
-        refused = f"passthrough refused, Win32 error {error}"
+        payload, ata_refusal = ata_passthrough(kernel32, handle, command=command, feature=feature, lba=lba)
+        refused = f"passthrough refused, {ata_refusal}"
         if not payload:
             payload, sat_refusal = sat_passthrough(kernel32, handle, command=command, feature=feature, lba=lba)
             refused = f"{refused}; SAT refused, {sat_refusal}"
