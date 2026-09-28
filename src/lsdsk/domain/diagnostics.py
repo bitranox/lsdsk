@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, NamedTuple
 
-from .enums import ControllerKind, Severity
+from .enums import Severity
 from .history import CounterKind, History, identity_of, trend_for
 from .models import (
     Controller,
@@ -1526,31 +1526,6 @@ def count_by_severity(findings: tuple[Finding, ...]) -> dict[Severity, int]:
     return counts
 
 
-def is_storage_controller(kind: ControllerKind) -> bool:
-    """Whether a controller kind is one that can carry disks.
-
-    Args:
-        kind: The controller kind to judge.
-
-    Returns:
-        True for the kinds that carry drives. ``UNKNOWN`` is false, because a
-        kind nobody read is not evidence of a storage controller.
-
-    Example:
-        >>> is_storage_controller(ControllerKind.SAS)
-        True
-        >>> is_storage_controller(ControllerKind.UNKNOWN)
-        False
-    """
-    return kind in {
-        ControllerKind.AHCI,
-        ControllerKind.SAS,
-        ControllerKind.NVME,
-        ControllerKind.RAID,
-        ControllerKind.IDE,
-    }
-
-
 __all__ = [
     "SEVERITY_RANKING",
     "attached_demand_gbytes",
@@ -1564,7 +1539,6 @@ __all__ = [
     "diagnose_port_allocation",
     "format_pcie_sentence",
     "interface_demand_gbytes",
-    "is_storage_controller",
     "one_step_in_severity",
     "refine",
 ]
