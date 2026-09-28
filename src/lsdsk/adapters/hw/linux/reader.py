@@ -139,7 +139,9 @@ def ata_passthrough(fd: int, *, command: int, feature: int = 0, lba: int = 0, co
         The data the device returned.
 
     Raises:
-        OSError: If the ioctl fails or the transport reports an error.
+        OSError: If the ioctl fails, the transport reports an error, the
+            command ends in a SCSI status other than GOOD, or the device moved
+            less than the whole transfer.
     """
     buffer = ctypes.create_string_buffer(_SECTOR_BYTES * max(count, 1))
     sense = ctypes.create_string_buffer(32)
@@ -165,6 +167,18 @@ def ata_passthrough(fd: int, *, command: int, feature: int = 0, lba: int = 0, co
     fcntl.ioctl(fd, SG_IO, header)
     if header.host_status or header.driver_status & 0x0F:
         message = f"SG_IO transport failure: host={header.host_status} driver={header.driver_status}"
+        raise OSError(message)
+    # A clean transport says nothing about the command: a translator that refused
+    # it answers CHECK CONDITION in `status`, and one that answered without moving
+    # data leaves the buffer untouched and says so only in `resid`. Either way the
+    # buffer is still the zero fill it was created with, and storing it would turn
+    # a refusal into a reading of an all-zero sector.
+    if header.status:
+        message = f"SG_IO SCSI status 0x{header.status:02x}"
+        raise OSError(message)
+    moved = header.dxfer_len - header.resid
+    if moved != header.dxfer_len:
+        message = f"SG_IO returned {moved} of {header.dxfer_len} bytes"
         raise OSError(message)
     return bytes(buffer)
 
