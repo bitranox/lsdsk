@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.4.1] 2026-09-28 18:13:30
+
 ### Changed
 
 - **A machine with thousands of controllers or drives is diagnosed through
