@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from pydantic import AfterValidator
+from pydantic import AfterValidator, Field
 
 # C0 controls, DEL, and the C1 range. Tab is not in the set that gets replaced
 # with a space because it never appears in these fields and collapsing it would
@@ -42,7 +42,33 @@ _UNSAFE = frozenset(range(0x00, 0x20)) | {0x7F} | frozenset(range(0x80, 0xA0))
 #: enough that a value which is most of a file stays one line of a refusal.
 QUOTED_TEXT_LIMIT = 80
 
-__all__ = ["QUOTED_TEXT_LIMIT", "DeviceText", "OptionalDeviceText", "device_text", "first_reported", "visible_text"]
+#: The longest a piece of text a DEVICE chose may be. Every one of these is an
+#: identifier, a name or a rate as the platform published it: four hex
+#: characters from sysfs, a model string, a driver name, `8.0 GT/s PCIe`. The
+#: bound is far above anything real and exists because the file ceiling is not a
+#: bound on what ONE field can do downstream - an identifier round-trips through
+#: an integer parse, a hex re-format and a per-character generator, which
+#: measured a 12 to 13x memory multiplier, so a single field inside the 64 MB
+#: file limit could reach roughly 800 MB, and a resolved device name is looked
+#: up once per device sharing its id, which multiplies it again. It lives here
+#: rather than with the capture because a capture is not the only file that
+#: carries such text: the counter store is one a caller points
+#: ``--history-file`` at, and its identities and hostname go through the same
+#: per-character cleaning. Unbounded there, one 40 MB identity cost about 445 MB
+#: to replay a ``trend``. :data:`BoundedDeviceText` is that bound on a domain
+#: field.
+MAX_DEVICE_TEXT = 4096
+
+__all__ = [
+    "MAX_DEVICE_TEXT",
+    "QUOTED_TEXT_LIMIT",
+    "BoundedDeviceText",
+    "DeviceText",
+    "OptionalDeviceText",
+    "device_text",
+    "first_reported",
+    "visible_text",
+]
 
 
 def device_text(value: str) -> str:
@@ -166,7 +192,24 @@ def first_reported(*values: str | None) -> str | None:
 
 
 #: A string field carrying text the hardware chose, cleaned on construction.
+#:
+#: Not length-bounded, deliberately. Its values reach the domain through a
+#: capture, whose own fields already stop at :data:`MAX_DEVICE_TEXT`, and many
+#: are text this tool COMPOSES around device text - a finding's title is a
+#: device's name plus a sentence about it, a disk's path is ``/dev/`` plus its
+#: node - so the same bound here refused, deep inside ``diagnose``, a capture
+#: the capture model had accepted.
 DeviceText = Annotated[str, AfterValidator(device_text)]
 
 #: The same, for a field the platform may not report at all.
 OptionalDeviceText = Annotated[str | None, AfterValidator(_clean_optional)]
+
+#: :data:`DeviceText` of at most :data:`MAX_DEVICE_TEXT` characters, for a field
+#: whose value can reach the domain WITHOUT passing a capture's bound first -
+#: the counter store, which a caller names with ``--history-file`` and which is
+#: validated straight into the domain's own models. The bound is part of the
+#: ``str`` schema itself, so pydantic refuses an over-long value before
+#: :func:`device_text` walks it a character at a time, which is the cost the
+#: bound exists to cap. Only raw device text belongs here, never text composed
+#: around it.
+BoundedDeviceText = Annotated[Annotated[str, Field(max_length=MAX_DEVICE_TEXT)], AfterValidator(device_text)]

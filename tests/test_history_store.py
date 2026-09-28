@@ -14,6 +14,7 @@ import json
 import os
 import stat
 from pathlib import Path
+from typing import Any
 
 import pytest
 from workcount import work_to_run
@@ -29,6 +30,7 @@ from lsdsk.adapters.history.store import (
 from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.history import CounterKind, DiskSeries, History, Sample, record, thin, trend_for
 from lsdsk.domain.models import Disk, Health
+from lsdsk.domain.text import MAX_DEVICE_TEXT
 
 T0 = "2026-08-05T01:23:00+00:00"
 
@@ -192,6 +194,61 @@ def test_a_store_from_a_future_schema_is_refused(store: Path) -> None:
     store.write_text(json.dumps({"schema": HISTORY_SCHEMA_VERSION + 1, "hostname": "box"}), encoding="utf-8")
     with pytest.raises(ConfigurationError, match="schema"):
         load_history(store, hostname="box")
+
+
+def _store_with_text(store: Path, field: str, text: str) -> None:
+    """Write a one-drive, one-sample store whose `field` holds `text`."""
+    document: dict[str, Any] = {
+        "schema": HISTORY_SCHEMA_VERSION,
+        "hostname": "box",
+        "series": [{"identity": "naa.1", "model": "X", "samples": [{"power_on_hours": 1, "captured_at": T0}]}],
+    }
+    if field == "hostname":
+        document["hostname"] = text
+    elif field == "captured_at":
+        document["series"][0]["samples"][0]["captured_at"] = text
+    else:
+        document["series"][0][field] = text
+    store.parent.mkdir(parents=True, exist_ok=True)
+    store.write_text(json.dumps(document), encoding="utf-8")
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("field", ["hostname", "identity", "model", "captured_at"])
+def test_a_stored_text_past_the_device_text_bound_is_refused(store: Path, field: str) -> None:
+    """The store is a file the caller points at, so each of its strings is input.
+
+    A capture bounds every piece of device text at `MAX_DEVICE_TEXT` because one
+    field is cleaned a character at a time, which costs a multiple of its length
+    in memory. The store's four strings carry the same kind of value through the
+    same cleaning and had no bound at all: a 40 MB `identity` inside the file
+    ceiling cost about 445 MB to replay a `trend`. Refused as any other malformed
+    store is, with the machine's own hostname passed in so the hostname arm is
+    refused by the bound and not by the other-machine check.
+    """
+    text = "a" * (MAX_DEVICE_TEXT + 1)
+    _store_with_text(store, field, text)
+    hostname = text if field == "hostname" else "box"
+    with pytest.raises(ConfigurationError, match="not a history store") as refused:
+        load_history(store, hostname=hostname)
+    assert f"at most {MAX_DEVICE_TEXT}" in str(refused.value), f"the refusal gives no reason: {refused.value}"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("field", ["hostname", "identity", "model", "captured_at"])
+def test_a_stored_text_at_the_device_text_bound_still_loads(store: Path, field: str) -> None:
+    """The control: the bound is a length, and a value exactly at it is kept."""
+    text = "a" * MAX_DEVICE_TEXT
+    _store_with_text(store, field, text)
+    hostname = text if field == "hostname" else "box"
+    loaded = load_history(store, hostname=hostname)
+    stored = {
+        "hostname": loaded.hostname,
+        "identity": loaded.series[0].identity,
+        "model": loaded.series[0].model,
+        "captured_at": loaded.series[0].samples[0].captured_at,
+    }
+    assert stored[field] == text, f"{field} at the bound did not load unchanged"
 
 
 # --------------------------------------------------------------------------

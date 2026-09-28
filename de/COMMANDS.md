@@ -160,6 +160,17 @@ nach wie vor nichts auf stdout. Zuvor schrieb ein fehlgeschlagener JSON-Lauf
 unterscheiden, der keine Daten erzeugte, und die Meldung mit dem Grund lag auf
 dem Strom, den sie nicht las.
 
+`lsdsk record` ist die eine Ausnahme, und zwar eine gewollte: Kann es die
+Messung nicht ablegen - ein Speicher, den es nicht lesen kann (`78`), ein
+Schreibvorgang, den das Dateisystem verweigert (`13`), jeder andere
+fehlgeschlagene Schreibvorgang (`74`) -, antwortet es trotzdem mit seinem eigenen
+Aktions-Umschlag und ohne `error`-Objekt. `ok` ist `false`, `data` enthält
+`recorded: false` samt Speicher und der Zahl gelesener Laufwerke, und der Grund
+steht als Satz in `skipped`, denn der Befehl hat trotzdem etwas getan: Er hat
+die Maschine gelesen. Der Exit-Code ist derselbe, den der Fehlschlag ohnehin
+hinterlässt; wer zuerst `ok` und den Code liest, behandelt `record` also wie
+alles andere, wer nur nach `error.type` sucht, sieht hier nichts.
+
 `lsdsk record` nennt, welches seiner Ergebnisse eingetreten ist, statt eines
 Satzes für alle, denn sie bedeuten Verschiedenes: nichts Neues zum Ablegen, was
 in Ordnung ist; ein Speicher, der zu einer anderen Maschine gehört oder nicht

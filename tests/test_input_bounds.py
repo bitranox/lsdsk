@@ -1680,8 +1680,14 @@ def test_a_store_for_another_machine_names_it_inert_and_bounded(tmp_path: Path) 
     The stored machine name is read as the file wrote it and quoted back when it
     is not this machine's. ``repr`` kept its escapes inert and its length whole,
     so a name that is most of the file became a refusal the size of the file.
+
+    The name is the longest the store admits, `MAX_DEVICE_TEXT`: one longer is
+    refused by that bound before the machines are compared, which
+    `test_a_stored_text_past_the_device_text_bound_is_refused` holds. At the
+    bound it still reaches this refusal and is still far past what a message
+    may quote.
     """
-    stored_name = f"{_OSC_KEY}{'H' * 100_000}"
+    stored_name = f"{_OSC_KEY}{'H' * (MAX_DEVICE_TEXT - len(_OSC_KEY))}"
     store = tmp_path / "other-machine.json"
     store.write_text(json.dumps({"schema": 1, "hostname": stored_name, "series": []}), encoding="utf-8")
 
@@ -1763,6 +1769,59 @@ def test_the_counter_store_cleans_the_text_it_carries_like_every_other_domain_fi
 
     assert "\x1b" not in DiskSeries(identity="naa.1\x1b[31m", model="Model").identity
     assert "\x1b" not in DiskSeries(identity="naa.1", model="Model\x1b]0;retitled\x07").model
+
+
+@pytest.mark.os_agnostic
+def test_every_string_the_counter_store_carries_is_bounded() -> None:
+    """The capture rule above, for the other file a caller points lsdsk at.
+
+    `--history-file` names a file nothing guarantees `record` wrote, and its
+    strings go through the same per-character cleaning a capture's do. They
+    carried no bound: a 40 MB `identity` inside the file ceiling cost about
+    445 MB to replay a `trend`. Walked from the file's root model rather than
+    listed, so a string field added to a sample or a series later is seen here.
+    """
+    from lsdsk.adapters.history.store import HistoryFile
+
+    assert _loose_strings(HistoryFile) == 0, "the counter store carries text with no maximum length"
+
+
+@pytest.mark.os_agnostic
+def test_text_the_capture_accepts_at_its_bound_is_diagnosed_rather_than_refused(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    """A domain field this tool COMPOSES may be longer than any one piece of device text.
+
+    A finding's title is a device's name plus a sentence about it, so it is at
+    most one bound plus the sentence, never at most one bound. Putting the
+    capture's bound on every domain `DeviceText` made a capture the capture
+    model accepts - every resolved PCI name exactly `MAX_DEVICE_TEXT` long -
+    die at 22 with pydantic's own error inside `diagnose`, where it used to be
+    diagnosed. The bound belongs where text ARRIVES, which is a capture or the
+    counter store, not on text built from what already arrived.
+    """
+    from lsdsk.adapters.cli import cli
+
+    capture = json.loads((FIXTURES / "linux-nvme-board.json").read_text(encoding="utf-8"))
+    assert capture["pci_names"], "the fixture resolves no names, so this padded nothing"
+    capture["pci_names"] = dict.fromkeys(capture["pci_names"], "N" * MAX_DEVICE_TEXT)
+    padded = tmp_path / "padded.json"
+    padded.write_text(json.dumps(capture), encoding="utf-8")
+
+    result = cli_runner.invoke(
+        cli,
+        ["--no-record", "findings", "--format", "json", "--replay", str(padded)],
+        obj=production_factory,
+        color=False,
+    )
+
+    # CliRunner reports an exception that escaped as exit 1, which is also the
+    # findings' own code, so the code alone cannot tell a diagnosis from a crash.
+    # The findings' own exit arrives as SystemExit; anything else escaped.
+    escaped = None if isinstance(result.exception, SystemExit) else result.exception
+    assert escaped is None, f"diagnosing a capture inside every bound raised {escaped!r}"
+    assert result.exit_code in (0, 1), f"a capture inside every bound left {result.exit_code}:\n{result.output[-800:]}"
+    assert "N" * MAX_DEVICE_TEXT in result.stdout, "the padded name reached no finding, so nothing was composed from it"
 
 
 @pytest.mark.os_agnostic

@@ -31,7 +31,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING
 
 from .base import DomainModel
-from .text import DeviceText
+from .text import BoundedDeviceText
 from .thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
@@ -114,7 +114,7 @@ class Sample(DomainModel, frozen=True):
     """
 
     power_on_hours: int
-    captured_at: DeviceText
+    captured_at: BoundedDeviceText
     crc_errors: int | None = None
     reallocated_sectors: int | None = None
     pending_sectors: int | None = None
@@ -192,8 +192,8 @@ class DiskSeries(DomainModel, frozen=True):
         ()
     """
 
-    identity: DeviceText
-    model: DeviceText
+    identity: BoundedDeviceText
+    model: BoundedDeviceText
     samples: tuple[Sample, ...] = ()
 
 
@@ -209,7 +209,7 @@ class History(DomainModel, frozen=True):
         True
     """
 
-    hostname: DeviceText
+    hostname: BoundedDeviceText
     series: tuple[DiskSeries, ...] = ()
 
     def for_identity(self, identity: str) -> DiskSeries | None:

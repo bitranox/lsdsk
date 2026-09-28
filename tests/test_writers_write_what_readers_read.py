@@ -7,10 +7,11 @@ ignores it, stops recording for good and leaves ``record`` at exit 0; a snapshot
 simply can never be replayed.
 
 The boundary is held at exactly the read limit and one byte past it. The file is
-padded with a model name made of four-byte characters, because the bound is on
+padded with model names made of four-byte characters, because the bound is on
 BYTES and every character of a model name is walked once by the text cleaner:
 sixty-four megabytes of ASCII cost several seconds to validate, a quarter as
-many characters costs a quarter of that.
+many characters costs a quarter of that. The names are spread over thousands of
+drives, because one name may carry no more than `MAX_DEVICE_TEXT` characters.
 """
 
 from __future__ import annotations
@@ -27,9 +28,10 @@ from lsdsk.adapters.hw import snapshot
 from lsdsk.adapters.textfile import MAX_INPUT_BYTES
 from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.history import DiskSeries, History, Sample
+from lsdsk.domain.text import MAX_DEVICE_TEXT
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from click.testing import CliRunner
 
@@ -38,19 +40,30 @@ WIDE = "\U0001f4be"  # a floppy disk, four bytes in UTF-8
 SNAPSHOT = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
 
 
-def _padded(model: str) -> History:
-    """A one-drive history whose size is decided by its model name.
+#: The most bytes one padding model carries. A model is `DeviceText`, so at most
+#: `MAX_DEVICE_TEXT` characters; four-byte characters fill it fastest, and the
+#: margin leaves room for the up to three one-byte characters that make an exact
+#: byte count without pushing a model past the bound.
+BYTES_PER_MODEL = len(WIDE.encode("utf-8")) * (MAX_DEVICE_TEXT - 16)
+
+
+def _padded(models: Sequence[str]) -> History:
+    """A history of one drive per model name, its size decided by those names.
 
     Built without validation because the text cleaner is the cost the padding
     would otherwise pay three times over; the reader, which is what is under
-    test, validates it in full.
+    test, validates it in full. The identities are one fixed width, so the
+    bytes a drive costs beyond its model do not depend on which drive it is.
     """
-    series = DiskSeries.model_construct(
-        identity="pad",
-        model=model,
-        samples=(Sample(power_on_hours=1, captured_at="t", crc_errors=0),),
+    series = tuple(
+        DiskSeries.model_construct(
+            identity=f"pad{index:05d}",
+            model=model,
+            samples=(Sample(power_on_hours=1, captured_at="t", crc_errors=0),),
+        )
+        for index, model in enumerate(models)
     )
-    return History.model_construct(hostname=HOST, series=(series,))
+    return History.model_construct(hostname=HOST, series=series)
 
 
 def _model_of_bytes(count: int) -> str:
@@ -59,38 +72,43 @@ def _model_of_bytes(count: int) -> str:
     return WIDE * wide + "x" * narrow
 
 
-def _model_filling(path: Path, target: int) -> str:
-    """The model name that makes the WRITER's own file exactly `target` bytes.
+def _models_filling(path: Path, target: int) -> tuple[str, ...]:
+    """The model names that make the WRITER's own file exactly `target` bytes.
 
-    Measured from what the writer produced for an empty name rather than from a
-    format assumed here, so the arithmetic follows whatever layout it chooses.
+    Spread over as many drives as it takes to keep each name within
+    `MAX_DEVICE_TEXT`, since the reader refuses one longer. The overhead is
+    measured from what the writer produced for that many empty names rather
+    than from a format assumed here, so the arithmetic follows whatever layout
+    it chooses.
     """
-    save_history(_padded(""), path)
+    count = -(-target // BYTES_PER_MODEL)
+    save_history(_padded(("",) * count), path)
     overhead = path.stat().st_size
     path.unlink()
-    return _model_of_bytes(target - overhead)
+    share, spare = divmod(target - overhead, count)
+    return tuple(_model_of_bytes(share + (1 if index < spare else 0)) for index in range(count))
 
 
 @pytest.mark.os_agnostic
 def test_a_store_of_exactly_the_read_limit_is_written_and_read_back(tmp_path: Path) -> None:
     """The largest file the writer may produce is one the reader takes."""
     store = tmp_path / "history.json"
-    save_history(_padded(_model_filling(store, MAX_INPUT_BYTES)), store)
+    save_history(_padded(_models_filling(store, MAX_INPUT_BYTES)), store)
 
     assert store.stat().st_size == MAX_INPUT_BYTES, "the padding missed the boundary, so this asserted nothing"
-    assert load_history(store, hostname=HOST).series[0].identity == "pad"
+    assert load_history(store, hostname=HOST).series[0].identity == "pad00000"
 
 
 @pytest.mark.os_agnostic
 def test_a_store_one_byte_past_the_read_limit_is_refused_and_the_old_one_kept(tmp_path: Path) -> None:
     """The writer refuses what the reader would refuse, loudly and before the rename."""
     store = tmp_path / "history.json"
-    model = _model_filling(store, MAX_INPUT_BYTES + 1)
-    save_history(_padded(""), store)
+    models = _models_filling(store, MAX_INPUT_BYTES + 1)
+    save_history(_padded(("",)), store)
     before = store.read_bytes()
 
     with pytest.raises(OSError, match="larger than the history reader accepts"):
-        save_history(_padded(model), store)
+        save_history(_padded(models), store)
 
     assert store.read_bytes() == before, "the previous store was replaced by one nothing can read"
     assert not list(tmp_path.glob(".*.tmp")), "a temporary file was left behind"
@@ -109,7 +127,7 @@ def test_record_fails_loudly_when_the_reading_would_outgrow_the_store(
     every later run refused, and exited 0 each time.
     """
     store = tmp_path / "history.json"
-    save_history(_padded(_model_filling(store, MAX_INPUT_BYTES - 512)), store)
+    save_history(_padded(_models_filling(store, MAX_INPUT_BYTES - 512)), store)
     before = store.read_bytes()
 
     result = cli_runner.invoke(
