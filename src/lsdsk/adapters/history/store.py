@@ -30,11 +30,9 @@ System Role:
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -42,6 +40,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from ...domain.errors import ConfigurationError, MissingFileError
 from ...domain.history import DiskSeries, History, Sample
+from ..atomicfile import replace_atomically
 from ..textfile import read_json_bounded
 from ..validation import what_is_wrong_with_it
 
@@ -273,22 +272,7 @@ def save_history(history: History, path: Path) -> None:
     stored = HistoryFile(schema=HISTORY_SCHEMA_VERSION, hostname=history.hostname, series=history.series)
     body = stored.model_dump_json(indent=2, by_alias=True)
 
-    handle, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(body)
-            stream.flush()
-            os.fsync(stream.fileno())
-        # mkstemp already creates at 0600; set it explicitly so the guarantee
-        # does not rest on that, and so a umask cannot widen it.
-        with contextlib.suppress(OSError):
-            temporary.chmod(HISTORY_FILE_MODE)
-        temporary.replace(path)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            temporary.unlink()
-        raise
+    replace_atomically(path, body, mode=HISTORY_FILE_MODE)
 
 
 def read_history(*, hostname: str, path: Path | None = None) -> History:

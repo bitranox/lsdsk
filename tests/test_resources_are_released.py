@@ -13,7 +13,9 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from lsdsk.adapters.history.store import save_history
 from lsdsk.adapters.hw import snapshot
+from lsdsk.domain.history import History
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -88,3 +90,21 @@ def test_a_failed_write_in_place_closes_the_descriptor_it_opened(tmp_path: Path,
         tmp_path.chmod(0o700)
 
     assert _next_free_descriptor() == before, "the destination's descriptor was left open"
+
+
+@pytest.mark.os_agnostic
+def test_a_failed_history_save_closes_the_descriptor_it_opened(tmp_path: Path, fdopen_refuses: None) -> None:
+    """The history store replaces its file the same way a snapshot does.
+
+    Five saves rather than one, so a leak reads as a count the process cannot
+    miss rather than as one descriptor a later open might happen to reuse.
+    """
+    del fdopen_refuses
+    before = _next_free_descriptor()
+
+    for _ in range(5):
+        with pytest.raises(OSError, match="no stream for this descriptor"):
+            save_history(History(hostname="box"), tmp_path / "history.json")
+
+    assert _next_free_descriptor() == before, "the temporary file's descriptor was left open"
+    assert not list(tmp_path.glob(".*.tmp")), "a temporary file was left behind"
