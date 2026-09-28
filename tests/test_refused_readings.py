@@ -19,10 +19,11 @@ direction, and it is the half that keeps this honest.
 from __future__ import annotations
 
 import json
+import mmap
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 import pytest
 
@@ -456,3 +457,63 @@ def test_a_controller_with_no_such_region_records_no_refusal(tmp_path: Path) -> 
 
     assert reading.registers is None
     assert reading.refused is None
+
+
+@pytest.mark.os_linux
+def test_a_region_too_small_to_hold_the_registers_records_no_refusal(tmp_path: Path) -> None:
+    """A BAR5 shorter than the two registers is a region with nothing to give, not a refusal.
+
+    The missing-file arm above does not reach this branch: it stops at ``stat``.
+    The control maps a region of the full span with both registers planted and
+    requires them back, so the subject cannot pass by the reader returning
+    nothing for every region.
+    """
+    from lsdsk.adapters.hw.decode import ahci
+    from lsdsk.adapters.hw.linux.reader import read_ahci_capabilities
+
+    full = tmp_path / "0000:00:1f.2"
+    full.mkdir()
+    registers = bytearray(0x1000)
+    registers[ahci.CAPABILITY_OFFSET : ahci.CAPABILITY_OFFSET + 4] = (0xE7234F05).to_bytes(4, "little")
+    registers[ahci.PORTS_IMPLEMENTED_OFFSET : ahci.PORTS_IMPLEMENTED_OFFSET + 4] = (0x3).to_bytes(4, "little")
+    (full / "resource5").write_bytes(bytes(registers))
+    control = read_ahci_capabilities(full)
+    assert control.registers == {"capability": 0xE7234F05, "ports_implemented": 0x3}, control
+    assert control.refused is None
+
+    short = tmp_path / "0000:00:17.0"
+    short.mkdir()
+    (short / "resource5").write_bytes(bytes(ahci.REGISTER_SPAN - 1))
+
+    reading = read_ahci_capabilities(short)
+
+    assert reading.registers is None
+    assert reading.refused is None
+
+
+@pytest.mark.os_linux
+def test_a_mapping_the_kernel_denies_is_recorded_with_its_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A region that opens but will not map is a refusal, not a controller with no BAR5.
+
+    The open-denied arm above cannot reach this branch, and it is skipped as root,
+    which is exactly the user that meets a denied MAPPING under kernel lockdown.
+    ``mmap.mmap`` is replaced because the kernel is the only thing that refuses a
+    mapping of a file the caller could open; it is the external edge here.
+    """
+    from lsdsk.adapters.hw.linux.reader import read_ahci_capabilities
+
+    device = tmp_path / "0000:00:1f.2"
+    device.mkdir()
+    (device / "resource5").write_bytes(bytes(0x1000))
+
+    def refuse(*_args: object, **_kwargs: object) -> NoReturn:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(mmap, "mmap", refuse)
+
+    reading = read_ahci_capabilities(device)
+
+    assert reading.registers is None
+    assert reading.refused is not None and "not permitted" in reading.refused, reading.refused

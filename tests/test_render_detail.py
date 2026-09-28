@@ -477,8 +477,13 @@ def test_an_uplink_resting_on_one_reading_is_marked_as_a_ceiling() -> None:
     read = PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8)
     both = Controller(address="0000:01:00.0", name="Measured HBA", link=read, upstream=read)
     one = Controller(address="0000:02:00.0", name="Half-measured HBA", link=read, upstream=PcieLink())
+    # The other orientation: the card's own link unread, the bridge's read. The
+    # figure is then the bridge's alone and just as much a ceiling, so a panel
+    # that decided by which END was unread rather than by how many would draw
+    # this one flat.
+    card_unread = Controller(address="0000:03:00.0", name="Card-unread HBA", link=PcieLink(), upstream=read)
 
-    machine = Inventory(hostname="example", controllers=(both, one))
+    machine = Inventory(hostname="example", controllers=(both, one, card_unread))
     findings = diagnose(machine)
 
     measured = _drawn(detail.render_detail(detail.controller_detail(both, machine), findings))
@@ -486,9 +491,10 @@ def test_an_uplink_resting_on_one_reading_is_marked_as_a_ceiling() -> None:
     assert theme.AT_MOST not in measured, "a controller with both ends read was marked as a ceiling"
     assert detail.AT_MOST_LEGEND not in measured
 
-    ceiling = _drawn(detail.render_detail(detail.controller_detail(one, machine), findings))
-    assert f"{theme.AT_MOST} " in ceiling, "an unread bridge was drawn as a measured uplink"
-    assert detail.AT_MOST_LEGEND in ceiling, "the marker was drawn and never explained"
+    for subject in (one, card_unread):
+        ceiling = _drawn(detail.render_detail(detail.controller_detail(subject, machine), findings))
+        assert f"{theme.AT_MOST} " in ceiling, f"{subject.name}: an unread end was drawn as a measured uplink"
+        assert detail.AT_MOST_LEGEND in ceiling, f"{subject.name}: the marker was drawn and never explained"
 
 
 def _values_of(record: detail.Detail, label: detail.DetailGroupLabel) -> dict[str, str]:

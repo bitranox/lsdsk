@@ -23,12 +23,12 @@ import pytest
 from lsdsk.adapters import cli as cli_mod
 from lsdsk.adapters.config.tunables import DisplaySettings
 from lsdsk.adapters.hw.snapshot import build_from
-from lsdsk.adapters.render import report, tables
+from lsdsk.adapters.render import report, tables, tree
 from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import BusType, DiskKind
-from lsdsk.domain.models import Disk, Inventory
+from lsdsk.domain.models import Disk, Inventory, PciNode
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -319,8 +319,25 @@ class TestADiskRowSurvivesAVirtualBus:
     came from would silently drop it.
     """
 
-    def test_a_physical_disk_reporting_a_virtual_bus_still_gets_a_row(self, rendered: Callable[..., str]) -> None:
+    @pytest.mark.parametrize("view", ["disk table", "controller tree", "fabric"])
+    def test_a_physical_disk_reporting_a_virtual_bus_still_gets_a_row(
+        self, view: str, rendered: Callable[..., str]
+    ) -> None:
+        """Every view that lists drives, not only the table.
+
+        The two trees each collect the drives no controller claimed into an
+        orphan group, which is where a Hyper-V guest's disk lands: it hangs off
+        VMBus, not off any PCI controller. A filter on the bus there drops the
+        guest's system disk from the view that exists to show it.
+        """
         disk = Disk(node="PhysicalDrive0", path="PhysicalDrive0", model="Virtual HD", bus=BusType.VIRTUAL)
         machine = Inventory(hostname="guest", disks=(disk,))
-        text = rendered(tables.render_disks(machine, ()))
-        assert "PhysicalDrive0" in text
+        if view == "disk table":
+            text = rendered(tables.render_disks(machine, ()))
+        elif view == "controller tree":
+            text = rendered(report.render_controller_disks(machine, ()))
+        else:
+            machine = machine.with_changes(pci_tree=(PciNode(address="0000:00", name="root bus"),))
+            assert tree.fabric_lines(machine, ()), "the control: this drew the no-PCI fallback, not the fabric"
+            text = rendered(tree.render_fabric(machine, ()))
+        assert "PhysicalDrive0" in text, text
