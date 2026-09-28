@@ -25,7 +25,7 @@ from pydantic import Field, TypeAdapter, ValidationError
 from ...domain.enums import Platform
 from ...domain.errors import ConfigurationError, UnsupportedPlatformError
 from ..atomicfile import replace_atomically, write_through
-from ..textfile import read_json_bounded
+from ..textfile import MAX_INPUT_BYTES, fits_a_bounded_read, read_json_bounded
 from ..validation import what_is_wrong_with_it
 from .capture import CaptureEnvelope
 from .linux import builder as linux_builder
@@ -184,14 +184,25 @@ def serialise(capture: dict[str, Any]) -> str:
 
     Raises:
         ConfigurationError: If the reading names no platform lsdsk has a model
-            for, or a section does not have the shape its model requires.
+            for, a section does not have the shape its model requires, or the
+            file would be larger than :func:`load` reads.
     """
     try:
         parse_capture(capture)
     except ValidationError as error:
         message = f"This reading is not one lsdsk understands, so it was not written:\n{what_is_wrong_with_it(error)}"
         raise ConfigurationError(message) from error
-    return json.dumps(capture, indent=2, sort_keys=True)
+    body = json.dumps(capture, indent=2, sort_keys=True)
+    if not fits_a_bounded_read(body):
+        # A snapshot exists to be replayed, and one past the read bound never
+        # can be: refused here, where the file is still unwritten, rather than
+        # at the replay, where the machine it describes may be long gone.
+        message = (
+            f"This reading is {len(body) / 1024 / 1024:.1f} MB as a snapshot, larger than --replay reads "
+            f"({MAX_INPUT_BYTES // 1024 // 1024} MB), so it was not written."
+        )
+        raise ConfigurationError(message)
+    return body
 
 
 def save(capture: dict[str, Any], path: Path) -> None:

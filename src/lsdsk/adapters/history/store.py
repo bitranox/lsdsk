@@ -13,10 +13,13 @@ often a cable, an enclosure powered down or a controller reset than a disposal,
 and discarding the history on that evidence would throw away the only copy of
 the past for a drive that comes back in an hour.  So the file grows with the
 number of distinct drives the machine has ever seen, which on real hardware is
-small and rises only when disks are swapped.  A full series costs about 227 KB,
-so the 64 MB read bound is reached at roughly 280 drives; past that the store
-would be refused as oversized.  That is far beyond any real machine, but it is
-a ceiling rather than the unbounded growth "capped per drive" might suggest.
+small and rises only when disks are swapped.  A full series costs about 210 KB
+with every counter sixteen digits long, so the 64 MB read bound is reached at
+roughly 300 such drives.  The writer refuses a store past that bound rather than
+write one its own reader would refuse, so a run that would cross it fails
+loudly and leaves the previous store as it was.  That is far beyond any real
+machine, but it is a ceiling rather than the unbounded growth "capped per
+drive" might suggest.
 
 The file lives in the platform's STATE directory rather than beside the
 configuration.  Configuration is written by a human and is worth copying between
@@ -30,6 +33,7 @@ System Role:
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import sys
@@ -41,7 +45,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from ...domain.errors import ConfigurationError, MissingFileError
 from ...domain.history import DiskSeries, History, Sample
 from ..atomicfile import replace_atomically
-from ..textfile import read_json_bounded
+from ..textfile import MAX_INPUT_BYTES, fits_a_bounded_read, read_json_bounded
 from ..validation import what_is_wrong_with_it
 
 HISTORY_SCHEMA_VERSION = 1
@@ -261,18 +265,48 @@ def save_history(history: History, path: Path) -> None:
 
     Raises:
         OSError: If the directory cannot be created or the file cannot be
-            replaced. The previous store is untouched in that case.
+            replaced, or the store would be larger than :func:`load_history`
+            reads (``errno.EFBIG``). The previous store is untouched in every
+            case.
         pydantic.ValidationError: If the history does not satisfy the stored
             schema. No caller has reached this - a ``History`` is validated at
             its own construction and ``HistoryFile`` declares the same field
             types - but the re-validation is real, so a caller catching only
             ``OSError`` would not see it.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
     stored = HistoryFile(schema=HISTORY_SCHEMA_VERSION, hostname=history.hostname, series=history.series)
-    body = stored.model_dump_json(indent=2, by_alias=True)
+    # Compact rather than indented: indentation is a third of a full series'
+    # size and nobody reads this file by eye.
+    body = stored.model_dump_json(by_alias=True)
+    _refuse_what_the_reader_would_refuse(body, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
 
     replace_atomically(path, body, mode=HISTORY_FILE_MODE)
+
+
+def _refuse_what_the_reader_would_refuse(body: str, path: Path) -> None:
+    """Refuse a store the reader would refuse, before anything is written.
+
+    The reader bounds a history store like any file from outside the tool, and
+    a writer with no bound of its own once produced a file past it: every later
+    run then ignored the store and recorded nothing, while ``record`` exited 0.
+    Raised as an ``OSError`` because that is what every caller already reports
+    as a write that failed; the previous store stays readable and is kept.
+
+    Args:
+        body: The whole file, as it would be written.
+        path: The store, for the message.
+
+    Raises:
+        OSError: With ``errno.EFBIG``, if ``body`` is over the read limit.
+    """
+    if not fits_a_bounded_read(body):
+        size = len(body.encode("utf-8"))
+        message = (
+            f"the history store would be {size / 1024 / 1024:.1f} MB, larger than the history reader accepts "
+            f"({MAX_INPUT_BYTES // 1024 // 1024} MB), so nothing was written and the previous store is kept"
+        )
+        raise OSError(errno.EFBIG, message, str(path))
 
 
 def read_history(*, hostname: str, path: Path | None = None) -> History:

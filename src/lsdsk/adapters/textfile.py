@@ -19,6 +19,8 @@ Contents:
     * :data:`MAX_INPUT_BYTES` - the ceiling both boundaries refuse above.
     * :func:`read_text_bounded` - read a file, or refuse it for its size.
     * :func:`read_json_bounded` - the same read, parsed, refusing a repeated key.
+    * :func:`fits_a_bounded_read` - whether a file this tool is about to write
+      is one it could read back.
 """
 
 from __future__ import annotations
@@ -51,8 +53,9 @@ _BOM_CODECS: Final[tuple[tuple[bytes, str], ...]] = (
 # Measured, not guessed: the largest capture from the real machines in
 # tests/fixtures/hw is 148 KB for 19 drives, so a capture costs roughly 8 KB per
 # drive. This leaves room for a machine with hundreds of drives and still
-# refuses a mistyped path to a log or a disk image in constant time. A history
-# store is smaller again, being bounded to MAX_SAMPLES_PER_DRIVE per drive.
+# refuses a mistyped path to a log or a disk image in constant time. Both files
+# are also WRITTEN by this tool, and each writer refuses a file past this ceiling
+# (fits_a_bounded_read), so nothing it writes is one it cannot read back.
 #
 # It bounds the FILE and not the footprint, and the difference is worth stating
 # because the sentence above reads as if it were the same thing. A parsed
@@ -72,6 +75,31 @@ _BOM_CODECS: Final[tuple[tuple[bytes, str], ...]] = (
 # answer and not a dangerous one, and the refusal above the ceiling is still
 # the one stat it always was.
 MAX_INPUT_BYTES = 64 * 1024 * 1024
+
+
+def fits_a_bounded_read(body: str) -> bool:
+    """Whether a file holding ``body`` would be accepted by the bounded read.
+
+    Both files this tool reads back are files it also WRITES, and a writer with
+    no bound of its own can produce one past :data:`MAX_INPUT_BYTES`: its own
+    reader then refuses it, so a history store stops growing for good and a
+    snapshot can never be replayed. The comparison is the reader's own, on the
+    same constant and on the UTF-8 bytes the writers produce, so writer and
+    reader cannot disagree about the boundary.
+
+    Args:
+        body: The whole file, as it would be written.
+
+    Returns:
+        Whether the read would accept it.
+
+    Example:
+        >>> fits_a_bounded_read("{}")
+        True
+        >>> fits_a_bounded_read("x" * (MAX_INPUT_BYTES + 1))
+        False
+    """
+    return len(body.encode("utf-8")) <= MAX_INPUT_BYTES
 
 
 def read_text_bounded(path: Path, *, what: str, errors: str = "strict") -> str:
@@ -311,4 +339,4 @@ def _unreadable(path: Path, what: str, error: OSError) -> ConfigurationError:
     return ConfigurationError(message)
 
 
-__all__ = ["MAX_INPUT_BYTES", "read_json_bounded", "read_text_bounded"]
+__all__ = ["MAX_INPUT_BYTES", "fits_a_bounded_read", "read_json_bounded", "read_text_bounded"]
