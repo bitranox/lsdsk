@@ -1298,6 +1298,24 @@ def _write_capture(destination: _CaptureDestination, output_format: OutputFormat
         )
 
 
+def _say_where_the_capture_went(named: str, output_format: OutputFormat) -> None:
+    """Put the capture's location on standard output, where a script reads it.
+
+    Args:
+        named: The file written, spelled the way the caller can reach it.
+        output_format: Whether stdout carries the result envelope.
+
+    Raises:
+        UnwritableStandardOutputError: When standard output refused the line.
+    """
+    if output_format is OutputFormat.JSON:
+        emit_action(ActionCommand.SNAPSHOT, SnapshotResult(path=named, schema_version=snapshot_adapter.SCHEMA_VERSION))
+    # A process started with no stdout (pythonw, a service, `>&-`) has nobody
+    # to tell, and the capture it asked for has landed.
+    elif not safe_console.standard_output_is_missing():
+        safe_console.echo(f"Wrote {named}")
+
+
 def _report_the_capture(destination: _CaptureDestination, output_format: OutputFormat) -> None:
     """Say where the capture went and what it carries.
 
@@ -1315,15 +1333,19 @@ def _report_the_capture(destination: _CaptureDestination, output_format: OutputF
             err=True,
         )
         return
-    if output_format is OutputFormat.JSON:
-        emit_action(
-            ActionCommand.SNAPSHOT,
-            SnapshotResult(path=destination.named, schema_version=snapshot_adapter.SCHEMA_VERSION),
+    try:
+        _say_where_the_capture_went(destination.named, output_format)
+    # The capture is on disk; only the line reporting it was lost. Said in this
+    # command's own words, because the generic sentence - standard output
+    # refused - reads as if the capture had been lost with it, and a caller
+    # acting on that re-takes a capture it already has. Still 74: the caller
+    # sent standard output somewhere and that write failed.
+    except safe_console.UnwritableStandardOutputError as error:
+        fail(
+            f"wrote the capture to {destination.named}, but standard output refused the line saying so: {error}",
+            ExitCode.IO_ERROR,
+            output_format=output_format,
         )
-    # A process started with no stdout (pythonw, a service, `>&-`) has nobody
-    # to tell, and the capture it asked for has landed.
-    elif not safe_console.standard_output_is_missing():
-        safe_console.echo(f"Wrote {destination.named}")
     # On stderr in both modes, so stdout stays exactly what a script parses:
     # the path line in human mode, the envelope in JSON mode.
     safe_console.echo(

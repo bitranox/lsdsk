@@ -25,6 +25,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   holding a NUL byte got as far as the file system. Both are now refused like
   any other unusable value: one warning naming the key, and the per-user state
   file (or `--history-file`) is used.
+- **`snapshot -o <file>` says the capture landed when standard output refuses
+  the line reporting it.** With `> /dev/full` the capture was written but the
+  one error line said only that standard output refused, which read as if the
+  capture had been lost too. The line now names the file it was written to. The
+  exit code stays `74`, because that write did fail; with standard output
+  closed (`>&-`) no line is attempted and the run still succeeds.
 - **`LOG_CONSOLE_STREAM` no longer bypasses the broken-pipe guard.** With that
   variable naming `stderr` or `stdout`, a reader closing stderr made rich send
   standard output to the null device, so `lsdsk config` delivered 1 byte of a

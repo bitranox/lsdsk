@@ -266,6 +266,34 @@ def test_a_snapshot_to_a_file_needs_no_standard_output(tmp_path: Path) -> None:
     assert not _lines_about_standard_output(run.stderr), run.stderr
 
 
+@pytest.mark.os_linux
+@pytest.mark.parametrize("output_format", ["human", "json"])
+def test_a_snapshot_to_a_file_says_the_capture_landed_when_standard_output_refuses(
+    output_format: str, tmp_path: Path
+) -> None:
+    """``snapshot -o file > /dev/full`` leaves 74 and says where the capture is.
+
+    Unlike ``>&-``, where nobody asked for a line and none is attempted, this
+    caller sent standard output somewhere and that write failed, so it leaves the
+    code every failed write leaves. But the capture itself landed, and a sentence
+    saying only that standard output refused read as if the capture had been lost
+    too: a caller acting on it would re-take a capture it already has.
+    """
+    target = tmp_path / "capture.json"
+
+    with Path("/dev/full").open("wb") as full:
+        run = _launch(
+            ["snapshot", "-o", str(target), "--format", output_format], stdout=full, tmp_path=tmp_path
+        )
+
+    assert run.code == ExitCode.IO_ERROR, f"exit {run.code}; stderr: {run.stderr!r}"
+    assert target.stat().st_size > 0, "the capture file is empty, so the control this test rests on failed"
+    assert "Traceback" not in run.stderr, run.stderr
+    said = _lines_about_standard_output(run.stderr)
+    assert len(said) == 1, f"expected one sentence about standard output, got {said!r} in {run.stderr!r}"
+    assert str(target) in said[0], f"the sentence does not say the capture landed: {said[0]!r}"
+
+
 @pytest.mark.os_agnostic
 def test_a_missing_standard_output_refuses_like_a_full_one_and_is_put_back(monkeypatch: pytest.MonkeyPatch) -> None:
     """The stand-in main() installs, held on every platform.
