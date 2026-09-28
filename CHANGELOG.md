@@ -32,6 +32,35 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   USB SATA SSD that answered IDENTIFY and SMART READ DATA that way. A reading
   refused both ways names both reasons. The Linux reader, which already spoke
   SAT, now builds the command from the same shared code.
+- **A passthrough that answers without moving data is a refusal, not a
+  reading.** Both readers trusted a clean transport: an ATA or SAT command a
+  translator refused with CHECK CONDITION, or answered without moving the
+  sector, left the zero-filled buffer to be stored as a real IDENTIFY or SMART
+  reading. The Windows reader now requires the whole sector in
+  `DataTransferLength` on both ioctls, and the Linux reader SCSI status GOOD and
+  no residue from SG_IO; anything else is recorded as a refusal naming how many
+  bytes arrived.
+- **The counter store's text is bounded like a capture's.** A history file is
+  untrusted input, and its drive identity, model, hostname and timestamps had no
+  length limit, so one oversized string inside the 64 MB file ceiling cost about
+  eleven times its size in memory. They are now refused past 4,096 characters,
+  the limit capture text already had, and `record` leaves `78` with the store
+  untouched.
+- **A log line standard output refuses is reported.** With the log console on
+  standard output and its queue off - which is how `logdemo` runs - a full disk
+  or a closed standard output left `0` and said nothing, because the logging
+  library swallowed the failure. It now leaves `74` with the one sentence every
+  other refused write gets, and that sentence is said once per run rather than
+  twice.
+- **Log lines reach stderr before the diagnostic they lead to.** Queued log
+  lines are delivered before any error, hint or warning is written, so
+  `config-deploy`'s "Deploying configuration" and "Permission denied" lines no
+  longer land after the `Error:` they explain.
+- **Two threads silencing one stream no longer leak a descriptor.**
+- **`tui`'s refusal on Windows says "both" for the two streams it needs.**
+- The ATA PASS-THROUGH block builder refuses a register value a 28-bit command
+  cannot carry, and puts LBA bits 27:24 in the DEVICE byte, instead of writing
+  bytes a translator ignores.
 
 ## [1.4.1] 2026-09-28 18:13:30
 
