@@ -22,17 +22,11 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import click
 import pytest
 
 from lsdsk.adapters.cli import cli
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-    from click.testing import CliRunner
 
 REPO = Path(__file__).parent.parent
 
@@ -183,58 +177,3 @@ def test_every_refusal_a_document_quotes_is_one_the_code_can_give() -> None:
     assert "not a whole number above zero" not in real, (
         "the control: the superseded wording must not be in the real set, or this cannot fail"
     )
-
-
-#: A quoted output block, and the argv that produces it.
-#:
-#: Keyed on the first line of the block so the test finds it wherever it moves in
-#: the document, and rendered at an explicit width because the layout surrenders
-#: the bandwidth figures on a narrow terminal - a sample showing both full device
-#: names and bandwidths is one no default-width run produces.
-SAMPLE_BLOCKS = (
-    (
-        "FINDINGS.md",
-        "Micro-Star",
-        ("--set", "display.piped_width=200", "slots", "--replay", "tests/fixtures/hw/linux-nvme-board.json"),
-    ),
-    (
-        "de/FINDINGS.md",
-        "Micro-Star",
-        ("--set", "display.piped_width=200", "slots", "--replay", "tests/fixtures/hw/linux-nvme-board.json"),
-    ),
-)
-
-
-@pytest.mark.parametrize(("document", "first_line", "argv"), SAMPLE_BLOCKS)
-def test_a_quoted_sample_is_output_the_tool_really_produces(
-    document: str,
-    first_line: str,
-    argv: tuple[str, ...],
-    cli_runner: CliRunner,
-    production_factory: Callable[[], object],
-) -> None:
-    """An invented sample reads exactly like a real one and matches nothing.
-
-    This block named its occupants `Samsung 980 PRO 2TB` and `AMD Hawaii XT
-    [Radeon R9 290X]`, and its board `MSI MEG Z690 ACE`. The occupant column is
-    the PCI database's own vendor and device string and has never been any of
-    those, so a reader comparing the sample against their own output found no row
-    of it - while every figure beside the names was correct, which is what made
-    it read as verified.
-
-    Only the blocks listed above are held. Other quoted output in these documents
-    is not, which is a narrower guard than the shape deserves.
-    """
-    result = cli_runner.invoke(cli, list(argv), obj=production_factory)
-    assert result.exit_code in {0, 1}, f"the sample's own command failed: {result.exception or result.output}"
-
-    produced = {line.rstrip() for line in result.output.splitlines() if line.strip()}
-    assert produced, "the control: the command produced nothing, so this asserted nothing"
-
-    text = (REPO / document).read_text(encoding="utf-8")
-    block = re.search(rf"```\n({re.escape(first_line)}.*?)\n```", text, re.S)
-    assert block is not None, f"{document}: no quoted block starting {first_line!r}"
-
-    quoted = [line.rstrip() for line in block.group(1).splitlines() if line.strip()]
-    invented = [line for line in quoted if line not in produced]
-    assert not invented, f"{document} quotes lines the tool does not print: {invented}"

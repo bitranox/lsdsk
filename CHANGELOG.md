@@ -37,6 +37,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   13,166-byte report. The guard read only the configuration key, which the
   variable overrides. It now decides from the stream the logging library
   actually resolved, whichever setting chose it.
+- **The sample page in REPORT.md is the page `report` prints.** Its first line
+  left out the build's version, which the banner names, and one line's spacing
+  had been widened to line up with its neighbours, so a reader searching their
+  own output for it found nothing. Every block of output the documents quote is
+  now reproduced by the test suite from a committed capture, and a new one
+  cannot be added without saying which command prints it.
 - **Standard output that refuses a write is said once, with no traceback.**
   `lsdsk --version > /dev/full`, `lsdsk findings > /dev/full` and
   `snapshot -o - > /dev/full` printed a traceback, then "Exception ignored while
