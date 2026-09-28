@@ -279,7 +279,10 @@ received a complete verdict.
 The two streams are ranked the same way at the write itself. A departed STDOUT reader
 stops the run, because that stream is what was asked for. A departed STDERR reader
 does not: stderr carries diagnostics ABOUT the run, so nobody listening to it costs
-that one message and leaves the command's own verdict standing.
+that one message and leaves the command's own verdict standing. The same holds for a
+stderr that refuses a write for any other reason - a log on a full disk, `2>/dev/full`,
+an `EIO` - because the stream carries the same thing whatever stopped it: every stderr
+writer in `safe_console` answers any `OSError` with `_lose_the_diagnostic` and carries on.
 
 A DIAGNOSTIC written to stdout is the exception, and it needs one, because the
 failure envelope goes there. `safe_console.echo` cannot tell a command's own

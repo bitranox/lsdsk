@@ -215,6 +215,30 @@ def restore_original_streams() -> None:
                 os.close(saved)
 
 
+def _lose_the_diagnostic() -> None:
+    """Give up on stderr after a write to it failed, for ANY reason.
+
+    stderr carries diagnostics about the run and never the run's own output, so a
+    stderr that cannot be written costs the diagnostic and nothing else: the
+    report on stdout and the exit code the run decided both stand. That holds
+    whether its reader left (``BrokenPipeError``), the disk behind it is full
+    (``ENOSPC``, ``2>/dev/full``) or the device failed (``EIO``) - the three are
+    one event from the point of view of whoever asked for the report. Measured
+    before a full disk was answered this way: ``lsdsk --profile nosuch findings
+    --format json 2>/dev/full`` left 120 with 0 bytes on stdout, against 1 and the
+    whole envelope with stderr to a file, because the warning's ``ENOSPC`` was
+    re-raised, the crash report about it failed the same way, and the interpreter
+    retried the buffered bytes at shutdown, outside every handler.
+
+    Pointing the descriptor at the null device is what empties the buffer whose
+    retry would fail at shutdown.
+
+    Side Effects:
+        Points stderr's descriptor at the null device.
+    """
+    _stop_writing_to(sys.stderr)
+
+
 def write_unless_the_reader_left(emit: Callable[[], None], *, err: bool = True) -> None:
     """Run `emit`, and give up quietly if the reader of its stream has gone.
 
@@ -242,6 +266,9 @@ def write_unless_the_reader_left(emit: Callable[[], None], *, err: bool = True) 
     failure envelope meeting a full disk - is lost the same way, and said so on
     stderr: the code was decided before the write, so it still stands.
 
+    A diagnostic bound for STDERR is lost whatever the reason, because stderr
+    never carries the run's own output (see :func:`_lose_the_diagnostic`).
+
     Args:
         emit: The write to attempt. It is expected to raise nothing but an
             ``OSError`` for a stream that has gone.
@@ -254,11 +281,12 @@ def write_unless_the_reader_left(emit: Callable[[], None], *, err: bool = True) 
     try:
         emit()
     except OSError as exc:
-        if is_broken_pipe(exc):
-            _stop_writing_to(sys.stderr if err else sys.stdout)
-            return
         if err:
-            raise
+            _lose_the_diagnostic()
+            return
+        if is_broken_pipe(exc):
+            _stop_writing_to(sys.stdout)
+            return
         refused = (
             exc if isinstance(exc, UnwritableStandardOutputError) else _refused_by_standard_output(sys.stdout, exc)
         )
@@ -491,6 +519,7 @@ class _Delivery(Enum):
     DELIVERED = "delivered"
     READER_LEFT = "reader left"
     NOT_WRITTEN = "not written"
+    DIAGNOSTIC_LOST = "diagnostic lost"
 
 
 def _delivered(stream: IO[Any] | None) -> _Delivery:
@@ -501,12 +530,11 @@ def _delivered(stream: IO[Any] | None) -> _Delivery:
 
     Returns:
         How the flush ended. A stream that cannot be flushed at all counts as
-        delivered: there is no pipe behind it to break.
-
-    Raises:
-        OSError: When a STDERR flush failed for any reason other than the reader
-            leaving. A stdout failure is answered here instead, because this runs
-            after the command has finished and nothing downstream could.
+        delivered: there is no pipe behind it to break. A stderr refusing for any
+        reason other than its reader leaving is a lost diagnostic, which leaves
+        the verdict alone (see :func:`_lose_the_diagnostic`); a stdout refusing
+        so is answered here and said on stderr, because this runs after the
+        command has finished and nothing downstream could.
     """
     try:
         if stream is not None:
@@ -518,7 +546,8 @@ def _delivered(stream: IO[Any] | None) -> _Delivery:
             _stop_writing_to(stream)
             return _Delivery.READER_LEFT
         if stream is not sys.stdout:
-            raise
+            _lose_the_diagnostic()
+            return _Delivery.DIAGNOSTIC_LOST
         say_standard_output_failed(_refused_by_standard_output(stream, exc))
         return _Delivery.NOT_WRITTEN
     return _Delivery.DELIVERED
@@ -563,7 +592,7 @@ def flush_streams_or_leave(code: int) -> int:
         fail afterwards and override this answer.
     """
     outcomes = {_delivered(sys.stdout), _delivered(sys.stderr)}
-    if outcomes == {_Delivery.DELIVERED} or outranks_a_departed_reader(code):
+    if outcomes <= {_Delivery.DELIVERED, _Delivery.DIAGNOSTIC_LOST} or outranks_a_departed_reader(code):
         return code
     if _Delivery.NOT_WRITTEN in outcomes:
         return int(ExitCode.IO_ERROR)
@@ -627,29 +656,30 @@ def echo(message: object = "", *, file: IO[Any] | None = None, err: bool = False
             other than its reader leaving; stdout is already silenced by then.
 
     Side Effects:
-        Writes to the given stream.
+        Writes to the given stream. A write stderr refuses, for any reason, is
+        lost rather than raised.
     """
     text = message if isinstance(message, str) else str(message)
     target = file if file is not None else (sys.stderr if err else sys.stdout)
     try:
         click.echo(encode_safe(text, _stream_encoding(file, err=err)), file=file, err=err, nl=nl)
     except OSError as exc:
+        if target is sys.stderr:
+            # A stderr that cannot be written is not a reason to stop, whether
+            # its reader left or its disk is full. stderr carries diagnostics
+            # about the run, never the run's own output, so this one message is
+            # lost and the command's own verdict still stands - which is the
+            # same ranking :func:`~.exit_codes.outranks_a_departed_reader`
+            # applies at the boundary. Aborting here instead answered `lsdsk
+            # config-deploy ... 2>&1 | head` with 141 and threw away the 13 that
+            # says exactly what went wrong. A departed STDOUT reader does stop
+            # the run: that stream IS what was asked for.
+            _lose_the_diagnostic()
+            return
         if not is_broken_pipe(exc):
             if target is sys.stdout:
                 raise _refused_by_standard_output(target, exc) from exc
             raise
-        if target is sys.stderr:
-            # A departed STDERR reader is not a reason to stop. stderr carries
-            # diagnostics about the run, never the run's own output, so nobody
-            # listening to it means this one message is lost and the command's
-            # own verdict still stands - which is the same ranking
-            # :func:`~.exit_codes.outranks_a_departed_reader` applies at the
-            # boundary. Aborting here instead answered `lsdsk config-deploy
-            # ... 2>&1 | head` with 141 and threw away the 13 that says exactly
-            # what went wrong. A departed STDOUT reader does stop the run: that
-            # stream IS what was asked for.
-            _stop_writing_to(target)
-            return
         _reader_went_away(target)
 
 
@@ -698,13 +728,11 @@ class _SafeWriter:
         try:
             return target.write(encode_safe(text, encoding if isinstance(encoding, str) else None))
         except OSError as exc:
-            if not is_broken_pipe(exc):
-                if not self._err:
-                    raise _refused_by_standard_output(target, exc) from exc
-                raise
             if self._err:
-                _stop_writing_to(target)
+                _lose_the_diagnostic()
                 return len(text)
+            if not is_broken_pipe(exc):
+                raise _refused_by_standard_output(target, exc) from exc
             _reader_went_away(target)
 
     def flush(self) -> None:
@@ -713,13 +741,11 @@ class _SafeWriter:
         try:
             target.flush()
         except OSError as exc:
-            if not is_broken_pipe(exc):
-                if not self._err:
-                    raise _refused_by_standard_output(target, exc) from exc
-                raise
             if self._err:
-                _stop_writing_to(target)
+                _lose_the_diagnostic()
                 return
+            if not is_broken_pipe(exc):
+                raise _refused_by_standard_output(target, exc) from exc
             _reader_went_away(target)
 
     def isatty(self) -> bool:
