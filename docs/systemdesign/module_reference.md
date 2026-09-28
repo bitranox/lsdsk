@@ -97,6 +97,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/config/history.py` - The ``[history]`` configuration section, parsed into a typed model.
 - `src/lsdsk/adapters/config/known_keys.py` - Which configuration keys this tool actually reads, so a mistyped one is refused rather than left inert.
 - `src/lsdsk/adapters/config/loader.py` - Configuration loader with caching and profile/override support.
+- `src/lsdsk/adapters/config/log_stream.py` - Where the logging console writes, decided the way lib_log_rich decides it.
 - `src/lsdsk/adapters/config/overrides.py` - Parse and apply ``--set SECTION.KEY=VALUE`` CLI overrides to Config.
 - `src/lsdsk/adapters/config/permissions.py` - Permission settings loader for config deployment.
 - `src/lsdsk/adapters/config/profiles.py` - Whether a named profile answered, and which ones exist to be named.

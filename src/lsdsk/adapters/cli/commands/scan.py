@@ -30,6 +30,7 @@ from rich.console import Console
 from rich.text import Text
 
 from lsdsk.adapters.config.history import HistorySettings, get_history_settings
+from lsdsk.adapters.config.log_stream import console_stream_in_force
 from lsdsk.adapters.config.tunables import (
     DEFAULT_PIPED_WIDTH,
     DisplaySettings,
@@ -1192,8 +1193,9 @@ def cli_snapshot(ctx: click.Context, output: str, output_format: OutputFormat) -
     exit 0. Copying a capture is a job for ``cp``.
 
     Refuses ``-o -`` with ``--format json`` too: both would be standard output,
-    and a parser handed two documents on one stream reads neither. And refuses
-    ``-o -`` when there is no standard output at all, before the machine is read.
+    and a parser handed two documents on one stream reads neither. The same goes
+    for a logging console that writes to stdout. And refuses ``-o -`` when there
+    is no standard output at all. Each is refused before the machine is read.
     """
     with lib_log_rich.runtime.bind(job_id="cli-snapshot", extra={"command": ActionCommand.SNAPSHOT.value}):
         if effective_replay(ctx, None) is not None:
@@ -1204,27 +1206,55 @@ def cli_snapshot(ctx: click.Context, output: str, output_format: OutputFormat) -
                 output_format=output_format,
             )
         destination = _destination_for(output)
-        if destination.path is None and output_format is OutputFormat.JSON:
-            fail(
-                "-o - writes the capture to standard output, which is where --format json puts its "
-                "result too. Write the capture to a file to get the envelope, or drop --format json.",
-                ExitCode.INVALID_ARGUMENT,
-                output_format=output_format,
-            )
-        if destination.path is None and sys.stdout is None:
-            # Started with descriptor 1 closed (`>&-`), or detached as pythonw
-            # and Windows services start: the interpreter then has no stdout at
-            # all, and click.echo returns silently for None - so the capture
-            # went nowhere and the run said it had succeeded.
-            fail(
-                "standard output is closed, so nothing was written: -o - has nowhere to put the capture. "
-                "Name a file with -o instead.",
-                ExitCode.GENERAL_ERROR,
-                output_format=output_format,
-            )
+        if destination.path is None:
+            _refuse_what_standard_output_cannot_carry(ctx, output_format)
         _write_capture(destination, output_format)
         _report_the_capture(destination, output_format)
         raise SystemExit(ExitCode.SUCCESS)
+
+
+def _refuse_what_standard_output_cannot_carry(ctx: click.Context, output_format: OutputFormat) -> None:
+    """Refuse ``-o -`` when stdout cannot carry the capture alone, before the machine is read.
+
+    Args:
+        ctx: The command's context, for the configuration in force.
+        output_format: What the caller asked for.
+
+    Raises:
+        SystemExit: With ``INVALID_ARGUMENT`` when something else would share
+            stdout with the capture, or ``GENERAL_ERROR`` when there is none.
+    """
+    if output_format is OutputFormat.JSON:
+        fail(
+            "-o - writes the capture to standard output, which is where --format json puts its "
+            "result too. Write the capture to a file to get the envelope, or drop --format json.",
+            ExitCode.INVALID_ARGUMENT,
+            output_format=output_format,
+        )
+    # Refused rather than re-routed for this run: logging is set up by the root
+    # group before this command has read -o, so a line logged in between -
+    # lib_layered_config logs its load at DEBUG - is already on stdout, and no
+    # switch made here could take it back out of the capture.
+    log = console_stream_in_force(get_cli_context(ctx).config)
+    if log.reaches_standard_output:
+        fail(
+            f"-o - writes the capture to standard output, which is where {log.setting}={log.stream} "
+            "sends log lines too, and a capture carrying them is one --replay refuses. "
+            f"Send the log to stderr ({log.setting}=stderr), or write the capture to a file.",
+            ExitCode.INVALID_ARGUMENT,
+            output_format=output_format,
+        )
+    if sys.stdout is None:
+        # Started with descriptor 1 closed (`>&-`), or detached as pythonw
+        # and Windows services start: the interpreter then has no stdout at
+        # all, and click.echo returns silently for None - so the capture
+        # went nowhere and the run said it had succeeded.
+        fail(
+            "standard output is closed, so nothing was written: -o - has nowhere to put the capture. "
+            "Name a file with -o instead.",
+            ExitCode.GENERAL_ERROR,
+            output_format=output_format,
+        )
 
 
 def _write_capture(destination: _CaptureDestination, output_format: OutputFormat) -> None:
