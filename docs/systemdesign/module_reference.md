@@ -310,6 +310,14 @@ not hold: the library reads the variable ahead of the configuration and override
 it. Nothing third-party is patched, and a stream of `custom` or `none` is left as
 configured.
 
+The library writes on a queue WORKER thread, where a raise ends that thread and
+nothing else: a `SystemExit(141)` there never reached the exit code, and the worker
+it killed left every later log line undelivered and the shutdown waiting out its
+stop timeout. So a stdout failure met off the main thread is recorded rather than
+raised, and `flush_streams_or_leave` answers it after the logging shutdown has
+drained - `141` for a departed reader, `74` and its sentence for a refusal, ranked
+against the run's own code as either would have been on the main thread.
+
 `safe_stream` takes no stream, only which of the two to follow, and reads it at
 each write. A process started with a descriptor closed has `sys.stdout` or
 `sys.stderr` set to None, and a writer that held the value it was handed could not
