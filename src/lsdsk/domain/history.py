@@ -27,6 +27,7 @@ over, while the self-calibrating rule separates them correctly.
 from __future__ import annotations
 
 from enum import StrEnum
+from functools import cached_property
 from typing import TYPE_CHECKING
 
 from .base import DomainModel
@@ -34,7 +35,7 @@ from .text import DeviceText
 from .thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from .models import Disk
     from .thresholds import Thresholds
@@ -216,10 +217,26 @@ class History(DomainModel, frozen=True):
         Returns:
             The series, or ``None`` when this drive has not been seen.
         """
+        return self._series_by_identity.get(identity)
+
+    @cached_property
+    def _series_by_identity(self) -> Mapping[str, DiskSeries]:
+        """The series keyed by identity, once per history.
+
+        The diagnosis, the health table and the trend section each look up
+        every drive's series, and a scan per lookup made a page cost the product
+        of its drives and the store's series. Computed on first use and kept,
+        which a frozen model supports: it is not a field, so it is absent from
+        ``model_dump`` and the instance stays hashable.
+
+        Returns:
+            Each identity against the FIRST series recorded under it, which is
+            the one the scan it replaces returned where a file repeats one.
+        """
+        index: dict[str, DiskSeries] = {}
         for candidate in self.series:
-            if candidate.identity == identity:
-                return candidate
-        return None
+            index.setdefault(candidate.identity, candidate)
+        return index
 
 
 class Trend(DomainModel, frozen=True):

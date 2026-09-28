@@ -10,12 +10,18 @@ that the samples cannot say.
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
+from typing import Any, ClassVar
 
 import pytest
+from rich.console import Console
 
+from lsdsk.adapters.history.store import HistoryRead
 from lsdsk.adapters.hw.snapshot import build_from
+from lsdsk.adapters.render.full import render_full
+from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.history import (
     CounterKind,
     DiskSeries,
@@ -29,7 +35,7 @@ from lsdsk.domain.history import (
     trend_for,
     untracked_disks,
 )
-from lsdsk.domain.models import Disk, Health
+from lsdsk.domain.models import Disk, Health, Inventory
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "hw"
@@ -521,3 +527,94 @@ def test_a_drive_that_cannot_be_tracked_is_not_an_answer_either_way() -> None:
     untrackable = Disk(node="sdz", path="/dev/sdz", model="X", health=Health(power_on_hours=9))
 
     assert has_new_readings(History(hostname="box"), [untrackable]) is False
+
+
+# --------------------------------------------------------------------------
+# Linear work
+# --------------------------------------------------------------------------
+
+
+class _CountingSeries(DiskSeries, frozen=True):
+    """A series that counts how often anything reads the identity it is keyed by.
+
+    Finding a drive's series is a comparison of identities, so this counts that
+    search's work through the input alone, with nothing inside the lookup
+    patched. The history keeps the instance as given rather than rebuilding it,
+    which ``_identity_reads_to_report`` asserts rather than assumes.
+    """
+
+    reads: ClassVar[int] = 0
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == "identity":
+            _CountingSeries.reads += 1
+        return super().__getattribute__(name)
+
+
+#: Drives in the smaller arm of the doubling. Large enough that a scan of every
+#: series per drive, n/2 reads on average, dwarfs the handful of reads each
+#: series costs anyway.
+_TRACKED_DRIVES = 200
+
+#: How much doubling the drives may multiply the identity reads by. A scan per
+#: lookup quadruples, and measured 3.98 over these arms before the fix; an
+#: index built once doubles. Three sits between, and reads are counted rather
+#: than timed, so a loaded runner cannot move it.
+_ACCEPTABLE_GROWTH = 3.0
+
+
+def _identity_reads_to_report(count: int) -> int:
+    """Identity reads to diagnose and draw ``count`` drives that each have a history."""
+    disks = tuple(
+        Disk(node=f"sd{index}", path=f"/dev/sd{index}", model="X", wwn=f"naa.{index}", health=Health(power_on_hours=20))
+        for index in range(count)
+    )
+    series = tuple(
+        _CountingSeries(
+            identity=f"naa.{index}",
+            model="X",
+            samples=(Sample(power_on_hours=10, captured_at=T0), Sample(power_on_hours=20, captured_at=T1)),
+        )
+        for index in range(count)
+    )
+    history = History(hostname="scaled", series=series)
+    assert all(type(item) is _CountingSeries for item in history.series), "the history rebuilt the series"
+    machine = Inventory(hostname="scaled", disks=disks)
+    _CountingSeries.reads = 0
+    findings = diagnose(machine, history=history)
+    page = render_full(machine, findings, 200, HistoryRead(history=history, writable=True))
+    buffer = io.StringIO()
+    Console(file=buffer, width=200, no_color=True).print(page)
+    assert f"naa.{count - 1}" in buffer.getvalue(), "the last drive was not drawn, so the count is of the wrong work"
+    return _CountingSeries.reads
+
+
+@pytest.mark.os_agnostic
+def test_doubling_the_tracked_drives_does_not_quadruple_the_history_lookups() -> None:
+    """Twice the drives with a history costs about twice the identity reads.
+
+    Every drive's series is looked up by the diagnosis, the health table and
+    the trend section, so a lookup that scanned every series made a page cost
+    the product of its drives and the store's series.
+    """
+    single = _identity_reads_to_report(_TRACKED_DRIVES)
+    doubled = _identity_reads_to_report(2 * _TRACKED_DRIVES)
+    assert single > 0, "no identity was read, so the counter is not wired"
+    assert doubled / single <= _ACCEPTABLE_GROWTH, (
+        f"doubling {_TRACKED_DRIVES} drives read {doubled} identities against {single}, "
+        f"{doubled / single:.2f} times the work: a lookup scans every series per drive"
+    )
+
+
+@pytest.mark.os_agnostic
+def test_a_file_that_repeats_an_identity_answers_with_the_first_series() -> None:
+    """The index answers what a scan in file order answered: the first series.
+
+    A store is a file, so it can name one drive twice, and which of the two a
+    lookup returns decides whose samples the drive is judged by.
+    """
+    first = DiskSeries(identity="naa.1", model="first")
+    second = DiskSeries(identity="naa.1", model="second")
+    found = History(hostname="box", series=(first, second)).for_identity("naa.1")
+    assert found is not None
+    assert found.model == "first"

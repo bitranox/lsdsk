@@ -46,6 +46,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   come from its parent's, remembered once per device, and the same chains take
   0.02, 0.03, 0.07 and 0.18 seconds. Every committed capture draws byte for byte
   what it did, at every density and at every width from 20 to 200.
+- **A drive's counter history is found by key, not by a scan.** The diagnosis,
+  the health table and the trend section look up each drive's series, five
+  lookups per drive on the full page, and each one scanned every series the
+  store holds. For a history of 1,000, 2,000 and 4,000 drives those lookups
+  took 0.12, 0.36 and 1.53 seconds; they take 0.002 at 4,000 now. A store that
+  names one drive twice still answers with the first series, as the scan did.
 - **The swap search finds a starved drive's partner without scanning every
   candidate.** Each drive capped by its own port walked every drive holding more
   port than it could use, so the rule cost the product of the two: exactly
