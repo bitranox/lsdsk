@@ -47,8 +47,9 @@ def test_no_record_with_record_is_refused_rather_than_quietly_obeyed(
 
     assert result.exit_code == ExitCode.INVALID_ARGUMENT, result.output
     said = " ".join((result.stderr or "").split())
-    assert "--no-record" in said, said or "(nothing on stderr)"
-    assert "record" in said
+    # The message's own claim, not two words it happens to contain: "record"
+    # is a substring of "--no-record", so asserting it after that proved nothing.
+    assert "--no-record leaves it nothing to do" in said, said or "(nothing on stderr)"
     assert not store.exists(), "a refused run must not have written the store"
 
 
@@ -63,7 +64,10 @@ def test_the_refusal_names_what_to_do_instead(
         obj=production_factory,
     )
     said = " ".join((result.stderr or "").split())
-    assert "trend" in said or "drop" in said or "without" in said, said
+    # Both ways out, each by the words a reader would act on: an OR of three
+    # loose words passed on any sentence mentioning one of them.
+    assert "Drop --no-record to sample" in said, said
+    assert "run `lsdsk trend` to judge the counters without adding to them" in said, said
 
 
 @pytest.mark.os_agnostic

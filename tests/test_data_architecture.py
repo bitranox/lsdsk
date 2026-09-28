@@ -12,11 +12,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from pydantic import ValidationError
 
 from lsdsk.adapters.hw.capture import CaptureEnvelope
 from lsdsk.adapters.hw.snapshot import load
 from lsdsk.domain.enums import CliCommand, Platform
 from lsdsk.domain.errors import ConfigurationError
+from lsdsk.domain.models import Controller
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -471,3 +473,21 @@ def test_a_refused_capture_is_explained_in_this_tool_s_own_words(tmp_path: Path)
     # And it still says WHAT is wrong, field by field, or the refusal is useless.
     assert "schema" in said and "hostname" in said, f"the refusal names no field:\n{said}"
     assert "required" in said.lower(), f"the refusal gives no reason:\n{said}"
+
+
+@pytest.mark.os_agnostic
+def test_a_changed_copy_refuses_a_misspelt_field_where_model_copy_would_not() -> None:
+    """``with_changes`` exists for this refusal, so it is held here and not only by a doctest.
+
+    The control is the reason for the method: pydantic's own ``model_copy``
+    takes the same typo without a word and leaves the real field alone. The
+    real spelling must still go through, or refusing everything would pass.
+    """
+    controller = Controller(address="0000:01:00.0", name="HBA", ports_used=1)
+
+    with pytest.raises(ValidationError, match="prots_used"):
+        controller.with_changes(prots_used=3)
+
+    silently = controller.model_copy(update={"prots_used": 3})
+    assert silently.ports_used == 1, "the control: model_copy started refusing, so the method may have no purpose"
+    assert controller.with_changes(ports_used=3).ports_used == 3

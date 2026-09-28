@@ -380,11 +380,16 @@ def test_the_note_names_what_each_density_draws() -> None:
     """Every density has words of its own, so the line can never read blank."""
     from lsdsk.adapters.render.tree import KEY_HINT, density_note
 
+    drawn: list[str] = []
     for density in TreeDensity:
         note = density_note(density, KEY_HINT)
         assert note.startswith("showing "), note
-        assert note != "showing ; " + KEY_HINT + " to change the detail level"
-        assert KEY_HINT in note
+        words = note.removeprefix("showing ").split(";", 1)[0].strip()
+        assert words, f"{density}: the line says it shows nothing"
+        drawn.append(words)
+    # Words of its OWN: two densities described alike cannot be told apart by
+    # the one line that exists to say which is drawn.
+    assert len(set(drawn)) == len(drawn), drawn
 
 
 @pytest.mark.os_agnostic

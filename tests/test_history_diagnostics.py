@@ -65,11 +65,29 @@ def crc_finding(findings: tuple[Finding, ...], subject: str) -> Finding:
 # --------------------------------------------------------------------------
 
 
+# What the CRC rule said about each drive of the later capture before history
+# existed. Written out, because the only other reference is diagnose() itself:
+# comparing diagnose(inventory) with diagnose(inventory, history=None) compares a
+# default with itself and holds whatever the rule does.
+CRC_SEVERITY_WITHOUT_HISTORY = {
+    "/dev/sda": Severity.HINT,
+    "/dev/sdb": Severity.HINT,
+    "/dev/sdc": Severity.WARNING,
+    "/dev/sdd": Severity.WARNING,
+    "/dev/sde": Severity.WARNING,
+    "/dev/sdf": Severity.HINT,
+    "/dev/sdg": Severity.HINT,
+    "/dev/sdj": Severity.WARNING,
+}
+
+
 def test_without_history_every_finding_is_unchanged() -> None:
     """A first run, an unprivileged run and a replay must read as they always did."""
     inventory = latest_inventory()
-    assert diagnose(inventory) == diagnose(inventory, history=None)
-    assert diagnose(inventory, history=History(hostname="linux-sas-hba")) == diagnose(inventory)
+    findings = diagnose(inventory)
+    crc = {finding.subject: finding.severity for finding in findings if "CRC" in finding.title}
+    assert crc == CRC_SEVERITY_WITHOUT_HISTORY
+    assert diagnose(inventory, history=History(hostname="linux-sas-hba")) == findings
 
 
 def test_a_single_sample_changes_nothing() -> None:
