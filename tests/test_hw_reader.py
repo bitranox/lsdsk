@@ -93,6 +93,39 @@ class TestTheKernelDecidesWhatIsVirtual:
         assert entry.get("virtual") is not True
 
 
+@pytest.mark.os_posix
+class TestAnUnresolvableLinkIsNeverCalledVirtual:
+    """A link that cannot be resolved says nothing either way, so it is real.
+
+    Nothing in the machine ever forces `Path.resolve()` to raise for a plain
+    dangling symlink on this platform - a missing target still resolves to an
+    absolute path with `strict=False`, it simply is not under the virtual
+    tree, so that alone can never prove the `except OSError` branch runs. The
+    branch is reached only when resolving genuinely raises, which a
+    permission-denied component or a name-resolution failure does on some
+    systems, so it is exercised here by making the one call for this node
+    raise `OSError` while every other `resolve()` call keeps working normally.
+    Reading the answer as `False` (real hardware, not virtual) rather than
+    `True` is the whole point: a refusal to resolve must never hide a real
+    disk.
+    """
+
+    def test_a_link_that_cannot_be_resolved_is_not_classified_virtual(
+        self, sysfs: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        node = sysfs / "block" / "sda"
+        real_resolve = Path.resolve
+
+        def _resolve_or_raise(self: Path, *, strict: bool = False) -> Path:
+            if self == node:
+                raise OSError("simulated: link cannot be resolved")
+            return real_resolve(self, strict=strict)
+
+        monkeypatch.setattr(Path, "resolve", _resolve_or_raise)
+        entry = read_block(sysfs / "block")["sda"]
+        assert entry.get("virtual") is not True
+
+
 @pytest.mark.os_agnostic
 def test_the_windows_reader_decides_nvme_through_the_shared_bus_conversion() -> None:
     """The choice between NVMe and ATA passthrough must not re-derive its own bus mapping.

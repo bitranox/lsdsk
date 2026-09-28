@@ -28,6 +28,7 @@ from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import BusType, DiskKind
+from lsdsk.domain.models import Disk, Inventory
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -304,3 +305,22 @@ class TestTheTuiAgreesWithThePrintedPage:
             await pilot.pause()
             expected = len(machine.disks) + len(machine.virtual_disks)
             assert rows_of(app.query_one("#disk-table")).row_count == expected
+
+
+@pytest.mark.os_agnostic
+class TestADiskRowSurvivesAVirtualBus:
+    """Membership decides which row is a disk, never the drive's own bus value.
+
+    A hypervisor disk on Windows legitimately reports ``BusType.VIRTUAL`` (it
+    has no physical link, being the guest's view of the host's real storage),
+    yet it is still a physical disk to this tool: ``Inventory.disks`` is what
+    made it a disk, so it must still get a row in the table. Filtering the
+    table by ``disk.bus is BusType.VIRTUAL`` instead of by which LIST the disk
+    came from would silently drop it.
+    """
+
+    def test_a_physical_disk_reporting_a_virtual_bus_still_gets_a_row(self, rendered: Callable[..., str]) -> None:
+        disk = Disk(node="PhysicalDrive0", path="PhysicalDrive0", model="Virtual HD", bus=BusType.VIRTUAL)
+        machine = Inventory(hostname="guest", disks=(disk,))
+        text = rendered(tables.render_disks(machine, ()))
+        assert "PhysicalDrive0" in text
