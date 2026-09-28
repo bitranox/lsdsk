@@ -202,6 +202,12 @@ def code_for_an_unhandled_exception(exc: BaseException) -> int:
     head -1`` left 22 on Windows where every other platform leaves 141. The
     Windows-only acceptance lives in :func:`~.safe_console.is_broken_pipe`.
 
+    Standard output that refused a write for another reason - a full disk - is
+    taken out too, as :attr:`ExitCode.GENERAL_ERROR`: its errno is the
+    filesystem's, and ``ENOSPC`` would otherwise have left 28, which is no code
+    this tool documents. 1 is what the table already gives a ``snapshot`` whose
+    write failed for a reason other than permission.
+
     Args:
         exc: The exception that reached the last-resort handler.
 
@@ -214,10 +220,15 @@ def code_for_an_unhandled_exception(exc: BaseException) -> int:
         >>> code_for_an_unhandled_exception(KeyboardInterrupt())
         130
     """
-    from .safe_console import is_broken_pipe  # noqa: PLC0415 - import cycle: safe_console reads this module's codes
+    from .safe_console import (  # noqa: PLC0415 - import cycle: safe_console reads this module's codes
+        UnwritableStandardOutputError,
+        is_broken_pipe,
+    )
 
     if is_broken_pipe(exc):
         return int(ExitCode.BROKEN_PIPE)
+    if isinstance(exc, UnwritableStandardOutputError):
+        return int(ExitCode.GENERAL_ERROR)
     code = lib_cli_exit_tools.get_system_exit_code(exc)
     if code != int(ExitCode.GENERAL_ERROR) or isinstance(exc, OSError):
         return code

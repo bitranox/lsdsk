@@ -150,6 +150,11 @@ def _answer_an_unhandled_exception(exc: BaseException) -> int:
         # Windows it arrives as a plain OSError carrying EINVAL, and printing it
         # told somebody who quit their pager that an argument was invalid.
         return code
+    if isinstance(exc, safe_console.UnwritableStandardOutputError):
+        # The destination refused, which is not a crash: one sentence saying so
+        # rather than a traceback that reads as the tool breaking.
+        safe_console.say_standard_output_failed(exc)
+        return code
     tracebacks_enabled = bool(getattr(lib_cli_exit_tools.config, "traceback", False))
     apply_traceback_preferences(tracebacks_enabled)
     # Read from configuration rather than the module constants: the two keys

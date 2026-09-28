@@ -1165,7 +1165,8 @@ def cli_snapshot(ctx: click.Context, output: str, output_format: OutputFormat) -
     exit 0. Copying a capture is a job for ``cp``.
 
     Refuses ``-o -`` with ``--format json`` too: both would be standard output,
-    and a parser handed two documents on one stream reads neither.
+    and a parser handed two documents on one stream reads neither. And refuses
+    ``-o -`` when there is no standard output at all, before the machine is read.
     """
     with lib_log_rich.runtime.bind(job_id="cli-snapshot", extra={"command": ActionCommand.SNAPSHOT.value}):
         if effective_replay(ctx, None) is not None:
@@ -1183,6 +1184,17 @@ def cli_snapshot(ctx: click.Context, output: str, output_format: OutputFormat) -
                 ExitCode.INVALID_ARGUMENT,
                 output_format=output_format,
             )
+        if destination is None and sys.stdout is None:
+            # Started with descriptor 1 closed (`>&-`), or detached as pythonw
+            # and Windows services start: the interpreter then has no stdout at
+            # all, and click.echo returns silently for None - so the capture
+            # went nowhere and the run said it had succeeded.
+            fail(
+                "standard output is closed, so nothing was written: -o - has nowhere to put the capture. "
+                "Name a file with -o instead.",
+                ExitCode.GENERAL_ERROR,
+                output_format=output_format,
+            )
         _write_capture(destination, output_format)
         _report_the_capture(destination, output_format)
         raise SystemExit(ExitCode.SUCCESS)
@@ -1195,6 +1207,7 @@ def _write_capture(destination: Path | None, output_format: OutputFormat) -> Non
         destination: The file to write, or None for standard output.
         output_format: How a refusal is reported.
     """
+    named = "standard output" if destination is None else str(destination)
     # One handler for both halves: serialise() parses the reading through the
     # same models load() reads it back with, so it refuses a reading this tool
     # could never replay - and that refusal deserves the same clean exit code
@@ -1217,13 +1230,13 @@ def _write_capture(destination: Path | None, output_format: OutputFormat) -> Non
     # error, and "-o /dev/full" left 28, which is nothing here at all.
     except PermissionError as error:
         fail(
-            f"not allowed to write the capture to {destination}: {error}",
+            f"not allowed to write the capture to {named}: {error}",
             ExitCode.PERMISSION_DENIED,
             output_format=output_format,
         )
     except OSError as error:
         fail(
-            f"could not write the capture to {destination}: {error}",
+            f"could not write the capture to {named}: {error}",
             ExitCode.GENERAL_ERROR,
             output_format=output_format,
         )

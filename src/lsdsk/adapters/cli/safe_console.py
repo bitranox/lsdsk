@@ -28,6 +28,8 @@ Contents
 * :func:`safe_stream` - the same protection for a writer this module does not
   own, such as the one a :class:`rich.console.Console` writes through
 * :func:`is_broken_pipe` - whether a failed write means the reader left
+* :class:`UnwritableStandardOutputError` - stdout refused a write for another reason
+* :func:`say_standard_output_failed` - the one sentence that reports it
 * :func:`flush_streams_or_leave` - deliver buffered output while a handler can
   still see it fail
 * :func:`restore_original_streams` - give a library caller back the descriptors
@@ -42,6 +44,7 @@ import contextlib
 import errno
 import os
 import sys
+from enum import Enum
 from typing import IO, TYPE_CHECKING, Any, Final, NoReturn, TextIO, cast
 
 import rich_click as click
@@ -224,6 +227,10 @@ def write_unless_the_reader_left(emit: Callable[[], None], *, err: bool = True) 
     and then ``main`` itself, and the interpreter reported its own shutdown
     flush failure instead of the usage error the caller needed.
 
+    A diagnostic bound for STDOUT that stdout refuses for another reason - the
+    failure envelope meeting a full disk - is lost the same way, and said so on
+    stderr: the code was decided before the write, so it still stands.
+
     Args:
         emit: The write to attempt. It is expected to raise nothing but an
             ``OSError`` for a stream that has gone.
@@ -236,9 +243,15 @@ def write_unless_the_reader_left(emit: Callable[[], None], *, err: bool = True) 
     try:
         emit()
     except OSError as exc:
-        if not is_broken_pipe(exc):
+        if is_broken_pipe(exc):
+            _stop_writing_to(sys.stderr if err else sys.stdout)
+            return
+        if err:
             raise
-        _stop_writing_to(sys.stderr if err else sys.stdout)
+        refused = (
+            exc if isinstance(exc, UnwritableStandardOutputError) else _refused_by_standard_output(sys.stdout, exc)
+        )
+        say_standard_output_failed(refused)
     except SystemExit as leaving:
         if leaving.code != int(ExitCode.BROKEN_PIPE):
             raise
@@ -307,31 +320,92 @@ def is_broken_pipe(exc: BaseException, *, on_windows: bool | None = None) -> boo
     return windows and isinstance(exc, OSError) and exc.errno in {errno.EINVAL, errno.EPIPE}
 
 
-def _delivered(stream: IO[Any] | None) -> bool:
-    """Flush `stream`, reporting whether its reader was still there.
+class UnwritableStandardOutputError(OSError):
+    """Standard output refused a write for a reason other than its reader leaving.
+
+    A full disk is the common case (``lsdsk ... > /dev/full`` fails with
+    ``ENOSPC``). It is raised in place of the ``OSError`` the stream gave, with
+    that error's errno and text, AFTER stdout has been pointed at the null
+    device: the failed bytes stay in Python's buffer, and without the redirect
+    the interpreter retried them at shutdown, outside every handler, printing a
+    traceback and leaving 120.
+
+    It stays an ``OSError`` so a command that knows what it was writing - the
+    capture ``snapshot -o -`` produces - can still catch it and say so in its own
+    words. Anything that does not reaches the last-resort handler, which reads
+    this type rather than the errno: the errno is the filesystem's, and 28 means
+    nothing in this tool's exit-code table.
+    """
+
+
+def _refused_by_standard_output(stream: IO[Any] | None, exc: OSError) -> UnwritableStandardOutputError:
+    """Silence stdout after a failed write, and name the failure for the caller to raise.
+
+    Args:
+        stream: The stream whose write failed, which is ``sys.stdout``.
+        exc: What the write raised.
+
+    Returns:
+        The typed error carrying the same errno and text.
+    """
+    _stop_writing_to(stream)
+    return UnwritableStandardOutputError(exc.errno, exc.strerror)
+
+
+def say_standard_output_failed(exc: OSError) -> None:
+    """Tell the person on stderr that stdout could not be written, and why.
+
+    One sentence and no traceback: the tool did not break, the destination
+    refused. It goes to stderr, which is the only stream left that can carry it,
+    and through the guard that lets a departed stderr reader cost this sentence
+    and nothing else.
+
+    Args:
+        exc: The error the write raised.
+
+    Side Effects:
+        Writes one line to stderr.
+    """
+    write_unless_the_reader_left(lambda: echo(f"Error: could not write to standard output: {exc}", err=True))
+
+
+class _Delivery(Enum):
+    """What flushing one stream came to."""
+
+    DELIVERED = "delivered"
+    READER_LEFT = "reader left"
+    NOT_WRITTEN = "not written"
+
+
+def _delivered(stream: IO[Any] | None) -> _Delivery:
+    """Flush `stream`, reporting whether what it held reached anybody.
 
     Args:
         stream: The stream to deliver.
 
     Returns:
-        Whether the flush reached a reader. A stream that cannot be flushed at
-        all counts as delivered: there is no pipe behind it to break.
+        How the flush ended. A stream that cannot be flushed at all counts as
+        delivered: there is no pipe behind it to break.
 
     Raises:
-        OSError: When the flush failed for any reason other than the reader
-            leaving, which is a real error and belongs to the caller.
+        OSError: When a STDERR flush failed for any reason other than the reader
+            leaving. A stdout failure is answered here instead, because this runs
+            after the command has finished and nothing downstream could.
     """
     try:
         if stream is not None:
             stream.flush()
     except ValueError:  # pragma: no cover - a closed test harness buffer
-        return True
+        return _Delivery.DELIVERED
     except OSError as exc:
-        if not is_broken_pipe(exc):
+        if is_broken_pipe(exc):
+            _stop_writing_to(stream)
+            return _Delivery.READER_LEFT
+        if stream is not sys.stdout:
             raise
-        _stop_writing_to(stream)
-        return False
-    return True
+        say_standard_output_failed(_refused_by_standard_output(stream, exc))
+        return _Delivery.NOT_WRITTEN
+    return _Delivery.DELIVERED
 
 
 def flush_streams_or_leave(code: int) -> int:
@@ -354,6 +428,13 @@ def flush_streams_or_leave(code: int) -> int:
     saying the run could not start stands, a code saying what the output contained
     yields to ``BROKEN_PIPE``.
 
+    Stdout that refused the flush for another reason - a full disk - yields the
+    same way, to ``GENERAL_ERROR``: that is the documented code for a ``snapshot``
+    whose write failed other than for permission, and the output that was not
+    written is no more a verdict than output nobody read. Measured before this:
+    ``lsdsk --version > /dev/full`` printed a traceback and left 120, because the
+    error escaped here and the interpreter then retried the same bytes.
+
     Args:
         code: What the run decided to leave with.
 
@@ -362,13 +443,15 @@ def flush_streams_or_leave(code: int) -> int:
 
     Side Effects:
         Flushes stdout and stderr, and points either at the null device if its reader
-        has gone, so the interpreter's own flush cannot fail afterwards and override
-        this answer.
+        has gone or stdout refused the write, so the interpreter's own flush cannot
+        fail afterwards and override this answer.
     """
-    reached_a_reader = [_delivered(sys.stdout), _delivered(sys.stderr)]
-    if all(reached_a_reader):
+    outcomes = {_delivered(sys.stdout), _delivered(sys.stderr)}
+    if outcomes == {_Delivery.DELIVERED} or outranks_a_departed_reader(code):
         return code
-    return code if outranks_a_departed_reader(code) else int(ExitCode.BROKEN_PIPE)
+    if _Delivery.NOT_WRITTEN in outcomes:
+        return int(ExitCode.GENERAL_ERROR)
+    return int(ExitCode.BROKEN_PIPE)
 
 
 def ascii_fallback(text: str, encoding: str) -> str:
@@ -423,6 +506,10 @@ def echo(message: object = "", *, file: IO[Any] | None = None, err: bool = False
         err: Write to stderr instead of stdout.
         nl: Append a newline.
 
+    Raises:
+        UnwritableStandardOutputError: When stdout refused the write for a reason
+            other than its reader leaving; stdout is already silenced by then.
+
     Side Effects:
         Writes to the given stream.
     """
@@ -432,6 +519,8 @@ def echo(message: object = "", *, file: IO[Any] | None = None, err: bool = False
         click.echo(encode_safe(text, _stream_encoding(file, err=err)), file=file, err=err, nl=nl)
     except OSError as exc:
         if not is_broken_pipe(exc):
+            if target is sys.stdout:
+                raise _refused_by_standard_output(target, exc) from exc
             raise
         if target is sys.stderr:
             # A departed STDERR reader is not a reason to stop. stderr carries
@@ -485,6 +574,8 @@ class _SafeWriter:
             return target.write(encode_safe(text, encoding if isinstance(encoding, str) else None))
         except OSError as exc:
             if not is_broken_pipe(exc):
+                if target is sys.stdout:
+                    raise _refused_by_standard_output(target, exc) from exc
                 raise
             if target is sys.stderr:
                 _stop_writing_to(target)
@@ -498,6 +589,8 @@ class _SafeWriter:
             target.flush()
         except OSError as exc:
             if not is_broken_pipe(exc):
+                if target is sys.stdout:
+                    raise _refused_by_standard_output(target, exc) from exc
                 raise
             if target is sys.stderr:
                 _stop_writing_to(target)
@@ -549,6 +642,7 @@ def safe_stream(stream: TextIO | None = None) -> IO[str]:
 
 __all__ = [
     "ASCII_FALLBACKS",
+    "UnwritableStandardOutputError",
     "ascii_fallback",
     "echo",
     "encode_safe",
@@ -556,5 +650,6 @@ __all__ = [
     "is_broken_pipe",
     "restore_original_streams",
     "safe_stream",
+    "say_standard_output_failed",
     "write_unless_the_reader_left",
 ]
