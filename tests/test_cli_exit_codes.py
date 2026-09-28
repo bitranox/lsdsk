@@ -643,6 +643,36 @@ def test_a_closed_stderr_does_not_discard_the_report_on_stdout() -> None:
 
 
 @pytest.mark.os_agnostic
+@pytest.mark.parametrize("named", ["stderr", "STDERR"])
+def test_a_closed_stderr_keeps_the_report_when_the_environment_names_the_log_stream(
+    monkeypatch: pytest.MonkeyPatch, named: str
+) -> None:
+    """``LOG_CONSOLE_STREAM`` is read by lib_log_rich AHEAD of the configuration.
+
+    So a guard decided from the ``console_stream`` key alone handed the library a
+    ``custom`` route that the environment variable then overrode, and rich's
+    handler was back on the raw stderr - the same loss as the test above, reached
+    through the one setting the guard never read. The upper-case arm is there
+    because the library lower-cases what it reads.
+    """
+    monkeypatch.setenv("LOG_CONSOLE_STREAM", named)
+    argv = ["config"]
+    control = _run_and_take_the_output_away(capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=False)
+    assert control.stdout_bytes > 0, "the control read nothing, so this arm has no loss to detect"
+    assert control.stderr_bytes > 0, (
+        "the control wrote nothing to stderr, so the write this test is about never happened"
+    )
+
+    kept = _run_and_take_the_output_away(
+        capture=CAPTURE, history=ABSENT_HISTORY, argv=argv, leaves=False, stderr_leaves=True
+    )
+    assert kept.stdout_bytes == control.stdout_bytes, (
+        f"with LOG_CONSOLE_STREAM={named} a closed stderr cost stdout "
+        f"{control.stdout_bytes - kept.stdout_bytes} of its {control.stdout_bytes} bytes"
+    )
+
+
+@pytest.mark.os_agnostic
 def test_a_findings_verdict_yields_to_a_departed_reader() -> None:
     """A verdict the reader never received must not be reported as delivered.
 

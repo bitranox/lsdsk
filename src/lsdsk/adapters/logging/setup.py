@@ -17,10 +17,11 @@ System Role:
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING, Any, Final, cast
+from typing import TYPE_CHECKING, Final, cast
 
 import lib_log_rich.config
 import lib_log_rich.runtime
+from lib_log_rich.runtime import RichConsoleAdapter
 from pydantic import BaseModel, ConfigDict
 
 from lsdsk import __init__conf__
@@ -31,9 +32,10 @@ from lsdsk import __init__conf__
 from ..cli import safe_console
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from typing import IO
 
     from lib_layered_config import Config
+    from lib_log_rich.runtime import ConsoleAppearance
 
 
 class LoggingConfigModel(BaseModel):
@@ -91,7 +93,8 @@ def _build_runtime_config(config: Config) -> lib_log_rich.runtime.RuntimeConfig:
     return lib_log_rich.runtime.RuntimeConfig(
         service=service,
         environment=environment,
-        **_routed_through_the_guarded_stream(extra_config),
+        console_adapter_factory=_guarded_console,
+        **extra_config,
     )
 
 
@@ -102,8 +105,8 @@ def _build_runtime_config(config: Config) -> lib_log_rich.runtime.RuntimeConfig:
 _GUARDABLE_CONSOLE_STREAMS: Final[frozenset[str]] = frozenset({"stdout", "stderr"})
 
 
-def _routed_through_the_guarded_stream(settings: Mapping[str, Any]) -> dict[str, Any]:
-    """Point lib_log_rich's console at a writer that answers a departed reader correctly.
+def _guarded_console(appearance: ConsoleAppearance) -> RichConsoleAdapter:
+    """Build lib_log_rich's console on a writer that answers a departed reader correctly.
 
     lib_log_rich renders through rich, and rich's ``Console.on_broken_pipe`` runs
     ``os.dup2(devnull, sys.stdout.fileno())`` - hardcoded to STDOUT whichever
@@ -112,33 +115,37 @@ def _routed_through_the_guarded_stream(settings: Mapping[str, Any]) -> dict[str,
     stdout read normally: the report went from 13,166 bytes to 1, with nothing on
     any stream to say the rest had been discarded.
 
-    ``console_stream="custom"`` with a ``console_stream_target`` is the library's
-    own seam for this, so nothing third-party is patched: rich is handed
-    :func:`~lsdsk.adapters.cli.safe_console.safe_stream`, whose writes never let a
-    ``BrokenPipeError`` reach rich's handler.
+    Decided HERE, from the appearance the library hands its console factory,
+    rather than by rewriting ``console_stream`` in the settings: the library reads
+    ``LOG_CONSOLE_STREAM`` ahead of the configuration, so a ``custom`` route put in
+    the settings was overridden by that variable and rich was back on the raw
+    stream. The appearance is resolved after the variable, so this sees the stream
+    the lines really go to, whichever setting chose it. ``console_adapter_factory``
+    is the library's own seam for this, so nothing third-party is patched: rich is
+    handed :func:`~lsdsk.adapters.cli.safe_console.safe_stream`, whose writes never
+    let a ``BrokenPipeError`` reach rich's handler.
 
     Args:
-        settings: The ``[lib_log_rich]`` values, minus service and environment.
-            Typed as the model's own ``Any`` values rather than narrowed to
-            ``object``: the model declares ``extra="allow"``, so these are the
-            library's keyword arguments passing through, and narrowing them here
-            erases every one of their types at the call that spreads them.
+        appearance: The console settings as the library resolved them.
 
     Returns:
-        Those settings, with a guarded target substituted where one applies. The
-        input is not modified.
+        The console adapter the library would have built, on the guarded writer
+        where the stream is one this can guard.
     """
-    configured = settings.get("console_stream")
-    # Lower-cased because lib_log_rich matches it that way, so "STDERR" names the
-    # same stream and must not slip past this guard by its spelling.
-    stream = configured.lower() if isinstance(configured, str) else ""
-    if stream not in _GUARDABLE_CONSOLE_STREAMS:
-        return dict(settings)
-    return {
-        **settings,
-        "console_stream": "custom",
-        "console_stream_target": safe_console.safe_stream(sys.stderr if stream == "stderr" else sys.stdout),
-    }
+    stream = str(appearance.stream.value)
+    target = cast("IO[str] | None", appearance.stream_target)
+    if stream in _GUARDABLE_CONSOLE_STREAMS:
+        target = safe_console.safe_stream(sys.stderr if stream == "stderr" else sys.stdout)
+        stream = "custom"
+    return RichConsoleAdapter(
+        force_color=appearance.force_color,
+        no_color=appearance.no_color,
+        styles=appearance.styles,
+        format_preset=appearance.format_preset,
+        format_template=appearance.format_template,
+        stream=stream,
+        stream_target=target,
+    )
 
 
 def init_logging(config: Config) -> None:

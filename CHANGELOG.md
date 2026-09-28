@@ -25,6 +25,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   holding a NUL byte got as far as the file system. Both are now refused like
   any other unusable value: one warning naming the key, and the per-user state
   file (or `--history-file`) is used.
+- **`LOG_CONSOLE_STREAM` no longer bypasses the broken-pipe guard.** With that
+  variable naming `stderr` or `stdout`, a reader closing stderr made rich send
+  standard output to the null device, so `lsdsk config` delivered 1 byte of a
+  13,166-byte report. The guard read only the configuration key, which the
+  variable overrides. It now decides from the stream the logging library
+  actually resolved, whichever setting chose it.
 - **Standard output that refuses a write is said once, with no traceback.**
   `lsdsk --version > /dev/full`, `lsdsk findings > /dev/full` and
   `snapshot -o - > /dev/full` printed a traceback, then "Exception ignored while
