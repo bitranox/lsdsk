@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from lsdsk.adapters.hw import snapshot
-from lsdsk.adapters.hw.fabric import NodeSource, assemble, port_kind_of
+from lsdsk.adapters.hw.fabric import UNPLACED_ROOT, NodeSource, assemble, port_kind_of
 from lsdsk.domain.enums import CliCommand, PciPortKind
 from lsdsk.domain.models import PcieLink
 
@@ -285,6 +285,49 @@ def test_a_domain_wider_than_four_digits_keeps_its_children_under_it() -> None:
     assert tree["10000:e1:00.0"].parent_address == "10000:e0:06.0", "the drive left its port"
     assert tree["10000:e0:06.0"].parent_address == "0000:00:0e.0", "the VMD port left the device it sits on"
     assert [node.address for node in tree.values() if node.is_root] == ["0000:00"], "a phantom root complex"
+
+
+@pytest.mark.os_agnostic
+def test_a_device_in_a_five_digit_domain_with_no_parent_roots_on_its_own_bus() -> None:
+    """A VMD port with no parent in the capture is still an ADDRESS, not an identifier.
+
+    The test above holds the path parser; this one holds the assembly's own
+    notion of what an address looks like, which decides where a device the
+    capture leaves parentless is rooted. A shape that accepts only a four-digit
+    domain reads `10000:e0:06.0` as one of Windows' address-less instance
+    identifiers and files it under the `unplaced` root - so the drives behind a
+    VMD whose own parent was not captured would be listed as devices with no
+    bus at all, merged with whatever else the platform could not place.
+    """
+    capture = {
+        "schema": 2,
+        "platform": "linux",
+        "hostname": "example",
+        "kernel": "6.1.0",
+        "pci": {
+            "10000:e0:06.0": {
+                "class": "0x060400",
+                "path": "/sys/devices/pci10000:e0/10000:e0:06.0",
+            },
+            "10000:e1:00.0": {
+                "class": "0x010802",
+                "path": "/sys/devices/pci10000:e0/10000:e0:06.0/10000:e1:00.0",
+            },
+        },
+        "block": {},
+    }
+
+    tree = {node.address: node for node in snapshot.build_from(capture).pci_tree}
+
+    roots = sorted(node.address for node in tree.values() if node.is_root)
+    assert roots == ["10000:e0"], f"the VMD port was rooted under {roots}, not on its own bus 10000:e0"
+    assert tree["10000:e0:06.0"].parent_address == "10000:e0"
+    assert tree["10000:e1:00.0"].parent_address == "10000:e0:06.0", "the drive left its port"
+    # The control: an identifier that genuinely carries no bus still goes to
+    # the unplaced root, so the assertion above is not satisfied by a shape
+    # that accepts everything.
+    unplaced = assemble([_source(r"PCI\VEN_1AF4&DEV_1000\3&13c0b0c5&0&50")])
+    assert [node.address for node in unplaced if node.is_root] == [UNPLACED_ROOT]
 
 
 @pytest.mark.os_agnostic

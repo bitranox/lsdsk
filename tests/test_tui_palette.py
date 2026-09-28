@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pytest
+from textual.containers import VerticalScroll
 from textual.widgets import OptionList
 
 from lsdsk.adapters.hw.snapshot import build_from
@@ -25,6 +26,7 @@ from lsdsk.adapters.render import tables, theme
 from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui import palette as tui_palette
 from lsdsk.adapters.tui.app import PAGE_LABELS
+from lsdsk.domain.history import History, record
 
 if TYPE_CHECKING:
     from textual.pilot import Pilot
@@ -203,6 +205,141 @@ async def test_no_printed_colour_reaches_the_interactive_view() -> None:
     # refuse. `-k` is a selection too, and so is a partner someone deletes.
     missing = sorted(role for role in INTERACTIVE_ROLES if getattr(tui_palette.PALETTE, role).upper() not in drawn)
     assert not missing, f"the interactive palette was not drawn either, so nothing above was tested: {missing}"
+
+
+#: The two capture times the paired history is recorded at, one per real capture.
+_EARLIER, _LATER = "2026-08-05T01:23:00+00:00", "2026-08-05T17:03:00+00:00"
+
+#: The sentence the trend page draws under its rows, and only when it HAS rows.
+_TREND_NOTE = "Rates are per power-on hour"
+
+
+def _capture(name: str) -> Inventory:
+    with (FIXTURE.parent / name).open(encoding="utf-8") as handle:
+        payload: dict[str, Any] = json.load(handle)
+    return build_from(payload)
+
+
+def _with_a_recorded_past() -> tuple[Inventory, History]:
+    """The later capture of the SAS box, and a history of both real captures.
+
+    Two samples, recorded through the real ``record``, because without a past
+    the trend page draws its explanation instead of rows and the note under
+    them - which is the one fill the plain sweep never reaches.
+    """
+    history = record(History(hostname="linux-sas-hba"), _capture("linux-sas-hba.json").disks, _EARLIER)
+    later = _capture("linux-sas-hba-later.json")
+    return later, record(history, later.disks, _LATER)
+
+
+def _region(app: LsdskApp, selector: str) -> tuple[str, set[str]]:
+    """What one widget draws right now: its text, and every foreground hue in it.
+
+    Read off the widget's own painted lines rather than the whole screenshot,
+    so a claim about the detail panel or the trend note is about THAT region
+    and cannot be satisfied by the same hue drawn somewhere else on the page.
+    """
+    widget = app.query_one(selector)
+    text: list[str] = []
+    hues: set[str] = set()
+    for row in range(widget.size.height):
+        for segment in widget.render_line(row):
+            text.append(segment.text)
+            colour = None if segment.style is None or segment.style.color is None else segment.style.color.triplet
+            if colour is not None:
+                hues.add(colour.hex.upper())
+    return "".join(text), hues
+
+
+class _Drawn(NamedTuple):
+    """One sweep of a running app: the pictures, and the three regions it reached."""
+
+    pictures: str
+    detail_hues: set[str]
+    detail_records: int
+    trend_note: str
+    trend_hues: set[str]
+    fallback_shown: bool
+
+
+async def _sweep_with_regions(app: LsdskApp, pilot: Pilot[None]) -> _Drawn:
+    """The mount-then-rescan sweep, reading the detail panel and trend body as it goes.
+
+    The same two passes as :func:`_sweep_before_and_after_a_rescan`, because a
+    fill reached from two places is only gated when both are swept. The regions
+    are read inside the run: a widget's content is gone once the app exits.
+    """
+    pictures: list[str] = []
+    detail_hues: set[str] = set()
+    records = 0
+    trend_note = ""
+    trend_hues: set[str] = set()
+    fallback_shown = False
+    for pass_number in (1, 2):
+        if pass_number == 2:
+            await pilot.press("f9")
+            await pilot.pause()
+        for number, _page in enumerate(PAGE_LABELS, start=1):
+            await pilot.press(str(number))
+            await pilot.pause()
+            pictures.append(app.export_screenshot().upper())
+            text, hues = _region(app, "#detail-body")
+            if text.strip() and "Nothing selected" not in text:
+                records += 1
+                detail_hues |= hues
+            fallback_shown |= bool(app.query_one("#tree-fallback", VerticalScroll).display)
+        note, hues = _region(app, "#trend-body")
+        trend_note += note
+        trend_hues |= hues
+    return _Drawn(" ".join(pictures), detail_hues, records, trend_note, trend_hues, fallback_shown)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["recorded-past", "no-pci-reading"])
+async def test_no_printed_colour_reaches_the_fills_the_plain_sweep_never_draws(scenario: str) -> None:
+    """The same gate, on the three fills the plain capture never reaches.
+
+    The sweep above opens a capture with no history and a full PCI fabric, so
+    three fills never run under it: the note under the trend rows (drawn only
+    when there ARE rows, which takes a recorded past), the old
+    disk-and-controller section that replaces the fabric list when a capture
+    carries no PCI reading, and - asserted per region rather than per screen -
+    the detail panel's own group headers, whose hue reaches it through
+    ``render_detail(header_style=...)`` and nowhere else. A printed hue planted
+    on the first two left the gate above green; the third can only be seen by
+    reading the panel itself, because the header hue is drawn elsewhere on
+    every page.
+
+    Each scenario asserts its path was actually drawn before judging its
+    colours, so a fill that silently stopped running cannot pass as clean.
+    """
+    printed = _printed_hues()
+    header = tui_palette.PALETTE.header.upper()
+    if scenario == "recorded-past":
+        machine, history = _with_a_recorded_past()
+        app = LsdskApp(machine, history)
+    else:
+        app = LsdskApp(inventory().with_changes(pci_tree=()))
+    async with app.run_test(size=DEMO_SIZE) as pilot:
+        drawn = await _sweep_with_regions(app, pilot)
+
+    leaked = sorted(hue for hue in printed if hue in drawn.pictures)
+    assert not leaked, f"{scenario}: the printed palette reached the interactive view: {leaked}"
+
+    assert drawn.detail_records, f"{scenario}: the detail panel never showed a record, so it was not tested"
+    assert not drawn.detail_hues & printed, f"{scenario}: the detail panel drew {sorted(drawn.detail_hues & printed)}"
+    assert header in drawn.detail_hues, (
+        f"{scenario}: the detail panel's group headers are not in the interactive header hue {header}; "
+        f"it drew {sorted(drawn.detail_hues)}"
+    )
+
+    if scenario == "recorded-past":
+        assert _TREND_NOTE in drawn.trend_note, "the trend page drew no rows, so its note was never tested"
+        assert not drawn.trend_hues & printed, f"the trend note drew {sorted(drawn.trend_hues & printed)}"
+        assert tui_palette.PALETTE.unknown.upper() in drawn.trend_hues, "the trend note carries no hue at all"
+    else:
+        assert drawn.fallback_shown, "the section that replaces a missing fabric was never shown"
 
 
 @pytest.mark.os_agnostic

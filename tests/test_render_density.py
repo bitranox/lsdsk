@@ -19,13 +19,24 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from rich.console import Console
 
-from lsdsk.adapters.render.tree import FabricView, render_fabric
+from lsdsk.adapters.render import theme
+from lsdsk.adapters.render.tree import (
+    HOP_WIDE_WIDTH,
+    Fabric,
+    FabricView,
+    device_header_line,
+    hop_cells,
+    render_fabric,
+)
 from lsdsk.domain.enums import TreeDensity
+from lsdsk.domain.models import PcieLink, PciNode
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from click.testing import CliRunner
+
+    from lsdsk.domain.models import Finding
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 _FIXTURE = FIXTURES / "linux-sas-hba.json"
@@ -978,3 +989,173 @@ def test_a_line_carries_the_thing_it_is_about_and_a_decorative_one_carries_nothi
         # cursor stop on it.
         drives = {line.subject for line in lines if line.subject in set(machine.disks)}
         assert len(drives) == len(machine.disks), f"{host}: {len(drives)} of {len(machine.disks)} drives selectable"
+
+
+#: A hop whose two ends differ in speed AND width AND worth, so a capable and a
+#: running figure crossed anywhere on the way to the row cannot read the same.
+_UNEQUAL_HOP = PcieLink(current_speed_gtps=8.0, current_width=4, max_speed_gtps=16.0, max_width=8)
+_PLACEHOLDERS = frozenset({theme.NOT_READ, theme.LEGACY})
+
+
+def _deep_linked_chain(levels: int) -> tuple[PciNode, ...]:
+    """A synthetic fabric `levels` deep whose every hop carries a real figure.
+
+    Deeper than any committed capture, so its spine pushes the width at which
+    the hop pair takes its wide tier well past 100 columns - the region where a
+    tier decided from the width alone and the tier the field plan decided come
+    apart.
+    """
+    root = PciNode(address="0000:00", name="root bus")
+    nodes = [root]
+    parent = root.address
+    for level in range(1, levels + 1):
+        address = f"0000:{level:02x}:00.0"
+        nodes.append(
+            PciNode(
+                address=address,
+                name=f"bridge {level}",
+                parent_address=parent,
+                class_code=0x060400,
+                link=_UNEQUAL_HOP,
+                pcie_capability_present=True,
+            )
+        )
+        parent = address
+    return tuple(nodes)
+
+
+def _hop_cells_off_their_tier(fabric: Fabric, findings: Sequence[Finding]) -> tuple[list[str], int]:
+    """Every drawn hop cell whose text is not the one its field's TIER calls for.
+
+    The expected text is derived from the field plan alone - the wide tier
+    carries the bandwidth, the narrow one does not - and read back off the drawn
+    row at the column its own header names. So a section deciding the bandwidth
+    a second time, from anything but the fields, is caught both ways: a figure
+    carrying its worth into a narrow column is clipped there, and a wide column
+    drawing the bare figure is not what the tier promised.
+
+    Returns:
+        The disagreements, and how many drawn cells differ between the two tiers
+        at all: a sweep in which both tiers draw the same text everywhere cannot
+        tell them apart, so the caller requires that count to be non-zero.
+    """
+    hops = [field for field in fabric.fields if field.key in {"capable", "running"}]
+    if not hops:
+        return [], 0
+    header = device_header_line(fabric).plain
+    wide = all(field.width == HOP_WIDE_WIDTH for field in hops)
+    wrong: list[str] = []
+    discriminating = 0
+    for node, _level in fabric.drawn():
+        row = fabric.row(node, findings).plain
+        expected = hop_cells(node, bandwidth=wide)
+        other = hop_cells(node, bandwidth=not wide)
+        for field, (text, _style), (other_text, _other_style) in zip(hops, expected, other, strict=True):
+            discriminating += text != other_text
+            start = header.index(field.key)
+            drawn = row[start : start + field.width].rstrip()
+            # The gap after the field must be blank too: padding never
+            # truncates, so an overlong cell starts with the right figure and
+            # runs on into the next column.
+            overrun = row[start + field.width : start + field.width + 2].strip()
+            if len(text) > field.width or drawn != text or overrun:
+                tier = "wide" if wide else "narrow"
+                wrong.append(
+                    f"w{fabric.width} {node.address} {field.key}: drew {row[start : start + field.width + 2]!r} in a "
+                    f"{field.width}-wide field where the {tier} tier calls for {text!r}"
+                )
+    return wrong, discriminating
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", sorted(DENSITY_COUNTS))
+def test_every_hop_cell_is_the_one_its_field_tier_was_measured_for(host: str) -> None:
+    """The bandwidth a hop cell carries is the field plan's decision, read back.
+
+    The plan picks the tier from the width LEFT after the marker, the spine and
+    the address, so the break sits at a different width for every depth of
+    fabric. Deciding the bandwidth a second time from the width alone (for
+    example ``width >= 100``) disagrees with it wherever the spine is not the one
+    that number assumed: a figure with its worth lands in a 7-wide column and is
+    clipped into a different figure, or a 21-wide column draws the bare figure
+    it was widened to explain. The tier guard above measures the tiers and the
+    one-line guard counts lines, and a clipped cell still takes one line.
+
+    Swept over every capture, every density and every width from 20 to 200,
+    because which width exposes a disagreement depends on the capture's depth.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.domain.diagnostics import diagnose
+
+    machine = build_from(_load(host))
+    findings = diagnose(machine)
+    wrong: list[str] = []
+    discriminating = 0
+    for density in TreeDensity:
+        for width in range(20, 201):
+            found, differing = _hop_cells_off_their_tier(
+                Fabric(machine.pci_tree, width, FabricView(density=density)), findings
+            )
+            wrong.extend(f"{density.value} {one}" for one in found)
+            discriminating += differing
+    # A capture that read no link at all (windows-ahci is a QEMU guest) draws a
+    # placeholder in every hop cell, and a placeholder never gains a bandwidth,
+    # so there the two tiers legitimately agree. Anywhere a figure was read, the
+    # sweep must have drawn one that tells them apart.
+    figures = [text for node in machine.pci_tree for text, _style in hop_cells(node) if text not in _PLACEHOLDERS]
+    assert discriminating or not figures, (
+        f"{host}: {len(figures)} figures were read, yet no drawn hop cell differs between the tiers"
+    )
+    assert not wrong, f"{host}: {len(wrong)} hop cells are off their field's tier, e.g. {wrong[:3]}"
+
+
+@pytest.mark.os_agnostic
+def test_a_deep_fabric_draws_the_hop_tier_its_field_plan_chose() -> None:
+    """The same law over a chain deeper than any capture.
+
+    A 12-deep chain has a 26-wide spine, so its hop pair takes the wide tier
+    only from 113 columns, and a width-only rule would draw bandwidth into the
+    narrow columns in between. Built here because the committed captures are
+    too shallow to put the break that far out.
+    """
+    nodes = _deep_linked_chain(12)
+    wrong: list[str] = []
+    discriminating = 0
+    for width in range(20, 201):
+        found, differing = _hop_cells_off_their_tier(Fabric(nodes, width, FabricView(density=TreeDensity.FULL)), ())
+        wrong.extend(found)
+        discriminating += differing
+    assert discriminating, "no drawn hop cell differs between the tiers, so the sweep asserted nothing"
+    assert not wrong, f"{len(wrong)} hop cells are off their field's tier, e.g. {wrong[:3]}"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("width", "capable", "running"),
+    [(200, "Gen4x8 (15.75 GB/s)", "Gen3x4 (3.94 GB/s)"), (90, "Gen4x8", "Gen3x4")],
+    ids=["wide-tier", "narrow-tier"],
+)
+def test_the_capable_column_draws_the_maximum_and_the_running_one_the_negotiated_link(
+    width: int, capable: str, running: str
+) -> None:
+    """Each hop column carries its own end of the link, under its own heading.
+
+    Both cells are strings, so a type checker cannot see them crossed, and every
+    other guard on these columns compares the drawn row against ``hop_cells``
+    itself - which agrees with a crossed pair by construction. So the figures
+    here are written out: the maximum is Gen4x8, the negotiated link Gen3x4, and
+    each carries ITS OWN worth in the wide tier.
+    """
+    link_only = PciNode(address="0000:01:00.0", name="card", link=_UNEQUAL_HOP, pcie_capability_present=True)
+    assert hop_cells(link_only, bandwidth=width == 200) == ((capable, ""), (running, ""))
+
+    fabric = Fabric(_deep_linked_chain(1), width, FabricView(density=TreeDensity.FULL))
+    header = device_header_line(fabric).plain
+    widths = {field.key: field.width for field in fabric.fields}
+    node, _level = fabric.drawn()[0]
+    row = fabric.row(node, ()).plain
+    for key, expected in (("capable", capable), ("running", running)):
+        start = header.index(key)
+        assert row[start : start + widths[key]].rstrip() == expected, (
+            f"at width {width} the {key!r} column drew {row[start : start + widths[key]]!r}, not {expected!r}"
+        )

@@ -489,3 +489,85 @@ def test_an_uplink_resting_on_one_reading_is_marked_as_a_ceiling() -> None:
     ceiling = _drawn(detail.render_detail(detail.controller_detail(one, machine), findings))
     assert f"{theme.AT_MOST} " in ceiling, "an unread bridge was drawn as a measured uplink"
     assert detail.AT_MOST_LEGEND in ceiling, "the marker was drawn and never explained"
+
+
+def _values_of(record: detail.Detail, label: detail.DetailGroupLabel) -> dict[str, str]:
+    """One group's values by name, text only."""
+    group = next(group for group in record.groups if group.label == label)
+    return {name: text for name, (text, _style) in group.values}
+
+
+def _nvme_drive_with_nothing_ata(machine: Inventory) -> Disk:
+    """The NVMe drive of linux-nvme-board, checked to publish no ATA counter and no attribute."""
+    drive = next(one for one in machine.disks if one.bus is BusType.NVME)
+    health = drive.health
+    assert health is not None, "the fixture no longer supports this test"
+    unread = (health.reallocated_sectors, health.pending_sectors, health.uncorrectable_sectors, health.crc_errors)
+    assert unread == (None, None, None, None) and not health.attributes, "the fixture no longer supports this test"
+    return drive
+
+
+@pytest.mark.os_agnostic
+def test_every_value_an_nvme_drive_cannot_have_is_marked_absent_not_unread() -> None:
+    """All four ATA counters AND the attribute summary say n/a on an NVMe drive.
+
+    The guard above holds one counter, ``realloc``; a panel that dashed the other
+    three, or the ``smart`` summary, would pass it while telling a reader that a
+    reading was missed on a drive that has no attribute table to read. Each is
+    asserted by name. The control is the SATA drive on the same machine, whose
+    attribute summary is a real reading and must not become n/a.
+    """
+    machine = _machine("linux-nvme-board")
+    drive = _nvme_drive_with_nothing_ata(machine)
+    record = detail.disk_detail(drive, machine)
+
+    counters = _values_of(record, detail.COUNTERS)
+    health = _values_of(record, detail.HEALTH)
+    absent = {label: counters[label] for label in ("realloc", "pending", "uncorr", "crc")}
+    absent["smart"] = health["smart"]
+    wrong = {label: text for label, text in absent.items() if text != theme.NOT_APPLICABLE}
+    assert not wrong, f"on an NVMe drive these read as something other than {theme.NOT_APPLICABLE!r}: {wrong}"
+
+    sata = next(one for one in machine.disks if one.bus is not BusType.NVME)
+    assert _values_of(detail.disk_detail(sata, machine), detail.HEALTH)["smart"] != theme.NOT_APPLICABLE, (
+        "a SATA drive's attribute summary was marked as not applying"
+    )
+
+
+@pytest.mark.os_agnostic
+def test_an_nvme_drive_that_does_answer_an_ata_counter_keeps_its_figure() -> None:
+    """The absent mark is for a MISSING value, never for one the drive gave.
+
+    CLAUDE.md states it: a counter is marked absent only when the value is
+    missing as well, so a drive that somehow answers one keeps its figure
+    rather than having it overwritten by a claim about its protocol. Keyed on
+    the bus alone, a real count of 3 CRC errors would read as ``n/a``, which is
+    a fault reported as a non-question.
+    """
+    machine = _machine("linux-nvme-board")
+    drive = _nvme_drive_with_nothing_ata(machine)
+    assert drive.health is not None
+    answering = drive.with_changes(health=drive.health.with_changes(crc_errors=3))
+
+    counters = _values_of(detail.disk_detail(answering, machine), detail.COUNTERS)
+    assert counters["crc"] == "3", f"an NVMe drive reporting 3 CRC errors was drawn as {counters['crc']!r}"
+    # The neighbours it did not answer are still absent, so the figure above is
+    # not the panel having stopped marking the bus at all.
+    assert counters["realloc"] == theme.NOT_APPLICABLE, counters
+    assert "crc 3" in _disk_panel(machine, answering)
+
+
+@pytest.mark.os_agnostic
+def test_a_drive_sold_as_500gb_is_labelled_on_both_scales_decimal_first() -> None:
+    """The exact pair, not merely a figure that names some scale.
+
+    The guard above accepts any figure ending in ``B``, which the binary figure
+    alone (``466GiB``) does - so a panel that fell back to one scale passed it.
+    Decimal first, because that is what is printed on the drive's own label.
+    """
+    machine = _machine("linux-nvme-board")
+    drive = machine.disks[0].with_changes(size_bytes=500_107_862_016)
+
+    identity = _values_of(detail.disk_detail(drive, machine), detail.IDENTITY)
+    assert identity["size"] == "500GB/466GiB", f"a 500GB drive's size was drawn as {identity['size']!r}"
+    assert "size 500GB/466GiB" in _disk_panel(machine, drive)
