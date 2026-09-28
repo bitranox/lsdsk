@@ -13,10 +13,13 @@ often a cable, an enclosure powered down or a controller reset than a disposal,
 and discarding the history on that evidence would throw away the only copy of
 the past for a drive that comes back in an hour.  So the file grows with the
 number of distinct drives the machine has ever seen, which on real hardware is
-small and rises only when disks are swapped.  A full series costs about 227 KB,
-so the 64 MB read bound is reached at roughly 280 drives; past that the store
-would be refused as oversized.  That is far beyond any real machine, but it is
-a ceiling rather than the unbounded growth "capped per drive" might suggest.
+small and rises only when disks are swapped.  A full series costs about 210 KB
+with every counter sixteen digits long, so the 64 MB read bound is reached at
+roughly 300 such drives.  The writer refuses a store past that bound rather than
+write one its own reader would refuse, so a run that would cross it fails
+loudly and leaves the previous store as it was.  That is far beyond any real
+machine, but it is a ceiling rather than the unbounded growth "capped per
+drive" might suggest.
 
 The file lives in the platform's STATE directory rather than beside the
 configuration.  Configuration is written by a human and is worth copying between
@@ -30,21 +33,23 @@ System Role:
 
 from __future__ import annotations
 
-import contextlib
+import errno
 import json
 import os
 import sys
-import tempfile
+from collections.abc import Mapping, Sequence, Sized
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Annotated, Any, NamedTuple, cast
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, BeforeValidator, Field, ValidationError, field_validator
+from pydantic_core import PydanticCustomError
 
 from ...domain.errors import ConfigurationError, MissingFileError
-from ...domain.history import DiskSeries, History, Sample
+from ...domain.history import DiskSeries, History, Sample, thin
 from ...domain.text import visible_text
-from ..textfile import read_json_bounded
-from ..validation import what_is_wrong_with_it
+from ..atomicfile import replace_atomically
+from ..textfile import MAX_INPUT_BYTES, fits_a_bounded_read, read_json_bounded
+from ..validation import BOUNDED, MAX_ENTRIES, what_is_wrong_with_it
 
 HISTORY_SCHEMA_VERSION = 1
 
@@ -82,6 +87,46 @@ _APP = "lsdsk"
 _FILENAME = "history.json"
 
 
+def _samples_within_bounds(value: object) -> object:
+    """Refuse a series holding more samples than one collection may.
+
+    Reads the raw series - a mapping from the file, or a ``DiskSeries`` a caller
+    is about to write - because it runs before the series are validated, which
+    is what keeps a million-sample series from being built only to be thinned.
+
+    Args:
+        value: The raw ``series`` field.
+
+    Returns:
+        ``value`` unchanged. Anything that is not a list of series passes
+        through to the field's own validation, which refuses it by type.
+
+    Raises:
+        PydanticCustomError: If a series holds more than
+            :data:`~lsdsk.adapters.validation.MAX_ENTRIES` samples.
+    """
+    _refuse_an_oversized_series(value)
+    return value
+
+
+def _refuse_an_oversized_series(value: object) -> None:
+    """The walk :func:`_samples_within_bounds` makes, over whatever shape it was handed."""
+    if not isinstance(value, list | tuple):
+        return
+    for entry in cast("Sequence[object]", value):
+        if isinstance(entry, Mapping):
+            fields = cast("Mapping[str, object]", entry)
+            identity, samples = fields.get("identity"), fields.get("samples")
+        else:
+            identity, samples = getattr(entry, "identity", None), getattr(entry, "samples", None)
+        if isinstance(samples, list | tuple) and len(cast("Sized", samples)) > MAX_ENTRIES:
+            raise PydanticCustomError(
+                "too_many_entries",
+                "the series '{identity}' holds {count} samples, more than the {limit} lsdsk reads in one place",
+                {"identity": str(identity), "count": len(cast("Sized", samples)), "limit": MAX_ENTRIES},
+            )
+
+
 class HistoryFile(BaseModel):
     """The on-disk shape, and the only place a stored file is trusted.
 
@@ -92,7 +137,12 @@ class HistoryFile(BaseModel):
     Attributes:
         schema_version: Format version. The wire key is ``schema``.
         hostname: The machine these samples were taken on.
-        series: One series per drive.
+        series: One series per drive. At most
+            :data:`~lsdsk.adapters.validation.MAX_ENTRIES` of them, each of at
+            most that many samples, both counted before anything in them is
+            validated. The samples are bounded HERE rather than on the domain's
+            own ``DiskSeries``, because the domain cannot know the file's limit
+            and ``record`` builds series the configuration sizes.
 
     Example:
         >>> HistoryFile(hostname="box").schema_version
@@ -103,7 +153,7 @@ class HistoryFile(BaseModel):
 
     schema_version: int = Field(default=HISTORY_SCHEMA_VERSION, alias="schema")
     hostname: str
-    series: tuple[DiskSeries, ...] = ()
+    series: Annotated[tuple[DiskSeries, ...], BOUNDED, BeforeValidator(_samples_within_bounds)] = ()
 
     @field_validator("series")
     @classmethod
@@ -174,15 +224,25 @@ def default_history_path() -> Path:
     return root / _APP / _FILENAME
 
 
-def load_history(path: Path, *, hostname: str) -> History:
+def load_history(path: Path, *, hostname: str, cap: int = MAX_SAMPLES_PER_DRIVE) -> History:
     """Read the store, or start an empty one.
+
+    Each series is thinned to ``cap`` on the way in, exactly as ``record``
+    thins it on the way out. The store is a file a user points
+    ``--history-file`` at, so nothing guarantees ``record`` wrote it, and every
+    judgement walks a drive's whole series once per counter: two series of
+    50,000 samples made ``report`` take 6.6 s. Thinning is idempotent, so a
+    series ``record`` wrote under the same cap is returned unchanged.
 
     Args:
         path: The store file.
         hostname: The machine being read now.
+        cap: The most samples any one drive keeps, which is the configured
+            ``max_samples_per_drive``.
 
     Returns:
-        What has been recorded for this machine.
+        What has been recorded for this machine, each series at most ``cap``
+        samples long.
 
     Raises:
         ConfigurationError: If the file is unreadable, malformed, written by a
@@ -248,7 +308,14 @@ def load_history(path: Path, *, hostname: str) -> History:
         )
         raise ConfigurationError(message)
 
-    return History(hostname=stored.hostname, series=stored.series)
+    return History(hostname=stored.hostname, series=tuple(_capped(series, cap) for series in stored.series))
+
+
+def _capped(series: DiskSeries, cap: int) -> DiskSeries:
+    """The series as ``record`` would keep it under ``cap``."""
+    if len(series.samples) <= cap:
+        return series
+    return series.with_changes(samples=thin(series.samples, cap))
 
 
 def save_history(history: History, path: Path) -> None:
@@ -265,46 +332,69 @@ def save_history(history: History, path: Path) -> None:
 
     Raises:
         OSError: If the directory cannot be created or the file cannot be
-            replaced. The previous store is untouched in that case.
-        pydantic.ValidationError: If the history does not satisfy the stored
-            schema. No caller has reached this - a ``History`` is validated at
-            its own construction and ``HistoryFile`` declares the same field
-            types - but the re-validation is real, so a caller catching only
-            ``OSError`` would not see it.
+            replaced, or the store would be larger than :func:`load_history`
+            reads (``errno.EFBIG``). The previous store is untouched in every
+            case.
+
+            A history the reader's own model refuses - more series or samples
+            than :data:`~lsdsk.adapters.validation.MAX_ENTRIES`, a figure past
+            the stored magnitude - is refused the same way (``errno.EINVAL``)
+            rather than as a ``ValidationError``, which no caller catches.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    stored = HistoryFile(schema=HISTORY_SCHEMA_VERSION, hostname=history.hostname, series=history.series)
-    body = stored.model_dump_json(indent=2, by_alias=True)
-
-    handle, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    temporary = Path(temporary_name)
     try:
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(body)
-            stream.flush()
-            os.fsync(stream.fileno())
-        # mkstemp already creates at 0600; set it explicitly so the guarantee
-        # does not rest on that, and so a umask cannot widen it.
-        with contextlib.suppress(OSError):
-            temporary.chmod(HISTORY_FILE_MODE)
-        temporary.replace(path)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            temporary.unlink()
-        raise
+        stored = HistoryFile(schema=HISTORY_SCHEMA_VERSION, hostname=history.hostname, series=history.series)
+    except ValidationError as error:
+        message = (
+            "the history would not be a store the history reader accepts, so nothing was written "
+            f"and the previous store is kept:\n{what_is_wrong_with_it(error)}"
+        )
+        raise OSError(errno.EINVAL, message, str(path)) from error
+    # Compact rather than indented: indentation is a third of a full series'
+    # size and nobody reads this file by eye.
+    body = stored.model_dump_json(by_alias=True)
+    _refuse_what_the_reader_would_refuse(body, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    replace_atomically(path, body, mode=HISTORY_FILE_MODE)
 
 
-def read_history(*, hostname: str, path: Path | None = None) -> History:
+def _refuse_what_the_reader_would_refuse(body: str, path: Path) -> None:
+    """Refuse a store the reader would refuse, before anything is written.
+
+    The reader bounds a history store like any file from outside the tool, and
+    a writer with no bound of its own once produced a file past it: every later
+    run then ignored the store and recorded nothing, while ``record`` exited 0.
+    Raised as an ``OSError`` because that is what every caller already reports
+    as a write that failed; the previous store stays readable and is kept.
+
+    Args:
+        body: The whole file, as it would be written.
+        path: The store, for the message.
+
+    Raises:
+        OSError: With ``errno.EFBIG``, if ``body`` is over the read limit.
+    """
+    if not fits_a_bounded_read(body):
+        size = len(body.encode("utf-8"))
+        message = (
+            f"the history store would be {size / 1024 / 1024:.1f} MB, larger than the history reader accepts "
+            f"({MAX_INPUT_BYTES // 1024 // 1024} MB), so nothing was written and the previous store is kept"
+        )
+        raise OSError(errno.EFBIG, message, str(path))
+
+
+def read_history(*, hostname: str, path: Path | None = None, cap: int = MAX_SAMPLES_PER_DRIVE) -> History:
     """Read the store at the configured location.
 
     Args:
         hostname: The machine being read now.
         path: Override the default location.
+        cap: The most samples any one drive keeps.
 
     Returns:
         What has been recorded for this machine.
     """
-    return load_history(path or default_history_path(), hostname=hostname)
+    return load_history(path or default_history_path(), hostname=hostname, cap=cap)
 
 
 def write_history(history: History, *, path: Path | None = None) -> None:

@@ -18,15 +18,14 @@ import errno
 import json
 import os
 import sys
-import tempfile
-from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, cast
 
 from pydantic import Field, TypeAdapter, ValidationError
 
 from ...domain.enums import Platform
 from ...domain.errors import ConfigurationError, UnsupportedPlatformError
-from ..textfile import read_json_bounded
+from ..atomicfile import replace_atomically, write_through
+from ..textfile import MAX_INPUT_BYTES, fits_a_bounded_read, read_json_bounded
 from ..validation import what_is_wrong_with_it
 from .capture import CaptureEnvelope
 from .linux import builder as linux_builder
@@ -35,6 +34,8 @@ from .windows import builder as windows_builder
 from .windows.capture import WindowsCapture
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from ...domain.models import Inventory
 
 SCHEMA_VERSION = 2
@@ -186,14 +187,25 @@ def serialise(capture: dict[str, Any]) -> str:
 
     Raises:
         ConfigurationError: If the reading names no platform lsdsk has a model
-            for, or a section does not have the shape its model requires.
+            for, a section does not have the shape its model requires, or the
+            file would be larger than :func:`load` reads.
     """
     try:
         parse_capture(capture)
     except ValidationError as error:
         message = f"This reading is not one lsdsk understands, so it was not written:\n{what_is_wrong_with_it(error)}"
         raise ConfigurationError(message) from error
-    return json.dumps(capture, indent=2, sort_keys=True)
+    body = json.dumps(capture, indent=2, sort_keys=True)
+    if not fits_a_bounded_read(body):
+        # A snapshot exists to be replayed, and one past the read bound never
+        # can be: refused here, where the file is still unwritten, rather than
+        # at the replay, where the machine it describes may be long gone.
+        message = (
+            f"This reading is {len(body) / 1024 / 1024:.1f} MB as a snapshot, larger than --replay reads "
+            f"({MAX_INPUT_BYTES // 1024 // 1024} MB), so it was not written."
+        )
+        raise ConfigurationError(message)
+    return body
 
 
 def save(capture: dict[str, Any], path: Path) -> None:
@@ -242,62 +254,14 @@ def save(capture: dict[str, Any], path: Path) -> None:
     """
     body = serialise(capture)
     path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        handle, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    except OSError:
-        # The temporary file lives in the DESTINATION'S directory, so a
-        # destination that is writable inside a directory that is not - a
-        # user-writable file under a root-owned path, or `-o /dev/null`, whose
-        # parent is `/dev` - cannot be written atomically at all. Fall back to
-        # writing in place with O_NOFOLLOW, which still refuses a symlink and so
-        # keeps the property that matters; only the atomicity is given up, and
-        # only where it was never available.
-        _write_in_place(path, body)
-        return
-    temporary = Path(temporary_name)
-    try:
-        _write_through(handle, body, sync=True)
-        # mkstemp already creates at 0600; setting it explicitly means the
-        # guarantee does not rest on that, and a umask cannot widen it.
-        # A filesystem that does not carry modes is not a failure to write.
-        with contextlib.suppress(OSError):
-            temporary.chmod(SNAPSHOT_FILE_MODE)
-        temporary.replace(path)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            temporary.unlink()
-        raise
-
-
-def _write_through(descriptor: int, body: str, *, sync: bool) -> None:
-    """Write the body through a raw descriptor and close it however that ends.
-
-    ``os.fdopen`` takes ownership of the descriptor only once it RETURNS, so a
-    failure inside it leaves the descriptor open with nothing holding it: the
-    caller's cleanup can unlink the file it named and still leak the handle.
-    Measured before this existed - one refused save moved the next free
-    descriptor up by one.
-
-    Args:
-        descriptor: A descriptor nothing else owns yet.
-        body: The whole file.
-        sync: Whether to force the bytes out before the descriptor is closed.
-            The atomic path does, because the rename that follows must not be
-            able to publish an empty file after a crash. The in-place fallback
-            does not: it is only ever taken where no temporary file could be
-            made, which includes a character device, and ``fsync`` on one of
-            those fails with ``EINVAL`` rather than meaning anything.
-    """
-    try:
-        stream = os.fdopen(descriptor, "w", encoding="utf-8")
-    except BaseException:
-        os.close(descriptor)
-        raise
-    with stream:
-        stream.write(body)
-        if sync:
-            stream.flush()
-            os.fsync(stream.fileno())
+    # The temporary file lives in the DESTINATION'S directory, so a destination
+    # that is writable inside a directory that is not - a user-writable file
+    # under a root-owned path, or `-o /dev/null`, whose parent is `/dev` - cannot
+    # be written atomically at all. It falls back to writing in place with
+    # O_NOFOLLOW, which still refuses a symlink and so keeps the property that
+    # matters; only the atomicity is given up, and only where it was never
+    # available.
+    replace_atomically(path, body, mode=SNAPSHOT_FILE_MODE, without_a_temporary_file=_write_in_place)
 
 
 def _write_in_place(path: Path, body: str) -> None:
@@ -324,7 +288,7 @@ def _write_in_place(path: Path, body: str) -> None:
         raise OSError(errno.ELOOP, message, str(path))
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | follow_refused_by_the_kernel
     descriptor = os.open(path, flags, SNAPSHOT_FILE_MODE)
-    _write_through(descriptor, body, sync=False)
+    write_through(descriptor, body, sync=False)
     with contextlib.suppress(OSError):
         path.chmod(SNAPSHOT_FILE_MODE)
 

@@ -129,10 +129,6 @@ class Sample(DomainModel, frozen=True):
     def counters(self) -> tuple[tuple[CounterKind, int | None], ...]:
         """Every counter paired with its kind.
 
-        Written out rather than resolved by attribute name. A kind added without
-        a matching field then fails loudly the first time it is read, instead of
-        reading as never-measured forever and quietly trending as absent.
-
         Returns:
             One pair per member of :class:`CounterKind`.
 
@@ -140,30 +136,22 @@ class Sample(DomainModel, frozen=True):
             >>> len(Sample(power_on_hours=1, captured_at="x").counters()) == len(CounterKind)
             True
         """
-        return (
-            (CounterKind.CRC_ERRORS, self.crc_errors),
-            (CounterKind.REALLOCATED_SECTORS, self.reallocated_sectors),
-            (CounterKind.PENDING_SECTORS, self.pending_sectors),
-            (CounterKind.UNCORRECTABLE_SECTORS, self.uncorrectable_sectors),
-            (CounterKind.MEDIA_ERRORS, self.media_errors),
-            (CounterKind.PERCENT_USED, self.percent_used),
-            (CounterKind.BYTES_WRITTEN, self.bytes_written),
-            (CounterKind.UNSAFE_SHUTDOWNS, self.unsafe_shutdowns),
-            (CounterKind.ERROR_LOG_ENTRIES, self.error_log_entries),
-            (CounterKind.POWER_CYCLES, self.power_cycles),
-        )
+        return tuple((kind, self.counter(kind)) for kind in CounterKind)
 
     def counter(self, kind: CounterKind) -> int | None:
         """Read one counter by kind.
+
+        A direct field read, because every judgement calls this once per sample
+        per counter: rebuilding all ten pairs to answer for one made it the
+        largest cost of a page. That a kind names a field is checked once, when
+        this module is imported, so a kind added without its field fails loudly
+        then rather than reading as never-measured forever.
 
         Args:
             kind: Which counter to read.
 
         Returns:
             The stored value, or ``None`` when it was not read.
-
-        Raises:
-            KeyError: If the kind has no field, which means the two drifted.
 
         Example:
             >>> sample = Sample(power_on_hours=1, captured_at="x", media_errors=3)
@@ -172,7 +160,23 @@ class Sample(DomainModel, frozen=True):
             >>> sample.counter(CounterKind.CRC_ERRORS) is None
             True
         """
-        return dict(self.counters())[kind]
+        value: int | None = getattr(self, kind.value)
+        return value
+
+
+def _every_counter_kind_names_a_sample_field() -> None:
+    """Refuse to import a module whose counter kinds and sample fields drifted.
+
+    Raises:
+        TypeError: If a :class:`CounterKind` names no field of :class:`Sample`.
+    """
+    unmatched = [kind.value for kind in CounterKind if kind.value not in Sample.model_fields]
+    if unmatched:
+        message = f"counter kinds with no Sample field: {unmatched}"
+        raise TypeError(message)
+
+
+_every_counter_kind_names_a_sample_field()
 
 
 class DiskSeries(DomainModel, frozen=True):

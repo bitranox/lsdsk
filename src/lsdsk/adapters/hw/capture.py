@@ -13,11 +13,15 @@ System Role:
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, TypeVar
 
 from pydantic import BaseModel, Field
 
 from ...domain.enums import Platform
+from ..validation import BOUNDED
+
+_Key = TypeVar("_Key")
+_Value = TypeVar("_Value")
 
 #: The longest a piece of text a DEVICE chose may be. Every one of these is an
 #: identifier, a name or a rate as the platform published it: four hex
@@ -56,6 +60,15 @@ DeviceText = Annotated[str, Field(max_length=MAX_DEVICE_TEXT)]
 #: A binary page as base64, bounded. Decoded at fixed offsets rather than walked
 #: per character, which is why it may be longer than :data:`DeviceText`.
 EncodedPayload = Annotated[str, Field(max_length=MAX_ENCODED_PAYLOAD)]
+
+#: A keyed section of a capture - PCI devices, block devices, a sysfs class -
+#: bounded in ENTRIES as well as by the file's bytes, and checked before any
+#: entry is validated. :data:`lsdsk.adapters.validation.MAX_ENTRIES` records why.
+EntryMap = Annotated[dict[_Key, _Value], BOUNDED]
+
+#: A list inside a capture - a device's children, a disk's ancestors - bounded
+#: the same way, since one entry's list can carry as much as a whole section.
+Entries = Annotated[tuple[_Value, ...], BOUNDED]
 
 
 class CaptureModel(BaseModel, frozen=True, extra="ignore"):
@@ -132,4 +145,6 @@ __all__ = [
     "CaptureModel",
     "DeviceText",
     "EncodedPayload",
+    "Entries",
+    "EntryMap",
 ]
