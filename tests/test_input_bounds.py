@@ -19,7 +19,7 @@ import re
 import sys
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, cast, get_args, get_origin, get_type_hints
 
 import annotated_types
 import pytest
@@ -572,6 +572,75 @@ def test_a_parent_chain_deeper_than_the_frame_limit_is_still_drawn() -> None:
     buffer = io.StringIO()
     Console(file=buffer, width=200, no_color=True).print(section)
     assert nodes[-1].address in buffer.getvalue(), "the deepest device of the chain is not drawn"
+
+
+class _CountingNode(PciNode, frozen=True):
+    """A device that counts how often anything asks for its parent.
+
+    Every walk up the fabric is a read of ``parent_address`` per level, so this
+    counts the renderer's work through the input alone, with nothing inside the
+    tree patched. The inventory keeps the instance as given rather than
+    rebuilding it, which ``_parent_reads_to_render`` asserts rather than assumes.
+    """
+
+    reads: ClassVar[int] = 0
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == "parent_address":
+            _CountingNode.reads += 1
+        return super().__getattribute__(name)
+
+
+#: Levels in the shallower arm of the doubling. Deep enough that a walk to the
+#: root per drawn row, depth/2 reads on average, dwarfs the handful of reads
+#: every device costs anyway.
+_CHAIN_LEVELS = 400
+
+#: How much doubling the depth may multiply the parent reads by. A walk to the
+#: root per row quadruples, and measured 3.99 over these arms before the fix; a
+#: level carried down from the parent doubles. Three sits between, and reads
+#: are counted rather than timed, so a loaded runner cannot move it.
+_ACCEPTABLE_DEPTH_GROWTH = 3.0
+
+
+def _parent_reads_to_render(levels: int) -> int:
+    """Parent reads to render one chain ``levels`` deep, every level drawn."""
+    nodes: list[PciNode] = [_CountingNode(address="0000:00", name="root complex")]
+    nodes.extend(
+        _CountingNode(
+            address=_chain_address(level),
+            name=f"switch leg {level}",
+            class_code=0x060400,
+            parent_address=_chain_address(level - 1) if level else "0000:00",
+        )
+        for level in range(levels)
+    )
+    inventory = Inventory(hostname="deep-chain", pci_tree=tuple(nodes))
+    assert all(type(node) is _CountingNode for node in inventory.pci_tree), "the inventory rebuilt the devices"
+    _CountingNode.reads = 0
+    section = render_fabric(inventory, (), 200, FabricView(density=TreeDensity.FULL))
+    reads = _CountingNode.reads
+    buffer = io.StringIO()
+    Console(file=buffer, width=200, no_color=True).print(section)
+    assert nodes[-1].address in buffer.getvalue(), "the chain was not drawn, so the count is of the wrong work"
+    return reads
+
+
+@pytest.mark.os_agnostic
+def test_doubling_the_depth_of_a_chain_does_not_quadruple_the_render() -> None:
+    """Twice as deep a fabric costs about twice the parent reads to draw.
+
+    A capture decides how deep its fabric is, and a renderer that walks to the
+    root for every row it draws, and again for every rule it draws beside one,
+    makes a crafted replay of a few thousand chained devices take minutes.
+    """
+    single = _parent_reads_to_render(_CHAIN_LEVELS)
+    doubled = _parent_reads_to_render(2 * _CHAIN_LEVELS)
+    assert single > 0, "no parent was read, so the counter is not wired"
+    assert doubled / single <= _ACCEPTABLE_DEPTH_GROWTH, (
+        f"doubling a {_CHAIN_LEVELS}-level chain read {doubled} parents against {single}, "
+        f"{doubled / single:.2f} times the work: the render walks to the root per row"
+    )
 
 
 #: A capture with one storage controller and one drive behind it, written as

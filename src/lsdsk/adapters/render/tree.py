@@ -373,7 +373,13 @@ class Fabric:
         # construction - a root bus exists exactly where a device attaches to
         # one - and so listed a root complex with nothing beneath it.
         self.roots = [node for node in nodes if node.is_root and self.by_parent.get(node.address)]
-        deepest = max((self.level_of(node) for node, _level in self.drawn()), default=0)
+        # Remembered per address, each from its parent's, so drawing a fabric
+        # reads every parent once. A capture decides how deep its chain is, and
+        # a walk to the root per row, repeated for every rule drawn beside one,
+        # made a crafted replay of a few thousand chained devices take minutes.
+        self._levels: dict[str, int] = {}
+        self._carried: dict[str, str] = {}
+        deepest = max((level for _node, level in self.drawn()), default=0)
         # One width for the whole section, wide enough for the DEEPEST row's
         # legs: padding to anything narrower let that row's columns sit two
         # characters right of every other row's, which is exactly the law this
@@ -485,36 +491,64 @@ class Fabric:
             stack.extend(reversed(self.by_parent.get(node.address, ())))
 
     def level_of(self, node: PciNode) -> int:
-        """Level of a device: the child of a root bus is level 1."""
-        level = 0
-        parent: str | None = node.parent_address
-        while parent is not None:
+        """Level of a device: the child of a root bus is level 1.
+
+        One more than its parent's, or 1 where the parent is a root bus or was
+        never captured. Climbs only as far as the nearest device whose level is
+        already known, and remembers every level it passes.
+        """
+        pending = list(self._unknown_ancestry(node, self._levels))
+        if not pending:
+            return self._levels.get(node.address, 0)
+        level = self._levels.get(pending[-1].parent_address or "", 0)
+        for member in reversed(pending):
             level += 1
-            above = self.by_address.get(parent)
-            parent = above.parent_address if above is not None else None
+            self._levels[member.address] = level
         return level
 
-    def _legs_for(self, node: PciNode) -> list[str]:
-        """One spine element per level above the device, root side first.
+    def _unknown_ancestry(self, node: PciNode, known: Mapping[str, object]) -> Iterable[PciNode]:
+        """The device and its ancestors, nearest first, up to one ``known`` holds.
 
-        The device's own leg is a branch or a last-turn; each ancestor's leg
-        is a continuing pipe where a drawn sibling follows it, and dead space
-        where the rule stops there.
+        Stops at a root bus and at a parent the capture never carried, which
+        is where every walk up this fabric has always stopped.
         """
-        chain: list[PciNode] = []
         current: PciNode | None = node
-        while current is not None and current.parent_address is not None:
-            chain.append(current)
+        while current is not None and current.parent_address is not None and current.address not in known:
+            yield current
             current = self.by_address.get(current.parent_address)
-        chain.reverse()  # root side first
-        legs: list[str] = []
-        for position, member in enumerate(chain):
-            if position == len(chain) - 1:
-                legs.append(TREE_LAST if self.by_parent[member.parent_address][-1] is member else TREE_BRANCH)
-            else:
-                siblings = self.by_parent.get(member.parent_address, [])
-                legs.append(TREE_STOP if siblings and siblings[-1] is member else TREE_PIPE)
-        return legs
+
+    def _is_last_child(self, node: PciNode) -> bool:
+        """Whether no drawn sibling follows this device under its parent."""
+        siblings = self.by_parent.get(node.parent_address, [])
+        return bool(siblings) and siblings[-1] is node
+
+    def _rules_above(self, node: PciNode) -> str:
+        """The rules the device's ANCESTORS draw in its row, root side first.
+
+        A continuing pipe where a drawn sibling still follows that ancestor,
+        and dead space where the rule stops there. Cut to the spine, which is
+        as much of it as any row ever draws.
+        """
+        parent = self.by_address.get(node.parent_address) if node.parent_address is not None else None
+        return "" if parent is None else self._carried_below(parent)
+
+    def _carried_below(self, node: PciNode) -> str:
+        """The rules every row below ``node`` inherits: its ancestors' and its own."""
+        pending = list(self._unknown_ancestry(node, self._carried))
+        if not pending:
+            return self._carried.get(node.address, "")
+        rules = self._carried.get(pending[-1].parent_address or "", "")
+        for member in reversed(pending):
+            rules = (rules + (TREE_STOP if self._is_last_child(member) else TREE_PIPE))[: self.spine]
+            self._carried[member.address] = rules
+        return rules
+
+    def _legs_for(self, node: PciNode) -> str:
+        """The device's whole spine: its ancestors' rules, then its own leg.
+
+        Its own leg is a branch, or a last-turn where no drawn sibling follows.
+        """
+        return self._rules_above(node) + (TREE_LAST if self._is_last_child(node) else TREE_BRANCH)
 
     def rules_under(self, node: PciNode | None) -> str:
         """The spine a block nested under one device draws.
@@ -530,13 +564,11 @@ class Fabric:
         """
         if node is None:
             return " " * self.spine
-        legs = self._legs_for(node)
-        siblings = self.by_parent.get(node.parent_address, [])
-        below = TREE_STOP if siblings and siblings[-1] is node else TREE_PIPE
+        below = TREE_STOP if self._is_last_child(node) else TREE_PIPE
         # Its ANCESTORS' rules only. The rule ends at the PCIe device itself:
         # the drives under it are that device's own table rather than another
         # level of fabric, so nothing continues into their column.
-        return "".join([*legs[:-1], below]).ljust(self.spine)[: self.spine]
+        return (self._rules_above(node) + below).ljust(self.spine)[: self.spine]
 
     def rules_before(self, node: PciNode) -> str:
         """The rules a line drawn just ABOVE this device carries.
@@ -546,8 +578,7 @@ class Fabric:
         sibling the rule at that column is live, and a header line drawn in
         between must not break it.
         """
-        legs = self._legs_for(node)
-        return "".join([*legs[:-1], TREE_PIPE]).ljust(self.spine)[: self.spine]
+        return (self._rules_above(node) + TREE_PIPE).ljust(self.spine)[: self.spine]
 
     def hop_legend(self) -> str:
         """Spell out the hop symbols THIS section drew, or say nothing.
@@ -591,7 +622,7 @@ class Fabric:
         blank padding: a shallow row's glyph and its address sat at opposite
         ends of it with nothing joining them.
         """
-        legs = "".join(self._legs_for(node))
+        legs = self._legs_for(node)
         carries = bool(self.by_parent.get(node.address))
         lead = (TREE_DOWN if carries else TREE_LEAD) + TREE_LEAD * self.spine
         # One blank at the end, so the leader stops short of the address rather

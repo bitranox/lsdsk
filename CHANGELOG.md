@@ -38,6 +38,14 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   size, against 12,021 before. The markers drawn are unchanged: the index keeps
   critical over warning over hint for each subject exactly as the per-row search
   did.
+- **The PCI fabric draws a deep chain in time proportional to its size.** Each
+  drawn row walked from its device to the root for its level, and again for
+  every rule drawn beside it, so a replayed capture whose devices form one long
+  chain cost the product of its size and its depth: 0.16, 0.52, 2.38 and 7.21
+  seconds at 500, 1,000, 2,000 and 4,000 levels. A device's level and rules now
+  come from its parent's, remembered once per device, and the same chains take
+  0.02, 0.03, 0.07 and 0.18 seconds. Every committed capture draws byte for byte
+  what it did, at every density and at every width from 20 to 200.
 - **The swap search finds a starved drive's partner without scanning every
   candidate.** Each drive capped by its own port walked every drive holding more
   port than it could use, so the rule cost the product of the two: exactly
