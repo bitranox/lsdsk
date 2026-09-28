@@ -217,15 +217,14 @@ pythonVersion = "3.11"
 # be typed away, because platform availability is not expressible as a type.
 # Measured 2026-09-20: 45 of them across 6 files, and ZERO in adapters/hw/windows.
 #
-# This pin USED to carry a trade - that a Windows-only type error in
-# adapters/hw/windows was not caught - and it no longer does.
-# `pyrightconfig.windows.json` is a second arm scoped to that package, held by
-# tests/test_windows_typecheck.py, and pyright cross-checks a platform from any
-# host, so it needs no Windows machine. The trade's own mitigation was the reason
-# to close it: it offered the captures replayed through the pure builder, which
-# reach builder.py and never reader.py or winapi.py. Those two are the transports,
-# omitted from coverage by design, so a type check is the only thing that reads
-# them at all.
+# The pin would cost every Windows- and macOS-only branch its type check, because
+# pyright treats a `sys.platform` branch for another platform as unreachable. Two
+# more arms close that: `pyrightconfig.windows.json` and `pyrightconfig.darwin.json`,
+# each over the whole of src (Windows less adapters/hw/linux), held by
+# tests/test_windows_typecheck.py. Pyright cross-checks a platform from any host,
+# so neither needs that machine. The Windows arm matters most for reader.py and
+# winapi.py, the transports: omitted from coverage by design and reached by no
+# replayed capture, so a type check is the only thing that reads them at all.
 pythonPlatform = "Linux"
 extraPaths = [
   "src",

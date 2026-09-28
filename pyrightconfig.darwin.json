@@ -1,7 +1,7 @@
 {
   "typeCheckingMode": "strict",
   "pythonVersion": "3.11",
-  "pythonPlatform": "Windows",
+  "pythonPlatform": "Darwin",
   "include": [
     "src"
   ],
@@ -12,7 +12,6 @@
     "**/node_modules",
     "**/__pycache__",
     ".venv",
-    ".venv*",
-    "src/lsdsk/adapters/hw/linux"
+    ".venv*"
   ]
 }
