@@ -40,7 +40,7 @@ from lsdsk.adapters.hw.linux import capture as linux_capture
 from lsdsk.adapters.hw.snapshot import load
 from lsdsk.adapters.hw.windows import capture as windows_capture
 from lsdsk.adapters.render.tree import FabricView, render_fabric
-from lsdsk.adapters.textfile import MAX_INPUT_BYTES, read_text_bounded
+from lsdsk.adapters.textfile import MAX_INPUT_BYTES, read_json_bounded, read_text_bounded
 from lsdsk.domain.enums import TreeDensity
 from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.models import Inventory, PciNode
@@ -1557,3 +1557,144 @@ def test_the_virtualization_reads_stop_at_the_capture_bound_not_the_megabyte(mon
     assert all(seen[path] == linux_reader.MAX_SYSFS_BYTES for path in wide_paths), (
         f"a value that is never stored moved onto the narrower bound: {seen}"
     )
+
+
+#: PowerShell 5.1's `>` (`Out-File`) writes UTF-16LE with a BOM; its
+#: `-Encoding utf8` writes UTF-8 with one. PS 5.1 is the default shell on
+#: Windows 10 and 11, and the documented `ssh host lsdsk snapshot -o - >
+#: capture.json` recipe goes through it. `str.encode` adds the BOM itself for
+#: these three codec names, so no test here hand-assembles a byte mark.
+_BOM_ENCODINGS = (
+    pytest.param("utf-8-sig", id="utf-8 with a BOM"),
+    pytest.param("utf-16", id="utf-16 with a BOM, PowerShell 5.1's `>`"),
+    pytest.param("utf-32", id="utf-32 with a BOM"),
+)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("codec", _BOM_ENCODINGS)
+def test_a_capture_saved_through_a_bom_carrying_encoding_still_replays(tmp_path: Path, codec: str) -> None:
+    """A capture written by PowerShell 5.1's `>` or `-Encoding utf8` still loads.
+
+    Read as plain UTF-8 before this, the UTF-16/UTF-32 bytes failed to decode
+    at all (``'utf-8' codec can't decode byte 0xff``), and the UTF-8 BOM
+    decoded cleanly but survived as a leading U+FEFF character that
+    ``json.loads`` then refused on its own terms (``Unexpected UTF-8 BOM``).
+    Both read as exit 78 for a file that is perfectly good JSON once its own
+    mark is honoured.
+    """
+    source = SNAPSHOT.read_text(encoding="utf-8")
+    encoded = tmp_path / "capture.json"
+    encoded.write_bytes(source.encode(codec))
+
+    control = load(SNAPSHOT)
+    replayed = load(encoded)
+
+    assert replayed.hostname == control.hostname
+    assert [c.address for c in replayed.controllers] == [c.address for c in control.controllers]
+    assert [d.node for d in replayed.disks] == [d.node for d in control.disks]
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("codec", _BOM_ENCODINGS)
+def test_a_history_store_saved_through_a_bom_carrying_encoding_still_loads(tmp_path: Path, codec: str) -> None:
+    """The counter history is read back through the same BOM-aware decode as a capture.
+
+    The two files that reach this tool from outside it share one reader
+    (``read_json_bounded``), so the fix belongs to both or it is one edit from
+    being absent at one - the same rule this file already applies to the
+    duplicate-key guard.
+    """
+    text = '{"schema": 1, "hostname": "box", "series": []}'
+    store = tmp_path / "history.json"
+    store.write_bytes(text.encode(codec))
+
+    history = load_history(store, hostname="box")
+
+    assert history.hostname == "box"
+    assert history.series == ()
+
+
+@pytest.mark.os_agnostic
+def test_a_capture_with_no_bom_that_is_not_valid_utf8_is_still_refused(tmp_path: Path) -> None:
+    """A file naming no recognised mark is still decoded as strict UTF-8, and still refused.
+
+    The control for every arm above: a byte string that opens with none of the
+    five marks this reader now checks, and is not valid UTF-8 either, so BOM
+    detection must not have widened what a genuinely unreadable file gets
+    away with.
+    """
+    invalid = tmp_path / "invalid.json"
+    invalid.write_bytes(b"\x80\x81\x82not valid utf-8")
+
+    with pytest.raises(ConfigurationError, match="Could not read the snapshot"):
+        load(invalid)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("codec", _BOM_ENCODINGS)
+def test_a_duplicate_key_is_still_refused_in_a_bom_carrying_capture(tmp_path: Path, codec: str) -> None:
+    """BOM detection decodes the bytes; it must not bypass the repeated-key guard.
+
+    The same crafted text `test_a_capture_that_names_one_pci_address_twice_is_refused`
+    uses, saved through each BOM-carrying codec instead of plain UTF-8.
+    """
+    crafted = tmp_path / "duplicate.json"
+    crafted.write_bytes(_capture_text(pci=f"{_CONTROLLER}, {_GRAPHICS}", block=_BLOCK).encode(codec))
+
+    with pytest.raises(ConfigurationError) as refusal:
+        load(crafted)
+
+    assert "0000:03:00.0" in str(refusal.value), "the refusal does not name the key that was repeated"
+
+
+@pytest.mark.os_agnostic
+def test_the_size_bound_is_on_bytes_read_not_on_the_decoded_character_count(tmp_path: Path) -> None:
+    """A multi-byte encoding is bounded by the BYTES it takes, which is the stricter reading.
+
+    `read_json_bounded` bounds the file it is handed before it decodes
+    anything, so the same character count costs more bytes in UTF-16 (2 bytes
+    per character here, all in the Basic Multilingual Plane) than in UTF-8
+    (1 byte per padding character), and hits :data:`MAX_INPUT_BYTES` at
+    roughly half the character count. That is the conservative direction: a
+    real capture or history file is orders of magnitude under either ceiling,
+    and nothing here is asked to decode a file whose bytes were never read
+    in the first place.
+    """
+    padding = "x" * (MAX_INPUT_BYTES // 2)
+    over_the_byte_bound = tmp_path / "over.json"
+    # Two bytes per padding character in UTF-16, plus a 2-byte BOM: past
+    # MAX_INPUT_BYTES in bytes despite every character living in the BMP.
+    over_the_byte_bound.write_bytes(f'{{"pad": "{padding}"}}'.encode("utf-16"))
+
+    with pytest.raises(ConfigurationError, match="far larger than a snapshot ever is"):
+        read_json_bounded(over_the_byte_bound, what="a snapshot")
+
+
+@pytest.mark.os_agnostic
+def test_a_bom_carrying_capture_replays_end_to_end(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    """The documented `ssh host lsdsk snapshot -o - > capture.json` recipe, driven through `--replay`.
+
+    `CliRunner` cannot see a broken pipe (:mod:`tests.test_cli_exit_codes`
+    covers that over a real subprocess), but it drives the real CLI, the real
+    container and the real `--replay` flag end to end, which a direct call to
+    `load` does not.
+    """
+    from lsdsk.adapters.cli import cli
+
+    encoded = tmp_path / "capture.json"
+    encoded.write_bytes(SNAPSHOT.read_text(encoding="utf-8").encode("utf-16"))
+
+    control = cli_runner.invoke(cli, ["disks", "--replay", str(SNAPSHOT)], obj=production_factory, color=False)
+    result = cli_runner.invoke(cli, ["disks", "--replay", str(encoded)], obj=production_factory, color=False)
+
+    # Not exit code 0: this fixture carries findings, so `disks` leaves this
+    # tool's actionable-finding code on the plain path too. The property under
+    # test is that the BOM-carrying replay behaves EXACTLY like the plain one,
+    # not that either exits clean.
+    assert result.exit_code == control.exit_code, (
+        f"a UTF-16 capture with a BOM answered {result.exit_code}, the plain one {control.exit_code}: {result.output}"
+    )
+    assert result.stdout == control.stdout, "the BOM-carrying replay rendered differently from the plain one"

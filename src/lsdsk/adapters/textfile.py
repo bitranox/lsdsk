@@ -24,12 +24,29 @@ Contents:
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from lsdsk.domain.errors import ConfigurationError, MissingFileError
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+# Longest prefix first: a UTF-32LE BOM (FF FE 00 00) starts with the UTF-16LE
+# BOM (FF FE), so checking the two-byte marks first would misread a UTF-32
+# file as UTF-16 followed by two NUL bytes of "content". The codec named is
+# the family's UNSUFFIXED one (``utf-16``, ``utf-32``), never ``-le``/``-be``:
+# those keep the BOM as a literal U+FEFF character in the decoded text, which
+# is exactly what made json.loads refuse a BOM-carrying capture with
+# "Unexpected UTF-8 BOM" even once the bytes decoded without error. The
+# unsuffixed codec both picks the byte order FROM the mark this loop already
+# matched and strips it.
+_BOM_CODECS: Final[tuple[tuple[bytes, str], ...]] = (
+    (b"\x00\x00\xfe\xff", "utf-32"),
+    (b"\xff\xfe\x00\x00", "utf-32"),
+    (b"\xfe\xff", "utf-16"),
+    (b"\xff\xfe", "utf-16"),
+    (b"\xef\xbb\xbf", "utf-8-sig"),
+)
 
 # Measured, not guessed: the largest capture from the real machines in
 # tests/fixtures/hw is 148 KB for 19 drives, so a capture costs roughly 8 KB per
@@ -107,6 +124,36 @@ def read_text_bounded(path: Path, *, what: str, errors: str = "strict") -> str:
         ...
         lsdsk.domain.errors.MissingFileError: Could not read a snapshot at ...
     """
+    return _read_bytes_bounded(path, what=what).decode("utf-8", errors=errors)
+
+
+def _read_bytes_bounded(path: Path, *, what: str) -> bytes:
+    """Read a file's bytes, refusing one too large to be what it claims.
+
+    Shared by :func:`read_text_bounded`, which always assumes UTF-8, and
+    :func:`read_json_bounded`, which decodes by whatever BOM the bytes carry
+    first. The bound is on the BYTES a caller handed this reader, which for a
+    multi-byte encoding is a stronger ceiling than the character count it
+    represents - a UTF-32 capture costs four bytes per character where the
+    same content in UTF-8 costs mostly one, so it reaches :data:`MAX_INPUT_BYTES`
+    at a quarter of the character count. That is conservative rather than
+    wrong: a real capture or history file is orders of magnitude under either
+    ceiling, and the alternative - measuring a decoded length before deciding
+    whether to decode at all - is the same unbounded-materialisation problem
+    this function exists to avoid.
+
+    Args:
+        path: The file to read.
+        what: What the file was expected to be, for the refusal message.
+
+    Returns:
+        The file's raw bytes.
+
+    Raises:
+        MissingFileError: If the file is not there.
+        ConfigurationError: If the file cannot be read, or is larger than
+            :data:`MAX_INPUT_BYTES`.
+    """
     try:
         size = path.stat().st_size
     except OSError as error:
@@ -136,7 +183,7 @@ def read_text_bounded(path: Path, *, what: str, errors: str = "strict") -> str:
         )
         raise ConfigurationError(message)
 
-    return raw.decode("utf-8", errors=errors)
+    return raw
 
 
 def read_json_bounded(path: Path, *, what: str) -> Any:
@@ -185,7 +232,43 @@ def read_json_bounded(path: Path, *, what: str) -> Any:
         ...
         ValueError: the key 'a' is given twice in one object
     """
-    return json.loads(read_text_bounded(path, what=what), object_pairs_hook=_object_without_repeated_keys)
+    text = _decode_bounded_bytes_by_bom(_read_bytes_bounded(path, what=what))
+    return json.loads(text, object_pairs_hook=_object_without_repeated_keys)
+
+
+def _decode_bounded_bytes_by_bom(raw: bytes) -> str:
+    """Decode `raw` by whichever BOM it opens with, or as strict UTF-8 with none.
+
+    A capture saved through Windows PowerShell 5.1's ``>`` (``Out-File``) is
+    UTF-16LE with a BOM, and ``Out-File -Encoding utf8`` is UTF-8 with one;
+    PS 5.1 is the default shell on Windows 10 and 11, and the documented
+    ``ssh host lsdsk snapshot -o - > capture.json`` recipe goes through it.
+    Decoding such a file as plain UTF-8 either raises immediately on the
+    UTF-16/32 byte pattern, or - for a UTF-8 BOM - succeeds and leaves a
+    leading U+FEFF character that ``json.loads`` then refuses on its own
+    terms, as "Unexpected UTF-8 BOM". Both read as this tool's exit 78 either
+    way, for a file that is perfectly good JSON once the mark is honoured.
+
+    A file with NO recognised BOM is decoded strict UTF-8, unchanged from
+    before this existed: still refused with the same 78 when it is not valid
+    UTF-8, since a file this tool did not write and cannot identify by a mark
+    is not one to guess about.
+
+    Args:
+        raw: The bytes :func:`_read_bytes_bounded` already bounded.
+
+    Returns:
+        The decoded text, with any BOM consumed rather than left as a
+        character `json.loads` would then refuse.
+
+    Raises:
+        UnicodeDecodeError: If the bytes do not decode under the codec their
+            BOM names, or - carrying none - are not valid UTF-8.
+    """
+    for bom, codec in _BOM_CODECS:
+        if raw.startswith(bom):
+            return raw.decode(codec)
+    return raw.decode("utf-8")
 
 
 def _object_without_repeated_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
