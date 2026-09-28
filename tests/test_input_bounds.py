@@ -44,6 +44,7 @@ from lsdsk.adapters.render.tree import FabricView, render_fabric
 from lsdsk.adapters.textfile import MAX_INPUT_BYTES, read_json_bounded, read_text_bounded
 from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui.app import PAGE_LABELS
+from lsdsk.adapters.validation import MAX_LISTED_PROBLEMS
 from lsdsk.domain.enums import TreeDensity
 from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.models import Inventory, PciNode
@@ -1540,6 +1541,174 @@ async def test_no_markup_in_a_capture_is_read_as_markup_by_the_interactive_view(
     wrong, whole = _markup_read_as_markup("\n".join(pictures))
     assert not wrong, f"{capture_name}: markup in a capture was read as markup: {wrong[:3]}"
     assert whole, f"{capture_name}: the payload was never drawn whole, so this arm asserts nothing"
+
+
+#: A key a refusal has to name, carrying the three OSC sequences a terminal acts
+#: on rather than displays - retitle the window, write the clipboard, open a
+#: link - and a newline, which would start a line of its own in the refusal.
+_OSC_KEY = "\x1b]0;RETITLED\x07\x1b]52;c;ZXZpbA==\x07\x1b]8;;https://evil.invalid\x07CLICK\x1b]8;;\x07\nFORGED-LINE"
+
+#: Where a capture's key reaches a refusal: an entry of the PCI section, whose
+#: vendor is the wrong type, so the key appears in the location pydantic reports.
+_BAD_PCI_ENTRY: dict[str, object] = {"vendor": 123}
+
+
+def _json(text: str) -> object:
+    return json.loads(text) if text.strip() else {}
+
+
+def _refused_capture(destination: Path, keys: Sequence[str]) -> Path:
+    capture = json.loads((FIXTURES / "linux-minimal.json").read_text(encoding="utf-8"))
+    capture["pci"] = {**capture["pci"], **dict.fromkeys(keys, _BAD_PCI_ENTRY)}
+    target = destination / "refused-capture.json"
+    target.write_text(json.dumps(capture), encoding="utf-8")
+    return target
+
+
+def _refused_store(destination: Path, keys: Sequence[str]) -> Path:
+    # A key no drive series declares: the store's models refuse an extra field
+    # and name it in the location, which is how the key reaches the message.
+    series = [{"identity": f"id{index}", "model": "m", key: 1} for index, key in enumerate(keys)]
+    target = destination / "refused-store.json"
+    target.write_text(json.dumps({"schema": 1, "hostname": "linux-minimal", "series": series}), encoding="utf-8")
+    return target
+
+
+def _refusal_run(
+    source: str, keys: Sequence[str], output_format: str, cli_runner: CliRunner, factory: Callable[[], Any], at: Path
+) -> Any:
+    """Refuse a capture or a counter store whose keys are the ones given."""
+    from lsdsk.adapters.cli import cli
+
+    fmt = ["--format", "json"] if output_format == "json" else []
+    if source == "capture":
+        argv = ["--no-record", "disks", *fmt, "--replay", str(_refused_capture(at, keys))]
+    else:
+        replay = str(FIXTURES / "linux-minimal.json")
+        argv = ["--no-record", "--history-file", str(_refused_store(at, keys)), "trend", *fmt, "--replay", replay]
+    return cli_runner.invoke(cli, argv, obj=factory, color=False)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("source", ["capture", "history"])
+@pytest.mark.parametrize("output_format", ["human", "json"])
+def test_a_refusal_names_a_crafted_key_without_executing_it(
+    source: str,
+    output_format: str,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+) -> None:
+    """The refusal quotes where the file went wrong, and that place is untrusted.
+
+    A location is built from the file's own keys, so a key carrying an escape
+    sequence reached stderr - and the JSON envelope's message - with it intact:
+    measured, one crafted PCI address put four OSC sequences on stderr. The
+    control is the other half of the claim: the key is still NAMED, with each
+    control character as a visible escape, because a refusal that drops the
+    escape names a key the reader will not find in their file.
+    """
+    result = _refusal_run(source, [f"{_OSC_KEY}0"], output_format, cli_runner, production_factory, tmp_path)
+
+    shown = result.stdout + result.stderr
+    assert "is not a" in shown, f"{source}/{output_format}: no refusal was printed, so this asserted nothing"
+    for stream, text in (("stdout", result.stdout), ("stderr", result.stderr)):
+        # The refusal is several lines of its own, so a newline in the decoded
+        # JSON message is this tool's; the key's own newline is caught instead
+        # by the line it would have started.
+        decoded = text if output_format == "human" or stream == "stderr" else "\n".join(_decoded_strings(_json(text)))
+        leaked = [ch for ch in decoded if _is_control(ch) and ch != "\n"]
+        assert not leaked, f"{source}/{output_format}: {len(leaked)} control characters reached {stream}"
+        forged = [line for line in decoded.splitlines() if line.startswith("FORGED-LINE")]
+        assert not forged, f"{source}/{output_format}: the key's newline started a line of its own on {stream}"
+    assert "\\x1b]0;RETITLED" in result.stderr, f"{source}: the refusal no longer names the key it refused"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("source", ["capture", "history"])
+def test_a_refusal_lists_a_bounded_number_of_problems(
+    source: str,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+) -> None:
+    """One line per problem is a bound on nothing when the file chooses the count.
+
+    Measured: 100,000 crafted entries in a 13 MB capture gave 12 MB of stderr and
+    a 16 MB JSON envelope, one line per entry, which buries the sentence that
+    says what happened. The refusal lists a fixed number and counts the rest.
+    """
+    total = 2 * MAX_LISTED_PROBLEMS + 7
+    keys = [f"BADKEY{index}" for index in range(total)]
+    result = _refusal_run(source, keys, "human", cli_runner, production_factory, tmp_path)
+
+    rest = total - MAX_LISTED_PROBLEMS
+    for stream, text in (("stdout", result.stdout), ("stderr", result.stderr)):
+        if "is not a" not in text:
+            continue
+        listed = text.count("BADKEY")
+        assert listed == MAX_LISTED_PROBLEMS * text.count("is not a"), f"{source}/{stream}: listed {listed} problems"
+        assert f"and {rest} more" in text, f"{source}/{stream}: the problems left out are not counted"
+    assert "is not a" in result.stderr, f"{source}: no refusal on stderr, so this asserted nothing"
+
+
+@pytest.mark.os_agnostic
+def test_a_key_quoted_by_a_refusal_is_cut_to_a_bounded_length(tmp_path: Path) -> None:
+    """One key can be most of the file, and one line is still one line.
+
+    Checked on both refusals a key reaches: the location pydantic reports, and
+    the repeated-key refusal the JSON reader raises before any model runs.
+    """
+    long_key = "K" * 100_000
+    with pytest.raises(ConfigurationError) as refused:
+        load(_refused_capture(tmp_path, [long_key]))
+    assert "K" * 64 in str(refused.value), "the control: the long key is not named at all"
+    assert len(str(refused.value)) < 1000, f"a {len(long_key)}-character key made a {len(str(refused.value))} refusal"
+
+    twice = tmp_path / "twice.json"
+    twice.write_text(f'{{"{long_key}": 1, "{long_key}": 2}}', encoding="utf-8")
+    with pytest.raises(ValueError, match="given twice") as repeated:
+        read_json_bounded(twice, what="a snapshot")
+    assert "K" * 64 in str(repeated.value), "the control: the repeated key is not named at all"
+    assert len(str(repeated.value)) < 1000, f"a repeated key made a {len(str(repeated.value))}-character refusal"
+
+
+@pytest.mark.os_agnostic
+def test_a_store_for_another_machine_names_it_inert_and_bounded(tmp_path: Path) -> None:
+    """The other refusal a counter store's own text reaches.
+
+    The stored machine name is read as the file wrote it and quoted back when it
+    is not this machine's. ``repr`` kept its escapes inert and its length whole,
+    so a name that is most of the file became a refusal the size of the file.
+    """
+    stored_name = f"{_OSC_KEY}{'H' * 100_000}"
+    store = tmp_path / "other-machine.json"
+    store.write_text(json.dumps({"schema": 1, "hostname": stored_name, "series": []}), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="holds history for") as refused:
+        load_history(store, hostname="box")
+    message = str(refused.value)
+    assert "\\x1b]0;RETITLED" in message, "the control: the other machine is not named"
+    assert not [ch for ch in message if _is_control(ch)], "a control character reached the refusal"
+    assert len(message) < 1000, f"a {len(stored_name)}-character name made a {len(message)}-character refusal"
+
+
+@pytest.mark.os_agnostic
+def test_a_reading_refused_while_it_is_collected_is_reported_like_a_replay() -> None:
+    """``build_from`` is the live run's parse, and it had its own refusal.
+
+    It interpolated ``str(ValidationError)`` whole: the developer's document the
+    replay path had already stopped printing, with the key's control characters
+    intact and a line per problem.
+    """
+    reading = json.loads((FIXTURES / "linux-minimal.json").read_text(encoding="utf-8"))
+    reading["pci"] = {**reading["pci"], f"{_OSC_KEY}0": _BAD_PCI_ENTRY}
+    with pytest.raises(ConfigurationError) as refused:
+        build_from(reading)
+    message = str(refused.value)
+    assert "\\x1b]0;RETITLED" in message, "the control: the refused key is not named"
+    assert not [ch for ch in message if _is_control(ch) and ch != "\n"], "a control character reached the refusal"
+    assert "pydantic.dev" not in message, "the refusal is pydantic's own document again"
 
 
 @pytest.mark.os_agnostic

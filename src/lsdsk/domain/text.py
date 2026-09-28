@@ -37,7 +37,12 @@ from pydantic import AfterValidator
 # hide a difference; it is simply removed with the rest.
 _UNSAFE = frozenset(range(0x00, 0x20)) | {0x7F} | frozenset(range(0x80, 0xA0))
 
-__all__ = ["DeviceText", "OptionalDeviceText", "device_text", "first_reported"]
+#: How much of one untrusted value a message quotes before cutting it. Enough to
+#: recognise a PCI address, a sysfs name or a field somebody mistyped; short
+#: enough that a value which is most of a file stays one line of a refusal.
+QUOTED_TEXT_LIMIT = 80
+
+__all__ = ["QUOTED_TEXT_LIMIT", "DeviceText", "OptionalDeviceText", "device_text", "first_reported", "visible_text"]
 
 
 def device_text(value: str) -> str:
@@ -59,6 +64,50 @@ def device_text(value: str) -> str:
         'Samsung SSD 860 EVO'
     """
     return "".join(character for character in value if ord(character) not in _UNSAFE).strip()
+
+
+def visible_text(value: str, limit: int = QUOTED_TEXT_LIMIT) -> str:
+    r"""Quote text from outside in a message, inert and of bounded length.
+
+    :func:`device_text` REMOVES control characters, which is right for a value
+    drawn as a reading. A message that quotes where a file went wrong needs the
+    opposite, because its reader has to find that place in the file: a key
+    whose escape was silently dropped names a key that is not there. So each
+    control character is shown as its escape instead of reaching the terminal,
+    and the result is cut at ``limit`` characters with a marked ``...``, so a
+    value that is most of a file stays one line of the message quoting it.
+
+    Args:
+        value: Text a file or a device chose.
+        limit: The most characters of it to show.
+
+    Returns:
+        The text with every control character written as ``\xNN``, cut to
+        ``limit`` characters plus the mark where it was longer.
+
+    Example:
+        >>> print(visible_text("0000:00:1f.2\x1b]0;title\x07"))
+        0000:00:1f.2\x1b]0;title\x07
+        >>> visible_text("a" * 10, limit=4)
+        'aaaa...'
+        >>> visible_text("0000:00:1f.2")
+        '0000:00:1f.2'
+        >>> visible_text("ab\x1b", limit=4)
+        'ab...'
+    """
+    # Walked a character at a time and only as far as the limit: escaping all of
+    # a value that is most of a file to keep eighty characters would be the cost
+    # the cut exists to avoid, and a cut between whole escapes never leaves a
+    # dangling "\x1" that reads as a different byte.
+    shown: list[str] = []
+    used = 0
+    for character in value[: limit + 1]:
+        piece = f"\\x{ord(character):02x}" if ord(character) in _UNSAFE else character
+        if used + len(piece) > limit:
+            return "".join(shown) + "..."
+        shown.append(piece)
+        used += len(piece)
+    return "".join(shown)
 
 
 def _clean_optional(value: str | None) -> str | None:
