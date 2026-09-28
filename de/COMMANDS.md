@@ -211,7 +211,9 @@ gibt. Ein `snapshot` oder `record`, dessen Ziel ablehnte, ein `config-deploy`
 oder `config-generate-examples`, das seine Dateien nicht schreiben konnte, und
 jeder Befehl, dessen Ausgabe die Standardausgabe ist, wenn diese sie ablehnte
 oder geschlossen war, hinterlassen ihn (`snapshot -o <Datei>` braucht keine
-Standardausgabe und gelingt auch ohne); eine Ablehnung wegen fehlender Rechte bleibt `13`. Die
+Standardausgabe und gelingt auch ohne; lehnt die Standardausgabe die Zeile ab,
+die den Mitschnitt meldet, hinterlässt es `74`, obwohl der Mitschnitt geschrieben
+wurde, und diese Zeile sagt das und nennt die Datei); eine Ablehnung wegen fehlender Rechte bleibt `13`. Die
 errno-Nummer ist nie der Exit-Code, ein volles Ziel hinterlässt also kein `28`,
 denn die Codes eines Dateisystems überschneiden sich mit den obigen und bedeuten
 hier etwas anderes. `74` bleibt stehen, auch wenn der Leser ebenfalls gegangen

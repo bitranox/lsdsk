@@ -269,12 +269,6 @@ QUOTED: tuple[QuotedBlock, ...] = (
         argv=("topology", *_replay("linux-sas-hba")),
         width=120,
         exit_code=1,
-        known_failure=(
-            "drawn in the ASCII fallback where a UTF-8 console gets box drawing, with a root-port name the PCI "
-            "database does not give (it reads 'Xeon E7 v2/Xeon E5 v2/Core i7 PCI Express Root Port 3a'), a name "
-            "cut without the '>' clip marker, and a disk table whose model and link columns no width produces "
-            "together: 5 of its 8 lines match nothing at any width from 80 to 140"
-        ),
     ),
     QuotedBlock(
         document="skills/lsdsk/SKILL.md",
@@ -282,10 +276,6 @@ QUOTED: tuple[QuotedBlock, ...] = (
         argv=("topology", *_replay("linux-minimal")),
         width=120,
         exit_code=0,
-        known_failure=(
-            "quotes '12 not listed: 8 loop, 3 zd, 1 zram', a tally no committed capture holds; the only capture "
-            "carrying kernel-virtual devices prints '3 not listed: 1 loop, 1 zd, 1 zram'"
-        ),
     ),
     QuotedBlock(
         document="skills/lsdsk/SKILL.md",
@@ -301,10 +291,6 @@ QUOTED: tuple[QuotedBlock, ...] = (
         width=160,
         exit_code=1,
         history=_SAS_HISTORY,
-        known_failure=(
-            "every row is real, but /dev/sdj is quoted above /dev/sde and the table sorts by device, so a reader "
-            "comparing it against their own run finds the rows in another order"
-        ),
     ),
 )
 

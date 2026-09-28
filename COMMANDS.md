@@ -195,7 +195,8 @@ that does not exist. A `snapshot` or `record` whose destination refused, a
 `config-deploy` or `config-generate-examples` that could not write its files, and
 any command whose output is standard output, when that refused it or was closed,
 all leave it (`snapshot -o <file>` needs no standard output and succeeds without
-one);
+one; when standard output refuses the line reporting the capture, it leaves `74`
+although the capture landed, and that line says so, naming the file);
 a refusal for lack of permission stays `13`. The errno is never the exit code - a
 full destination does not leave `28` - because the codes a filesystem produces
 overlap the ones above and mean something else here. `74` stands even when the
