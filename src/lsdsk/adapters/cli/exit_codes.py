@@ -37,6 +37,12 @@ class ExitCode(IntEnum):
     * 22: EINVAL
     * 70: EX_SOFTWARE (sysexits.h), an error inside this tool rather than in
       what it was asked to look at
+    * 74: EX_IOERR (sysexits.h), a write this tool was asked to make that
+      failed for a reason other than permission - a full disk, a destination
+      that cannot exist, a standard output that refused its output or is
+      closed. Not 1, because for a reporting command 1 is the verdict that a
+      warning or a critical was found, and output that never arrived is no
+      verdict at all
     * 78: EX_CONFIG (sysexits.h)
     * 128+N: signal N. 130 and 143 are informational, raised by nobody here;
       141 is raised by :mod:`lsdsk.adapters.cli.safe_console` when a reader
@@ -74,6 +80,7 @@ class ExitCode(IntEnum):
     PERMISSION_DENIED = 13
     INVALID_ARGUMENT = 22
     SOFTWARE_ERROR = 70
+    IO_ERROR = 74
     CONFIG_ERROR = 78
     SIGNAL_INT = 130
     BROKEN_PIPE = 141
@@ -82,20 +89,24 @@ class ExitCode(IntEnum):
 
 #: The codes that are true whoever was reading, as opposed to what the output said.
 #:
-#: Two kinds qualify, and the name says what they have in common rather than
+#: Three kinds qualify, and the name says what they have in common rather than
 #: naming one of them. A code saying the run could not START: a usage error from
 #: whichever end produced it - click's parser refusing an unknown option, or this
 #: tool's own ``click.UsageError`` for a malformed ``--set`` - and 13, 22 and 78
 #: beside it. And a code saying THIS TOOL BROKE, which is just as true of a run
 #: whose reader stayed; without it a check piping lsdsk into ``head`` or ``jq``
 #: would read a crash as its own reader leaving, which is the one gap
-#: :attr:`ExitCode.SOFTWARE_ERROR` exists to close.
+#: :attr:`ExitCode.SOFTWARE_ERROR` exists to close. And a code saying a WRITE
+#: FAILED - 74 - which is about a destination, not about what a reader was
+#: shown: a capture the disk refused is refused whether or not anybody was
+#: still reading stdout.
 _TRUE_WHOEVER_WAS_READING: Final[frozenset[int]] = frozenset(
     {
         int(ExitCode.USAGE_ERROR),
         int(ExitCode.PERMISSION_DENIED),
         int(ExitCode.INVALID_ARGUMENT),
         int(ExitCode.SOFTWARE_ERROR),
+        int(ExitCode.IO_ERROR),
         int(ExitCode.CONFIG_ERROR),
     }
 )
@@ -113,6 +124,9 @@ def outranks_a_departed_reader(code: int) -> bool:
     contained, so the reason a verdict yields does not reach it, and a check
     piping lsdsk into ``head`` or ``jq`` would otherwise read a crash as its own
     reader leaving - the one hole left in the split 70 exists to make.
+
+    So does 74, decided 2026-09-28 (user). A write this tool was asked to make
+    failed, which is a fact about the destination and holds whoever was reading.
 
     A code that says what the output CONTAINED does not stand, because it was not
     delivered. ``lsdsk report | head -5`` on a failing machine has shown the
@@ -135,6 +149,8 @@ def outranks_a_departed_reader(code: int) -> bool:
         >>> outranks_a_departed_reader(int(ExitCode.INVALID_ARGUMENT))
         True
         >>> outranks_a_departed_reader(int(ExitCode.SOFTWARE_ERROR))
+        True
+        >>> outranks_a_departed_reader(int(ExitCode.IO_ERROR))
         True
         >>> outranks_a_departed_reader(int(ExitCode.GENERAL_ERROR))
         False
@@ -203,10 +219,9 @@ def code_for_an_unhandled_exception(exc: BaseException) -> int:
     Windows-only acceptance lives in :func:`~.safe_console.is_broken_pipe`.
 
     Standard output that refused a write for another reason - a full disk - is
-    taken out too, as :attr:`ExitCode.GENERAL_ERROR`: its errno is the
+    taken out too, as :attr:`ExitCode.IO_ERROR`: its errno is the
     filesystem's, and ``ENOSPC`` would otherwise have left 28, which is no code
-    this tool documents. 1 is what the table already gives a ``snapshot`` whose
-    write failed for a reason other than permission.
+    this tool documents.
 
     Args:
         exc: The exception that reached the last-resort handler.
@@ -228,7 +243,7 @@ def code_for_an_unhandled_exception(exc: BaseException) -> int:
     if is_broken_pipe(exc):
         return int(ExitCode.BROKEN_PIPE)
     if isinstance(exc, UnwritableStandardOutputError):
-        return int(ExitCode.GENERAL_ERROR)
+        return int(ExitCode.IO_ERROR)
     code = lib_cli_exit_tools.get_system_exit_code(exc)
     if code != int(ExitCode.GENERAL_ERROR) or isinstance(exc, OSError):
         return code

@@ -145,12 +145,14 @@ def _argv(case: _Case, tmp_path: Path) -> list[str]:
 
 @pytest.mark.os_linux
 @pytest.mark.parametrize("case", list(_CASES.values()), ids=list(_CASES))
-def test_output_that_cannot_be_written_is_said_once_and_leaves_general_error(case: _Case, tmp_path: Path) -> None:
-    """One sentence on stderr naming stdout and the errno, no traceback, and exit 1.
+def test_output_that_cannot_be_written_is_said_once_and_leaves_io_error(case: _Case, tmp_path: Path) -> None:
+    """One sentence on stderr naming stdout and the errno, no traceback, and exit 74.
 
-    1 is what the exit-code table gives a ``snapshot`` whose write failed for a
+    74 is what the exit-code table gives a ``snapshot`` whose write failed for a
     reason other than permission, and the same failure in any other command is
-    the same failure.
+    the same failure. It is not 1, because for a reporting command 1 is the
+    verdict that a warning or a critical was found, and a monitor whose output
+    disk filled up would then page somebody about a drive fault.
     """
     argv = _argv(case, tmp_path)
     control = _launch(argv, stdout=subprocess.PIPE, tmp_path=tmp_path)
@@ -168,7 +170,7 @@ def test_output_that_cannot_be_written_is_said_once_and_leaves_general_error(cas
     said = _lines_about_standard_output(run.stderr)
     assert len(said) == 1, f"expected one sentence about standard output, got {said!r} in {run.stderr!r}"
     assert f"[Errno {errno.ENOSPC}]" in said[0], f"the sentence does not say why: {said[0]!r}"
-    assert run.code == ExitCode.GENERAL_ERROR, f"exit {run.code}; stderr: {run.stderr!r}"
+    assert run.code == ExitCode.IO_ERROR, f"exit {run.code}; stderr: {run.stderr!r}"
 
 
 @pytest.mark.os_linux
@@ -207,12 +209,95 @@ def test_a_closed_standard_output_is_refused_before_the_machine_is_read(tmp_path
 
     run = _launch(["snapshot", "-o", "-"], stdout=subprocess.DEVNULL, tmp_path=tmp_path, close_stdout=True)
 
-    assert run.code == ExitCode.GENERAL_ERROR, f"exit {run.code}; stderr: {run.stderr!r}"
+    assert run.code == ExitCode.IO_ERROR, f"exit {run.code}; stderr: {run.stderr!r}"
     lowered = run.stderr.lower()
     assert "standard output is closed" in lowered, run.stderr
     assert "nothing was written" in lowered, run.stderr
     assert "serial number" not in lowered, f"the notice about a capture that went nowhere: {run.stderr!r}"
     assert not run.read_the_machine, "the machine was read for a capture that had nowhere to go"
+
+
+_OUTPUT_ON_STANDARD_OUTPUT = [
+    pytest.param(case, id=name)
+    for name, case in _CASES.items()
+    if case.argv[:1] != ["snapshot"]  # refused before the read, held by the test above
+]
+
+
+@pytest.mark.os_posix
+@pytest.mark.parametrize("case", _OUTPUT_ON_STANDARD_OUTPUT)
+def test_a_command_whose_output_is_standard_output_leaves_io_error_when_there_is_none(
+    case: _Case, tmp_path: Path
+) -> None:
+    """``lsdsk findings >&-`` says stdout is closed and leaves 74, not a crash.
+
+    With descriptor 1 closed ``sys.stdout`` is None. Rich's writer asked None
+    whether it was a terminal and the run died with an AttributeError and 70,
+    which tells a check the tool broke; ``click.echo`` returned silently for
+    None, so a command writing only through it exited as if its output had
+    arrived. A missing stdout is the same fact as one that refuses a write, so
+    it gets the same answer.
+    """
+    run = _launch(_argv(case, tmp_path), stdout=subprocess.DEVNULL, tmp_path=tmp_path, close_stdout=True)
+
+    assert "Traceback" not in run.stderr, run.stderr
+    assert "AttributeError" not in run.stderr, run.stderr
+    said = _lines_about_standard_output(run.stderr)
+    assert len(said) == 1, f"expected one sentence about standard output, got {said!r} in {run.stderr!r}"
+    assert "closed" in said[0], f"the sentence does not say why: {said[0]!r}"
+    assert run.code == ExitCode.IO_ERROR, f"exit {run.code}; stderr: {run.stderr!r}"
+
+
+@pytest.mark.os_posix
+def test_a_snapshot_to_a_file_needs_no_standard_output(tmp_path: Path) -> None:
+    """``snapshot -o file >&-`` writes the capture and succeeds.
+
+    A detached launch - pythonw, a Windows service, ``>&-`` - has no stdout, and
+    the capture it asked for goes to a file. The line saying where it went has
+    nobody to tell, which is no reason to fail a run whose output landed.
+    """
+    target = tmp_path / "capture.json"
+
+    run = _launch(["snapshot", "-o", str(target)], stdout=subprocess.DEVNULL, tmp_path=tmp_path, close_stdout=True)
+
+    assert run.code == ExitCode.SUCCESS, f"exit {run.code}; stderr: {run.stderr!r}"
+    assert run.read_the_machine, "the machine was never read, so nothing was captured"
+    assert target.stat().st_size > 0, "the capture file is empty"
+    assert not _lines_about_standard_output(run.stderr), run.stderr
+
+
+@pytest.mark.os_agnostic
+def test_a_missing_standard_output_refuses_like_a_full_one_and_is_put_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The stand-in main() installs, held on every platform.
+
+    The end-to-end arms above need a closed descriptor 1, which only POSIX can
+    hand a child; pythonw on Windows starts with ``sys.stdout`` None the same
+    way. So the stand-in itself is asserted here: it refuses a write as the
+    typed error the last-resort handler answers with 74, it tells rich it is no
+    terminal, and restoring the streams puts the None back.
+    """
+    monkeypatch.setattr(sys, "stdout", None)
+
+    safe_console.stand_in_for_a_missing_standard_output()
+    assert safe_console.standard_output_is_missing()
+    assert sys.stdout is not None and sys.stdout.isatty() is False
+    with pytest.raises(safe_console.UnwritableStandardOutputError, match="standard output is closed"):
+        safe_console.echo("x")
+
+    safe_console.restore_original_streams()
+    assert sys.stdout is None, "the stand-in outlived main"
+
+
+@pytest.mark.os_agnostic
+def test_a_process_with_a_standard_output_keeps_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The control: nothing is replaced when there is a stdout to write to."""
+    present = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", present)
+
+    safe_console.stand_in_for_a_missing_standard_output()
+
+    assert sys.stdout is present
+    assert not safe_console.standard_output_is_missing()
 
 
 class _RefusingStdout(io.StringIO):
@@ -248,8 +333,9 @@ def _refuse_stdout(monkeypatch: pytest.MonkeyPatch) -> io.StringIO:
 @pytest.mark.parametrize(
     ("decided", "left_with"),
     [
-        pytest.param(ExitCode.SUCCESS, ExitCode.GENERAL_ERROR, id="nothing found yields"),
-        pytest.param(ExitCode.GENERAL_ERROR, ExitCode.GENERAL_ERROR, id="a finding stays 1"),
+        pytest.param(ExitCode.SUCCESS, ExitCode.IO_ERROR, id="nothing found yields"),
+        pytest.param(ExitCode.GENERAL_ERROR, ExitCode.IO_ERROR, id="an undelivered finding yields"),
+        pytest.param(ExitCode.IO_ERROR, ExitCode.IO_ERROR, id="a failed write stands"),
         pytest.param(ExitCode.INVALID_ARGUMENT, ExitCode.INVALID_ARGUMENT, id="a refusal stands"),
         pytest.param(ExitCode.CONFIG_ERROR, ExitCode.CONFIG_ERROR, id="a config error stands"),
         pytest.param(ExitCode.SOFTWARE_ERROR, ExitCode.SOFTWARE_ERROR, id="a crash stands"),
@@ -258,7 +344,7 @@ def _refuse_stdout(monkeypatch: pytest.MonkeyPatch) -> io.StringIO:
 def test_the_final_flush_ranks_an_unwritten_stdout_like_a_departed_reader(
     monkeypatch: pytest.MonkeyPatch, decided: ExitCode, left_with: ExitCode
 ) -> None:
-    """0 and 1 yield to GENERAL_ERROR; a code that says the run could not start stands."""
+    """0 and 1 yield to IO_ERROR - neither was delivered; a code decided before the write stands."""
     refusing_stdout = _refuse_stdout(monkeypatch)
     assert safe_console.flush_streams_or_leave(int(decided)) == left_with
     said = _lines_about_standard_output(refusing_stdout.getvalue())

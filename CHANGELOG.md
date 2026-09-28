@@ -5,6 +5,52 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **A write that could not happen leaves `74` (EX_IOERR), never `1`.** On a
+  reporting command `1` is the verdict that a warning or a critical was found,
+  so a monitoring check whose output disk filled up would page somebody about a
+  drive fault that does not exist. A `snapshot` or `record` whose destination
+  refused for a reason other than permission, a `config-deploy` or
+  `config-generate-examples` that could not write its files, and any command
+  whose standard output refused its output or was closed now leave `74`; they
+  left `1` before. A permission refusal stays `13`, and `74` stands even when
+  the reader has also gone, because it is about the destination.
+
+### Fixed
+
+- **Standard output that refuses a write is said once, with no traceback.**
+  `lsdsk --version > /dev/full`, `lsdsk findings > /dev/full` and
+  `snapshot -o - > /dev/full` printed a traceback, then "Exception ignored while
+  flushing sys.stdout", and left `120`. They now print one line naming standard
+  output and the errno, and leave `74`. `snapshot` no longer calls standard
+  output "None" in that message.
+- **`snapshot -o -` with standard output closed is refused.** Started with
+  `>&-`, under pythonw or detached, it exited `0`, wrote the capture nowhere and
+  still printed the notice about the capture on standard output. It now refuses
+  before the machine is read.
+- **A command whose output is standard output leaves `74` when there is none.**
+  Started with descriptor 1 closed (`>&-`, pythonw, a detached launch),
+  `findings` and `report` crashed with an `AttributeError` and `70`, and
+  `--version` and `--help` exited `0` having printed nothing. They now say
+  standard output is closed and leave `74`. `snapshot -o <file>` needs no
+  standard output and still succeeds without one.
+- **`snapshot -o -` is refused at `22` while the logging console writes to
+  standard output.** The log lines landed inside the capture, which `--replay`
+  then refused.
+- **`snapshot -o ./-` reports `Wrote ./-`,** the spelling that reaches the file,
+  rather than `-`, which now means standard output.
+- **`lsdsk config | head` leaves `141`, not `1`,** like every other command
+  whose reader leaves early.
+- **A capture or history file saved with a byte-order mark loads.** PowerShell
+  5.1's `>` writes UTF-16 with a BOM and `Out-File -Encoding utf8` writes UTF-8
+  with one, so `ssh host lsdsk snapshot -o - > capture.json` run from Windows'
+  default shell produced a file `--replay` refused at `78`.
+- **A capture's environment evidence is bounded like every other text field.**
+  A multi-megabyte cgroup or DMI string was parsed and kept in full. A live run
+  now reads each one at the capture's own bound and records an over-long one as
+  not read, and a capture file carrying one is refused at `78`.
+
 ## [1.4.0] 2026-09-28 02:50:38
 
 ### Changed

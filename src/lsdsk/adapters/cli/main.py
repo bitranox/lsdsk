@@ -214,6 +214,9 @@ def main(
         raise ValueError("services_factory is required. Pass build_production from composition layer.")
 
     previous_state = snapshot_traceback_state()
+    # Before any command runs, so every printer - click's, rich's, this
+    # project's own - meets the same refusal on a process with no stdout.
+    safe_console.stand_in_for_a_missing_standard_output()
     try:
         code = _run_cli(argv, services_factory=services_factory)
     finally:

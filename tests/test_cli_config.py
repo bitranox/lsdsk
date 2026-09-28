@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from lsdsk.adapters import cli as cli_mod
+from lsdsk.adapters.cli.exit_codes import ExitCode
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -441,7 +442,7 @@ def test_when_config_generate_examples_without_force_it_defaults_to_false(
 
 
 @pytest.mark.os_agnostic
-def test_when_config_generate_examples_encounters_error_it_exits_with_general_error(
+def test_when_config_generate_examples_cannot_write_it_exits_with_io_error(
     cli_runner: CliRunner,
     tmp_path: Any,
     inject_generate_examples: Callable[[Callable[..., list[Path]]], Callable[[], AppServices]],
@@ -461,7 +462,7 @@ def test_when_config_generate_examples_encounters_error_it_exits_with_general_er
         obj=factory,
     )
 
-    assert result.exit_code == 1  # GENERAL_ERROR
+    assert result.exit_code == ExitCode.IO_ERROR
     assert "Disk full" in result.stderr
 
 

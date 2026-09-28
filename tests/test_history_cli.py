@@ -754,13 +754,13 @@ def test_a_record_that_could_not_write_leaves_a_code_a_timer_can_see(
     store = in_the_way / "history.json"
 
     human = run(cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(HEALTHY))
-    assert human.exit_code == ExitCode.GENERAL_ERROR, f"a write that could not happen left {human.exit_code}"
+    assert human.exit_code == ExitCode.IO_ERROR, f"a write that could not happen left {human.exit_code}"
     assert str(store) in human.stderr, f"the failure does not name the store: {human.stderr!r}"
 
     code, envelope, _ = _record_json(
         cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(HEALTHY)
     )
-    assert code == ExitCode.GENERAL_ERROR, f"the machine-readable mode left {code} for the same failure"
+    assert code == ExitCode.IO_ERROR, f"the machine-readable mode left {code} for the same failure"
     assert envelope["ok"] is False, "a write that failed cannot report ok"
     assert envelope["data"]["recorded"] is False, "nothing was recorded, so the payload must not say it was"
 

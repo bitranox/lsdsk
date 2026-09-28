@@ -77,6 +77,12 @@ schiebt sie (`lsdsk disks --full-wwn | less -S`). Der JSON-Umschlag trägt jede
 WWN immer vollständig, gleich was die menschenlesbare Ansicht angefordert hat.
 
 `lsdsk snapshot` braucht ein Ziel: `-o FILE`, ausgeschrieben `--output FILE`.
+`-o -` schreibt die Aufnahme stattdessen auf die Standardausgabe; halten Sie
+stderr dann aus der Umleitung heraus: `2>&1`, `&>` oder `ssh -t` legen den
+Hinweis zu den Seriennummern mit in die Datei, und `--replay` lehnt sie mit `78`
+ab. Eine Datei, die `-o FILE` schreibt, darf nur ihr Besitzer lesen; eine Datei,
+die Ihre Shell aus `-o -` anlegt, bekommt Ihre umask, setzen Sie also vorher
+`umask 077`.
 `lsdsk logdemo` nimmt `--theme classic|dark|neon|pastel` und wählt damit, in
 welchem der mitgelieferten Protokollthemen die Vorschau dargestellt wird.
 
@@ -96,9 +102,13 @@ ein Argument, mit dem das Werkzeug nichts anfangen
 kann, also einen Konfigurationsabschnitt oder einen `--profile`-Namen, den die
 Konfigurationsbibliothek ablehnt, und ebenso eine Option, die zum Befehl nicht
 passt, etwa `snapshot` mit `--replay`, oder mit `-o -` und `--format json`, was zwei
-Dokumente auf einen Datenstrom legen würde; `70`, wenn dieses Werkzeug selbst
+Dokumente auf einen Datenstrom legen würde, oder `-o -`, während auch die
+Protokollkonsole auf die Standardausgabe schreibt; `70`, wenn dieses Werkzeug selbst
 kaputtgegangen ist, also eine Ausnahme, die kein Befehl behandelt hat, und damit
-ein zu meldender Fehler statt einer Aussage über die Maschine; `78` für eine
+ein zu meldender Fehler statt einer Aussage über die Maschine; `74`, wenn ein
+Schreibvorgang, den das Werkzeug ausführen sollte, aus einem anderen Grund als
+fehlenden Rechten scheiterte - ein volles Ziel, ein Ziel, das es nicht geben kann,
+eine Standardausgabe, die die Ausgabe ablehnte oder geschlossen ist; `78` für eine
 Konfiguration, die dieses Werkzeug nicht laden kann, für eine Datei, die keine
 von dieser Fassung lesbare Aufnahme ist, oder für eine Plattform ohne
 Hardwareleser. Behandeln Sie alles über `1` als "hat die Frage
@@ -193,13 +203,20 @@ Gesamtseite zeichnen den `PROBLEMS`-Block ohnehin, und `findings` ist die Liste,
 diese drei sagen also nichts zusätzlich. Die maschinenlesbare Form bleibt
 unverändert: ihr Umschlag trägt die Befunde selbst.
 
-Ein Befehl, der nichts diagnostiziert, hat keinen Befund zu melden; dort steht
-`1` also für den Fehlschlag, den er soeben auf stderr genannt hat, und nicht für
-eine Warnung oder einen kritischen Befund: ein `snapshot`, der nicht geschrieben
-werden konnte, und ein `config-deploy`, das seine Dateien nicht schreiben
-konnte, hinterlassen beide diesen Code. Die errno-Nummer ist nie der Exit-Code,
-ein volles Ziel hinterlässt also kein `28`, denn die Codes eines Dateisystems
-überschneiden sich mit den obigen und bedeuten hier etwas anderes.
+Ein Schreibvorgang, der nicht stattfinden konnte, hinterlässt `74`, nie `1`. Bei
+einem berichtenden Befehl ist `1` der Befund, dass eine Warnung oder ein
+kritischer Befund vorliegt; eine Überwachungsprüfung, deren Ausgabeplatte voll
+gelaufen ist, würde sonst wegen eines Laufwerksfehlers alarmieren, den es nicht
+gibt. Ein `snapshot` oder `record`, dessen Ziel ablehnte, ein `config-deploy`
+oder `config-generate-examples`, das seine Dateien nicht schreiben konnte, und
+jeder Befehl, dessen Ausgabe die Standardausgabe ist, wenn diese sie ablehnte
+oder geschlossen war, hinterlassen ihn (`snapshot -o <Datei>` braucht keine
+Standardausgabe und gelingt auch ohne); eine Ablehnung wegen fehlender Rechte bleibt `13`. Die
+errno-Nummer ist nie der Exit-Code, ein volles Ziel hinterlässt also kein `28`,
+denn die Codes eines Dateisystems überschneiden sich mit den obigen und bedeuten
+hier etwas anderes. `74` bleibt stehen, auch wenn der Leser ebenfalls gegangen
+ist, denn es sagt etwas über das Ziel, nicht über das, was ein Leser zu sehen
+bekam.
 
 `2` ist der Verwendungsfehler von Click und heisst, dass die Befehlszeile falsch
 war, nicht dass eine Datei fehlte: eine unbekannte Option, ein unbekannter

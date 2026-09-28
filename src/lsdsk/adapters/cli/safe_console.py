@@ -30,6 +30,8 @@ Contents
 * :func:`is_broken_pipe` - whether a failed write means the reader left
 * :class:`UnwritableStandardOutputError` - stdout refused a write for another reason
 * :func:`say_standard_output_failed` - the one sentence that reports it
+* :func:`stand_in_for_a_missing_standard_output` and
+  :func:`standard_output_is_missing` - a process started with no stdout at all
 * :func:`flush_streams_or_leave` - deliver buffered output while a handler can
   still see it fail
 * :func:`restore_original_streams` - give a library caller back the descriptors
@@ -42,6 +44,7 @@ from __future__ import annotations
 
 import contextlib
 import errno
+import io
 import os
 import sys
 from enum import Enum
@@ -191,8 +194,12 @@ def restore_original_streams() -> None:
     own flush writes nothing through the descriptor this hands back.
 
     Side Effects:
-        Restores process file descriptors and closes the saved duplicates.
+        Restores process file descriptors and closes the saved duplicates, and
+        puts back the None :func:`stand_in_for_a_missing_standard_output`
+        replaced.
     """
+    if isinstance(sys.stdout, _MissingStandardOutput):
+        sys.stdout = None
     while _REDIRECTED_DESCRIPTORS:
         descriptor, saved = _REDIRECTED_DESCRIPTORS.popitem()
         try:
@@ -352,6 +359,68 @@ def _refused_by_standard_output(stream: IO[Any] | None, exc: OSError) -> Unwrita
     return UnwritableStandardOutputError(exc.errno, exc.strerror)
 
 
+class _MissingStandardOutput(io.TextIOBase):
+    """Stands in for the standard output a process was started without.
+
+    With descriptor 1 closed - ``>&-``, pythonw, a detached Windows launch - the
+    interpreter sets ``sys.stdout`` to None, and every printer met that
+    differently: ``click.echo`` returned silently, so output went nowhere and the
+    run exited as if it had arrived, while rich asked None whether it was a
+    terminal and died with an ``AttributeError`` that left 70. This object gives
+    them all one answer: a write is refused the way a full disk refuses it, as
+    :class:`UnwritableStandardOutputError`, which the last-resort handler reports
+    in one sentence and leaves 74 for.
+    """
+
+    #: UTF-8, so an encoding probe has an answer and moves on to the write.
+    encoding = "utf-8"
+
+    def writable(self) -> bool:
+        """Claim to be writable, so a printer reaches the write that refuses."""
+        return True
+
+    def write(self, text: str) -> int:
+        """Refuse, as a missing stream must.
+
+        Raises:
+            UnwritableStandardOutputError: Always.
+        """
+        raise UnwritableStandardOutputError(errno.EBADF, "standard output is closed")
+
+    def flush(self) -> None:
+        """Nothing is ever buffered here, so there is nothing to deliver."""
+
+    def isatty(self) -> bool:
+        """No terminal: nobody is sitting at a stream that does not exist."""
+        return False
+
+
+def stand_in_for_a_missing_standard_output() -> None:
+    """Put a refusing stand-in where a missing ``sys.stdout`` would be.
+
+    Called once by ``main`` before any command runs, and undone by
+    :func:`restore_original_streams`. A process that has a stdout is untouched.
+
+    Side Effects:
+        Rebinds ``sys.stdout`` when it is None.
+    """
+    if sys.stdout is None:
+        sys.stdout = _MissingStandardOutput()
+
+
+def standard_output_is_missing() -> bool:
+    """Whether this process was started with no standard output at all.
+
+    Returns:
+        True when ``sys.stdout`` is None or the stand-in for it.
+
+    Example:
+        >>> standard_output_is_missing()
+        False
+    """
+    return sys.stdout is None or isinstance(sys.stdout, _MissingStandardOutput)
+
+
 def say_standard_output_failed(exc: OSError) -> None:
     """Tell the person on stderr that stdout could not be written, and why.
 
@@ -429,7 +498,7 @@ def flush_streams_or_leave(code: int) -> int:
     yields to ``BROKEN_PIPE``.
 
     Stdout that refused the flush for another reason - a full disk - yields the
-    same way, to ``GENERAL_ERROR``: that is the documented code for a ``snapshot``
+    same way, to ``IO_ERROR``: that is the documented code for a ``snapshot``
     whose write failed other than for permission, and the output that was not
     written is no more a verdict than output nobody read. Measured before this:
     ``lsdsk --version > /dev/full`` printed a traceback and left 120, because the
@@ -450,7 +519,7 @@ def flush_streams_or_leave(code: int) -> int:
     if outcomes == {_Delivery.DELIVERED} or outranks_a_departed_reader(code):
         return code
     if _Delivery.NOT_WRITTEN in outcomes:
-        return int(ExitCode.GENERAL_ERROR)
+        return int(ExitCode.IO_ERROR)
     return int(ExitCode.BROKEN_PIPE)
 
 
@@ -651,5 +720,7 @@ __all__ = [
     "restore_original_streams",
     "safe_stream",
     "say_standard_output_failed",
+    "stand_in_for_a_missing_standard_output",
+    "standard_output_is_missing",
     "write_unless_the_reader_left",
 ]

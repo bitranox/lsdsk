@@ -199,14 +199,15 @@ describes a ceiling rather than a fault. Anything above `1` means the command di
 answer the question, either because it was refused before it started or because this tool
 broke while it ran.
 
-| Code | Name                | Raised when                                                                                                                                                                         |
-|------|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 0    | `SUCCESS`           | The command ran and found nothing actionable                                                                                                                                        |
-| 1    | `GENERAL_ERROR`     | A scan found a warning or a critical, or an action failed                                                                                                                           |
-| 13   | `PERMISSION_DENIED` | A `config-deploy` target, a `config-generate-examples`, `snapshot` or `record` destination, or a device needs privilege this run does not have                                      |
-| 22   | `INVALID_ARGUMENT`  | `config --section` named no section, a `--profile` was rejected, `snapshot` was given a global `--replay` or `-o -` with `--format json`, or `report` or `tui` was given `--format` |
-| 70   | `SOFTWARE_ERROR`    | An error inside this tool: an exception no command handled, which is a bug rather than a finding                                                                                    |
-| 78   | `CONFIG_ERROR`      | A configuration file cannot be loaded, a file is not a snapshot this version reads, or this platform has no hardware reader                                                         |
+| Code | Name                | Raised when                                                                                                                                                                                                                       |
+|------|---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 0    | `SUCCESS`           | The command ran and found nothing actionable                                                                                                                                                                                      |
+| 1    | `GENERAL_ERROR`     | A scan found a warning or a critical, or an action failed                                                                                                                                                                         |
+| 13   | `PERMISSION_DENIED` | A `config-deploy` target, a `config-generate-examples`, `snapshot` or `record` destination, or a device needs privilege this run does not have                                                                                    |
+| 22   | `INVALID_ARGUMENT`  | `config --section` named no section, a `--profile` was rejected, `snapshot` was given a global `--replay` or `-o -` with `--format json` or while the logging console writes to stdout, or `report` or `tui` was given `--format` |
+| 70   | `SOFTWARE_ERROR`    | An error inside this tool: an exception no command handled, which is a bug rather than a finding                                                                                                                                  |
+| 74   | `IO_ERROR`          | A write failed for a reason other than permission: a `snapshot` or `record` destination, a `config-deploy` or `config-generate-examples` file, or standard output itself refusing the output or closed                            |
+| 78   | `CONFIG_ERROR`      | A configuration file cannot be loaded, a file is not a snapshot this version reads, or this platform has no hardware reader                                                                                                       |
 
 Two more are named in the enum and decided elsewhere:
 
@@ -258,7 +259,9 @@ START stands - 2, 13, 22 and 78 - because there was never any output for that re
 to lose: a mistyped `--section` is a mistyped `--section` whether it was piped into
 `head` or into a file. So does 70, which says the tool BROKE: that is equally true of
 a run whose reader stayed, and without it a check piping `lsdsk` into `head` would
-read a crash as its own reader leaving. A code saying what the output CONTAINED yields to `141`,
+read a crash as its own reader leaving. So does 74, which says a WRITE failed: that is a fact
+about the destination - a full disk, a path that cannot exist - and holds whoever was reading.
+A code saying what the output CONTAINED yields to `141`,
 because it was not delivered: `lsdsk report | head -5` on a failing machine has shown
 the reader five lines, and leaving `1` there would tell a monitoring check it had
 received a complete verdict.

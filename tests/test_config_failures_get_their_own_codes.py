@@ -121,7 +121,7 @@ def test_generate_examples_answers_a_refused_directory_the_way_deploy_does(
 
 
 @pytest.mark.os_posix
-def test_generate_examples_still_reports_a_non_permission_failure_as_one(
+def test_generate_examples_still_reports_a_non_permission_failure_as_an_io_error(
     cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
 ) -> None:
     """The control: the permission arm must not have swallowed every OSError.
@@ -136,4 +136,4 @@ def test_generate_examples_still_reports_a_non_permission_failure_as_one(
     result = cli_runner.invoke(
         cli, ["config-generate-examples", "--destination", str(in_the_way / "examples")], obj=production_factory
     )
-    assert result.exit_code == ExitCode.GENERAL_ERROR, f"left {result.exit_code}: {result.output[-300:]}"
+    assert result.exit_code == ExitCode.IO_ERROR, f"left {result.exit_code}: {result.output[-300:]}"

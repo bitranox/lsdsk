@@ -564,7 +564,7 @@ def somebody_is_sitting_at_it() -> bool:
     Returns:
         True when both standard streams are terminals.
     """
-    return sys.stdout.isatty() and sys.stdin.isatty()
+    return bool(sys.stdout and sys.stdout.isatty() and sys.stdin and sys.stdin.isatty())
 
 
 class InteractiveView(Protocol):
@@ -1222,7 +1222,7 @@ def _refuse_what_standard_output_cannot_carry(ctx: click.Context, output_format:
 
     Raises:
         SystemExit: With ``INVALID_ARGUMENT`` when something else would share
-            stdout with the capture, or ``GENERAL_ERROR`` when there is none.
+            stdout with the capture, or ``IO_ERROR`` when there is none.
     """
     if output_format is OutputFormat.JSON:
         fail(
@@ -1244,7 +1244,7 @@ def _refuse_what_standard_output_cannot_carry(ctx: click.Context, output_format:
             ExitCode.INVALID_ARGUMENT,
             output_format=output_format,
         )
-    if sys.stdout is None:
+    if safe_console.standard_output_is_missing():
         # Started with descriptor 1 closed (`>&-`), or detached as pythonw
         # and Windows services start: the interpreter then has no stdout at
         # all, and click.echo returns silently for None - so the capture
@@ -1252,7 +1252,7 @@ def _refuse_what_standard_output_cannot_carry(ctx: click.Context, output_format:
         fail(
             "standard output is closed, so nothing was written: -o - has nowhere to put the capture. "
             "Name a file with -o instead.",
-            ExitCode.GENERAL_ERROR,
+            ExitCode.IO_ERROR,
             output_format=output_format,
         )
 
@@ -1293,7 +1293,7 @@ def _write_capture(destination: _CaptureDestination, output_format: OutputFormat
     except OSError as error:
         fail(
             f"could not write the capture to {destination.named}: {error}",
-            ExitCode.GENERAL_ERROR,
+            ExitCode.IO_ERROR,
             output_format=output_format,
         )
 
@@ -1320,7 +1320,9 @@ def _report_the_capture(destination: _CaptureDestination, output_format: OutputF
             ActionCommand.SNAPSHOT,
             SnapshotResult(path=destination.named, schema_version=snapshot_adapter.SCHEMA_VERSION),
         )
-    else:
+    # A process started with no stdout (pythonw, a service, `>&-`) has nobody
+    # to tell, and the capture it asked for has landed.
+    elif not safe_console.standard_output_is_missing():
         safe_console.echo(f"Wrote {destination.named}")
     # On stderr in both modes, so stdout stays exactly what a script parses:
     # the path line in human mode, the envelope in JSON mode.

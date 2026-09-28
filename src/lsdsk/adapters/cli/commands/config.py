@@ -419,8 +419,13 @@ def _execute_deploy(
     # Anything else is a bug in lsdsk, and catching it here would print it as a
     # one-line user error and swallow the traceback that --traceback asked for,
     # leaving the only copy of it in the log. Let it reach the handler in
-    # main.py, which is what honours the flag.
-    except (OSError, ConfigurationError) as exc:
+    # main.py, which is what honours the flag. A write that failed leaves the
+    # code every other failed write leaves, never 1, which a reporting command
+    # means as "a warning or a critical was found".
+    except OSError as exc:
+        logger.error("Failed to deploy configuration", extra={"error": str(exc), "error_type": type(exc).__name__})
+        _fail_after_output(f"Failed to deploy configuration: {exc}", ExitCode.IO_ERROR, output_format=output_format)
+    except ConfigurationError as exc:
         logger.error("Failed to deploy configuration", extra={"error": str(exc), "error_type": type(exc).__name__})
         _fail_after_output(
             f"Failed to deploy configuration: {exc}", ExitCode.GENERAL_ERROR, output_format=output_format
@@ -534,7 +539,7 @@ def cli_config_generate_examples(
         # --traceback. See the matching note in _execute_deploy.
         except OSError as exc:
             logger.error("Failed to generate examples", extra={"error": str(exc)})
-            _fail_after_output(str(exc), ExitCode.GENERAL_ERROR, output_format=output_format)
+            _fail_after_output(str(exc), ExitCode.IO_ERROR, output_format=output_format)
 
 
 __all__ = ["cli_config", "cli_config_deploy", "cli_config_generate_examples"]

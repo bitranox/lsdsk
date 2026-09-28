@@ -77,7 +77,11 @@ less -S`). The JSON envelope always carries every WWN in full, whatever the
 human view was asked for.
 
 `lsdsk snapshot` needs somewhere to write: `-o FILE`, spelled `--output FILE`
-in full. `lsdsk logdemo` takes `--theme classic|dark|neon|pastel`, which picks
+in full. `-o -` writes the capture to standard output instead, so keep stderr off
+that redirect: `2>&1`, `&>` or `ssh -t` put the serial-number notice into the
+file and `--replay` refuses it at `78`. A file `-o FILE` writes is owner-only; a
+file your shell creates from `-o -` takes your umask, so run `umask 077` first.
+`lsdsk logdemo` takes `--theme classic|dark|neon|pastel`, which picks
 which of the shipped logging themes the preview renders in.
 
 `--format json` gives a machine-readable envelope naming the command that
@@ -95,8 +99,12 @@ argument the tool cannot act on, which is a
 configuration section or a `--profile` name the configuration library rejects,
 and also an option that does not apply to the command, such as `snapshot` given
 `--replay`, or given `-o -` with `--format json`, which would put two documents on
-one stream; `70` when this tool itself broke, which is an exception no command
-handled and a bug to report rather than anything about the machine; `78` for a
+one stream, or `-o -` while the logging console writes to standard output too;
+`70` when this tool itself broke, which is an exception no command
+handled and a bug to report rather than anything about the machine; `74` when a
+write this tool was asked to make failed for a reason other than permission - a
+full disk, a destination that cannot exist, a standard output that refused the
+output or is closed; `78` for a
 configuration this tool cannot load, a file that is not a snapshot this version
 reads, or a platform with no hardware reader. Treat anything above `1` as "did not answer the question".
 
@@ -180,12 +188,19 @@ the whole-machine page draw the `PROBLEMS` block already and `findings` is the
 list, so those three say nothing extra. The machine-readable form is unchanged:
 its envelope carries the findings themselves.
 
-A command that diagnoses nothing has no finding to report, so on those `1` means
-the failure it just named on stderr rather than a warning or a critical: a
-`snapshot` that could not be written and a `config-deploy` that could not write
-its files both leave it. The errno is never the exit code - a full destination
-does not leave `28` - because the codes a filesystem produces overlap the ones
-above and mean something else here.
+A write that could not happen leaves `74`, never `1`. On a reporting command `1`
+is the verdict that a warning or a critical was found, so a monitoring check
+whose output disk filled up would otherwise page somebody about a drive fault
+that does not exist. A `snapshot` or `record` whose destination refused, a
+`config-deploy` or `config-generate-examples` that could not write its files, and
+any command whose output is standard output, when that refused it or was closed,
+all leave it (`snapshot -o <file>` needs no standard output and succeeds without
+one);
+a refusal for lack of permission stays `13`. The errno is never the exit code - a
+full destination does not leave `28` - because the codes a filesystem produces
+overlap the ones above and mean something else here. `74` stands even when the
+reader has also gone, because it is about the destination rather than about what
+a reader was shown.
 
 `2` is Click's usage error and means the command line was wrong, not that a file
 was missing: an unknown option, an unknown command, a missing argument and a bad

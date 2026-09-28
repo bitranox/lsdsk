@@ -77,11 +77,11 @@ def test_when_config_deploy_has_permission_error_it_exits_with_code_13(
 
 
 @pytest.mark.os_agnostic
-def test_when_config_deploy_has_generic_error_it_exits_with_code_1(
+def test_when_config_deploy_cannot_write_its_files_it_exits_with_io_error(
     cli_runner: CliRunner,
     inject_deploy_configuration: Callable[[Callable[..., list[Path]]], Callable[[], Any]],
 ) -> None:
-    """Config-deploy generic Exception must exit with GENERAL_ERROR (1)."""
+    """A config-deploy whose write fails leaves IO_ERROR (74), never the findings verdict 1."""
 
     def mock_deploy(request: DeployRequest) -> list[Any]:
         raise OSError("Disk full")
@@ -90,7 +90,7 @@ def test_when_config_deploy_has_generic_error_it_exits_with_code_1(
 
     result: Result = cli_runner.invoke(cli_mod.cli, ["config-deploy", "--target", "user"], obj=factory)
 
-    assert result.exit_code == 1
+    assert result.exit_code == ExitCode.IO_ERROR
     assert "Disk full" in result.stderr
 
 
@@ -174,6 +174,7 @@ def _row_for(path: Path, code: int) -> str:
 DOCUMENTED_CAUSES: dict[int, tuple[str, ...]] = {
     13: ("config-deploy", "config-generate-examples", "snapshot"),
     22: ("--section", "--profile", "--replay", "`report`", "`tui`", "--format", "`-o -`"),
+    74: ("snapshot", "record", "config-deploy", "config-generate-examples", "standard output"),
     78: ("configuration", "snapshot", "hardware reader"),
 }
 
@@ -200,6 +201,7 @@ def test_the_exit_codes_the_docs_promise_are_the_ones_the_code_defines() -> None
         13: "PERMISSION_DENIED",
         22: "INVALID_ARGUMENT",
         70: "SOFTWARE_ERROR",
+        74: "IO_ERROR",
         78: "CONFIG_ERROR",
     }
     for value, name in published.items():
@@ -702,7 +704,7 @@ def test_a_snapshot_that_cannot_be_written_exits_with_a_code_lsdsk_raises(
 
     code = cli_mod.main(["snapshot", "-o", str(target)], services_factory=build_production)
 
-    assert code == ExitCode.GENERAL_ERROR, f"a write that could not happen left {code}"
+    assert code == ExitCode.IO_ERROR, f"a write that could not happen left {code}"
     assert str(target) in capsys.readouterr().err, "the refusal does not name the destination"
 
 
@@ -931,3 +933,24 @@ def test_a_crash_stands_whoever_was_reading_because_it_says_nothing_about_the_ou
         "the control that must answer the OTHER way: an undelivered verdict still yields"
     )
     assert outranks_a_departed_reader(int(ExitCode.SUCCESS)) is False
+
+
+@pytest.mark.os_agnostic
+def test_a_failed_write_stands_whoever_was_reading_because_it_is_about_the_destination() -> None:
+    """74 says a write this tool was asked to make failed (user, 2026-09-28).
+
+    That is a fact about the destination - a full disk, a path that cannot
+    exist - and not about what a reader was shown, so a `snapshot -o file` whose
+    disk refused the capture must not turn into 141 because the stderr reader
+    had also gone. The final-flush ranking cannot hold this on its own: an
+    unwritten stdout ALSO answers 74, so dropping 74 from the set leaves that
+    test's answer unchanged. This asks the decider directly.
+    """
+    from lsdsk.adapters.cli.exit_codes import ExitCode, outranks_a_departed_reader
+
+    assert outranks_a_departed_reader(int(ExitCode.IO_ERROR)) is True, (
+        "a write the disk refused would be reported as the reader leaving"
+    )
+    assert outranks_a_departed_reader(int(ExitCode.GENERAL_ERROR)) is False, (
+        "the control that must answer the OTHER way: an undelivered verdict still yields"
+    )

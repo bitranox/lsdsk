@@ -210,12 +210,12 @@ def record_exit_code(attempt: RecordAttempt) -> ExitCode:
         >>> record_exit_code(RecordAttempt(RecordOutcome.NOT_PERMITTED, "denied"))
         <ExitCode.PERMISSION_DENIED: 13>
         >>> record_exit_code(RecordAttempt(RecordOutcome.COULD_NOT_WRITE, "full"))
-        <ExitCode.GENERAL_ERROR: 1>
+        <ExitCode.IO_ERROR: 74>
     """
     if attempt.outcome is RecordOutcome.NOT_PERMITTED:
         return ExitCode.PERMISSION_DENIED
     if attempt.outcome is RecordOutcome.COULD_NOT_WRITE:
-        return ExitCode.GENERAL_ERROR
+        return ExitCode.IO_ERROR
     return ExitCode.SUCCESS
 
 
