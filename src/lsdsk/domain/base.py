@@ -36,9 +36,13 @@ Example:
 
 from __future__ import annotations
 
-from typing import Self
+from functools import cached_property
+from typing import TYPE_CHECKING, Any, Self
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 __all__ = ["DomainModel"]
 
@@ -63,11 +67,13 @@ class DomainModel(BaseModel, frozen=True, extra="forbid"):
         later travels along rather than being silently dropped by a rebuild
         that restates every other field.
 
-        It goes through validation, which ``model_copy(update=...)`` does not:
-        pydantic writes an unknown key there straight into the instance, so
-        ``model_copy(update={"prots_used": 3})`` leaves ``ports_used`` alone,
-        sets an attribute nothing reads, dumps nothing extra and raises
-        nothing. Measured on pydantic 2.13.5. Here the typo is refused.
+        It goes through validation, which pydantic's own
+        ``model_copy(update=...)`` does not: that writes an unknown key straight
+        into the instance, so ``update={"prots_used": 3}`` leaves ``ports_used``
+        alone, sets an attribute nothing reads, dumps nothing extra and raises
+        nothing (measured on pydantic 2.13.5). Here the typo is refused, and
+        :meth:`model_copy` routes its ``update`` through this method for the
+        same reason.
 
         Args:
             **changes: Field values to replace, by field name.
@@ -91,3 +97,51 @@ class DomainModel(BaseModel, frozen=True, extra="forbid"):
             pydantic_core._pydantic_core.ValidationError: ...
         """
         return self.model_validate({**dict(self), **changes})
+
+    def model_copy(self, *, update: Mapping[str, Any] | None = None, deep: bool = False) -> Self:
+        """Return a copy that answers from its own fields, with ``update`` validated.
+
+        Pydantic copies an instance's ``__dict__`` whole, and a
+        ``functools.cached_property`` keeps its value there, so a copy made after
+        an index was first used carried that index along. With ``update`` the
+        copy's fields and its index then described two different values: a
+        copied ``History`` answered ``for_identity`` from the series it no longer
+        held. Every cached value is dropped from the copy, which rebuilds its own
+        on first use, and ``update`` goes through :meth:`with_changes`, so a
+        misspelt field is refused rather than written into the instance.
+
+        Args:
+            update: Field values to replace, by field name.
+            deep: Whether to copy the field values as well as the instance.
+
+        Returns:
+            A new instance of the same type.
+
+        Raises:
+            pydantic.ValidationError: If a name in ``update`` is not a field of
+                this model, or a value does not fit it.
+
+        Example:
+            >>> class Reading(DomainModel):
+            ...     value: int = 0
+            >>> Reading(value=3).model_copy(update={"value": 4})
+            Reading(value=4)
+        """
+        copied = super().model_copy(deep=deep)
+        for name in _cached_names(type(self)):
+            vars(copied).pop(name, None)
+        return copied.with_changes(**update) if update else copied
+
+
+def _cached_names(model: type[DomainModel]) -> tuple[str, ...]:
+    """Every ``cached_property`` a model class carries, inherited ones included.
+
+    Args:
+        model: The model class.
+
+    Returns:
+        The attribute names the cached values are stored under.
+    """
+    return tuple(
+        name for klass in model.__mro__ for name, member in vars(klass).items() if isinstance(member, cached_property)
+    )
