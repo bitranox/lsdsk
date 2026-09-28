@@ -1,6 +1,7 @@
 """Logging demonstration CLI command.
 
-Provides a command to preview log output using lib_log_rich's logdemo facility.
+Provides a command to preview log output, one line per severity, on the same
+guarded console every other command logs through.
 
 Contents:
     * :class:`LogDemoTheme` - The console themes a preview can be asked for.
@@ -52,15 +53,18 @@ class LogDemoTheme(StrEnum):
 )
 def cli_logdemo(theme: LogDemoTheme) -> None:
     """Run a logging demonstration to preview log output."""
-    import lib_log_rich  # noqa: PLC0415 - deferred: logdemo needs an uninitialised runtime, imported only when invoked
-    import lib_log_rich.runtime  # noqa: PLC0415 - deferred: logdemo needs an uninitialised runtime, imported only when invoked
+    import lib_log_rich.runtime  # noqa: PLC0415 - deferred: imported only when the demo is invoked
 
-    # logdemo() requires uninitialized runtime
+    # Local for an import cycle: the logging adapter imports safe_console from
+    # this package, whose __init__ imports this module.
+    from lsdsk.adapters.logging.setup import run_log_demo  # noqa: PLC0415 - import cycle, see above
+
+    # One runtime at a time: the demo builds its own, so the run's goes first.
     if lib_log_rich.runtime.is_initialised():
         lib_log_rich.runtime.shutdown()
 
-    result = lib_log_rich.logdemo(theme=theme)
-    safe_console.echo(f"\nLog demo completed (theme: {result.theme})")
+    shown = run_log_demo(str(theme))
+    safe_console.echo(f"\nLog demo completed (theme: {shown})")
 
 
 __all__ = ["LogDemoTheme", "cli_logdemo"]

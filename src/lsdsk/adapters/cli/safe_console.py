@@ -49,6 +49,7 @@ import errno
 import io
 import os
 import sys
+import threading
 from enum import Enum
 from typing import IO, TYPE_CHECKING, Any, Final, NoReturn, TextIO, cast
 
@@ -116,6 +117,16 @@ def _stream_encoding(file: IO[Any] | None, *, err: bool = False) -> str | None:
 #: Process-global because a file DESCRIPTOR is, so recording it anywhere narrower
 #: would describe something other than the thing that was changed.
 _REDIRECTED_DESCRIPTORS: Final[dict[int, int]] = {}
+
+#: What a stdout write met on a thread other than the main one, oldest first.
+#:
+#: lib_log_rich writes on a queue worker thread, and an exception raised there
+#: ends that thread and nothing else: ``SystemExit(141)`` never reached the exit
+#: code, and the worker it killed left every later log line undelivered and the
+#: shutdown drain waiting out its whole stop timeout. So a failure met off the
+#: main thread is recorded here instead, and :func:`flush_streams_or_leave`
+#: answers it on the main thread, after the logging shutdown has drained.
+_FAILED_OFF_THE_MAIN_THREAD: Final[list[tuple[_Delivery, OSError]]] = []
 
 
 def _stop_writing_to(stream: IO[Any] | io.IOBase | None) -> None:
@@ -196,14 +207,16 @@ def restore_original_streams() -> None:
     own flush writes nothing through the descriptor this hands back.
 
     Side Effects:
-        Restores process file descriptors and closes the saved duplicates, and
-        puts back each None :func:`stand_in_for_missing_standard_streams`
-        replaced.
+        Restores process file descriptors and closes the saved duplicates, puts
+        back each None :func:`stand_in_for_missing_standard_streams` replaced,
+        and forgets any stdout failure recorded off the main thread, so the next
+        run in the same process starts from nothing.
     """
     if isinstance(sys.stdout, _MissingStandardOutput):
         sys.stdout = None
     if isinstance(sys.stderr, _MissingStandardError):
         sys.stderr = None
+    _FAILED_OFF_THE_MAIN_THREAD.clear()
     while _REDIRECTED_DESCRIPTORS:
         descriptor, saved = _REDIRECTED_DESCRIPTORS.popitem()
         try:
@@ -213,6 +226,30 @@ def restore_original_streams() -> None:
         finally:
             with contextlib.suppress(OSError):
                 os.close(saved)
+
+
+def _lose_the_diagnostic() -> None:
+    """Give up on stderr after a write to it failed, for ANY reason.
+
+    stderr carries diagnostics about the run and never the run's own output, so a
+    stderr that cannot be written costs the diagnostic and nothing else: the
+    report on stdout and the exit code the run decided both stand. That holds
+    whether its reader left (``BrokenPipeError``), the disk behind it is full
+    (``ENOSPC``, ``2>/dev/full``) or the device failed (``EIO``) - the three are
+    one event from the point of view of whoever asked for the report. Measured
+    before a full disk was answered this way: ``lsdsk --profile nosuch findings
+    --format json 2>/dev/full`` left 120 with 0 bytes on stdout, against 1 and the
+    whole envelope with stderr to a file, because the warning's ``ENOSPC`` was
+    re-raised, the crash report about it failed the same way, and the interpreter
+    retried the buffered bytes at shutdown, outside every handler.
+
+    Pointing the descriptor at the null device is what empties the buffer whose
+    retry would fail at shutdown.
+
+    Side Effects:
+        Points stderr's descriptor at the null device.
+    """
+    _stop_writing_to(sys.stderr)
 
 
 def write_unless_the_reader_left(emit: Callable[[], None], *, err: bool = True) -> None:
@@ -242,6 +279,9 @@ def write_unless_the_reader_left(emit: Callable[[], None], *, err: bool = True) 
     failure envelope meeting a full disk - is lost the same way, and said so on
     stderr: the code was decided before the write, so it still stands.
 
+    A diagnostic bound for STDERR is lost whatever the reason, because stderr
+    never carries the run's own output (see :func:`_lose_the_diagnostic`).
+
     Args:
         emit: The write to attempt. It is expected to raise nothing but an
             ``OSError`` for a stream that has gone.
@@ -254,11 +294,12 @@ def write_unless_the_reader_left(emit: Callable[[], None], *, err: bool = True) 
     try:
         emit()
     except OSError as exc:
-        if is_broken_pipe(exc):
-            _stop_writing_to(sys.stderr if err else sys.stdout)
-            return
         if err:
-            raise
+            _lose_the_diagnostic()
+            return
+        if is_broken_pipe(exc):
+            _stop_writing_to(sys.stdout)
+            return
         refused = (
             exc if isinstance(exc, UnwritableStandardOutputError) else _refused_by_standard_output(sys.stdout, exc)
         )
@@ -287,6 +328,59 @@ def _reader_went_away(stream: IO[Any] | io.IOBase | None) -> NoReturn:
     """
     _stop_writing_to(stream)
     raise SystemExit(ExitCode.BROKEN_PIPE)
+
+
+def _answer_a_failed_standard_output_write(target: IO[Any] | io.IOBase | None, exc: OSError) -> None:
+    """Answer a stdout write that failed, on whichever thread met it.
+
+    On the MAIN thread the answer is raised where it happened: ``SystemExit(141)``
+    for a departed reader, :class:`UnwritableStandardOutputError` for anything
+    else, as before. OFF it the answer is recorded, because a raise there ends
+    one thread and nothing else - measured before this, ``LOG_CONSOLE_STREAM=stdout
+    lsdsk fail`` with stdout's reader gone took 5.6 s against 0.6 s, the logging
+    worker having died on a ``SystemExit`` nobody saw while the shutdown waited
+    out the library's 5 s stop timeout for it. stdout is silenced either way, so
+    nothing retries the bytes; :func:`flush_streams_or_leave` reads the record.
+
+    Args:
+        target: The stream whose write failed, which is ``sys.stdout``.
+        exc: What the write raised.
+
+    Raises:
+        SystemExit: On the main thread, when stdout's reader has gone.
+        UnwritableStandardOutputError: On the main thread, when stdout refused
+            the write for another reason.
+    """
+    broken = is_broken_pipe(exc)
+    if threading.current_thread() is not threading.main_thread():
+        _stop_writing_to(target)
+        _FAILED_OFF_THE_MAIN_THREAD.append((_Delivery.READER_LEFT if broken else _Delivery.NOT_WRITTEN, exc))
+        return
+    if broken:
+        _reader_went_away(target)
+    raise _refused_by_standard_output(target, exc) from exc
+
+
+def _answer_what_failed_off_the_main_thread(already: set[_Delivery]) -> set[_Delivery]:
+    """Hand the final flush what stdout met off the main thread, and say a refusal once.
+
+    Args:
+        already: What flushing the streams themselves came to, so a refusal
+            that flush already reported is not reported twice.
+
+    Returns:
+        How each recorded failure ended, as the flush would have put it.
+
+    Side Effects:
+        Empties the record, and writes one sentence to stderr for the first
+        refusal when the flush did not already write it.
+    """
+    recorded = list(_FAILED_OFF_THE_MAIN_THREAD)
+    _FAILED_OFF_THE_MAIN_THREAD.clear()
+    refusals = [exc for outcome, exc in recorded if outcome is _Delivery.NOT_WRITTEN]
+    if refusals and _Delivery.NOT_WRITTEN not in already:
+        say_standard_output_failed(UnwritableStandardOutputError(refusals[0].errno, refusals[0].strerror))
+    return {outcome for outcome, _ in recorded}
 
 
 def is_broken_pipe(exc: BaseException, *, on_windows: bool | None = None) -> bool:
@@ -491,6 +585,7 @@ class _Delivery(Enum):
     DELIVERED = "delivered"
     READER_LEFT = "reader left"
     NOT_WRITTEN = "not written"
+    DIAGNOSTIC_LOST = "diagnostic lost"
 
 
 def _delivered(stream: IO[Any] | None) -> _Delivery:
@@ -501,12 +596,11 @@ def _delivered(stream: IO[Any] | None) -> _Delivery:
 
     Returns:
         How the flush ended. A stream that cannot be flushed at all counts as
-        delivered: there is no pipe behind it to break.
-
-    Raises:
-        OSError: When a STDERR flush failed for any reason other than the reader
-            leaving. A stdout failure is answered here instead, because this runs
-            after the command has finished and nothing downstream could.
+        delivered: there is no pipe behind it to break. A stderr refusing for any
+        reason other than its reader leaving is a lost diagnostic, which leaves
+        the verdict alone (see :func:`_lose_the_diagnostic`); a stdout refusing
+        so is answered here and said on stderr, because this runs after the
+        command has finished and nothing downstream could.
     """
     try:
         if stream is not None:
@@ -518,7 +612,8 @@ def _delivered(stream: IO[Any] | None) -> _Delivery:
             _stop_writing_to(stream)
             return _Delivery.READER_LEFT
         if stream is not sys.stdout:
-            raise
+            _lose_the_diagnostic()
+            return _Delivery.DIAGNOSTIC_LOST
         say_standard_output_failed(_refused_by_standard_output(stream, exc))
         return _Delivery.NOT_WRITTEN
     return _Delivery.DELIVERED
@@ -551,6 +646,10 @@ def flush_streams_or_leave(code: int) -> int:
     ``lsdsk --version > /dev/full`` printed a traceback and left 120, because the
     error escaped here and the interpreter then retried the same bytes.
 
+    A stdout failure the logging worker met off the main thread is answered here
+    too, from the record :func:`_answer_a_failed_standard_output_write` kept: it
+    could not be raised where it happened.
+
     Args:
         code: What the run decided to leave with.
 
@@ -563,7 +662,8 @@ def flush_streams_or_leave(code: int) -> int:
         fail afterwards and override this answer.
     """
     outcomes = {_delivered(sys.stdout), _delivered(sys.stderr)}
-    if outcomes == {_Delivery.DELIVERED} or outranks_a_departed_reader(code):
+    outcomes |= _answer_what_failed_off_the_main_thread(outcomes)
+    if outcomes <= {_Delivery.DELIVERED, _Delivery.DIAGNOSTIC_LOST} or outranks_a_departed_reader(code):
         return code
     if _Delivery.NOT_WRITTEN in outcomes:
         return int(ExitCode.IO_ERROR)
@@ -627,29 +727,31 @@ def echo(message: object = "", *, file: IO[Any] | None = None, err: bool = False
             other than its reader leaving; stdout is already silenced by then.
 
     Side Effects:
-        Writes to the given stream.
+        Writes to the given stream. A write stderr refuses, for any reason, is
+        lost rather than raised.
     """
     text = message if isinstance(message, str) else str(message)
     target = file if file is not None else (sys.stderr if err else sys.stdout)
     try:
         click.echo(encode_safe(text, _stream_encoding(file, err=err)), file=file, err=err, nl=nl)
     except OSError as exc:
-        if not is_broken_pipe(exc):
-            if target is sys.stdout:
-                raise _refused_by_standard_output(target, exc) from exc
-            raise
         if target is sys.stderr:
-            # A departed STDERR reader is not a reason to stop. stderr carries
-            # diagnostics about the run, never the run's own output, so nobody
-            # listening to it means this one message is lost and the command's
-            # own verdict still stands - which is the same ranking
-            # :func:`~.exit_codes.outranks_a_departed_reader` applies at the
-            # boundary. Aborting here instead answered `lsdsk config-deploy
-            # ... 2>&1 | head` with 141 and threw away the 13 that says exactly
-            # what went wrong. A departed STDOUT reader does stop the run: that
-            # stream IS what was asked for.
-            _stop_writing_to(target)
+            # A stderr that cannot be written is not a reason to stop, whether
+            # its reader left or its disk is full. stderr carries diagnostics
+            # about the run, never the run's own output, so this one message is
+            # lost and the command's own verdict still stands - which is the
+            # same ranking :func:`~.exit_codes.outranks_a_departed_reader`
+            # applies at the boundary. Aborting here instead answered `lsdsk
+            # config-deploy ... 2>&1 | head` with 141 and threw away the 13 that
+            # says exactly what went wrong. A departed STDOUT reader does stop
+            # the run: that stream IS what was asked for.
+            _lose_the_diagnostic()
             return
+        if target is sys.stdout:
+            _answer_a_failed_standard_output_write(target, exc)
+            return
+        if not is_broken_pipe(exc):
+            raise
         _reader_went_away(target)
 
 
@@ -698,14 +800,11 @@ class _SafeWriter:
         try:
             return target.write(encode_safe(text, encoding if isinstance(encoding, str) else None))
         except OSError as exc:
-            if not is_broken_pipe(exc):
-                if not self._err:
-                    raise _refused_by_standard_output(target, exc) from exc
-                raise
             if self._err:
-                _stop_writing_to(target)
+                _lose_the_diagnostic()
                 return len(text)
-            _reader_went_away(target)
+            _answer_a_failed_standard_output_write(target, exc)
+            return len(text)
 
     def flush(self) -> None:
         """Flush the current target, following the same per-stream rule as :func:`echo`."""
@@ -713,14 +812,10 @@ class _SafeWriter:
         try:
             target.flush()
         except OSError as exc:
-            if not is_broken_pipe(exc):
-                if not self._err:
-                    raise _refused_by_standard_output(target, exc) from exc
-                raise
             if self._err:
-                _stop_writing_to(target)
+                _lose_the_diagnostic()
                 return
-            _reader_went_away(target)
+            _answer_a_failed_standard_output_write(target, exc)
 
     def isatty(self) -> bool:
         """Report the target's tty-ness, so rich keeps its styling."""
@@ -733,7 +828,7 @@ class _SafeWriter:
         return encoding if isinstance(encoding, str) else None
 
 
-def safe_stream(*, err: bool = False) -> IO[str]:
+def safe_stream(*, err: bool = False) -> TextIO:
     """Wrap a stream so unencodable text degrades instead of raising.
 
     Use for a writer handed to a third-party renderer. For this project's own
@@ -747,12 +842,14 @@ def safe_stream(*, err: bool = False) -> IO[str]:
     a ``BrokenPipeError`` to handle: the failure is answered here, on the stream
     that really broke.
 
-    The return is typed as the ``IO[str]`` rich's ``Console(file=...)`` declares,
-    rather than left as ``Any``. ``_SafeWriter`` implements the four members
-    rich actually calls - ``write``, ``flush``, ``isatty``, ``encoding`` - and
-    nothing else of the ABC, which is why the type has to be asserted here
-    rather than inferred; asserting it once at this boundary is what keeps the
-    call site typed, where ``Any`` erased the whole console.
+    The return is typed as ``TextIO``, which is what
+    ``lib_cli_exit_tools.print_exception_message(stream=...)`` declares and is
+    an ``IO[str]``, which is what rich's ``Console(file=...)`` declares, rather
+    than left as ``Any``. ``_SafeWriter`` implements the four members rich
+    actually calls - ``write``, ``flush``, ``isatty``, ``encoding`` - and nothing
+    else of the ABC, which is why the type has to be asserted here rather than
+    inferred; asserting it once at this boundary is what keeps the call site
+    typed, where ``Any`` erased the whole console.
 
     It takes no stream, only which of the two to follow, the way :func:`echo`
     does. A stream handed in is the value it had when the renderer was built,
@@ -767,7 +864,7 @@ def safe_stream(*, err: bool = False) -> IO[str]:
     Returns:
         A writer with ``write``/``flush``/``isatty``/``encoding``.
     """
-    return cast("IO[str]", _SafeWriter(err=err))
+    return cast("TextIO", _SafeWriter(err=err))
 
 
 class _SafeTee:
@@ -778,8 +875,11 @@ class _SafeTee:
         the RAW streams, and rich's ``on_broken_pipe`` fires on it whichever half
         broke - pointing STDOUT at the null device when only stderr's reader
         left. Each half here is a :class:`_SafeWriter`, so a departed stdout
-        reader ends the run with 141 and a departed stderr reader costs stderr
-        alone.
+        reader leaves 141 and a departed stderr reader costs stderr alone. On
+        the main thread the 141 is raised at the write; on the logging worker,
+        where a raise would end only that thread, it is recorded and the final
+        flush answers it. Either way the stderr half is written: a stdout
+        failure raised from the first half used to skip the second.
     """
 
     def __init__(self) -> None:
@@ -791,14 +891,21 @@ class _SafeTee:
         Returns:
             The whole length: each half answers its own failure.
         """
-        for half in self._halves:
-            half.write(text)
+        standard_output, standard_error = self._halves
+        try:
+            standard_output.write(text)
+        finally:
+            # The stderr half never raises, so this cannot mask the stdout answer.
+            standard_error.write(text)
         return len(text)
 
     def flush(self) -> None:
-        """Flush both halves, stdout first."""
-        for half in self._halves:
-            half.flush()
+        """Flush both halves, stdout first, the stderr half whatever stdout did."""
+        standard_output, standard_error = self._halves
+        try:
+            standard_output.flush()
+        finally:
+            standard_error.flush()
 
     def isatty(self) -> bool:
         """Whether either half is a terminal, so rich styles for the one that is."""

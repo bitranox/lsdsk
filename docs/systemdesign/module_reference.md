@@ -279,7 +279,10 @@ received a complete verdict.
 The two streams are ranked the same way at the write itself. A departed STDOUT reader
 stops the run, because that stream is what was asked for. A departed STDERR reader
 does not: stderr carries diagnostics ABOUT the run, so nobody listening to it costs
-that one message and leaves the command's own verdict standing.
+that one message and leaves the command's own verdict standing. The same holds for a
+stderr that refuses a write for any other reason - a log on a full disk, `2>/dev/full`,
+an `EIO` - because the stream carries the same thing whatever stopped it: every stderr
+writer in `safe_console` answers any `OSError` with `_lose_the_diagnostic` and carries on.
 
 A DIAGNOSTIC written to stdout is the exception, and it needs one, because the
 failure envelope goes there. `safe_console.echo` cannot tell a command's own
@@ -305,7 +308,18 @@ never sees a `BrokenPipeError` to handle, and the failure is answered on the str
 that really broke. Deciding it by rewriting `console_stream` in the settings does
 not hold: the library reads the variable ahead of the configuration and overrides
 it. Nothing third-party is patched, and a stream of `custom` or `none` is left as
-configured.
+configured. `logdemo` previews logging through a runtime of its own, and builds that
+one with `_guarded_console` too (`run_log_demo`): the library's `logdemo()` has no
+factory, and on the raw streams a departed stderr reader left `141` and discarded
+stdout for the one command that exists to show what logging does.
+
+The library writes on a queue WORKER thread, where a raise ends that thread and
+nothing else: a `SystemExit(141)` there never reached the exit code, and the worker
+it killed left every later log line undelivered and the shutdown waiting out its
+stop timeout. So a stdout failure met off the main thread is recorded rather than
+raised, and `flush_streams_or_leave` answers it after the logging shutdown has
+drained - `141` for a departed reader, `74` and its sentence for a refusal, ranked
+against the run's own code as either would have been on the main thread.
 
 `safe_stream` takes no stream, only which of the two to follow, and reads it at
 each write. A process started with a descriptor closed has `sys.stdout` or

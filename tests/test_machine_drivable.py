@@ -286,18 +286,22 @@ def test_no_help_screen_shows_developer_content(cli_runner: CliRunner, productio
 
 @pytest.mark.os_agnostic
 @pytest.mark.parametrize(
-    ("stdout_tty", "stdin_tty", "expect"),
+    ("stdout_tty", "stdin_tty", "stderr_tty", "expect"),
     [
-        pytest.param(True, True, "tui", id="somebody is sitting at it"),
-        pytest.param(False, False, "report", id="a pipe gets the printed page"),
+        pytest.param(True, True, True, "tui", id="somebody is sitting at it"),
+        pytest.param(False, False, False, "report", id="a pipe gets the printed page"),
         # `lsdsk < /dev/null` at a terminal. Textual reads key events from
         # stdin, so a redirected stdin leaves a full-screen view nobody can
         # quit however interactive the output side looks.
-        pytest.param(True, False, "report", id="output is a terminal but nobody can type"),
+        pytest.param(True, False, True, "report", id="output is a terminal but nobody can type"),
+        # `lsdsk 2>err.log` at a terminal. Textual's POSIX driver DRAWS on
+        # stderr, so a redirected stderr leaves a full-screen view nobody can
+        # see, however interactive the other two look.
+        pytest.param(True, True, False, "report", id="both ends are terminals but the view would draw into a file"),
     ],
 )
 def test_the_default_view_follows_whether_anything_can_be_typed_at(
-    monkeypatch: pytest.MonkeyPatch, stdout_tty: bool, stdin_tty: bool, expect: str
+    monkeypatch: pytest.MonkeyPatch, stdout_tty: bool, stdin_tty: bool, stderr_tty: bool, expect: str
 ) -> None:
     """A bare ``lsdsk`` opens the TUI on a terminal and prints the page off one.
 
@@ -393,6 +397,9 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
 
     monkeypatch.setattr(_sys.stdout, "isatty", lambda: stdout_tty, raising=False)
     monkeypatch.setattr(_sys.stdin, "isatty", lambda: stdin_tty, raising=False)
+    # The ORIGINAL stderr, not sys.stderr: that is the object Textual's driver
+    # draws on, and the one the router therefore asks.
+    monkeypatch.setattr(_sys.__stderr__, "isatty", lambda: stderr_tty, raising=False)
 
     seams = scan.Collaborators(
         report=note_report,

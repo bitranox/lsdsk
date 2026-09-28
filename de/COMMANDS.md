@@ -36,8 +36,10 @@ Protokollkonfiguration vor, und `fail` gibt es, damit der Fehlerpfad über den
 echten Einstiegspunkt geprüft werden kann; beide stehen hier, weil `lsdsk
 --help` sie anbietet und wer ihnen dort begegnet, sie hier finden soll.
 
-Ein blosses `lsdsk` entscheidet zwischen beiden danach, ob stdin und stdout
-Terminals sind, denn irgendetwas muss `q` drücken können. `lsdsk tui` verlangt
+Ein blosses `lsdsk` entscheidet zwischen beiden danach, ob stdin, stdout und
+stderr alle Terminals sind: irgendetwas muss `q` drücken können, und die Ansicht
+zeichnet auf stderr, also gibt `lsdsk 2>err.log` an einem Terminal die Seite aus,
+statt eine Ansicht in die Datei zu zeichnen. `lsdsk tui` verlangt
 die interaktive Ansicht ausdrücklich, also VERWEIGERT der Befehl dort mit `22`
 und nennt `lsdsk report` - statt eine Ansicht zu öffnen, die niemand beenden
 kann, oder stillschweigend eine Seite auszugeben, nach der niemand gefragt hat.
