@@ -66,7 +66,14 @@ _REASON_LIMIT = 200
 #: with thousands of multipath LUNs or zvols stays an order of magnitude under
 #: it. A history store's series are the drives a machine has ever seen, and a
 #: series is thinned to a few hundred samples. At the bound, a collection costs
-#: a second or two rather than minutes.
+#: a second or two to VALIDATE rather than minutes.
+#:
+#: What it does not bound is the parse. The count is checked on the document
+#: ``json.loads`` has already built, so every file inside
+#: :data:`~lsdsk.adapters.textfile.MAX_INPUT_BYTES` is parsed whole first, however
+#: many entries it holds: measured, a 67 MB capture of 5.7 million ``"k":{}``
+#: entries cost 7 to 8 s and 1.8 GB of peak memory before this bound refused it
+#: at 78.
 MAX_ENTRIES: Final = 65_536
 
 

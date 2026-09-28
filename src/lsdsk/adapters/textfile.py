@@ -65,9 +65,14 @@ _BOM_CODECS: Final[tuple[tuple[bytes, str], ...]] = (
 # and 4.5 million in 58.5 MB cost 156 s and 14.4 GB. So every collection either
 # model declares is ALSO bounded in entries, before any entry is validated, by
 # lsdsk.adapters.validation.MAX_ENTRIES; that constant carries the figure and
-# why no real machine approaches it. Between the two bounds a file costs at most
-# a few seconds and a few hundred megabytes, and a document past either is
-# refused in this tool's own words.
+# why no real machine approaches it. The entry bound does not make parsing
+# cheap, though: it is checked on the parsed document, so a file inside this
+# ceiling is always parsed WHOLE before any count is refused. Measured at the
+# ceiling, a 67 MB capture of 5.7 million `"k":{}` entries cost 7 to 8 s and
+# 1.8 GB of peak memory before it was refused at 78. That is the worst a file
+# under the ceiling costs - seconds and a couple of gigabytes, not the minutes
+# and tens of gigabytes an unbounded count cost - and a document past either
+# bound is still refused in this tool's own words.
 MAX_INPUT_BYTES = 64 * 1024 * 1024
 
 
