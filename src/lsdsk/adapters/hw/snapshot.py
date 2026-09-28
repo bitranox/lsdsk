@@ -164,6 +164,35 @@ def collect() -> Inventory:
     return build_from(read_current_machine())
 
 
+def serialise(capture: dict[str, Any]) -> str:
+    """Validate a reading and return the text a snapshot holds.
+
+    The one place a reading is checked before it leaves the process, whether it
+    goes to a file through :func:`save` or to standard output. Stdout needs the
+    check at least as much as a file does: a pipe has no temporary file to throw
+    away, so a reading written before it was checked is already in the
+    reader's hands when the check fails.
+
+    Args:
+        capture: The reading to store.
+
+    Returns:
+        The reading as indented JSON with sorted keys. It is ASCII, because
+        ``json.dumps`` escapes everything else, so no console encoding can
+        change a byte of it.
+
+    Raises:
+        ConfigurationError: If the reading names no platform lsdsk has a model
+            for, or a section does not have the shape its model requires.
+    """
+    try:
+        parse_capture(capture)
+    except ValidationError as error:
+        message = f"This reading is not one lsdsk understands, so it was not written:\n{what_is_wrong_with_it(error)}"
+        raise ConfigurationError(message) from error
+    return json.dumps(capture, indent=2, sort_keys=True)
+
+
 def save(capture: dict[str, Any], path: Path) -> None:
     """Write a reading to a snapshot file, readable only by its owner.
 
@@ -208,12 +237,7 @@ def save(capture: dict[str, Any], path: Path) -> None:
         OSError: If the file cannot be written or renamed into place. Any
             previous file at the destination is untouched in that case.
     """
-    try:
-        parse_capture(capture)
-    except ValidationError as error:
-        message = f"This reading is not one lsdsk understands, so it was not written:\n{what_is_wrong_with_it(error)}"
-        raise ConfigurationError(message) from error
-    body = json.dumps(capture, indent=2, sort_keys=True)
+    body = serialise(capture)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         handle, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
@@ -365,4 +389,5 @@ __all__ = [
     "parse_capture",
     "read_current_machine",
     "save",
+    "serialise",
 ]

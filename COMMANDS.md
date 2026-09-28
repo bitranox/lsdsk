@@ -22,6 +22,7 @@ Back to the [README](README.md).
 | `lsdsk record`                   | Store one reading and print nothing, for a timer                                                   |
 | `lsdsk tui`                      | An interactive page per question, `*top` style                                                     |
 | `lsdsk snapshot -o f.json`       | Capture the raw reading                                                                            |
+| `lsdsk snapshot -o -`            | Capture to standard output: `ssh host lsdsk snapshot -o - > f.json`                                |
 | `lsdsk --replay f.json`          | Render a capture from any machine                                                                  |
 | `lsdsk config`                   | The merged configuration, and which layer each value came from                                     |
 | `lsdsk config-deploy`            | Write the shipped defaults where you can edit them                                                 |
@@ -93,7 +94,8 @@ outright, a `snapshot` whose destination refuses to be written, and a
 argument the tool cannot act on, which is a
 configuration section or a `--profile` name the configuration library rejects,
 and also an option that does not apply to the command, such as `snapshot` given
-`--replay`; `70` when this tool itself broke, which is an exception no command
+`--replay`, or given `-o -` with `--format json`, which would put two documents on
+one stream; `70` when this tool itself broke, which is an exception no command
 handled and a bug to report rather than anything about the machine; `78` for a
 configuration this tool cannot load, a file that is not a snapshot this version
 reads, or a platform with no hardware reader. Treat anything above `1` as "did not answer the question".

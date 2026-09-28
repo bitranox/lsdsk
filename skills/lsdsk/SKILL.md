@@ -305,7 +305,8 @@ sys.exit(any(x["node"] in virtual for x in d["disks"]))'
 
 **`snapshot` is the exception to all of this.** With `-o` it writes the raw
 reading - the bytes the platform gave, for `--replay` - which is a different
-document from the envelope above and is not a list of disks.
+document from the envelope above and is not a list of disks. `-o -` writes that
+reading to stdout instead of a file, which is why it refuses `--format json`.
 
 **A monitor must read `data.privileged` too, or it reports clean on a blind
 run.** Unprivileged, no SMART is read, so no wear or counter finding is ever
@@ -415,16 +416,16 @@ writes no failure envelope of its own, because the handler that answers it never
 reads `--format`: the exception goes to stderr in both modes and stdout holds
 nothing, or a truncated report if the crash landed mid-write.
 
-| Code  | Means                                                                                                                                                                                                                                                                                                                                                                    |
-|-------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `0`   | A reporting command found nothing actionable. `record`, `snapshot` and `config-*` exit `0` on success regardless                                                                                                                                                                                                                                                         |
-| `1`   | A reporting command found a warning or a critical. So does a `record` or `snapshot` whose write failed for a reason other than permission; see below. NOT a crash - that is `70`                                                                                                                                                                                         |
-| `2`   | The command line was wrong. `USAGE_ERROR` in the envelope. See below, this one is misread constantly                                                                                                                                                                                                                                                                     |
-| `13`  | Something needed privilege this run lacks: `config-deploy --target app` or `host` without root, a diagnostic run whose hardware read the kernel refused outright, or a `snapshot`, `record` or `config-generate-examples` whose destination refuses to be written. A field that merely could not be read is different - it degrades to `-` and names itself in `skipped` |
-| `22`  | `lsdsk config --section` named a section that does not exist, a `--profile` was rejected, a global `--replay` was given to `snapshot`, or `--format` was given to `report` or `tui`, which draw a page for a person - `findings --format json` is their machine-readable form. `--set SECTION.KEY=VALUE` is a different option and is not what produces this             |
-| `70`  | An error inside `lsdsk` itself: an exception no command handled. A bug to report and never a statement about the machine, so route it to whoever owns the tool rather than to storage. An `OSError` keeps its own code instead, because its errno means something - EPERM is itself `1`                                                                                  |
-| `78`  | A configuration file this tool cannot load, such as malformed TOML in `config.d`; a file that is not a snapshot this version reads; or a platform with no hardware reader                                                                                                                                                                                                |
-| `141` | The process reading the output closed the pipe before the command finished. Neither a verdict nor a refusal; see the ranking below                                                                                                                                                                                                                                       |
+| Code  | Means                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+|-------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`   | A reporting command found nothing actionable. `record`, `snapshot` and `config-*` exit `0` on success regardless                                                                                                                                                                                                                                                                                                                                       |
+| `1`   | A reporting command found a warning or a critical. So does a `record` or `snapshot` whose write failed for a reason other than permission; see below. NOT a crash - that is `70`                                                                                                                                                                                                                                                                       |
+| `2`   | The command line was wrong. `USAGE_ERROR` in the envelope. See below, this one is misread constantly                                                                                                                                                                                                                                                                                                                                                   |
+| `13`  | Something needed privilege this run lacks: `config-deploy --target app` or `host` without root, a diagnostic run whose hardware read the kernel refused outright, or a `snapshot`, `record` or `config-generate-examples` whose destination refuses to be written. A field that merely could not be read is different - it degrades to `-` and names itself in `skipped`                                                                               |
+| `22`  | `lsdsk config --section` named a section that does not exist, a `--profile` was rejected, `snapshot` was given a global `--replay`, or `-o -` together with `--format json` (the capture and the envelope would both be stdout), or `--format` was given to `report` or `tui`, which draw a page for a person - `findings --format json` is their machine-readable form. `--set SECTION.KEY=VALUE` is a different option and is not what produces this |
+| `70`  | An error inside `lsdsk` itself: an exception no command handled. A bug to report and never a statement about the machine, so route it to whoever owns the tool rather than to storage. An `OSError` keeps its own code instead, because its errno means something - EPERM is itself `1`                                                                                                                                                                |
+| `78`  | A configuration file this tool cannot load, such as malformed TOML in `config.d`; a file that is not a snapshot this version reads; or a platform with no hardware reader                                                                                                                                                                                                                                                                              |
+| `141` | The process reading the output closed the pipe before the command finished. Neither a verdict nor a refusal; see the ranking below                                                                                                                                                                                                                                                                                                                     |
 
 **`2` does not mean the file was missing.** It is the CLI framework's usage
 error and an absent `--replay` path is only one of its causes: an unknown
@@ -547,7 +548,8 @@ So the rule is "a REPORTING command asked for JSON does not mutate state", not
 which write by design whatever `--format` says. `snapshot` also REFUSES a global
 `--replay` with exit `22` rather than obeying it: it always captures the machine
 it runs on, so there is no snapshot of somebody else's capture to take. Copy the
-file instead. `info` and plain `config` write
+file instead. It refuses `-o -` with `--format json` at `22` as well, because the
+capture and the envelope would both be stdout. `info` and plain `config` write
 nothing either and are safe to include; of the three `config` commands, `config-deploy`
 and `config-generate-examples` are the two that create files.
 
@@ -696,6 +698,17 @@ from.
 
 ```bash
 uvx lsdsk snapshot -o /var/lib/lsdsk/$(hostname)-$(date +%F).json
+```
+
+`-o -` writes the capture to stdout rather than a file, so a server's capture
+comes to your desk in one line and no copy is left on the server; the notice
+about serial numbers still goes to stderr. Only the bare dash means stdout -
+`-o ./-` writes a file named `-`.
+
+```bash
+ssh host.example lsdsk snapshot -o - > capture.json
+lsdsk --replay capture.json
+lsdsk --replay <(ssh host.example lsdsk snapshot -o -)   # replay without keeping a file
 ```
 
 ## Reading a finding

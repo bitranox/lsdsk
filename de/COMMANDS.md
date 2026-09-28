@@ -22,6 +22,7 @@ zur [README](README.md).
 | `lsdsk record`                   | Eine Messung ablegen und nichts ausgeben, für einen Timer                                             |
 | `lsdsk tui`                      | Eine interaktive Seite je Frage, in der Art der `*top`-Werkzeuge                                      |
 | `lsdsk snapshot -o f.json`       | Die rohe Messung aufnehmen                                                                            |
+| `lsdsk snapshot -o -`            | Auf die Standardausgabe aufnehmen: `ssh host lsdsk snapshot -o - > f.json`                            |
 | `lsdsk --replay f.json`          | Eine Aufnahme von einer beliebigen Maschine darstellen                                                |
 | `lsdsk config`                   | Die zusammengeführte Konfiguration, und aus welcher Schicht jeder Wert stammt                         |
 | `lsdsk config-deploy`            | Die mitgelieferten Vorgaben dorthin schreiben, wo Sie sie bearbeiten können                           |
@@ -94,7 +95,8 @@ verweigert, ein `snapshot`, dessen Ziel sich nicht schreiben lässt, und ein
 ein Argument, mit dem das Werkzeug nichts anfangen
 kann, also einen Konfigurationsabschnitt oder einen `--profile`-Namen, den die
 Konfigurationsbibliothek ablehnt, und ebenso eine Option, die zum Befehl nicht
-passt, etwa `snapshot` mit `--replay`; `70`, wenn dieses Werkzeug selbst
+passt, etwa `snapshot` mit `--replay`, oder mit `-o -` und `--format json`, was zwei
+Dokumente auf einen Datenstrom legen würde; `70`, wenn dieses Werkzeug selbst
 kaputtgegangen ist, also eine Ausnahme, die kein Befehl behandelt hat, und damit
 ein zu meldender Fehler statt einer Aussage über die Maschine; `78` für eine
 Konfiguration, die dieses Werkzeug nicht laden kann, für eine Datei, die keine

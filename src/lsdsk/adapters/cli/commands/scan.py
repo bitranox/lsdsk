@@ -1130,23 +1130,30 @@ def cli_tui(
         raise SystemExit(ExitCode.SUCCESS)
 
 
+#: What a reader types for "standard output" in place of a path. It is compared
+#: with the RAW argument, because pathlib folds ``./-`` into ``-`` and a file that
+#: really is named ``-`` has to stay reachable through that spelling.
+STANDARD_OUTPUT = "-"
+
+
 @click.command("snapshot", context_settings=CLICK_CONTEXT_SETTINGS)
 @FORMAT_OPTION
 @option(
     "--output",
     "-o",
     "output",
-    type=click.Path(dir_okay=False, writable=True, path_type=Path),
+    type=click.Path(dir_okay=False, writable=True, allow_dash=True),
     required=True,
-    help="Where to write the snapshot.",
+    help="Where to write the snapshot. '-' writes it to standard output; './-' is a file named '-'.",
 )
 @click.pass_context
-def cli_snapshot(ctx: click.Context, output: Path, output_format: OutputFormat) -> None:
+def cli_snapshot(ctx: click.Context, output: str, output_format: OutputFormat) -> None:
     """Capture this machine's raw reading for replay elsewhere.
 
     The snapshot holds the reading, not the rendered result, so replaying it
     runs the same decoding and diagnosis a live run does.  That makes it a
-    reproducible bug report as well as a way to inspect a server from your desk.
+    reproducible bug report as well as a way to inspect a server from your desk:
+    ``ssh host lsdsk snapshot -o - > capture.json`` brings one home in one line.
 
     A capture holds every drive's serial number and this machine's hostname,
     so treat it as identifying data before attaching it anywhere public.
@@ -1156,6 +1163,9 @@ def cli_snapshot(ctx: click.Context, output: Path, output_format: OutputFormat) 
     somebody else's capture, and ignoring it wrote THIS machine's reading into a
     file the caller believed held the other one - mislabelled data, silently, at
     exit 0. Copying a capture is a job for ``cp``.
+
+    Refuses ``-o -`` with ``--format json`` too: both would be standard output,
+    and a parser handed two documents on one stream reads neither.
     """
     with lib_log_rich.runtime.bind(job_id="cli-snapshot", extra={"command": ActionCommand.SNAPSHOT.value}):
         if effective_replay(ctx, None) is not None:
@@ -1165,49 +1175,91 @@ def cli_snapshot(ctx: click.Context, output: Path, output_format: OutputFormat) 
                 ExitCode.INVALID_ARGUMENT,
                 output_format=output_format,
             )
-        # One handler for both halves: save() parses the reading through the same
-        # models load() reads it back with, so it refuses a reading this tool
-        # could never replay - and that refusal deserves the same clean exit code
-        # as a reading that could not be taken at all, rather than falling
-        # through to the top-level handler as an unexpected exception.
-        try:
-            capture = snapshot_adapter.read_current_machine()
-            snapshot_adapter.save(capture, output)
-        except ConfigurationError as error:
-            fail(str(error), ExitCode.CONFIG_ERROR, output_format=output_format)
-        # save() declares OSError and it is the destination's, not the
-        # machine's: read_current_machine documents ConfigurationError alone,
-        # and a drive that refuses to answer is recorded against that drive
-        # rather than raised. Uncaught, the errno became the exit code, and the
-        # codes a filesystem produces overlap the ones this tool means
-        # something by - "-o /proc/lsdskx.json" left 2, which is Click's usage
-        # error, and "-o /dev/full" left 28, which is nothing here at all.
-        except PermissionError as error:
+        destination = None if output == STANDARD_OUTPUT else Path(output)
+        if destination is None and output_format is OutputFormat.JSON:
             fail(
-                f"not allowed to write the capture to {output}: {error}",
-                ExitCode.PERMISSION_DENIED,
+                "-o - writes the capture to standard output, which is where --format json puts its "
+                "result too. Write the capture to a file to get the envelope, or drop --format json.",
+                ExitCode.INVALID_ARGUMENT,
                 output_format=output_format,
             )
-        except OSError as error:
-            fail(
-                f"could not write the capture to {output}: {error}",
-                ExitCode.GENERAL_ERROR,
-                output_format=output_format,
-            )
-        if output_format is OutputFormat.JSON:
-            emit_action(
-                ActionCommand.SNAPSHOT, SnapshotResult(path=str(output), schema_version=snapshot_adapter.SCHEMA_VERSION)
-            )
+        _write_capture(destination, output_format)
+        _report_the_capture(destination, output_format)
+        raise SystemExit(ExitCode.SUCCESS)
+
+
+def _write_capture(destination: Path | None, output_format: OutputFormat) -> None:
+    """Read this machine and write the capture to `destination`, or to stdout for None.
+
+    Args:
+        destination: The file to write, or None for standard output.
+        output_format: How a refusal is reported.
+    """
+    # One handler for both halves: serialise() parses the reading through the
+    # same models load() reads it back with, so it refuses a reading this tool
+    # could never replay - and that refusal deserves the same clean exit code
+    # as a reading that could not be taken at all, rather than falling
+    # through to the top-level handler as an unexpected exception.
+    try:
+        capture = snapshot_adapter.read_current_machine()
+        if destination is None:
+            safe_console.echo(snapshot_adapter.serialise(capture))
         else:
-            safe_console.echo(f"Wrote {output}")
-        # On stderr in both modes, so stdout stays exactly what a script parses:
-        # the path line in human mode, the envelope in JSON mode.
+            snapshot_adapter.save(capture, destination)
+    except ConfigurationError as error:
+        fail(str(error), ExitCode.CONFIG_ERROR, output_format=output_format)
+    # save() declares OSError and it is the destination's, not the
+    # machine's: read_current_machine documents ConfigurationError alone,
+    # and a drive that refuses to answer is recorded against that drive
+    # rather than raised. Uncaught, the errno became the exit code, and the
+    # codes a filesystem produces overlap the ones this tool means
+    # something by - "-o /proc/lsdskx.json" left 2, which is Click's usage
+    # error, and "-o /dev/full" left 28, which is nothing here at all.
+    except PermissionError as error:
+        fail(
+            f"not allowed to write the capture to {destination}: {error}",
+            ExitCode.PERMISSION_DENIED,
+            output_format=output_format,
+        )
+    except OSError as error:
+        fail(
+            f"could not write the capture to {destination}: {error}",
+            ExitCode.GENERAL_ERROR,
+            output_format=output_format,
+        )
+
+
+def _report_the_capture(destination: Path | None, output_format: OutputFormat) -> None:
+    """Say where the capture went and what it carries.
+
+    Args:
+        destination: The file written, or None when the capture went to stdout.
+        output_format: Whether stdout carries the result envelope.
+    """
+    if destination is None:
+        # Stdout IS the capture here, so the only line that can go there is
+        # none at all: a "Wrote" line ahead of the document would make the
+        # redirected file one ``--replay`` refuses.
         safe_console.echo(
-            f"Note: {output} holds every drive's serial number and this machine's hostname. "
-            "Treat it as identifying data before sharing it.",
+            "Note: the capture on standard output holds every drive's serial number and this "
+            "machine's hostname. Treat it as identifying data before sharing it.",
             err=True,
         )
-        raise SystemExit(ExitCode.SUCCESS)
+        return
+    if output_format is OutputFormat.JSON:
+        emit_action(
+            ActionCommand.SNAPSHOT,
+            SnapshotResult(path=str(destination), schema_version=snapshot_adapter.SCHEMA_VERSION),
+        )
+    else:
+        safe_console.echo(f"Wrote {destination}")
+    # On stderr in both modes, so stdout stays exactly what a script parses:
+    # the path line in human mode, the envelope in JSON mode.
+    safe_console.echo(
+        f"Note: {destination} holds every drive's serial number and this machine's hostname. "
+        "Treat it as identifying data before sharing it.",
+        err=True,
+    )
 
 
 __all__ = [

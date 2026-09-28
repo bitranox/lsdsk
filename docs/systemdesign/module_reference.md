@@ -198,14 +198,14 @@ describes a ceiling rather than a fault. Anything above `1` means the command di
 answer the question, either because it was refused before it started or because this tool
 broke while it ran.
 
-| Code | Name                | Raised when                                                                                                                                          |
-|------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 0    | `SUCCESS`           | The command ran and found nothing actionable                                                                                                         |
-| 1    | `GENERAL_ERROR`     | A scan found a warning or a critical, or an action failed                                                                                            |
-| 13   | `PERMISSION_DENIED` | A `config-deploy` target, a `config-generate-examples`, `snapshot` or `record` destination, or a device needs privilege this run does not have       |
-| 22   | `INVALID_ARGUMENT`  | `config --section` named no section, a `--profile` was rejected, `snapshot` was given a global `--replay`, or `report` or `tui` was given `--format` |
-| 70   | `SOFTWARE_ERROR`    | An error inside this tool: an exception no command handled, which is a bug rather than a finding                                                     |
-| 78   | `CONFIG_ERROR`      | A configuration file cannot be loaded, a file is not a snapshot this version reads, or this platform has no hardware reader                          |
+| Code | Name                | Raised when                                                                                                                                                                         |
+|------|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 0    | `SUCCESS`           | The command ran and found nothing actionable                                                                                                                                        |
+| 1    | `GENERAL_ERROR`     | A scan found a warning or a critical, or an action failed                                                                                                                           |
+| 13   | `PERMISSION_DENIED` | A `config-deploy` target, a `config-generate-examples`, `snapshot` or `record` destination, or a device needs privilege this run does not have                                      |
+| 22   | `INVALID_ARGUMENT`  | `config --section` named no section, a `--profile` was rejected, `snapshot` was given a global `--replay` or `-o -` with `--format json`, or `report` or `tui` was given `--format` |
+| 70   | `SOFTWARE_ERROR`    | An error inside this tool: an exception no command handled, which is a bug rather than a finding                                                                                    |
+| 78   | `CONFIG_ERROR`      | A configuration file cannot be loaded, a file is not a snapshot this version reads, or this platform has no hardware reader                                                         |
 
 Two more are named in the enum and decided elsewhere:
 

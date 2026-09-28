@@ -5,6 +5,19 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **`snapshot -o -` writes the capture to standard output.** It used to exit 0
+  saying `Wrote -` and leave a file literally named `-` in the working
+  directory, holding every drive's serial number. A dash now means stdout, as it
+  does for every Unix tool, so a remote machine's capture comes home in one
+  line: `ssh host lsdsk snapshot -o - > capture.json`, or straight into
+  `--replay <(ssh host lsdsk snapshot -o -)`. The capture is validated before
+  any of it is written, exactly as a file is, and the identity notice goes to
+  stderr. A file that really is called `-` is still reachable as `./-`.
+  `-o -` with `--format json` is refused at `22`, because the capture and the
+  result envelope would both be standard output.
+
 ## [1.3.1] 2026-09-28 01:24:32
 
 ### Fixed
