@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from lib_layered_config import Config
+    from rich.console import Console
 
     from ..domain.deployment import DeployRequest
     from ..domain.enums import OutputFormat
@@ -82,7 +83,13 @@ class DisplayConfig(Protocol):
     """Display the provided configuration in the requested format."""
 
     def __call__(
-        self, config: Config, *, output_format: OutputFormat = ..., section: str | None = ..., profile: str | None = ...
+        self,
+        config: Config,
+        *,
+        output_format: OutputFormat = ...,
+        section: str | None = ...,
+        profile: str | None = ...,
+        console: Console | None = ...,
     ) -> None: ...
 
 

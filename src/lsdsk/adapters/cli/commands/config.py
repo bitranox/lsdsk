@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 import lib_log_rich.runtime
 import rich_click as click
 from lib_layered_config import Config, redact_mapping
+from rich.console import Console
 
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.overrides import apply_overrides
@@ -110,8 +111,21 @@ def cli_config(ctx: click.Context, output_format: OutputFormat, section: str | N
             return
         safe_console.echo()
         try:
+            # A Console built on the module's own default writer, like
+            # ``scan.py``'s ``report``, rather than the ``console=None`` this
+            # command used to pass through: that let lib_layered_config build
+            # its OWN unguarded ``rich.console.Console``, whose
+            # ``on_broken_pipe`` catches the EPIPE and raises
+            # ``SystemExit(1)`` - this tool's code for an actionable finding -
+            # before any handler here ever sees the write fail. Wrapped in
+            # ``safe_console.safe_stream()`` the failure is answered where
+            # every other write on this stream is: 141.
             cli_ctx.services.display_config(
-                effective_config, output_format=output_format, section=section, profile=effective_profile
+                effective_config,
+                output_format=output_format,
+                section=section,
+                profile=effective_profile,
+                console=Console(file=safe_console.safe_stream()),
             )
         except ValueError as exc:
             # A backstop, not the guard: the lookup above is what a missing

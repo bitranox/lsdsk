@@ -16,6 +16,8 @@ from ...domain.enums import OutputFormat
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from rich.console import Console
+
     from ...domain.deployment import DeployRequest
 
 
@@ -83,6 +85,7 @@ def display_config_in_memory(
     output_format: OutputFormat = OutputFormat.HUMAN,
     section: str | None = None,
     profile: str | None = None,
+    console: Console | None = None,
 ) -> None:
     """No-op display -- satisfies the DisplayConfig protocol.
 
@@ -91,6 +94,7 @@ def display_config_in_memory(
         output_format: Accepted and ignored.
         section: Accepted and ignored.
         profile: Accepted and ignored.
+        console: Accepted and ignored.
     """
 
 

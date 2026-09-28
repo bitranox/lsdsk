@@ -478,6 +478,77 @@ def test_a_reader_that_leaves_on_both_streams_is_still_answered_with_the_broken_
 
 
 @pytest.mark.os_agnostic
+def test_a_reader_that_takes_one_line_of_config_then_leaves_gets_the_broken_pipe_code() -> None:
+    """`lsdsk config | head -n 3` must leave 141, not 1.
+
+    ``config``'s human page is rendered through ``display_config(console=None)``,
+    which builds lib_layered_config's own unguarded ``rich.console.Console``
+    rather than one wrapped in :func:`safe_console.safe_stream`. That Console's
+    own ``on_broken_pipe`` catches the EPIPE and raises ``SystemExit(1)`` -
+    this tool's code for an actionable finding on a healthy machine - before any
+    handler in this project ever sees the write fail. ``report`` renders through
+    a Console built on ``safe_console.safe_stream()`` (``scan.py``) and is
+    unaffected, which is why this is ``config``'s own test rather than another
+    case of the sink list above.
+
+    Closing the pipe WITHOUT reading first (the shape the sink list above uses)
+    does not reach this defect: the config page is under 9 KB, comfortably
+    inside a pipe's buffer, so an immediate close never makes the write fail at
+    all and the run exits 0 either way. Taking one line first - the shape
+    ``head`` actually has - is what forces the second write into a reader that
+    has already gone. Measured 3 for 3 runs.
+    """
+    import os
+    import subprocess
+    import sys
+
+    argv = [
+        sys.executable,
+        "-m",
+        "lsdsk",
+        "--no-record",
+        "--history-file",
+        str(ABSENT_HISTORY),
+        "--replay",
+        str(CAPTURE),
+        "config",
+    ]
+    control = subprocess.run(  # noqa: S603 - argv is built here, no shell
+        argv,
+        capture_output=True,
+        cwd=str(Path(__file__).parent.parent),
+        env={**os.environ, "TERM": "dumb"},
+        check=False,
+        timeout=60,
+    )
+    assert control.returncode == ExitCode.SUCCESS, "the control: this capture must exit 0 when the output is read"
+    assert len(control.stdout) > 0, "the control wrote nothing, so the arm below would pass with no pipe to break"
+
+    process = subprocess.Popen(  # noqa: S603 - argv is built here, no shell
+        argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=str(Path(__file__).parent.parent),
+        env={**os.environ, "TERM": "dumb"},
+    )
+    assert process.stdout is not None, "the pipe this test is about was not created"
+    try:
+        process.stdout.readline()
+        process.stdout.close()
+        abandoned = process.wait(timeout=30)
+    finally:
+        if process.poll() is None:  # pragma: no cover - only on a hang
+            process.kill()
+            process.wait(timeout=30)
+        if process.stderr is not None:
+            process.stderr.close()
+    assert abandoned == ExitCode.BROKEN_PIPE, (
+        f"a reader that took one line of config then left got {abandoned}, "
+        f"and {int(ExitCode.GENERAL_ERROR)} is what an actionable finding leaves"
+    )
+
+
+@pytest.mark.os_agnostic
 def test_a_refusal_click_itself_printed_outranks_a_departed_reader() -> None:
     """An unknown command is an unknown command whoever was reading.
 
