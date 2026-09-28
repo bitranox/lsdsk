@@ -25,6 +25,7 @@ Contents
 * :func:`ascii_fallback` - transliterate text for a target encoding
 * :func:`encode_safe` - degrade text only when the encoding rejects it
 * :func:`echo` - the :func:`click.echo` replacement every module uses
+* :func:`deliver_pending_log_lines` - put queued log lines ahead of a diagnostic
 * :func:`safe_stream` - the same protection for a writer this module does not
   own, such as the one a :class:`rich.console.Console` writes through
 * :func:`safe_stream_to_both` - the same, for a renderer writing to both streams
@@ -53,6 +54,7 @@ import threading
 from enum import Enum
 from typing import IO, TYPE_CHECKING, Any, Final, NoReturn, TextIO, cast
 
+import lib_log_rich.runtime
 import rich_click as click
 
 from .exit_codes import ExitCode, outranks_a_departed_reader
@@ -746,6 +748,32 @@ def encode_safe(text: str, encoding: str | None) -> str:
     return text
 
 
+def deliver_pending_log_lines() -> None:
+    """Write out every log line queued so far, before a diagnostic that follows them.
+
+    lib_log_rich writes its console on a queue worker thread, and a diagnostic -
+    ``Error:`` and its ``Hint:``, a warning, a traceback - is written on the
+    calling thread at once, so nothing ordered the two: the log line describing
+    a failure landed after the sentence reporting it. Measured on ``lsdsk
+    config-deploy --target app`` as an ordinary user, six runs of six. Draining
+    here, where every stderr diagnostic passes, orders them by construction
+    rather than per command.
+
+    A drain that cannot run leaves the diagnostic to be written anyway: inside a
+    running event loop - the interactive view - the library refuses to flush, and
+    a queue that does not empty within its stop timeout is out of order at worst,
+    which costs less than the diagnostic.
+
+    Side Effects:
+        Blocks until the logging queue is empty and its console flushed, when a
+        logging runtime is running.
+    """
+    if not lib_log_rich.runtime.is_initialised():
+        return
+    with contextlib.suppress(RuntimeError, TimeoutError):
+        lib_log_rich.runtime.flush()
+
+
 def echo(message: object = "", *, file: IO[Any] | None = None, err: bool = False, nl: bool = True) -> None:
     """Write `message` to the console, degrading anything it cannot encode.
 
@@ -763,10 +791,13 @@ def echo(message: object = "", *, file: IO[Any] | None = None, err: bool = False
 
     Side Effects:
         Writes to the given stream. A write stderr refuses, for any reason, is
-        lost rather than raised.
+        lost rather than raised. A write to stderr first delivers the log lines
+        already queued (see :func:`deliver_pending_log_lines`).
     """
     text = message if isinstance(message, str) else str(message)
     target = file if file is not None else (sys.stderr if err else sys.stdout)
+    if target is sys.stderr:
+        deliver_pending_log_lines()
     try:
         click.echo(encode_safe(text, _stream_encoding(file, err=err)), file=file, err=err, nl=nl)
     except OSError as exc:
@@ -982,6 +1013,7 @@ __all__ = [
     "ASCII_FALLBACKS",
     "UnwritableStandardOutputError",
     "ascii_fallback",
+    "deliver_pending_log_lines",
     "echo",
     "encode_safe",
     "flush_streams_or_leave",

@@ -148,6 +148,9 @@ def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppSe
     except click.exceptions.Exit as exc:
         return exc.exit_code
     except click.ClickException as exc:
+        # click prints this itself rather than through safe_console.echo, so the
+        # log lines it follows are delivered here first.
+        safe_console.deliver_pending_log_lines()
         # Through the guard: the BrokenPipeError from printing a usage message is
         # raised INSIDE this handler, so unguarded it escapes main() itself and the
         # caller is told nothing about the usage error it actually made.
@@ -192,6 +195,10 @@ def _answer_an_unhandled_exception(exc: BaseException) -> int:
         # rather than a traceback that reads as the tool breaking.
         safe_console.say_standard_output_failed(exc)
         return code
+    # The traceback is printed through a writer rather than safe_console.echo,
+    # so the log lines leading up to the crash are delivered here first: measured,
+    # `lsdsk fail` printed its traceback ahead of its own warning six runs of six.
+    safe_console.deliver_pending_log_lines()
     tracebacks_enabled = bool(getattr(lib_cli_exit_tools.config, "traceback", False))
     apply_traceback_preferences(tracebacks_enabled)
     # Read from configuration rather than the module constants: the two keys
