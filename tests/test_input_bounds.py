@@ -12,6 +12,7 @@ import ast
 import base64
 import dataclasses
 import errno
+import html
 import io
 import json
 import os
@@ -37,10 +38,12 @@ from lsdsk.adapters.hw.capture import (
     DeviceText,
 )
 from lsdsk.adapters.hw.linux import capture as linux_capture
-from lsdsk.adapters.hw.snapshot import load
+from lsdsk.adapters.hw.snapshot import build_from, load
 from lsdsk.adapters.hw.windows import capture as windows_capture
 from lsdsk.adapters.render.tree import FabricView, render_fabric
 from lsdsk.adapters.textfile import MAX_INPUT_BYTES, read_json_bounded, read_text_bounded
+from lsdsk.adapters.tui import LsdskApp
+from lsdsk.adapters.tui.app import PAGE_LABELS
 from lsdsk.domain.enums import TreeDensity
 from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.models import Inventory, PciNode
@@ -1247,15 +1250,15 @@ _STRUCTURAL_KEYS = frozenset({"platform"})
 _CARRIES_NO_DEVICE_TEXT = frozenset({("windows-ahci", "trend", "human")})
 
 
-def _salted(node: object, key: str | None = None) -> object:
+def _salted(node: object, key: str | None = None, *, suffix: str = f"{_MARK}{_PAYLOAD}") -> object:
     """The same capture with every device-text string carrying the payload."""
     if isinstance(node, dict):
         entries = cast("dict[str, object]", node)
-        return {name: _salted(value, name) for name, value in entries.items()}
+        return {name: _salted(value, name, suffix=suffix) for name, value in entries.items()}
     if isinstance(node, list):
-        return [_salted(value) for value in cast("list[object]", node)]
+        return [_salted(value, suffix=suffix) for value in cast("list[object]", node)]
     if isinstance(node, str) and key not in _STRUCTURAL_KEYS:
-        return f"{node}{_MARK}{_PAYLOAD}"
+        return f"{node}{suffix}"
     return node
 
 
@@ -1347,6 +1350,196 @@ def test_no_control_character_reaches_any_view_from_a_salted_capture(
         fmt = output_format if stream == "stdout" else "human"
         leaked = _control_characters(text, output_format=fmt)
         assert not leaked, f"{cell}: {len(leaked)} control characters reached {stream}: {[hex(ord(c)) for c in leaked]}"
+
+
+#: Rich markup, which is printable and so passes the control-character
+#: sanitiser untouched. Handed to an API that parses markup it is an
+#: instruction rather than text: the unmatched closing tag stops the run with a
+#: MarkupError, and the link tag turns the machine's name into an OSC 8
+#: hyperlink on any terminal that honours one. Both halves are asserted, the
+#: crash by the exit code and the silent half by what follows the mark.
+_MARKUP = "[/bold][link=https://evil.invalid]LINKED[/link]"
+
+#: A visible marker the payload follows, so each place it was drawn can be found.
+_MARKUP_MARK = "MARKUPMARK"
+
+#: What may legitimately stand where the payload stops short: the ASCII mark a
+#: clipped cell ends in, Rich's own ellipsis, or a fold onto the next line.
+_CUT_MARKS = frozenset({">", "…", "\n", ""})
+
+#: Every command that draws a capture in human form: the eight sections, the
+#: default page, and ``report``, which is the same page under its own name.
+_MARKUP_VIEWS = (*_SALTED_VIEWS, "report")
+
+#: Cells that draw no capture text with the payload intact, MEASURED, and held
+#: self-cancelling like the control-character exclusion above. ``trend`` with no
+#: recorded past prints an explanation naming no device; ``slots`` on these two
+#: machines lists no port, and salting every string also salts the base64
+#: readings the board's name is decoded from, so nothing capture-chosen is left
+#: on it. The history arm below is what reaches the trend table's title.
+_MARKUP_DRAWS_NOTHING = frozenset(
+    {
+        ("linux-sas-hba", "trend"),
+        ("linux-nvme-board", "trend"),
+        ("windows-ahci", "trend"),
+        ("linux-sas-hba", "slots"),
+        ("windows-ahci", "slots"),
+    }
+)
+
+
+def _markup_read_as_markup(text: str) -> tuple[list[str], int]:
+    """Where the payload was drawn as something other than itself.
+
+    Returns:
+        The text following each mark that is not the payload (nor a cut of it),
+        and how many marks carried the WHOLE payload - which is what proves the
+        check could have fired, since a view whose every occurrence was clipped
+        before the first bracket would pass whatever the renderer did.
+    """
+    wrong: list[str] = []
+    whole = 0
+    for found in re.finditer(_MARKUP_MARK, text):
+        rest = text[found.end() :]
+        agreed = len(os.path.commonprefix([rest, _MARKUP]))
+        if agreed == len(_MARKUP):
+            whole += 1
+        elif rest[agreed : agreed + 1] not in _CUT_MARKS:
+            wrong.append(rest[:48])
+    return wrong, whole
+
+
+def _write_markup_salted(name: str, destination: Path) -> Path:
+    source = FIXTURES / f"{name}.json"
+    salted = _salted(json.loads(source.read_text(encoding="utf-8")), suffix=f"{_MARKUP_MARK}{_MARKUP}")
+    target = destination / f"markup-{name}.json"
+    target.write_text(json.dumps(salted), encoding="utf-8")
+    return target
+
+
+def _write_markup_hostname(name: str, destination: Path) -> Path:
+    source = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+    source["hostname"] = f"{source['hostname']}{_MARKUP_MARK}{_MARKUP}"
+    target = destination / f"markup-host-{name}.json"
+    target.write_text(json.dumps(source), encoding="utf-8")
+    return target
+
+
+def _assert_drawn_as_text(cell: str, result: Any, *, draws_nothing: bool = False) -> None:
+    assert result.exit_code in (0, 1), f"{cell}: the run failed with {result.exit_code}: {result.stderr[-300:]}"
+    drawn = result.stdout + result.stderr
+    wrong, whole = _markup_read_as_markup(drawn)
+    assert not wrong, f"{cell}: markup in a capture was read as markup: {wrong[:3]}"
+    if draws_nothing:
+        assert _MARKUP_MARK not in drawn, f"{cell}: now draws capture text, so give it a real arm, not an exclusion"
+        return
+    assert whole, f"{cell}: the payload was never drawn whole, so this arm asserts nothing"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("capture_name", _SALTED_CAPTURES)
+@pytest.mark.parametrize("view", _MARKUP_VIEWS)
+def test_no_markup_in_a_capture_is_read_as_markup_by_any_view(
+    capture_name: str,
+    view: str,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+) -> None:
+    """Capture text is TEXT in every view, whatever brackets it contains.
+
+    Found as a hostname of ``box[/bold]``, which made four commands and the
+    default page leave 70 with a MarkupError, because a table title built by
+    f-string was handed to Rich as a markup string. The claim is wider than the
+    title: no string a capture carries may reach a markup-parsing API, so the
+    payload goes into every string and every command is read back.
+    """
+    from lsdsk.adapters.cli import cli
+
+    crafted = _write_markup_salted(capture_name, tmp_path)
+    prefix = ["--no-record", "--history-file", str(tmp_path / "absent.json")]
+    argv = [*prefix, *([view] if view else []), "--replay", str(crafted)]
+    result = cli_runner.invoke(cli, argv, obj=production_factory, color=False)
+    cell = f"{capture_name}/{view or 'bare'}"
+    _assert_drawn_as_text(cell, result, draws_nothing=(capture_name, view) in _MARKUP_DRAWS_NOTHING)
+
+
+#: The commands that draw what the counter store holds, and so the trend table
+#: that an empty store never reaches.
+_HISTORY_VIEWS = ("trend", "health", "findings", "report", "")
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("view", _HISTORY_VIEWS)
+def test_no_markup_in_a_recorded_history_is_read_as_markup(
+    view: str,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+) -> None:
+    """The same claim for the views that need a recorded past to draw at all.
+
+    Without two samples the trend section prints an explanation instead of its
+    table, so the title that carries the machine's name - the same f-string
+    shape as the other three - is never built by the matrix above. Two
+    captures of one machine are recorded through the real ``record`` first,
+    with only the machine's NAME salted: salting every string would break the
+    base64 readings the counters are decoded from, and a capture with no
+    counters records nothing, so the table would never be drawn.
+    """
+    from lsdsk.adapters.cli import cli
+
+    store = tmp_path / "history.json"
+    earlier = _write_markup_hostname("linux-sas-hba", tmp_path)
+    later = _write_markup_hostname("linux-sas-hba-later", tmp_path)
+    for capture in (earlier, later):
+        recorded = cli_runner.invoke(
+            cli, ["--history-file", str(store), "record", "--replay", str(capture)], obj=production_factory
+        )
+        assert recorded.exit_code == 0, f"recording {capture.name} failed: {recorded.stderr[-300:]}"
+
+    argv = ["--no-record", "--history-file", str(store), *([view] if view else []), "--replay", str(later)]
+    result = cli_runner.invoke(cli, argv, obj=production_factory, color=False)
+    _assert_drawn_as_text(f"history/{view or 'bare'}", result)
+    if view == "trend":
+        assert "Counter trends on" in result.stdout, "the control: the trend table was not drawn, so its title was not"
+
+
+def _screen_text(svg: str) -> str:
+    """The characters an exported Textual screenshot draws, one line per row."""
+    rows: dict[int, list[tuple[float, str]]] = {}
+    for found in re.finditer(
+        r'<text[^>]*?x="([\d.]+)"[^>]*?clip-path="url\(#[^)]*-line-(\d+)\)"[^>]*>(.*?)</text>', svg
+    ):
+        x, line, content = float(found.group(1)), int(found.group(2)), found.group(3)
+        rows.setdefault(line, []).append((x, html.unescape(content).replace("\xa0", " ")))
+    return "\n".join("".join(text for _x, text in sorted(rows[line])) for line in sorted(rows))
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
+@pytest.mark.parametrize("capture_name", _SALTED_CAPTURES)
+async def test_no_markup_in_a_capture_is_read_as_markup_by_the_interactive_view(capture_name: str) -> None:
+    """Every page of the TUI, with the detail panel it opens on, read back.
+
+    The TUI renders the same Rich renderables inside Textual, whose console
+    parses markup too, so a fix made only to the printed console would leave
+    it. The pages are pressed rather than filled directly, so what is asserted
+    is what a reader is shown.
+    """
+    source = FIXTURES / f"{capture_name}.json"
+    payload = _salted(json.loads(source.read_text(encoding="utf-8")), suffix=f"{_MARKUP_MARK}{_MARKUP}")
+    app = LsdskApp(build_from(cast("dict[str, Any]", payload)))
+    pictures: list[str] = []
+    async with app.run_test(size=(180, 50)) as pilot:
+        for number, _page in enumerate(PAGE_LABELS, start=1):
+            await pilot.press(str(number))
+            await pilot.pause()
+            pictures.append(_screen_text(app.export_screenshot()))
+
+    wrong, whole = _markup_read_as_markup("\n".join(pictures))
+    assert not wrong, f"{capture_name}: markup in a capture was read as markup: {wrong[:3]}"
+    assert whole, f"{capture_name}: the payload was never drawn whole, so this arm asserts nothing"
 
 
 @pytest.mark.os_agnostic

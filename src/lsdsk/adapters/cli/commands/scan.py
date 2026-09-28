@@ -115,10 +115,17 @@ def console_for_output(piped_width: int = PIPED_WIDTH) -> Console:
     Args:
         piped_width: The width to lay out at when output is not a terminal.
 
+    Markup is off. Everything this tool prints is either its own sentence or
+    text a capture or a counter store chose - a hostname, a model, a board name -
+    and nothing here is written as markup. With it on, any of those that reached
+    the console as a plain string was parsed: ``[/bold]`` in a hostname stopped
+    the run with a MarkupError and ``[link=...]`` became a hyperlink. Off here, a
+    string that slips past a renderer is drawn as the characters it holds.
+
     Returns:
         A console for this run's output.
     """
-    return Console(file=safe_console.safe_stream(), width=_width(piped_width), highlight=False)
+    return Console(file=safe_console.safe_stream(), width=_width(piped_width), highlight=False, markup=False)
 
 
 def _width(piped_width: int = PIPED_WIDTH) -> int | None:

@@ -259,8 +259,10 @@ def _table(rows: Sequence[Row], title: str, width: int) -> Table:
     plain = [{key: value[0] for key, value in row.items()} for row in rows]
     widths = natural_widths(TREND_COLUMNS, plain)
     chosen = fit(TREND_COLUMNS, widths, width)
+    # A Text rather than the string: the title carries the machine's name, which
+    # the capture chose, and a string is parsed as Rich markup (see tables._render).
     table = Table(
-        title=title,
+        title=Text(title),
         title_justify="left",
         title_style="bold",
         box=None,
