@@ -10,11 +10,11 @@ no committed fixture carries, a parent cycle and a parent outside the capture.
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 from typing import Any
 
 import pytest
+from workcount import work_to_run
 
 from lsdsk.adapters.hw import snapshot
 from lsdsk.adapters.hw.fabric import UNPLACED_ROOT, NodeSource, assemble, port_kind_of
@@ -371,19 +371,17 @@ def test_two_entries_at_one_address_both_reach_the_tree() -> None:
     assert len({node.address for node in devices}) == 2, "two nodes cannot share one address"
 
 
-#: Enough devices for a quadratic to be unmistakable and a linear one to be
-#: instant: measured before the fix, 16,000 sources at one address took 9.98
-#: seconds against 0.0012 for the same count at addresses of their own, and the
-#: cost quadrupled on every doubling from 2,000 up.
-_CRAFTED_DEVICE_COUNT = 16_000
+#: Enough devices for a quadratic to be unmistakable. The arms count work
+#: rather than time it, so the size need not outrun a slow runner's noise - and
+#: must not be large, because every line a quadratic executes is counted.
+_CRAFTED_DEVICE_COUNT = 4_000
 
 #: How many times the duplicate path may cost what the ordinary one does. A
-#: ratio measured on the machine running the test rather than a wall-clock
-#: ceiling, because the claim is about COMPLEXITY and a second on a fast runner
-#: is a minute on a slow one. Measured end to end through ``assemble``, which
-#: does linear work of its own around the keying: before the fix the two arms
-#: read 10.1s against 0.09s, a factor of about 110, and after it 0.09 against
-#: 0.09. Ten sits an order of magnitude from each.
+#: ratio against a control in the same test rather than a ceiling, because the
+#: claim is about COMPLEXITY. Counted end to end through ``assemble``, which
+#: does linear work of its own around the keying (2026-09-28, 4,000 devices):
+#: the source before the fix read 28.1 times the control, the fixed one 1.17.
+#: Ten sits well clear of each.
 _ACCEPTABLE_RATIO = 10
 
 
@@ -406,22 +404,18 @@ def _crafted(count: int, *, colliding: bool) -> list[NodeSource]:
     ]
 
 
-def _seconds_to_assemble(sources: list[NodeSource], runs: int = 2) -> float:
-    """The FASTEST of several assemblies of those sources, the building excluded.
+def _work_to_assemble(sources: list[NodeSource]) -> int:
+    """The work one assembly of those sources does, the building excluded.
 
-    The fastest rather than the mean, because a one-off pause on a shared runner
-    only ever inflates a reading, and the arm below compares two of these
-    against each other: a pause in the control would make the ratio look better
-    than it is, and one in the measurement worse.
+    Counted by :mod:`workcount` rather than timed. Two wall-clock figures
+    compared against each other move with whatever else the runner is doing,
+    and a pause in the control makes the ratio look better than it is; a count
+    is the same on every run.
     """
-    measured: list[float] = []
-    for _run in range(runs):
-        started = time.perf_counter()
-        nodes = assemble(sources)
-        measured.append(time.perf_counter() - started)
-        placed = [node for node in nodes if not node.is_root]
-        assert len(placed) == len(sources), "the assembly dropped a device, so the timing is of the wrong work"
-    return min(measured)
+    nodes, work = work_to_run(lambda: assemble(sources))
+    placed = [node for node in nodes if not node.is_root]
+    assert len(placed) == len(sources), "the assembly dropped a device, so the count is of the wrong work"
+    return work
 
 
 @pytest.mark.os_agnostic
@@ -436,21 +430,21 @@ def test_a_capture_whose_devices_all_claim_one_address_is_keyed_in_the_same_pass
     reach it: the Linux builder keys off sysfs dict keys, which are unique by
     construction.
 
-    The control is the same count at addresses of their own, timed on the same
-    machine in the same test, so what is asserted is the RATIO between the two
-    paths rather than a wall-clock figure a slower runner would fail. It is
+    The control is the same count at addresses of their own, counted in the
+    same test, so what is asserted is the RATIO between the two paths rather
+    than a figure that depends on how large the arms were chosen. It is
     measured through ``assemble`` rather than the keying alone, which is the
     seam a capture actually arrives at - and it is why the ratio is a tight one:
     the linear work around the keying lands in BOTH arms and shrinks the figure,
     so a loose ceiling here passes against the quadratic it exists to catch.
     """
-    ordinary = _seconds_to_assemble(_crafted(_CRAFTED_DEVICE_COUNT, colliding=False))
-    crafted = _seconds_to_assemble(_crafted(_CRAFTED_DEVICE_COUNT, colliding=True))
+    ordinary = _work_to_assemble(_crafted(_CRAFTED_DEVICE_COUNT, colliding=False))
+    crafted = _work_to_assemble(_crafted(_CRAFTED_DEVICE_COUNT, colliding=True))
 
-    assert ordinary > 0, "the control measured no time at all, so the ratio below means nothing"
+    assert ordinary > _CRAFTED_DEVICE_COUNT, "the control counted less than a unit per device, so it is not wired"
     assert crafted < ordinary * _ACCEPTABLE_RATIO, (
-        f"{_CRAFTED_DEVICE_COUNT} devices at one address took {crafted:.3f}s against {ordinary:.4f}s "
-        f"for the same count at their own, a factor of {crafted / ordinary:.0f}"
+        f"{_CRAFTED_DEVICE_COUNT} devices at one address took {crafted} units of work against {ordinary} "
+        f"for the same count at their own, a factor of {crafted / ordinary:.1f}"
     )
 
 
@@ -478,9 +472,10 @@ def test_a_source_whose_own_address_carries_the_duplicate_mark_still_reaches_the
 
 
 #: How many times the cycle-bearing path may cost the same devices in a chain.
-#: Measured before the fix at n=16,000: 2.450s against 0.125s, a factor of 20.
-#: Cutting an edge is real work the control does not do, so this one cannot be
-#: as loose as a ratio against an idle path would allow.
+#: Counted at 4,000 devices (2026-09-28): the source before the fix read 14.4
+#: times the control, the fixed one 1.04. Cutting an edge is real work the
+#: control does not do, so this one cannot be as loose as a ratio against an
+#: idle path would allow.
 _ACCEPTABLE_CYCLE_RATIO = 5
 
 
@@ -519,13 +514,13 @@ def test_a_capture_full_of_small_parent_cycles_is_cut_in_one_pass() -> None:
 
     The control is the same devices with no parents at all, so the difference
     between the arms is the cycles rather than the size, and the assertion is a
-    ratio measured on the machine running it.
+    ratio of the two counts.
     """
-    ordinary = _seconds_to_assemble(_in_pairs(_CRAFTED_DEVICE_COUNT, looping=False))
-    looping = _seconds_to_assemble(_in_pairs(_CRAFTED_DEVICE_COUNT, looping=True))
+    ordinary = _work_to_assemble(_in_pairs(_CRAFTED_DEVICE_COUNT, looping=False))
+    looping = _work_to_assemble(_in_pairs(_CRAFTED_DEVICE_COUNT, looping=True))
 
-    assert ordinary > 0, "the control measured no time at all, so the ratio below means nothing"
+    assert ordinary > _CRAFTED_DEVICE_COUNT, "the control counted less than a unit per device, so it is not wired"
     assert looping < ordinary * _ACCEPTABLE_CYCLE_RATIO, (
-        f"{_CRAFTED_DEVICE_COUNT} devices in {_CRAFTED_DEVICE_COUNT // 2} cycles took {looping:.3f}s "
-        f"against {ordinary:.3f}s for the same devices in none, a factor of {looping / ordinary:.0f}"
+        f"{_CRAFTED_DEVICE_COUNT} devices in {_CRAFTED_DEVICE_COUNT // 2} cycles took {looping} units of work "
+        f"against {ordinary} for the same devices in none, a factor of {looping / ordinary:.1f}"
     )

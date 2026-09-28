@@ -1440,7 +1440,8 @@ def test_diagnosing_a_machine_at_the_input_ceiling_does_not_cost_minutes() -> No
     disk index absorbs it. Mutating both together is what kills it, and that is
     the arm this was proved on.
     """
-    # The one test in this module that measures anything.
+    # The one test in this module that reads a clock: an absolute ceiling sixty
+    # times the measured cost, where every other cost arm here counts work.
     import time
 
     from lsdsk.domain.diagnostics import diagnose

@@ -5,16 +5,14 @@ capture cost the PRODUCT of its disks and its class entries. The arms below are
 scaling arms rather than wall-clock ones: they double a capture and require the
 work to roughly double with it, because the claim is about complexity and a
 figure that passes on this machine says nothing about a slower one. The work is
-COUNTED, as calls and executed lines, rather than timed, so a loaded host
-cannot move it.
+COUNTED by :mod:`workcount` rather than timed, so a loaded host cannot move
+it.
 """
 
 from __future__ import annotations
 
-import sys
-from typing import TYPE_CHECKING
-
 import pytest
+from workcount import work_to_run
 
 from lsdsk.adapters.hw.linux.builder import build_disks
 from lsdsk.adapters.hw.linux.capture import (
@@ -26,13 +24,6 @@ from lsdsk.adapters.hw.linux.capture import (
     SysfsClasses,
 )
 from lsdsk.domain.enums import Platform
-
-if TYPE_CHECKING:
-    from types import FrameType
-
-    # A stub-only alias: typeshed spells the recursive tracer type once, and
-    # sys.settrace is declared against it.
-    from _typeshed import TraceFunction
 
 #: Enough disks for a per-disk scan to dominate the count. The arms count work
 #: rather than time, so the size need not outrun a slow runner's noise.
@@ -118,23 +109,12 @@ def _capture(*, block: dict[str, BlockEntry], classes: SysfsClasses) -> LinuxCap
 
 
 def _work_to_build(capture: LinuxCapture, expected: int) -> int:
-    """How much work building one capture does: calls made plus lines executed.
+    """How much work building one capture does, counted by :mod:`workcount`.
 
-    Counted with a profile hook rather than timed. Both arms used to race the
-    wall clock, and on a shared host at load 27 to 42 the FIXED build measured a
-    3.8 growth - the defect's own figure - in six full runs while passing alone
-    every time: a timing ratio of a 30 ms arm cannot tell a slow neighbour from a
-    quadratic loop. A count is the same on every run, every platform and every
-    load. A generator resuming counts as a call, so a generator expression over a
-    whole map is counted by the frame.
-
-    Calls alone were not enough, and the executed LINES are what closes it. A
-    rescan written as a plain ``for key, value in index.items(): if key == ...``
-    inside the function that looks one entry up makes one call per LOOKUP, not
-    one per entry, so both NVMe lookups rewritten that way went quadratic and
-    left the call-counting arm green. Every pass of that loop executes a line,
-    which a trace hook sees and a profile hook cannot: counted with the lines,
-    the same two rewrites grow by 3.41 and fail.
+    Calls alone were not enough here: both NVMe lookups rewritten as a plain
+    loop over their index went quadratic and left a call-counting arm green.
+    Counted with the executed lines as well, the same two rewrites grow by 3.41
+    and fail.
 
     Args:
         capture: The capture to build.
@@ -143,28 +123,7 @@ def _work_to_build(capture: LinuxCapture, expected: int) -> int:
     Returns:
         The calls made and the lines executed while building it.
     """
-    work = 0
-
-    def count(_frame: FrameType, event: str, _arg: object) -> None:
-        nonlocal work
-        if event in {"call", "c_call"}:
-            work += 1
-
-    def lines(_frame: FrameType, event: str, _arg: object) -> TraceFunction:
-        nonlocal work
-        if event == "line":
-            work += 1
-        return lines
-
-    previous_profile = sys.getprofile()
-    previous_trace = sys.gettrace()
-    sys.setprofile(count)
-    sys.settrace(lines)
-    try:
-        disks = build_disks(capture)
-    finally:
-        sys.settrace(previous_trace)
-        sys.setprofile(previous_profile)
+    disks, work = work_to_run(lambda: build_disks(capture))
     assert len(disks) == expected, f"the build produced {len(disks)} of {expected} disks, so the count is wrong"
     return work
 
