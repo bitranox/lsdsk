@@ -21,20 +21,26 @@ named would pass just as well against a build that warns about every value it re
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from lsdsk.adapters import cli as cli_mod
 from lsdsk.adapters.config.history import read_history_settings
 from lsdsk.adapters.config.tunables import read_display_settings, read_thresholds
 from lsdsk.adapters.config.values import (
     RejectedValue,
+    SectionValues,
     accepts_flag,
+    accepts_path,
     accepts_positive_float,
     accepts_positive_int,
     accepts_tree_density,
     flag,
+    path_or_none,
     positive_float,
     positive_int,
     tree_density_of,
@@ -43,7 +49,6 @@ from lsdsk.domain.enums import TreeDensity
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from click.testing import CliRunner, Result
     from lib_layered_config import Config
@@ -293,6 +298,30 @@ def test_every_coercer_reports_the_value_it_refuses_and_stays_quiet_on_one_it_ta
 
 
 @pytest.mark.os_agnostic
+@pytest.mark.parametrize("bad", [2.5, True], ids=["a fractional count", "a bool"])
+def test_section_values_positive_int_refuses_by_its_own_predicate_not_the_floats(
+    config_factory: Callable[[dict[str, Any]], Config],
+    bad: object,
+) -> None:
+    """``SectionValues.positive_int`` must decide with ``accepts_positive_int``, never ``accepts_positive_float``.
+
+    2.5 is usable as a rate but not as a whole count, and it is the case that
+    tells the two predicates apart: ``accepts_positive_float(2.5)`` is True
+    while ``accepts_positive_int(2.5)`` is False. Reading the float predicate
+    here would still fall back to the shipped default in the RETURNED value
+    (the free ``positive_int`` function is untouched by that mistake), while
+    the refusal goes UNREPORTED - the same silent-fallback shape this whole
+    module exists to close.
+    """
+    values = SectionValues("thresholds", config_factory({"thresholds": {"wear_warning_percent": bad}}))
+
+    assert values.positive_int("wear_warning_percent", 80) == 80
+    assert [r.dotted for r in values.rejected] == ["thresholds.wear_warning_percent"], (
+        f"{bad!r} was not reported as refused: {values.rejected}"
+    )
+
+
+@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("accepts", "coerce", "defaults", "raws"),
     [
@@ -353,6 +382,90 @@ def test_a_coercer_and_the_test_that_decides_what_it_accepts_cannot_disagree(
             )
         else:
             assert answers == defaults, f"{raw!r} is refused, so the default must decide, yet the answer was {answers}"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "fullish",
+        "full-detail",
+        "not-full",
+        "storage-onlyx",
+        "xstorage-only",
+        "storage_only",
+        "storage-and-siblingsy",
+        "ful",
+        "storage-onl",
+    ],
+)
+def test_tree_density_of_refuses_a_near_miss_that_only_shares_a_prefix_or_substring(raw: str) -> None:
+    """A density name must match one of the three tokens EXACTLY, never a near miss.
+
+    A hand-picked list of finite raws (``"full"``, ``"FULL"``, ``" full "``,
+    ``"bogus"``) cannot tell an exact-match implementation from one WIDENED to
+    accept a prefix or substring of a real token: every one of those four
+    raws is refused (or accepted) identically either way. These near
+    misses are exactly what such a widening would let through as if they
+    named a density, so they are the case that tells the two apart.
+    """
+    default = TreeDensity.STORAGE_ONLY
+
+    assert not accepts_tree_density(raw), f"{raw!r} is not one of the three tokens but was accepted"
+    assert tree_density_of(raw, default) is default, f"{raw!r} did not fall back to the shipped default"
+
+
+@pytest.mark.os_agnostic
+@given(raw=st.text(max_size=30))
+def test_tree_density_of_agrees_with_its_own_predicate_over_arbitrary_text(raw: str) -> None:
+    """The property behind the hand-picked cases above, fuzzed rather than enumerated.
+
+    Hypothesis explores near-miss text a finite list would not think to try,
+    which is exactly the shape a widened acceptance slips through in.
+    """
+    default = TreeDensity.STORAGE_ONLY
+    normalized = raw.strip().casefold()
+    values = {density.value for density in TreeDensity}
+
+    if normalized in values:
+        assert accepts_tree_density(raw)
+        assert tree_density_of(raw, default) is TreeDensity(normalized)
+    else:
+        assert not accepts_tree_density(raw), f"{raw!r} names no density but was accepted"
+        assert tree_density_of(raw, default) is default, f"{raw!r} names no density but changed the result"
+
+
+@pytest.mark.os_agnostic
+@given(
+    raw=st.one_of(
+        # A leading "~name" is excluded: Path.expanduser() looks the name up
+        # via the platform's user database and raises RuntimeError for one
+        # that does not exist, which is a real gap in path_or_none's own
+        # fallback contract (a config value can carry any text) rather than
+        # a property this test can assert either way from here.
+        st.text(max_size=30).filter(lambda raw: not raw.strip().startswith("~")),
+        st.integers(),
+        st.floats(allow_nan=False),
+        st.booleans(),
+        st.none(),
+    )
+)
+def test_path_or_none_agrees_with_accepts_path_over_arbitrary_values(raw: object) -> None:
+    """``path_or_none`` is held only by its doctest; give it the same property the others get.
+
+    ``accepts_path`` decides, exactly as it does for every other coercer here:
+    anything it refuses must come back ``None``, and a blank string, which it
+    accepts as "use the platform default", must come back ``None`` too rather
+    than a path to nowhere.
+    """
+    if not accepts_path(raw):
+        assert path_or_none(raw) is None, f"{raw!r} is not a path but produced one"
+        return
+    assert isinstance(raw, str)
+    if not raw.strip():
+        assert path_or_none(raw) is None, f"{raw!r} is blank and must mean the platform default, not a location"
+    else:
+        assert path_or_none(raw) == Path(raw).expanduser()
 
 
 @pytest.mark.os_agnostic

@@ -30,7 +30,7 @@ from lsdsk.domain.history import (
     untracked_disks,
 )
 from lsdsk.domain.models import Disk, Health
-from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "hw"
 
@@ -83,10 +83,37 @@ def test_a_rising_counter_reports_errors_per_power_on_hour() -> None:
 
 
 def test_a_span_under_an_hour_refuses_to_rate() -> None:
-    """Two samples in the same power-on hour divide by nothing."""
+    """Two samples in the same power-on hour divide by nothing.
+
+    ``trend.delta`` is pinned as well as the verdict: with only two samples,
+    ``_previous_reading``'s "every reading sits in this one hour" fallback
+    (``usable[-2]``) and the latest sample itself are the same object, so a
+    fallback of ``usable[-1]`` would compare the latest reading with itself
+    and still land on TOO_CLOSE (now via the quiet path) with the SAME
+    per_hour, but with a delta of 0 rather than the true 800.
+    """
     trend = trend_for(series_of(crc_sample(1000, 100), crc_sample(1000, 900)), CounterKind.CRC_ERRORS)
     assert trend.verdict is TrendVerdict.TOO_CLOSE
     assert trend.per_hour is None
+    assert trend.delta == 800
+
+
+def test_a_configured_min_span_hours_widens_what_counts_as_too_close() -> None:
+    """``_rising`` must weigh the span against the CONFIGURED floor, not a fixed one.
+
+    Three hours is enough to rate under the shipped default (``min_span_hours``
+    is 1), so this pins that a fleet-tuned floor of five hours refuses the same
+    rise instead of quietly ignoring it.
+    """
+    thresholds = Thresholds(min_span_hours=5)
+    trend = trend_for(
+        series_of(crc_sample(1000, 100), crc_sample(1003, 300)),
+        CounterKind.CRC_ERRORS,
+        thresholds,
+    )
+    assert trend.verdict is TrendVerdict.TOO_CLOSE
+    assert trend.per_hour is None
+    assert trend.span_hours == 3
 
 
 def test_a_counter_that_fell_is_a_reset_never_a_negative_rate() -> None:
@@ -144,6 +171,28 @@ def test_a_long_quiet_run_beats_the_threshold_that_the_last_interval_alone_would
 def test_quiet_needs_a_lifetime_rate_so_a_zero_hour_drive_cannot_claim_it() -> None:
     trend = trend_for(series_of(crc_sample(0, 0), crc_sample(0, 0)), CounterKind.CRC_ERRORS)
     assert trend.verdict is not TrendVerdict.QUIET
+
+
+def test_a_quiet_run_stops_walking_back_where_the_drives_clock_goes_backwards() -> None:
+    """``_quiet_run_start`` must survive a stored series whose clock is not monotonic.
+
+    Walking backward through the samples (newest to oldest), a clock that goes
+    backwards shows up as a candidate whose ``power_on_hours`` is HIGHER than
+    the oldest-so-far ``start``: the row before it, further back in the
+    series, claims to be later in the drive's life. That is not evidence the
+    quiet run reaches that far, so the walk stops there. Without the guard the
+    walk keeps going, ``start`` jumps to that impossible sample, and the span
+    it reports comes out NEGATIVE (a latest reading "quiet since" a start that
+    reads as being in its own future).
+    """
+    samples = (
+        crc_sample(300, 100, when="a"),  # oldest on record, but its clock reads latest
+        crc_sample(50, 100, when="b"),  # where the walk must stop
+        crc_sample(100, 100, when="c"),  # latest
+    )
+    trend = trend_for(series_of(*samples), CounterKind.CRC_ERRORS)
+    assert trend.span_hours == 50, f"the walk did not stop at the clock discontinuity: {trend.span_hours}"
+    assert trend.verdict is TrendVerdict.QUIET
 
 
 # --------------------------------------------------------------------------
