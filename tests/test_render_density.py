@@ -20,6 +20,7 @@ import pytest
 from rich.console import Console
 
 from lsdsk.adapters.render import theme
+from lsdsk.adapters.render.report import severity_index
 from lsdsk.adapters.render.tree import (
     HOP_WIDE_WIDTH,
     Fabric,
@@ -434,7 +435,7 @@ def test_a_device_row_takes_one_line_at_every_width(host: str) -> None:
         console = Console(file=io.StringIO(), width=width, no_color=True)
         for node, _level in fabric.drawn():
             with console.capture() as capture:
-                console.print(fabric.row(node, findings))
+                console.print(fabric.row(node, severity_index(findings)))
             drawn = capture.get().rstrip("\n").split("\n")
             assert len(drawn) == 1, f"{host} at width {width}: {node.address} took {len(drawn)} lines: {drawn}"
 
@@ -458,7 +459,7 @@ def test_every_device_row_starts_its_columns_at_the_same_place(host: str) -> Non
     findings = diagnose(machine)
     fabric = Fabric(machine.pci_tree, 200, FabricView(density=TreeDensity.FULL))
 
-    offsets = {fabric.row(node, findings).plain.index(node.address) for node, _level in fabric.drawn()}
+    offsets = {fabric.row(node, severity_index(findings)).plain.index(node.address) for node, _level in fabric.drawn()}
 
     assert len(offsets) == 1, f"{host}: the address column sits at {sorted(offsets)} depending on the row's depth"
 
@@ -727,7 +728,7 @@ def test_the_device_rows_carry_a_header_over_their_own_columns() -> None:
     fabric = Fabric(machine.pci_tree, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
     header = device_header_line(fabric).plain
     node, _level = fabric.drawn()[0]
-    row = fabric.row(node, findings).plain
+    row = fabric.row(node, severity_index(findings)).plain
     capable, running = (text for text, _style in hop_cells_of(node))
 
     assert header.index("address") == row.index(node.address), f"{header!r} against {row!r}"
@@ -790,7 +791,7 @@ def test_the_header_names_exactly_the_columns_the_rows_draw() -> None:
         node, _level = fabric.drawn()[0]
         # Matches BOTH hop tiers: the narrow figure is a prefix of the wide
         # one, so this asks "did the row draw a hop" without caring which.
-        drew_hops = "Gen3x4" in fabric.row(node, ()).plain
+        drew_hops = "Gen3x4" in fabric.row(node, {}).plain
         seen[drew_hops] += 1
 
         assert ("capable" in header.plain) == drew_hops, f"at {width}: {header.plain!r}"
@@ -1047,7 +1048,7 @@ def _hop_cells_off_their_tier(fabric: Fabric, findings: Sequence[Finding]) -> tu
     wrong: list[str] = []
     discriminating = 0
     for node, _level in fabric.drawn():
-        row = fabric.row(node, findings).plain
+        row = fabric.row(node, severity_index(findings)).plain
         expected = hop_cells(node, bandwidth=wide)
         other = hop_cells(node, bandwidth=not wide)
         for field, (text, _style), (other_text, _other_style) in zip(hops, expected, other, strict=True):
@@ -1153,7 +1154,7 @@ def test_the_capable_column_draws_the_maximum_and_the_running_one_the_negotiated
     header = device_header_line(fabric).plain
     widths = {field.key: field.width for field in fabric.fields}
     node, _level = fabric.drawn()[0]
-    row = fabric.row(node, ()).plain
+    row = fabric.row(node, {}).plain
     for key, expected in (("capable", capable), ("running", running)):
         start = header.index(key)
         assert row[start : start + widths[key]].rstrip() == expected, (

@@ -59,8 +59,8 @@ from .report import (
     disk_cells,
     disk_row,
     render_controller_disks,
+    severity_index,
     virtual_note,
-    worst_severity,
 )
 
 if TYPE_CHECKING:
@@ -69,6 +69,7 @@ if TYPE_CHECKING:
 
     from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
 
+    from ...domain.enums import Severity
     from ...domain.models import Disk, Finding, Inventory, PciNode
 
     #: What a drawn line of the fabric can be ABOUT. A device on the fabric, a
@@ -560,7 +561,7 @@ class Fabric:
         }
         return theme.hop_legend(drawn)
 
-    def row(self, node: PciNode, findings: Sequence[Finding]) -> Text:
+    def row(self, node: PciNode, severities: Mapping[str, Severity]) -> Text:
         """One structure row: marker, spine, then the fields this width holds.
 
         The severity marker leads, exactly as every table's rows lead, so a
@@ -569,7 +570,7 @@ class Fabric:
         The fields after the spine are the section's, not this row's, so the
         header above them labels exactly what every row drew.
         """
-        severity = worst_severity(findings, node.address)
+        severity = severities.get(node.address)
         line = Text()
         line.append(theme.marker_for(severity).ljust(_MARKER_WIDTH), style=theme.style_for(severity))
         line.append(self._spine_for(node))
@@ -632,7 +633,7 @@ class Fabric:
         self,
         disk: Disk,
         layout: Layout,
-        findings: Sequence[Finding],
+        severities: Mapping[str, Severity],
         inventory: Inventory,
         rules: str = "",
     ) -> Text:
@@ -648,7 +649,7 @@ class Fabric:
         one shape: marker, gutter, then columns.
         """
         line = Text()
-        severity = worst_severity(findings, disk.path)
+        severity = severities.get(disk.path)
         line.append(theme.marker_for(severity).ljust(_MARKER_WIDTH), style=theme.style_for(severity))
         line.append(rules)
         cells = disk_row(disk, inventory.port_link_for(disk), bandwidth=layout.bandwidth, thresholds=self.thresholds)
@@ -744,13 +745,16 @@ def fabric_lines(
         return ()
     fabric = Fabric(inventory.pci_tree, width, view, thresholds=thresholds)
     layout = fabric.measure(inventory)
+    # Graded once, beside the layout that is fitted once: a lookup per row that
+    # walks every finding makes the section cost its rows times its findings.
+    severities = severity_index(findings)
     attached: set[str] = set()
     out = [*_fabric_head(inventory, fabric, view)]
-    out += _fabric_devices(inventory, findings, fabric, layout, attached)
-    out += _fabric_orphans(inventory, findings, fabric, layout, attached)
+    out += _fabric_devices(inventory, severities, fabric, layout, attached)
+    out += _fabric_orphans(inventory, severities, fabric, layout, attached)
     out += [
         FabricLine(line, None)
-        for line in _virtual_block(fabric, inventory, findings, layout, expand_virtual=view.expand_virtual)
+        for line in _virtual_block(fabric, inventory, severities, layout, expand_virtual=view.expand_virtual)
     ]
     return tuple(out)
 
@@ -767,7 +771,7 @@ def _fabric_head(inventory: Inventory, fabric: Fabric, view: FabricView) -> list
 
 def _fabric_devices(
     inventory: Inventory,
-    findings: Sequence[Finding],
+    severities: Mapping[str, Severity],
     fabric: Fabric,
     layout: Layout,
     attached: set[str],
@@ -782,21 +786,21 @@ def _fabric_devices(
             # one header at the top ends up twenty lines from its own columns.
             out.append(FabricLine(device_header_line(fabric, fabric.rules_before(node)), None))
             labelled = True
-        out.append(FabricLine(fabric.row(node, findings), node))
+        out.append(FabricLine(fabric.row(node, severities), node))
         disks = inventory.disks_on(node.address) if node.is_storage else ()
         if not disks:
             continue
         attached.update(disk.node for disk in disks)
         rules = fabric.rules_under(node)
         out.append(FabricLine(disk_header_line(fabric, layout, rules), None))
-        out += [FabricLine(fabric.disk_row(disk, layout, findings, inventory, rules), disk) for disk in disks]
+        out += [FabricLine(fabric.disk_row(disk, layout, severities, inventory, rules), disk) for disk in disks]
         labelled = False
     return out
 
 
 def _fabric_orphans(
     inventory: Inventory,
-    findings: Sequence[Finding],
+    severities: Mapping[str, Severity],
     fabric: Fabric,
     layout: Layout,
     attached: set[str],
@@ -809,7 +813,7 @@ def _fabric_orphans(
         FabricLine(Text(""), None),
         FabricLine(Text("not attached to a known controller", style=theme.STYLE_UNKNOWN), None),
         FabricLine(disk_header_line(fabric, layout), None),
-        *(FabricLine(fabric.disk_row(disk, layout, findings, inventory), disk) for disk in orphans),
+        *(FabricLine(fabric.disk_row(disk, layout, severities, inventory), disk) for disk in orphans),
     ]
 
 
@@ -908,7 +912,7 @@ def _best_root_port(nodes: Sequence[PciNode]) -> str | None:
 def _virtual_block(
     fabric: Fabric,
     inventory: Inventory,
-    findings: Sequence[Finding],
+    severities: Mapping[str, Severity],
     layout: Layout,
     *,
     expand_virtual: bool,
@@ -927,7 +931,7 @@ def _virtual_block(
         lines.append(Text(f"   {virtual_note(inventory.virtual_disks)}", style=theme.STYLE_UNKNOWN))
         return lines
     lines.append(disk_header_line(fabric, layout))
-    lines.extend(fabric.disk_row(disk, layout, findings, inventory) for disk in inventory.virtual_disks)
+    lines.extend(fabric.disk_row(disk, layout, severities, inventory) for disk in inventory.virtual_disks)
     return lines
 
 

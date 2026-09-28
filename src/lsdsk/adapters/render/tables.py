@@ -27,7 +27,7 @@ from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_WWN_WIDTH
 from . import theme
 from .layout import Column, Layout, clip
-from .report import disk_row, virtual_note, worst_severity
+from .report import disk_row, severity_index, virtual_note
 from .rows import MarkedRow
 
 # A single character, because these columns are already the first to be dropped
@@ -47,8 +47,9 @@ ANNOTATED_COUNTERS: tuple[CounterKind, ...] = (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
+    from ...domain.enums import Severity
     from ...domain.history import DiskSeries, History, Trend
     from ...domain.models import Controller, Disk, Finding, Inventory, PcieLink
     from .rows import Row
@@ -218,13 +219,14 @@ def render_controllers(inventory: Inventory, findings: Sequence[Finding], width:
     Returns:
         A table of controllers.
     """
-    rows = [controller_table_row(one, inventory, findings, bandwidth=True) for one in inventory.controllers]
-    plain = [controller_table_row(one, inventory, findings) for one in inventory.controllers]
+    severities = severity_index(findings)
+    rows = [controller_table_row(one, inventory, severities, bandwidth=True) for one in inventory.controllers]
+    plain = [controller_table_row(one, inventory, severities) for one in inventory.controllers]
     return _render(f"Controllers on {inventory.hostname}", CONTROLLER_COLUMNS, TableRows(rows, plain), width)
 
 
 def controller_table_row(
-    controller: Controller, inventory: Inventory, findings: Sequence[Finding], *, bandwidth: bool = False
+    controller: Controller, inventory: Inventory, severities: Mapping[str, Severity], *, bandwidth: bool = False
 ) -> MarkedRow:
     """One controller's cells for every key in :data:`CONTROLLER_COLUMNS`, styled.
 
@@ -236,14 +238,17 @@ def controller_table_row(
     Args:
         controller: The controller to describe.
         inventory: The machine it sits in, for the drives on it.
-        findings: The findings, for the row's severity marker.
+        severities: Every subject's worst severity, from
+            :func:`~lsdsk.adapters.render.report.severity_index`, for the row's
+            marker. Built once by the caller rather than per row, so a table
+            does not walk every finding for every controller it draws.
         bandwidth: Whether the two link figures carry what they are worth.
 
     Returns:
         The marker and a cell per column key.
     """
     demand = attached_demand_gbytes(controller, inventory)
-    severity = worst_severity(findings, controller.address)
+    severity = severities.get(controller.address)
     link = theme.link_pair_cells(controller.link, bandwidth=bandwidth)
     return MarkedRow(
         marker=(theme.marker_for(severity), theme.style_for(severity)),
@@ -356,8 +361,9 @@ def render_disks(
     rows: list[MarkedRow] = []
     plain: list[MarkedRow] = []
     listed = (*inventory.disks, *inventory.virtual_disks) if expand_virtual else inventory.disks
+    severities = severity_index(findings)
     for disk in listed:
-        severity = worst_severity(findings, disk.path)
+        severity = severities.get(disk.path)
         # One rule for what a disk row says and how it is coloured, shared with
         # the tree. Three copies of it disagreed: this one called every NVMe
         # link healthy whatever it negotiated.
@@ -390,13 +396,14 @@ def render_health(
     Returns:
         A table of health readings.
     """
-    rows = [health_table_row(disk, findings, history, thresholds) for disk in inventory.disks]
+    severities = severity_index(findings)
+    rows = [health_table_row(disk, severities, history, thresholds) for disk in inventory.disks]
     return _render(f"Disk health on {inventory.hostname}", HEALTH_COLUMNS, TableRows(rows), width)
 
 
 def health_table_row(
     disk: Disk,
-    findings: Sequence[Finding],
+    severities: Mapping[str, Severity],
     history: History | None = None,
     thresholds: Thresholds = DEFAULT_THRESHOLDS,
 ) -> MarkedRow:
@@ -408,7 +415,9 @@ def health_table_row(
 
     Args:
         disk: The drive to describe.
-        findings: The findings, for the row's severity marker.
+        severities: Every subject's worst severity, from
+            :func:`~lsdsk.adapters.render.report.severity_index`, for the row's
+            marker.
         history: Counter samples recorded earlier, which decide whether a count
             still carries its "rising" mark.
         thresholds: What this run judges wear by.
@@ -416,7 +425,7 @@ def health_table_row(
     Returns:
         The marker and a cell per column key.
     """
-    severity = worst_severity(findings, disk.path)
+    severity = severities.get(disk.path)
     health = disk.health
     series = series_for(disk, history)
     temperature = theme.format_temperature(

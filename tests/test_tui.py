@@ -21,7 +21,7 @@ from lsdsk.adapters.config.tunables import DEFAULT_WWN_WIDTH, DisplaySettings
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import theme
 from lsdsk.adapters.render.layout import ELLIPSIS, Column, clip, fit, natural_widths, pad
-from lsdsk.adapters.render.report import DISK_COLUMNS, render_tree
+from lsdsk.adapters.render.report import DISK_COLUMNS, render_tree, severity_index
 from lsdsk.adapters.render.tables import DISK_COLUMNS as PRINTED_DISK_COLUMNS
 from lsdsk.adapters.render.tables import render_disks
 from lsdsk.adapters.render.tree import KEY_HINT, FabricView, render_fabric
@@ -1540,15 +1540,15 @@ async def test_a_controller_row_and_a_health_row_carry_every_value_the_printed_r
         # has to surrender a link figure's bandwidth and always asks for it. The
         # printed row is built the same way here, or this would compare the two
         # FORMS rather than the two views.
-        printed = tables.controller_table_row(controller, machine, findings, bandwidth=True)
+        printed = tables.controller_table_row(controller, machine, severity_index(findings), bandwidth=True)
         expected = [printed.marker[0], *(printed.cells[column.key][0] for column in tables.CONTROLLER_COLUMNS)]
         assert [cell.plain for cell in drawn_controllers[index]] == expected, controller.address
-        plain = tables.controller_table_row(controller, machine, findings)
+        plain = tables.controller_table_row(controller, machine, severity_index(findings))
         differed += printed.cells["running"][0] != plain.cells["running"][0]
     assert differed, "no controller here draws a link, so the two forms never differed and this compared nothing"
 
     for index, disk in enumerate(machine.disks):
-        printed = tables.health_table_row(disk, findings, app.history)
+        printed = tables.health_table_row(disk, severity_index(findings), app.history)
         expected = [printed.marker[0], *(printed.cells[column.key][0] for column in tables.HEALTH_COLUMNS)]
         assert [cell.plain for cell in drawn_health[index]] == expected, disk.path
 

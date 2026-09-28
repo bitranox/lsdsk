@@ -16,6 +16,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   whose standard output refused its output or was closed now leave `74`; they
   left `1` before. A permission refusal stays `13`, and `74` stands even when
   the reader has also gone, because it is about the destination.
+- **Every render grades its rows from one index of the findings.** Each row that
+  carries a severity marker - in both trees, the controllers, disks and health
+  tables and the interactive pages - walked every finding for the one naming it,
+  so a page cost the product of its rows and its findings. Measured on the full
+  page with one warning per drive, the lookup took 0.03, 0.17, 0.54 and 2.05
+  seconds at 500, 1,000, 2,000 and 4,000 drives, 1.1 to 8.0 percent of the
+  render and close to four times the cost on every doubling; it now takes 0.006
+  seconds at 4,000, and the findings are walked 6 times per page whatever its
+  size, against 12,021 before. The markers drawn are unchanged: the index keeps
+  critical over warning over hint for each subject exactly as the per-row search
+  did.
 
 ### Fixed
 

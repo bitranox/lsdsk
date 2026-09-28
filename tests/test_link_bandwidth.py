@@ -89,9 +89,17 @@ def _surfaces(machine: Inventory) -> list[tuple[str, tuple[Column, ...], list[di
             "the controllers table",
             tables.CONTROLLER_COLUMNS,
             _texts(
-                [tables.controller_table_row(c, machine, findings, bandwidth=True).cells for c in machine.controllers]
+                [
+                    tables.controller_table_row(c, machine, report.severity_index(findings), bandwidth=True).cells
+                    for c in machine.controllers
+                ]
             ),
-            _texts([tables.controller_table_row(c, machine, findings).cells for c in machine.controllers]),
+            _texts(
+                [
+                    tables.controller_table_row(c, machine, report.severity_index(findings)).cells
+                    for c in machine.controllers
+                ]
+            ),
         ),
         (
             "the slots table",
@@ -339,7 +347,7 @@ def test_no_dash_in_the_controllers_table_is_drawn_as_a_reading(host: str) -> No
     findings = diagnose(machine)
     dashes = 0
     for controller in machine.controllers:
-        row = tables.controller_table_row(controller, machine, findings, bandwidth=True)
+        row = tables.controller_table_row(controller, machine, report.severity_index(findings), bandwidth=True)
         for name, (text, style) in row.cells.items():
             if text != theme.NOT_READ:
                 continue
@@ -356,7 +364,7 @@ def test_the_link_pair_is_styled_from_the_model_and_not_from_its_own_text() -> N
 
     def styles(link: PcieLink) -> tuple[str, str]:
         controller, _ = _controller_with("linux-minimal", link)
-        row = tables.controller_table_row(controller, machine, findings, bandwidth=True)
+        row = tables.controller_table_row(controller, machine, report.severity_index(findings), bandwidth=True)
         return row.cells["running"][1], row.cells["capable"][1]
 
     # Neither read. A string compare called these EQUAL and drew them unstyled.

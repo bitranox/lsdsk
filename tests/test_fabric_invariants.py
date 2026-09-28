@@ -106,7 +106,7 @@ def test_a_deep_fabric_still_takes_one_line_per_row_at_a_narrow_width(width: int
     # That is the trap this module's own guard was rewritten to avoid.
     for node, _level in fabric.drawn():
         with console.capture() as capture:
-            console.print(fabric.row(node, ()))
+            console.print(fabric.row(node, {}))
         lines = capture.get().rstrip("\n").split("\n")
         assert len(lines) == 1, f"at width {width}, {node.address} took {len(lines)} lines: {lines}"
 

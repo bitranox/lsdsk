@@ -493,8 +493,9 @@ class LsdskApp(App[None]):
         """Populate the controller page."""
         table = rows_of(self.query_one("#controller-table"))
         table.add_columns(*CONTROLLER_COLUMNS)
+        severities = report.severity_index(self.findings)
         for controller in self.inventory.controllers:
-            row = tables.controller_table_row(controller, self.inventory, self.findings, bandwidth=True)
+            row = tables.controller_table_row(controller, self.inventory, severities, bandwidth=True)
             table.add_row(*_marked(row, tables.CONTROLLER_COLUMNS), key=controller.address)
 
     def _fill_slots(self) -> None:
@@ -533,10 +534,13 @@ class LsdskApp(App[None]):
             if self.display_settings.expand_virtual
             else self.inventory.disks
         )
+        # Graded once for the page, never per row: a lookup per row walks every
+        # finding for every drive, so the page cost its drives times its findings.
+        severities = report.severity_index(self.findings)
         for disk in listed:
             port = self.inventory.port_link_for(disk)
             cells = tables.disk_table_row(disk, port, bandwidth=True)
-            severity = report.worst_severity(self.findings, disk.path)
+            severity = severities.get(disk.path)
             table.add_row(
                 _cell(theme.marker_for(severity), theme.style_for(severity)),
                 *(_disk_cell(cells, column) for column in columns),
@@ -709,8 +713,9 @@ class LsdskApp(App[None]):
         """
         table = rows_of(self.query_one("#health-table"))
         table.add_columns(*HEALTH_COLUMNS)
+        severities = report.severity_index(self.findings)
         for disk in self.inventory.disks:
-            row = tables.health_table_row(disk, self.findings, self.history, self.thresholds)
+            row = tables.health_table_row(disk, severities, self.history, self.thresholds)
             table.add_row(*_marked(row, tables.HEALTH_COLUMNS), key=disk.node)
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:

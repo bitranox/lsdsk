@@ -31,7 +31,7 @@ from . import theme
 from .layout import GAP, GUTTER, TREE_BRANCH, TREE_LAST, Column, Layout, fit, natural_widths, pad
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from rich.console import RenderableType
 
@@ -79,21 +79,45 @@ DISK_COLUMNS: tuple[Column, ...] = (
 )
 
 
-def worst_severity(findings: Iterable[Finding], subject: str) -> Severity | None:
-    """Return the most urgent severity recorded against one subject.
+# Lower is more urgent. Of two severities raised against one subject the index
+# keeps the lower, so this table IS the precedence.
+_URGENCY: dict[Severity, int] = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.HINT: 2}
+
+
+def severity_index(findings: Iterable[Finding]) -> Mapping[str, Severity]:
+    """The most urgent severity recorded against every subject, in one walk.
+
+    A render builds this once, beside the layout it fits once, and each row
+    looks its own subject up in it. A per-row search of the findings instead
+    makes a page cost the product of its rows and its findings, which is what
+    ``tests/test_severity_index.py`` counts.
 
     Args:
         findings: All findings.
-        subject: The subject to look for.
 
     Returns:
-        The worst severity, or ``None`` when the subject is clean.
+        Subject to its worst severity. A subject nothing was raised against is
+        absent, so ``.get(subject)`` answers ``None`` for a clean row.
+
+    Example:
+        >>> from lsdsk.domain.models import Finding
+        >>> index = severity_index(
+        ...     [
+        ...         Finding(severity=Severity.HINT, subject="/dev/sda", title="a hint"),
+        ...         Finding(severity=Severity.CRITICAL, subject="/dev/sda", title="a fault"),
+        ...     ]
+        ... )
+        >>> index["/dev/sda"]
+        <Severity.CRITICAL: 'critical'>
+        >>> index.get("/dev/sdb") is None
+        True
     """
-    matching = {finding.severity for finding in findings if finding.subject == subject}
-    for severity in (Severity.CRITICAL, Severity.WARNING, Severity.HINT):
-        if severity in matching:
-            return severity
-    return None
+    worst: dict[str, Severity] = {}
+    for finding in findings:
+        held = worst.get(finding.subject)
+        if held is None or _URGENCY[finding.severity] < _URGENCY[held]:
+            worst[finding.subject] = finding.severity
+    return worst
 
 
 def findings_for(findings: Iterable[Finding], *subjects: str) -> tuple[Finding, ...]:
@@ -105,10 +129,10 @@ def findings_for(findings: Iterable[Finding], *subjects: str) -> tuple[Finding, 
     a caller asking "everything about this drive" has to name both of the keys
     that can reach it, and the detail panel does.
 
-    :func:`worst_severity` deliberately stays single-subject and is not built on
-    this: a per-model hint raised on every row's marker would mark seven rows to
-    say one thing about the set of them, which is the judgement already recorded
-    for the opportunity colour.
+    :func:`severity_index` deliberately stays keyed by one subject per row and
+    is not built on this: a per-model hint raised on every row's marker would
+    mark seven rows to say one thing about the set of them, which is the
+    judgement already recorded for the opportunity colour.
 
     Args:
         findings: All findings.
@@ -690,6 +714,10 @@ def render_controller_disks(
     # flagged row, and at 42 of 181 widths tested, wherever the fit happened to
     # land on the boundary.
     layout = Layout.preferring(DISK_COLUMNS, rows, plain, width - _MARKER_RESERVE - 1)
+    # Indexed once beside the layout, which is fitted once for the same reason:
+    # a lookup per row that walks every finding makes the tree cost the product
+    # of its rows and its findings.
+    severities = severity_index(findings)
 
     lines: list[RenderableType] = []
     attached: set[str] = set()
@@ -698,28 +726,28 @@ def render_controller_disks(
         attached.update(disk.node for disk in disks)
         if index:
             lines.append(Text(""))
-        lines.append(_controller_line(controller, worst_severity(findings, controller.address)))
+        lines.append(_controller_line(controller, severities.get(controller.address)))
         # The header is repeated above each group rather than printed once at the
         # top. On a machine with five controllers the single top header ends up
         # twenty lines away from the rows it labels, which is the same as having
         # no header at all.
         if disks:
             lines.append(_header_line(layout.columns, layout.widths))
-        lines.extend(_disk_lines(disks, findings, layout, inventory, thresholds))
+        lines.extend(_disk_lines(disks, severities, layout, inventory, thresholds))
 
     orphans = [disk for disk in inventory.disks if disk.node not in attached]
     if orphans:
         lines.append(Text(""))
         lines.append(Text("not attached to a known controller", style=theme.STYLE_UNKNOWN))
         lines.append(_header_line(layout.columns, layout.widths))
-        lines.extend(_disk_lines(orphans, findings, layout, inventory, thresholds))
-    lines.extend(_virtual_lines(inventory, findings, layout, expand_virtual=expand_virtual, thresholds=thresholds))
+        lines.extend(_disk_lines(orphans, severities, layout, inventory, thresholds))
+    lines.extend(_virtual_lines(inventory, severities, layout, expand_virtual=expand_virtual, thresholds=thresholds))
     return Group(*lines)
 
 
 def _virtual_lines(
     inventory: Inventory,
-    findings: Sequence[Finding],
+    severities: Mapping[str, Severity],
     layout: Layout,
     *,
     expand_virtual: bool,
@@ -733,13 +761,13 @@ def _virtual_lines(
         lines.append(Text(f"   {virtual_note(inventory.virtual_disks)}", style=theme.STYLE_UNKNOWN))
         return lines
     lines.append(_header_line(layout.columns, layout.widths))
-    lines.extend(_disk_lines(inventory.virtual_disks, findings, layout, inventory, thresholds))
+    lines.extend(_disk_lines(inventory.virtual_disks, severities, layout, inventory, thresholds))
     return lines
 
 
 def _disk_lines(
     disks: Sequence[Disk],
-    findings: Sequence[Finding],
+    severities: Mapping[str, Severity],
     layout: Layout,
     inventory: Inventory,
     thresholds: Thresholds = DEFAULT_THRESHOLDS,
@@ -749,7 +777,7 @@ def _disk_lines(
     for position, disk in enumerate(disks):
         glyph = TREE_LAST if position == len(disks) - 1 else TREE_BRANCH
         row = disk_row(disk, inventory.port_link_for(disk), bandwidth=layout.bandwidth, thresholds=thresholds)
-        lines.append(_disk_line(row, glyph, layout, severity=worst_severity(findings, disk.path)))
+        lines.append(_disk_line(row, glyph, layout, severity=severities.get(disk.path)))
     return lines
 
 
@@ -1085,9 +1113,9 @@ __all__ = [
     "render_tree",
     "render_verdict",
     "serial_speed",
+    "severity_index",
     "slot_privilege_note",
     "slot_table_row",
     "slot_verdict",
     "virtual_note",
-    "worst_severity",
 ]
