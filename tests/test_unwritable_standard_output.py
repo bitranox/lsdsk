@@ -304,7 +304,7 @@ def test_a_missing_standard_output_refuses_like_a_full_one_and_is_put_back(monke
     """
     monkeypatch.setattr(sys, "stdout", None)
 
-    safe_console.stand_in_for_a_missing_standard_output()
+    safe_console.stand_in_for_missing_standard_streams()
     assert safe_console.standard_output_is_missing()
     assert sys.stdout is not None and sys.stdout.isatty() is False
     with pytest.raises(safe_console.UnwritableStandardOutputError, match="standard output is closed"):
@@ -320,7 +320,7 @@ def test_a_process_with_a_standard_output_keeps_it(monkeypatch: pytest.MonkeyPat
     present = io.StringIO()
     monkeypatch.setattr(sys, "stdout", present)
 
-    safe_console.stand_in_for_a_missing_standard_output()
+    safe_console.stand_in_for_missing_standard_streams()
 
     assert sys.stdout is present
     assert not safe_console.standard_output_is_missing()

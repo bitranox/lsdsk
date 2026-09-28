@@ -27,11 +27,13 @@ Contents
 * :func:`echo` - the :func:`click.echo` replacement every module uses
 * :func:`safe_stream` - the same protection for a writer this module does not
   own, such as the one a :class:`rich.console.Console` writes through
+* :func:`safe_stream_to_both` - the same, for a renderer writing to both streams
 * :func:`is_broken_pipe` - whether a failed write means the reader left
 * :class:`UnwritableStandardOutputError` - stdout refused a write for another reason
 * :func:`say_standard_output_failed` - the one sentence that reports it
-* :func:`stand_in_for_a_missing_standard_output` and
-  :func:`standard_output_is_missing` - a process started with no stdout at all
+* :func:`stand_in_for_missing_standard_streams` and
+  :func:`standard_output_is_missing` - a process started with no stdout or no
+  stderr at all
 * :func:`flush_streams_or_leave` - deliver buffered output while a handler can
   still see it fail
 * :func:`restore_original_streams` - give a library caller back the descriptors
@@ -116,7 +118,7 @@ def _stream_encoding(file: IO[Any] | None, *, err: bool = False) -> str | None:
 _REDIRECTED_DESCRIPTORS: Final[dict[int, int]] = {}
 
 
-def _stop_writing_to(stream: IO[Any] | None) -> None:
+def _stop_writing_to(stream: IO[Any] | io.IOBase | None) -> None:
     """Point the descriptor behind `stream` at the null device.
 
     Python flushes ``sys.stdout`` and ``sys.stderr`` as the interpreter exits. On
@@ -195,11 +197,13 @@ def restore_original_streams() -> None:
 
     Side Effects:
         Restores process file descriptors and closes the saved duplicates, and
-        puts back the None :func:`stand_in_for_a_missing_standard_output`
+        puts back each None :func:`stand_in_for_missing_standard_streams`
         replaced.
     """
     if isinstance(sys.stdout, _MissingStandardOutput):
         sys.stdout = None
+    if isinstance(sys.stderr, _MissingStandardError):
+        sys.stderr = None
     while _REDIRECTED_DESCRIPTORS:
         descriptor, saved = _REDIRECTED_DESCRIPTORS.popitem()
         try:
@@ -266,7 +270,7 @@ def write_unless_the_reader_left(emit: Callable[[], None], *, err: bool = True) 
         # stream at the null device, which is what `_reader_went_away` does first.
 
 
-def _reader_went_away(stream: IO[Any] | None) -> NoReturn:
+def _reader_went_away(stream: IO[Any] | io.IOBase | None) -> NoReturn:
     """Leave with the code that says the pipe closed, never the one that says a drive is failing.
 
     Raised rather than returned so it cannot be forgotten at a call site, and
@@ -345,7 +349,7 @@ class UnwritableStandardOutputError(OSError):
     """
 
 
-def _refused_by_standard_output(stream: IO[Any] | None, exc: OSError) -> UnwritableStandardOutputError:
+def _refused_by_standard_output(stream: IO[Any] | io.IOBase | None, exc: OSError) -> UnwritableStandardOutputError:
     """Silence stdout after a failed write, and name the failure for the caller to raise.
 
     Args:
@@ -395,17 +399,60 @@ class _MissingStandardOutput(io.TextIOBase):
         return False
 
 
-def stand_in_for_a_missing_standard_output() -> None:
-    """Put a refusing stand-in where a missing ``sys.stdout`` would be.
+class _MissingStandardError(io.TextIOBase):
+    """Stands in for the standard error a process was started without.
+
+    With descriptor 2 closed - ``2>&-``, a supervisor that wires only stdout -
+    the interpreter sets ``sys.stderr`` to None, and three printers fell back to
+    STDOUT on meeting it: the logging console, rich-click's usage error and the
+    log line of a crash. So ``lsdsk config --format json 2>&-`` left 0 with a log
+    line appended to the JSON a caller was parsing.
+
+    It ACCEPTS every write and keeps none, where the stdout stand-in refuses:
+    stderr carries diagnostics about the run and never the run's own output, so
+    a stderr nobody holds loses the diagnostic and leaves the verdict alone -
+    the rule a departed stderr reader is already answered by.
+    """
+
+    #: UTF-8, so an encoding probe has an answer and moves on to the write.
+    encoding = "utf-8"
+
+    def writable(self) -> bool:
+        """Claim to be writable, so a printer writes here rather than elsewhere."""
+        return True
+
+    def write(self, text: str) -> int:
+        """Accept `text` and keep none of it.
+
+        Returns:
+            The whole length, so no caller retries what has nowhere to go.
+        """
+        return len(text)
+
+    def flush(self) -> None:
+        """Nothing is ever kept here, so there is nothing to deliver."""
+
+    def isatty(self) -> bool:
+        """No terminal: nobody is sitting at a stream that does not exist."""
+        return False
+
+
+def stand_in_for_missing_standard_streams() -> None:
+    """Put a stand-in where a missing ``sys.stdout`` or ``sys.stderr`` would be.
 
     Called once by ``main`` before any command runs, and undone by
-    :func:`restore_original_streams`. A process that has a stdout is untouched.
+    :func:`restore_original_streams`, so every printer - click's, rich's, this
+    project's own - finds a stream rather than None and none of them picks a
+    fallback of its own. A missing stdout refuses a write, which leaves 74; a
+    missing stderr swallows one. A stream the process has is untouched.
 
     Side Effects:
-        Rebinds ``sys.stdout`` when it is None.
+        Rebinds ``sys.stdout`` and ``sys.stderr`` where either is None.
     """
     if sys.stdout is None:
         sys.stdout = _MissingStandardOutput()
+    if sys.stderr is None:
+        sys.stderr = _MissingStandardError()
 
 
 def standard_output_is_missing() -> bool:
@@ -615,19 +662,28 @@ class _SafeWriter:
         substituting. Wrapping the writer applies the fallback to every segment
         rich emits without rich needing to know.
 
-        With no explicit stream the target is resolved at WRITE time, not at
-        construction. A module-level ``Console(file=safe_stream())`` built at
-        import would otherwise capture the interpreter's original stdout, and
-        anything that later swaps ``sys.stdout`` - click's ``CliRunner``,
+        The target is resolved at WRITE time, not at construction. A
+        module-level ``Console(file=safe_stream())`` built at import would
+        otherwise capture the interpreter's original stdout, and anything that
+        later swaps ``sys.stdout`` - click's ``CliRunner``,
         ``contextlib.redirect_stdout``, pytest's capture - would be bypassed
         and its buffer would come back empty.
+
+        It FOLLOWS a stream by name and never holds one. Holding one is what
+        failed: handed ``sys.stderr`` in a process started without it, the
+        writer held None, and None was also how it was told to follow stdout, so
+        every log line meant for stderr was written into the JSON on stdout.
+        A stream missing at write time gets the same stand-in ``main`` installs.
     """
 
-    def __init__(self, stream: TextIO | None) -> None:
-        self._stream = stream
+    def __init__(self, *, err: bool) -> None:
+        self._err = err
 
-    def _target(self) -> TextIO:
-        return self._stream if self._stream is not None else sys.stdout
+    def _target(self) -> TextIO | io.TextIOBase:
+        stream = sys.stderr if self._err else sys.stdout
+        if stream is not None:
+            return stream
+        return _MissingStandardError() if self._err else _MissingStandardOutput()
 
     def write(self, text: str) -> int:
         """Write `text`, degrading anything the current target cannot encode.
@@ -643,10 +699,10 @@ class _SafeWriter:
             return target.write(encode_safe(text, encoding if isinstance(encoding, str) else None))
         except OSError as exc:
             if not is_broken_pipe(exc):
-                if target is sys.stdout:
+                if not self._err:
                     raise _refused_by_standard_output(target, exc) from exc
                 raise
-            if target is sys.stderr:
+            if self._err:
                 _stop_writing_to(target)
                 return len(text)
             _reader_went_away(target)
@@ -658,10 +714,10 @@ class _SafeWriter:
             target.flush()
         except OSError as exc:
             if not is_broken_pipe(exc):
-                if target is sys.stdout:
+                if not self._err:
                     raise _refused_by_standard_output(target, exc) from exc
                 raise
-            if target is sys.stderr:
+            if self._err:
                 _stop_writing_to(target)
                 return
             _reader_went_away(target)
@@ -677,7 +733,7 @@ class _SafeWriter:
         return encoding if isinstance(encoding, str) else None
 
 
-def safe_stream(stream: TextIO | None = None) -> IO[str]:
+def safe_stream(*, err: bool = False) -> IO[str]:
     """Wrap a stream so unencodable text degrades instead of raising.
 
     Use for a writer handed to a third-party renderer. For this project's own
@@ -698,15 +754,70 @@ def safe_stream(stream: TextIO | None = None) -> IO[str]:
     rather than inferred; asserting it once at this boundary is what keeps the
     call site typed, where ``Any`` erased the whole console.
 
+    It takes no stream, only which of the two to follow, the way :func:`echo`
+    does. A stream handed in is the value it had when the renderer was built,
+    and in a process started without stderr that value is None - which a
+    writer taking an optional stream cannot tell apart from being given none.
+
     Args:
-        stream: The destination text stream. Omit it (or pass None) to follow
-            ``sys.stdout`` as it is at each write, which is what a module-level
-            renderer needs so test harnesses can still capture the output.
+        err: Follow ``sys.stderr`` instead of ``sys.stdout``. Either is read as
+            it is at each write, which is what a module-level renderer needs so
+            test harnesses can still capture the output.
 
     Returns:
         A writer with ``write``/``flush``/``isatty``/``encoding``.
     """
-    return cast("IO[str]", _SafeWriter(stream))
+    return cast("IO[str]", _SafeWriter(err=err))
+
+
+class _SafeTee:
+    """Writes every line to stdout and to stderr, each under its own stream's rule.
+
+    Why
+        A renderer asked for both streams at once otherwise builds one tee over
+        the RAW streams, and rich's ``on_broken_pipe`` fires on it whichever half
+        broke - pointing STDOUT at the null device when only stderr's reader
+        left. Each half here is a :class:`_SafeWriter`, so a departed stdout
+        reader ends the run with 141 and a departed stderr reader costs stderr
+        alone.
+    """
+
+    def __init__(self) -> None:
+        self._halves = (_SafeWriter(err=False), _SafeWriter(err=True))
+
+    def write(self, text: str) -> int:
+        """Write `text` to both halves, stdout first.
+
+        Returns:
+            The whole length: each half answers its own failure.
+        """
+        for half in self._halves:
+            half.write(text)
+        return len(text)
+
+    def flush(self) -> None:
+        """Flush both halves, stdout first."""
+        for half in self._halves:
+            half.flush()
+
+    def isatty(self) -> bool:
+        """Whether either half is a terminal, so rich styles for the one that is."""
+        return any(half.isatty() for half in self._halves)
+
+    @property
+    def encoding(self) -> str | None:
+        """Stdout's encoding, which rich renders for."""
+        return self._halves[0].encoding
+
+
+def safe_stream_to_both() -> IO[str]:
+    """The writer :func:`safe_stream` is, for a renderer that writes to both streams.
+
+    Returns:
+        A writer with ``write``/``flush``/``isatty``/``encoding`` that follows
+        ``sys.stdout`` and ``sys.stderr`` at each write.
+    """
+    return cast("IO[str]", _SafeTee())
 
 
 __all__ = [
@@ -719,8 +830,9 @@ __all__ = [
     "is_broken_pipe",
     "restore_original_streams",
     "safe_stream",
+    "safe_stream_to_both",
     "say_standard_output_failed",
-    "stand_in_for_a_missing_standard_output",
+    "stand_in_for_missing_standard_streams",
     "standard_output_is_missing",
     "write_unless_the_reader_left",
 ]

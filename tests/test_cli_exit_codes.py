@@ -667,7 +667,7 @@ def test_a_closed_stderr_does_not_discard_the_report_on_stdout() -> None:
 
 
 @pytest.mark.os_agnostic
-@pytest.mark.parametrize("named", ["stderr", "STDERR"])
+@pytest.mark.parametrize("named", ["stderr", "STDERR", "both", "BOTH"])
 def test_a_closed_stderr_keeps_the_report_when_the_environment_names_the_log_stream(
     monkeypatch: pytest.MonkeyPatch, named: str
 ) -> None:
@@ -676,8 +676,14 @@ def test_a_closed_stderr_keeps_the_report_when_the_environment_names_the_log_str
     So a guard decided from the ``console_stream`` key alone handed the library a
     ``custom`` route that the environment variable then overrode, and rich's
     handler was back on the raw stderr - the same loss as the test above, reached
-    through the one setting the guard never read. The upper-case arm is there
+    through the one setting the guard never read. The upper-case arms are there
     because the library lower-cases what it reads.
+
+    ``both`` is the arm that was never guarded at all: lib_log_rich builds its own
+    tee over the raw ``sys.stdout`` and ``sys.stderr`` for it, so rich's handler
+    fired on the stderr half. Measured before it was guarded: the control
+    delivered 15,549 bytes and left 0, this arm delivered 1 byte and left 141 - a
+    departed stderr reader ended the run, which stderr's reader never may.
     """
     monkeypatch.setenv("LOG_CONSOLE_STREAM", named)
     argv = ["config"]
@@ -693,6 +699,9 @@ def test_a_closed_stderr_keeps_the_report_when_the_environment_names_the_log_str
     assert kept.stdout_bytes == control.stdout_bytes, (
         f"with LOG_CONSOLE_STREAM={named} a closed stderr cost stdout "
         f"{control.stdout_bytes - kept.stdout_bytes} of its {control.stdout_bytes} bytes"
+    )
+    assert kept.code == control.code, (
+        f"with LOG_CONSOLE_STREAM={named} a departed stderr reader turned {control.code} into {kept.code}"
     )
 
 

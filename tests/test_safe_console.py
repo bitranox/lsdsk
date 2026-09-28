@@ -109,9 +109,10 @@ class TestTheDefaultTargetFollowsTheStreamEchoWritesTo:
 class TestSafeStreamProtectsRich:
     """Rich raises on a legacy codepage too; it renders through its own writer."""
 
-    def test_rich_output_degrades_instead_of_raising(self) -> None:
+    def test_rich_output_degrades_instead_of_raising(self, monkeypatch: pytest.MonkeyPatch) -> None:
         stream = _cp1252_stream()
-        Console(file=safe_console.safe_stream(stream), legacy_windows=False, width=80).print("check ✓ done ≥ 90%")
+        monkeypatch.setattr(sys, "stdout", stream)
+        Console(file=safe_console.safe_stream(), legacy_windows=False, width=80).print("check ✓ done ≥ 90%")
         written = _read_back(stream)
         assert "[OK]" in written
         assert ">= 90%" in written
@@ -141,7 +142,7 @@ class TestNoModuleBypassesTheAdapter:
             for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
             if "Console(file=sys.stdout" in line
         ]
-        assert not offenders, f"wrap the writer with safe_console.safe_stream(sys.stdout): {offenders}"
+        assert not offenders, f"wrap the writer with safe_console.safe_stream(): {offenders}"
 
 
 class TestTheRealCliSurvivesALegacyCodepage:

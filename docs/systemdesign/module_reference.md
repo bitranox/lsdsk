@@ -284,11 +284,28 @@ format is exactly the collapse these codes exist to prevent.
 That rule has to hold for every writer, including the ones a library owns.
 `lib_log_rich` renders through rich, and rich's `Console.on_broken_pipe` points
 STDOUT at the null device whichever stream broke, then raises `SystemExit(1)`. So
-`adapters/logging/setup.py` hands it `console_stream="custom"` with a
-`console_stream_target` of `safe_console.safe_stream(...)`: rich never sees a
-`BrokenPipeError` to handle, and the failure is answered on the stream that really
-broke. Nothing third-party is patched, and a `console_stream` of `both`, `custom` or
-`none` is left as configured.
+`adapters/logging/setup.py` hands `RuntimeConfig` a `console_adapter_factory`,
+`_guarded_console`, which the library calls with the console settings it resolved
+AFTER `LOG_CONSOLE_STREAM` and every other source applied. For a `stdout` or
+`stderr` stream it builds the console on `safe_console.safe_stream(err=...)`, and
+for `both` on `safe_console.safe_stream_to_both()`, a tee whose two halves each
+keep their own stream's rule - left to the library, `both` became a tee over the
+raw streams and a departed stderr reader sent stdout to the null device. So rich
+never sees a `BrokenPipeError` to handle, and the failure is answered on the stream
+that really broke. Deciding it by rewriting `console_stream` in the settings does
+not hold: the library reads the variable ahead of the configuration and overrides
+it. Nothing third-party is patched, and a stream of `custom` or `none` is left as
+configured.
+
+`safe_stream` takes no stream, only which of the two to follow, and reads it at
+each write. A process started with a descriptor closed has `sys.stdout` or
+`sys.stderr` set to None, and a writer that held the value it was handed could not
+tell that None from being told to follow stdout - which is how a closed stderr put
+log lines into the JSON on stdout. `main` stands in for a missing stream before any
+command runs (`safe_console.stand_in_for_missing_standard_streams`), so every
+printer finds a stream rather than picking a fallback of its own: a missing stdout
+refuses a write, which leaves `74`, and a missing stderr swallows one, because a
+diagnostic nobody can read is lost and the run's verdict stands.
 
 One limit is worth stating, because it looks like a breach of the rule and is not. The
 contract ranks a code the run DECIDED. A reader that leaves while a command is still

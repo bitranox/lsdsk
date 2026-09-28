@@ -64,6 +64,18 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   capture had been lost too. The line now names the file it was written to. The
   exit code stays `74`, because that write did fail; with standard output
   closed (`>&-`) no line is attempted and the run still succeeds.
+- **A process started without stderr writes nothing meant for stderr to
+  stdout.** With descriptor 2 closed (`2>&-`, a supervisor that wires only
+  stdout), `lsdsk config --format json` left `0` with `[INFO]: Displaying
+  configuration` appended to its JSON, a usage error printed its help block onto
+  stdout, and `fail` wrote its log line there. A missing stderr now swallows what
+  is written to it, the way a departed stderr reader already did: the diagnostic
+  is lost and the output and exit code stand.
+- **`console_stream = "both"` is guarded against a departed reader too.** It was
+  left to the logging library, which wrote through the raw streams, so a reader
+  closing stderr sent standard output to the null device: `lsdsk config`
+  delivered 1 byte of a 15,549-byte report and left `141`. It now keeps the
+  report and leaves `0`, as `stdout` and `stderr` already did.
 - **`LOG_CONSOLE_STREAM` no longer bypasses the broken-pipe guard.** With that
   variable naming `stderr` or `stdout`, a reader closing stderr made rich send
   standard output to the null device, so `lsdsk config` delivered 1 byte of a

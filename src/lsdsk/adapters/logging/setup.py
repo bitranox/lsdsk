@@ -16,7 +16,7 @@ System Role:
 
 from __future__ import annotations
 
-import sys
+from functools import partial
 from typing import TYPE_CHECKING, Final, cast
 
 import lib_log_rich.config
@@ -32,6 +32,7 @@ from lsdsk import __init__conf__
 from ..cli import safe_console
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
     from typing import IO
 
     from lib_layered_config import Config
@@ -98,11 +99,17 @@ def _build_runtime_config(config: Config) -> lib_log_rich.runtime.RuntimeConfig:
     )
 
 
-#: The console streams this can hand lib_log_rich a guarded writer for.
+#: The guarded writer for each console stream a setting can name.
 #:
-#: ``both``, ``custom`` and ``none`` are left alone: the first two already name a
-#: target this does not own, and the third writes nowhere.
-_GUARDABLE_CONSOLE_STREAMS: Final[frozenset[str]] = frozenset({"stdout", "stderr"})
+#: ``custom`` and ``none`` are left alone: the first names a target this does not
+#: own, and the second writes nowhere. ``both`` is here, not with them: it is a
+#: plain setting like the other two, and left to the library it becomes a tee over
+#: the RAW streams, so a departed stderr reader sent stdout to the null device.
+_GUARDED_WRITERS: Final[Mapping[str, Callable[[], IO[str]]]] = {
+    "stdout": safe_console.safe_stream,
+    "stderr": partial(safe_console.safe_stream, err=True),
+    "both": safe_console.safe_stream_to_both,
+}
 
 
 def _guarded_console(appearance: ConsoleAppearance) -> RichConsoleAdapter:
@@ -122,8 +129,9 @@ def _guarded_console(appearance: ConsoleAppearance) -> RichConsoleAdapter:
     stream. The appearance is resolved after the variable, so this sees the stream
     the lines really go to, whichever setting chose it. ``console_adapter_factory``
     is the library's own seam for this, so nothing third-party is patched: rich is
-    handed :func:`~lsdsk.adapters.cli.safe_console.safe_stream`, whose writes never
-    let a ``BrokenPipeError`` reach rich's handler.
+    handed :func:`~lsdsk.adapters.cli.safe_console.safe_stream` (or, for ``both``,
+    :func:`~lsdsk.adapters.cli.safe_console.safe_stream_to_both`), whose writes
+    never let a ``BrokenPipeError`` reach rich's handler.
 
     Args:
         appearance: The console settings as the library resolved them.
@@ -134,8 +142,9 @@ def _guarded_console(appearance: ConsoleAppearance) -> RichConsoleAdapter:
     """
     stream = str(appearance.stream.value)
     target = cast("IO[str] | None", appearance.stream_target)
-    if stream in _GUARDABLE_CONSOLE_STREAMS:
-        target = safe_console.safe_stream(sys.stderr if stream == "stderr" else sys.stdout)
+    guarded = _GUARDED_WRITERS.get(stream)
+    if guarded is not None:
+        target = guarded()
         stream = "custom"
     return RichConsoleAdapter(
         force_color=appearance.force_color,
