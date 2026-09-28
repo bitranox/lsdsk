@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple, Protocol
+from typing import TYPE_CHECKING, NamedTuple, Protocol, TextIO
 
 import lib_log_rich.runtime
 import rich_click as click
@@ -559,29 +559,44 @@ def emit_json(inventory: Inventory, findings: Sequence[Finding], command: CliCom
 def streams_that_are_not_terminals() -> list[str]:
     """Name each standard stream the interactive view needs that is not a terminal.
 
-    All THREE, not stdin and stdout alone. Textual reads key events from stdin,
-    so ``lsdsk < /dev/null`` would open a view nobody can quit. And its POSIX
-    driver DRAWS on ``sys.__stderr__``, not on stdout, so ``lsdsk 2>err.log`` at
-    a terminal opened a view nobody could see: measured, the screen stayed on
-    the shell's text, 161,934 bytes of escape sequences went into the file, and
-    the run ended only on a blind ``q``; with ``2>&-`` there was nothing to draw
-    on at all. It is asked as ``sys.__stderr__`` because that is the object the
-    driver writes to - ``sys.stderr`` may be a stand-in this tool installed.
-    Textual's Windows driver draws on stdout instead, and stderr is required
-    there as well: one rule on every platform, so a driver that moves its
-    drawing cannot reopen the blank screen.
+    Textual reads key events from stdin, so ``lsdsk < /dev/null`` would open a
+    view nobody can quit, and stdout is asked because a redirected stdout means
+    the reader wants the printed page. The third is the stream the view DRAWS
+    on, which Textual chooses by platform exactly as :func:`_drawing_stream`
+    does: its POSIX driver draws on ``sys.__stderr__``, so ``lsdsk 2>err.log``
+    at a terminal opened a view nobody could see - measured, the screen stayed
+    on the shell's text, 161,934 bytes of escape sequences went into the file,
+    and the run ended only on a blind ``q``; with ``2>&-`` there was nothing to
+    draw on at all. Its Windows driver draws on stdout, which is already asked,
+    so a Windows ``lsdsk 2>log`` keeps its view.
 
     Returns:
-        ``"standard input"``, ``"standard output"`` and ``"standard error"``,
-        each included when that stream is missing or not a terminal. Empty when
-        somebody is sitting at all three.
+        ``"standard input"``, ``"standard output"`` and, where the view draws
+        on it, ``"standard error"``, each included when that stream is missing
+        or not a terminal. Empty when somebody is sitting at every one of them.
     """
-    streams = (
-        ("standard input", sys.stdin),
-        ("standard output", sys.stdout),
-        ("standard error", sys.__stderr__),
-    )
+    streams = [("standard input", sys.stdin), ("standard output", sys.stdout)]
+    drawing = _drawing_stream()
+    if drawing is not None:
+        streams.append(drawing)
     return [name for name, stream in streams if not (stream is not None and stream.isatty())]
+
+
+def _drawing_stream() -> tuple[str, TextIO | None] | None:
+    """Name the stream Textual draws on when it is not one already asked.
+
+    Textual picks its driver from ``sys.platform == "win32"`` (``App.get_driver_class``):
+    the Windows driver writes to ``sys.__stdout__``, the POSIX one to
+    ``sys.__stderr__``. It is the ORIGINAL stderr because that is the object the
+    driver holds - ``sys.stderr`` may be a stand-in this tool installed.
+
+    Returns:
+        ``("standard error", sys.__stderr__)`` off Windows; None on Windows,
+        where the view draws on the stdout the caller already asks about.
+    """
+    if sys.platform == "win32":
+        return None
+    return ("standard error", sys.__stderr__)
 
 
 def somebody_is_sitting_at_it() -> bool:
