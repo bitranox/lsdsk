@@ -53,9 +53,19 @@ REPORTED = 12
 #: which is the threshold the doc's own test states.
 REPEATED = 3
 
-#: What marks a signature as a framework's rather than this project's. Click
-#: passes a context, and the Windows bindings take a library handle.
-FRAMEWORK_MARKERS = {"ctx": "click", "kernel32": "win32", "setupapi": "win32", "handle": "win32"}
+#: The decorators that make a function a Click command, whose parameters are
+#: its options and therefore Click's shape rather than this project's.
+CLICK_DECORATORS = frozenset({"command", "group"})
+
+#: Where the Win32 bindings live, as a path under the repository root.
+WIN32_PACKAGE = "src/lsdsk/adapters/hw/windows/"
+
+#: The library handles a Win32 binding takes. A function there that takes none
+#: of them is this project's own code, whatever module it sits in.
+WIN32_HANDLES = frozenset({"handle", "kernel32", "setupapi"})
+
+#: The annotation roots an anonymous tuple is written with.
+TUPLE_ROOTS = frozenset({"tuple", "Tuple"})
 
 
 @dataclass
@@ -85,34 +95,85 @@ class Census:
     return_sites: dict[str, list[str]] = field(default_factory=dict[str, list[str]])
 
 
-def owner_of(parameters: tuple[str, ...]) -> str:
-    """Whose shape this signature is: a framework's, or this project's."""
-    for parameter in parameters:
-        marker = FRAMEWORK_MARKERS.get(parameter)
-        if marker is not None:
-            return marker
+def _decorator_name(decorator: ast.expr) -> str:
+    """The last dotted name of a decorator, called or not: ``command`` for ``@click.command()``."""
+    target = decorator.func if isinstance(decorator, ast.Call) else decorator
+    return _root_name(target)
+
+
+def owner_of(node: ast.FunctionDef | ast.AsyncFunctionDef, module: str) -> str:
+    """Whose shape this signature is: a framework's, or this project's.
+
+    Decided by what the function IS, never by what a parameter is called: a
+    function of this project's that happened to name one ``ctx`` or ``handle``
+    was filed as Click's or Win32's and escaped the width invariant that way.
+    A Click command is one Click registers, which its decorator says; a Win32
+    binding is one in the Windows package that takes a library handle.
+
+    Args:
+        node: The function.
+        module: Its path under the repository root, with forward slashes.
+
+    Returns:
+        ``click``, ``win32`` or ``lsdsk``.
+    """
+    if any(_decorator_name(decorator) in CLICK_DECORATORS for decorator in node.decorator_list):
+        return "click"
+    if module.startswith(WIN32_PACKAGE) and WIN32_HANDLES & set(parameters_of(node)):
+        return "win32"
     return "lsdsk"
 
 
 def parameters_of(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[str, ...]:
-    """Every declared parameter, minus the instance argument."""
+    """Every declared parameter, minus the instance argument.
+
+    ``*args`` and ``**kwargs`` count, spelled with their stars: each is a
+    parameter a caller fills, and leaving them out let a signature be wider
+    than the census said.
+    """
     args = node.args
     named = [*args.posonlyargs, *args.args, *args.kwonlyargs]
-    return tuple(arg.arg for arg in named if arg.arg not in {"self", "cls"})
+    listed = [arg.arg for arg in named if arg.arg not in {"self", "cls"}]
+    if args.vararg is not None:
+        listed.append(f"*{args.vararg.arg}")
+    if args.kwarg is not None:
+        listed.append(f"**{args.kwarg.arg}")
+    return tuple(listed)
+
+
+def _root_name(expression: ast.expr) -> str:
+    """The last dotted name: ``tuple`` for ``tuple``, ``Tuple`` for ``typing.Tuple``."""
+    if isinstance(expression, ast.Attribute):
+        return expression.attr
+    return expression.id if isinstance(expression, ast.Name) else ""
+
+
+def _without_none(annotation: ast.expr) -> ast.expr:
+    """``X`` for ``X | None`` and ``Optional[X]``: a pair that may be absent is a pair when present."""
+    if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        sides = [annotation.left, annotation.right]
+        kept = [side for side in sides if not (isinstance(side, ast.Constant) and side.value is None)]
+        if len(kept) == 1:
+            return kept[0]
+    if isinstance(annotation, ast.Subscript) and _root_name(annotation.value) == "Optional":
+        return annotation.slice
+    return annotation
 
 
 def return_shape(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
     """The annotated shape of a multi-value return, or ``None`` for anything else.
 
     A NAMED tuple type is not anonymous, so only a subscripted ``tuple[...]``
-    with two or more elements counts - which is exactly the construct a swap of
-    two same-typed members passes through unnoticed.
+    or ``Tuple[...]`` with two or more elements counts - which is exactly the
+    construct a swap of two same-typed members passes through unnoticed. One
+    that may be ``None`` counts too, because when it is not it is that tuple.
     """
-    annotation = node.returns
+    if node.returns is None:
+        return None
+    annotation = _without_none(node.returns)
     if not isinstance(annotation, ast.Subscript):
         return None
-    root = annotation.value
-    if getattr(root, "id", getattr(root, "attr", "")) != "tuple":
+    if _root_name(annotation.value) not in TUPLE_ROOTS:
         return None
     inner = annotation.slice
     if not isinstance(inner, ast.Tuple) or len(inner.elts) < SMALLEST_MULTI_VALUE:
@@ -129,14 +190,14 @@ def walk(root: Path) -> Census:
         if "__pycache__" in path.parts:
             continue
         census.modules += 1
-        module = str(path.relative_to(root.parent.parent))
+        module = path.relative_to(root.parent.parent).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
             census.functions += 1
             parameters = parameters_of(node)
-            census.signatures.append(Signature(module, node.name, node.lineno, parameters, owner_of(parameters)))
+            census.signatures.append(Signature(module, node.name, node.lineno, parameters, owner_of(node, module)))
             shape = return_shape(node)
             if shape is not None:
                 census.returns[shape] += 1
@@ -204,17 +265,32 @@ class Figures:
     same_typed_return_shapes: dict[str, int]
 
 
+def is_same_typed(shape: str) -> bool:
+    """Whether every member of a tuple shape is written the same.
+
+    Read back through the parser rather than split on commas, because a member
+    that is itself generic - ``dict[str, int]`` - carries commas of its own, and
+    splitting there made two identical members look like four different ones.
+
+    Args:
+        shape: A shape as :func:`return_shape` writes it.
+
+    Returns:
+        True when the members are all one type.
+    """
+    parsed = ast.parse(shape, mode="eval").body
+    if not isinstance(parsed, ast.Subscript) or not isinstance(parsed.slice, ast.Tuple):
+        return False
+    return len({ast.unparse(element) for element in parsed.slice.elts}) == 1
+
+
 def report(census: Census) -> Figures:
     """Everything the doc quotes, as data."""
     wide = sorted(
         (s for s in census.signatures if s.width >= WIDE),
         key=lambda s: (-s.width, s.module, s.line),
     )
-    same_typed = {
-        shape: count
-        for shape, count in census.returns.items()
-        if len({element.strip() for element in shape[len("tuple[") : -1].split(",")}) == 1
-    }
+    same_typed = {shape: count for shape, count in census.returns.items() if is_same_typed(shape)}
     return Figures(
         modules=census.modules,
         functions=census.functions,

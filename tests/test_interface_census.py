@@ -128,3 +128,104 @@ def test_the_script_the_doc_names_runs_and_emits_json() -> None:
     emitted: dict[str, Any] = json.loads(result.stdout)
     assert emitted["modules"] > 50
     assert "wide_signatures" in emitted
+
+
+def _census_of(tmp_path: Path, sources: dict[str, str]) -> Any:
+    """Run the real census over a synthetic tree laid out like this repository.
+
+    Args:
+        tmp_path: Where to build it.
+        sources: Module path under ``src/lsdsk/`` to its source text.
+
+    Returns:
+        The census figures for exactly those modules.
+    """
+    package = tmp_path / "src" / "lsdsk"
+    for relative, text in sources.items():
+        module = package / relative
+        module.parent.mkdir(parents=True, exist_ok=True)
+        module.write_text(text, encoding="utf-8")
+    return CENSUS.report(CENSUS.walk(package))
+
+
+def _owners(figures: Any) -> dict[str, str]:
+    """Each wide signature's name to whose shape the census filed it as."""
+    return {entry.name: entry.owner for entry in figures.wide_signatures}
+
+
+@pytest.mark.os_agnostic
+def test_a_parameter_name_does_not_make_a_function_a_framework_s(tmp_path: Path) -> None:
+    """Ownership is what the function IS: a Click command, or a Win32 binding.
+
+    Deciding by parameter NAME filed any wide function of this project's that
+    called one parameter ``ctx`` or ``handle`` as Click's or Win32's, so it
+    escaped the six-wide invariant above. The two controls keep the real
+    framework shapes recognised, so the fix cannot pass by calling everything
+    this project's.
+    """
+    figures = _census_of(
+        tmp_path,
+        {
+            "domain/planted.py": "def by_context(ctx, a, b, c, d, e): ...\ndef by_handle(handle, a, b, c, d, e): ...\n",
+            "adapters/cli/planted.py": (
+                "import click\n@click.command()\n@click.pass_context\ndef a_command(ctx, a, b, c, d, e): ...\n"
+            ),
+            "adapters/hw/windows/planted.py": "def a_binding(kernel32, handle, a, b, c, d): ...\n",
+        },
+    )
+    assert _owners(figures) == {
+        "by_context": "lsdsk",
+        "by_handle": "lsdsk",
+        "a_command": "click",
+        "a_binding": "win32",
+    }
+
+
+@pytest.mark.os_agnostic
+def test_star_args_and_star_kwargs_count_toward_a_signature_s_width(tmp_path: Path) -> None:
+    """Four named parameters and two catch-alls is a six-wide signature."""
+    figures = _census_of(tmp_path, {"domain/planted.py": "def spread(a, b, c, d, *rest, **extra): ...\n"})
+    assert [(entry.name, entry.width) for entry in figures.wide_signatures] == [("spread", 6)]
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        "Tuple[int, int]",
+        "typing.Tuple[int, int]",
+        "tuple[int, int] | None",
+        "Optional[tuple[int, int]]",
+        "tuple[dict[str, int], dict[str, int]]",
+    ],
+)
+def test_every_spelling_of_a_same_typed_pair_is_seen(tmp_path: Path, annotation: str) -> None:
+    """A same-typed anonymous return is the swap no checker catches, however it is written.
+
+    ``Tuple`` and an optional pair were not read as tuples at all, and a member
+    carrying commas of its own was split at them, so two identical members read
+    as different ones.
+    """
+    source = f"import typing\nfrom typing import Optional, Tuple\ndef pair() -> {annotation}: ...\n"
+    figures = _census_of(tmp_path, {"domain/planted.py": source})
+    assert figures.anonymous_multi_value_returns == 1, annotation
+    assert len(figures.same_typed_return_shapes) == 1, (annotation, figures.same_typed_return_shapes)
+
+
+@pytest.mark.os_agnostic
+def test_a_mixed_pair_is_counted_and_not_called_same_typed(tmp_path: Path) -> None:
+    """The control for the spellings above: a pair the type checker DOES catch is left alone."""
+    figures = _census_of(tmp_path, {"domain/planted.py": "def pair() -> tuple[dict[str, int], int] | None: ...\n"})
+    assert figures.anonymous_multi_value_returns == 1
+    assert figures.same_typed_return_shapes == {}
+
+
+@pytest.mark.os_agnostic
+def test_this_project_returns_no_same_typed_anonymous_tuple(figures: Any) -> None:
+    """The acceptance CLAUDE.md records: every same-typed pair got a NamedTuple.
+
+    Held rather than re-derived by hand, because the census that re-derives it
+    is only run when somebody remembers to.
+    """
+    assert figures.anonymous_multi_value_returns > 0, "the control: the census found no multi-value return at all"
+    assert figures.same_typed_return_shapes == {}, figures.same_typed_return_shapes
