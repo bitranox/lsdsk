@@ -262,7 +262,9 @@ def speed_from_sysfs(speed: str | None, rx_lanes: str | None, tx_lanes: str | No
     """Decode the kernel's `speed` attribute and lane counts into a speed.
 
     The kernel reports the total: 10000 is one Gen 2 lane or two Gen 1 lanes,
-    told apart by the lane count, and 20000 is two Gen 2 lanes.
+    told apart by the lane count, and 20000 is two Gen 2 lanes. Every other
+    total is one lane whatever the lane count says, because two lanes cannot
+    add up to a total the kernel did not report.
 
     Args:
         speed: The `speed` attribute, in Mb/s.
@@ -280,8 +282,9 @@ def speed_from_sysfs(speed: str | None, rx_lanes: str | None, tx_lanes: str | No
     rate = _SYSFS_LANE_RATES.get(text)
     if rate is None:
         return None
-    two_lanes = text == _SYSFS_TWO_LANE_TOTAL or _lane_count(rx_lanes, tx_lanes) == _TWO_LANES
-    if text == _SYSFS_AMBIGUOUS_TOTAL and two_lanes:
+    two_gen1 = text == _SYSFS_AMBIGUOUS_TOTAL and _lane_count(rx_lanes, tx_lanes) == _TWO_LANES
+    two_lanes = text == _SYSFS_TWO_LANE_TOTAL or two_gen1
+    if two_gen1:
         rate = UsbLaneRate.GEN1
     return UsbSpeed(lane_rate=rate, lanes=_TWO_LANES if two_lanes else 1)
 

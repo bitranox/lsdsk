@@ -96,6 +96,23 @@ def test_a_sysfs_speed_decodes_with_its_lanes(speed: str, rx: str | None, tx: st
 
 
 @pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("speed", "expected"),
+    [("1.5", "USB1.5M"), ("12", "USB12M"), ("480", "USB480M"), ("5000", "USB5G")],
+)
+def test_a_lane_count_never_raises_the_total_the_kernel_reported(speed: str, expected: str) -> None:
+    """The kernel's `speed` is the link's TOTAL, so two lanes cannot add to it.
+
+    Only 10000 is ambiguous (one Gen 2 lane or two Gen 1 lanes) and only 20000
+    is two Gen 2 lanes. Believing a lane count of 2 beside any other total
+    doubled the figure the kernel itself reported: 480 became USB960M, a rate no
+    USB link has, and 5000 became USB10G.
+    """
+    decoded = usb.speed_from_sysfs(speed, "2", "2")
+    assert decoded is not None and decoded.figure == expected
+
+
+@pytest.mark.os_agnostic
 def test_two_gen1_lanes_are_priced_as_gen1_not_gen2() -> None:
     assert usb.speed_from_sysfs("10000", "2", "2") == UsbSpeed(lane_rate=UsbLaneRate.GEN1, lanes=2)
 

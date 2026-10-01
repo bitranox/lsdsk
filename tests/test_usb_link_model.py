@@ -70,3 +70,18 @@ def test_a_disk_carries_no_usb_link_unless_given_one() -> None:
     assert plain.usb is None
     attached = plain.with_changes(usb=UsbLink(running=GEN1, transport=UsbTransport.UAS))
     assert attached.usb is not None and attached.usb.transport is UsbTransport.UAS
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("rate", [UsbLaneRate.LOW, UsbLaneRate.FULL, UsbLaneRate.HIGH])
+def test_two_lanes_below_superspeed_are_refused(rate: UsbLaneRate) -> None:
+    """Dual-lane operation exists only for SuperSpeed, so USB960M is no speed at all."""
+    with pytest.raises(ValueError, match="two lanes exist only at 5G and 10G"):
+        UsbSpeed(lane_rate=rate, lanes=2)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("rate", [UsbLaneRate.GEN1, UsbLaneRate.GEN2])
+def test_two_superspeed_lanes_are_a_speed(rate: UsbLaneRate) -> None:
+    """The control: the refusal is about the rate, not about two lanes."""
+    assert UsbSpeed(lane_rate=rate, lanes=2).lanes == 2

@@ -14,9 +14,9 @@ from __future__ import annotations
 
 from functools import cached_property
 from math import inf, isnan
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .base import DomainModel
 from .enums import BusType, ControllerKind, DiskKind, Environment, PciPortKind, Severity, UsbLaneRate, UsbTransport
@@ -65,6 +65,9 @@ _USB_LANE_MBPS: dict[UsbLaneRate, float] = {
     UsbLaneRate.GEN1: 5000.0,
     UsbLaneRate.GEN2: 10000.0,
 }
+# USB 3.2 runs two lanes only at the SuperSpeed rates; a USB 2 or USB 1 link is
+# one pair of wires by construction. A specification fact, not a tunable.
+_DUAL_LANE_RATES = frozenset({UsbLaneRate.GEN1, UsbLaneRate.GEN2})
 _USB_LINE_EFFICIENCY: dict[UsbLaneRate, float] = {
     UsbLaneRate.LOW: 1.0,
     UsbLaneRate.FULL: 1.0,
@@ -1008,7 +1011,8 @@ class UsbSpeed(DomainModel, frozen=True):
 
     Attributes:
         lane_rate: The signalling rate of each lane.
-        lanes: One, or two for a USB 3.2 x2 link.
+        lanes: One, or two for a USB 3.2 x2 link, which exists only at 5G and
+            10G - a slower rate with two lanes is refused.
 
     Example:
         >>> UsbSpeed(lane_rate=UsbLaneRate.GEN2).figure
@@ -1019,6 +1023,14 @@ class UsbSpeed(DomainModel, frozen=True):
 
     lane_rate: UsbLaneRate
     lanes: int = Field(default=1, ge=1, le=2)
+
+    @model_validator(mode="after")
+    def _two_lanes_only_at_superspeed(self) -> Self:
+        """Refuse a pair no USB link can run: two lanes below SuperSpeed."""
+        if self.lanes > 1 and self.lane_rate not in _DUAL_LANE_RATES:
+            msg = f"two lanes exist only at 5G and 10G, not at {self.lane_rate}"
+            raise ValueError(msg)
+        return self
 
     @property
     def signalling_mbps(self) -> float:
