@@ -39,6 +39,7 @@ from rich.text import Text
 from ...domain.enums import PciPortKind, TreeDensity
 from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_TREE_DENSITY
+from ..hw.fabric import UNPLACED_ROOT
 from . import theme
 from .layout import (
     GAP,
@@ -81,7 +82,7 @@ if TYPE_CHECKING:
 
 # Spine geometry: two characters per drawn level, then the column a row's own
 # turn points down into, then one blank so the leader never touches the address.
-# S = 2K + 2 for the deepest drawn level K.
+# S = 2K + 2 for the deepest drawn level K, where a root bus is level 1.
 _SPINE_UNIT = 2
 _MARGIN_BEFORE_COLUMNS = 2
 
@@ -322,8 +323,29 @@ def device_header_line(fabric: Fabric, rules: str = "") -> Text:
 
 
 def _spine_width(deepest_level: int) -> int:
-    """Spine width for the deepest drawn level (a root bus is level 0)."""
+    """Spine width for the deepest drawn level (a root bus is level 1)."""
     return _SPINE_UNIT * deepest_level + _MARGIN_BEFORE_COLUMNS
+
+
+def root_heading(root: PciNode) -> str:
+    """What a root bus's heading row says.
+
+    Args:
+        root: A synthetic root bus of the fabric.
+
+    Returns:
+        The root complex it is, or - for the bus the assembly gives devices
+        that published no address - that they have none, because "root complex
+        unplaced" would name a root complex the machine does not have.
+
+    Example:
+        >>> from lsdsk.domain.models import PciNode
+        >>> root_heading(PciNode(address="0000:ff", name="root"))
+        'root complex 0000:ff'
+        >>> root_heading(PciNode(address=UNPLACED_ROOT, name="root"))
+        'no bus address'
+    """
+    return "no bus address" if root.address == UNPLACED_ROOT else f"root complex {root.address}"
 
 
 class Fabric:
@@ -373,14 +395,13 @@ class Fabric:
         #: What this run judges wear by, for the disk rows drawn under a
         #: controller. Carried here for the same reason as the header style.
         self.thresholds = thresholds
-        self.by_address = {node.address: node for node in nodes if not node.is_root}
+        # The root buses are in here as well as the devices: a root bus is a
+        # level of the tree with rules of its own, and leaving it out drew every
+        # root complex's devices as one column, so a second root's devices
+        # carried on in a column the first one's last device had just ended.
+        self.by_address = {node.address: node for node in nodes}
         self.kept = self._kept()
         self.by_parent = self._grouped(node for node in self.by_address.values() if node.address in self.kept)
-        # A root is drawn when something under it SURVIVED the density. Asked
-        # of the kept set rather than of every device, which is always true by
-        # construction - a root bus exists exactly where a device attaches to
-        # one - and so listed a root complex with nothing beneath it.
-        self.roots = [node for node in nodes if node.is_root and self.by_parent.get(node.address)]
         # Remembered per address, each from its parent's, so drawing a fabric
         # reads every parent once. A capture decides how deep its chain is, and
         # a walk to the root per row, repeated for every rule drawn beside one,
@@ -474,13 +495,18 @@ class Fabric:
         with storage - the neighbours that explain lane sharing. A shared
         parent that is not a bridge keeps nothing: devices on a root bus share
         no link, so they are not each other's neighbours there.
+
+        A root bus is never selected for itself, at any density: it arrives as
+        the ancestor of a kept device, so a root complex with nothing kept
+        beneath it draws no heading over an empty space.
         """
+        devices = {address: node for address, node in self.by_address.items() if not node.is_root}
         if self.density is TreeDensity.FULL:
-            return set(self.by_address)
-        storage = {address for address, node in self.by_address.items() if self.holds_drives(node)}
+            return self._with_ancestors(set(devices))
+        storage = {address for address, node in devices.items() if self.holds_drives(node)}
         keep = set(storage)
         if self.density is TreeDensity.STORAGE_AND_SIBLINGS:
-            by_parent_all = self._grouped(self.by_address.values())
+            by_parent_all = self._grouped(devices.values())
             for address in storage:
                 parent = self.by_address[address].parent_address
                 above = self.by_address.get(parent) if parent is not None else None
@@ -489,7 +515,7 @@ class Fabric:
         return self._with_ancestors(keep)
 
     def _with_ancestors(self, keep: set[str]) -> set[str]:
-        """Add whatever stands between a kept device and its root bus.
+        """Add whatever stands between a kept device and its root bus, and the bus.
 
         The density selects by CLASS and the drawing walks DOWN through kept
         parents, so a kept device whose parent was not kept is selected and
@@ -510,17 +536,25 @@ class Fabric:
         return complete
 
     def drawn(self) -> list[tuple[PciNode, int]]:
-        """Every drawn device with its level.
+        """Every drawn row's node with its level: each root bus, then its devices.
 
-        Parents before children, address order within a parent.
+        Parents before children, address order within a parent. A root bus is
+        level 1 and is drawn as a heading rather than as a device.
         """
-        out: list[tuple[PciNode, int]] = []
-        for root in self.roots:
-            out.extend(self._descendants(root))
-        return out
+        return list(self._descendants(None))
 
-    def _descendants(self, parent: PciNode) -> Iterable[tuple[PciNode, int]]:
-        """Everything below ``parent``, parents before children.
+    def devices(self) -> list[tuple[PciNode, int]]:
+        """Every drawn DEVICE with its level: :meth:`drawn` without the root buses.
+
+        What a question about a device row asks - its columns, its hops, its
+        link - because a root heading has no columns to answer it with.
+        """
+        return [(node, level) for node, level in self.drawn() if not node.is_root]
+
+    def _descendants(self, parent_address: str | None) -> Iterable[tuple[PciNode, int]]:
+        """Everything below ``parent_address``, parents before children.
+
+        ``None`` is above the root buses, so it walks the whole drawn tree.
 
         Walked from an explicit stack rather than by recursion. Parenthood is
         the capture's to state, so the depth of a chain is too, and one frame
@@ -533,18 +567,18 @@ class Fabric:
         Pushed in reverse so the children come back off the stack in the
         address order :meth:`_grouped` put them in.
         """
-        stack = list(reversed(self.by_parent.get(parent.address, ())))
+        stack = list(reversed(self.by_parent.get(parent_address, ())))
         while stack:
             node = stack.pop()
             yield node, self.level_of(node)
             stack.extend(reversed(self.by_parent.get(node.address, ())))
 
     def level_of(self, node: PciNode) -> int:
-        """Level of a device: the child of a root bus is level 1.
+        """Level of a node: a root bus is level 1, a device on one level 2.
 
-        One more than its parent's, or 1 where the parent is a root bus or was
-        never captured. Climbs only as far as the nearest device whose level is
-        already known, and remembers every level it passes.
+        One more than its parent's, or 1 where it has no parent or its parent
+        was never captured. Climbs only as far as the nearest node whose level
+        is already known, and remembers every level it passes.
         """
         pending = list(self._unknown_ancestry(node, self._levels))
         if not pending:
@@ -556,15 +590,16 @@ class Fabric:
         return level
 
     def _unknown_ancestry(self, node: PciNode, known: Mapping[str, object]) -> Iterable[PciNode]:
-        """The device and its ancestors, nearest first, up to one ``known`` holds.
+        """The node and its ancestors, nearest first, up to one ``known`` holds.
 
-        Stops at a root bus and at a parent the capture never carried, which
-        is where every walk up this fabric has always stopped.
+        The root bus is included, because it draws a rule of its own; the walk
+        stops above it and at a parent the capture never carried.
         """
         current: PciNode | None = node
-        while current is not None and current.parent_address is not None and current.address not in known:
+        while current is not None and current.address not in known:
             yield current
-            current = self.by_address.get(current.parent_address)
+            parent = current.parent_address
+            current = self.by_address.get(parent) if parent is not None else None
 
     def _is_last_child(self, node: PciNode) -> bool:
         """Whether no drawn sibling follows this device under its parent."""
@@ -637,7 +672,7 @@ class Fabric:
         a section that drew one always is.
         """
         drawn = {
-            text for node, _level in self.drawn() for text, _style in hop_cells(node, bandwidth=self.hop_bandwidth)
+            text for node, _level in self.devices() for text, _style in hop_cells(node, bandwidth=self.hop_bandwidth)
         }
         return theme.hop_legend(drawn)
 
@@ -649,12 +684,26 @@ class Fabric:
         test_no_width_strands_a_severity_marker_on_its_own_line exists for.
         The fields after the spine are the section's, not this row's, so the
         header above them labels exactly what every row drew.
+
+        A root bus is a heading instead: its legs and the turn down into its
+        devices, then what it is. It has no link to put in the hop columns and
+        no finding to mark, and it is cut to the width rather than wrapped, so
+        it holds the one-line law every device row does.
         """
+        if node.is_root:
+            return self._heading_row(node)
         severity = severities.get(node.address)
         line = Text()
         line.append(theme.marker_for(severity).ljust(_MARKER_WIDTH), style=theme.style_for(severity))
         line.append(self._spine_for(node))
         _append_fields(line, self.fields, self._cells(node))
+        return line
+
+    def _heading_row(self, root: PciNode) -> Text:
+        """A root bus's row: its rules, the turn down to its devices, its name."""
+        rules = " " * _MARKER_WIDTH + self._legs_for(root) + TREE_DOWN + " "
+        line = Text(rules)
+        line.append(clip(root_heading(root), max(self.width - len(rules), 1)), style=self.header_style)
         return line
 
     def _spine_for(self, node: PciNode) -> str:
@@ -860,6 +909,13 @@ def _fabric_devices(
     out: list[FabricLine] = []
     labelled = False
     for node, _level in fabric.drawn():
+        if node.is_root:
+            # A heading describes the section, so it names no subject: there
+            # is no device behind a synthetic bus for the detail panel to read.
+            # The column header follows it, under the root's own rule.
+            out.append(FabricLine(fabric.row(node, severities), None))
+            labelled = False
+            continue
         if not labelled:
             # Again after a disk block has come between, for the reason the disk
             # header already repeats per controller: on a machine with several,

@@ -544,7 +544,9 @@ def test_every_device_row_starts_its_columns_at_the_same_place(host: str) -> Non
     findings = diagnose(machine)
     fabric = Fabric.of(machine, 200, FabricView(density=TreeDensity.FULL))
 
-    offsets = {fabric.row(node, severity_index(findings)).plain.index(node.address) for node, _level in fabric.drawn()}
+    offsets = {
+        fabric.row(node, severity_index(findings)).plain.index(node.address) for node, _level in fabric.devices()
+    }
 
     assert len(offsets) == 1, f"{host}: the address column sits at {sorted(offsets)} depending on the row's depth"
 
@@ -699,7 +701,9 @@ def test_the_top_line_says_only_what_the_capture_carries() -> None:
         )
         lines = [line.rstrip() for line in buffer.getvalue().splitlines() if line.strip()]
         first_device = min(index for index, line in enumerate(lines) if DeviceLine.search(line))
-        return next(line for line in reversed(lines[:first_device]) if "root complex" in line)
+        # The board line by what only it carries: each root complex has a heading
+        # of its own between the board and the first device, naming one too.
+        return next(line for line in reversed(lines[:first_device]) if line.endswith("PCI devices"))
 
     nameless = top_line("linux-sas-hba")
     assert "linux-sas-hba" in nameless, f"with no board named, the line names the machine: {nameless!r}"
@@ -812,7 +816,7 @@ def test_the_device_rows_carry_a_header_over_their_own_columns() -> None:
     findings = diagnose(machine)
     fabric = Fabric.of(machine, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
     header = device_header_line(fabric).plain
-    node, _level = fabric.drawn()[0]
+    node, _level = fabric.devices()[0]
     row = fabric.row(node, severity_index(findings)).plain
     capable, running = (text for text, _style in hop_cells_of(node))
 
@@ -873,7 +877,7 @@ def test_the_header_names_exactly_the_columns_the_rows_draw() -> None:
     for width in range(20, 201):
         fabric = Fabric(tree, width, FabricView(density=TreeDensity.FULL), drives_on=())
         header = device_header_line(fabric)
-        node, _level = fabric.drawn()[0]
+        node, _level = fabric.devices()[0]
         # Matches BOTH hop tiers: the narrow figure is a prefix of the wide
         # one, so this asks "did the row draw a hop" without caring which.
         drew_hops = "Gen3x4" in fabric.row(node, {}).plain
@@ -1132,7 +1136,7 @@ def _hop_cells_off_their_tier(fabric: Fabric, findings: Sequence[Finding]) -> tu
     wide = all(field.width == HOP_WIDE_WIDTH for field in hops)
     wrong: list[str] = []
     discriminating = 0
-    for node, _level in fabric.drawn():
+    for node, _level in fabric.devices():
         row = fabric.row(node, severity_index(findings)).plain
         expected = hop_cells(node, bandwidth=wide)
         other = hop_cells(node, bandwidth=not wide)
@@ -1240,7 +1244,7 @@ def test_the_capable_column_draws_the_maximum_and_the_running_one_the_negotiated
     fabric = Fabric(_deep_linked_chain(1), width, FabricView(density=TreeDensity.FULL), drives_on=())
     header = device_header_line(fabric).plain
     widths = {field.key: field.width for field in fabric.fields}
-    node, _level = fabric.drawn()[0]
+    node, _level = fabric.devices()[0]
     row = fabric.row(node, {}).plain
     for key, expected in (("capable", capable), ("running", running)):
         start = header.index(key)
