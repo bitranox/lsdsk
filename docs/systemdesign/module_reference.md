@@ -39,6 +39,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/hw/linux/builder.py` - Turn a captured Linux sysfs reading into the domain inventory.
 - `src/lsdsk/adapters/hw/linux/capture.py` - The typed shape of a Linux reading.
 - `src/lsdsk/adapters/hw/linux/reader.py` - Read storage topology and device blobs from a live Linux system.
+- `src/lsdsk/adapters/hw/linux/usbfs.py` - Fetch a USB device's BOS through usbfs, for kernels that do not publish it in sysfs.
 
 ### Adapters - hardware, Windows
 

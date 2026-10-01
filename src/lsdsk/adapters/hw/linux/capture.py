@@ -331,6 +331,40 @@ class NvmeBlobs(CaptureModel, frozen=True):
     smart_log_error: DeviceText | None = None
 
 
+class UsbDeviceEntry(CaptureModel, frozen=True):
+    """One USB device on the way from a USB disk to its root hub, as sysfs published it.
+
+    Values stay the text the kernel wrote; decoding them is the builder's job.
+    No serial, product or manufacturer string is recorded: nothing reads them,
+    and a fixture would have to scrub each.
+
+    Attributes:
+        name: The device directory's name, ``usb1`` for a root hub, ``1-1.2`` below it.
+        speed: The running speed in Mb/s, as the kernel writes it.
+        version: bcdUSB, which says whether the device has a BOS at all.
+        rx_lanes: The lanes it receives on (USB 3.2).
+        tx_lanes: The lanes it transmits on (USB 3.2).
+        device_class: bDeviceClass; ``09`` is a hub.
+        interface_drivers: The drivers bound to its interfaces, ``uas`` or ``usb-storage`` for a disk.
+        peer_hub: The sysfs path of the hub owning the other-speed half of the socket it is in.
+        bos: Its BOS descriptor, from sysfs or usbfs.
+        bos_none: The device has no BOS: bcdUSB is below 2.01, or it STALLed the request.
+        bos_error: Why the BOS could not be read.
+    """
+
+    name: DeviceText = ""
+    speed: DeviceText | None = None
+    version: DeviceText | None = None
+    rx_lanes: DeviceText | None = None
+    tx_lanes: DeviceText | None = None
+    device_class: DeviceText | None = Field(default=None, alias="bDeviceClass")
+    interface_drivers: Entries[DeviceText] = ()
+    peer_hub: DeviceText | None = None
+    bos: EncodedPayload | None = None
+    bos_none: bool = False
+    bos_error: DeviceText | None = None
+
+
 class LinuxCapture(CaptureHeader, frozen=True):
     """A whole Linux reading.
 
@@ -348,6 +382,7 @@ class LinuxCapture(CaptureHeader, frozen=True):
         block: Every block device, keyed by node name.
         ata: ATA passthrough results, keyed by node name.
         nvme: NVMe passthrough results, keyed by node name.
+        usb: Every USB device between a USB disk and its root hub, keyed by sysfs path.
     """
 
     platform: Literal[Platform.LINUX]
@@ -360,6 +395,7 @@ class LinuxCapture(CaptureHeader, frozen=True):
     block: EntryMap[DeviceText, BlockEntry] = Field(default_factory=dict[DeviceText, BlockEntry])
     ata: EntryMap[DeviceText, AtaBlobs] = Field(default_factory=dict[DeviceText, AtaBlobs])
     nvme: EntryMap[DeviceText, NvmeBlobs] = Field(default_factory=dict[DeviceText, NvmeBlobs])
+    usb: EntryMap[DeviceText, UsbDeviceEntry] = Field(default_factory=dict[DeviceText, UsbDeviceEntry])
 
 
 __all__ = [
@@ -378,5 +414,6 @@ __all__ = [
     "SasPhyEntry",
     "ScsiHostEntry",
     "SysfsClasses",
+    "UsbDeviceEntry",
     "VpdPages",
 ]

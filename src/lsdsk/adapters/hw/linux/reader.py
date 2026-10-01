@@ -35,7 +35,7 @@ import mmap
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from ....domain.enums import Platform
 from ..ata_commands import (
@@ -50,6 +50,10 @@ from ..capture import MAX_DEVICE_TEXT, MAX_PAYLOAD_BYTES
 from ..decode import ahci, pciids
 from ..decode.virtualization import container_markers_in_mounts
 from ..snapshot import SCHEMA_VERSION
+from . import usbfs
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 # ioctl numbers. SG_IO is the generic SCSI passthrough; the NVMe admin command
 # code is _IOWR('N', 0x41, struct nvme_passthru_cmd) evaluated for a 72-byte
@@ -705,6 +709,129 @@ def read_block(root: Path = Path("/sys/block")) -> dict[str, dict[str, Any]]:
     return disks
 
 
+USB_DEVICE_ATTRS = ("speed", "version", "rx_lanes", "tx_lanes", "bDeviceClass", "busnum", "devnum")
+_FIRST_VERSION_WITH_BOS = (2, 1)
+_USB_PATH_MARK = "/usb"
+_ROOT_HUB_PREFIX = "usb"
+
+
+def read_usb(block: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Record every USB device between a USB disk and its root hub, and the hub its socket's twin hangs off.
+
+    A USB disk's speed is a property of the chain it hangs on rather than of the
+    disk: the socket it is in, any hub above it, and - for a USB 3 socket - the
+    other-speed half of the same socket, which sits under a different root hub.
+    Each device is read once however many disks share it.
+
+    Args:
+        block: What :func:`read_block` returned.
+
+    Returns:
+        Each device's attributes, keyed by its real sysfs path.
+    """
+    found: dict[str, dict[str, Any]] = {}
+    for entry in block.values():
+        for device in _usb_devices_above(str(entry.get("device_path", ""))):
+            _record_usb_device(device, found)
+    return found
+
+
+def _record_usb_device(device: Path, found: dict[str, dict[str, Any]]) -> None:
+    """Read one USB device into ``found``, and the hub owning its socket's twin."""
+    key = os.path.realpath(device)
+    if key in found:
+        return
+    found[key] = _read_usb_device(device)
+    twin_hub = found[key].get("peer_hub")
+    if twin_hub and twin_hub not in found:
+        found[twin_hub] = _read_usb_device(Path(twin_hub))
+
+
+def _usb_devices_above(device_path: str) -> list[Path]:
+    """Every USB device directory from the one nearest a block device up to its root hub."""
+    if _USB_PATH_MARK not in device_path:
+        return []
+    return [parent for parent in Path(device_path).parents if (parent / "idVendor").exists()]
+
+
+def _read_usb_device(device: Path) -> dict[str, Any]:
+    """The attributes, interface drivers, socket twin and BOS of one USB device."""
+    entry: dict[str, Any] = dict(_read_attrs(device, USB_DEVICE_ATTRS))
+    entry["name"] = device.name
+    entry["interface_drivers"] = _interface_drivers(device)
+    twin = _twin_hub(device)
+    if twin is not None:
+        entry["peer_hub"] = twin
+    entry.update(_read_usb_bos(device))
+    return entry
+
+
+def _interface_drivers(device: Path) -> list[str]:
+    """The drivers bound to a device's interfaces (``uas``, ``usb-storage``, ``hub``)."""
+    names = {
+        Path(os.path.realpath(interface / "driver")).name
+        for interface in _entries(device)
+        if ":" in interface.name and (interface / "driver").exists()
+    }
+    return sorted(names)
+
+
+def _port_of(device: Path) -> Path | None:
+    """The hub port a device is plugged into.
+
+    Below a hub that is ``<hub>/<hub>:1.0/<hub>-port<N>``; on a root hub ``usbB``
+    it is ``usbB/B-0:1.0/usbB-port<N>``. A root hub itself has no port.
+    """
+    name = device.name
+    if name.startswith(_ROOT_HUB_PREFIX) or "-" not in name:
+        return None
+    nested = "." in name
+    port = name.rsplit(".", 1)[1] if nested else name.split("-", 1)[1]
+    label = device.parent.name if nested else f"{_ROOT_HUB_PREFIX}{name.split('-', 1)[0]}"
+    for interface in _entries(device.parent):
+        candidate = interface / f"{label}-port{port}"
+        if ":" in interface.name and candidate.exists():
+            return candidate
+    return None
+
+
+def _twin_hub(device: Path) -> str | None:
+    """The hub device owning the other-speed half of this device's socket, or None for a socket with none."""
+    port = _port_of(device)
+    if port is None or not (port / "peer").exists():
+        return None
+    # peer -> <hub>/<hub>:1.0/<hub>-portN, so the hub is two levels above it.
+    return str(Path(os.path.realpath(port / "peer")).parent.parent)
+
+
+def _declares_bos(version: str | None) -> bool:
+    """Whether bcdUSB says the device has a BOS; an unreadable version is asked rather than assumed."""
+    try:
+        major, minor = (version or "").strip().split(".")
+        return (int(major), int(minor)) >= _FIRST_VERSION_WITH_BOS
+    except ValueError:
+        return True
+
+
+def _read_usb_bos(device: Path) -> dict[str, Any]:
+    """The BOS from sysfs (kernel 6.9+) or usbfs (root), or why there is none."""
+    if not _declares_bos(_read_attribute(device / "version")):
+        return {"bos_none": True}
+    published = _read_blob(device / "bos_descriptors")
+    if published is not None:
+        return {"bos": published}
+    bus, number = _read_attribute(device / "busnum"), _read_attribute(device / "devnum")
+    if bus is None or number is None or not bus.isdigit() or not number.isdigit():
+        return {}
+    try:
+        payload = usbfs.read_bos(Path(f"/dev/bus/usb/{int(bus):03d}/{int(number):03d}"))
+    except usbfs.NoBos:
+        return {"bos_none": True}
+    except (OSError, ValueError) as error:
+        return {"bos_error": str(error)}
+    return {"bos": base64.b64encode(payload).decode("ascii")}
+
+
 def read_ata_blobs(nodes: list[str]) -> dict[str, dict[str, str]]:
     """Read IDENTIFY and SMART structures from every ATA disk.
 
@@ -872,6 +999,7 @@ def read_system() -> dict[str, Any]:
         "block": block,
         "ata": read_ata_blobs(ata_nodes),
         "nvme": read_nvme_blobs(nvme_nodes),
+        "usb": read_usb(block),
     }
 
 
@@ -891,5 +1019,6 @@ __all__ = [
     "read_environment",
     "read_pci",
     "read_system",
+    "read_usb",
     "smart_log_selector",
 ]
