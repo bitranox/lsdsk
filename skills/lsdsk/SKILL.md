@@ -264,14 +264,22 @@ an `IndentationError`, which exits `1` - the same code these checks use for
 
 **A disk, inside `data.disks`, carries `node`, `path`, `model`, `serial`,
 `firmware`, `wwn`, `size_bytes`, `kind`, `bus`, `controller_address`, `link`,
-`pcie`, `health` and `readings_refused`.** Every one but `node`, `path`,
+`pcie`, `usb`, `health` and `readings_refused`.** Every one but `node`, `path`,
 `model`, `bus` and `readings_refused` may be `null`, which means it was not read
 rather than that it is zero. `readings_refused` is a list, empty on a drive that
 answered everything, and each entry is an object of `reading` and `reason`: what
 was asked for, and what the operating system said when it would not give it. `bus` is one of
 `sata`, `sas`, `nvme`, `usb`, `virtual`, `unknown`; `kind` is `ssd`, `hdd` or
 `unknown`. `link` is an object of `negotiated_gbps`, `drive_max_gbps` and
-`port_max_gbps`, and a speed rule only fires when both ends are known.
+`port_max_gbps`, and a speed rule only fires when both ends are known. On a disk
+reached over USB, `link` stays the drive's own link behind the bridge in its
+enclosure, and `usb` is the USB link from the machine to that bridge: an object of
+`running`, `device_max`, `port_max`, `behind_hub`, `upstream`, `on_usb2_twin` and
+`transport` (`uas`, `bot` or `unknown`), each speed in it an object of
+`lane_rate` (`1.5M`, `12M`, `480M`, `5G` or `10G`, where `M` is Mb/s and `G` is
+Gb/s, per lane) and `lanes` (1 or 2). The speed is the lane rate times the lanes:
+`{"lane_rate": "10G", "lanes": 2}` is 20 Gb/s and `{"lane_rate": "480M", "lanes": 1}`
+is 0.48 Gb/s. `usb` is `null` on every other disk.
 
 **A controller, inside `data.controllers`, carries `kind`**, which is one of
 `ahci`, `sas`, `nvme`, `raid`, `ide`, `other` or `unknown` - read from the PCI
