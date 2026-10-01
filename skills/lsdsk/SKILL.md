@@ -154,14 +154,21 @@ running `Gen3x8` because the root port above it is a Gen3 port, so the card is
 not faulty and the board is the ceiling.
 
 **A hop column holds a SYMBOL when there is no figure, and the section spells
-out whichever one it drew.** Neither is a fault, and reading one as a fault is a
-work order against hardware that is fine:
+out whichever one it drew.** None of them is a fault, and reading one as a fault
+is a work order against hardware that is fine:
 
 - `- = not read` - nobody published the register. Windows exposes a PCIe link
   for endpoints and for BRIDGES not at all, so every bridge row reads this
   there. It means UNMEASURED, never "down".
 - `legacy = no PCIe capability` - the device has no PCIe capability at all,
   which is an ordinary legacy PCI part. It is a reading, not a gap.
+- `none = no link trained` - the register WAS read, and no lane is up: usually a
+  slot or root port with nothing in it, or a function built into the chip with
+  no link of its own. A reading like `legacy`, not a gap like `-`, and nothing
+  to reseat on it. A storage controller whose link never trained raises its own
+  critical finding, so `none` alone never calls for action. The row says which:
+  a row tagged `root port` or `switch port` with nothing drawn beneath it is a
+  slot with nothing working in it; any other row is a built-in function.
 
 The distinction matters because those two look alike and mean opposite things
 about the EVIDENCE. `legacy` is a positive reading - the platform answered, and
