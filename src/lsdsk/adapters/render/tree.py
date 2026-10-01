@@ -666,7 +666,7 @@ class Fabric:
         layout: Layout,
         severities: Mapping[str, Severity],
         inventory: Inventory,
-        rules: str = "",
+        rules: str,
     ) -> Text:
         """One disk's row under its controller's fabric row.
 
@@ -843,8 +843,11 @@ def _fabric_orphans(
     return [
         FabricLine(Text(""), None),
         FabricLine(Text("not attached to a known controller", style=theme.STYLE_UNKNOWN), None),
-        FabricLine(disk_header_line(fabric, layout), None),
-        *(FabricLine(fabric.disk_row(disk, layout, severities, inventory), disk) for disk in orphans),
+        FabricLine(disk_header_line(fabric, layout, fabric.rules_under(None)), None),
+        *(
+            FabricLine(fabric.disk_row(disk, layout, severities, inventory, fabric.rules_under(None)), disk)
+            for disk in orphans
+        ),
     ]
 
 
@@ -961,8 +964,9 @@ def _virtual_block(
     if not expand_virtual:
         lines.append(Text(f"   {virtual_note(inventory.virtual_disks)}", style=theme.STYLE_UNKNOWN))
         return lines
-    lines.append(disk_header_line(fabric, layout))
-    lines.extend(fabric.disk_row(disk, layout, severities, inventory) for disk in inventory.virtual_disks)
+    rules = fabric.rules_under(None)
+    lines.append(disk_header_line(fabric, layout, rules))
+    lines.extend(fabric.disk_row(disk, layout, severities, inventory, rules) for disk in inventory.virtual_disks)
     return lines
 
 
@@ -983,7 +987,7 @@ def _no_pci_fallback(
     return render_controller_disks(inventory, findings, width, expand_virtual=expand_virtual)
 
 
-def disk_header_line(fabric: Fabric, layout: Layout, rules: str = "") -> Text:
+def disk_header_line(fabric: Fabric, layout: Layout, rules: str) -> Text:
     """The disk column header, offset by marker and spine like every row.
 
     Copied from report's own with the gutter widened to the spine: the header
@@ -997,13 +1001,16 @@ def disk_header_line(fabric: Fabric, layout: Layout, rules: str = "") -> Text:
         layout: The fitted disk columns and their widths.
         rules: The vertical rules live at this point in the tree, drawn in the
             spine so a reader following one down the page does not lose it.
+            Required, and the rows below take the same value: with a default
+            here and a different one on the row, a block that passed neither
+            drew its header a spine to the right of its own rows.
 
     Returns:
         The header line, ready to draw above a controller's disks.
     """
     line = Text()
     line.append(" " * _MARKER_WIDTH)
-    line.append(rules or " " * fabric.spine)
+    line.append(rules)
     for column in layout.columns:
         line.append(pad(column.title, layout.widths[column.key], column.align), style=fabric.header_style)
         line.append(GAP)

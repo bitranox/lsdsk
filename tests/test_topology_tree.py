@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -274,3 +275,70 @@ def test_a_section_whose_hops_were_all_read_explains_nothing() -> None:
     assert "0000:01:00.0" in text, "the fixture drew nothing to judge"
     assert "= not read" not in text, text
     assert "= no PCIe capability" not in text, text
+
+
+def _disk_blocks(host: str, *, expand_virtual: bool = False) -> list[tuple[str, list[tuple[str, str]]]]:
+    """Every disk block of the fabric: its header, then each row with the path it draws.
+
+    A kernel-virtual row is drawn with no subject, so it is recognised by its path.
+    """
+    from lsdsk.adapters.render.tree import FabricView, fabric_lines
+    from lsdsk.domain.enums import TreeDensity
+    from lsdsk.domain.models import Disk
+
+    machine = build_from(_load(host))
+    view = FabricView(density=TreeDensity.FULL, expand_virtual=expand_virtual)
+    lines = fabric_lines(machine, diagnose(machine), 200, view)
+    virtual = {disk.path for disk in machine.virtual_disks}
+    blocks: list[tuple[str, list[tuple[str, str]]]] = []
+    for line in lines:
+        text = line.text.plain
+        cells = text.split()
+        if line.subject is None and re.search(r"\bdevice\s+model\b", text):
+            blocks.append((text, []))
+        elif isinstance(line.subject, Disk) and blocks:
+            blocks[-1][1].append((text, line.subject.path))
+        elif line.subject is None and blocks and (path := next((c for c in cells if c in virtual), None)):
+            blocks[-1][1].append((text, path))
+    return blocks
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", sorted(path.stem for path in FIXTURES.glob("*.json")))
+def test_every_disk_row_starts_under_its_own_header(host: str) -> None:
+    """A disk row's first cell sits under the header's first title, in every block.
+
+    The orphan block, for drives on no controller the fabric drew, built its
+    header with the spine's width of blank and its rows with none, so every row
+    there stood a spine to the left of the column naming it. No capture had an
+    orphan until a USB disk arrived, whose xHCI is no storage controller.
+    """
+    blocks = _disk_blocks(host)
+    assert blocks, f"{host} draws no disk block, so this would pass on nothing"
+    wrong = [
+        f"{node}: row at {row.index(node)}, header at {header.index('device')}"
+        for header, rows in blocks
+        for row, node in rows
+        if row.index(node) != header.index("device")
+    ]
+    assert not wrong, wrong
+
+
+@pytest.mark.os_agnostic
+def test_a_usb_disk_on_windows_reaches_the_orphan_block() -> None:
+    """The case the alignment test needs an orphan for, held so it cannot quietly vanish."""
+    blocks = _disk_blocks("windows-usb-uas")
+    nodes = [node for _, rows in blocks for _, node in rows]
+    lines = _fabric_lines("windows-usb-uas")
+    assert any("not attached to a known controller" in line for line in lines)
+    assert "PhysicalDrive2" in nodes, nodes
+
+
+@pytest.mark.os_agnostic
+def test_an_expanded_virtual_row_starts_under_its_own_header() -> None:
+    """The kernel-virtual block had the orphans' defect too, drawn only on request."""
+    blocks = _disk_blocks("linux-minimal", expand_virtual=True)
+    virtual_rows = [(header, row, path) for header, rows in blocks for row, path in rows if "/dev/sd" not in path]
+    assert virtual_rows, "linux-minimal carries kernel-virtual devices, so the block must be drawn"
+    wrong = [path for header, row, path in virtual_rows if row.index(path) != header.index("device")]
+    assert not wrong, wrong

@@ -249,7 +249,9 @@ def test_both_headers_of_a_section_are_drawn_in_the_same_style() -> None:
     fabric = Fabric(inventory.pci_tree, 200, FabricView(density=TreeDensity.FULL, header_style=interactive))
 
     device_styles = {str(span.style) for span in device_header_line(fabric).spans}
-    disk_styles = {str(span.style) for span in disk_header_line(fabric, fabric.measure(inventory)).spans}
+    disk_styles = {
+        str(span.style) for span in disk_header_line(fabric, fabric.measure(inventory), fabric.rules_under(None)).spans
+    }
 
     assert device_styles == {interactive}, device_styles
     assert disk_styles == {interactive}, f"the disk header ignored the section's header style: {disk_styles}"
