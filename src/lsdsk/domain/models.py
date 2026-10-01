@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from pydantic import Field
 
 from .base import DomainModel
-from .enums import BusType, ControllerKind, DiskKind, Environment, PciPortKind, Severity
+from .enums import BusType, ControllerKind, DiskKind, Environment, PciPortKind, Severity, UsbLaneRate, UsbTransport
 from .text import DeviceText, OptionalDeviceText
 
 if TYPE_CHECKING:
@@ -53,6 +53,28 @@ _PCIE_FLOOR_WIDTH = 1
 # use the same ratio at 12 Gb/s for SAS-3, so usable bytes per second is the
 # signalling rate over ten. Fixed by the specification, never a setting.
 _SERIAL_ENCODING_DIVISOR = 10.0
+
+# USB signalling per lane, in Mb/s, and the share of it the line coding leaves
+# for data: USB 2 has no block code (bit stuffing costs at most 1/7 and is not
+# counted, so its figure is the nominal byte rate), Gen 1 uses 8b/10b and
+# Gen 2 uses 128b/132b. Specification constants, not tunables.
+_USB_LANE_MBPS: dict[UsbLaneRate, float] = {
+    UsbLaneRate.LOW: 1.5,
+    UsbLaneRate.FULL: 12.0,
+    UsbLaneRate.HIGH: 480.0,
+    UsbLaneRate.GEN1: 5000.0,
+    UsbLaneRate.GEN2: 10000.0,
+}
+_USB_LINE_EFFICIENCY: dict[UsbLaneRate, float] = {
+    UsbLaneRate.LOW: 1.0,
+    UsbLaneRate.FULL: 1.0,
+    UsbLaneRate.HIGH: 1.0,
+    UsbLaneRate.GEN1: 8 / 10,
+    UsbLaneRate.GEN2: 128 / 132,
+}
+_USB2_CEILING_MBPS = 480.0
+_MBPS_PER_GBYTE = 8000.0
+_MBPS_PER_GBPS = 1000.0
 
 # PCI base class codes, enough to say what is sitting in a slot.
 _PCI_CLASS_STORAGE = 0x01
@@ -981,6 +1003,104 @@ class InterfaceLink(DomainModel, frozen=True):
         )
 
 
+class UsbSpeed(DomainModel, frozen=True):
+    """A USB rate: what one lane signals at, times how many lanes.
+
+    Attributes:
+        lane_rate: The signalling rate of each lane.
+        lanes: One, or two for a USB 3.2 x2 link.
+
+    Example:
+        >>> UsbSpeed(lane_rate=UsbLaneRate.GEN2).figure
+        'USB10G'
+        >>> UsbSpeed(lane_rate=UsbLaneRate.GEN2, lanes=2).bandwidth_gbps
+        2.4242
+    """
+
+    lane_rate: UsbLaneRate
+    lanes: int = Field(default=1, ge=1, le=2)
+
+    @property
+    def signalling_mbps(self) -> float:
+        """The total signalling rate across every lane, in Mb/s."""
+        return _USB_LANE_MBPS[self.lane_rate] * self.lanes
+
+    @property
+    def bandwidth_gbps(self) -> float:
+        """What the link carries for data after line coding, in GB/s."""
+        return round(self.signalling_mbps * _USB_LINE_EFFICIENCY[self.lane_rate] / _MBPS_PER_GBYTE, 4)
+
+    @property
+    def figure(self) -> str:
+        """The one spelling every view and every finding draws: the total rate, as on the box.
+
+        Example:
+            >>> UsbSpeed(lane_rate=UsbLaneRate.HIGH).figure
+            'USB480M'
+        """
+        mbps = self.signalling_mbps
+        if mbps >= _MBPS_PER_GBPS:
+            return f"USB{mbps / _MBPS_PER_GBPS:g}G"
+        return f"USB{mbps:g}M"
+
+
+class UsbLink(DomainModel, frozen=True):
+    """The USB link between the machine and the bridge in a disk's enclosure.
+
+    Attributes:
+        running: What the link negotiated.
+        device_max: The fastest the device (the bridge) declares it can do.
+        port_max: The fastest the socket it is plugged into can do.
+        behind_hub: Whether a hub sits between that socket and the machine; None when unread.
+        upstream: The slowest running hub link between the socket and the machine.
+        on_usb2_twin: Whether it came up on the USB 2 half of a socket that has a USB 3 half.
+        transport: UAS or BOT.
+
+    Example:
+        >>> gen2 = UsbSpeed(lane_rate=UsbLaneRate.GEN2)
+        >>> UsbLink(running=UsbSpeed(lane_rate=UsbLaneRate.HIGH), device_max=gen2, port_max=gen2).is_underperforming
+        True
+    """
+
+    running: UsbSpeed | None = None
+    device_max: UsbSpeed | None = None
+    port_max: UsbSpeed | None = None
+    behind_hub: bool | None = None
+    upstream: UsbSpeed | None = None
+    on_usb2_twin: bool | None = None
+    transport: UsbTransport = UsbTransport.UNKNOWN
+
+    @property
+    def achievable(self) -> UsbSpeed | None:
+        """The best this link could manage: the slowest of the device, the socket and any hub above.
+
+        Both the device and the socket are required, for the reason
+        `InterfaceLink.achievable_gbps` gives: an end that was not read is not
+        evidence of a capable one.
+        """
+        if self.device_max is None or self.port_max is None:
+            return None
+        ends = [self.device_max, self.port_max]
+        if self.upstream is not None:
+            ends.append(self.upstream)
+        return min(ends, key=lambda speed: speed.bandwidth_gbps)
+
+    @property
+    def is_underperforming(self) -> bool:
+        """Whether the link provably runs below what every end of it can do."""
+        achievable = self.achievable
+        if self.running is None or achievable is None:
+            return False
+        return self.running.bandwidth_gbps < achievable.bandwidth_gbps
+
+    @property
+    def fell_back_to_usb2(self) -> bool:
+        """Whether a SuperSpeed device came up at USB 2 speed in a socket that has a USB 3 half."""
+        if self.on_usb2_twin is not True or self.running is None or self.device_max is None:
+            return False
+        return self.running.signalling_mbps <= _USB2_CEILING_MBPS < self.device_max.signalling_mbps
+
+
 class SmartAttribute(DomainModel, frozen=True):
     """One row of the ATA SMART attribute table.
 
@@ -1302,6 +1422,8 @@ class Disk(DomainModel, frozen=True):
         controller_address: PCI address of the controller it hangs off.
         link: Its interface speed, negotiated against both ends' capability.
         pcie: For NVMe, the drive's own PCIe link.
+        usb: For a disk reached over USB, the USB link to its enclosure;
+            ``link`` stays the drive's own link behind the bridge.
         health: Condition and wear, when it could be read.
         readings_refused: Readings this drive would not give, each with the
             reason. A drive behind some RAID drivers refuses SMART passthrough,
@@ -1325,6 +1447,7 @@ class Disk(DomainModel, frozen=True):
     controller_address: OptionalDeviceText = None
     link: InterfaceLink = Field(default_factory=InterfaceLink)
     pcie: PcieLink | None = None
+    usb: UsbLink | None = None
     health: Health | None = None
     readings_refused: tuple[RefusedReading, ...] = ()
 
@@ -1961,6 +2084,8 @@ __all__ = [
     "PortChild",
     "RefusedReading",
     "SmartAttribute",
+    "UsbLink",
+    "UsbSpeed",
     "pci_bus_of",
     "pci_class_name",
     "pcie_bandwidth_gbps",

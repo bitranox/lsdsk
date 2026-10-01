@@ -45,9 +45,10 @@ is a `RefusedReading` named `usb-link`; a kernel that does not publish the attri
 
 **Model.** `Disk` gains `usb: UsbLink | None`, beside `link` (the drive's own SATA figures from
 IDENTIFY, unchanged) and `pcie`. `UsbLink` carries `running`, `device_max`, `port_max`, `upstream`,
-`on_usb2_twin` and `transport`. Rates are a `UsbRate` enum - USB12M, USB480M, USB5G, USB10G,
-USB20G - each with its usable bandwidth after the line encoding the specification defines (8b/10b
-for 5 Gb/s, 128b/132b for 10 and 20 Gb/s). `achievable` requires both `device_max` and `port_max`,
+`on_usb2_twin` and `transport`. Rates are a `UsbSpeed`: a `UsbLaneRate` (1.5M, 12M, 480M, 5G,
+10G) times one or two lanes, priced by the line coding of its lane rate (8b/10b for 5 Gb/s lanes,
+128b/132b for 10 Gb/s lanes), so 10 Gb/s from one Gen 2 lane and from two Gen 1 lanes both read
+`USB10G` while carrying 1.21 and 1.00 GB/s. `achievable` requires both `device_max` and `port_max`,
 exactly as `InterfaceLink.achievable_gbps` does: an end that was not read is never a capable end.
 `Disk.bus` is `usb` on both platforms for a drive reached through a USB device.
 

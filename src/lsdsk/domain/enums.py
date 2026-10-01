@@ -101,6 +101,53 @@ class BusType(StrEnum):
     UNKNOWN = "unknown"
 
 
+class UsbLaneRate(StrEnum):
+    """The signalling rate of one USB lane.
+
+    A link runs one or two lanes and the rate is per lane, so 20 Gb/s is two
+    lanes of GEN2. The value is the rate as the packaging writes it, which is
+    what `UsbSpeed.figure` builds the one spelling from.
+
+    Attributes:
+        LOW: 1.5 Mb/s, USB 1 low speed.
+        FULL: 12 Mb/s, USB 1 full speed.
+        HIGH: 480 Mb/s, USB 2.
+        GEN1: 5 Gb/s, SuperSpeed.
+        GEN2: 10 Gb/s per lane, SuperSpeedPlus.
+
+    Example:
+        >>> f"{UsbLaneRate.GEN2}"
+        '10G'
+    """
+
+    LOW = "1.5M"
+    FULL = "12M"
+    HIGH = "480M"
+    GEN1 = "5G"
+    GEN2 = "10G"
+
+
+class UsbTransport(StrEnum):
+    """Which mass-storage protocol a USB disk is driven with.
+
+    UAS queues commands and is markedly faster for an SSD; BOT (bulk-only
+    transport) runs one command at a time.
+
+    Attributes:
+        UAS: USB Attached SCSI.
+        BOT: Bulk-only transport (`usb-storage`, `USBSTOR`).
+        UNKNOWN: Not read.
+
+    Example:
+        >>> f"{UsbTransport.UAS}"
+        'uas'
+    """
+
+    UAS = "uas"
+    BOT = "bot"
+    UNKNOWN = "unknown"
+
+
 class DiskKind(StrEnum):
     """Whether a disk has spinning platters.
 
@@ -332,4 +379,6 @@ __all__ = [
     "Platform",
     "Severity",
     "TreeDensity",
+    "UsbLaneRate",
+    "UsbTransport",
 ]

@@ -15,7 +15,18 @@ from __future__ import annotations
 from .diagnostics import count_by_severity, diagnose
 from .enums import BusType, ControllerKind, DeployTarget, DiskKind, OutputFormat, Severity
 from .errors import ConfigurationError, UnsupportedPlatformError
-from .models import Controller, Disk, Finding, Health, InterfaceLink, Inventory, PcieLink, PcieSlot
+from .models import (
+    Controller,
+    Disk,
+    Finding,
+    Health,
+    InterfaceLink,
+    Inventory,
+    PcieLink,
+    PcieSlot,
+    UsbLink,
+    UsbSpeed,
+)
 
 __all__ = [
     "BusType",
@@ -34,6 +45,8 @@ __all__ = [
     "PcieSlot",
     "Severity",
     "UnsupportedPlatformError",
+    "UsbLink",
+    "UsbSpeed",
     "count_by_severity",
     "diagnose",
 ]
