@@ -27,11 +27,11 @@ from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 import pytest
 
-from lsdsk.adapters.hw.linux.capture import AtaBlobs, NvmeBlobs
+from lsdsk.adapters.hw.linux.capture import AtaBlobs, NvmeBlobs, UsbDeviceEntry
 from lsdsk.adapters.hw.windows.capture import DiskEntry, HealthBlobs
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
     from click.testing import CliRunner
     from pydantic import BaseModel
@@ -97,7 +97,7 @@ def refusal_lines(envelope: dict[str, Any]) -> list[str]:
     return [entry for entry in envelope["skipped"] if REFUSAL in entry]
 
 
-def _refusal_fields(model: type[BaseModel]) -> list[tuple[str, str]]:
+def _refusal_fields(model: type[BaseModel], renamed: Mapping[str, str] | None = None) -> list[tuple[str, str]]:
     """Every refusal field a capture model carries, paired with its reading name.
 
     Read from the model's own ``model_fields`` rather than hand-listed, so a
@@ -109,13 +109,18 @@ def _refusal_fields(model: type[BaseModel]) -> list[tuple[str, str]]:
 
     Args:
         model: A capture model that carries one or more refusal fields.
+        renamed: The fields whose reading is named for what the refusal leaves
+            unread rather than for the field: a USB device's ``bos_error`` is
+            the reason the disk's ``usb-link`` was not read at one end.
 
     Returns:
         One ``(field_name, reading_name)`` pair per refusal field.
     """
     fields: list[tuple[str, str]] = []
     for name in model.model_fields:
-        if name == "error":
+        if renamed is not None and name in renamed:
+            fields.append((name, renamed[name]))
+        elif name == "error":
             fields.append((name, "device"))
         elif name.endswith("_error"):
             fields.append((name, name.removesuffix("_error").replace("_", "-")))
@@ -180,6 +185,12 @@ def _container_for(data: dict[str, Any], kind: str) -> tuple[dict[str, Any], str
     if kind == "linux-nvme":
         node = sorted(data["nvme"])[0]
         return data["nvme"][node], node
+    if kind == "linux-usb":
+        # The disk's own device, the deepest on its chain: a refusal anywhere on
+        # the chain leaves the link unread, and the disk's end is the one every
+        # USB capture has.
+        path = max(data["usb"], key=len)
+        return data["usb"][path], path
     if kind == "windows-health":
         path = sorted(data["disks"])[0]
         return data["disks"][path]["ata"], path
@@ -198,6 +209,10 @@ _CASES: tuple[_RefusalCase, ...] = (
     *(
         _RefusalCase(kind="linux-nvme", fixture="linux-nvme-board.json", field=field, reading=reading)
         for field, reading in _refusal_fields(NvmeBlobs)
+    ),
+    *(
+        _RefusalCase(kind="linux-usb", fixture="linux-usb-ehci.json", field=field, reading=reading)
+        for field, reading in _refusal_fields(UsbDeviceEntry, renamed={"bos_error": "usb-link"})
     ),
     *(
         _RefusalCase(kind="windows-health", fixture="windows-ahci.json", field=field, reading=reading)
@@ -221,7 +236,7 @@ def test_every_refusal_field_reaches_skipped_and_readings_refused(
     """Every refusal field a capture model carries surfaces both ways.
 
     Parametrized over every ``*_error`` field :func:`_refusal_fields` reads off
-    the three disk capture models (never hand-listed), so a field one builder
+    the disk capture models (never hand-listed), so a field one builder
     forgets to pass into ``refusals_of`` fails here rather than surviving a
     mutation pass silently. The read direction matters as much as the write:
     a field dropped between the typed capture and ``readings_refused`` is
