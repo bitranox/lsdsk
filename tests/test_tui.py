@@ -1243,34 +1243,29 @@ class TestTheTopologyPageCanBeMovedThrough:
 
     @pytest.mark.os_agnostic
     @pytest.mark.asyncio
-    async def test_below_the_sections_own_floor_a_row_does_outgrow_the_width(self) -> None:
-        """The control, and the floor written down rather than discovered again.
+    async def test_a_row_fits_from_the_narrowest_width_up_because_it_is_cut(self) -> None:
+        """The control, and the reason the test above cannot pass vacuously.
 
-        Measured on every committed capture: a device or drive row fits from 47
-        columns up and overruns below (48 on windows-ahci, whose addresses are
-        longer). The test above would pass vacuously if the rows fitted at every
-        width imaginable, so this pins the other side.
-
-        It was 48 while a link figure carried a blank inside it. Closing the
-        figure bought a character; carrying what the figure is worth costs
-        nothing here, because that detail is surrendered before a row is allowed
-        to outgrow its width - so if this number ever RISES, the surrender has
-        stopped working rather than the rows having grown.
+        A row used to overrun below 47 columns (48 on windows-ahci), and this
+        pinned that floor. The user's rule since 2026-10-01 is that a row is cut
+        to one line at every width rather than wrapped, so every width fits now -
+        which the test above would also report if the rows had simply become
+        short. The second half rules that out: at 20 columns some row is drawn
+        narrower than it is at 200, so it fits because it was cut.
         """
         from lsdsk.adapters.render.tree import FabricView, fabric_lines
 
         machine = inventory()
         findings = diagnose(machine)
-        fits = [
-            width
-            for width in range(20, 61)
-            if all(
-                len(line.text.plain) <= width
-                for line in fabric_lines(machine, findings, width, FabricView())
-                if _is_device_row(line)
-            )
-        ]
-        assert min(fits) == 47, f"the section's floor moved to {min(fits)}"
+
+        def rows(width: int) -> list[str]:
+            return [
+                line.text.plain for line in fabric_lines(machine, findings, width, FabricView()) if _is_device_row(line)
+            ]
+
+        overrun = [width for width in range(20, 61) if any(len(row) > width for row in rows(width))]
+        assert not overrun, f"a row outgrew these widths: {overrun}"
+        assert max(map(len, rows(20))) < max(map(len, rows(200))), "no row was cut at 20 columns"
 
     @pytest.mark.os_agnostic
     @pytest.mark.asyncio

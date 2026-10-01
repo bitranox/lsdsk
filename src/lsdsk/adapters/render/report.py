@@ -775,7 +775,8 @@ def render_controller_disks(
     # row is a problem. Measured at COLUMNS=40 on three real fixtures: every
     # flagged row, and at 42 of 181 widths tested, wherever the fit happened to
     # land on the boundary.
-    layout = Layout.preferring(DISK_COLUMNS, rows, plain, width - _MARKER_RESERVE - 1)
+    available = width - _MARKER_RESERVE - 1
+    layout = Layout.preferring(DISK_COLUMNS, rows, plain, available).on_one_line(available)
     # Indexed once beside the layout, which is fitted once for the same reason:
     # a lookup per row that walks every finding makes the tree cost the product
     # of its rows and its findings.

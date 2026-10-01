@@ -17,7 +17,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from rich.console import Console
+from rich.console import Console, Group
+from rich.text import Text
 
 from lsdsk.adapters.render import theme
 from lsdsk.adapters.render.report import severity_index
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from click.testing import CliRunner
+    from rich.console import RenderableType
 
     from lsdsk.domain.models import Finding
 
@@ -55,6 +57,7 @@ DENSITY_COUNTS: dict[str, dict[TreeDensity, int]] = {
     "linux-nvme-board": {TreeDensity.STORAGE_ONLY: 13, TreeDensity.STORAGE_AND_SIBLINGS: 13, TreeDensity.FULL: 45},
     "linux-usb-ehci": {TreeDensity.STORAGE_ONLY: 3, TreeDensity.STORAGE_AND_SIBLINGS: 3, TreeDensity.FULL: 82},
     "windows-ahci": {TreeDensity.STORAGE_ONLY: 4, TreeDensity.STORAGE_AND_SIBLINGS: 7, TreeDensity.FULL: 27},
+    "windows-usb-uas": {TreeDensity.STORAGE_ONLY: 4, TreeDensity.STORAGE_AND_SIBLINGS: 4, TreeDensity.FULL: 25},
 }
 
 
@@ -444,6 +447,82 @@ def test_a_device_row_takes_one_line_at_every_width(host: str) -> None:
                 console.print(fabric.row(node, severity_index(findings)))
             drawn = capture.get().rstrip("\n").split("\n")
             assert len(drawn) == 1, f"{host} at width {width}: {node.address} took {len(drawn)} lines: {drawn}"
+
+
+def _one_line_each(lines: list[tuple[str, Any]], width: int) -> list[str]:
+    """Every labelled renderable that does not print as exactly one line at this width."""
+    console = Console(file=io.StringIO(), width=width, no_color=True)
+    wrapped: list[str] = []
+    for label, renderable in lines:
+        with console.capture() as capture:
+            console.print(renderable)
+        drawn = capture.get().rstrip("\n").split("\n")
+        if len(drawn) != 1:
+            wrapped.append(f"{label} at width {width} took {len(drawn)} lines: {drawn}")
+    return wrapped
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", sorted(path.stem for path in FIXTURES.glob("*.json")))
+def test_a_disk_row_takes_one_line_at_every_width(host: str) -> None:
+    """One disk, one line, at every width from 20 to 200, in the fabric and its header.
+
+    The user's rule for a row that cannot fit (2026-10-01): it is cut to one
+    line rather than wrapped, as a device row is. A wrapped disk row left its
+    severity marker alone on a line, detached from the drive it marks, wherever
+    the drive's name was long enough - a Windows PhysicalDriveN under the last
+    controller at 20 columns was the first.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render.tree import Fabric, disk_header_line
+    from lsdsk.domain.diagnostics import diagnose
+
+    machine = build_from(_load(host))
+    severities = severity_index(diagnose(machine))
+    wrapped: list[str] = []
+    for width in range(20, 201):
+        fabric = Fabric(machine.pci_tree, width, FabricView(density=TreeDensity.FULL, expand_virtual=True))
+        layout = fabric.measure(machine)
+        rules = fabric.rules_under(None)
+        lines: list[tuple[str, Any]] = [("header", disk_header_line(fabric, layout, rules))]
+        lines += [
+            (disk.path, fabric.disk_row(disk, layout, severities, machine, rules))
+            for disk in (*machine.disks, *machine.virtual_disks)
+        ]
+        wrapped += _one_line_each(lines, width)
+    assert not wrapped, wrapped[:5]
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", sorted(path.stem for path in FIXTURES.glob("*.json")))
+def test_a_disk_row_in_the_controller_tree_takes_one_line_at_every_width(host: str) -> None:
+    """The tree a capture with no PCI reading gets follows the same rule."""
+    from lsdsk.adapters.hw.snapshot import build_from
+    from lsdsk.adapters.render import report
+    from lsdsk.domain.diagnostics import diagnose
+
+    machine = build_from(_load(host))
+    findings = diagnose(machine)
+    paths = {disk.path for disk in (*machine.disks, *machine.virtual_disks)}
+
+    def drawn(width: int) -> list[RenderableType]:
+        group = report.render_controller_disks(machine, findings, width, expand_virtual=True)
+        assert isinstance(group, Group)
+        return list(group.renderables)
+
+    # Found where nothing is cut: a narrow width clips the path the row is
+    # recognised by, and the lines stand in the same order at every width.
+    positions = {
+        index: path
+        for index, line in enumerate(drawn(200))
+        if isinstance(line, Text) and (path := next((p for p in paths if p in line.plain.split()), None))
+    }
+    assert positions, f"{host} drew no disk row in the controller tree"
+    wrapped: list[str] = []
+    for width in range(20, 201):
+        lines = drawn(width)
+        wrapped += _one_line_each([(path, lines[index]) for index, path in positions.items()], width)
+    assert not wrapped, wrapped[:5]
 
 
 @pytest.mark.os_agnostic

@@ -112,8 +112,6 @@ _MIN_NAME_WIDTH = 8
 #: characters, which identifies no device; the suffix is worth having only once
 #: the row still says what the device IS.
 _MIN_NAME_FOR_WIDE = 24
-#: The floor the disk columns are fitted in, whatever the spine costs.
-_MIN_COLUMNS_WIDTH = 20
 
 _TREE_GAP = "  "
 
@@ -657,8 +655,8 @@ class Fabric:
         listed = (*inventory.disks, *inventory.virtual_disks) if self.expand_virtual else inventory.disks
         rows = [disk_cells(disk, inventory.port_link_for(disk), bandwidth=True) for disk in listed]
         plain = [disk_cells(disk, inventory.port_link_for(disk)) for disk in listed]
-        available = max(self.width - _MARKER_WIDTH - self.spine, _MIN_COLUMNS_WIDTH)
-        return Layout.preferring(DISK_COLUMNS, rows, plain, available)
+        available = self.width - _MARKER_WIDTH - self.spine
+        return Layout.preferring(DISK_COLUMNS, rows, plain, available).on_one_line(available)
 
     def disk_row(
         self,

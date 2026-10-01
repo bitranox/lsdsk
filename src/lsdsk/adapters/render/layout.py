@@ -172,6 +172,50 @@ class Layout:
         """Total width this layout needs, gutter and gaps included."""
         return _required(self.columns, self.widths)
 
+    def on_one_line(self, available: int) -> Layout:
+        """The same layout cut down until a row fits on one line.
+
+        :func:`fit` stops at the columns it may not drop, so below some width
+        those alone overrun and the row wraps, leaving its severity marker on a
+        line of its own. A row is one line at every width instead. :func:`fit`
+        has already shrunk each flexible column to its ``min_width``, the
+        smallest width it declares useful, so below that it goes whole rather
+        than survive as a stub; then whole columns go from the right, because a
+        figure cut short is a different figure rather than a shorter one; and
+        the first column, which names the row, stays and is clipped to
+        whatever is left.
+
+        Args:
+            available: Width the row may take.
+
+        Returns:
+            This layout when it already fits, otherwise the reduced one.
+
+        Example:
+            >>> cols = [Column("a", "a"), Column("b", "b", flexible=True, min_width=6), Column("c", "c")]
+            >>> layout = Layout(tuple(cols), {"a": 8, "b": 6, "c": 6})
+            >>> layout.on_one_line(100) is layout
+            True
+            >>> fitted = layout.on_one_line(21)
+            >>> [column.key for column in fitted.columns], fitted.required() <= 21
+            (['a', 'c'], True)
+            >>> narrowest = layout.on_one_line(8)
+            >>> [column.key for column in narrowest.columns], narrowest.widths["a"] < 8, narrowest.required() <= 8
+            (['a'], True, True)
+        """
+        if self.required() <= available:
+            return self
+        columns = list(self.columns)
+        widths = dict(self.widths)
+        for column in reversed(self.columns[1:]):
+            if column.flexible and _required(columns, widths) > available:
+                columns.remove(column)
+        while len(columns) > 1 and _required(columns, widths) > available:
+            columns.pop()
+        first = columns[0].key
+        widths[first] = max(widths[first] - max(_required(columns, widths) - available, 0), _CLIPPED)
+        return Layout(tuple(columns), widths, bandwidth=self.bandwidth)
+
 
 def natural_widths(columns: Sequence[Column], rows: Iterable[dict[str, str]]) -> dict[str, int]:
     """Measure how wide each column wants to be.
@@ -233,6 +277,10 @@ def fit(columns: Sequence[Column], widths: dict[str, int], available: int) -> li
         victim = max(droppable, key=lambda column: column.priority)
         chosen.remove(victim)
     return chosen
+
+
+#: The narrowest a clipped cell gets: one character and the clip mark.
+_CLIPPED = 2
 
 
 def _required(columns: Sequence[Column], widths: dict[str, int]) -> int:
