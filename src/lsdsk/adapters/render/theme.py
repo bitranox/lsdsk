@@ -457,14 +457,22 @@ def format_pcie_generation(speed_gtps: float | None, width: int | None) -> str:
         width: The link's lane count, where it was read.
 
     Returns:
-        The closed figure, or a dash where either half was not read.
+        The closed figure, :data:`NO_LINK` where the width was read as zero
+        whatever speed sits beside it, or a dash where either half was not read.
 
     Example:
         >>> format_pcie_generation(16.0, 4)
         'Gen4x4'
         >>> format_pcie_generation(None, 4)
         '-'
+        >>> format_pcie_generation(2.5, 0)
+        'none'
     """
+    if width == 0:
+        # A READ width of zero: no lane trained. The speed beside it is the
+        # register's reset value or "Unknown", and drawing it made an empty
+        # port read "Gen1x0", as if a link ran.
+        return NO_LINK
     generation = pcie_generation(speed_gtps)
     return "-" if generation is None or width is None else f"Gen{generation}x{width}"
 
@@ -743,7 +751,8 @@ def link_pair_cells(link: PcieLink, *, bandwidth: bool = False) -> LinkPair:
         ... ).running
         ('Gen1x8', '#A5660D')
     """
-    running_read = link.current_speed_gtps is not None and link.current_width is not None
+    untrained = link.current_width == 0
+    running_read = link.current_speed_gtps is not None and link.current_width is not None and not untrained
     capable_read = link.max_speed_gtps is not None and link.max_width is not None
     running = format_pcie_generation(link.current_speed_gtps, link.current_width)
     capable = format_pcie_generation(link.max_speed_gtps, link.max_width)
@@ -757,7 +766,11 @@ def link_pair_cells(link: PcieLink, *, bandwidth: bool = False) -> LinkPair:
         and link.max_bandwidth_gbps is not None
         and link.current_bandwidth_gbps < link.max_bandwidth_gbps
     )
-    if not running_read:
+    if untrained:
+        # Read, and no lane trained: an empty port is not a shortfall against
+        # its capability, and not a register nobody read either.
+        running_style = ""
+    elif not running_read:
         running_style = STYLE_UNKNOWN
     elif below:
         running_style = STYLE_BELOW_CAPABILITY
@@ -774,6 +787,12 @@ def link_pair_cells(link: PcieLink, *, bandwidth: bool = False) -> LinkPair:
 #: the opposite of the truth; a dash WITH its legend does not.
 NOT_READ = "-"
 LEGACY = "legacy"
+
+#: What a link column prints when the register WAS read and says no lane is
+#: trained: an empty port, or a function with no link of its own. Neither the
+#: dash, which says nobody read it, nor the figure its halves would spell, which
+#: says a link runs. A measured absence, so it is styled like a figure.
+NO_LINK = "none"
 
 #: What a value prints when the thing it names cannot exist for this subject at
 #: all: a numbered ATA attribute on an NVMe drive, the occupant of a socket with
@@ -797,6 +816,7 @@ AT_MOST = "<="
 _HOP_MEANINGS: Final[dict[str, str]] = {
     NOT_READ: "not read",
     LEGACY: "no PCIe capability",
+    NO_LINK: "no link trained",
 }
 
 
@@ -804,7 +824,7 @@ _HOP_MEANINGS: Final[dict[str, str]] = {
 #: TOKENS a column actually prints, so adding a fourth symbol to the vocabulary
 #: and forgetting it here is one edit rather than a silent decoration of a value
 #: nobody read - or of one that could not exist to be read.
-_NO_BANDWIDTH: Final[frozenset[str]] = frozenset({NOT_READ, LEGACY, NOT_APPLICABLE})
+_NO_BANDWIDTH: Final[frozenset[str]] = frozenset({NOT_READ, LEGACY, NOT_APPLICABLE, NO_LINK})
 
 
 def format_bandwidth(gbps: float | None) -> str:
@@ -914,6 +934,7 @@ __all__ = [
     "LEGACY",
     "NOT_APPLICABLE",
     "NOT_READ",
+    "NO_LINK",
     "PRINTED",
     "SEVERITY_LABELS",
     "SEVERITY_MARKERS",

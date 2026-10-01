@@ -121,6 +121,7 @@ MODEL_NOTE: Final = "about every drive of this model"
 UNREAD_LEGEND: Final = "- not read"
 NOT_APPLICABLE_LEGEND: Final = "n/a does not apply"
 AT_MOST_LEGEND: Final = "<= at most: one end was not read"
+NO_LINK_LEGEND: Final = f"{theme.NO_LINK} no link trained"
 
 #: What each marker means, keyed by the token a panel actually prints, so the
 #: legend cannot explain a symbol the view does not use. The order is the order
@@ -129,6 +130,7 @@ _MARKER_MEANINGS: Final[dict[str, str]] = {
     theme.NOT_READ: UNREAD_LEGEND,
     theme.NOT_APPLICABLE: NOT_APPLICABLE_LEGEND,
     theme.AT_MOST: AT_MOST_LEGEND,
+    theme.NO_LINK: NO_LINK_LEGEND,
 }
 
 #: The markers that QUALIFY a value rather than replace it, so they are found at
@@ -873,6 +875,7 @@ __all__ = [
     "MACHINE",
     "MODEL_NOTE",
     "NOT_APPLICABLE_LEGEND",
+    "NO_LINK_LEGEND",
     "OCCUPANT",
     "PLACE",
     "PORTS",
