@@ -20,8 +20,9 @@ the tool reports for that drive. A recapture that misses a location fails here
 and is told which one, and a location added to the reader is covered the moment
 a fixture carries it.
 
-A disk behind USB has a SECOND serial, the USB device's own. Windows reports it
-as the disk's serial and keeps the device's raw iSerial in its instance ID,
+A disk behind USB has a SECOND serial, the USB device's own. Windows reports the
+bridge's VPD 0x80 serial as the disk's serial and keeps the device's raw iSerial
+in its instance ID,
 behind ``MSFT30`` for a SuperSpeed device; on Linux every SCSI-layer copy (VPD
 0x80, the INQUIRY vendor bytes, the VPD 0x83 T10 designator) is the bridge's.
 It is not the drive's, so it is held to its own copies rather than to IDENTIFY,
@@ -69,8 +70,8 @@ _SAT_SERIAL_START = 48
 # A bridge's own T10 vendor-id designator is vendor (8), product (16), serial.
 _T10_VENDOR_PRODUCT_LENGTH = 24
 
-# A USB device instance ID is USB\VID_xxxx&PID_xxxx\<serial>. Windows prefixes a
-# SuperSpeed device's serial with MSFT30, and a device with no serial gets a
+# A USB device instance ID is USB\VID_xxxx&PID_xxxx\<iSerial>. Windows prefixes a
+# SuperSpeed device's iSerial with MSFT30, and a device with no serial gets a
 # generated segment holding '&', which names no serial and is skipped.
 _USB_INSTANCE = re.compile(r"^USB\\VID_[0-9A-F]{4}&PID_[0-9A-F]{4}\\(?P<segment>[^\\&]+)$", re.IGNORECASE)
 _SUPERSPEED_PREFIX = "MSFT30"
@@ -165,8 +166,11 @@ def _blob(source: Mapping[str, object], key: str) -> bytes | None:
 def _usb_segment_serial(instance_id: str) -> str | None:
     """The serial a USB device instance ID carries, or None when it carries none.
 
-    The segment after ``MSFT30`` was measured as the serial's ASCII written in
-    hex; a segment that is not hex text is taken as the serial verbatim.
+    The segment is the device's raw iSerial. The bridge measured here sends that
+    as the hex text of the serial it reports in VPD 0x80 (Linux sysfs shows the
+    same 24 digits), so hex text is decoded; that is this bridge's firmware, not
+    a Windows rule, and a bridge that sends anything else is taken verbatim -
+    where it disagrees, the check names it rather than passing.
     """
     match = _USB_INSTANCE.match(instance_id)
     if match is None:
