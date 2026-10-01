@@ -391,6 +391,7 @@ def _refusals_for(entry: DiskEntry, record: HealthBlobs) -> tuple[RefusedReading
     return refusals_of(
         {
             "device": entry.error,
+            "usb-link": entry.usb_link_error,
             "identify": record.identify_error,
             "identify-controller": record.identify_controller_error,
             "smart-data": record.smart_data_error,

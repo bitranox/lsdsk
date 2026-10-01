@@ -160,3 +160,25 @@ def test_the_scsi_passthrough_request_carries_its_one_pointer_width_field_where_
     assert ctypes.sizeof(api.SCSI_PASS_THROUGH) == -(-(offset + word + 4 + 16) // word) * word
     if word == 8:
         assert ctypes.sizeof(api.SCSI_PASS_THROUGH) == 56
+
+
+#: The USB hub IOCTLs by their function number in usbioctl.h. Every one is
+#: CTL_CODE(FILE_DEVICE_USB, function, METHOD_BUFFERED, FILE_ANY_ACCESS).
+USB_HUB_FUNCTIONS = {
+    "IOCTL_USB_GET_DESCRIPTOR_FROM_NODE_CONNECTION": 260,
+    "IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX": 274,
+    "IOCTL_USB_GET_HUB_INFORMATION_EX": 277,
+    "IOCTL_USB_GET_PORT_CONNECTOR_PROPERTIES": 278,
+    "IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX_V2": 279,
+    "IOCTL_USB_GET_NODE_CONNECTION_SUPERSPEEDPLUS_INFORMATION": 286,
+}
+FILE_DEVICE_USB = 0x22
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(("name", "function"), sorted(USB_HUB_FUNCTIONS.items()))
+def test_a_usb_hub_ioctl_code_is_built_from_its_function_number(name: str, function: int) -> None:
+    """Written out as hex in winapi.py, so each is held against the macro that defines it."""
+    method_buffered, file_any_access = 0, 0
+    expected = (FILE_DEVICE_USB << 16) | (file_any_access << 14) | (function << 2) | method_buffered
+    assert getattr(api, name) == expected

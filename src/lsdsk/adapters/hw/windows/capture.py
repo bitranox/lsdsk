@@ -76,6 +76,7 @@ _UINT32_MAX = 0xFFFFFFFF  # DEVPKEY UINumber, read as a UINT32
 _LARGE_INTEGER_MAX = 2**63 - 1  # IOCTL_DISK_GET_LENGTH_INFO answers in one
 _SHORT_MIN = -(2**15)  # the temperature fields are each a ctypes.c_short
 _SHORT_MAX = 2**15 - 1
+_MAX_HUB_PORT = 255  # USB_NODE_CONNECTION_INFORMATION_EX.ConnectionIndex addresses a hub's ports in one byte
 
 
 class PciEntry(CaptureModel, frozen=True):
@@ -193,6 +194,9 @@ class DiskEntry(CaptureModel, frozen=True):
         ata: ATA passthrough results.
         error: Why the device could not be opened at all, in which case nothing
             else here was read.
+        usb_link_error: Why the hub port a USB disk is plugged into could not be
+            asked about its link: the hub would not open, the port did not
+            answer, or the disk's place on the hub is not known.
     """
 
     parent: DeviceText | None = None
@@ -204,6 +208,52 @@ class DiskEntry(CaptureModel, frozen=True):
     temperature: DiskTemperature | None = None
     nvme: HealthBlobs | None = None
     ata: HealthBlobs | None = None
+    error: DeviceText | None = None
+    usb_link_error: DeviceText | None = None
+
+
+class UsbPortEntry(CaptureModel, frozen=True):
+    """What one hub said about one of its ports and the device plugged into it.
+
+    Every payload is the hub's own answer, as many bytes as it returned, for
+    :mod:`..decode.usb` to read. A payload left empty without an ``error`` is
+    an answer too: a port not running SuperSpeedPlus refuses that request, and
+    a device with no BOS STALLs the request for it.
+
+    Attributes:
+        hub: The instance identifier of the hub the port belongs to.
+        port: The port's number on that hub.
+        service: The driver bound to the device in the port, such as
+            ``UASPStor``, ``USBSTOR`` or ``USBHUB3``.
+        connection: ``USB_NODE_CONNECTION_INFORMATION_EX``.
+        connection_v2: ``USB_NODE_CONNECTION_INFORMATION_EX_V2``.
+        connector: ``USB_PORT_CONNECTOR_PROPERTIES``.
+        superspeedplus: ``USB_NODE_CONNECTION_SUPERSPEEDPLUS_INFORMATION``.
+        bos: The device's BOS descriptor, without the hub's request header.
+        error: Why the port could not be asked at all, in which case none of
+            the payloads was read.
+    """
+
+    hub: DeviceText
+    port: int = Field(ge=1, le=_MAX_HUB_PORT)
+    service: DeviceText | None = None
+    connection: EncodedPayload | None = None
+    connection_v2: EncodedPayload | None = None
+    connector: EncodedPayload | None = None
+    superspeedplus: EncodedPayload | None = None
+    bos: EncodedPayload | None = None
+    error: DeviceText | None = None
+
+
+class UsbHubEntry(CaptureModel, frozen=True):
+    """What one hub said about itself.
+
+    Attributes:
+        information: ``USB_HUB_INFORMATION_EX``, whose type says root, USB 2 or USB 3.
+        error: Why the hub could not be opened.
+    """
+
+    information: EncodedPayload | None = None
     error: DeviceText | None = None
 
 
@@ -221,6 +271,11 @@ class WindowsCapture(CaptureHeader, frozen=True):
             from a capture taken before this field existed, which is the one
             case a builder still has to fall back on the replaying machine for.
         disks: Every disk, keyed by interface path.
+        usb_ports: The port every USB device above a disk is plugged into,
+            keyed by the instance identifier of that device. Absent from a
+            capture taken before USB links were read.
+        usb_hubs: Every hub one of those ports belongs to, keyed by its
+            instance identifier.
     """
 
     platform: Literal[Platform.WINDOWS]
@@ -230,6 +285,8 @@ class WindowsCapture(CaptureHeader, frozen=True):
     pci: EntryMap[DeviceText, PciEntry]
     pci_names: EntryMap[DeviceText, DeviceText] = Field(default_factory=dict[DeviceText, DeviceText])
     disks: EntryMap[DeviceText, DiskEntry] = Field(default_factory=dict[DeviceText, DiskEntry])
+    usb_ports: EntryMap[DeviceText, UsbPortEntry] = Field(default_factory=dict[DeviceText, UsbPortEntry])
+    usb_hubs: EntryMap[DeviceText, UsbHubEntry] = Field(default_factory=dict[DeviceText, UsbHubEntry])
 
 
 __all__ = [
@@ -238,6 +295,8 @@ __all__ = [
     "HealthBlobs",
     "PciEntry",
     "StorageDescriptor",
+    "UsbHubEntry",
+    "UsbPortEntry",
     "WindowsCapture",
     "bus_type_of",
 ]

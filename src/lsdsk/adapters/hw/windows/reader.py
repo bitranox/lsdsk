@@ -3,6 +3,10 @@
 The Windows counterpart to the Linux reader, and it produces the same shape of
 reading so a snapshot from either can be rendered anywhere.
 
+A USB disk's link is read from the hub its device is plugged into: the hub is
+opened and asked about that port, and every hub between the disk and the root
+is asked about its own port the same way.
+
 Two privilege tiers, as on Linux:
     * unprivileged: the device tree, PCIe link state from the PCI device
       properties, disk identity and bus type from ``IOCTL_STORAGE_QUERY_PROPERTY``,
@@ -28,7 +32,7 @@ import platform
 import re
 from ctypes import wintypes
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from ....domain.enums import BusType, Platform
 from ..ata_commands import (
@@ -40,10 +44,13 @@ from ..ata_commands import (
     ata_pass_through_16,
 )
 from ..capture import MAX_DEVICE_TEXT
-from ..decode import pciids
+from ..decode import pciids, usb
 from ..snapshot import SCHEMA_VERSION
 from . import winapi as api
 from .capture import bus_type_of
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping, Sequence
 
 # PCI hardware identifiers look like PCI\VEN_8086&DEV_A182&SUBSYS_...&REV_11.
 _HARDWARE_ID = re.compile(r"PCI\\VEN_([0-9A-F]{4})&DEV_([0-9A-F]{4})", re.IGNORECASE)
@@ -64,6 +71,56 @@ _MAX_TREE_DEPTH = 64
 # low enough that a driver returning a sibling cycle stops rather than filling
 # memory.
 _MAX_SIBLINGS = 4096
+
+# A hub numbers its ports in one byte, and the capture model holds no other.
+_MAX_HUB_PORT = 255
+
+# Output buffers for the hub answers that carry a variable tail: the connection
+# information lists the device's pipes and the connector properties its
+# companion hub's name. Both fit well inside these on every hub measured.
+_CONNECTION_ANSWER_BYTES = 512
+_CONNECTOR_ANSWER_BYTES = 512
+_HUB_INFORMATION_BYTES = 128
+
+# The fixed part of a BOS descriptor, which names the length of the whole.
+_BOS_HEADER_BYTES = 5
+
+# The instance-ID segment Windows gives one interface of a composite device.
+# Such an interface is not plugged into a port; the composite device above it is.
+_COMPOSITE_INTERFACE = "&MI_"
+
+
+class UsbDeviceFacts(NamedTuple):
+    """Where one USB device sits in the device tree, and the driver bound to it.
+
+    Attributes:
+        parent: The instance identifier of the device it hangs off: for a
+            device in a hub's port, that hub.
+        port: The port number on that hub, as the device's address property
+            publishes it.
+        service: The driver bound to the device, such as ``UASPStor``.
+    """
+
+    parent: str | None
+    port: int | None
+    service: str | None
+
+
+class UsbReading(NamedTuple):
+    """What the hubs said about the ports USB disks hang off.
+
+    Attributes:
+        ports: One record per USB device above a disk, keyed by its instance
+            identifier, shaped for the capture's ``usb_ports``.
+        hubs: One record per hub asked, keyed by its instance identifier,
+            shaped for the capture's ``usb_hubs``.
+        disk_errors: Why a disk's OWN port could not be asked, keyed by the
+            disk's interface path.
+    """
+
+    ports: dict[str, dict[str, Any]]
+    hubs: dict[str, dict[str, Any]]
+    disk_errors: dict[str, str]
 
 
 def is_elevated() -> bool:
@@ -87,10 +144,39 @@ class _DeviceTree:
 
     def enumerate_pci(self) -> dict[str, dict[str, Any]]:
         """Read every present PCI device with its properties."""
-        handle = self.setupapi.SetupDiGetClassDevsW(None, "PCI", None, api.DIGCF_PRESENT | api.DIGCF_ALLCLASSES)
+        return {
+            instance: self._pci_entry(handle, info, instance) for handle, info, instance in self._present_devices("PCI")
+        }
+
+    def usb_devices(self) -> dict[str, UsbDeviceFacts]:
+        """Read where every present USB device is plugged in, root hubs included."""
+        return {
+            instance: UsbDeviceFacts(
+                parent=self._parent_instance(info.DevInst),
+                port=self._uint_property(handle, info, api.DEVICE_PROPERTY_FMTID, api.DEVICE_PROP_ADDRESS),
+                service=self._string_property(handle, info, api.DEVICE_PROPERTY_FMTID, api.DEVICE_PROP_SERVICE),
+            )
+            for handle, info, instance in self._present_devices("USB")
+        }
+
+    def usb_hubs(self) -> dict[str, str]:
+        """Return the interface path of every present USB hub, keyed by the hub's instance identifier."""
+        found: dict[str, str] = {}
+        for path, devinst in self._interfaces(api.GUID_DEVINTERFACE_USB_HUB):
+            instance = None if devinst is None else self._instance_id(devinst)
+            if instance is not None:
+                found[instance] = path
+        return found
+
+    def _present_devices(self, enumerator: str) -> Iterator[tuple[int, api.SP_DEVINFO_DATA, str]]:
+        """Yield every present device one enumerator created, with the handle and record to read it by.
+
+        The record is one buffer the enumeration refills on every turn, so a
+        caller reads what it needs from it before asking for the next device.
+        """
+        handle = self.setupapi.SetupDiGetClassDevsW(None, enumerator, None, api.DIGCF_PRESENT | api.DIGCF_ALLCLASSES)
         if handle == api.INVALID_HANDLE_VALUE:
-            return {}
-        devices: dict[str, dict[str, Any]] = {}
+            return
         try:
             info = api.SP_DEVINFO_DATA()
             info.cbSize = ctypes.sizeof(api.SP_DEVINFO_DATA)
@@ -98,10 +184,8 @@ class _DeviceTree:
             while self.setupapi.SetupDiEnumDeviceInfo(handle, index, ctypes.byref(info)):
                 index += 1
                 instance = self._instance_id(info.DevInst)
-                if instance is None:
-                    continue
-                devices[instance] = self._pci_entry(handle, info, instance)
-            return devices
+                if instance is not None:
+                    yield handle, info, instance
         finally:
             self.setupapi.SetupDiDestroyDeviceInfoList(handle)
 
@@ -312,13 +396,20 @@ class _DeviceTree:
 
     def disk_interfaces(self) -> list[tuple[str, list[str]]]:
         """Return every disk's interface path and the instances above it, nearest first."""
-        guid = api.parse_guid(api.GUID_DEVINTERFACE_DISK)
+        return [
+            (path, [] if devinst is None else self._ancestor_instances(devinst))
+            for path, devinst in self._interfaces(api.GUID_DEVINTERFACE_DISK)
+        ]
+
+    def _interfaces(self, interface_class: str) -> list[tuple[str, int | None]]:
+        """Return the path and device instance of every present interface of one class."""
+        guid = api.parse_guid(interface_class)
         handle = self.setupapi.SetupDiGetClassDevsW(
             ctypes.byref(guid), None, None, api.DIGCF_PRESENT | api.DIGCF_DEVICEINTERFACE
         )
         if handle == api.INVALID_HANDLE_VALUE:
             return []
-        found: list[tuple[str, list[str]]] = []
+        found: list[tuple[str, int | None]] = []
         try:
             interface = api.SP_DEVICE_INTERFACE_DATA()
             interface.cbSize = ctypes.sizeof(api.SP_DEVICE_INTERFACE_DATA)
@@ -329,7 +420,7 @@ class _DeviceTree:
                 index += 1
                 path, devinst = self._interface_detail(handle, interface)
                 if path:
-                    found.append((path, [] if devinst is None else self._ancestor_instances(devinst)))
+                    found.append((path, devinst))
             return found
         finally:
             self.setupapi.SetupDiDestroyDeviceInfoList(handle)
@@ -827,6 +918,219 @@ def read_ata(kernel32: api.WinLibrary, handle: int) -> dict[str, str]:
     return record
 
 
+def _hub_request(
+    kernel32: api.WinLibrary, handle: int, code: int, request: bytes, answer_bytes: int = 0
+) -> bytes | None:
+    """Issue one hub ioctl and return as many bytes as the hub wrote, or ``None`` when it refused.
+
+    The request and the answer share one buffer, as the hub ioctls define
+    them, sized for whichever is larger. The input length is the request's
+    own, because the hub refuses one a byte short or long.
+    """
+    buffer = ctypes.create_string_buffer(request, max(len(request), answer_bytes))
+    returned = wintypes.DWORD()
+    ok = kernel32.DeviceIoControl(handle, code, buffer, len(request), buffer, len(buffer), ctypes.byref(returned), None)
+    return buffer.raw[: returned.value] if ok else None
+
+
+def _encoded(answer: bytes | None) -> str | None:
+    """Base64 for a capture, with an empty answer recorded as no answer."""
+    return base64.b64encode(answer).decode("ascii") if answer else None
+
+
+def _read_bos(kernel32: api.WinLibrary, handle: int, port: int) -> bytes | None:
+    """Ask the device in a port for its BOS: its header first, which names the whole length."""
+    ask = usb.bos_request(port, _BOS_HEADER_BYTES)
+    head = _hub_request(
+        kernel32, handle, api.IOCTL_USB_GET_DESCRIPTOR_FROM_NODE_CONNECTION, ask, len(ask) + _BOS_HEADER_BYTES
+    )
+    header = usb.descriptor_payload(head or b"")
+    if len(header) < _BOS_HEADER_BYTES:
+        return None
+    total = int.from_bytes(header[2:4], "little")
+    request = usb.bos_request(port, total)
+    answer = _hub_request(
+        kernel32, handle, api.IOCTL_USB_GET_DESCRIPTOR_FROM_NODE_CONNECTION, request, len(request) + total
+    )
+    return None if answer is None else usb.descriptor_payload(answer)
+
+
+def _ask_port(kernel32: api.WinLibrary, handle: int, port: int) -> dict[str, str | None]:
+    """Ask a hub every question about one port, or say why it would not answer the first.
+
+    The first question is the one every hub answers for a connected port, so a
+    refusal there means the port could not be read at all. The others are
+    answers either way: a port not running SuperSpeedPlus refuses that request,
+    and a device with no BOS STALLs the request for it.
+    """
+    connection = _hub_request(
+        kernel32,
+        handle,
+        api.IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX,
+        usb.connection_request(port),
+        _CONNECTION_ANSWER_BYTES,
+    )
+    if connection is None:
+        return {"error": f"Win32 error {api.last_error()}"}
+    if not connection:
+        return {"error": "the hub returned no connection information"}
+    return {
+        "connection": _encoded(connection),
+        "connection_v2": _encoded(
+            _hub_request(
+                kernel32, handle, api.IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX_V2, usb.connection_v2_request(port)
+            )
+        ),
+        "connector": _encoded(
+            _hub_request(
+                kernel32,
+                handle,
+                api.IOCTL_USB_GET_PORT_CONNECTOR_PROPERTIES,
+                usb.connector_request(port),
+                _CONNECTOR_ANSWER_BYTES,
+            )
+        ),
+        "superspeedplus": _encoded(
+            _hub_request(
+                kernel32,
+                handle,
+                api.IOCTL_USB_GET_NODE_CONNECTION_SUPERSPEEDPLUS_INFORMATION,
+                usb.superspeedplus_request(port),
+            )
+        ),
+        "bos": _encoded(_read_bos(kernel32, handle, port)),
+    }
+
+
+_UNANSWERED_PORT: dict[str, str | None] = dict.fromkeys(
+    ("connection", "connection_v2", "connector", "superspeedplus", "bos", "error")
+)
+
+
+class _HubPorts:
+    """One run's hub handles and port records, so a hub several disks share is opened and asked once."""
+
+    def __init__(
+        self, kernel32: api.WinLibrary, devices: Mapping[str, UsbDeviceFacts], hubs: Mapping[str, str]
+    ) -> None:
+        """Ask through ``kernel32``, placing devices by ``devices`` and opening hubs by ``hubs``."""
+        self.kernel32 = kernel32
+        self.devices = devices
+        self.hubs = hubs
+        self.ports: dict[str, dict[str, Any]] = {}
+        self.hub_entries: dict[str, dict[str, Any]] = {}
+        self._handles: dict[str, int | None] = {}
+        self._unasked: dict[str, str] = {}
+
+    def read_chain(self, ancestors: Sequence[str]) -> str | None:
+        """Record the port of every USB device above a disk, and say why the disk's own was not read.
+
+        Only devices plugged into another USB device are in a port: a root hub
+        hangs off its PCI controller, and one interface of a composite device
+        off the device itself. The nearest of what remains is the disk's own
+        port; the rest are the hubs between it and the root.
+        """
+        plugged = [
+            instance
+            for instance in ancestors
+            if instance in self.devices
+            and self.devices[instance].parent in self.devices
+            and _COMPOSITE_INTERFACE not in instance.upper()
+        ]
+        errors = [self._record(instance) for instance in plugged]
+        return errors[0] if errors else None
+
+    def _record(self, instance: str) -> str | None:
+        """Ask about the port one device is plugged into, once per run, and return why it could not be."""
+        if instance in self.ports:
+            return self.ports[instance]["error"]
+        if instance in self._unasked:
+            return self._unasked[instance]
+        facts = self.devices[instance]
+        place = _place(facts, self.hubs)
+        if isinstance(place, str):
+            self._unasked[instance] = place
+            return place
+        hub, port = place
+        handle = self._open(hub)
+        answers = (
+            {"error": self.hub_entries[hub]["error"]} if handle is None else _ask_port(self.kernel32, handle, port)
+        )
+        self.ports[instance] = {
+            "hub": hub,
+            "port": port,
+            "service": facts.service,
+            **_UNANSWERED_PORT,
+            **answers,
+        }
+        return self.ports[instance]["error"]
+
+    def _open(self, hub: str) -> int | None:
+        """Open a hub once per run, asking it about itself the first time."""
+        if hub in self._handles:
+            return self._handles[hub]
+        handle = self.kernel32.CreateFileW(
+            self.hubs[hub], api.GENERIC_WRITE, api.FILE_SHARE_WRITE, None, api.OPEN_EXISTING, 0, None
+        )
+        if handle == api.INVALID_HANDLE_VALUE:
+            self._handles[hub] = None
+            self.hub_entries[hub] = {"information": None, "error": f"Win32 error {api.last_error()}"}
+            return None
+        self._handles[hub] = handle
+        information = _hub_request(
+            self.kernel32, handle, api.IOCTL_USB_GET_HUB_INFORMATION_EX, b"", _HUB_INFORMATION_BYTES
+        )
+        self.hub_entries[hub] = {"information": _encoded(information), "error": None}
+        return handle
+
+    def close(self) -> None:
+        """Close every hub this run opened."""
+        for handle in self._handles.values():
+            if handle is not None:
+                self.kernel32.CloseHandle(handle)
+
+
+def _place(facts: UsbDeviceFacts, hubs: Mapping[str, str]) -> tuple[str, int] | str:
+    """The hub and port a device is plugged into, or why that port cannot be asked about."""
+    if facts.parent is None or facts.parent not in hubs:
+        return f"no hub interface was found for {facts.parent}, the device above it"
+    if facts.port is None:
+        return "the hub published no port number for it"
+    if not 1 <= facts.port <= _MAX_HUB_PORT:
+        return f"the hub published port number {facts.port}, which no hub port can have"
+    return facts.parent, facts.port
+
+
+def read_usb_ports(
+    kernel32: api.WinLibrary,
+    disks: Mapping[str, Mapping[str, Any]],
+    devices: Mapping[str, UsbDeviceFacts],
+    hubs: Mapping[str, str],
+) -> UsbReading:
+    """Ask the hubs about the port every USB disk hangs off, and every port above it.
+
+    Args:
+        kernel32: The typed facade over the Win32 entry points.
+        disks: Every disk's reading, keyed by interface path; only its
+            ``ancestors`` are read.
+        devices: Every present USB device, keyed by instance identifier.
+        hubs: Every present hub's interface path, keyed by instance identifier.
+
+    Returns:
+        The port and hub records, and why any disk's own port could not be read.
+    """
+    asked = _HubPorts(kernel32, devices, hubs)
+    disk_errors: dict[str, str] = {}
+    try:
+        for path, record in disks.items():
+            error = asked.read_chain(record.get("ancestors") or ())
+            if error is not None:
+                disk_errors[path] = error
+    finally:
+        asked.close()
+    return UsbReading(ports=asked.ports, hubs=asked.hub_entries, disk_errors=disk_errors)
+
+
 def read_environment() -> dict[str, Any]:
     """Gather the evidence that says whether this is metal, a guest or a container.
 
@@ -865,6 +1169,9 @@ def read_system() -> dict[str, Any]:
     for path, ancestors in tree.disk_interfaces():
         record = read_disk(tree.kernel32, path, ancestors)
         disks[path] = record
+    usb_reading = read_usb_ports(tree.kernel32, disks, tree.usb_devices(), tree.usb_hubs())
+    for path, error in usb_reading.disk_errors.items():
+        disks[path]["usb_link_error"] = error
 
     return {
         "schema": SCHEMA_VERSION,
@@ -882,11 +1189,15 @@ def read_system() -> dict[str, Any]:
         # capture rather than from the one that took it.
         "pci_names": pciids.resolve_names(pci),
         "disks": disks,
+        "usb_ports": usb_reading.ports,
+        "usb_hubs": usb_reading.hubs,
         "cwd": os.getcwd(),  # noqa: PTH109 - recorded as context for a bug report, not used as a path
     }
 
 
 __all__ = [
+    "UsbDeviceFacts",
+    "UsbReading",
     "ata_passthrough",
     "is_elevated",
     "nvme_protocol_data",
@@ -895,5 +1206,6 @@ __all__ = [
     "read_disk",
     "read_environment",
     "read_system",
+    "read_usb_ports",
     "sat_passthrough",
 ]
