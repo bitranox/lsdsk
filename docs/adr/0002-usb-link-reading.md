@@ -11,11 +11,13 @@ So the most common USB fault - a USB3 drive that came up at USB2 speed because o
 a half-seated plug, roughly forty times slower - is invisible, and on Linux such a disk is reported
 as `sata` or `unknown` while Windows reports the same disk as `usb`.
 
-Both platforms publish the USB link without privilege:
+Both platforms publish the USB link, most of it without privilege:
 
 - Linux sysfs carries the running rate (`speed`) and lane counts (`rx_lanes`, `tx_lanes`) for every
-  USB device, the device's own capability in `bos_descriptors` (kernel 6.7 and later), and a `peer`
-  link from each USB3 hub port to its USB2 twin.
+  USB device and a `peer` link from each USB3 hub port to its USB2 twin. The device's own
+  capability, its BOS descriptor, is in sysfs as `bos_descriptors` from kernel 6.9 only; on an
+  older kernel the same descriptor is reachable by root through the device's usbfs node with a
+  standard `GET_DESCRIPTOR` control request.
 - Windows answers the parent hub's per-port queries: `IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX`
   for the running speed, `..._EX_V2` for the supported protocols and the capable-of and
   operating-at SuperSpeed and SuperSpeedPlus flags, and
@@ -35,8 +37,11 @@ still loads. Linux records the sysfs attributes above for every USB device on th
 disk to its root hub, the bound driver, and the port's `peer` path. Windows records the raw IOCTL
 output buffers for the disk's port on its parent hub, and that hub's own port on the hub above it.
 Decoding stays pure in `adapters/hw/decode/usb.py`, so the Windows mapping is tested on Linux as it
-is today. A refused IOCTL is a `RefusedReading` named `usb-link`. A missing `bos_descriptors` on an
-older kernel is not a refusal: nothing was refused, the capability is simply unread.
+is today. Where sysfs has no `bos_descriptors`, a privileged Linux run fetches the BOS through
+`/dev/bus/usb/<bus>/<device>` instead, and an unprivileged one leaves the capability unread, as for
+every other root-only reading. A device that STALLs the request (one whose `bcdUSB` is below 2.01)
+has no BOS, which is an answer rather than a refusal. A refused open or IOCTL, on either platform,
+is a `RefusedReading` named `usb-link`; a kernel that does not publish the attribute is not one.
 
 **Model.** `Disk` gains `usb: UsbLink | None`, beside `link` (the drive's own SATA figures from
 IDENTIFY, unchanged) and `pcie`. `UsbLink` carries `running`, `device_max`, `port_max`, `upstream`,
@@ -83,7 +88,8 @@ raise a false warning on every USB3 hub in a machine.
 - Two new identifiers have to be scrubbed from a capture before it becomes a fixture: the Windows
   USB instance ID embeds the device serial, and the BOS Container ID record is a per-device UUID.
   `tests/test_fixture_serials.py` checks both.
-- Kernels before 6.7 report a USB disk's own capability as unread, so there no shortfall is blamed
-  on either end.
+- On a kernel before 6.9 the disk's own capability needs root, so an unprivileged run there reports
+  it unread and blames no shortfall on either end. The usbfs path adds a second ioctl transport
+  whose structure layout is held by a test, as the Windows structures are.
 - The design rests on one Windows capture of a UAS SSD and one Linux capture of a USB disk, both
   taken before any reader code is written, which also confirm every field above is published.
