@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from .history import DiskSeries, Trend
+    from .models import UsbLink, UsbSpeed
     from .thresholds import Thresholds
 
 
@@ -587,6 +588,146 @@ def _upgrade_sentence(controller: Controller, inventory: Inventory, achievable: 
         )
     wanted = format_pcie_sentence(controller.link.max_speed_gtps, controller.link.max_width)
     return f"A {wanted} port would take this link from {_format_gbytes(achievable)} to {_format_gbytes(own_max)}."
+
+
+class _UsbCeiling(NamedTuple):
+    """The slowest thing in front of a USB disk, and whether it is a hub rather than the socket."""
+
+    speed: UsbSpeed
+    hub: bool
+
+
+def diagnose_usb_link(disk: Disk) -> list[Finding]:
+    """Grade a USB disk's link to the machine, the way every other link is graded.
+
+    The drive's own link behind the bridge is `diagnose_disk_link`'s; this rule
+    judges only the USB side, in the order the ADR fixes: a SuperSpeed disk that
+    came up at USB 2 speed, a link below what both read ends support, a socket
+    or hub that is the ceiling, and a shortfall whose port was never read. Every
+    one of them compares against what the device declares, so a device whose
+    capability was not read raises nothing.
+
+    Args:
+        disk: The disk to judge.
+
+    Returns:
+        At most one finding.
+
+    Example:
+        >>> diagnose_usb_link(Disk(node="sda", path="/dev/sda", model="m"))
+        []
+    """
+    link = disk.usb
+    if link is None or link.running is None or link.device_max is None:
+        return []
+    running, device = link.running, link.device_max
+    if link.fell_back_to_usb2:
+        return [_usb2_fallback(disk, running, device)]
+    achievable = link.achievable
+    if achievable is not None and link.is_underperforming:
+        return [_usb_link_fault(disk, running, achievable)]
+    ceiling = _usb_ceiling(link, device)
+    if ceiling is not None:
+        return [_usb_capped(disk, device, ceiling)]
+    if link.port_max is None and running.bandwidth_gbps < device.bandwidth_gbps:
+        return [_usb_unattributed(disk, running, device)]
+    return []
+
+
+def _usb_ceiling(link: UsbLink, device: UsbSpeed) -> _UsbCeiling | None:
+    """The socket or hub slower than the device's own capability, the slowest of them first."""
+    candidates = [
+        _UsbCeiling(speed, hub) for speed, hub in ((link.port_max, False), (link.upstream, True)) if speed is not None
+    ]
+    if not candidates:
+        return None
+    slowest = min(candidates, key=lambda ceiling: ceiling.speed.bandwidth_gbps)
+    if slowest.speed.bandwidth_gbps >= device.bandwidth_gbps:
+        return None
+    return slowest
+
+
+def _usb_cap_noticed(disk: Disk, ceiling: UsbSpeed) -> bool:
+    """Whether the drive behind the bridge can pull more than the ceiling carries; unread counts as yes."""
+    demand = interface_demand_gbytes(disk)
+    return demand is None or demand > ceiling.bandwidth_gbps
+
+
+def _usb_headroom(disk: Disk, ceiling: UsbSpeed) -> str:
+    """Say whether the drive behind the bridge can feel the cap, judged by what its own link pulls."""
+    demand = interface_demand_gbytes(disk)
+    carries = _format_gbytes(ceiling.bandwidth_gbps)
+    if demand is None:
+        return "What the drive behind the bridge can pull was not read, so whether it feels this cap is not known."
+    if demand > ceiling.bandwidth_gbps:
+        return (
+            f"The drive behind the bridge can pull {_format_gbytes(demand)}, "
+            f"more than {ceiling.figure} carries ({carries})."
+        )
+    return (
+        f"The drive behind the bridge pulls about {_format_gbytes(demand)}, which {ceiling.figure} "
+        "already carries, so this cap costs nothing today."
+    )
+
+
+def _usb2_fallback(disk: Disk, running: UsbSpeed, device: UsbSpeed) -> Finding:
+    """The finding for a SuperSpeed disk that came up on the USB 2 half of a USB 3 socket."""
+    return Finding(
+        severity=Severity.WARNING,
+        subject=disk.path,
+        title=f"{disk.model} is running at {running.figure} on the USB 2 side of a USB 3 port",
+        detail=(
+            f"The drive can do {device.figure} and the port has a USB 3 side, but the link came up at "
+            "USB 2 speed. That is almost always a USB 2 cable or extension, a USB 2 hub in between, or a plug "
+            "that is not fully seated."
+        ),
+        action="Connect it with a USB 3 cable, seated fully, with no USB 2 hub or extension in between.",
+    )
+
+
+def _usb_link_fault(disk: Disk, running: UsbSpeed, achievable: UsbSpeed) -> Finding:
+    """The finding for a link below what the device, the socket and any hub above all support."""
+    return Finding(
+        severity=Severity.WARNING,
+        subject=disk.path,
+        title=f"{disk.model} is running at {running.figure} but both ends support {achievable.figure}",
+        detail=(
+            "Both the drive and the port it is in were read, so the slower link is a fault of what connects "
+            "them: the cable, a hub, or the plug."
+        ),
+        action="Reseat the plug and try another cable before suspecting the drive.",
+    )
+
+
+def _usb_capped(disk: Disk, device: UsbSpeed, ceiling: _UsbCeiling) -> Finding:
+    """The finding for a socket or hub that holds the disk below its own capability."""
+    if ceiling.hub:
+        where = f"a hub between it and the machine runs at {ceiling.speed.figure}"
+        action = f"Connect it directly to the machine, or through a hub that runs at {device.figure}."
+    else:
+        where = f"its port only offers {ceiling.speed.figure}"
+        action = f"A port that offers {device.figure} would recover the difference."
+    return Finding(
+        severity=Severity.WARNING if _usb_cap_noticed(disk, ceiling.speed) else Severity.HINT,
+        subject=disk.path,
+        title=f"{disk.model} can do {device.figure} but {where}",
+        detail=_usb_headroom(disk, ceiling.speed),
+        action=action,
+    )
+
+
+def _usb_unattributed(disk: Disk, running: UsbSpeed, device: UsbSpeed) -> Finding:
+    """The finding for a shortfall whose port was never read, which is not yet a fault."""
+    return Finding(
+        severity=Severity.WARNING,
+        subject=disk.path,
+        title=f"{disk.model} is running at {running.figure}, below its own {device.figure}",
+        detail=(
+            "What the port can carry was not read, so this is not yet a fault: a port that only offers "
+            f"{running.figure} explains it exactly as well as a bad cable does."
+        ),
+        action="Establish what the port offers before treating it as a link fault.",
+    )
 
 
 def diagnose_disk_link(disk: Disk, inventory: Inventory) -> list[Finding]:
@@ -1498,6 +1639,7 @@ def diagnose(
     for disk in inventory.disks:
         if physical:
             findings.extend(diagnose_disk_link(disk, inventory))
+            findings.extend(diagnose_usb_link(disk))
         series = None if history is None else history.for_identity(identity_of(disk) or "")
         findings.extend(diagnose_health(disk, series, thresholds))
     if physical:
@@ -1537,6 +1679,7 @@ __all__ = [
     "diagnose_firmware_consistency",
     "diagnose_health",
     "diagnose_port_allocation",
+    "diagnose_usb_link",
     "format_pcie_sentence",
     "interface_demand_gbytes",
     "one_step_in_severity",
