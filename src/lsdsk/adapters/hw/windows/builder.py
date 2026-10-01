@@ -21,9 +21,9 @@ System Role:
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
-from ....domain.enums import BusType, ControllerKind, DiskKind, PciPortKind
+from ....domain.enums import BusType, ControllerKind, DiskKind, PciPortKind, UsbLaneRate, UsbTransport
 from ....domain.models import (
     Controller,
     Disk,
@@ -35,6 +35,8 @@ from ....domain.models import (
     PciNode,
     PortChild,
     RefusedReading,
+    UsbLink,
+    UsbSpeed,
     representative_occupant,
 )
 from ....domain.text import device_text, first_reported
@@ -43,6 +45,15 @@ from ..decode.ata_identify import decode_identify
 from ..decode.ata_smart import decode_health
 from ..decode.captured import decode_base64, parse_int
 from ..decode.nvme import decode_identify_controller, decode_smart_log
+from ..decode.usb import (
+    decode_bos,
+    decode_connection,
+    decode_connection_v2,
+    decode_connector,
+    decode_hub_type,
+    decode_superspeedplus,
+    fastest,
+)
 from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble
 from ..linux.builder import controller_kind_of, parse_pcie_speed
@@ -50,14 +61,16 @@ from ..refusals import refusals_of
 from .capture import HealthBlobs
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from ..decode.nvme import NvmeIdentity
-    from .capture import DiskEntry, PciEntry, WindowsCapture
+    from .capture import DiskEntry, PciEntry, UsbPortEntry, WindowsCapture
 
 # A Windows disk interface path ends with the device instance, from which the
 # familiar PhysicalDrive-style name cannot be recovered, so the path is shown.
 _DISK_INDEX = re.compile(r"PhysicalDrive(\d+)", re.IGNORECASE)
+
+_Decoded = TypeVar("_Decoded")
 
 
 def _pcie_link(entry: PciEntry) -> PcieLink:
@@ -303,9 +316,12 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
         bus = device.bus_type
         is_nvme = bus is BusType.NVME
         record = (entry.nvme if is_nvme else entry.ata) or HealthBlobs()
+        usb_chain = _usb_chain(entry, capture)
+        usb = _usb_link(usb_chain, capture)
 
         identity = None
-        if bus is BusType.SATA:
+        # A USB disk's IDENTIFY came through the bridge by SAT passthrough.
+        if bus in (BusType.SATA, BusType.USB) or (usb is not None and not is_nvme):
             blob = decode_base64(record.identify)
             if blob is not None:
                 try:
@@ -357,7 +373,7 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
                 ),
                 size_bytes=entry.size_bytes,
                 kind=kind,
-                bus=bus,
+                bus=BusType.USB if usb is not None else bus,
                 controller_address=controller,
                 # The reader records no port capability for a disk, so the port
                 # end of the link stays unmeasured.
@@ -366,11 +382,135 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
                     drive_max_gbps=identity.max_gbps if identity else None,
                 ),
                 pcie=_pcie_link(endpoint) if is_nvme and endpoint is not None else None,
+                usb=usb,
                 health=_health_from(record, entry, bus=bus, nvme_identity=nvme_identity),
                 readings_refused=_refusals_for(entry, record),
             )
         )
     return tuple(disks)
+
+
+_USB2 = UsbSpeed(lane_rate=UsbLaneRate.HIGH)
+_GEN1 = UsbSpeed(lane_rate=UsbLaneRate.GEN1)
+_GEN2 = UsbSpeed(lane_rate=UsbLaneRate.GEN2)
+_ROOT_HUB_TYPE = 1
+_TRANSPORTS = {"uaspstor": UsbTransport.UAS, "usbstor": UsbTransport.BOT}
+
+
+def _decoded(payload: str | None, decoder: Callable[[bytes], _Decoded]) -> _Decoded | None:
+    """Decode one recorded hub answer, or ``None`` when it was not recorded or does not decode."""
+    blob = decode_base64(payload)
+    if blob is None:
+        return None
+    try:
+        return decoder(blob)
+    except ValueError:
+        return None
+
+
+def _usb_chain(entry: DiskEntry, capture: WindowsCapture) -> list[UsbPortEntry]:
+    """The port records above a disk, nearest first: its own USB device, then each hub with a record."""
+    if not capture.usb_ports:
+        return []
+    return [capture.usb_ports[instance] for instance in _ancestry_of(entry) if instance in capture.usb_ports]
+
+
+def _port_running(port: UsbPortEntry) -> UsbSpeed | None:
+    """What the device in a port negotiated.
+
+    ``..._EX`` reports high speed for a SuperSpeed device, so it is believed
+    only once V2 has said the device is not running SuperSpeed - or, without
+    V2, only below high speed, where the two cannot disagree. A SuperSpeedPlus
+    link with no rate recorded stays unread: guessing one lane at 10 Gb/s would
+    report a healthy 20 Gb/s link as slow.
+    """
+    protocols = _decoded(port.connection_v2, decode_connection_v2)
+    if protocols is not None and protocols.operating_superspeedplus:
+        return _decoded(port.superspeedplus, decode_superspeedplus)
+    if protocols is not None and protocols.operating_superspeed:
+        return _GEN1
+    connection = _decoded(port.connection, decode_connection)
+    speed = connection.speed if connection is not None else None
+    if protocols is None and speed is not None and speed.signalling_mbps >= _USB2.signalling_mbps:
+        return None
+    return speed
+
+
+def _device_capability(port: UsbPortEntry, running: UsbSpeed | None) -> UsbSpeed | None:
+    """The fastest the device in a port can run: its BOS, the V2 capability flags, and what it runs.
+
+    A BOS lists lane speeds and never a lane count, so the running link is a
+    lower bound on it, as on Linux.
+    """
+    protocols = _decoded(port.connection_v2, decode_connection_v2)
+    floor = None
+    if protocols is not None and protocols.superspeedplus_capable:
+        floor = _GEN2
+    elif protocols is not None and protocols.superspeed_capable:
+        floor = _GEN1
+    declared = _decoded(port.bos, decode_bos)
+    return fastest(declared.fastest if declared is not None else None, floor, running)
+
+
+def _on_usb2_twin(port: UsbPortEntry, running: UsbSpeed | None) -> bool | None:
+    """Whether a device runs on the USB 2 half of a socket whose USB 3 half is another port."""
+    protocols = _decoded(port.connection_v2, decode_connection_v2)
+    if protocols is None:
+        return None
+    if protocols.port_usb3:
+        return False
+    connector = _decoded(port.connector, decode_connector)
+    if connector is None:
+        return None
+    if connector.companion_port == 0:
+        return False
+    return None if running is None else running.signalling_mbps <= _USB2.signalling_mbps
+
+
+def _socket_capability(port: UsbPortEntry, hub_port: UsbPortEntry | None, *, twin: bool | None) -> UsbSpeed | None:
+    """The fastest the socket a device is plugged into can run.
+
+    A port that speaks no USB 3 can do 480 Mb/s, which is a reading. A USB 3
+    port is as fast as the external hub it belongs to says it is through that
+    hub's own BOS; a root hub says only "USB 3", so its ports stay unread. The
+    USB 2 half of a USB 3 socket is not the socket's capability either.
+    """
+    protocols = _decoded(port.connection_v2, decode_connection_v2)
+    if protocols is None or twin:
+        return None
+    if not protocols.port_usb3:
+        return _USB2
+    if hub_port is None or _decoded(hub_port.bos, decode_bos) is None:
+        return None
+    return _device_capability(hub_port, _port_running(hub_port))
+
+
+def _behind_hub(chain: Sequence[UsbPortEntry], capture: WindowsCapture) -> bool | None:
+    """Whether a hub sits between the disk's socket and the root hub."""
+    if len(chain) > 1:
+        return True
+    hub = capture.usb_hubs.get(chain[0].hub)
+    hub_type = _decoded(hub.information, decode_hub_type) if hub is not None else None
+    return None if hub_type is None else hub_type != _ROOT_HUB_TYPE
+
+
+def _usb_link(chain: Sequence[UsbPortEntry], capture: WindowsCapture) -> UsbLink | None:
+    """Assemble a USB disk's link from the answers of the hubs on its chain."""
+    if not chain:
+        return None
+    port, hubs = chain[0], chain[1:]
+    running = _port_running(port)
+    twin = _on_usb2_twin(port, running)
+    upstream = [speed for hub in hubs if (speed := _port_running(hub)) is not None]
+    return UsbLink(
+        running=running,
+        device_max=_device_capability(port, running),
+        port_max=_socket_capability(port, hubs[0] if hubs else None, twin=twin),
+        behind_hub=_behind_hub(chain, capture),
+        upstream=min(upstream, key=lambda speed: speed.bandwidth_gbps) if upstream else None,
+        on_usb2_twin=twin,
+        transport=_TRANSPORTS.get((port.service or "").lower(), UsbTransport.UNKNOWN),
+    )
 
 
 def _refusals_for(entry: DiskEntry, record: HealthBlobs) -> tuple[RefusedReading, ...]:
