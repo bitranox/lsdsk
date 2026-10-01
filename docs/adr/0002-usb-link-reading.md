@@ -92,5 +92,10 @@ raise a false warning on every USB3 hub in a machine.
 - On a kernel before 6.9 the disk's own capability needs root, so an unprivileged run there reports
   it unread and blames no shortfall on either end. The usbfs path adds a second ioctl transport
   whose structure layout is held by a test, as the Windows structures are.
+- On Windows the hub queries need no privilege. Measured on Windows 11 with the UAS SSD behind a
+  USB 2 hub: a snapshot taken under a limited token, which the same run's refused ATA passthrough
+  confirms was unelevated, recorded port and hub answers byte-identical to an elevated one. So an
+  unprivileged Windows run reads the USB link, while the drive's own SATA figures behind it still
+  need Administrator.
 - The design rests on one Windows capture of a UAS SSD and one Linux capture of a USB disk, both
   taken before any reader code is written, which also confirm every field above is published.
