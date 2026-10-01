@@ -420,8 +420,8 @@ auch gesetzt ist.
 `tree_density` bestimmt, wie viel der PCI-Struktur jede Ansicht zeichnet, `lsdsk
 topology`, der Bericht auf einer Seite und die interaktive Ansicht gleichermassen.
 Die drei Schreibweisen laufen von der geringsten Genauigkeit zur grössten.
-`storage-only`, die mitgelieferte Vorgabe, behält die Speichercontroller und die
-Bridges ÜBER ihnen, also den Weg vom Board hinunter zu jedem Laufwerk und nichts,
+`storage-only`, die mitgelieferte Vorgabe, behält die Speichercontroller, den
+USB-Hostcontroller jedes USB-Laufwerks und die Bridges ÜBER ihnen, also den Weg vom Board hinunter zu jedem Laufwerk und nichts,
 was woandershin führt, denn auf echter Hardware sind vier von fünf Gerätezeilen
 ohne Bezug zum Speicher. `storage-and-siblings` behält diese plus die Geräte
 ohne Speicherbezug, die sich eine Bridge mit einem teilen; `full` nennt jedes

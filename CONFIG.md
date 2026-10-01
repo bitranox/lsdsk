@@ -420,8 +420,8 @@ whatever this key is set to.
 `tree_density` picks how much of the PCI fabric every view draws - `lsdsk
 topology`, the one-page report, and the interactive view alike. The three
 spellings run from least detail to most. `storage-only`, the shipped default,
-keeps the storage controllers and the bridges ABOVE them - the path from the
-board down to each drive, and nothing that leads elsewhere - because four
+keeps the storage controllers, the USB host controller of any USB drive, and the
+bridges ABOVE them - the path from the board down to each drive, and nothing that leads elsewhere - because four
 device lines in five are unrelated to storage on real hardware;
 `storage-and-siblings` keeps those plus the non-storage devices that share a
 bridge with one; `full` names every device the board came with, root-down. No

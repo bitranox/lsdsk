@@ -25,6 +25,8 @@ from lsdsk.domain.diagnostics import diagnose
 if TYPE_CHECKING:
     from rich.console import RenderableType
 
+    from lsdsk.domain.models import Inventory
+
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 
 # A real AHCI controller whose capture carries no link keys at all, which is
@@ -277,7 +279,7 @@ def test_a_section_whose_hops_were_all_read_explains_nothing() -> None:
     assert "= no PCIe capability" not in text, text
 
 
-def _disk_blocks(host: str, *, expand_virtual: bool = False) -> list[tuple[str, list[tuple[str, str]]]]:
+def _disk_blocks(machine: Inventory, *, expand_virtual: bool = False) -> list[tuple[str, list[tuple[str, str]]]]:
     """Every disk block of the fabric: its header, then each row with the path it draws.
 
     A kernel-virtual row is drawn with no subject, so it is recognised by its path.
@@ -286,7 +288,6 @@ def _disk_blocks(host: str, *, expand_virtual: bool = False) -> list[tuple[str, 
     from lsdsk.domain.enums import TreeDensity
     from lsdsk.domain.models import Disk
 
-    machine = build_from(_load(host))
     view = FabricView(density=TreeDensity.FULL, expand_virtual=expand_virtual)
     lines = fabric_lines(machine, diagnose(machine), 200, view)
     virtual = {disk.path for disk in machine.virtual_disks}
@@ -311,10 +312,13 @@ def test_every_disk_row_starts_under_its_own_header(host: str) -> None:
     The orphan block, for drives on no controller the fabric drew, built its
     header with the spine's width of blank and its rows with none, so every row
     there stood a spine to the left of the column naming it. No capture had an
-    orphan until a USB disk arrived, whose xHCI is no storage controller.
+    orphan, so the case is built by hand below.
     """
-    blocks = _disk_blocks(host)
-    assert blocks, f"{host} draws no disk block, so this would pass on nothing"
+    _assert_rows_under_their_headers(host, _disk_blocks(build_from(_load(host))))
+
+
+def _assert_rows_under_their_headers(label: str, blocks: list[tuple[str, list[tuple[str, str]]]]) -> None:
+    assert blocks, f"{label} draws no disk block, so this would pass on nothing"
     wrong = [
         f"{node}: row at {row.index(node)}, header at {header.index('device')}"
         for header, rows in blocks
@@ -325,19 +329,37 @@ def test_every_disk_row_starts_under_its_own_header(host: str) -> None:
 
 
 @pytest.mark.os_agnostic
-def test_a_usb_disk_on_windows_reaches_the_orphan_block() -> None:
-    """The case the alignment test needs an orphan for, held so it cannot quietly vanish."""
-    blocks = _disk_blocks("windows-usb-uas")
-    nodes = [node for _, rows in blocks for _, node in rows]
-    lines = _fabric_lines("windows-usb-uas")
-    assert any("not attached to a known controller" in line for line in lines)
-    assert "PhysicalDrive2" in nodes, nodes
+def test_an_orphan_row_starts_under_its_own_header() -> None:
+    """A drive naming a controller the fabric does not carry, in the orphan block.
+
+    No committed capture has one: a USB disk was the only orphan, and it now
+    hangs under its host controller. So the drive is pointed at an address
+    absent from the capture, which is what a reading that lost its parent
+    looks like, and the block is held to the same alignment as every other.
+    """
+    from lsdsk.adapters.render.tree import FabricView, fabric_lines
+    from lsdsk.domain.enums import TreeDensity
+
+    machine = build_from(_load("windows-usb-uas"))
+    absent = "0000:99:00.0"
+    assert all(node.address != absent for node in machine.pci_tree)
+    moved = tuple(
+        disk.with_changes(controller_address=absent) if disk.node == "PhysicalDrive2" else disk
+        for disk in machine.disks
+    )
+    orphaned = machine.with_changes(disks=moved)
+
+    lines = fabric_lines(orphaned, diagnose(orphaned), 200, FabricView(density=TreeDensity.FULL))
+    assert any("not attached to a known controller" in line.text.plain for line in lines)
+    blocks = _disk_blocks(orphaned)
+    assert "PhysicalDrive2" in [node for _, rows in blocks for _, node in rows]
+    _assert_rows_under_their_headers("windows-usb-uas, one drive orphaned", blocks)
 
 
 @pytest.mark.os_agnostic
 def test_an_expanded_virtual_row_starts_under_its_own_header() -> None:
     """The kernel-virtual block had the orphans' defect too, drawn only on request."""
-    blocks = _disk_blocks("linux-minimal", expand_virtual=True)
+    blocks = _disk_blocks(build_from(_load("linux-minimal")), expand_virtual=True)
     virtual_rows = [(header, row, path) for header, rows in blocks for row, path in rows if "/dev/sd" not in path]
     assert virtual_rows, "linux-minimal carries kernel-virtual devices, so the block must be drawn"
     wrong = [path for header, row, path in virtual_rows if row.index(path) != header.index("device")]

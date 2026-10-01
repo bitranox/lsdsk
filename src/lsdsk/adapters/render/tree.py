@@ -64,7 +64,7 @@ from .report import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Collection, Iterable, Mapping, Sequence
     from typing import TypeAlias
 
     from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
@@ -341,6 +341,7 @@ class Fabric:
         width: int,
         view: FabricView | None = None,
         *,
+        drives_on: Collection[str],
         thresholds: Thresholds = DEFAULT_THRESHOLDS,
     ) -> None:
         """Settle one render call's shared state.
@@ -349,9 +350,18 @@ class Fabric:
         travel together through every signature that renders the fabric, which
         is what the type exists to say, and unpacking them here made this the
         one place they could be passed out of step.
+
+        `drives_on` is REQUIRED rather than defaulting to empty: a fabric built
+        without it keeps no USB host controller in the reduced densities, and
+        that omission draws a plausible tree with a drive missing from it.
+        :meth:`of` derives it from the machine; a hand-built tree says so.
         """
         settled = FabricView() if view is None else view
         self.nodes = nodes
+        #: The addresses a drive hangs off. A storage class is not the only
+        #: thing a drive can sit under: a USB disk's controller is a host
+        #: controller, class 0C03, which no storage rule covers.
+        self.drives_on = frozenset(drives_on)
         self.width = width
         self.view = settled
         self.density = settled.density
@@ -386,6 +396,47 @@ class Fabric:
         #: What every row of this section draws, so the header labels the same.
         self.fields = device_fields(self.width, self.spine)
 
+    @classmethod
+    def of(
+        cls,
+        inventory: Inventory,
+        width: int,
+        view: FabricView | None = None,
+        *,
+        thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    ) -> Fabric:
+        """The fabric of one machine, its devices and the drives on them read together.
+
+        Args:
+            inventory: The machine.
+            width: Width to lay out inside.
+            view: How this view draws it.
+            thresholds: What this run judges wear by, for the disk rows.
+
+        Returns:
+            The fabric, keeping every device a drive hangs off at every density.
+        """
+        hosts = (disk.controller_address for disk in inventory.disks)
+        return cls(
+            inventory.pci_tree,
+            width,
+            view,
+            drives_on={address for address in hosts if address is not None},
+            thresholds=thresholds,
+        )
+
+    def holds_drives(self, node: PciNode) -> bool:
+        """Whether a device is where drives hang: a storage class, or one a drive names.
+
+        Args:
+            node: A device on this fabric.
+
+        Returns:
+            True for a storage controller, with or without drives, and for any
+            other device a drive in this machine is attached to.
+        """
+        return node.is_storage or node.address in self.drives_on
+
     @property
     def hop_bandwidth(self) -> bool:
         """Whether this section's hop figures carry what they are worth.
@@ -410,8 +461,8 @@ class Fabric:
     def _kept(self) -> set[str]:
         """The addresses the density keeps.
 
-        FULL keeps everything. A reduced density starts from the STORAGE and
-        keeps the path to it: the bridges that come with it are the ones above
+        FULL keeps everything. A reduced density starts from the STORAGE - every
+        device :meth:`holds_drives` - and keeps the path to it: the bridges that come with it are the ones above
         a drawn device, added by :meth:`_with_ancestors`, not every class-06
         device on the board. Keeping them all drew the whole bridge skeleton -
         a downstream port leading to a graphics card, an LPC bridge, the four
@@ -426,7 +477,7 @@ class Fabric:
         """
         if self.density is TreeDensity.FULL:
             return set(self.by_address)
-        storage = {address for address, node in self.by_address.items() if node.is_storage}
+        storage = {address for address, node in self.by_address.items() if self.holds_drives(node)}
         keep = set(storage)
         if self.density is TreeDensity.STORAGE_AND_SIBLINGS:
             by_parent_all = self._grouped(self.by_address.values())
@@ -772,7 +823,7 @@ def fabric_lines(
     """
     if not inventory.pci_tree:
         return ()
-    fabric = Fabric(inventory.pci_tree, width, view, thresholds=thresholds)
+    fabric = Fabric.of(inventory, width, view, thresholds=thresholds)
     layout = fabric.measure(inventory)
     # Graded once, beside the layout that is fitted once: a lookup per row that
     # walks every finding makes the section cost its rows times its findings.
@@ -816,7 +867,7 @@ def _fabric_devices(
             out.append(FabricLine(device_header_line(fabric, fabric.rules_before(node)), None))
             labelled = True
         out.append(FabricLine(fabric.row(node, severities), node))
-        disks = inventory.disks_on(node.address) if node.is_storage else ()
+        disks = inventory.disks_on(node.address) if fabric.holds_drives(node) else ()
         if not disks:
             continue
         attached.update(disk.node for disk in disks)

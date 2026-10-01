@@ -16,8 +16,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 from lsdsk.adapters.hw.snapshot import build_from
+from lsdsk.adapters.render.tree import FabricView, fabric_lines
 from lsdsk.domain.diagnostics import diagnose
-from lsdsk.domain.enums import BusType, UsbTransport
+from lsdsk.domain.enums import BusType, TreeDensity, UsbTransport
+from lsdsk.domain.models import PciNode
 
 if TYPE_CHECKING:
     from lsdsk.domain.models import Disk, Finding, Inventory
@@ -112,3 +114,29 @@ def test_the_linux_usb_disk_raises_the_port_finding_and_nothing_else_about_its_l
     titles = [finding.title for finding in _usb_findings(machine, disk)]
 
     assert titles == [f"{disk.model} can do USB10G but its port only offers USB480M"], titles
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", ["linux-usb-ehci", "windows-usb-uas"])
+@pytest.mark.parametrize("density", list(TreeDensity), ids=str)
+def test_a_usb_disk_is_drawn_under_its_own_host_controller(host: str, density: TreeDensity) -> None:
+    """The host controller is a known device, so the disk hangs under it at every density.
+
+    A USB host controller is no storage class, and the tree used to hang drives
+    under storage classes only, so a disk whose controller was in the fabric
+    was drawn under "not attached to a known controller" - a sentence that was
+    false on both captures. The reduced densities must keep the host controller
+    too, or the disk has nothing to hang under there.
+    """
+    machine = _machine(host)
+    disk = _usb_disk(machine)
+    lines = fabric_lines(machine, diagnose(machine), 200, FabricView(density=density))
+
+    at = next(index for index, line in enumerate(lines) if line.subject == disk)
+    above = [line.subject for line in lines[:at] if isinstance(line.subject, PciNode)]
+
+    assert above, f"{host} {density.value}: the disk is drawn above every device"
+    assert above[-1].address == disk.controller_address, (above[-1].address, disk.controller_address)
+    # The case this exists for: a host controller the storage classes do not cover.
+    assert not above[-1].is_storage, above[-1].class_code
+    assert not any("not attached" in line.text.plain for line in lines)

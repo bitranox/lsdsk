@@ -55,9 +55,9 @@ DENSITY_COUNTS: dict[str, dict[TreeDensity, int]] = {
     "linux-sas-hba": {TreeDensity.STORAGE_ONLY: 9, TreeDensity.STORAGE_AND_SIBLINGS: 9, TreeDensity.FULL: 95},
     "linux-minimal": {TreeDensity.STORAGE_ONLY: 5, TreeDensity.STORAGE_AND_SIBLINGS: 5, TreeDensity.FULL: 87},
     "linux-nvme-board": {TreeDensity.STORAGE_ONLY: 13, TreeDensity.STORAGE_AND_SIBLINGS: 13, TreeDensity.FULL: 45},
-    "linux-usb-ehci": {TreeDensity.STORAGE_ONLY: 3, TreeDensity.STORAGE_AND_SIBLINGS: 3, TreeDensity.FULL: 82},
+    "linux-usb-ehci": {TreeDensity.STORAGE_ONLY: 4, TreeDensity.STORAGE_AND_SIBLINGS: 4, TreeDensity.FULL: 82},
     "windows-ahci": {TreeDensity.STORAGE_ONLY: 4, TreeDensity.STORAGE_AND_SIBLINGS: 7, TreeDensity.FULL: 27},
-    "windows-usb-uas": {TreeDensity.STORAGE_ONLY: 4, TreeDensity.STORAGE_AND_SIBLINGS: 4, TreeDensity.FULL: 25},
+    "windows-usb-uas": {TreeDensity.STORAGE_ONLY: 5, TreeDensity.STORAGE_AND_SIBLINGS: 5, TreeDensity.FULL: 25},
 }
 
 
@@ -207,7 +207,7 @@ def test_a_density_draws_every_device_it_keeps() -> None:
     for host in DENSITY_COUNTS:
         machine = build_from(_load(host))
         for density in tuple(TreeDensity):
-            fabric = Fabric(machine.pci_tree, 200, FabricView(density=density))
+            fabric = Fabric.of(machine, 200, FabricView(density=density))
             drawn = {node.address for node, _level in fabric.drawn()}
             lost = fabric.kept - drawn
             assert not lost, f"{host} {density.value}: kept but never drawn: {sorted(lost)[:5]}"
@@ -440,7 +440,7 @@ def test_a_device_row_takes_one_line_at_every_width(host: str) -> None:
     machine = build_from(_load(host))
     findings = diagnose(machine)
     for width in range(20, 201):
-        fabric = Fabric(machine.pci_tree, width, FabricView(density=TreeDensity.FULL))
+        fabric = Fabric.of(machine, width, FabricView(density=TreeDensity.FULL))
         console = Console(file=io.StringIO(), width=width, no_color=True)
         for node, _level in fabric.drawn():
             with console.capture() as capture:
@@ -481,7 +481,7 @@ def test_a_disk_row_takes_one_line_at_every_width(host: str) -> None:
     severities = severity_index(diagnose(machine))
     wrapped: list[str] = []
     for width in range(20, 201):
-        fabric = Fabric(machine.pci_tree, width, FabricView(density=TreeDensity.FULL, expand_virtual=True))
+        fabric = Fabric.of(machine, width, FabricView(density=TreeDensity.FULL, expand_virtual=True))
         layout = fabric.measure(machine)
         rules = fabric.rules_under(None)
         lines: list[tuple[str, Any]] = [("header", disk_header_line(fabric, layout, rules))]
@@ -542,7 +542,7 @@ def test_every_device_row_starts_its_columns_at_the_same_place(host: str) -> Non
 
     machine = build_from(_load(host))
     findings = diagnose(machine)
-    fabric = Fabric(machine.pci_tree, 200, FabricView(density=TreeDensity.FULL))
+    fabric = Fabric.of(machine, 200, FabricView(density=TreeDensity.FULL))
 
     offsets = {fabric.row(node, severity_index(findings)).plain.index(node.address) for node, _level in fabric.drawn()}
 
@@ -638,7 +638,7 @@ def test_a_reduced_density_draws_no_bridge_that_leads_away_from_storage(host: st
         return node.is_storage or any(holds_storage(child) for child in node.children)
 
     for density in (TreeDensity.STORAGE_AND_SIBLINGS, TreeDensity.STORAGE_ONLY):
-        fabric = Fabric(machine.pci_tree, 200, FabricView(density=density))
+        fabric = Fabric.of(machine, 200, FabricView(density=density))
         strays = [
             node.address for node, _level in fabric.drawn() if node.is_bridge_family and not holds_storage(node.address)
         ]
@@ -810,7 +810,7 @@ def test_the_device_rows_carry_a_header_over_their_own_columns() -> None:
 
     machine = build_from(_load("linux-nvme-board"))
     findings = diagnose(machine)
-    fabric = Fabric(machine.pci_tree, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
+    fabric = Fabric.of(machine, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
     header = device_header_line(fabric).plain
     node, _level = fabric.drawn()[0]
     row = fabric.row(node, severity_index(findings)).plain
@@ -871,7 +871,7 @@ def test_the_header_names_exactly_the_columns_the_rows_draw() -> None:
     )
     seen = {True: 0, False: 0}
     for width in range(20, 201):
-        fabric = Fabric(tree, width, FabricView(density=TreeDensity.FULL))
+        fabric = Fabric(tree, width, FabricView(density=TreeDensity.FULL), drives_on=())
         header = device_header_line(fabric)
         node, _level = fabric.drawn()[0]
         # Matches BOTH hop tiers: the narrow figure is a prefix of the wide
@@ -917,7 +917,7 @@ def test_a_disk_block_carries_the_rules_of_the_controller_above_it(host: str) ->
 
     machine = build_from(_load(host))
     findings = diagnose(machine)
-    fabric = Fabric(machine.pci_tree, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
+    fabric = Fabric.of(machine, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
     buffer = io.StringIO()
     Console(file=buffer, width=160, no_color=True).print(
         render_fabric(machine, findings, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
@@ -982,7 +982,7 @@ def test_nothing_drawn_between_two_siblings_breaks_the_rule_between_them(host: s
 
     machine = build_from(_load(host))
     findings = diagnose(machine)
-    fabric = Fabric(machine.pci_tree, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
+    fabric = Fabric.of(machine, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
     buffer = io.StringIO()
     Console(file=buffer, width=160, no_color=True).print(
         render_fabric(machine, findings, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
@@ -1180,7 +1180,7 @@ def test_every_hop_cell_is_the_one_its_field_tier_was_measured_for(host: str) ->
     for density in TreeDensity:
         for width in range(20, 201):
             found, differing = _hop_cells_off_their_tier(
-                Fabric(machine.pci_tree, width, FabricView(density=density)), findings
+                Fabric.of(machine, width, FabricView(density=density)), findings
             )
             wrong.extend(f"{density.value} {one}" for one in found)
             discriminating += differing
@@ -1208,7 +1208,9 @@ def test_a_deep_fabric_draws_the_hop_tier_its_field_plan_chose() -> None:
     wrong: list[str] = []
     discriminating = 0
     for width in range(20, 201):
-        found, differing = _hop_cells_off_their_tier(Fabric(nodes, width, FabricView(density=TreeDensity.FULL)), ())
+        found, differing = _hop_cells_off_their_tier(
+            Fabric(nodes, width, FabricView(density=TreeDensity.FULL), drives_on=()), ()
+        )
         wrong.extend(found)
         discriminating += differing
     assert discriminating, "no drawn hop cell differs between the tiers, so the sweep asserted nothing"
@@ -1235,7 +1237,7 @@ def test_the_capable_column_draws_the_maximum_and_the_running_one_the_negotiated
     link_only = PciNode(address="0000:01:00.0", name="card", link=_UNEQUAL_HOP, pcie_capability_present=True)
     assert hop_cells(link_only, bandwidth=width == 200) == ((capable, ""), (running, ""))
 
-    fabric = Fabric(_deep_linked_chain(1), width, FabricView(density=TreeDensity.FULL))
+    fabric = Fabric(_deep_linked_chain(1), width, FabricView(density=TreeDensity.FULL), drives_on=())
     header = device_header_line(fabric).plain
     widths = {field.key: field.width for field in fabric.fields}
     node, _level = fabric.drawn()[0]

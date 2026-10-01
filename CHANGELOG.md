@@ -5,6 +5,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **A USB disk is drawn under its host controller in the topology.** Its
+  controller is a known PCI device, but a USB host controller is no storage
+  class, so the tree put the disk under "not attached to a known controller" -
+  a sentence that was false - and the reduced densities did not draw the host
+  controller at all. Every density now keeps a device any drive hangs off,
+  with the bridges above it, so a disk held to USB 2 sits beside the EHCI that
+  holds it there. The host controller still gets none of the controller rules
+  (port count, free sockets).
+
 ## [1.5.0] 2026-09-28 23:32:21
 
 ### Changed
