@@ -19,11 +19,22 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from hostprobe import DOCUMENTED_EXITS, check, resolve, smart_actually_read
+from hostprobe import DOCUMENTED_EXITS, check, resolve, smart_actually_read, usb_link_read
 
 
 def _disk(bus: str, *, model: str | None = "ACME", hours: int | None = 100) -> dict[str, Any]:
     return {"bus": bus, "model": model, "health": None if hours is None else {"power_on_hours": hours}}
+
+
+def _speed(lane_rate: str, lanes: int = 1) -> dict[str, Any]:
+    return {"lane_rate": lane_rate, "lanes": lanes}
+
+
+def _usb_disk(path: str, usb: dict[str, Any] | None) -> dict[str, Any]:
+    return {**_disk("usb"), "path": path, "usb": usb}
+
+
+_A_READ_LINK = {"running": _speed("480M"), "device_max": _speed("10G"), "port_max": _speed("480M")}
 
 
 def _fake_cli(disks: list[dict[str, Any]], *, privileged: bool = True):
@@ -139,3 +150,53 @@ def test_check_reports_both_outcomes() -> None:
     assert check("x", True)["passed"] is True
     assert check("x", False, "why")["passed"] is False
     assert check("x", False, "why")["detail"] == "why"
+
+
+def _usb_check(results: list[dict[str, Any]]) -> dict[str, Any]:
+    return next(item for item in results if item["name"] == "usb:every-usb-disk-has-a-running-link")
+
+
+@pytest.mark.os_agnostic
+def test_a_usb_disk_whose_link_was_read_passes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The control: a real USB disk with its link read, beside a disk on another bus."""
+    import hostprobe
+
+    monkeypatch.setattr(hostprobe, "run", _fake_cli([_usb_disk("/dev/sdb", _A_READ_LINK), _disk("sata")]))
+    results, facts = usb_link_read(["lsdsk"])
+    assert _usb_check(results)["passed"], _usb_check(results)["detail"]
+    assert facts["usb_disks"] == 1
+    assert facts["usb_links"] == {"/dev/sdb": {"running": "480Mx1", "device_max": "10Gx1", "port_max": "480Mx1"}}
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    "usb",
+    [None, {**_A_READ_LINK, "running": None}],
+    ids=["no-usb-object", "no-running-link"],
+)
+def test_a_usb_disk_without_a_running_link_fails_naming_it(
+    monkeypatch: pytest.MonkeyPatch, usb: dict[str, Any] | None
+) -> None:
+    """A USB disk the reader could not place on its link is the failure this check exists for."""
+    import hostprobe
+
+    disks = [_usb_disk("/dev/sdb", _A_READ_LINK), _usb_disk("/dev/sdc", usb)]
+    monkeypatch.setattr(hostprobe, "run", _fake_cli(disks))
+    results, _ = usb_link_read(["lsdsk"])
+    found = _usb_check(results)
+    assert not found["passed"], "a USB disk with no running link was called fine"
+    assert "/dev/sdc" in found["detail"]
+    assert "/dev/sdb" not in found["detail"], found["detail"]
+
+
+@pytest.mark.os_agnostic
+def test_a_host_with_no_usb_disk_passes_and_says_it_proved_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A vacuous pass must SAY it is vacuous, or the report reads as USB coverage."""
+    import hostprobe
+
+    monkeypatch.setattr(hostprobe, "run", _fake_cli([_disk("sata"), _disk("nvme")]))
+    results, facts = usb_link_read(["lsdsk"])
+    found = _usb_check(results)
+    assert found["passed"]
+    assert found["detail"] == "no usb disk on this host"
+    assert facts["usb_disks"] == 0

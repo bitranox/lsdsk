@@ -208,6 +208,52 @@ def smart_actually_read(invocation: list[str]) -> tuple[list[dict[str, Any]], di
     return results, facts
 
 
+def _speed_text(speed: object) -> str | None:
+    """A USB speed as ``<lane rate>x<lanes>``, or None when it was not read."""
+    if not isinstance(speed, dict):
+        return None
+    fields = cast("dict[str, Any]", speed)
+    return f"{fields.get('lane_rate')}x{fields.get('lanes')}"
+
+
+def _usb_of(disk: dict[str, Any]) -> dict[str, Any]:
+    """A disk's USB link mapping, or an empty one when it carries none."""
+    raw = disk.get("usb")
+    return cast("dict[str, Any]", raw) if isinstance(raw, dict) else {}
+
+
+def usb_link_read(invocation: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Whether every USB disk on this host came back with the link it runs on.
+
+    Only a live run can fail this: the hub IOCTLs and the usbfs BOS request are
+    answered by this machine's own stack, and a capture holds whatever they
+    returned. A host with no USB disk passes, and says so in the detail, so a
+    green report from it is never read as USB coverage.
+    """
+    name = "usb:every-usb-disk-has-a-running-link"
+    code, out, _ = run(invocation, ["disks", "--format", "json"])
+    if code not in DOCUMENTED_EXITS:
+        return [check(name, False, f"exit {code}")], {}
+    try:
+        disks: list[dict[str, Any]] = json.loads(out)["data"]["disks"]
+    except Exception as error:
+        return [check(name, False, type(error).__name__)], {}
+
+    usb = [disk for disk in disks if disk.get("bus") == "usb"]
+    links = {
+        str(disk.get("path")): {
+            key: _speed_text(_usb_of(disk).get(key)) for key in ("running", "device_max", "port_max")
+        }
+        for disk in usb
+    }
+    facts: dict[str, Any] = {"usb_disks": len(usb), "usb_links": links}
+    if not usb:
+        return [check(name, True, "no usb disk on this host")], facts
+    unread = sorted(path for path, link in links.items() if link["running"] is None)
+    detail = f"no running link on {unread}" if unread else f"{len(usb)} usb disk(s), every link read"
+    return [check(name, not unread, detail)], facts
+
+
 def snapshot_refuses_replay(invocation: list[str], workdir: Path) -> list[dict[str, Any]]:
     """It captures the machine it runs on, so --replay must not silently apply.
 
@@ -239,6 +285,9 @@ def main() -> int:
         smart, smart_facts = smart_actually_read(invocation)
         checks += smart
         facts.update(smart_facts)
+        usb, usb_facts = usb_link_read(invocation)
+        checks += usb
+        facts.update(usb_facts)
         checks += snapshot_refuses_replay(invocation, workdir)
 
     envelope = {
