@@ -115,11 +115,12 @@ another level of fabric.
 showing storage and the bridges above it; --tree-density to change the detail level
 legacy = no PCIe capability
 linux-sas-hba   2 root complexes (0000:00, 0000:ff)   root ports to PCIe Gen3x8   95 PCI devices
-   │     address       capable                running                name
-   ├─┬── 0000:00:03.0  Gen3x8 (7.88 GB/s)     Gen3x8 (7.88 GB/s)     Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 PC>
-~  │ └── 0000:03:00.0  Gen4x8 (15.75 GB/s)    Gen3x8 (7.88 GB/s)     Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS38>
-   │     device        model                         size  kind  bus   port    disk    link    temp  worn
-~  │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  12G     6G      6G       36C    1%
+   └─┬ root complex 0000:00
+     │     address       capable                running                name
+     ├─┬── 0000:00:03.0  Gen3x8 (7.88 GB/s)     Gen3x8 (7.88 GB/s)     Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 >
+~    │ └── 0000:03:00.0  Gen4x8 (15.75 GB/s)    Gen3x8 (7.88 GB/s)     Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS>
+     │     device        model                         size  kind  bus   port    disk    link    temp  worn
+~    │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  12G     6G      6G       36C    1%
 ```
 
 **The first line is the BOARD, not a bus.** It names the board where DMI gave a
@@ -127,6 +128,13 @@ name and the machine where it did not, how many root complexes the MACHINE has,
 the best link the board's own root ports publish where one was read, and how
 many PCI devices the capture holds. A tree whose first line were a bus label
 would start one level below the thing that explains it.
+
+**Under the board, each root complex has a heading of its own** -
+`root complex 0000:00`, or `no bus address` for devices the platform published
+no PCI address for - and that root complex's devices hang one level below it.
+The heading is not a device: it carries no link and no hop figures, so a blank
+there is not a reading of any kind, and the interactive view does not select
+it. Every machine draws one, a single root complex included.
 
 **The default draws the LEAST of the fabric, so a missing device is usually the
 setting rather than the tool.** The note above the tree says which:
@@ -149,7 +157,8 @@ the tool's own words:
 
 Where the two differ the device is below its own maximum, which is the
 comparison this view exists to draw. Read them against the PORT above it, which
-is the row one level up: in the sample the HBA is `capable` of `Gen4x8` and
+is the row one level up (a device directly under a root complex heading has
+no port above it): in the sample the HBA is `capable` of `Gen4x8` and
 running `Gen3x8` because the root port above it is a Gen3 port, so the card is
 not faulty and the board is the ceiling.
 
