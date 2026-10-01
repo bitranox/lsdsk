@@ -19,12 +19,20 @@ instead: every copy of a drive's serial in a fixture must agree with the one
 the tool reports for that drive. A recapture that misses a location fails here
 and is told which one, and a location added to the reader is covered the moment
 a fixture carries it.
+
+A disk behind USB has a SECOND serial, the USB device's own, which Windows
+reports as the disk's serial and writes into the device's instance ID, hex
+encoded behind ``MSFT30`` for a SuperSpeed device. It is not the drive's, so it
+is held to its own copies rather than to IDENTIFY. An NVMe disk on Windows
+reports its namespace EUI-64 in that same field, which is no copy of the SN at
+all and has no second copy to agree with.
 """
 
 from __future__ import annotations
 
 import base64
 import json
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -32,6 +40,7 @@ import pytest
 
 from lsdsk.adapters.hw.decode.ata_identify import decode_identify, decode_vpd_ata_information
 from lsdsk.adapters.hw.decode.nvme import decode_identify_controller
+from lsdsk.adapters.hw.decode.usb import decode_bos
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -55,6 +64,15 @@ _NQN_END = 1024
 _SAT_VENDOR = b"ATA     "
 _SAT_DESIGNATOR_LENGTH = 68
 _SAT_SERIAL_START = 48
+
+# A USB device instance ID is USB\VID_xxxx&PID_xxxx\<serial>. Windows prefixes a
+# SuperSpeed device's serial with MSFT30, and a device with no serial gets a
+# generated segment holding '&', which names no serial and is skipped.
+_USB_INSTANCE = re.compile(r"^USB\\VID_[0-9A-F]{4}&PID_[0-9A-F]{4}\\(?P<segment>[^\\&]+)$", re.IGNORECASE)
+_SUPERSPEED_PREFIX = "MSFT30"
+
+# The Container ID every committed capture carries in place of the real one.
+FAKE_CONTAINER_ID = bytes(range(16))
 
 
 def _text(raw: bytes) -> str:
@@ -121,15 +139,91 @@ def _blob(source: Mapping[str, object], key: str) -> bytes | None:
     return base64.b64decode(value) if isinstance(value, str) else None
 
 
+def _usb_segment_serial(instance_id: str) -> str | None:
+    """The serial a USB device instance ID carries, or None when it carries none.
+
+    The segment after ``MSFT30`` was measured as the serial's ASCII written in
+    hex; a segment that is not hex text is taken as the serial verbatim.
+    """
+    match = _USB_INSTANCE.match(instance_id)
+    if match is None:
+        return None
+    segment = match["segment"]
+    if not segment.upper().startswith(_SUPERSPEED_PREFIX):
+        return segment
+    body = segment[len(_SUPERSPEED_PREFIX) :]
+    try:
+        return bytes.fromhex(body).decode("ascii")
+    except ValueError:
+        return body
+
+
+def _usb_instance_ids(capture: Mapping[str, object], device: str) -> dict[str, str]:
+    """Every copy of a disk's USB device instance ID, keyed by where it lives."""
+    record = _mapping(_mapping(capture.get("disks")).get(device))
+    found: dict[str, str] = {}
+    parent = record.get("parent")
+    if isinstance(parent, str):
+        found["parent"] = parent
+    ancestors = record.get("ancestors")
+    if isinstance(ancestors, list):
+        for index, ancestor in enumerate(cast("list[object]", ancestors)):
+            if isinstance(ancestor, str):
+                found[f"ancestors[{index}]"] = ancestor
+    own = {instance for instance in found.values() if _USB_INSTANCE.match(instance)}
+    for key in _mapping(capture.get("usb_ports")):
+        if key in own:
+            found[f"usb_ports[{key}]"] = key
+    return {where: instance for where, instance in found.items() if _USB_INSTANCE.match(instance)}
+
+
+def _usb_serial_locations(capture: Mapping[str, object], device: str) -> dict[str, str]:
+    """Every copy of the serial of the USB device a disk sits behind.
+
+    Empty for a disk with no USB device above it. Windows reports this serial as
+    the disk's own, so ``device/serial`` belongs here rather than to the drive.
+    """
+    instances = _usb_instance_ids(capture, device)
+    if not instances:
+        return {}
+    found = {
+        f"usb/{where}": serial for where, instance in instances.items() if (serial := _usb_segment_serial(instance))
+    }
+    reported = _reported_serial(capture, device)
+    if reported:
+        found["device/serial"] = reported
+    return found
+
+
+def _reported_serial(capture: Mapping[str, object], device: str) -> str | None:
+    """The serial the platform published for a disk, beside the decoded structures."""
+    _, _, record = _records(capture, device)
+    reported = _mapping(record.get("device")).get("serial")
+    return reported.strip() if isinstance(reported, str) and reported.strip() else None
+
+
+def _reported_belongs_to_the_drive(capture: Mapping[str, object], device: str) -> bool:
+    """Whether the platform's own serial field is a copy of the drive's serial.
+
+    On Windows it is not, twice: behind USB it is the USB device's serial, and
+    for NVMe it is the namespace EUI-64 the storage driver publishes there.
+    """
+    if _usb_instance_ids(capture, device):
+        return False
+    _, nvme, _ = _records(capture, device)
+    is_windows = device in _mapping(capture.get("disks"))
+    return not (is_windows and _blob(nvme, "identify_controller") is not None)
+
+
 def _serial_locations(capture: Mapping[str, object], device: str) -> dict[str, str]:
-    """Every serial this capture holds for one device, keyed by where it lives."""
+    """Every copy of a drive's own serial this capture holds, keyed by where it lives."""
     ata, nvme, record = _records(capture, device)
     vpd = _mapping(record.get("vpd"))
     found: dict[str, str] = {}
 
-    reported = _mapping(record.get("device")).get("serial")
-    if isinstance(reported, str) and reported.strip():
-        found["device/serial"] = reported.strip()
+    reported = _reported_serial(capture, device)
+    if reported and _reported_belongs_to_the_drive(capture, device):
+        found["device/serial"] = reported
 
     if (identify := _blob(ata, "identify")) is not None:
         found["ata/identify"] = decode_identify(identify).serial
@@ -167,20 +261,53 @@ def _devices(capture: Mapping[str, object]) -> list[str]:
 
 
 def _disagreements(capture: Mapping[str, object]) -> list[str]:
-    """Locations whose serial differs from the one the tool reports for that drive."""
-    devices = _devices(capture)
+    """Locations whose serial differs from the one the tool reports for that drive.
+
+    A USB device's serial copies are held to the one Windows reports, as that
+    serial has no decoded structure behind it to be held to.
+    """
     problems: list[str] = []
-    for device in devices:
+    for device in _devices(capture):
         locations = _serial_locations(capture, device)
         reported = locations.get("ata/identify") or locations.get("nvme/sn")
-        if not reported:
-            continue
+        if reported:
+            problems += [
+                f"{device} {where}={serial!r} but the drive reports {reported!r}"
+                for where, serial in sorted(locations.items())
+                if serial != reported
+            ]
+        usb = _usb_serial_locations(capture, device)
+        published = usb.get("device/serial")
         problems += [
-            f"{device} {where}={serial!r} but the drive reports {reported!r}"
-            for where, serial in sorted(locations.items())
-            if serial != reported
+            f"{device} {where}={serial!r} but the USB device reports {published!r}"
+            for where, serial in sorted(usb.items())
+            if published and serial != published
         ]
     return problems
+
+
+def _all_locations(capture: Mapping[str, object], device: str) -> dict[str, str]:
+    """Every serial copy for one disk, the drive's own and its USB device's."""
+    return {**_serial_locations(capture, device), **_usb_serial_locations(capture, device)}
+
+
+def _bos_blobs(capture: Mapping[str, object]) -> dict[str, bytes]:
+    """Every BOS descriptor a capture holds, on either platform, keyed by where it lives."""
+    found: dict[str, bytes] = {}
+    for section in ("usb_ports", "usb"):
+        for key, entry in _mapping(capture.get(section)).items():
+            if (bos := _blob(_mapping(entry), "bos")) is not None:
+                found[f"{section}[{key}]"] = bos
+    return found
+
+
+def _real_container_ids(capture: Mapping[str, object]) -> list[str]:
+    """BOS descriptors whose Container ID is not the placeholder a scrub writes."""
+    return [
+        where
+        for where, bos in _bos_blobs(capture).items()
+        if (container := decode_bos(bos).container_id) is not None and container != FAKE_CONTAINER_ID
+    ]
 
 
 def _fixtures() -> list[Path]:
@@ -212,7 +339,7 @@ def test_every_fixture_contributes_at_least_one_serial_location(fixture: Path) -
     so a new platform or a changed section name fails here and names the file.
     """
     capture = _load(fixture)
-    counts = {device: len(_serial_locations(capture, device)) for device in _devices(capture)}
+    counts = {device: len(_all_locations(capture, device)) for device in _devices(capture)}
     assert sum(counts.values()) >= 1, (
         f"{fixture.name} yielded no serial locations, so every check over it passes vacuously; "
         f"devices found: {sorted(counts)}"
@@ -225,7 +352,7 @@ def test_a_fixture_carries_enough_locations_for_the_check_to_mean_something() ->
     counts: dict[str, int] = {}
     for path in _fixtures():
         capture = _load(path)
-        counts[path.stem] = sum(len(_serial_locations(capture, device)) for device in _devices(capture))
+        counts[path.stem] = sum(len(_all_locations(capture, device)) for device in _devices(capture))
     assert sum(counts.values()) >= _LOCATIONS_THE_FIXTURES_CARRY, counts
 
 
@@ -275,3 +402,113 @@ def test_the_check_names_a_planted_serial_on_a_windows_capture_too() -> None:
     problems = _disagreements(capture)
 
     assert any("device/serial=" in problem for problem in problems), problems
+
+
+def _usb_disk(capture: dict[str, object]) -> tuple[dict[str, object], str]:
+    """The disks section of a capture and the one disk in it that sits behind USB."""
+    disks = _mapping(capture.get("disks"))
+    device = next((name for name in sorted(disks) if _usb_instance_ids(capture, name)), None)
+    assert device is not None, "the control needs a Windows capture with a disk behind USB"
+    return disks, device
+
+
+@pytest.mark.os_agnostic
+def test_a_usb_device_serial_is_read_from_its_instance_id() -> None:
+    """The instance ID copy must be decoded, or a scrub that misses it passes.
+
+    The USB serial is held only to its own copies, so a decoder that reads
+    nothing from the instance ID would leave ``device/serial`` alone and agree
+    with itself on any capture.
+    """
+    capture = _load(FIXTURES / "windows-usb-uas.json")
+    _, device = _usb_disk(capture)
+
+    locations = _usb_serial_locations(capture, device)
+
+    assert {"device/serial", "usb/parent", "usb/ancestors[0]"} <= set(locations), locations
+    assert any(where.startswith("usb/usb_ports[") for where in locations), locations
+
+
+@pytest.mark.os_agnostic
+def test_the_check_names_a_usb_instance_id_planted_with_another_serial() -> None:
+    """The control for the USB serial: a scrub that missed one copy must be named."""
+    capture = _load(FIXTURES / "windows-usb-uas.json")
+    disks, device = _usb_disk(capture)
+    record = _mapping(disks.get(device))
+    parent = record.get("parent")
+    assert isinstance(parent, str)
+    vendor_product = parent.rsplit("\\", 1)[0]
+    record["parent"] = f"{vendor_product}\\{_SUPERSPEED_PREFIX}{_ANOTHER_SERIAL.strip().hex().upper()}"
+    disks[device] = record
+    capture["disks"] = disks
+
+    problems = _disagreements(capture)
+
+    assert any("usb/parent=" in problem for problem in problems), problems
+
+
+@pytest.mark.os_agnostic
+def test_a_usb_disk_s_reported_serial_is_not_held_to_the_drive_inside() -> None:
+    """Behind USB, Windows reports the bridge's serial, so the drive's is not its copy.
+
+    Held to the drive it would disagree on every real USB disk, since the two are
+    different devices. Here the drive's own IDENTIFY is still read, and is then
+    its only copy, so it has nothing to disagree with: the USB copies carry the
+    check for this disk.
+    """
+    capture = _load(FIXTURES / "windows-usb-uas.json")
+    _, device = _usb_disk(capture)
+
+    drive = _serial_locations(capture, device)
+
+    assert "device/serial" not in drive, drive
+    assert set(drive) == {"ata/identify"}, drive
+    assert "device/serial" in _usb_serial_locations(capture, device)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("fixture", _fixtures(), ids=lambda path: path.stem)
+def test_no_fixture_publishes_a_real_usb_container_id(fixture: Path) -> None:
+    """A BOS Container ID is unique to one device, so a scrub replaces it with the placeholder."""
+    assert not _real_container_ids(_load(fixture)), f"{fixture.name} carries a real Container ID"
+
+
+@pytest.mark.os_agnostic
+def test_the_container_id_check_names_a_planted_one() -> None:
+    """The control: no committed disk's BOS carries a Container ID, so plant one.
+
+    A Container ID capability is a 20-byte record of type 4 appended to the BOS,
+    with the descriptor's total length raised to match.
+    """
+    capture = _load(FIXTURES / "windows-usb-uas.json")
+    ports = _mapping(capture.get("usb_ports"))
+    key = next(iter(sorted(ports)))
+    port = _mapping(ports.get(key))
+    bos = _blob(port, "bos")
+    assert bos is not None and decode_bos(bos).container_id is None
+    record = bytes([20, 0x10, 4, 0]) + bytes(range(100, 116))
+    total = len(bos) + len(record)
+    planted = bos[:2] + total.to_bytes(2, "little") + bytes([bos[4] + 1]) + bos[5:] + record
+    assert decode_bos(planted).container_id == bytes(range(100, 116))
+
+    port["bos"] = base64.b64encode(planted).decode("ascii")
+    ports[key] = port
+    capture["usb_ports"] = ports
+
+    assert _real_container_ids(capture) == [f"usb_ports[{key}]"]
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("instance_id", "serial"),
+    [
+        ("USB\\VID_0781&PID_558C\\MSFT30" + b"FAKE00000002".hex().upper(), "FAKE00000002"),
+        ("USB\\VID_0781&PID_5581\\4C530001230101100000", "4C530001230101100000"),
+        ("USB\\VID_046D&PID_C52B\\5&1A2B3C4D&0&2", None),
+        ("USB\\ROOT_HUB30\\4&2FD48294&0&0", None),
+    ],
+    ids=["superspeed-hex", "high-speed-verbatim", "generated-no-serial", "not-a-device"],
+)
+def test_a_usb_instance_id_is_read_the_way_windows_writes_it(instance_id: str, serial: str | None) -> None:
+    """Each shape of the last segment, since a fixture holds only the SuperSpeed one."""
+    assert _usb_segment_serial(instance_id) == serial
