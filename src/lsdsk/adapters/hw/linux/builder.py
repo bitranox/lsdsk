@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, NamedTuple
 
-from ....domain.enums import BusType, ControllerKind, DiskKind
+from ....domain.enums import BusType, ControllerKind, DiskKind, UsbLaneRate, UsbTransport
 from ....domain.models import (
     Controller,
     Disk,
@@ -32,6 +32,8 @@ from ....domain.models import (
     PcieSlot,
     PciNode,
     PortChild,
+    UsbLink,
+    UsbSpeed,
     representative_occupant,
 )
 from ....domain.text import device_text, first_reported
@@ -41,6 +43,7 @@ from ..decode.ata_identify import AtaIdentity, decode_identify, decode_vpd_ata_i
 from ..decode.ata_smart import decode_health
 from ..decode.captured import decode_base64, parse_int
 from ..decode.nvme import decode_identify_controller, decode_smart_log
+from ..decode.usb import decode_bos, fastest, speed_from_sysfs
 from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble, port_kind_of
 from ..refusals import refusals_of
@@ -50,7 +53,15 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from ..decode.ahci import AhciCapabilities
-    from .capture import AtaLinkEntry, BlockEntry, LinuxCapture, PciEntry, SasPhyEntry, ScsiHostEntry
+    from .capture import (
+        AtaLinkEntry,
+        BlockEntry,
+        LinuxCapture,
+        PciEntry,
+        SasPhyEntry,
+        ScsiHostEntry,
+        UsbDeviceEntry,
+    )
 
 # A PCI address as it appears inside a sysfs device path. The domain is FOUR OR
 # MORE digits and cannot start mid-number: an Intel VMD re-enumerates its drives
@@ -664,6 +675,93 @@ def _nvme_class_entry(indexed: _IndexedCapture, device_path: str) -> NvmeClassEn
     return NvmeClassEntry()
 
 
+_ROOT_HUB_PREFIX = "usb"
+_USB2_CEILING = UsbSpeed(lane_rate=UsbLaneRate.HIGH)
+_TRANSPORTS = {"uas": UsbTransport.UAS, "usb-storage": UsbTransport.BOT}
+
+
+def _usb_chain(device_path: str, capture: LinuxCapture) -> list[UsbDeviceEntry]:
+    """The captured USB devices a block device hangs under, nearest first, ending at its root hub.
+
+    One dict lookup per path component, so a capture of many USB disks costs no
+    more per disk than one of few.
+    """
+    if not capture.usb:
+        return []
+    return [entry for candidate in _self_and_ancestors(device_path) if (entry := capture.usb.get(candidate))]
+
+
+def _usb_running(entry: UsbDeviceEntry) -> UsbSpeed | None:
+    """What one USB device's own link negotiated."""
+    return speed_from_sysfs(entry.speed, entry.rx_lanes, entry.tx_lanes)
+
+
+def _usb_capability(entry: UsbDeviceEntry) -> UsbSpeed | None:
+    """The fastest one USB device can run, or ``None`` where nothing says.
+
+    A root hub's own speed IS the bus's capability. Below it the device's BOS
+    says what it supports; the running link is a lower bound on that, because a
+    BOS lists lane speeds and never a lane count. A device with no BOS at all is
+    a USB 2 device, so it can do what it runs. A BOS that was not read, or that
+    does not decode, leaves the device unread rather than guessed.
+    """
+    running = _usb_running(entry)
+    if entry.name.startswith(_ROOT_HUB_PREFIX):
+        return running
+    if entry.bos_none:
+        return running
+    payload = decode_base64(entry.bos)
+    if payload is None:
+        return None
+    try:
+        declared = decode_bos(payload)
+    except ValueError:
+        return None
+    return fastest(declared.fastest, running)
+
+
+def _usb_link(chain: Sequence[UsbDeviceEntry], capture: LinuxCapture) -> UsbLink | None:
+    """Assemble a USB disk's link from its chain: the disk, the hubs above it and the root."""
+    if not chain:
+        return None
+    device, above = chain[0], chain[1:]
+    running = _usb_running(device)
+    twin = capture.usb.get(device.peer_hub) if device.peer_hub else None
+    socket = _usb_capability(above[0]) if above else None
+    hubs = [entry for entry in above if not entry.name.startswith(_ROOT_HUB_PREFIX)]
+    upstream = [speed for hub in hubs if (speed := _usb_running(hub)) is not None]
+    return UsbLink(
+        running=running,
+        device_max=_usb_capability(device),
+        port_max=fastest(socket, None if twin is None else _usb_capability(twin)),
+        behind_hub=None if not above else bool(hubs),
+        upstream=min(upstream, key=lambda speed: speed.bandwidth_gbps) if upstream else None,
+        on_usb2_twin=_on_usb2_twin(device, running, has_parent=bool(above)),
+        transport=_usb_transport(device),
+    )
+
+
+def _on_usb2_twin(device: UsbDeviceEntry, running: UsbSpeed | None, *, has_parent: bool) -> bool | None:
+    """Whether a device runs on the USB 2 half of a socket that has a USB 3 half."""
+    if not has_parent or running is None:
+        return None
+    if not device.peer_hub:
+        return False
+    return running.signalling_mbps <= _USB2_CEILING.signalling_mbps
+
+
+def _usb_transport(device: UsbDeviceEntry) -> UsbTransport:
+    """UAS or BOT, from the driver bound to the disk's interface."""
+    return next(
+        (_TRANSPORTS[driver] for driver in device.interface_drivers if driver in _TRANSPORTS), UsbTransport.UNKNOWN
+    )
+
+
+def _usb_refusal(chain: Sequence[UsbDeviceEntry]) -> str | None:
+    """The first refused BOS read on the chain, which is what left an end of the link unread."""
+    return next((entry.bos_error for entry in chain if entry.bos_error), None)
+
+
 def _build_ata_disk(node: str, block: BlockEntry, indexed: _IndexedCapture) -> Disk:
     """Build one SATA or SAS disk from a capture."""
     capture = indexed.capture
@@ -673,6 +771,8 @@ def _build_ata_disk(node: str, block: BlockEntry, indexed: _IndexedCapture) -> D
     identity = _ata_identity(block, ata)
     phy = _phy_for(device_path, capture)
     ata_link = _ata_link_for(device_path, indexed)
+    usb_chain = _usb_chain(device_path, capture)
+    usb = _usb_link(usb_chain, capture)
 
     health: Health | None = None
     data = decode_base64(ata.smart_data)
@@ -699,9 +799,10 @@ def _build_ata_disk(node: str, block: BlockEntry, indexed: _IndexedCapture) -> D
         wwn=_stable_identifier(block),
         size_bytes=_size_bytes(block, identity),
         kind=kind,
-        bus=_bus_of(identity, phy),
+        bus=BusType.USB if usb is not None else _bus_of(identity, phy),
         controller_address=address,
         link=_sata_link(identity, phy, ata_link, _ahci_port_speed(capture, address)),
+        usb=usb,
         health=health,
         readings_refused=refusals_of(
             {
@@ -709,6 +810,7 @@ def _build_ata_disk(node: str, block: BlockEntry, indexed: _IndexedCapture) -> D
                 "identify": ata.identify_error,
                 "smart-data": ata.smart_data_error,
                 "smart-thresholds": ata.smart_thresholds_error,
+                "usb-link": _usb_refusal(usb_chain),
             }
         ),
     )
