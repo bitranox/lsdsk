@@ -35,7 +35,17 @@ if TYPE_CHECKING:
 
     from rich.console import RenderableType
 
-    from ...domain.models import Controller, Disk, Finding, Inventory, PcieLink, PcieSlot, SmartAttribute
+    from ...domain.models import (
+        Controller,
+        Disk,
+        Finding,
+        Inventory,
+        PcieLink,
+        PcieSlot,
+        SmartAttribute,
+        UsbLink,
+        UsbSpeed,
+    )
     from .rows import Row
 
 # What is lost when the SMART path is unavailable, as the reader sees it named in
@@ -370,6 +380,49 @@ def serial_speed(gbps: float | None, *, bandwidth: bool = False) -> str:
     return theme.with_bandwidth(figure, serial_bandwidth_gbps(gbps)) if bandwidth else figure
 
 
+def usb_speed_text(speed: UsbSpeed | None, *, bandwidth: bool = False) -> str:
+    """Render one end of a USB link, as every column and the panel spell it.
+
+    The spelling itself is ``UsbSpeed.figure``; this only adds what the rate
+    carries and the unread marker, so no view can write a USB rate its own way.
+
+    Args:
+        speed: That end's rate, or ``None`` where it was not read.
+        bandwidth: Whether to carry what the figure is worth beside it.
+
+    Returns:
+        The figure, with its bandwidth when asked for, or the unread marker.
+
+    Example:
+        >>> from lsdsk.domain.enums import UsbLaneRate
+        >>> from lsdsk.domain.models import UsbSpeed
+        >>> usb_speed_text(UsbSpeed(lane_rate=UsbLaneRate.GEN2), bandwidth=True)
+        'USB10G (1.21 GB/s)'
+    """
+    if speed is None:
+        return theme.NOT_READ
+    return theme.with_bandwidth(speed.figure, speed.bandwidth_gbps) if bandwidth else speed.figure
+
+
+def _usb_gbps(speed: UsbSpeed | None) -> float | None:
+    """What a USB rate carries in GB/s, for the colour rules, or ``None`` when unread."""
+    return None if speed is None else speed.bandwidth_gbps
+
+
+def _usb_path_gbps(usb: UsbLink) -> float | None:
+    """What the socket AND any hub above it can carry: the slowest of them, for the link colour.
+
+    A link held down by a slower hub is not a link fault - the finding names the
+    hub as the ceiling - so the colour weighs the running rate against the whole
+    path rather than against the socket alone.
+    """
+    port = _usb_gbps(usb.port_max)
+    upstream = _usb_gbps(usb.upstream)
+    if port is None or upstream is None:
+        return port
+    return min(port, upstream)
+
+
 def disk_cells(
     disk: Disk,
     port: PcieLink | None = None,
@@ -403,6 +456,10 @@ def disk_cells(
         port_text = pcie_capability(port, bandwidth=bandwidth) if port is not None else "-"
         drive_text = pcie_capability(disk.pcie, bandwidth=bandwidth)
         link_text = _pcie_text(disk.pcie, bandwidth=bandwidth)
+    elif disk.usb is not None:
+        port_text = usb_speed_text(disk.usb.port_max, bandwidth=bandwidth)
+        drive_text = usb_speed_text(disk.usb.device_max, bandwidth=bandwidth)
+        link_text = usb_speed_text(disk.usb.running, bandwidth=bandwidth)
     else:
         port_text = serial_speed(disk.link.port_max_gbps, bandwidth=bandwidth)
         drive_text = serial_speed(disk.link.drive_max_gbps, bandwidth=bandwidth)
@@ -459,6 +516,11 @@ def disk_cell_styles(
         port_style = theme.port_style(port_max, drive_max)
         drive_style = theme.disk_style(drive_max, port_max)
         negotiated_style = theme.link_style(negotiated, port_max, drive_max)
+    elif disk.usb is not None:
+        port_max, drive_max = _usb_gbps(disk.usb.port_max), _usb_gbps(disk.usb.device_max)
+        port_style = theme.port_style(port_max, drive_max)
+        drive_style = theme.disk_style(drive_max, port_max)
+        negotiated_style = theme.link_style(_usb_gbps(disk.usb.running), _usb_path_gbps(disk.usb), drive_max)
     else:
         port_style = theme.port_style(disk.link.port_max_gbps, disk.link.drive_max_gbps)
         drive_style = theme.disk_style(disk.link.drive_max_gbps, disk.link.port_max_gbps)
@@ -1117,5 +1179,6 @@ __all__ = [
     "slot_privilege_note",
     "slot_table_row",
     "slot_verdict",
+    "usb_speed_text",
     "virtual_note",
 ]

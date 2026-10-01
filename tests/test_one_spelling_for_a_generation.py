@@ -143,3 +143,62 @@ def test_a_finding_spells_a_generation_the_way_the_table_above_it_does(host: str
         text = f"{finding.title} {finding.detail} {finding.action or ''}"
         found = sorted({match.group(0) for match in DECIMAL.finditer(text)})
         assert not found, f"{host}: a finding writes {found}: {text}"
+
+
+#: A USB rate written any way but ``UsbSpeed.figure``'s: a bare rate with a bit
+#: unit, the marketing ``USB 3.2 Gen 2`` family, or the figure with a blank in it.
+USB_OTHER_SPELLING = re.compile(
+    r"\b\d+(\.\d+)?\s?(Gbps|Mbps|Gb/s|Mb/s|Gbit/s|Mbit/s)\b|\bUSB ?\d\.\d\b|\bGen ?\dx\d USB\b|\bUSB \d+(\.\d+)?[MG]\b"
+)
+
+#: The spelling every USB figure takes.
+USB_FIGURE = re.compile(r"\bUSB(1\.5M|12M|480M|5G|10G|20G)\b")
+
+
+def _usb_views(*, usb: bool) -> list[tuple[str, str]]:
+    """Every view of a machine holding one USB disk (or the same disk as plain SATA, for the control)."""
+    from lsdsk.domain.enums import BusType, UsbLaneRate
+    from lsdsk.domain.models import Disk, InterfaceLink, Inventory, UsbLink, UsbSpeed
+
+    link = UsbLink(
+        running=UsbSpeed(lane_rate=UsbLaneRate.HIGH),
+        device_max=UsbSpeed(lane_rate=UsbLaneRate.GEN2),
+        port_max=UsbSpeed(lane_rate=UsbLaneRate.HIGH),
+        behind_hub=False,
+        on_usb2_twin=False,
+    )
+    disk = Disk(
+        node="sdb",
+        path="/dev/sdb",
+        model="Portable SSD",
+        bus=BusType.USB if usb else BusType.SATA,
+        link=InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0),
+        usb=link if usb else None,
+    )
+    machine = Inventory(hostname="usb-host", disks=(disk,))
+    findings = diagnose(machine)
+    finding_text = " ".join(f"{one.title} {one.detail} {one.action or ''}" for one in findings)
+    return [
+        ("the printed page", _text(render_full(machine, findings, width=200))),
+        ("the disk-and-controller tree", _text(report.render_controller_disks(machine, findings, width=200))),
+        ("the findings", finding_text),
+        *_panels(machine, findings),
+    ]
+
+
+@pytest.mark.os_agnostic
+def test_every_view_spells_a_usb_rate_one_way() -> None:
+    """The USB figure is written by one property, so no view may grow a second spelling."""
+    views = _usb_views(usb=True)
+    for label, text in views:
+        found = sorted({match.group(0) for match in USB_OTHER_SPELLING.finditer(text)})
+        assert not found, f"{label}: writes {found}, which is not how a USB rate is spelled"
+    drawn = {match.group(0) for _, text in views for match in USB_FIGURE.finditer(text)}
+    assert {"USB10G", "USB480M"} <= drawn, f"the views drew {sorted(drawn)}, so the rule above checked too little"
+
+
+@pytest.mark.os_agnostic
+def test_a_machine_with_no_usb_disk_draws_no_usb_figure() -> None:
+    """The control: the figures above come from the USB link, not from the page's furniture."""
+    drawn = {match.group(0) for _, text in _usb_views(usb=False) for match in USB_FIGURE.finditer(text)}
+    assert not drawn

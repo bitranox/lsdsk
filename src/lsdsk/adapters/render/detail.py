@@ -41,11 +41,11 @@ from rich.table import Table
 from rich.text import Text
 
 from ...domain.diagnostics import attached_demand_gbytes
-from ...domain.enums import BusType
+from ...domain.enums import BusType, UsbTransport
 from ...domain.history import CounterKind
 from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from . import tables, theme
-from .report import findings_for, pcie_capability, serial_speed, slot_verdict
+from .report import findings_for, pcie_capability, serial_speed, slot_verdict, usb_speed_text
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -515,9 +515,45 @@ def _disk_link_values(disk: Disk, row: dict[str, Cell], port: PcieLink | None) -
         limiting = disk.pcie.limiting_end(port)
         text = theme.NOT_READ if limiting is None else pcie_capability(limiting, bandwidth=True)
         achievable = (text, "")
+    elif disk.usb is not None:
+        achievable = (usb_speed_text(disk.usb.achievable, bandwidth=True), "")
     else:
         achievable = (serial_speed(disk.link.achievable_gbps, bandwidth=True), "")
-    return (("port", row["port"]), ("drive", row["disk"]), ("negotiated", row["link"]), ("achievable", achievable))
+    shared = (("port", row["port"]), ("drive", row["disk"]), ("negotiated", row["link"]), ("achievable", achievable))
+    return (*shared, *_usb_values(disk))
+
+
+def _usb_values(disk: Disk) -> tuple[tuple[str, Cell], ...]:
+    """The USB side of a USB disk's link, then the drive's own link behind the bridge.
+
+    The four rows above are the USB link, because that is what the table draws
+    for a USB disk. The drive's own SATA figures are still real and still in the
+    JSON, so the panel names them here under labels that say whose they are.
+    """
+    usb = disk.usb
+    if usb is None:
+        return ()
+    hub = _absent() if usb.behind_hub is False else _figure(usb_speed_text(usb.upstream, bandwidth=True))
+    if usb.on_usb2_twin is None:
+        twin: Cell = (theme.NOT_READ, theme.STYLE_UNKNOWN)
+    else:
+        twin = ("yes" if usb.on_usb2_twin else "no", "")
+    if usb.transport is UsbTransport.UNKNOWN:
+        transport: Cell = (theme.NOT_READ, theme.STYLE_UNKNOWN)
+    else:
+        transport = (usb.transport.value.upper(), "")
+    return (
+        ("hub above", hub),
+        ("usb2 side", twin),
+        ("transport", transport),
+        ("drive link", _figure(serial_speed(disk.link.negotiated_gbps, bandwidth=True))),
+        ("drive can do", _figure(serial_speed(disk.link.drive_max_gbps, bandwidth=True))),
+    )
+
+
+def _figure(text: str) -> Cell:
+    """A formatted link figure, styled as unknown when it is the unread marker."""
+    return text, theme.STYLE_UNKNOWN if text == theme.NOT_READ else ""
 
 
 def _seat_values(disk: Disk, inventory: Inventory) -> tuple[tuple[str, Cell], ...]:
