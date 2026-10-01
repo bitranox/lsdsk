@@ -24,7 +24,14 @@ if TYPE_CHECKING:
     from lsdsk.domain.models import Inventory
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
-CAPTURES = ("linux-sas-hba", "linux-nvme-board", "linux-minimal", "windows-ahci", "windows-usb-uas")
+CAPTURES = (
+    "linux-sas-hba",
+    "linux-nvme-board",
+    "linux-minimal",
+    "linux-usb-ehci",
+    "windows-ahci",
+    "windows-usb-uas",
+)
 
 #: Widths to sweep. Spans the tool's own piped default (120) and the width its
 #: pictures are taken at (180), plus the narrow end where columns start going.

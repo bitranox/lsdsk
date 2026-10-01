@@ -81,3 +81,34 @@ def test_the_drive_inside_the_windows_enclosure_keeps_its_own_sata_link() -> Non
     assert disk.link.negotiated_gbps == pytest.approx(6.0)
     assert disk.link.drive_max_gbps == pytest.approx(6.0)
     assert disk.model.startswith("SanDisk")
+
+
+@pytest.mark.os_agnostic
+def test_the_linux_usb_disk_is_held_to_usb_2_by_its_port() -> None:
+    """The 10 Gb/s enclosure on an EHCI port behind a USB 2.0 hub, kernel 6.8.
+
+    The BOS came through usbfs, the fallback for a kernel without
+    bos_descriptors, which is what tells the device can do USB10G at all.
+    """
+    disk = _usb_disk(_machine("linux-usb-ehci"))
+    usb = disk.usb
+
+    assert usb is not None and usb.running is not None and usb.device_max is not None
+    assert usb.port_max is not None and usb.upstream is not None
+    assert usb.running.figure == "USB480M"
+    assert usb.device_max.figure == "USB10G"
+    assert usb.port_max.figure == "USB480M"
+    assert usb.behind_hub and usb.upstream.figure == "USB480M"
+    assert usb.transport is UsbTransport.UAS
+    assert usb.achievable is not None and usb.achievable.figure == "USB480M"
+
+
+@pytest.mark.os_agnostic
+def test_the_linux_usb_disk_raises_the_port_finding_and_nothing_else_about_its_link() -> None:
+    """The port is the ceiling, so the finding names the port, not the link."""
+    machine = _machine("linux-usb-ehci")
+    disk = _usb_disk(machine)
+
+    titles = [finding.title for finding in _usb_findings(machine, disk)]
+
+    assert titles == [f"{disk.model} can do USB10G but its port only offers USB480M"], titles

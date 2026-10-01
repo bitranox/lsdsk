@@ -1215,7 +1215,7 @@ def test_the_version_a_capture_declares_is_deliberately_not_bounded() -> None:
 
 
 #: Every capture committed here that carries device text worth salting.
-_SALTED_CAPTURES = ("linux-sas-hba", "linux-nvme-board", "windows-ahci", "windows-usb-uas")
+_SALTED_CAPTURES = ("linux-sas-hba", "linux-nvme-board", "linux-usb-ehci", "windows-ahci", "windows-usb-uas")
 
 #: The eight section commands, plus the default page as the empty argv.
 _SALTED_VIEWS = ("topology", "controllers", "disks", "health", "smart", "slots", "trend", "findings", "")
@@ -1382,6 +1382,7 @@ _MARKUP_DRAWS_NOTHING = frozenset(
     {
         ("linux-sas-hba", "trend"),
         ("linux-nvme-board", "trend"),
+        ("linux-usb-ehci", "trend"),
         ("windows-ahci", "trend"),
         ("windows-usb-uas", "trend"),
         ("linux-sas-hba", "slots"),

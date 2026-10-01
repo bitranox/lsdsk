@@ -23,7 +23,7 @@ from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import BusType, ControllerKind, DiskKind, Severity
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "hw"
-LINUX_HOSTS = ("linux-sas-hba", "linux-minimal", "linux-nvme-board")
+LINUX_HOSTS = ("linux-sas-hba", "linux-minimal", "linux-nvme-board", "linux-usb-ehci")
 WINDOWS_HOST = "windows-ahci"
 
 

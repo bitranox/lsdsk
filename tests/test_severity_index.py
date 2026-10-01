@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 #: The committed captures the rules raise something on. windows-ahci raises
 #: nothing, so an equivalence over it would compare two empty answers.
-CAPTURES = ("linux-sas-hba", "linux-nvme-board", "linux-minimal", "windows-usb-uas")
+CAPTURES = ("linux-sas-hba", "linux-nvme-board", "linux-minimal", "linux-usb-ehci", "windows-usb-uas")
 
 #: Drives in the smaller arm. Small enough that the whole page renders in a
 #: blink, large enough that one walk per row cannot hide inside the fixed

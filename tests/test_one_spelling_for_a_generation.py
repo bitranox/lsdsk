@@ -36,7 +36,14 @@ if TYPE_CHECKING:
     from lsdsk.domain.models import Finding, Inventory
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
-CAPTURES = ("linux-sas-hba", "linux-nvme-board", "linux-minimal", "windows-ahci", "windows-usb-uas")
+CAPTURES = (
+    "linux-sas-hba",
+    "linux-nvme-board",
+    "linux-minimal",
+    "linux-usb-ehci",
+    "windows-ahci",
+    "windows-usb-uas",
+)
 
 #: The spelling this tool does NOT write, with or without the blank that used to
 #: sit inside it. Both forms are caught, because a figure written ``3.0 x4`` is

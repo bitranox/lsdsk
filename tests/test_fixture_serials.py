@@ -20,10 +20,12 @@ the tool reports for that drive. A recapture that misses a location fails here
 and is told which one, and a location added to the reader is covered the moment
 a fixture carries it.
 
-A disk behind USB has a SECOND serial, the USB device's own, which Windows
-reports as the disk's serial and writes into the device's instance ID, hex
-encoded behind ``MSFT30`` for a SuperSpeed device. It is not the drive's, so it
-is held to its own copies rather than to IDENTIFY. An NVMe disk on Windows
+A disk behind USB has a SECOND serial, the USB device's own. Windows reports it
+as the disk's serial and keeps the device's raw iSerial in its instance ID,
+behind ``MSFT30`` for a SuperSpeed device; on Linux every SCSI-layer copy (VPD
+0x80, the INQUIRY vendor bytes, the VPD 0x83 T10 designator) is the bridge's.
+It is not the drive's, so it is held to its own copies rather than to IDENTIFY,
+and only IDENTIFY, which reaches the drive through the bridge, is the drive's. An NVMe disk on Windows
 reports its namespace EUI-64 in that same field, which is no copy of the SN at
 all and has no second copy to agree with.
 """
@@ -64,12 +66,16 @@ _NQN_END = 1024
 _SAT_VENDOR = b"ATA     "
 _SAT_DESIGNATOR_LENGTH = 68
 _SAT_SERIAL_START = 48
+# A bridge's own T10 vendor-id designator is vendor (8), product (16), serial.
+_T10_VENDOR_PRODUCT_LENGTH = 24
 
 # A USB device instance ID is USB\VID_xxxx&PID_xxxx\<serial>. Windows prefixes a
 # SuperSpeed device's serial with MSFT30, and a device with no serial gets a
 # generated segment holding '&', which names no serial and is skipped.
 _USB_INSTANCE = re.compile(r"^USB\\VID_[0-9A-F]{4}&PID_[0-9A-F]{4}\\(?P<segment>[^\\&]+)$", re.IGNORECASE)
 _SUPERSPEED_PREFIX = "MSFT30"
+# A Linux disk behind USB resolves through a usbN directory in sysfs.
+_LINUX_USB_PATH = re.compile(r"/usb\d+/")
 
 # The Container ID every committed capture carries in place of the real one.
 FAKE_CONTAINER_ID = bytes(range(16))
@@ -83,6 +89,23 @@ def _text(raw: bytes) -> str:
 def _is_sat_designator(data: bytes) -> bool:
     """Whether this T10 designator has the SAT layout whose serial offset is fixed."""
     return len(data) == _SAT_DESIGNATOR_LENGTH and data.startswith(_SAT_VENDOR)
+
+
+def _page_83_bridge_serials(blob: bytes) -> dict[str, str]:
+    """Every T10 vendor-id designator in VPD 0x83 that is not the SAT layout, by offset.
+
+    Only read for a disk behind USB, where the bridge answers the page and
+    writes vendor, product, then its own serial.
+    """
+    found: dict[str, str] = {}
+    offset = 4
+    while offset + 4 <= len(blob):
+        code_set, designator_type, length = blob[offset] & 0xF, blob[offset + 1] & 0xF, blob[offset + 3]
+        data = blob[offset + 4 : offset + 4 + length]
+        if code_set == 2 and designator_type == 1 and not _is_sat_designator(data):
+            found[f"usb/vpd_pg83[{offset}] t10-vendor-id"] = _text(data[_T10_VENDOR_PRODUCT_LENGTH:])
+        offset += 4 + length
+    return found
 
 
 def _page_83_serials(blob: bytes) -> dict[str, str]:
@@ -177,12 +200,38 @@ def _usb_instance_ids(capture: Mapping[str, object], device: str) -> dict[str, s
     return {where: instance for where, instance in found.items() if _USB_INSTANCE.match(instance)}
 
 
+def _behind_usb_on_linux(capture: Mapping[str, object], device: str) -> bool:
+    """Whether a Linux disk's sysfs path runs through a USB device."""
+    path = _device(capture, "block", device).get("device_path")
+    return isinstance(path, str) and _LINUX_USB_PATH.search(path) is not None
+
+
+def _scsi_locations(record: Mapping[str, object]) -> dict[str, str]:
+    """The serial copies the SCSI layer answers with: VPD 0x80, VPD 0x83 and INQUIRY."""
+    vpd = _mapping(record.get("vpd"))
+    found: dict[str, str] = {}
+    if (page_80 := _blob(vpd, "vpd_pg80")) is not None:
+        found["vpd_pg80"] = _text(page_80[4 : 4 + page_80[3]])
+    if (page_83 := _blob(vpd, "vpd_pg83")) is not None:
+        found.update(_page_83_serials(page_83))
+    if (inquiry := _blob(vpd, "inquiry")) is not None and len(inquiry) >= _INQUIRY_SERIAL_END:
+        found["inquiry"] = _text(inquiry[_INQUIRY_SERIAL_START:_INQUIRY_SERIAL_END])
+    return found
+
+
 def _usb_serial_locations(capture: Mapping[str, object], device: str) -> dict[str, str]:
     """Every copy of the serial of the USB device a disk sits behind.
 
     Empty for a disk with no USB device above it. Windows reports this serial as
-    the disk's own, so ``device/serial`` belongs here rather than to the drive.
+    the disk's own, so ``device/serial`` belongs here rather than to the drive;
+    on Linux the bridge answers every SCSI page, so those copies do.
     """
+    if _behind_usb_on_linux(capture, device):
+        _, _, record = _records(capture, device)
+        found = {f"usb/{where}": serial for where, serial in _scsi_locations(record).items()}
+        if (page_83 := _blob(_mapping(record.get("vpd")), "vpd_pg83")) is not None:
+            found.update(_page_83_bridge_serials(page_83))
+        return {where: serial for where, serial in found.items() if serial}
     instances = _usb_instance_ids(capture, device)
     if not instances:
         return {}
@@ -193,6 +242,11 @@ def _usb_serial_locations(capture: Mapping[str, object], device: str) -> dict[st
     if reported:
         found["device/serial"] = reported
     return found
+
+
+def _usb_published(locations: Mapping[str, str]) -> str | None:
+    """The USB device's serial as the platform published it: Windows' field, Linux's VPD 0x80."""
+    return locations.get("device/serial") or locations.get("usb/vpd_pg80")
 
 
 def _reported_serial(capture: Mapping[str, object], device: str) -> str | None:
@@ -229,12 +283,8 @@ def _serial_locations(capture: Mapping[str, object], device: str) -> dict[str, s
         found["ata/identify"] = decode_identify(identify).serial
     if (page_89 := _blob(vpd, "vpd_pg89")) is not None:
         found["vpd_pg89"] = decode_vpd_ata_information(page_89).serial
-    if (page_80 := _blob(vpd, "vpd_pg80")) is not None:
-        found["vpd_pg80"] = _text(page_80[4 : 4 + page_80[3]])
-    if (page_83 := _blob(vpd, "vpd_pg83")) is not None:
-        found.update(_page_83_serials(page_83))
-    if (inquiry := _blob(vpd, "inquiry")) is not None and len(inquiry) >= _INQUIRY_SERIAL_END:
-        found["inquiry"] = _text(inquiry[_INQUIRY_SERIAL_START:_INQUIRY_SERIAL_END])
+    if not _behind_usb_on_linux(capture, device):
+        found.update(_scsi_locations(record))
     if (controller := _blob(nvme, "identify_controller")) is not None:
         found["nvme/sn"] = decode_identify_controller(controller).serial
         nqn = _text(controller[_NQN_START:_NQN_END])
@@ -263,8 +313,12 @@ def _devices(capture: Mapping[str, object]) -> list[str]:
 def _disagreements(capture: Mapping[str, object]) -> list[str]:
     """Locations whose serial differs from the one the tool reports for that drive.
 
-    A USB device's serial copies are held to the one Windows reports, as that
-    serial has no decoded structure behind it to be held to.
+    A USB device's serial copies are held to the one the platform published, as
+    that serial has no decoded structure behind it to be held to. A copy agrees
+    when it CONTAINS that serial, since a bridge wraps it in vendor bytes
+    (measured: the USB product ID before it in INQUIRY, vendor and product before
+    it in VPD 0x83). A scrub that missed a copy still leaves the real serial
+    there, which does not contain the fake.
     """
     problems: list[str] = []
     for device in _devices(capture):
@@ -277,11 +331,11 @@ def _disagreements(capture: Mapping[str, object]) -> list[str]:
                 if serial != reported
             ]
         usb = _usb_serial_locations(capture, device)
-        published = usb.get("device/serial")
+        published = _usb_published(usb)
         problems += [
             f"{device} {where}={serial!r} but the USB device reports {published!r}"
             for where, serial in sorted(usb.items())
-            if published and serial != published
+            if published and published not in serial
         ]
     return problems
 
@@ -512,3 +566,44 @@ def test_the_container_id_check_names_a_planted_one() -> None:
 def test_a_usb_instance_id_is_read_the_way_windows_writes_it(instance_id: str, serial: str | None) -> None:
     """Each shape of the last segment, since a fixture holds only the SuperSpeed one."""
     assert _usb_segment_serial(instance_id) == serial
+
+
+@pytest.mark.os_agnostic
+def test_a_linux_usb_disk_holds_its_scsi_copies_to_the_bridge() -> None:
+    """Behind USB on Linux the bridge answers every SCSI page; only IDENTIFY is the drive's."""
+    capture = _load(FIXTURES / "linux-usb-ehci.json")
+
+    assert set(_serial_locations(capture, "sdb")) == {"ata/identify"}
+    assert set(_usb_serial_locations(capture, "sdb")) == {
+        "usb/vpd_pg80",
+        "usb/inquiry",
+        "usb/vpd_pg83[40] t10-vendor-id",
+    }
+    # The control: the SATA disk on the same machine keeps its SCSI copies.
+    assert {"vpd_pg80", "vpd_pg89"} <= set(_serial_locations(capture, "sda"))
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(("page", "start"), [("inquiry", _INQUIRY_SERIAL_START), ("vpd_pg83", 68)])
+def test_the_check_names_a_bridge_copy_planted_with_another_serial(page: str, start: int) -> None:
+    """A copy a scrub missed still holds the real serial, so it must not contain the fake.
+
+    Each bridge copy wraps the serial in vendor bytes, so it is checked by
+    containment; planting another serial over the bridge's own must be named.
+    VPD 0x83's T10 designator starts at byte 44 here and the serial 24 bytes in.
+    """
+    capture = _load(FIXTURES / "linux-usb-ehci.json")
+    block = _mapping(capture.get("block"))
+    record = _mapping(block.get("sdb"))
+    vpd = _mapping(record.get("vpd"))
+    blob = _blob(vpd, page)
+    assert blob is not None
+    planted = blob[:start] + _ANOTHER_SERIAL[:12] + blob[start + 12 :]
+    vpd[page] = base64.b64encode(planted).decode("ascii")
+    record["vpd"] = vpd
+    block["sdb"] = record
+    capture["block"] = block
+
+    problems = _disagreements(capture)
+
+    assert any(f"sdb usb/{page}" in problem for problem in problems), problems

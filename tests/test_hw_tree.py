@@ -27,6 +27,7 @@ ALL_HOSTS = (
     "linux-sas-hba-later",
     "linux-minimal",
     "linux-nvme-board",
+    "linux-usb-ehci",
     "windows-ahci",
     "windows-usb-uas",
 )

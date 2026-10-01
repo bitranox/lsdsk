@@ -24,7 +24,14 @@ if TYPE_CHECKING:
     from lsdsk.domain.models import Disk, Inventory
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
-CAPTURES = ("linux-sas-hba", "linux-nvme-board", "linux-minimal", "windows-ahci", "windows-usb-uas")
+CAPTURES = (
+    "linux-sas-hba",
+    "linux-nvme-board",
+    "linux-minimal",
+    "linux-usb-ehci",
+    "windows-ahci",
+    "windows-usb-uas",
+)
 
 # Fields a scan reads and NO column of any table draws. Each is paired with the
 # label the panel gives it, so the test names what a reader would lose rather

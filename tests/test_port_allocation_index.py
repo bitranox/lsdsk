@@ -30,7 +30,14 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
-CAPTURES = ("linux-sas-hba", "linux-nvme-board", "linux-minimal", "windows-ahci", "windows-usb-uas")
+CAPTURES = (
+    "linux-sas-hba",
+    "linux-nvme-board",
+    "linux-minimal",
+    "linux-usb-ehci",
+    "windows-ahci",
+    "windows-usb-uas",
+)
 
 #: Drives in the smaller arm of the doubling. Large enough that a quadratic's
 #: (n/2)^2 term dwarfs the handful of linear reads every drive costs anyway.
