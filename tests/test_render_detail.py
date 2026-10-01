@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from lsdsk.domain.models import Disk, Inventory
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
-CAPTURES = ("linux-sas-hba", "linux-nvme-board", "linux-minimal", "windows-ahci")
+CAPTURES = ("linux-sas-hba", "linux-nvme-board", "linux-minimal", "windows-ahci", "windows-usb-uas")
 
 # Fields a scan reads and NO column of any table draws. Each is paired with the
 # label the panel gives it, so the test names what a reader would lose rather
@@ -309,6 +309,13 @@ def test_the_heading_does_not_carry_the_capacity_as_well() -> None:
     assert checked, "the control: no capture reported a capacity, so this asserted nothing"
 
 
+#: Rows of the link group that state a fact about a USB link rather than a
+#: figure: whether it came up on the USB 2 half of its socket, and UAS or BOT.
+#: Named rather than inferred from the text, so a new row added to the group is
+#: held to the rule until somebody decides it is a fact.
+_LINK_FACTS = frozenset({"usb2 side", "transport"})
+
+
 def _link_pairs(machine: Inventory, disk: Disk) -> dict[str, str]:
     """The panel's link group for one drive, label to text."""
     record = detail.disk_detail(disk, machine)
@@ -317,8 +324,19 @@ def _link_pairs(machine: Inventory, disk: Disk) -> dict[str, str]:
 
 
 def _seated_pcie_drives(machine: Inventory) -> list[Disk]:
-    """Every drive with a PCIe link whose seat was also read."""
-    return [d for d in machine.disks if d.pcie is not None and machine.port_link_for(d) is not None]
+    """Every drive with a PCIe link whose seat was also read.
+
+    Read means the seat's capability was published, not that a link object
+    exists: Windows publishes no link registers for a bridge, so the seat of an
+    NVMe drive there is an EMPTY link, and the dash beside it is the right
+    answer rather than the defect the test below looks for.
+    """
+    seated: list[Disk] = []
+    for disk in machine.disks:
+        seat = machine.port_link_for(disk)
+        if disk.pcie is not None and seat is not None and seat.capability_is_known:
+            seated.append(disk)
+    return seated
 
 
 def test_the_captures_hold_a_pcie_drive_in_a_known_seat_at_all() -> None:
@@ -394,12 +412,13 @@ def test_every_link_figure_the_panel_draws_names_what_it_is_worth(host: str) -> 
     that broke it, reading `6G` beside three figures reading `6G (0.60 GB/s)`,
     but a law written for that one label would not notice the next figure added
     beside them. A placeholder is exempt and must stay exempt - a number after
-    a figure nobody read turns "could not measure" into a measurement.
+    a figure nobody read turns "could not measure" into a measurement, and one
+    after ``n/a`` (no hub above a USB disk) measures something that is not there.
     """
     machine = _machine(host)
     for disk in machine.disks:
         for label, text in _link_pairs(machine, disk).items():
-            if text in (theme.NOT_READ, theme.LEGACY):
+            if label in _LINK_FACTS or text in (theme.NOT_READ, theme.LEGACY, theme.NOT_APPLICABLE):
                 continue
             assert "GB/s" in text, f"{host} {disk.path}: {label} reads {text!r} and names no bandwidth"
 

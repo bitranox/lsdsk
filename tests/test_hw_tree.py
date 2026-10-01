@@ -22,7 +22,14 @@ from lsdsk.domain.enums import CliCommand, PciPortKind
 from lsdsk.domain.models import PcieLink
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "hw"
-ALL_HOSTS = ("linux-sas-hba", "linux-sas-hba-later", "linux-minimal", "linux-nvme-board", "windows-ahci")
+ALL_HOSTS = (
+    "linux-sas-hba",
+    "linux-sas-hba-later",
+    "linux-minimal",
+    "linux-nvme-board",
+    "windows-ahci",
+    "windows-usb-uas",
+)
 LINUX_HOSTS = [host for host in ALL_HOSTS if host.startswith("linux-")]
 
 
