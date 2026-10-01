@@ -121,8 +121,10 @@ def test_a_stalled_bos_request_means_the_device_has_none(tmp_path: Path, monkeyp
         raise OSError(errno.EPIPE, "Broken pipe")
 
     monkeypatch.setattr(fcntl, "ioctl", stall)  # the kernel is the true external edge here
-    with pytest.raises(usbfs.NoBos):
+    with pytest.raises(usbfs.NoBos) as caught:
         usbfs.read_bos(node)
+    cause = caught.value.__cause__
+    assert isinstance(cause, OSError) and cause.errno == errno.EPIPE
 
 
 @pytest.mark.os_posix
@@ -136,8 +138,9 @@ def test_a_refused_bos_request_is_an_error_not_an_answer(tmp_path: Path, monkeyp
         raise OSError(errno.EACCES, "Permission denied")
 
     monkeypatch.setattr(fcntl, "ioctl", refuse)
-    with pytest.raises(PermissionError):
+    with pytest.raises(PermissionError, match="Permission denied") as caught:
         usbfs.read_bos(node)
+    assert caught.value.errno == errno.EACCES
 
 
 @pytest.mark.os_posix
