@@ -179,10 +179,21 @@ def test_the_connector_names_the_usb3_companion_of_a_usb2_root_port() -> None:
     assert decoded.companion_port == 18 and not decoded.type_c
 
 
+#: What a Windows 11 root hub answered for a 10 Gb/s SanDisk (0781:558c) on port 17: receive and
+#: transmit sublinks at 10 Gb/s SuperSpeedPlus, and a lane count of 0 for each, which usbioctl.h
+#: says to read as one lane ("For 'actual' LaneCount, add 1").
+REAL_SUPERSPEEDPLUS_GEN2X1 = bytes.fromhex("110000001800000035400a0000000000b5400a0000000000")
+
+
 @pytest.mark.os_agnostic
-def test_a_superspeedplus_answer_decodes_lane_rate_and_count() -> None:
+def test_a_real_superspeedplus_answer_decodes_as_one_10g_lane() -> None:
+    assert usb.decode_superspeedplus(REAL_SUPERSPEEDPLUS_GEN2X1) == UsbSpeed(lane_rate=UsbLaneRate.GEN2, lanes=1)
+
+
+@pytest.mark.os_agnostic
+def test_a_superspeedplus_lane_count_is_zero_based() -> None:
     sublink_10g = (10 << 16) | (1 << 14) | (3 << 4)
-    raw = struct.pack("<IIIIII", 17, 24, sublink_10g, 2, sublink_10g, 2)
+    raw = struct.pack("<IIIIII", 17, 24, sublink_10g, 1, sublink_10g, 1)
     assert usb.decode_superspeedplus(raw) == UsbSpeed(lane_rate=UsbLaneRate.GEN2, lanes=2)
 
 

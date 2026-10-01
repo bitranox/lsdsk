@@ -447,8 +447,9 @@ def decode_superspeedplus(buffer: bytes) -> UsbSpeed | None:
     """
     if len(buffer) < _SUPERSPEEDPLUS_LENGTH:
         raise ValueError(f"SuperSpeedPlus information short: {len(buffer)} of {_SUPERSPEEDPLUS_LENGTH} bytes")
-    _port, _length, receive, receive_lanes, _transmit, _transmit_lanes = struct.unpack_from("<IIIIII", buffer)
-    return _lane_speed(receive, lanes=receive_lanes)
+    _port, _length, receive, receive_lane_index, _transmit, _transmit_lanes = struct.unpack_from("<IIIIII", buffer)
+    # usbioctl.h counts lanes from zero ("For 'actual' LaneCount, add 1"): a one-lane link reads 0.
+    return _lane_speed(receive, lanes=receive_lane_index + 1)
 
 
 def decode_hub_type(buffer: bytes) -> int:

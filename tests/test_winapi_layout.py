@@ -162,15 +162,19 @@ def test_the_scsi_passthrough_request_carries_its_one_pointer_width_field_where_
         assert ctypes.sizeof(api.SCSI_PASS_THROUGH) == 56
 
 
-#: The USB hub IOCTLs by their function number in usbioctl.h. Every one is
-#: CTL_CODE(FILE_DEVICE_USB, function, METHOD_BUFFERED, FILE_ANY_ACCESS).
+#: The USB hub IOCTLs by their function number, copied from the `#define USB_GET_*` lines of the
+#: SDK's usbiodef.h (usbioctl.h holds only the CTL_CODE macros that use them). Every one is
+#: CTL_CODE(FILE_DEVICE_USB, function, METHOD_BUFFERED, FILE_ANY_ACCESS). A number taken from
+#: anywhere else is a guess this test cannot catch: SuperSpeedPlus is 289, and 286 - its
+#: neighbour USB_GET_FRAME_NUMBER_AND_QPC_FOR_TIME_SYNC - answers ERROR_INVALID_PARAMETER on
+#: every port, which reads exactly like a port that is not running SuperSpeedPlus.
 USB_HUB_FUNCTIONS = {
     "IOCTL_USB_GET_DESCRIPTOR_FROM_NODE_CONNECTION": 260,
     "IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX": 274,
     "IOCTL_USB_GET_HUB_INFORMATION_EX": 277,
     "IOCTL_USB_GET_PORT_CONNECTOR_PROPERTIES": 278,
     "IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX_V2": 279,
-    "IOCTL_USB_GET_NODE_CONNECTION_SUPERSPEEDPLUS_INFORMATION": 286,
+    "IOCTL_USB_GET_NODE_CONNECTION_SUPERSPEEDPLUS_INFORMATION": 289,
 }
 FILE_DEVICE_USB = 0x22
 
