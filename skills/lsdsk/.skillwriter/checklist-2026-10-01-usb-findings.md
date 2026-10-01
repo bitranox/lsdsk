@@ -51,6 +51,11 @@ for any of them.
       the section already says to read the marker on the finding in front of you,
       which is what set the exit code.
 
+- [x] Text check: `test_every_constant_the_skill_names_is_one_this_package_has`
+      failed on the first version, which named `USB5G`, a figure no committed
+      capture prints. The sentence now says any figure ending in G is USB 3, and
+      names only `USB480M` and `USB10G`, both of which the captures print.
+
 ## Deployment
 
 - [x] No address, host or path from a real machine; the model names in the probes

@@ -814,12 +814,12 @@ rests at while idle.
 
 **A USB disk is graded twice: its USB link by the four USB rows, and the drive
 inside the enclosure on its own `link` by the other rows.** A USB figure is the
-whole link, the lane rate times the lanes: `USB480M` is USB 2, `USB5G` and up is
-USB 3, and `USB10G` can be one 10G lane or two 5G lanes - the `usb` object in
-the JSON says which. The title says which USB row it is: "but both ends support"
-means drive, port and every hub were read, "below its own" means the port was
-not. The PCIe advice does not carry over: `lsdsk slots` lists PCIe slots, not
-USB sockets, and `upstream_name` names a PCIe port only.
+whole link, the lane rate times the lanes: `USB480M` is USB 2, any figure ending
+in G is USB 3, and `USB10G` can be one 10G lane or two 5G lanes - the `usb`
+object in the JSON says which. The title says which USB row it is: "but both
+ends support" means drive, port and every hub were read, "below its own" means
+the port was not. The PCIe advice does not carry over: `lsdsk slots` lists PCIe
+slots, not USB sockets, and `upstream_name` names a PCIe port only.
 
 ### The port was not measured
 
