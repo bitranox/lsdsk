@@ -40,10 +40,11 @@ from .models import (
     shared_maker,
 )
 from .pcie_text import format_gbytes, format_pcie_sentence
+from .placement import achievable_pcie, best_slot, free_slot_for, gain_in, seat_of
 from .thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
     from .history import DiskSeries, Trend
     from .models import UsbLink, UsbSpeed
@@ -107,7 +108,7 @@ def _best_port_for(controller: Controller, inventory: Inventory) -> tuple[PcieSl
     """
     best: tuple[PcieSlot, float] | None = None
     for slot in inventory.placement_candidates(besides=controller.upstream_address, admits=_any_port):
-        gain = _gain_in(slot, controller)
+        gain = gain_in(slot, seat_of(controller))
         if gain is None:
             continue
         if best is None or (gain, slot.capability_gbps or 0.0) > (best[1], best[0].capability_gbps or 0.0):
@@ -118,75 +119,6 @@ def _best_port_for(controller: Controller, inventory: Inventory) -> tuple[PcieSl
 def _any_port(_slot: PcieSlot) -> bool:
     """Admit every port, for the search that judges the board rather than a free seat."""
     return True
-
-
-def _achievable_pcie(controller: Controller) -> tuple[float | None, int | None]:
-    """Return what the port this controller currently sits in can give it.
-
-    This is the *current* seat, not the best the board can offer. See
-    :func:`_best_port_for` for the latter; the two differ whenever a faster
-    port exists but is occupied.
-    """
-    own_speed = controller.link.max_speed_gtps
-    own_width = controller.link.max_width
-    upstream = controller.upstream
-    # BOTH ends or nothing. Taking the device's own maximum when the port was not
-    # read makes an unmeasured port look at least as fast as the device, which
-    # turns "not measured" into "the port is fine" and bills the shortfall to a
-    # cable. Measured: a Gen5 drive in a Gen4 socket, on a platform that exposes
-    # no link properties for PCIe bridges at all, was reported as a negotiation
-    # fault with advice to reseat it.
-    if own_speed is None or own_width is None:
-        return None, None
-    if upstream is None or upstream.max_speed_gtps is None or upstream.max_width is None:
-        return None, None
-    return min(own_speed, upstream.max_speed_gtps), min(own_width, upstream.max_width)
-
-
-def _gain_in(slot: PcieSlot, controller: Controller) -> float | None:
-    """What a controller would get in one slot, in GB/s.
-
-    A slot that does not report its own speed and width is never a candidate.
-    Legacy PCI bridges report neither, and treating an unknown capability as an
-    unlimited one made every such bridge look like the fastest slot in the
-    machine, which produced a confident recommendation to move a card into a
-    slot slower than the one it already occupied.
-    """
-    if slot.link.max_speed_gtps is None or slot.link.max_width is None:
-        return None
-    return pcie_bandwidth_gbps(
-        _lower(slot.link.max_speed_gtps, controller.link.max_speed_gtps),
-        _lower_int(slot.link.max_width, controller.link.max_width),
-    )
-
-
-def _best_slot(
-    controller: Controller,
-    inventory: Inventory,
-    candidates: Callable[[PcieSlot], bool],
-) -> PcieSlot | None:
-    """Find the slot passing a test that would serve a controller best."""
-    current = pcie_bandwidth_gbps(*_achievable_pcie(controller))
-    if current is None:
-        return None
-    best: PcieSlot | None = None
-    best_bandwidth = current
-    # The port this controller already sits behind is skipped by the address it
-    # records for that port. Matching the port's OCCUPANT instead missed it
-    # whenever a sibling represented the port, and then offered the card the
-    # seat it is already in as somewhere better to be. The machine hands over
-    # one port per group of interchangeable ones rather than every port, which
-    # is what keeps this search from costing the whole port list per controller.
-    for slot in inventory.placement_candidates(besides=controller.upstream_address, admits=candidates):
-        gain = _gain_in(slot, controller)
-        if gain is not None and gain > best_bandwidth:
-            best, best_bandwidth = slot, gain
-    return best
-
-
-def _free_slot_for(controller: Controller, inventory: Inventory) -> PcieSlot | None:
-    """Find an empty slot with a real connector that would serve better."""
-    return _best_slot(controller, inventory, lambda slot: slot.is_move_target)
 
 
 def _swap_slot_for(controller: Controller, inventory: Inventory) -> PcieSlot | None:
@@ -204,25 +136,13 @@ def _swap_slot_for(controller: Controller, inventory: Inventory) -> PcieSlot | N
         occupant_need = slot.occupant_need_gbps
         if occupant_need is None:
             return False
-        current = pcie_bandwidth_gbps(*_achievable_pcie(controller))
+        current = pcie_bandwidth_gbps(*achievable_pcie(seat_of(controller)))
         # The displaced card must fit in the slot this controller vacates.
         if current is not None and occupant_need > current:
             return False
         return needed is None or occupant_need < needed
 
-    return _best_slot(controller, inventory, is_worthwhile)
-
-
-def _lower(left: float | None, right: float | None) -> float | None:
-    """Return the smaller of two optional numbers, ignoring unknowns."""
-    values = [value for value in (left, right) if value is not None]
-    return min(values) if values else None
-
-
-def _lower_int(left: int | None, right: int | None) -> int | None:
-    """Return the smaller of two optional integers, ignoring unknowns."""
-    values = [value for value in (left, right) if value is not None]
-    return min(values) if values else None
+    return best_slot(seat_of(controller), inventory, is_worthwhile)
 
 
 def attached_demand_gbytes(controller: Controller, inventory: Inventory) -> float | None:
@@ -268,7 +188,7 @@ def diagnose_controller_link(controller: Controller, inventory: Inventory) -> li
             )
         ]
 
-    achievable_speed, achievable_width = _achievable_pcie(controller)
+    achievable_speed, achievable_width = achievable_pcie(seat_of(controller))
     negotiated = link.current_bandwidth_gbps
     achievable = pcie_bandwidth_gbps(achievable_speed, achievable_width)
 
@@ -343,10 +263,10 @@ def _platform_limited_finding(
     own_max: float,
 ) -> Finding:
     """Build the finding for a controller capped by the machine, not by itself."""
-    achievable_speed, achievable_width = _achievable_pcie(controller)
+    achievable_speed, achievable_width = achievable_pcie(seat_of(controller))
     shortfall = _slot_shortfall(controller)
 
-    move = _free_slot_for(controller, inventory)
+    move = free_slot_for(seat_of(controller), inventory)
     if move is not None:
         advice = Finding(
             severity=Severity.WARNING,
