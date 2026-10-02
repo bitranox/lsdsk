@@ -13,14 +13,14 @@ same report for when you already know which one you want.
 ```
 lsdsk <version>  linux-sas-hba   19 disks on 5 controllers
 
-    PROBLEMS      7 warning   6 hint
+    PROBLEMS      7 warning   7 hint
  !  /dev/nvme0n1  SAMSUNG MZVPV512HDGL-00000 logged 2 media errors
  !  /dev/sdc      Samsung SSD 870 EVO 4TB has 99345 interface CRC errors
  !  /dev/sdd      Samsung SSD 870 EVO 4TB has 2179485 interface CRC errors
  !  /dev/sde      Samsung SSD 870 EVO 500GB has 430 interface CRC errors
  !  /dev/sdj      Samsung SSD 870 EVO 4TB has 462640 interface CRC errors
  !  /dev/sdl      Hitachi HDS722020ALA330 has 4 reallocated sectors
-                  and 7 more, run `lsdsk findings`
+                  and 8 more, run `lsdsk findings`
 
 Topology on linux-sas-hba
 showing storage and the bridges above it; --tree-density to change the detail level

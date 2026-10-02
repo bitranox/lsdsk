@@ -17,10 +17,13 @@ System Role:
 from __future__ import annotations
 
 from collections import Counter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from .base import DomainModel
-from .models import PciNode
+from .enums import Severity
+from .models import Finding, PciNode, pcie_bandwidth_gbps
+from .pcie_text import format_gbytes, format_pcie_sentence
+from .placement import Seat, free_slot_for
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -131,4 +134,127 @@ def carrying_clause(link: FabricLink, tree: Sequence[PciNode]) -> str:
     return f", carrying {spelled}" + (f" and {rest} more" if rest > 0 else "")
 
 
-__all__ = ["FabricLink", "carrying_clause", "fabric_links"]
+class _Shape(NamedTuple):
+    """A link's generation and width, both read."""
+
+    speed_gtps: float
+    width: int
+
+
+def _both_support(link: FabricLink) -> _Shape | None:
+    """What both ends of a link support, or ``None`` when either end was not read."""
+    card, port = link.card.link, link.port.link
+    # BOTH ends or nothing, as for a storage controller: an unread port filled in
+    # from the card would make "not measured" read as "the port is fine".
+    if card.max_speed_gtps is None or card.max_width is None:
+        return None
+    if port.max_speed_gtps is None or port.max_width is None:
+        return None
+    return _Shape(min(card.max_speed_gtps, port.max_speed_gtps), min(card.max_width, port.max_width))
+
+
+def diagnose_fabric_link(link: FabricLink, inventory: Inventory) -> list[Finding]:
+    """Grade one link: lanes lost first, then a slot that caps the card.
+
+    Args:
+        link: The link.
+        inventory: The machine, for the tree the title names and the free slots.
+
+    Returns:
+        At most one hint; none where either end's capability or the running
+        width was not read, where the link never trained, or where the only
+        shortfall is speed.
+    """
+    achievable = _both_support(link)
+    running_width = link.card.link.current_width
+    # A width of 0 is a link that never trained, which the tree already draws
+    # as "none"; a lanes finding there would count every lane as lost.
+    if achievable is None or running_width is None or running_width == 0:
+        return []
+    carrying = carrying_clause(link, inventory.pci_tree)
+    # The clause is parenthetical, so it is closed again before the verb.
+    name = f"{link.card.name}{carrying}," if carrying else link.card.name
+    # Lanes first: a card that lost lanes in a slot that also caps it needs the
+    # contact checked before a move would show what the slot gives it.
+    if running_width < achievable.width:
+        return [_lanes_lost(link, name=name, achievable=achievable, running_width=running_width)]
+    capped = pcie_bandwidth_gbps(achievable.speed_gtps, achievable.width)
+    own = link.card.link.max_bandwidth_gbps
+    if capped is None or own is None or capped >= own:
+        return []
+    return [_slot_capped(link, name=name, achievable=achievable, inventory=inventory)]
+
+
+def _lanes_lost(link: FabricLink, *, name: str, achievable: _Shape, running_width: int) -> Finding:
+    """The hint for a link running narrower than both of its ends support."""
+    running = link.card.link
+    return Finding(
+        severity=Severity.HINT,
+        subject=link.card.address,
+        title=f"{name} runs on fewer lanes than both ends support",
+        detail=(
+            f"Running {format_pcie_sentence(running.current_speed_gtps, running_width)} "
+            f"({format_gbytes(running.current_bandwidth_gbps)}) where the card and the port at "
+            f"{link.port.address} both support {format_pcie_sentence(achievable.speed_gtps, achievable.width)} "
+            f"({format_gbytes(pcie_bandwidth_gbps(achievable.speed_gtps, achievable.width))}): "
+            f"{achievable.width - running_width} of {achievable.width} lanes did not train."
+        ),
+        action="Reseat the card and check the slot and any riser; a lane that does not train is usually a contact.",
+    )
+
+
+def _slot_capped(link: FabricLink, *, name: str, achievable: _Shape, inventory: Inventory) -> Finding:
+    """The hint for a card its slot holds below what the card can do."""
+    card, port = link.card.link, link.port.link
+    return Finding(
+        severity=Severity.HINT,
+        subject=link.card.address,
+        title=f"{name} is capped by its slot",
+        detail=(
+            f"The card can do {format_pcie_sentence(card.max_speed_gtps, card.max_width)} "
+            f"({format_gbytes(card.max_bandwidth_gbps)}); the port at {link.port.address} offers "
+            f"{format_pcie_sentence(port.max_speed_gtps, port.max_width)} ({format_gbytes(port.max_bandwidth_gbps)}), "
+            f"which caps it at {format_pcie_sentence(achievable.speed_gtps, achievable.width)} "
+            f"({format_gbytes(pcie_bandwidth_gbps(achievable.speed_gtps, achievable.width))})."
+        ),
+        action=_where_it_could_go(link, inventory),
+    )
+
+
+def _where_it_could_go(link: FabricLink, inventory: Inventory) -> str:
+    """Name a free slot that would carry more, or say why none is named."""
+    seat = Seat(link=link.card.link, port=link.port.link, port_address=link.port.address)
+    free = free_slot_for(seat, inventory)
+    if free is not None:
+        number = "" if free.physical_slot_number is None else f", slot {free.physical_slot_number}"
+        figure = format_pcie_sentence(free.link.max_speed_gtps, free.link.max_width)
+        return (
+            f"Move it to the free slot at {free.address} ({figure}{number}). "
+            "Check the slot is mechanically long enough or open-ended first."
+        )
+    # A connector bit nobody read is not a missing slot: without root no port
+    # is known to end in one, and "no free slot" would claim what was not seen.
+    if not any(slot.connector_present is not None for slot in inventory.slots):
+        return (
+            "Whether a free slot would carry more was not readable: telling a slot from an internal port "
+            "needs the PCIe capability, which takes root to read."
+        )
+    # Named by the card's own figure rather than "a faster port": a card short on
+    # lanes can sit in a port that is already the faster of the two.
+    own = format_pcie_sentence(link.card.link.max_speed_gtps, link.card.link.max_width)
+    return f"No free slot on this board would carry more; the card runs in full only in a {own} port."
+
+
+def diagnose_fabric_links(inventory: Inventory) -> list[Finding]:
+    """Grade every link no storage rule grades.
+
+    Args:
+        inventory: The machine.
+
+    Returns:
+        One hint per link that lost lanes or is capped by its slot.
+    """
+    return [finding for link in fabric_links(inventory) for finding in diagnose_fabric_link(link, inventory)]
+
+
+__all__ = ["FabricLink", "carrying_clause", "diagnose_fabric_link", "diagnose_fabric_links", "fabric_links"]

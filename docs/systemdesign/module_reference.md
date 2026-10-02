@@ -14,8 +14,11 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/domain/diagnostics.py` - Pure rules that turn an inventory into findings.
 - `src/lsdsk/domain/enums.py` - Type-safe domain enums for output formats and deployment targets.
 - `src/lsdsk/domain/errors.py` - Domain-specific exceptions for typed error handling at boundaries.
+- `src/lsdsk/domain/fabric_links.py` - Hints for the PCIe links no storage rule grades: lanes lost, or a slot that caps the card.
 - `src/lsdsk/domain/history.py` - Counter history, and the rules that turn a stored total into a rate.
 - `src/lsdsk/domain/models.py` - Typed value objects describing storage topology, health and diagnostics.
+- `src/lsdsk/domain/pcie_text.py` - How a finding writes a PCIe figure and a bandwidth in a sentence.
+- `src/lsdsk/domain/placement.py` - The one search for a better seat, shared by storage controllers and every other card.
 - `src/lsdsk/domain/thresholds.py` - Every number the rules judge by, in one place and overridable.
 - `src/lsdsk/domain/text.py` - Text the hardware chose, cleaned on the field that carries it.
 

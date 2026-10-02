@@ -94,8 +94,8 @@ def test_the_line_names_how_many_and_of_what(
     page = " ".join(strip_ansi(run(cli_runner, production_factory, "report").stdout).split())
 
     assert "7 warnings" in section, section[-300:]
-    assert "6 hints" in section, section[-300:]
-    assert "7 warning" in page and "6 hint" in page, "the fixture's counts moved; both halves read the same tally"
+    assert "7 hints" in section, section[-300:]
+    assert "7 warning" in page and "7 hint" in page, "the fixture's counts moved; both halves read the same tally"
 
 
 @pytest.mark.os_agnostic

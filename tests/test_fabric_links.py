@@ -13,9 +13,16 @@ from typing import Any
 import pytest
 
 from lsdsk.adapters.hw.snapshot import build_from
-from lsdsk.domain.enums import PciPortKind
-from lsdsk.domain.fabric_links import FabricLink, carrying_clause, fabric_links
-from lsdsk.domain.models import Controller, Disk, Inventory, PcieLink, PciNode
+from lsdsk.domain.diagnostics import diagnose
+from lsdsk.domain.enums import PciPortKind, Severity
+from lsdsk.domain.fabric_links import (
+    FabricLink,
+    carrying_clause,
+    diagnose_fabric_link,
+    diagnose_fabric_links,
+    fabric_links,
+)
+from lsdsk.domain.models import Controller, Disk, Finding, Inventory, PcieLink, PcieSlot, PciNode
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 
@@ -170,3 +177,122 @@ def test_every_function_of_a_bridge_card_contributes_what_it_carries() -> None:
         _below(second.address, "0000:03:05.0", "NIC"),
     )
     assert carrying_clause(FabricLink(port=PORT, functions=(first, second)), tree) == ", carrying 2x NIC"
+
+
+LANES = "runs on fewer lanes than both ends support"
+CAPPED = "is capped by its slot"
+
+#: (capture, card address, which hint) for every hint the committed captures raise.
+EXPECTED: tuple[tuple[str, str, str], ...] = (
+    ("linux-minimal", "0000:01:00.0", CAPPED),
+    ("linux-nvme-board", "0000:01:00.0", CAPPED),
+    ("linux-sas-hba", "0000:01:00.0", CAPPED),
+    ("linux-sas-hba-later", "0000:01:00.0", CAPPED),
+    ("linux-usb-ehci", "0000:01:00.0", LANES),
+    ("linux-usb-ehci", "0000:04:00.0", CAPPED),
+)
+
+
+def _hints(inventory: Inventory) -> list[tuple[str, str]]:
+    return [
+        (finding.subject, LANES if LANES in finding.title else CAPPED) for finding in diagnose_fabric_links(inventory)
+    ]
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("host", sorted(path.stem for path in FIXTURES.glob("*.json")))
+def test_every_committed_capture_raises_exactly_the_hints_measured_for_it(host: str) -> None:
+    expected = [(card, kind) for capture, card, kind in EXPECTED if capture == host]
+    assert _hints(_machine(host)) == expected
+
+
+@pytest.mark.os_agnostic
+def test_every_fabric_hint_is_a_hint_and_reaches_the_findings() -> None:
+    machine = _machine("linux-usb-ehci")
+    ours = [finding for finding in diagnose(machine) if LANES in finding.title or CAPPED in finding.title]
+    assert [finding.subject for finding in ours] == ["0000:01:00.0", "0000:04:00.0"]
+    assert {finding.severity for finding in ours} == {Severity.HINT}
+
+
+@pytest.mark.os_agnostic
+def test_the_hd_7990_is_sent_to_the_free_x16_slot() -> None:
+    capped = next(f for f in diagnose_fabric_links(_machine("linux-usb-ehci")) if f.subject == "0000:04:00.0")
+    assert "carrying 2x" in capped.title and "Radeon HD 7990" in capped.title
+    assert "PCIe Gen3x16" in capped.detail and "0000:00:02.2" in capped.detail
+    assert "which caps it at PCIe Gen3x8 (7.88 GB/s)" in capped.detail
+    assert capped.title.endswith("[Radeon HD 7990/8990 OEM], is capped by its slot")
+    assert capped.action is not None
+    assert capped.action.startswith("Move it to the free slot at 0000:00:03.0 (PCIe Gen3x16")
+
+
+@pytest.mark.os_agnostic
+def test_a_card_short_on_lanes_is_not_told_it_needs_a_faster_port() -> None:
+    """The Hawaii card sits in a Gen5 x8 port: faster than the card, and too narrow."""
+    hawaii = next(f for f in diagnose_fabric_links(_machine("linux-nvme-board")) if f.subject == "0000:01:00.0")
+    assert hawaii.action == (
+        "No free slot on this board would carry more; the card runs in full only in a PCIe Gen3x16 port."
+    )
+    assert not hawaii.title.endswith(", is capped by its slot")
+
+
+@pytest.mark.os_agnostic
+def test_lanes_lost_names_how_many_did_not_train() -> None:
+    lost = next(f for f in diagnose_fabric_links(_machine("linux-usb-ehci")) if f.subject == "0000:01:00.0")
+    assert "Running PCIe Gen1x4 (1.00 GB/s)" in lost.detail
+    assert "both support PCIe Gen1x8 (2.00 GB/s): 4 of 8 lanes did not train" in lost.detail
+
+
+def _graded(card: PciNode, *, slots: tuple[PcieSlot, ...] = ()) -> list[Finding]:
+    inventory = Inventory(hostname="h", pci_tree=(ROOT, PORT, card), slots=slots)
+    (link,) = fabric_links(inventory)
+    return diagnose_fabric_link(link, inventory)
+
+
+@pytest.mark.os_agnostic
+def test_a_speed_only_shortfall_raises_nothing() -> None:
+    idle = _card(link=_link((2.5, 8), (8.0, 8)))
+    assert _graded(idle) == []
+
+
+@pytest.mark.os_agnostic
+def test_a_link_that_lost_lanes_is_not_also_called_capped() -> None:
+    both = _card(link=_link((8.0, 4), (8.0, 16)))
+    titles = [finding.title for finding in _graded(both)]
+    assert len(titles) == 1 and LANES in titles[0]
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("unread", ["card", "port"])
+def test_an_unread_end_grades_nothing(unread: str) -> None:
+    card = _card(link=PcieLink(current_speed_gtps=8.0, current_width=8)) if unread == "card" else _card()
+    port = PORT.with_changes(link=PcieLink(current_speed_gtps=8.0, current_width=8)) if unread == "port" else PORT
+    inventory = Inventory(hostname="h", pci_tree=(ROOT, port, card))
+    assert diagnose_fabric_links(inventory) == []
+
+
+@pytest.mark.os_agnostic
+def test_a_link_that_never_trained_is_left_to_the_none_marker() -> None:
+    assert _graded(_card(link=_link((2.5, 0), (8.0, 16)))) == []
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("connector", "advice"),
+    [
+        (True, "Move it to the free slot at 0000:00:03.0 (PCIe Gen3x16, slot 4)."),
+        (False, "No free slot on this board would carry more"),
+        (None, "Whether a free slot would carry more was not readable"),
+    ],
+    ids=["free-slot", "no-free-slot", "connector-unread"],
+)
+def test_a_capped_card_is_told_where_it_could_go_only_on_a_read_connector(connector: bool | None, advice: str) -> None:
+    wide = PcieSlot(
+        address="0000:00:03.0",
+        link=PcieLink(max_speed_gtps=8.0, max_width=16),
+        connector_present=connector,
+        physical_slot_number=4,
+    )
+    here = PcieSlot(address=PORT.address, link=PORT.link, occupied=True, connector_present=connector)
+    capped = _graded(_card(), slots=(here, wide))
+    assert len(capped) == 1 and CAPPED in capped[0].title
+    assert capped[0].action is not None and capped[0].action.startswith(advice)

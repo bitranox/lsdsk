@@ -25,6 +25,7 @@ import math
 from typing import TYPE_CHECKING, NamedTuple
 
 from .enums import Severity
+from .fabric_links import diagnose_fabric_links
 from .history import CounterKind, History, identity_of, trend_for
 from .models import (
     Controller,
@@ -1528,6 +1529,7 @@ def diagnose(
         findings.extend(diagnose_health(disk, series, thresholds))
     if physical:
         findings.extend(diagnose_port_allocation(inventory))
+        findings.extend(diagnose_fabric_links(inventory))
     findings.extend(diagnose_firmware_consistency(inventory, thresholds))
     return tuple(sorted(findings, key=lambda f: (SEVERITY_RANKING.index(f.severity), f.subject)))
 
