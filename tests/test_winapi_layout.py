@@ -23,26 +23,23 @@ import ast
 import ctypes
 import importlib
 import pkgutil
+import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 
 from lsdsk.adapters.hw import windows as windows_package
 from lsdsk.adapters.hw.windows import winapi as api
 
-if TYPE_CHECKING:
-    from collections.abc import Iterable
+#: The ctypes names whose size follows the running machine's word, so a field
+#: declared with one sizes itself differently on Windows' LLP64 than on the LP64
+#: that Linux and macOS use. Matched by NAME in the source, never by the class:
+#: the fixed-width names are aliases of these same classes on one platform or
+#: the other, so the class cannot tell the trap from the correct declaration.
+FOLLOWING_THE_MACHINE = frozenset({"c_ulong", "c_long", "c_ulonglong", "c_longlong", "c_size_t"})
 
-WINAPI_SOURCE = Path(api.__file__)
-
-#: The exact ctypes classes whose size follows the running machine's word, so a
-#: field declared with one of these - or with the ``ctypes.wintypes`` alias of
-#: one, which IS the same object (``wintypes.DWORD is ctypes.c_ulong``) - sizes
-#: itself differently on Windows' LLP64 than on the LP64 that Linux and macOS
-#: use. Checked by identity rather than by name, so the wintypes spelling needs
-#: no separate case.
-FOLLOWING_THE_MACHINE = {ctypes.c_ulong, ctypes.c_long, ctypes.c_ulonglong, ctypes.c_longlong, ctypes.c_size_t}
+#: The ``ctypes.wintypes`` names, every one taken from the running machine.
+FROM_WINTYPES = frozenset({"DWORD", "ULONG", "BOOL", "BOOLEAN", "WORD", "USHORT", "UINT", "INT", "LONG", "ULONG64"})
 
 #: Structures whose every field is a fixed width, so the size is the same
 #: number on any machine Windows runs on.
@@ -103,59 +100,16 @@ def test_the_widths_the_windows_abi_fixes_are_declared_fixed() -> None:
 
 
 @pytest.mark.os_agnostic
-def test_no_structure_field_takes_its_width_from_the_running_machine() -> None:
-    """The trap itself, so it cannot be reintroduced by the next field added.
+def test_the_sweep_can_still_find_what_it_searches_for() -> None:
+    """Its control: the sweep reads one declaration per structure, and the names it looks for exist.
 
-    A field spelled ``wintypes.DWORD`` or ``ctypes.c_ulong`` reads as deliberate
-    and is the whole defect. Pointer types are exempt by name, because a pointer
-    IS the machine's word.
+    Without this the sweep passes just as well against files it failed to read,
+    a declaration spelled in a form it does not parse, or a ctypes that renamed
+    these, which is the same green for the opposite reason.
     """
-    following_the_machine = {"c_ulong", "c_long", "c_ulonglong", "c_longlong", "c_size_t"}
-    from_wintypes = {"DWORD", "ULONG", "BOOL", "BOOLEAN", "WORD", "USHORT", "UINT", "INT", "LONG", "ULONG64"}
-    offenders: list[str] = []
-
-    for node in ast.walk(ast.parse(WINAPI_SOURCE.read_text(encoding="utf-8"))):
-        if not (isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "_fields_" for t in node.targets)):
-            continue
-        # A pointer TO one of these is a pointer, and a pointer is the machine's
-        # word by definition, so everything under a POINTER() is exempt.
-        exempt = {
-            id(under)
-            for call in ast.walk(node.value)
-            if isinstance(call, ast.Call) and getattr(call.func, "attr", "") == "POINTER"
-            for under in ast.walk(call)
-        }
-        for inner in ast.walk(node.value):
-            if not isinstance(inner, ast.Attribute) or id(inner) in exempt:
-                continue
-            if inner.attr in following_the_machine:
-                offenders.append(f"line {inner.lineno}: ctypes.{inner.attr}")
-            if getattr(inner.value, "id", "") == "wintypes" and inner.attr in from_wintypes:
-                offenders.append(f"line {inner.lineno}: wintypes.{inner.attr}")
-
-    assert not offenders, "a field whose width follows the running machine: " + "; ".join(offenders)
-
-
-@pytest.mark.os_agnostic
-def test_the_sweep_above_can_still_find_what_it_searches_for() -> None:
-    """Its control: the names it looks for must still exist to be found.
-
-    Without this the sweep passes just as well against a file it failed to read
-    or a ctypes that renamed these, which is the same green for the opposite
-    reason.
-    """
-    assert "_fields_" in WINAPI_SOURCE.read_text(encoding="utf-8")
-    assert all(hasattr(ctypes, name) for name in ("c_ulong", "c_long", "c_void_p"))
-
-    planted = ast.parse('class X:\n    _fields_ = (("a", ctypes.c_ulong),)\n')
-    found = [
-        inner.attr
-        for node in ast.walk(planted)
-        if isinstance(node, ast.Assign)
-        for inner in ast.walk(node.value)
-        if isinstance(inner, ast.Attribute) and inner.attr == "c_ulong"
-    ]
-    assert found == ["c_ulong"], "the sweep's own shape no longer matches a field it must catch"
+    declarations = sum(len(_fields_declarations(source)) for source in _windows_sources().values())
+    assert declarations == len(_windows_structures())
+    assert all(hasattr(ctypes, name) for name in FOLLOWING_THE_MACHINE)
 
 
 @pytest.mark.os_agnostic
@@ -203,27 +157,66 @@ def test_a_usb_hub_ioctl_code_is_built_from_its_function_number(name: str, funct
     assert getattr(api, name) == expected
 
 
-def _is_pointer_type(field_type: type) -> bool:
-    """Whether a ctypes field type is a pointer, which is the machine's word by definition.
+def _fields_value(node: ast.AST) -> ast.expr | None:
+    """The value ``node`` assigns to a structure's ``_fields_``, annotated or not; None for anything else."""
+    if isinstance(node, ast.Assign) and any(getattr(target, "id", "") == "_fields_" for target in node.targets):
+        return node.value
+    if isinstance(node, ast.AnnAssign) and getattr(node.target, "id", "") == "_fields_":
+        return node.value
+    return None
 
-    A pointer class is the one ctypes shape that carries a ``contents``
-    attribute; a scalar type (even one sized like a pointer) and an array type
-    do not, so this needs no private ``ctypes._Pointer`` reference.
+
+def _under_a_pointer(fields: ast.expr) -> set[int]:
+    """The ids of every node inside a ``POINTER(...)`` call, which is the machine's word by definition."""
+    return {
+        id(under)
+        for call in ast.walk(fields)
+        if isinstance(call, ast.Call) and getattr(call.func, "attr", getattr(call.func, "id", "")) == "POINTER"
+        for under in ast.walk(call)
+    }
+
+
+def _spelled_machine_width(node: ast.Name | ast.Attribute) -> str | None:
+    """The spelling of ``node`` when it names a machine-width type, else None."""
+    if isinstance(node, ast.Name):
+        return node.id if node.id in FOLLOWING_THE_MACHINE else None
+    if node.attr in FOLLOWING_THE_MACHINE:
+        return f"{getattr(node.value, 'id', '?')}.{node.attr}"
+    if getattr(node.value, "id", "") == "wintypes" and node.attr in FROM_WINTYPES:
+        return f"wintypes.{node.attr}"
+    return None
+
+
+def _offending_fields(source: str, *, origin: str) -> list[str]:
+    """Every non-pointer ``_fields_`` entry in ``source`` spelled with a machine-width type.
+
+    Judged by SPELLING, never by the class a field resolves to at runtime: ctypes
+    defines its fixed-width names as aliases of the platform's own C types, so
+    ``c_uint32 is c_ulong`` on Windows and ``c_uint64 is c_ulong`` on Linux, and
+    an identity check flags every correct ``ULONG = c_uint32`` field on one
+    platform or every 64-bit one on the other.
     """
-    return hasattr(field_type, "contents")
-
-
-def _offending_fields(structures: Iterable[type[ctypes.Structure]]) -> list[str]:
-    """Every non-pointer field of ``structures`` whose width follows the running machine."""
     offenders: list[str] = []
-    for structure in structures:
-        for field in structure._fields_:
-            name, field_type = field[0], field[1]
-            if _is_pointer_type(field_type):
+    for fields in _fields_declarations(source):
+        exempt = _under_a_pointer(fields)
+        for inner in ast.walk(fields):
+            if not isinstance(inner, ast.Name | ast.Attribute) or id(inner) in exempt:
                 continue
-            if field_type in FOLLOWING_THE_MACHINE:
-                offenders.append(f"{structure.__module__}.{structure.__name__}.{name}")
+            spelling = _spelled_machine_width(inner)
+            if spelling is not None:
+                offenders.append(f"{origin}:{inner.lineno}: {spelling}")
     return offenders
+
+
+def _fields_declarations(source: str) -> list[ast.expr]:
+    """The value of every ``_fields_`` assignment in ``source``, in walk order."""
+    return [fields for node in ast.walk(ast.parse(source)) if (fields := _fields_value(node)) is not None]
+
+
+def _windows_sources() -> dict[Path, str]:
+    """The source of every module under ``adapters/hw/windows/``, by path."""
+    package_dir = Path(windows_package.__file__).parent
+    return {path: path.read_text(encoding="utf-8") for path in sorted(package_dir.rglob("*.py"))}
 
 
 def _windows_structures() -> list[type[ctypes.Structure]]:
@@ -257,35 +250,56 @@ def test_no_field_of_any_windows_structure_takes_its_width_from_the_running_mach
     than ``ctypes.c_ulong``, which is eight on the LP64 that Linux and macOS use.
     A wider filler there shifts the sense and data buffer offsets the structure
     hands to ``DeviceIoControl`` exactly as a wrong field in winapi.py would.
+
+    A field spelled ``wintypes.DWORD`` or ``ctypes.c_ulong`` reads as deliberate
+    and is the whole defect. Pointer types are exempt, because a pointer IS the
+    machine's word.
     """
-    offenders = _offending_fields(_windows_structures())
+    offenders = [
+        offender
+        for path, source in _windows_sources().items()
+        for offender in _offending_fields(source, origin=path.name)
+    ]
     assert not offenders, "a field whose width follows the running machine: " + "; ".join(offenders)
 
 
 @pytest.mark.os_agnostic
-def test_the_general_sweep_reaches_every_structure_the_file_based_one_names() -> None:
-    """Its control for coverage: the discovery must not silently find nothing or drop a file."""
-    discovered = {structure.__name__ for structure in _windows_structures()}
-    assert discovered >= set(FIXED_SIZES) | set(POINTER_BEARING) | {"_SatRequest"}
+def test_the_general_sweep_reaches_every_structure_the_package_defines() -> None:
+    """Its control for coverage: every module that defines a structure is a module whose source is read."""
+    structures = _windows_structures()
+    assert {structure.__name__ for structure in structures} >= set(FIXED_SIZES) | set(POINTER_BEARING) | {"_SatRequest"}
+
+    defining = {Path(sys.modules[structure.__module__].__file__ or "").resolve() for structure in structures}
+    assert defining <= {path.resolve() for path in _windows_sources()}
 
 
 @pytest.mark.os_agnostic
-def test_the_general_sweep_still_catches_a_planted_offender() -> None:
+@pytest.mark.parametrize(
+    "spelling",
+    ["ctypes.c_ulong", "ctypes.c_long", "ctypes.c_size_t", "wintypes.DWORD", "wintypes.ULONG", "c_ulong"],
+)
+def test_the_general_sweep_still_catches_a_planted_offender(spelling: str) -> None:
     """Its control for detection: a structure built like ``_SatRequest`` with the bug restored."""
+    source = f'class _Offender:\n    _fields_ = (("filler", {spelling}),)\n'
+    assert _offending_fields(source, origin="planted") == [f"planted:2: {spelling}"]
 
-    class _Offender(ctypes.Structure):
-        _fields_ = (("filler", ctypes.c_ulong),)
 
-    offenders = _offending_fields([_Offender])
-    assert len(offenders) == 1
-    assert offenders[0].endswith("_Offender.filler")
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("width", [f"c_{sign}int{bits}" for sign in ("u", "") for bits in (8, 16, 32, 64)])
+def test_the_general_sweep_never_flags_a_fixed_width_field(width: str) -> None:
+    """Its control for the opposite direction, on every platform at once.
+
+    ctypes makes ``c_uint32`` the very same class as ``c_ulong`` on Windows and
+    ``c_uint64`` the same as ``c_ulong`` on Linux, so a sweep keyed on the class
+    flags these there. Measured: every ``ULONG`` field in the package was
+    reported on all four Windows CI cells while Linux stayed green.
+    """
+    source = f'class _Fixed:\n    _fields_ = (("count", ctypes.{width}), ("filler", api.ULONG))\n'
+    assert _offending_fields(source, origin="planted") == []
 
 
 @pytest.mark.os_agnostic
 def test_the_general_sweep_does_not_flag_a_pointer_field() -> None:
     """Its control for the exception: a pointer field must stay exempt in the general sweep too."""
-
-    class _Clean(ctypes.Structure):
-        _fields_ = (("reserved", ctypes.POINTER(ctypes.c_ulong)),)
-
-    assert _offending_fields([_Clean]) == []
+    source = 'class _Clean:\n    _fields_: tuple = (("reserved", ctypes.POINTER(ctypes.c_ulong)),)\n'
+    assert _offending_fields(source, origin="planted") == []
