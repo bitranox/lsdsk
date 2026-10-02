@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.6.0] 2026-10-02 13:33:54
+
 ### Added
 
 - **The USB link of a USB disk, on Linux and Windows.** A USB 3 drive that came
