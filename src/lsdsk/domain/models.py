@@ -1882,7 +1882,9 @@ class Inventory(DomainModel, frozen=True):
                 grouped.setdefault(pci_bus_of(slot.address), []).append(slot)
         return {bus: tuple(slots) for bus, slots in grouped.items()}
 
-    def placement_candidates(self, *, besides: str | None, admits: Callable[[PcieSlot], bool]) -> tuple[PcieSlot, ...]:
+    def placement_candidates(
+        self, *, besides: str | None, admits: Callable[[PcieSlot], bool], below: frozenset[str] = frozenset()
+    ) -> tuple[PcieSlot, ...]:
         """Return every port a search for a better seat could choose, one per group of interchangeable ports.
 
         Ports that read identically to every placement search - the same
@@ -1906,10 +1908,13 @@ class Inventory(DomainModel, frozen=True):
             besides: The address of the port the searching controller already
                 sits behind, which is never a candidate.
             admits: The search's own test of a port.
+            below: Addresses below the searching card itself, which are never
+                candidates either. Skipped port by port, like ``besides``, so
+                an equal port elsewhere in the same group still answers.
 
         Returns:
-            The first admitted port of each group that is not at ``besides``,
-            in inventory order.
+            The first admitted port of each group that is neither at ``besides``
+            nor ``below``, in inventory order.
 
         Example:
             >>> link = PcieLink(max_speed_gtps=8.0, max_width=4)
@@ -1927,7 +1932,10 @@ class Inventory(DomainModel, frozen=True):
         for group in self._placement_groups:
             if not admits(group[0].slot):
                 continue
-            first = next((placed for placed in group if placed.slot.address != besides), None)
+            first = next(
+                (placed for placed in group if placed.slot.address != besides and placed.slot.address not in below),
+                None,
+            )
             if first is not None:
                 chosen.append(first)
         return tuple(placed.slot for placed in sorted(chosen, key=lambda placed: placed.position))

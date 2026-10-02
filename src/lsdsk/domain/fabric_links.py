@@ -120,6 +120,18 @@ def _devices_below(link: FabricLink, inventory: Inventory) -> list[PciNode]:
     return sorted(found.values(), key=lambda node: node.address)
 
 
+def _addresses_below(link: FabricLink, inventory: Inventory) -> frozenset[str]:
+    """Every address below the card: a switch card's own ports and what they carry."""
+    found: set[str] = set()
+    stack = [function.address for function in link.functions]
+    while stack:
+        for child in inventory.pci_children_of(stack.pop()):
+            if child.address not in found:
+                found.add(child.address)
+                stack.append(child.address)
+    return frozenset(found)
+
+
 def carrying_clause(link: FabricLink, inventory: Inventory) -> str:
     """What a bridge or switch card carries, for the title of its finding.
 
@@ -242,7 +254,12 @@ def _slot_capped(link: FabricLink, *, name: str, achievable: _Shape, inventory: 
 
 def _where_it_could_go(link: FabricLink, inventory: Inventory) -> str:
     """Name a free slot that would carry more, or say why none is named."""
-    seat = Seat(link=link.card.link, port=link.port.link, port_address=link.port.address)
+    seat = Seat(
+        link=link.card.link,
+        port=link.port.link,
+        port_address=link.port.address,
+        below=_addresses_below(link, inventory),
+    )
     free = free_slot_for(seat, inventory)
     if free is not None:
         number = "" if free.physical_slot_number is None else f", slot {free.physical_slot_number}"

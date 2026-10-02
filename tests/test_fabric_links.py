@@ -396,3 +396,46 @@ def test_two_devices_on_a_conventional_bus_are_still_two() -> None:
         _below(LEG_A.address, "0000:03:01.0", "NIC"),
     )
     assert carrying_clause(FabricLink(port=PORT, functions=(SWITCH,)), tree) == ", carrying 2x NIC"
+
+
+DOWN_A = LEG_A.with_changes(port_kind=PciPortKind.SWITCH_DOWNSTREAM)
+DOWN_B = LEG_B.with_changes(port_kind=PciPortKind.SWITCH_DOWNSTREAM)
+_X16 = PcieLink(max_speed_gtps=8.0, max_width=16)
+
+
+def _switch_action(*extra: PcieSlot) -> str:
+    """The action for a capped switch card whose own second downstream port is free and x16."""
+    tree = (ROOT, PORT, SWITCH, DOWN_A, DOWN_B, _below(DOWN_A.address, "0000:03:00.0", "GPU"))
+    slots = (
+        PcieSlot(address=PORT.address, link=PORT.link, occupied=True, connector_present=True),
+        PcieSlot(address=DOWN_A.address, link=_X16, occupied=True, connector_present=True),
+        PcieSlot(address=DOWN_B.address, link=_X16, connector_present=True),
+        *extra,
+    )
+    inventory = Inventory(hostname="h", pci_tree=tree, slots=slots)
+    # The GPU behind the first downstream port is a link of its own; the one
+    # graded here is the switch's, to the root port.
+    link = next(link for link in fabric_links(inventory) if link.card.address == SWITCH.address)
+    (capped,) = diagnose_fabric_link(link, inventory)
+    assert CAPPED in capped.title and capped.action is not None
+    return capped.action
+
+
+@pytest.mark.os_agnostic
+def test_a_switch_card_is_never_sent_to_a_port_of_its_own() -> None:
+    """Nothing below a card can carry more than the card's own uplink, so its own ports are no move."""
+    action = _switch_action()
+    assert DOWN_B.address not in action, action
+    assert action.startswith("No free slot on this board would carry more")
+
+
+@pytest.mark.os_agnostic
+def test_a_switch_card_is_still_sent_to_a_free_slot_beside_it() -> None:
+    """The control: an identical free slot NOT below the card is offered, though it reads exactly like the own port.
+
+    It is listed after the own port, and the two are interchangeable to the
+    search's grouping, so a filter applied per group rather than per port would
+    lose it with the port it shares a group with.
+    """
+    beside = PcieSlot(address="0000:00:03.0", link=_X16, connector_present=True)
+    assert _switch_action(beside).startswith("Move it to the free slot at 0000:00:03.0")
