@@ -5,6 +5,24 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **`lsdsk record --format json` reports a run with nothing new as `ok: true`.**
+  A run where no drive's power-on hours had advanced is the store left alone on
+  purpose and exits `0`, but its envelope said `ok: false` with the reason in
+  `skipped` - the same shape as an unreadable store or a failed write - so a
+  timer that reads `ok` first raised an alarm every healthy hour. It now carries
+  `ok: true` and an empty `skipped`, and every run's `data` gains `outcome`:
+  `recorded`, `nothing new`, `store not readable`, `not permitted` or
+  `could not write`.
+
+### Fixed
+
+- **`DomainModel.with_changes` no longer refuses a model whose public cached
+  property was read first.** It built the new values from the instance's own
+  dictionary, which holds a warmed `cached_property` beside the fields, and the
+  model refused the extra key. No shipped model had such a property yet.
+
 ## [1.6.0] 2026-10-02 13:33:54
 
 ### Added

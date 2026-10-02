@@ -154,15 +154,17 @@ no data, and the message explaining why was on the stream it was not reading.
 the reading - a store it cannot read (`78`), a write the filesystem refused
 (`13`), any other failed write (`74`) - it still answers with its own action
 envelope and no `error` object. `ok` is `false`, `data` carries `recorded:
-false` with the store and how many drives were read, and the reason is a
+false` and the `outcome` with the store and how many drives were read, and the reason is a
 sentence in `skipped`, because the command still did something: it read the
 machine. The exit code is the same one the failure would leave anyway, so a
 caller that reads `ok` and the code first handles `record` like everything else;
 one that looks only for `error.type` sees nothing here.
 
 `lsdsk record` says which of its outcomes happened rather than one sentence for
-all of them, because they mean different things: nothing new to store, which is
-healthy; a store belonging to another machine or one that cannot be read, which
+all of them, in `data.outcome` - `recorded`, `nothing new`, `store not readable`,
+`not permitted` or `could not write` - because they mean different things:
+nothing new to store, which is healthy and so reports `ok: true` with nothing in
+`skipped`; a store belonging to another machine or one that cannot be read, which
 `record` keeps rather than replaces; and a write that failed. The last two mean
 the record has stopped growing, and each leaves a code - `78` for a store that
 cannot be read, and for a failed write `13` when the filesystem refused

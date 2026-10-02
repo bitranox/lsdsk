@@ -357,11 +357,15 @@ def _capture_stamp(replay: Path | None) -> str | None:
 class RecordResult(ActionResult):
     """What one `record` run stored, and where.
 
-    `recorded` false is not a failure: it means no drive's own clock has moved
-    since the last reading, so there was nothing new to store.
+    `recorded` false is not on its own a failure: `outcome` says which of the
+    reasons it was. ``nothing new`` means no drive's own clock has moved since the
+    last reading, which is a healthy run, so it carries `ok` true and nothing in
+    `skipped`; the outcomes that mean the record has stopped growing carry their
+    sentence in `skipped` and a non-zero exit code.
     """
 
     recorded: bool
+    outcome: RecordOutcome
     store: str
     drives: int
 
@@ -427,10 +431,19 @@ def cli_record(ctx: click.Context, replay: Path | None, output_format: OutputFor
             # nothing but an exit code.
             safe_console.echo(f"Error: {reason}", err=True)
         if output_format is OutputFormat.JSON:
+            # Only a run whose record stopped growing skips anything. Nothing new
+            # is the store left alone on purpose, so it reports ok and says what
+            # it did in `outcome`: a timer that reads `ok` first, as the skill
+            # teaches, must not alarm on a healthy hour.
             emit_action(
                 ActionCommand.RECORD,
-                RecordResult(recorded=attempt.stored, store=str(settings.path), drives=len(inventory.disks)),
-                skipped=[] if reason is None else [reason],
+                RecordResult(
+                    recorded=attempt.stored,
+                    outcome=attempt.outcome,
+                    store=str(settings.path),
+                    drives=len(inventory.disks),
+                ),
+                skipped=[] if code is ExitCode.SUCCESS or reason is None else [reason],
             )
         raise SystemExit(code)
 

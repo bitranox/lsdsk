@@ -686,10 +686,12 @@ def test_every_reason_record_stored_nothing_gets_its_own_sentence(
     instruction failed. A scheduled job watching ``skipped``, which is what the
     skill teaches, could not tell any of them apart.
 
-    The invariant is that the sentences are DISTINCT, asserted as a set, so a fix
+    The invariant is that the causes are DISTINCT, asserted as a set, so a fix
     that gives them one new shared sentence fails here. Each arm also has to name
     its own cause, because distinct sentences describing the wrong things would
-    satisfy the set alone.
+    satisfy the set alone. Nothing new is no longer one of the sentences: it is a
+    healthy run, reported as ``ok: true`` with ``data.outcome`` saying so (user
+    decision 2026-10-02), and every arm's outcome is asserted alongside.
 
     ``--no-record`` was a fourth arm here and is no longer an outcome of this
     command at all: it is refused at 22, because on ``record`` it leaves nothing
@@ -737,17 +739,29 @@ def test_every_reason_record_stored_nothing_gets_its_own_sentence(
         str(HEALTHY),
     )
 
+    # Nothing new is not a skip: the run did everything it should, so it rides on
+    # `ok: true` with nothing skipped, and says what it did in `data.outcome`.
+    assert nothing_new["ok"] is True and nothing_new["skipped"] == [], nothing_new
+    outcomes = {
+        "nothing new": nothing_new["data"]["outcome"],
+        "another machine's store": another_machine["data"]["outcome"],
+        "a write that failed": refused["data"]["outcome"],
+    }
+    assert outcomes == {
+        "nothing new": "nothing new",
+        "another machine's store": "store not readable",
+        "a write that failed": "could not write",
+    }, outcomes
+
     sentences = {
-        "nothing new": nothing_new["skipped"],
         "another machine's store": another_machine["skipped"],
         "a write that failed": refused["skipped"],
     }
     for cause, skipped in sentences.items():
         assert len(skipped) == 1, f"{cause}: expected one sentence, got {skipped!r}"
     spoken = {cause: skipped[0] for cause, skipped in sentences.items()}
-    assert len(set(spoken.values())) == 3, f"two causes share a sentence, so a caller cannot tell them apart: {spoken}"
+    assert len(set(spoken.values())) == 2, f"two causes share a sentence, so a caller cannot tell them apart: {spoken}"
 
-    assert "power-on hours" in spoken["nothing new"], spoken["nothing new"]
     assert "read" in spoken["another machine's store"], spoken["another machine's store"]
     assert "write" in spoken["a write that failed"], spoken["a write that failed"]
 

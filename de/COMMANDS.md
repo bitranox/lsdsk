@@ -165,15 +165,17 @@ Messung nicht ablegen - ein Speicher, den es nicht lesen kann (`78`), ein
 Schreibvorgang, den das Dateisystem verweigert (`13`), jeder andere
 fehlgeschlagene Schreibvorgang (`74`) -, antwortet es trotzdem mit seinem eigenen
 Aktions-Umschlag und ohne `error`-Objekt. `ok` ist `false`, `data` enthält
-`recorded: false` samt Speicher und der Zahl gelesener Laufwerke, und der Grund
+`recorded: false` und das `outcome` samt Speicher und der Zahl gelesener Laufwerke, und der Grund
 steht als Satz in `skipped`, denn der Befehl hat trotzdem etwas getan: Er hat
 die Maschine gelesen. Der Exit-Code ist derselbe, den der Fehlschlag ohnehin
 hinterlässt; wer zuerst `ok` und den Code liest, behandelt `record` also wie
 alles andere, wer nur nach `error.type` sucht, sieht hier nichts.
 
 `lsdsk record` nennt, welches seiner Ergebnisse eingetreten ist, statt eines
-Satzes für alle, denn sie bedeuten Verschiedenes: nichts Neues zum Ablegen, was
-in Ordnung ist; ein Speicher, der zu einer anderen Maschine gehört oder nicht
+Satzes für alle, und zwar in `data.outcome` - `recorded`, `nothing new`,
+`store not readable`, `not permitted` oder `could not write` -, denn sie bedeuten
+Verschiedenes: nichts Neues zum Ablegen, was in Ordnung ist und deshalb
+`ok: true` mit leerem `skipped` meldet; ein Speicher, der zu einer anderen Maschine gehört oder nicht
 gelesen werden kann, den `record` behält statt ersetzt; und ein fehlgeschlagener
 Schreibvorgang. Die letzten beiden bedeuten, dass der Verlauf nicht mehr wächst,
 und jeder hinterlässt einen Code - `78` für einen Speicher, der nicht gelesen

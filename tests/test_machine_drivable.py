@@ -162,8 +162,13 @@ def test_a_structured_run_that_stored_nothing_says_so_rather_than_claiming_succe
     again = envelope_in(cli_runner.invoke(cli, args, obj=production_factory).output)  # type: ignore[attr-defined]
 
     assert first["ok"] is True and first["data"]["recorded"] is True
-    assert again["ok"] is False and again["data"]["recorded"] is False
-    assert again["skipped"], "a run that stored nothing must say why"
+    assert first["data"]["outcome"] == "recorded", first["data"]
+    # Nothing new is a healthy run that did everything it should, so `ok` stays
+    # true and `skipped` empty: a timer reading `ok` first must not alarm on it.
+    # What it did instead of storing is the outcome, not a skip.
+    assert again["ok"] is True and again["skipped"] == [], again
+    assert again["data"]["recorded"] is False
+    assert again["data"]["outcome"] == "nothing new", again["data"]
 
 
 @pytest.mark.os_agnostic
