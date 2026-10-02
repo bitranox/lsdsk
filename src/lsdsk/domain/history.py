@@ -621,7 +621,8 @@ def has_recordable_drive(disks: Sequence[Disk]) -> bool:
         >>> from lsdsk.domain.models import Disk, Health
         >>> has_recordable_drive([Disk(node="sda", path="/dev/sda", model="X", wwn="naa.1")])
         False
-        >>> has_recordable_drive([Disk(node="sda", path="/dev/sda", model="X", wwn="naa.1", health=Health(power_on_hours=5))])
+        >>> clocked = Disk(node="sda", path="/dev/sda", model="X", wwn="naa.1", health=Health(power_on_hours=5))
+        >>> has_recordable_drive([clocked])
         True
     """
     return any(identity_of(disk) is not None and sample_from(disk, "") is not None for disk in disks)

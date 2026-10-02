@@ -154,6 +154,21 @@ class RecordAttempt(NamedTuple):
 _WRITE_FAILED: Final[frozenset[RecordOutcome]] = frozenset({RecordOutcome.NOT_PERMITTED, RecordOutcome.COULD_NOT_WRITE})
 
 
+#: The sentence for each outcome, as a template over ``{path}`` (the store) and
+#: ``{detail}`` (the reader's or the filesystem's own words). One entry per member,
+#: which ``test_every_record_outcome_has_its_own_sentence`` holds: a table cannot be
+#: checked for exhaustiveness the way a ``match`` can.
+_SENTENCES: Final[dict[RecordOutcome, str | None]] = {
+    RecordOutcome.RECORDED: None,
+    RecordOutcome.NOTHING_NEW: "no drive has advanced its power-on hours since the last reading",
+    RecordOutcome.NO_DRIVE_READABLE: "no drive's power-on hours could be read, so there was nothing to store{detail}",
+    RecordOutcome.RECORDING_OFF: "--no-record was given, so this run judged the counters without adding to them",
+    RecordOutcome.STORE_NOT_READABLE: "left the existing store at {path} alone, because it could not be read: {detail}",
+    RecordOutcome.NOT_PERMITTED: "not allowed to write counter history to {path}: {detail}",
+    RecordOutcome.COULD_NOT_WRITE: "could not write counter history to {path}: {detail}",
+}
+
+
 def why_nothing_was_stored(attempt: RecordAttempt, path: Path) -> str | None:
     """The one sentence ``record`` reports for `attempt`.
 
@@ -172,21 +187,10 @@ def why_nothing_was_stored(attempt: RecordAttempt, path: Path) -> str | None:
         >>> why_nothing_was_stored(RecordAttempt(RecordOutcome.RECORDING_OFF), Path("h.json"))
         '--no-record was given, so this run judged the counters without adding to them'
     """
-    match attempt.outcome:
-        case RecordOutcome.RECORDED:
-            return None
-        case RecordOutcome.NOTHING_NEW:
-            return "no drive has advanced its power-on hours since the last reading"
-        case RecordOutcome.NO_DRIVE_READABLE:
-            return f"no drive's power-on hours could be read, so there was nothing to store{attempt.detail or ''}"
-        case RecordOutcome.RECORDING_OFF:
-            return "--no-record was given, so this run judged the counters without adding to them"
-        case RecordOutcome.STORE_NOT_READABLE:
-            return f"left the existing store at {path} alone, because it could not be read: {attempt.detail}"
-        case RecordOutcome.NOT_PERMITTED:
-            return f"not allowed to write counter history to {path}: {attempt.detail}"
-        case RecordOutcome.COULD_NOT_WRITE:
-            return f"could not write counter history to {path}: {attempt.detail}"
+    template = _SENTENCES[attempt.outcome]
+    # Formatting substitutes the values without re-reading them as templates, so
+    # a brace in a filesystem's message stays a brace.
+    return None if template is None else template.format(path=path, detail=attempt.detail or "")
 
 
 def record_exit_code(attempt: RecordAttempt) -> ExitCode:
@@ -258,6 +262,27 @@ def warn_if_the_store_was_not_written(attempt: RecordAttempt) -> None:
         safe_console.echo(f"Warning: could not record counter history: {attempt.detail}", err=True)
 
 
+def _why_not_to_record(inventory: Inventory, read: HistoryRead, settings: HistorySettings) -> RecordAttempt | None:
+    """The reason this reading is not added to the store, or ``None`` to add it."""
+    # A store that could not be read is still a store. Writing this run's
+    # readings over it replaces an accumulated record with a single sample, and
+    # every refusal reason reaches here: a renamed host, a newer schema, a file
+    # too large to read, malformed JSON. None of them is a reason to delete it.
+    if not read.writable:
+        return RecordAttempt(RecordOutcome.STORE_NOT_READABLE, read.refusal)
+    if not settings.enabled:
+        return RecordAttempt(RecordOutcome.RECORDING_OFF)
+    # Asked before "nothing new", which is a claim that every drive was asked and
+    # none had moved. With no drive's clock read that claim is false, and a
+    # sampler without privilege would report a healthy hour for as long as it ran.
+    if not has_recordable_drive(inventory.disks):
+        why = "" if inventory.privileged else " (reading SMART needs root or Administrator)"
+        return RecordAttempt(RecordOutcome.NO_DRIVE_READABLE, why)
+    if not has_new_readings(read.history, inventory.disks):
+        return RecordAttempt(RecordOutcome.NOTHING_NEW)
+    return None
+
+
 def record_reading(
     inventory: Inventory,
     read: HistoryRead,
@@ -283,22 +308,9 @@ def record_reading(
         failed write: see :func:`warn_if_the_store_was_not_written`.
     """
     history = read.history
-    # A store that could not be read is still a store. Writing this run's
-    # readings over it replaces an accumulated record with a single sample, and
-    # every refusal reason reaches here: a renamed host, a newer schema, a file
-    # too large to read, malformed JSON. None of them is a reason to delete it.
-    if not read.writable:
-        return RecordAttempt(RecordOutcome.STORE_NOT_READABLE, read.refusal)
-    if not settings.enabled:
-        return RecordAttempt(RecordOutcome.RECORDING_OFF)
-    # Asked before "nothing new", which is a claim that every drive was asked and
-    # none had moved. With no drive's clock read that claim is false, and a
-    # sampler without privilege would report a healthy hour for as long as it ran.
-    if not has_recordable_drive(inventory.disks):
-        why = "" if inventory.privileged else " (reading SMART needs root or Administrator)"
-        return RecordAttempt(RecordOutcome.NO_DRIVE_READABLE, why)
-    if not has_new_readings(history, inventory.disks):
-        return RecordAttempt(RecordOutcome.NOTHING_NEW)
+    declined = _why_not_to_record(inventory, read, settings)
+    if declined is not None:
+        return declined
     first_ever = not settings.path.exists()
     stamp = captured_at or datetime.now(UTC).isoformat()
     updated = record(history, inventory.disks, stamp, cap=settings.max_samples_per_drive)

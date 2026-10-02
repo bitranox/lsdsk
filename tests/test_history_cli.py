@@ -986,3 +986,21 @@ def test_a_report_still_reports_when_its_store_cannot_be_written(
     assert "could not record counter history" in result.stderr, (
         f"a failed store write was silent, so the record can stop growing unnoticed: {result.stderr!r}"
     )
+
+
+@pytest.mark.os_agnostic
+def test_every_record_outcome_has_its_own_sentence() -> None:
+    """The sentences are a table now, which a type checker cannot hold exhaustive the way a match is."""
+    from lsdsk.adapters.cli.commands.history import RecordAttempt, RecordOutcome, why_nothing_was_stored
+
+    sentences = {
+        outcome: why_nothing_was_stored(RecordAttempt(outcome, "{detail}"), Path("store.json"))
+        for outcome in RecordOutcome
+    }
+
+    assert sentences.pop(RecordOutcome.RECORDED) is None
+    assert all(sentences.values()), f"an outcome has no sentence: {sentences}"
+    assert len(set(sentences.values())) == len(sentences), f"two outcomes share a sentence: {sentences}"
+    # A brace in the filesystem's own words stays a brace rather than a template.
+    could_not_write = sentences[RecordOutcome.COULD_NOT_WRITE]
+    assert could_not_write is not None and "{detail}" in could_not_write, could_not_write
