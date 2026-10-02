@@ -28,6 +28,12 @@ if TYPE_CHECKING:
 #: change to the builder that a translator would reject cannot pass as a refactor.
 MEASURED_IDENTIFY = bytes.fromhex("85080e0000000100000000000000ec00")
 MEASURED_SMART_READ_DATA = bytes.fromhex("85080e00d000010000004f00c200b000")
+#: SMART READ THRESHOLDS carries the same LBA signature as SMART READ DATA and
+#: differs only in the features byte (0xD1 instead of 0xD0, at index 4) - built
+#: from ata_pass_through_16(command=ATA_SMART, feature=SMART_READ_THRESHOLDS,
+#: lba=SMART_LBA_SIGNATURE) rather than measured on a real bridge, since lsdsk
+#: has not had an occasion to issue this one against hardware.
+MEASURED_SMART_READ_THRESHOLDS = bytes.fromhex("85080e00d100010000004f00c200b000")
 
 
 @pytest.mark.os_agnostic
@@ -144,8 +150,7 @@ def test_a_drive_the_ata_ioctl_cannot_reach_is_read_through_sat() -> None:
     assert base64.b64decode(record["smart_data"]) == _sector_for(ata.ATA_SMART)
     assert base64.b64decode(record["smart_thresholds"]) == _sector_for(ata.ATA_SMART)
     assert not any(key.endswith("_error") for key in record), record
-    assert fake.sat_blocks[:2] == [MEASURED_IDENTIFY, MEASURED_SMART_READ_DATA]
-    assert fake.sat_blocks[2][4] == ata.SMART_READ_THRESHOLDS
+    assert fake.sat_blocks == [MEASURED_IDENTIFY, MEASURED_SMART_READ_DATA, MEASURED_SMART_READ_THRESHOLDS]
 
 
 @pytest.mark.os_agnostic
