@@ -26,8 +26,6 @@ from .pcie_text import format_gbytes, format_pcie_sentence
 from .placement import Seat, free_slot_for, unread_free_slot_for
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from .models import Inventory
 
 
@@ -93,16 +91,16 @@ def _is_function_zero(node: PciNode) -> bool:
     return node.address.rpartition(".")[2].partition("#")[0] == "0"
 
 
-def _devices_below(link: FabricLink, tree: Sequence[PciNode]) -> list[PciNode]:
-    """The end devices below the card, walked from an explicit stack, first functions only."""
-    children: dict[str, list[PciNode]] = {}
-    for node in tree:
-        if node.parent_address is not None:
-            children.setdefault(node.parent_address, []).append(node)
+def _devices_below(link: FabricLink, inventory: Inventory) -> list[PciNode]:
+    """The end devices below the card, walked from an explicit stack, first functions only.
+
+    Walks the card's own subtree through the machine's children index, so a
+    card costs what sits below it rather than the whole tree.
+    """
     found: list[PciNode] = []
     stack = [function.address for function in link.functions]
     while stack:
-        for child in children.get(stack.pop(), ()):
+        for child in inventory.pci_children_of(stack.pop()):
             if child.is_bridge_family:
                 stack.append(child.address)
             elif _is_function_zero(child):
@@ -110,7 +108,7 @@ def _devices_below(link: FabricLink, tree: Sequence[PciNode]) -> list[PciNode]:
     return sorted(found, key=lambda node: node.address)
 
 
-def carrying_clause(link: FabricLink, tree: Sequence[PciNode]) -> str:
+def carrying_clause(link: FabricLink, inventory: Inventory) -> str:
     """What a bridge or switch card carries, for the title of its finding.
 
     A switch or a bridge chip is the device at the card end of the link, and its
@@ -119,13 +117,13 @@ def carrying_clause(link: FabricLink, tree: Sequence[PciNode]) -> str:
 
     Args:
         link: The link whose card end is described.
-        tree: The machine's whole PCI tree.
+        inventory: The machine whose PCI tree is walked below the card.
 
     Returns:
         ``""`` for a card with nothing behind it, otherwise ``", carrying "``
         and the names, at most two spelled out and the rest counted.
     """
-    counted = Counter(node.name for node in _devices_below(link, tree))
+    counted = Counter(node.name for node in _devices_below(link, inventory))
     if not counted:
         return ""
     names = [f"{count}x {name}" if count > 1 else name for name, count in counted.items()]
@@ -171,18 +169,27 @@ def diagnose_fabric_link(link: FabricLink, inventory: Inventory) -> list[Finding
     # as "none"; a lanes finding there would count every lane as lost.
     if achievable is None or running_width is None or running_width == 0:
         return []
-    carrying = carrying_clause(link, inventory.pci_tree)
-    # The clause is parenthetical, so it is closed again before the verb.
-    name = f"{link.card.name}{carrying}," if carrying else link.card.name
     # Lanes first: a card that lost lanes in a slot that also caps it needs the
     # contact checked before a move would show what the slot gives it.
     if running_width < achievable.width:
+        name = _titled(link, inventory)
         return [_lanes_lost(link, name=name, achievable=achievable, running_width=running_width)]
     capped = pcie_bandwidth_gbps(achievable.speed_gtps, achievable.width)
     own = link.card.link.max_bandwidth_gbps
     if capped is None or own is None or capped >= own:
         return []
-    return [_slot_capped(link, name=name, achievable=achievable, inventory=inventory)]
+    return [_slot_capped(link, name=_titled(link, inventory), achievable=achievable, inventory=inventory)]
+
+
+def _titled(link: FabricLink, inventory: Inventory) -> str:
+    """The card's name with what it carries, built only once a finding is decided.
+
+    The walk below the card is the costly part of a title, so a link that earns
+    no finding never pays for it.
+    """
+    carrying = carrying_clause(link, inventory)
+    # The clause is parenthetical, so it is closed again before the verb.
+    return f"{link.card.name}{carrying}," if carrying else link.card.name
 
 
 def _lanes_lost(link: FabricLink, *, name: str, achievable: _Shape, running_width: int) -> Finding:

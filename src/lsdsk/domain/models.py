@@ -1710,6 +1710,42 @@ class Inventory(DomainModel, frozen=True):
         """
         return self._slot_by_address.get(address)
 
+    def pci_children_of(self, address: str) -> tuple[PciNode, ...]:
+        """Return the nodes of the PCI tree directly below one address, in tree order.
+
+        Args:
+            address: The address of the parent node.
+
+        Returns:
+            Every node naming that address as its parent; empty where none does.
+
+        Example:
+            >>> bus = PciNode(address="0000:00", name="root bus")
+            >>> card = PciNode(address="0000:00:02.0", name="card", parent_address="0000:00")
+            >>> [node.address for node in Inventory(hostname="h", pci_tree=(bus, card)).pci_children_of("0000:00")]
+            ['0000:00:02.0']
+            >>> Inventory(hostname="h", pci_tree=(bus, card)).pci_children_of("0000:00:02.0")
+            ()
+        """
+        return self._pci_children.get(address, ())
+
+    @cached_property
+    def _pci_children(self) -> Mapping[str, tuple[PciNode, ...]]:
+        """The PCI tree's nodes keyed by their parent's address, once per machine.
+
+        The fabric-link rules walk below every graded card, and rebuilding this
+        map per card made grading a machine cost the product of its links and
+        its devices.
+
+        Returns:
+            Each parent address against the nodes directly below it.
+        """
+        grouped: dict[str, list[PciNode]] = {}
+        for node in self.pci_tree:
+            if node.parent_address is not None:
+                grouped.setdefault(node.parent_address, []).append(node)
+        return {parent: tuple(nodes) for parent, nodes in grouped.items()}
+
     @cached_property
     def _slot_by_address(self) -> Mapping[str, PcieSlot]:
         """The ports keyed by address, once per machine, keeping the first of a repeated one.

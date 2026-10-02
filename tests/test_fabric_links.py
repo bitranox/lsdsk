@@ -121,6 +121,10 @@ def test_no_committed_capture_grades_a_port_as_the_card_end(host: str) -> None:
         assert link.port.faces_downstream, f"{host}: {link.port.address}"
 
 
+def _tree(*nodes: PciNode) -> Inventory:
+    return Inventory(hostname="h", pci_tree=nodes)
+
+
 def _below(parent: str, address: str, name: str, class_code: int = 0x030000) -> PciNode:
     return PciNode(address=address, name=name, class_code=class_code, parent_address=parent)
 
@@ -132,7 +136,7 @@ LEG_B = _below(SWITCH.address, "0000:02:10.0", "leg", 0x060400)
 
 @pytest.mark.os_agnostic
 def test_a_plain_card_carries_nothing() -> None:
-    assert carrying_clause(FabricLink(port=PORT, functions=(_card(),)), (ROOT, PORT, _card())) == ""
+    assert carrying_clause(FabricLink(port=PORT, functions=(_card(),)), _tree(ROOT, PORT, _card())) == ""
 
 
 @pytest.mark.os_agnostic
@@ -147,7 +151,7 @@ def test_a_switch_names_the_devices_behind_it_grouped_and_counted() -> None:
         _below(LEG_A.address, "0000:03:00.1", "GPU audio", 0x040300),
         _below(LEG_B.address, "0000:04:00.0", "GPU"),
     )
-    assert carrying_clause(FabricLink(port=PORT, functions=(SWITCH,)), tree) == ", carrying 2x GPU"
+    assert carrying_clause(FabricLink(port=PORT, functions=(SWITCH,)), _tree(*tree)) == ", carrying 2x GPU"
 
 
 @pytest.mark.os_agnostic
@@ -159,7 +163,7 @@ def test_more_than_two_names_end_in_a_count() -> None:
         LEG_A,
         *(_below(LEG_A.address, f"0000:0{i}:00.0", f"device {i}") for i in range(3, 7)),
     )
-    assert carrying_clause(FabricLink(port=PORT, functions=(SWITCH,)), tree) == (
+    assert carrying_clause(FabricLink(port=PORT, functions=(SWITCH,)), _tree(*tree)) == (
         ", carrying device 3, device 4 and 2 more"
     )
 
@@ -176,7 +180,7 @@ def test_every_function_of_a_bridge_card_contributes_what_it_carries() -> None:
         _below(first.address, "0000:02:04.0", "NIC"),
         _below(second.address, "0000:03:05.0", "NIC"),
     )
-    assert carrying_clause(FabricLink(port=PORT, functions=(first, second)), tree) == ", carrying 2x NIC"
+    assert carrying_clause(FabricLink(port=PORT, functions=(first, second)), _tree(*tree)) == ", carrying 2x NIC"
 
 
 LANES = "runs on fewer lanes than both ends support"
