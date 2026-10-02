@@ -511,7 +511,7 @@ def _open_the_lock(lock: Path) -> int:
 
 
 @contextlib.contextmanager
-def history_lock(path: Path, *, wait: float = LOCK_WAIT_SECONDS) -> Generator[None]:
+def history_lock(path: Path, *, wait: float | None = None) -> Generator[None]:
     """Hold the store exclusively from reading it to writing it back.
 
     Two runs that overlap - a timer's ``record`` and an interactive ``lsdsk`` -
@@ -523,7 +523,10 @@ def history_lock(path: Path, *, wait: float = LOCK_WAIT_SECONDS) -> Generator[No
 
     Args:
         path: The store. The lock is ``.<name>.lock`` in the same directory.
-        wait: How long to wait for another run before giving up.
+        wait: How long to wait for another run before giving up, in seconds.
+            ``None`` waits :data:`LOCK_WAIT_SECONDS`, read when the lock is
+            taken rather than when this function was defined, so the one
+            figure governs every caller that does not choose its own.
 
     Returns:
         A context manager that holds the lock for the body of its ``with``
@@ -543,10 +546,11 @@ def history_lock(path: Path, *, wait: float = LOCK_WAIT_SECONDS) -> Generator[No
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor = _open_the_lock(path.with_name(f".{path.name}.lock"))
     try:
-        deadline = time.monotonic() + wait
+        patience = LOCK_WAIT_SECONDS if wait is None else wait
+        deadline = time.monotonic() + patience
         while not _try_lock(descriptor):
             if time.monotonic() >= deadline:
-                message = f"another lsdsk run has held the counter store for over {wait:g} seconds"
+                message = f"another lsdsk run has held the counter store for over {patience:g} seconds"
                 raise OSError(errno.EAGAIN, message, str(path))
             time.sleep(_LOCK_POLL_SECONDS)
         yield
