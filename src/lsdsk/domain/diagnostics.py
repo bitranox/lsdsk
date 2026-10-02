@@ -39,6 +39,7 @@ from .models import (
     serial_bandwidth_gbps,
     shared_maker,
 )
+from .pcie_text import format_gbytes, format_pcie_sentence
 from .thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
@@ -73,43 +74,6 @@ def interface_demand_gbytes(disk: Disk) -> float | None:
     if disk.pcie is not None:
         return disk.pcie.current_bandwidth_gbps
     return serial_bandwidth_gbps(disk.link.negotiated_gbps)
-
-
-def _format_gbytes(value: float | None) -> str:
-    """Render a GB/s figure for a message, or a placeholder when unknown."""
-    return "unknown" if value is None else f"{value:.2f} GB/s"
-
-
-def format_pcie_sentence(speed_gtps: float | None, width: int | None) -> str:
-    """Render a PCIe link as a generation and width, for a sentence.
-
-    Written closed and in the marketing form, as the render layer writes it in a
-    column. One spelling for the whole tool: a finding that said ``PCIe 3.0x8``
-    while the table above it said ``Gen3x8`` would be describing the same link in
-    two hands, and a reader comparing the two has to work out that they agree.
-
-    The domain cannot reach the render layer's formatter, so this is the second
-    place that spelling is written, and the two are held together by a test in
-    ``tests/test_one_spelling_for_a_generation.py`` rather than by convention.
-
-    Args:
-        speed_gtps: The link's speed in GT/s per lane, or ``None`` if unread.
-        width: The link's negotiated lane count, or ``None`` if unread.
-
-    Returns:
-        The figure as a sentence writes it, or ``PCIe unknown`` when either half
-        was not read - never a half-figure, which would read as a measurement.
-
-    Example:
-        >>> format_pcie_sentence(8.0, 8)
-        'PCIe Gen3x8'
-        >>> format_pcie_sentence(None, None)
-        'PCIe unknown'
-    """
-    generation = pcie_generation(speed_gtps)
-    if generation is None or width is None:
-        return "PCIe unknown"
-    return f"PCIe Gen{generation}x{width}"
 
 
 def _board_generation(controller: Controller, inventory: Inventory) -> int | None:
@@ -316,8 +280,8 @@ def diagnose_controller_link(controller: Controller, inventory: Inventory) -> li
                 title=f"{controller.name} negotiated below what this machine offers",
                 detail=(
                     f"Running {format_pcie_sentence(link.current_speed_gtps, link.current_width)} "
-                    f"({_format_gbytes(negotiated)}) where both ends support "
-                    f"{format_pcie_sentence(achievable_speed, achievable_width)} ({_format_gbytes(achievable)})."
+                    f"({format_gbytes(negotiated)}) where both ends support "
+                    f"{format_pcie_sentence(achievable_speed, achievable_width)} ({format_gbytes(achievable)})."
                 ),
                 action="Reseat the card, check the riser and cabling, and look for a slot speed override in the BIOS.",
             )
@@ -359,8 +323,8 @@ def _unmeasured_port_finding(
             title=f"{controller.name} runs below its own maximum, and the port was not measured",
             detail=(
                 f"Running {format_pcie_sentence(link.current_speed_gtps, link.current_width)} "
-                f"({_format_gbytes(negotiated)}) where the device alone could do "
-                f"{format_pcie_sentence(link.max_speed_gtps, link.max_width)} ({_format_gbytes(own_max)}). "
+                f"({format_gbytes(negotiated)}) where the device alone could do "
+                f"{format_pcie_sentence(link.max_speed_gtps, link.max_width)} ({format_gbytes(own_max)}). "
                 "What the port can carry was not readable, so this is not attributable: a socket "
                 f"built one generation below the device reads exactly the same as a fault.{named}"
             ),
@@ -389,8 +353,8 @@ def _platform_limited_finding(
             subject=controller.address,
             title=f"{controller.name} is in a slot narrower or slower than it needs",
             detail=(
-                f"This slot gives it {_format_gbytes(achievable)} and falls short on {shortfall}; "
-                f"the card itself can do {_format_gbytes(own_max)}."
+                f"This slot gives it {format_gbytes(achievable)} and falls short on {shortfall}; "
+                f"the card itself can do {format_gbytes(own_max)}."
             ),
             action=(
                 f"Move it to the free slot at {move.address} "
@@ -408,9 +372,9 @@ def _platform_limited_finding(
             subject=controller.address,
             title=f"{controller.name} is in a slot narrower or slower than it needs",
             detail=(
-                f"This slot gives it {_format_gbytes(achievable)} and falls short on {shortfall}. "
+                f"This slot gives it {format_gbytes(achievable)} and falls short on {shortfall}. "
                 f"The slot at {swap.address} is faster and holds a {swap.occupant_description}, which can only "
-                f"use {_format_gbytes(swap.occupant_need_gbps)} of the {_format_gbytes(swap.capability_gbps)} "
+                f"use {format_gbytes(swap.occupant_need_gbps)} of the {format_gbytes(swap.capability_gbps)} "
                 "it offers, so that card loses nothing in a narrower slot."
             ),
             action=(
@@ -432,7 +396,7 @@ def _platform_limited_finding(
             f"{_headroom_sentence(controller, inventory, achievable)}"
         )
         action = (
-            f"Freeing a {port_pcie} port would take this link to {_format_gbytes(gain)}; "
+            f"Freeing a {port_pcie} port would take this link to {format_gbytes(gain)}; "
             "the board itself does not need replacing."
         )
     else:
@@ -495,7 +459,7 @@ def _peak_demand_gbytes(disk: Disk) -> float | None:
         ...     model="m",
         ...     pcie=PcieLink(current_speed_gtps=2.5, current_width=4, max_speed_gtps=8.0, max_width=4),
         ... )
-        >>> _format_gbytes(_peak_demand_gbytes(resting))
+        >>> format_gbytes(_peak_demand_gbytes(resting))
         '3.94 GB/s'
     """
     if disk.pcie is not None:
@@ -562,11 +526,11 @@ def _headroom_sentence(controller: Controller, inventory: Inventory, achievable:
     if demand < achievable:
         needed = f"The {count} attached drives need" if count > 1 else "The attached drive needs"
         return (
-            f"{needed} about {_format_gbytes(demand)}, so this link is not the bottleneck today; revisit if more "
+            f"{needed} about {format_gbytes(demand)}, so this link is not the bottleneck today; revisit if more "
             "drives are added."
         )
     wanted = "The attached drives already want" if count > 1 else "The attached drive already wants"
-    return f"{wanted} about {_format_gbytes(demand)}, at or beyond this link."
+    return f"{wanted} about {format_gbytes(demand)}, at or beyond this link."
 
 
 def _upgrade_sentence(controller: Controller, inventory: Inventory, achievable: float, own_max: float) -> str:
@@ -583,11 +547,11 @@ def _upgrade_sentence(controller: Controller, inventory: Inventory, achievable: 
     board_generation = _board_generation(controller, inventory)
     if board_generation is not None and own_generation is not None and own_generation > board_generation:
         return (
-            f"A PCIe {own_generation}.0 board would take this link from {_format_gbytes(achievable)} "
-            f"to {_format_gbytes(own_max)}."
+            f"A PCIe {own_generation}.0 board would take this link from {format_gbytes(achievable)} "
+            f"to {format_gbytes(own_max)}."
         )
     wanted = format_pcie_sentence(controller.link.max_speed_gtps, controller.link.max_width)
-    return f"A {wanted} port would take this link from {_format_gbytes(achievable)} to {_format_gbytes(own_max)}."
+    return f"A {wanted} port would take this link from {format_gbytes(achievable)} to {format_gbytes(own_max)}."
 
 
 class _UsbCeiling(NamedTuple):
@@ -656,16 +620,16 @@ def _usb_cap_noticed(disk: Disk, ceiling: UsbSpeed) -> bool:
 def _usb_headroom(disk: Disk, ceiling: UsbSpeed) -> str:
     """Say whether the drive behind the bridge can feel the cap, judged by what its own link pulls."""
     demand = interface_demand_gbytes(disk)
-    carries = _format_gbytes(ceiling.bandwidth_gbps)
+    carries = format_gbytes(ceiling.bandwidth_gbps)
     if demand is None:
         return "What the drive behind the bridge can pull was not read, so whether it feels this cap is not known."
     if demand > ceiling.bandwidth_gbps:
         return (
-            f"The drive behind the bridge can pull {_format_gbytes(demand)}, "
+            f"The drive behind the bridge can pull {format_gbytes(demand)}, "
             f"more than {ceiling.figure} carries ({carries})."
         )
     return (
-        f"The drive behind the bridge pulls about {_format_gbytes(demand)}, which {ceiling.figure} "
+        f"The drive behind the bridge pulls about {format_gbytes(demand)}, which {ceiling.figure} "
         "already carries, so this cap costs nothing today."
     )
 
@@ -1516,8 +1480,8 @@ def _demand_clause(count: int, demand: float) -> str:
         'The drive can pull about 0.60 GB/s'
     """
     if count > 1:
-        return f"{count} drives can pull about {_format_gbytes(demand)} together"
-    return f"The drive can pull about {_format_gbytes(demand)}"
+        return f"{count} drives can pull about {format_gbytes(demand)} together"
+    return f"The drive can pull about {format_gbytes(demand)}"
 
 
 def _register_default_finding(
@@ -1536,7 +1500,7 @@ def _register_default_finding(
         title=f"{controller.name} publishes the PCIe floor as its link, which is not a ceiling",
         detail=(
             f"{wanted}, and the link reads {format_pcie_sentence(link.max_speed_gtps, link.max_width)} "
-            f"({_format_gbytes(link.max_bandwidth_gbps)}) as both running and capable, the lowest the PCIe "
+            f"({format_gbytes(link.max_bandwidth_gbps)}) as both running and capable, the lowest the PCIe "
             f"specification allows. The {pci_class_name(twin.occupant_class)} at "
             f"{twin.occupant_address or twin.address} on the same switch publishes the identical floor, both "
             "carry the vendor of the switch ports in front of them, and another device there reports a real "
@@ -1596,7 +1560,7 @@ def diagnose_controller_oversubscription(controller: Controller, inventory: Inve
             severity=Severity.WARNING,
             subject=controller.address,
             title=f"{controller.name} is oversubscribed by the drives on it",
-            detail=f"{_demand_clause(count, demand)}, but the uplink can carry {_format_gbytes(uplink)}.",
+            detail=f"{_demand_clause(count, demand)}, but the uplink can carry {format_gbytes(uplink)}.",
             action=action,
         )
     ]
