@@ -16,12 +16,15 @@ System Role:
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import TYPE_CHECKING
 
 from .base import DomainModel
 from .models import PciNode
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from .models import Inventory
 
 
@@ -78,4 +81,54 @@ def fabric_links(inventory: Inventory) -> tuple[FabricLink, ...]:
     return tuple(sorted(links, key=lambda link: link.card.address))
 
 
-__all__ = ["FabricLink", "fabric_links"]
+#: How many distinct names a carrying clause spells out before it counts the rest.
+_NAMES_SPELLED_OUT = 2
+
+
+def _is_function_zero(node: PciNode) -> bool:
+    """Whether a node is a device's first function, which stands for the device."""
+    return node.address.rpartition(".")[2].partition("#")[0] == "0"
+
+
+def _devices_below(link: FabricLink, tree: Sequence[PciNode]) -> list[PciNode]:
+    """The end devices below the card, walked from an explicit stack, first functions only."""
+    children: dict[str, list[PciNode]] = {}
+    for node in tree:
+        if node.parent_address is not None:
+            children.setdefault(node.parent_address, []).append(node)
+    found: list[PciNode] = []
+    stack = [function.address for function in link.functions]
+    while stack:
+        for child in children.get(stack.pop(), ()):
+            if child.is_bridge_family:
+                stack.append(child.address)
+            elif _is_function_zero(child):
+                found.append(child)
+    return sorted(found, key=lambda node: node.address)
+
+
+def carrying_clause(link: FabricLink, tree: Sequence[PciNode]) -> str:
+    """What a bridge or switch card carries, for the title of its finding.
+
+    A switch or a bridge chip is the device at the card end of the link, and its
+    name is one a reader has never seen on the box: the HD 7990 reads as a PLX
+    switch. So the title names the end devices behind it, grouped by name.
+
+    Args:
+        link: The link whose card end is described.
+        tree: The machine's whole PCI tree.
+
+    Returns:
+        ``""`` for a card with nothing behind it, otherwise ``", carrying "``
+        and the names, at most two spelled out and the rest counted.
+    """
+    counted = Counter(node.name for node in _devices_below(link, tree))
+    if not counted:
+        return ""
+    names = [f"{count}x {name}" if count > 1 else name for name, count in counted.items()]
+    spelled = ", ".join(names[:_NAMES_SPELLED_OUT])
+    rest = len(names) - _NAMES_SPELLED_OUT
+    return f", carrying {spelled}" + (f" and {rest} more" if rest > 0 else "")
+
+
+__all__ = ["FabricLink", "carrying_clause", "fabric_links"]

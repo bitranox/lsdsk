@@ -14,7 +14,7 @@ import pytest
 
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.domain.enums import PciPortKind
-from lsdsk.domain.fabric_links import fabric_links
+from lsdsk.domain.fabric_links import FabricLink, carrying_clause, fabric_links
 from lsdsk.domain.models import Controller, Disk, Inventory, PcieLink, PciNode
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
@@ -112,3 +112,61 @@ def test_no_committed_capture_grades_a_port_as_the_card_end(host: str) -> None:
     for link in fabric_links(_machine(host)):
         assert not link.card.faces_downstream, f"{host}: {link.card.address}"
         assert link.port.faces_downstream, f"{host}: {link.port.address}"
+
+
+def _below(parent: str, address: str, name: str, class_code: int = 0x030000) -> PciNode:
+    return PciNode(address=address, name=name, class_code=class_code, parent_address=parent)
+
+
+SWITCH = _card(name="switch", class_code=0x060400, port_kind=PciPortKind.SWITCH_UPSTREAM)
+LEG_A = _below(SWITCH.address, "0000:02:08.0", "leg", 0x060400)
+LEG_B = _below(SWITCH.address, "0000:02:10.0", "leg", 0x060400)
+
+
+@pytest.mark.os_agnostic
+def test_a_plain_card_carries_nothing() -> None:
+    assert carrying_clause(FabricLink(port=PORT, functions=(_card(),)), (ROOT, PORT, _card())) == ""
+
+
+@pytest.mark.os_agnostic
+def test_a_switch_names_the_devices_behind_it_grouped_and_counted() -> None:
+    tree = (
+        ROOT,
+        PORT,
+        SWITCH,
+        LEG_A,
+        LEG_B,
+        _below(LEG_A.address, "0000:03:00.0", "GPU"),
+        _below(LEG_A.address, "0000:03:00.1", "GPU audio", 0x040300),
+        _below(LEG_B.address, "0000:04:00.0", "GPU"),
+    )
+    assert carrying_clause(FabricLink(port=PORT, functions=(SWITCH,)), tree) == ", carrying 2x GPU"
+
+
+@pytest.mark.os_agnostic
+def test_more_than_two_names_end_in_a_count() -> None:
+    tree = (
+        ROOT,
+        PORT,
+        SWITCH,
+        LEG_A,
+        *(_below(LEG_A.address, f"0000:0{i}:00.0", f"device {i}") for i in range(3, 7)),
+    )
+    assert carrying_clause(FabricLink(port=PORT, functions=(SWITCH,)), tree) == (
+        ", carrying device 3, device 4 and 2 more"
+    )
+
+
+@pytest.mark.os_agnostic
+def test_every_function_of_a_bridge_card_contributes_what_it_carries() -> None:
+    first = _card("0000:01:00.0", name="bridge", class_code=0x060400)
+    second = _card("0000:01:00.2", name="bridge", class_code=0x060400)
+    tree = (
+        ROOT,
+        PORT,
+        first,
+        second,
+        _below(first.address, "0000:02:04.0", "NIC"),
+        _below(second.address, "0000:03:05.0", "NIC"),
+    )
+    assert carrying_clause(FabricLink(port=PORT, functions=(first, second)), tree) == ", carrying 2x NIC"
