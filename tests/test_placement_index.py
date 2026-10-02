@@ -29,7 +29,7 @@ from hypothesis import strategies as st
 from workcount import work_to_run
 
 from lsdsk.domain.diagnostics import diagnose
-from lsdsk.domain.enums import BusType, ControllerKind
+from lsdsk.domain.enums import BusType, ControllerKind, Severity
 from lsdsk.domain.models import (
     Controller,
     Disk,
@@ -365,12 +365,29 @@ def _machines_of_controllers(draw: st.DrawFn) -> Inventory:
     return Inventory(hostname="generated", controllers=controllers, disks=disks)
 
 
+def _fastest_rate_by_walking_disks(machine: Inventory, controller_address: str | None) -> float | None:
+    """The best port rate on one controller, read straight off the disks.
+
+    Computed independently of :meth:`Inventory.fastest_port_rate_on`, which is
+    the index under test: an oracle that calls the same method agrees with any
+    mutation made to it. ``max`` over the matching rates in inventory order
+    reproduces the running-best loop the index itself uses, NaN and all, so the
+    two can disagree only when the index's own arithmetic is wrong.
+    """
+    rates = [
+        disk.link.port_max_gbps
+        for disk in machine.disks
+        if disk.controller_address == controller_address and disk.link.port_max_gbps is not None
+    ]
+    return max(rates) if rates else None
+
+
 def _first_faster_by_walking(machine: Inventory, rate: float, besides: str | None) -> Controller | None:
     """The oracle: the first other controller with a free port faster than ``rate``."""
     for controller in machine.controllers:
         if controller.address == besides or not controller.ports_free:
             continue
-        best = machine.fastest_port_rate_on(controller.address)
+        best = _fastest_rate_by_walking_disks(machine, controller.address)
         if best is not None and best > rate:
             return controller
     return None
@@ -413,3 +430,40 @@ def test_a_rate_nobody_can_beat_does_not_hide_the_controller_beside_it() -> None
     )
     assert _first_faster_by_walking(machine, 3.0, None) is fast
     assert machine.first_controller_with_a_free_port_faster_than(3.0, besides=None) is fast
+
+
+@pytest.mark.os_agnostic
+def test_a_capped_drive_is_told_to_move_to_the_faster_free_port_the_rule_finds() -> None:
+    """``diagnose`` itself raises the move warning, naming the controller it found.
+
+    ``test_doubling_the_machine_does_not_quadruple_the_placement_search`` only
+    exercises the HINT branch (no faster port free anywhere), so this is the
+    first end-to-end proof that the WARNING branch - a faster free port really
+    exists - fires through the real rule rather than only through the index's
+    own unit tests.
+    """
+    capped = InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=3.0)
+    slowest = InterfaceLink(negotiated_gbps=1.0, drive_max_gbps=1.0, port_max_gbps=1.0)
+    slow = Controller(address="0000:00:1f.2", name="slow AHCI", port_count=1, ports_used=1)
+    # Two occupied ports plus one free: a port rate taken as the MINIMUM of
+    # the two, rather than the maximum the rule is written for, reads 1.0 Gb/s
+    # here - slower than the capped drive's own port - and the warning would
+    # never fire, which is what makes this fixture catch that mutation.
+    fast = Controller(address="0000:01:00.0", name="fast HBA", port_count=3, ports_used=2)
+    machine = Inventory(
+        hostname="h",
+        controllers=(slow, fast),
+        disks=(
+            _sata(0, slow.address, capped),
+            _sata(1, fast.address, slowest),
+            _sata(2, fast.address, _SATA_6G),
+        ),
+    )
+    findings = diagnose(machine)
+    moves = [finding for finding in findings if "is on a port slower than the drive" in finding.title]
+    assert len(moves) == 1, f"expected one move warning, got {[f.title for f in findings]}"
+    move = moves[0]
+    assert move.severity is Severity.WARNING
+    assert move.subject == "/dev/sd0"
+    assert move.action is not None
+    assert f"{fast.name} at {fast.address}" in move.action
