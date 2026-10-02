@@ -284,6 +284,20 @@ def user_config_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return _user_config_dir(tmp_path, monkeypatch)
 
 
+@pytest.fixture
+def user_config_dir_under(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[[str], Path]:
+    """The same directory, under a root whose NAME the test chooses.
+
+    For a test about the path itself - brackets, spaces, characters a renderer
+    could misread - which still has to seed the directory this platform reads.
+    """
+
+    def _under(name: str) -> Path:
+        return _user_config_dir(tmp_path / name, monkeypatch)
+
+    return _under
+
+
 def _load_dotenv() -> None:
     """Load .env file when it exists for integration test configuration."""
     try:
