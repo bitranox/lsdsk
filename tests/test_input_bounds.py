@@ -1467,6 +1467,45 @@ def test_no_markup_in_a_capture_is_read_as_markup_by_any_view(
     _assert_drawn_as_text(cell, result, draws_nothing=(capture_name, view) in _MARKUP_DRAWS_NOTHING)
 
 
+#: The commands whose page draws the disks table, and so its caption.
+_DISKS_CAPTION_VIEWS = ("disks", "report", "")
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("view", _DISKS_CAPTION_VIEWS)
+def test_no_markup_in_a_virtual_device_name_is_read_as_markup_by_the_disks_caption(
+    view: str,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+) -> None:
+    """The disks table caption names a virtual device FAMILY, unreached above.
+
+    ``virtual_note`` builds that family from a disk's ``node``, which for a
+    kernel-virtual device comes from the ``block`` mapping's own KEY in the
+    capture - not a value. The salting walk above salts every string VALUE and
+    never a dict key, so adding a capture with virtual disks to
+    ``_SALTED_CAPTURES`` would still never carry the payload into this one
+    sentence: every other field it salts (hostname, model) already satisfies
+    that test's own "drawn whole somewhere" check, so the caption's gap stays
+    invisible. This test salts the key directly, on ``linux-minimal`` (the one
+    fixture with kernel-virtual block devices), and reaches exactly that
+    sentence.
+    """
+    from lsdsk.adapters.cli import cli
+
+    capture = json.loads((FIXTURES / "linux-minimal.json").read_text(encoding="utf-8"))
+    block = cast("dict[str, object]", capture["block"])
+    block[f"loop0{_MARKUP_MARK}{_MARKUP}"] = block.pop("loop0")
+    crafted = tmp_path / "markup-virtual-key.json"
+    crafted.write_text(json.dumps(capture), encoding="utf-8")
+
+    prefix = ["--no-record", "--history-file", str(tmp_path / "absent.json")]
+    argv = [*prefix, *([view] if view else []), "--replay", str(crafted)]
+    result = cli_runner.invoke(cli, argv, obj=production_factory, color=False)
+    _assert_drawn_as_text(f"linux-minimal/{view or 'bare'}/virtual-key", result)
+
+
 #: The commands that draw what the counter store holds, and so the trend table
 #: that an empty store never reaches.
 _HISTORY_VIEWS = ("trend", "health", "findings", "report", "")
