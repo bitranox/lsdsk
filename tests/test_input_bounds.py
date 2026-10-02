@@ -540,8 +540,9 @@ def test_the_bounded_read_stops_one_byte_past_the_ceiling_not_at_end_of_stream(t
     sent: list[int] = []
     writer = _fifo_carrying(fifo, MAX_INPUT_BYTES * 4, sent=sent)
 
-    with pytest.raises(ConfigurationError):
+    with pytest.raises(ConfigurationError) as raised:
         read_text_bounded(fifo, what="a snapshot")
+    assert "Check the path" in str(raised.value)
     writer.join(timeout=30)
 
     delivered = sum(sent)

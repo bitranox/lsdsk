@@ -330,6 +330,7 @@ def test_every_action_result_can_read_the_wire_form_it_writes() -> None:
     A field type this cannot build fails the test by name rather than being
     skipped, because a skipped arm is an unguarded arm.
     """
+    import enum
     import importlib
     import pkgutil
     import typing
@@ -347,6 +348,8 @@ def test_every_action_result_can_read_the_wire_form_it_writes() -> None:
             return []
         if origin is not None and type(None) in typing.get_args(annotation):
             return None
+        if isinstance(annotation, type) and issubclass(annotation, enum.Enum):
+            return next(iter(annotation))
         simple: dict[object, object] = {str: "x", int: 1, bool: True, float: 1.0}
         if annotation not in simple:
             raise AssertionError(f"this guard cannot build a {annotation!r}; teach it that type")

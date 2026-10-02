@@ -20,6 +20,7 @@ import pytest
 from rich.console import Console
 
 from lsdsk.adapters.cli import safe_console
+from lsdsk.adapters.cli.exit_codes import ExitCode
 
 PKG = Path(__file__).resolve().parent.parent / "src" / "lsdsk"
 
@@ -488,8 +489,9 @@ def test_the_tee_writes_its_stderr_half_even_when_the_stdout_half_raises(monkeyp
 
     tee = safe_console.safe_stream_to_both()
     try:
-        with pytest.raises(SystemExit):
+        with pytest.raises(SystemExit) as leaving:
             tee.write("a log line\n")
+        assert leaving.value.code == ExitCode.BROKEN_PIPE, leaving.value.code
     finally:
         safe_console.restore_original_streams()
 
