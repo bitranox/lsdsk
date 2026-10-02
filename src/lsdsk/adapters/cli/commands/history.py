@@ -139,10 +139,14 @@ class RecordAttempt(NamedTuple):
         outcome: What happened.
         detail: The reader's or the filesystem's own words, for the outcomes that
             have any. ``None`` otherwise.
+        history: The store as it was written, when a sample was stored, so a
+            caller that draws from it need not read the file back. ``None``
+            otherwise.
     """
 
     outcome: RecordOutcome
     detail: str | None = None
+    history: History | None = None
 
     @property
     def stored(self) -> bool:
@@ -341,8 +345,9 @@ def _record_into_the_current_store(
     if declined is not None:
         return declined
     stamp = captured_at or datetime.now(UTC).isoformat()
-    save_history(record(current.history, inventory.disks, stamp, cap=settings.max_samples_per_drive), settings.path)
-    return RecordAttempt(RecordOutcome.RECORDED)
+    updated = record(current.history, inventory.disks, stamp, cap=settings.max_samples_per_drive)
+    save_history(updated, settings.path)
+    return RecordAttempt(RecordOutcome.RECORDED, history=updated)
 
 
 def analyse(
@@ -364,14 +369,19 @@ def analyse(
         thresholds: The judgement values the rules weigh against.
 
     Returns:
-        The machine and its findings.
+        The machine, its findings, and the counter store as it stands after
+        this run: the copy judged against, or the one this run wrote. A caller
+        that draws the counters draws from it rather than reading the file again.
     """
     inventory = load_inventory(replay, output_format=output_format)
     read = read_history(inventory, settings)
     findings = diagnose(inventory, history=read.history, thresholds=thresholds)
     if replay is None and output_format is OutputFormat.HUMAN:
-        warn_if_the_store_was_not_written(record_reading(inventory, read, settings))
-    return Analysis(inventory, findings)
+        attempt = record_reading(inventory, read, settings)
+        warn_if_the_store_was_not_written(attempt)
+        if attempt.history is not None:
+            read = HistoryRead(attempt.history, writable=True)
+    return Analysis(inventory, findings, read)
 
 
 def _capture_stamp(replay: Path | None) -> str | None:
@@ -517,13 +527,12 @@ def cli_trend(ctx: click.Context, replay: Path | None, output_format: OutputForm
         settings = resolve_history(ctx)
         thresholds, display = resolve_tunables(ctx)
         target = effective_replay(ctx, replay)
-        inventory, findings = analyse(target, output_format, settings, thresholds)
+        inventory, findings, read = analyse(target, output_format, settings, thresholds)
         if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.TREND)
         else:
             from lsdsk.adapters.render.trend import render_trend  # noqa: PLC0415 - keeps the import graph flat
 
-            read = read_history(inventory, settings)
             console = console_for_output(display.piped_width)
             console.print(
                 render_trend(

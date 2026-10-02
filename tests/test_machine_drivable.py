@@ -389,11 +389,7 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
         thresholds: Thresholds = configured,
     ) -> Analysis:
         del replay, output_format, settings, thresholds
-        return Analysis(machine, ())
-
-    def give_history(inventory: Inventory, settings: HistorySettings) -> HistoryRead:
-        del inventory, settings
-        return read
+        return Analysis(machine, (), read)
 
     class StubApp:
         def __init__(
@@ -425,7 +421,6 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
         report=note_report,
         open_view=StubApp,
         analyse=give_inventory,
-        read_history=give_history,
     )
 
     if expect == "tui":

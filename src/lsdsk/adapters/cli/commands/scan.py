@@ -210,16 +210,20 @@ def resolve_history(ctx: click.Context) -> HistorySettings:
 
 
 class Analysis(NamedTuple):
-    """A machine and what the rules concluded about it.
+    """A machine, what the rules concluded about it, and the history they used.
 
-    Returned rather than a bare pair because two functions produce this exact
-    shape and nine call sites unpack it: both halves are objects, so a swapped
-    unpacking is a type error, but a NAMED result also says what the second half
-    is without the reader following it back to its producer.
+    Returned rather than a bare tuple because two functions produce this exact
+    shape and many call sites unpack it: every part is a distinct type, so a
+    swapped unpacking is a type error, but a NAMED result also says what each
+    part is without the reader following it back to its producer.
     """
 
     inventory: Inventory
     findings: tuple[Finding, ...]
+    #: The counter store the findings were judged against, or the copy this run
+    #: wrote into it: what a section that draws the counters draws from, so it
+    #: is never read from disk a second time.
+    history: HistoryRead
 
 
 def note(text: str) -> Text:
@@ -737,20 +741,12 @@ class ReadsTheMachine(Protocol):
         ...
 
 
-class ReadsTheHistory(Protocol):
-    """Load this machine's recorded counter history."""
-
-    def __call__(self, inventory: Inventory, settings: HistorySettings) -> HistoryRead:
-        """Return the history and whether the store can be written."""
-        ...
-
-
 class Collaborators(NamedTuple):
-    """The four functions the default view calls, as one named group.
+    """The three functions the default view calls, as one named group.
 
-    Bundled rather than threaded separately for two reasons. Four more
-    parameters would take ``run_default_view`` to nine, past the width this
-    project holds its own signatures to; and they are always substituted
+    Bundled rather than threaded separately for two reasons. Passed one by one
+    they would take ``run_default_view`` past the width this project holds its
+    own signatures to; and they are always substituted
     together, so passing them apart is the one place they could go out of step.
 
     They exist so a test can drive the router without substituting a module
@@ -762,7 +758,6 @@ class Collaborators(NamedTuple):
     report: PrintsThePage
     open_view: OpensTheInteractiveView
     analyse: ReadsTheMachine
-    read_history: ReadsTheHistory
 
 
 def run_default_view(
@@ -822,8 +817,7 @@ def run_default_view(
     resolved = settings if settings is not None else get_history_settings(Config({}, {}))
     laid_out = display if display is not None else DisplaySettings()
     with lib_log_rich.runtime.bind(job_id="cli-tui", extra={"command": "tui"}):
-        inventory, findings = called.analyse(replay, OutputFormat.HUMAN, resolved, thresholds)
-        read = called.read_history(inventory, resolved)
+        inventory, findings, read = called.analyse(replay, OutputFormat.HUMAN, resolved, thresholds)
         called.open_view(
             inventory,
             read.history,
@@ -838,13 +832,13 @@ def _the_real_collaborators() -> Collaborators:
     """Resolve the production functions, deferring both imports as before.
 
     Returns:
-        The four this module reaches for when nothing was substituted.
+        The three this module reaches for when nothing was substituted.
     """
     from lsdsk.adapters.tui import LsdskApp  # noqa: PLC0415 - keeps textual off the fast path
 
-    from .history import analyse, read_history  # noqa: PLC0415 - deferred: history imports this module
+    from .history import analyse  # noqa: PLC0415 - deferred: history imports this module
 
-    return Collaborators(report=run_default_report, open_view=LsdskApp, analyse=analyse, read_history=read_history)
+    return Collaborators(report=run_default_report, open_view=LsdskApp, analyse=analyse)
 
 
 def _refuse_a_format_this_command_has_no_form_of(output_format: OutputFormat | None, *, instead: str) -> None:
@@ -889,7 +883,7 @@ def run_default_report(
     Raises:
         SystemExit: Always, carrying the exit code the findings imply.
     """
-    from .history import analyse, read_history  # noqa: PLC0415 - deferred: history imports this module
+    from .history import analyse  # noqa: PLC0415 - deferred: history imports this module
 
     resolved = settings if settings is not None else get_history_settings(Config({}, {}))
     with lib_log_rich.runtime.bind(  # Not a CliCommand member: the default view emits no envelope, so it has
@@ -897,12 +891,11 @@ def run_default_report(
         job_id="cli-report",
         extra={"command": "report"},
     ):
-        inventory, findings = analyse(replay, OutputFormat.HUMAN, resolved, thresholds)
+        inventory, findings, read = analyse(replay, OutputFormat.HUMAN, resolved, thresholds)
         from lsdsk.adapters.render.full import render_full  # noqa: PLC0415 - keeps the import graph flat
 
         laid_out = display if display is not None else DisplaySettings()
         console = console_for_output(laid_out.piped_width)
-        read = read_history(inventory, resolved)
         console.print(
             render_full(
                 inventory,
@@ -965,7 +958,7 @@ def cli_topology(
     This is one section of the page a bare `lsdsk` renders, not that whole page.
     """
     with lib_log_rich.runtime.bind(job_id="cli-topology", extra={"command": CliCommand.TOPOLOGY.value}):
-        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
+        inventory, findings, _ = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         thresholds, display = resolve_tunables(ctx)
         logger.debug("Scanned %d disks on %d controllers", len(inventory.disks), len(inventory.controllers))
 
@@ -1024,7 +1017,7 @@ def effective_tree_density(ctx: click.Context, tree_density: str | None) -> Tree
 def cli_smart(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Show every disk's SMART attributes against its own thresholds."""
     with lib_log_rich.runtime.bind(job_id="cli-smart", extra={"command": CliCommand.SMART.value}):
-        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
+        inventory, findings, _ = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
         if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.SMART)
@@ -1044,7 +1037,7 @@ def cli_smart(ctx: click.Context, replay: Path | None, output_format: OutputForm
 def cli_findings(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Explain every problem and improvement in full."""
     with lib_log_rich.runtime.bind(job_id="cli-findings", extra={"command": CliCommand.FINDINGS.value}):
-        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
+        inventory, findings, _ = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
         if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.FINDINGS)
@@ -1063,7 +1056,7 @@ def cli_findings(ctx: click.Context, replay: Path | None, output_format: OutputF
 def cli_controllers(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """List storage controllers, their PCIe placement and their free ports."""
     with lib_log_rich.runtime.bind(job_id="cli-controllers", extra={"command": CliCommand.CONTROLLERS.value}):
-        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
+        inventory, findings, _ = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
         if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.CONTROLLERS)
@@ -1085,7 +1078,7 @@ def cli_controllers(ctx: click.Context, replay: Path | None, output_format: Outp
 def cli_slots(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Show the mainboard's PCIe ports, what occupies them and what is free."""
     with lib_log_rich.runtime.bind(job_id="cli-slots", extra={"command": CliCommand.SLOTS.value}):
-        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
+        inventory, findings, _ = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
         if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.SLOTS)
@@ -1109,7 +1102,7 @@ def cli_disks(
 ) -> None:
     """List every disk with its identity and its interface speed."""
     with lib_log_rich.runtime.bind(job_id="cli-disks", extra={"command": CliCommand.DISKS.value}):
-        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
+        inventory, findings, _ = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
         if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.DISKS)
@@ -1146,7 +1139,7 @@ def cli_disks(
 def cli_health(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Show wear, temperature, hours and error counters for every disk."""
     with lib_log_rich.runtime.bind(job_id="cli-health", extra={"command": CliCommand.HEALTH.value}):
-        inventory, findings = analyse_run(ctx, effective_replay(ctx, replay), output_format)
+        inventory, findings, read = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         thresholds, display = resolve_tunables(ctx)
         if output_format is OutputFormat.JSON:
             emit_json(inventory, findings, CliCommand.HEALTH)
@@ -1154,16 +1147,13 @@ def cli_health(ctx: click.Context, replay: Path | None, output_format: OutputFor
             from lsdsk.adapters.render.tables import render_health  # noqa: PLC0415 - keeps the import graph flat
 
             console = console_for_output(display.piped_width)
-            from .history import read_history  # noqa: PLC0415 - deferred: history imports this module
-
-            history = read_history(inventory, resolve_history(ctx)).history
             console.print(
-                render_health(inventory, findings, width=console.width, history=history, thresholds=thresholds)
+                render_health(inventory, findings, width=console.width, history=read.history, thresholds=thresholds)
             )
             # Through the console rather than a plain echo, so prose wraps to the
             # terminal instead of running off the side of a narrow one. The
             # tables already fit themselves; a bare echo does not.
-            legend = counter_legend(inventory, history)
+            legend = counter_legend(inventory, read.history)
             if legend:
                 console.print("")
                 console.print(note(legend))
@@ -1479,7 +1469,6 @@ __all__ = [
     "InteractiveView",
     "OpensTheInteractiveView",
     "PrintsThePage",
-    "ReadsTheHistory",
     "ReadsTheMachine",
     "build_envelope",
     "cli_controllers",
