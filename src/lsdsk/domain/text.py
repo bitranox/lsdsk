@@ -28,6 +28,7 @@ Example:
 
 from __future__ import annotations
 
+import unicodedata
 from typing import Annotated
 
 from pydantic import AfterValidator, Field
@@ -36,6 +37,24 @@ from pydantic import AfterValidator, Field
 # with a space because it never appears in these fields and collapsing it would
 # hide a difference; it is simply removed with the rest.
 _UNSAFE = frozenset(range(0x00, 0x20)) | {0x7F} | frozenset(range(0x80, 0xA0))
+
+
+def _is_unsafe(character: str) -> bool:
+    r"""Whether a terminal would act on ``character`` rather than show it.
+
+    The controls above, and every FORMAT character (Unicode category ``Cf``): a
+    right-to-left override or isolate reorders the rest of its line on screen,
+    and a zero-width space or joiner hides a difference between two strings that
+    look identical. None of them is a control character, so a stripper that knew
+    only the controls passed them through. A device identifier has no use for
+    any of them.
+
+    Example:
+        >>> _is_unsafe("\u202e"), _is_unsafe("\x1b"), _is_unsafe("e")
+        (True, True, False)
+    """
+    return ord(character) in _UNSAFE or unicodedata.category(character) == "Cf"
+
 
 #: How much of one untrusted value a message quotes before cutting it. Enough to
 #: recognise a PCI address, a sysfs name or a field somebody mistyped; short
@@ -72,7 +91,7 @@ __all__ = [
 
 
 def device_text(value: str) -> str:
-    r"""Strip control characters from a string the hardware chose.
+    r"""Strip control and format characters from a string the hardware chose.
 
     Args:
         value: Text as the device or a capture reported it.
@@ -86,10 +105,12 @@ def device_text(value: str) -> str:
         'Evil[31mDRIVE[0m'
         >>> device_text("two\nrows")
         'tworows'
+        >>> device_text("MODEL\u202eLEDOM")
+        'MODELLEDOM'
         >>> device_text("  Samsung SSD 860 EVO  ")
         'Samsung SSD 860 EVO'
     """
-    return "".join(character for character in value if ord(character) not in _UNSAFE).strip()
+    return "".join(character for character in value if not _is_unsafe(character)).strip()
 
 
 def visible_text(value: str, limit: int = QUOTED_TEXT_LIMIT) -> str:
@@ -128,12 +149,27 @@ def visible_text(value: str, limit: int = QUOTED_TEXT_LIMIT) -> str:
     shown: list[str] = []
     used = 0
     for character in value[: limit + 1]:
-        piece = f"\\x{ord(character):02x}" if ord(character) in _UNSAFE else character
+        piece = _escaped(character) if _is_unsafe(character) else character
         if used + len(piece) > limit:
             return "".join(shown) + "..."
         shown.append(piece)
         used += len(piece)
     return "".join(shown)
+
+
+#: The first code point a two-digit ``\xNN`` escape cannot spell.
+_PAST_TWO_HEX_DIGITS = 0x100
+
+
+def _escaped(character: str) -> str:
+    r"""The escape a message shows in place of a character it must not emit.
+
+    Example:
+        >>> _escaped("\x1b"), _escaped("\u202e")
+        ('\\x1b', '\\u202e')
+    """
+    code = ord(character)
+    return f"\\x{code:02x}" if code < _PAST_TWO_HEX_DIGITS else f"\\u{code:04x}"
 
 
 def _clean_optional(value: str | None) -> str | None:

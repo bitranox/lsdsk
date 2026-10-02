@@ -236,6 +236,48 @@ def test_snapshot_replaces_a_symlink_instead_of_writing_through_it(tmp_path: Pat
     assert not list(tmp_path.glob(".*.tmp")), "a temporary file was left behind"
 
 
+#: Format characters a terminal does not display but obeys: the bidi overrides
+#: and isolates reorder everything after them on the line, and the zero-width
+#: ones hide a difference between two strings that look identical.
+INVISIBLE_FORMATTING = ("\u202e", "\u202d", "\u2066", "\u2067", "\u2068", "\u2069", "\u200b", "\u200f", "\ufeff")
+
+
+@pytest.mark.os_agnostic
+def test_a_capture_cannot_reorder_or_hide_text_with_format_characters(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    """A right-to-left override in a model reverses the rest of its row on screen.
+
+    They are not control characters (Unicode category Cf, not Cc), so the
+    control stripper passed them through: measured before this, 37 in the bare
+    page from one crafted capture.
+    """
+    import json
+
+    from lsdsk.adapters.cli import cli
+    from lsdsk.domain.text import device_text
+
+    source = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
+    capture: dict[str, Any] = json.loads(source.read_text(encoding="utf-8"))
+    capture["hostname"] = "box\u202eevil"
+    block: dict[str, Any] = capture.get("block") or {}
+    device: dict[str, Any] = block[sorted(block)[0]].setdefault("device", {})
+    device["model"] = "".join(INVISIBLE_FORMATTING) + "MODEL\u202eLEDOM"
+    crafted = tmp_path / "bidi.json"
+    crafted.write_text(json.dumps(capture), encoding="utf-8")
+
+    for argv in (["disks"], []):
+        result = cli_runner.invoke(cli, [*argv, "--replay", str(crafted)], obj=production_factory, color=False)
+        # The hostname heads every page, so it is the field that provably reaches
+        # it, with or without its override.
+        assert "evil" in result.stdout, f"{argv or 'bare'}: the crafted hostname is not on the page"
+        leaked = sorted({hex(ord(c)) for c in result.stdout if c in INVISIBLE_FORMATTING})
+        assert not leaked, f"{argv or 'bare'}: format characters reached the terminal: {leaked}"
+        assert "boxevil" in result.stdout, f"{argv or 'bare'}: the hostname was dropped rather than cleaned"
+
+    assert device_text("ab\u202ecd\u200b") == "abcd"
+
+
 @pytest.mark.os_agnostic
 def test_a_capture_cannot_inject_control_characters_into_the_terminal(
     cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path

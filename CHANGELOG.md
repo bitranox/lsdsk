@@ -35,6 +35,13 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   any of them as a `--history-file`, because the counter store is only ever
   replaced whole.
 
+- **Text a device or a capture chose no longer carries format characters to
+  the terminal.** The cleaner removed control characters but not Unicode
+  format characters, so a right-to-left override in a model or hostname
+  reversed the rest of its row on screen, and a zero-width space hid a
+  difference between two names that looked identical. They are now removed
+  with the controls, and a refusal quoting such text shows them as `\uNNNN`.
+
 - **`DomainModel.with_changes` no longer refuses a model whose public cached
   property was read first.** It built the new values from the instance's own
   dictionary, which holds a warmed `cached_property` beside the fields, and the
