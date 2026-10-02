@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import base64
+import json
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from lsdsk.adapters.hw.linux.builder import build_disks
-from lsdsk.adapters.hw.linux.capture import LinuxCapture
+from lsdsk.adapters.hw.linux.capture import LinuxCapture, UsbDeviceEntry
 from lsdsk.domain.diagnostics import diagnose_usb_link
 from lsdsk.domain.enums import BusType, Platform, Severity, UsbLaneRate, UsbTransport
 from lsdsk.domain.models import RefusedReading, UsbSpeed
@@ -161,3 +164,31 @@ def test_a_disk_off_usb_carries_no_usb_link() -> None:
     assert disk.usb is None
     assert disk.bus is not BusType.USB
     assert not any(refusal.reading == "usb-link" for refusal in disk.readings_refused)
+
+
+@pytest.mark.os_agnostic
+def test_every_field_the_usb_device_model_declares_is_one_the_builder_reads() -> None:
+    """A capture model names only the keys a builder reads; the rest of a capture rides along as extra keys.
+
+    A declared field nobody reads is a typed promise with no consumer, and its
+    docstring is then the only description of what it means - unchecked. The
+    reader can still record the raw attribute for a bug report: the model
+    ignores keys it does not name.
+    """
+    builder = (Path(build_disks.__code__.co_filename)).read_text(encoding="utf-8")
+    unread = [name for name in UsbDeviceEntry.model_fields if not re.search(rf"\.{name}\b", builder)]
+    assert not unread, f"declared on UsbDeviceEntry and read by nothing in the Linux builder: {unread}"
+    assert re.search(r"\.peer_hub\b", builder), "the control: a field the builder does read is found"
+
+
+@pytest.mark.os_agnostic
+def test_every_committed_linux_capture_still_loads_its_usb_section() -> None:
+    """A key the model stopped naming is ignored, so a fixture carrying it keeps loading."""
+    fixtures = sorted((Path(__file__).parent / "fixtures" / "hw").glob("*.json"))
+    linux = [path for path in fixtures if json.loads(path.read_text(encoding="utf-8")).get("platform") == "linux"]
+    with_usb = [path for path in linux if json.loads(path.read_text(encoding="utf-8")).get("usb")]
+
+    assert linux, "no Linux capture was found, so nothing was checked"
+    assert with_usb, "no Linux capture carries a usb section, so the extra key was never exercised"
+    for path in linux:
+        LinuxCapture.model_validate(json.loads(path.read_text(encoding="utf-8")))

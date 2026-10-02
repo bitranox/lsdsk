@@ -67,8 +67,9 @@ def test_what_the_reader_records_is_a_capture_the_model_accepts(tmp_path: Path) 
     capture = LinuxCapture.model_validate(
         {"schema": 2, "platform": "linux", "hostname": "h", "kernel": "k", "pci": {}, "usb": usb}
     )
-    assert capture.usb[str(disk)].device_class == "00"
     assert capture.usb[str(disk)].interface_drivers == ("uas",)
+    # Recorded for a bug report, and carried past a model that does not name it.
+    assert usb[str(disk)]["bDeviceClass"] == "00"
 
 
 @pytest.mark.os_posix

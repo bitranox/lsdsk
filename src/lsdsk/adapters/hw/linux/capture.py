@@ -338,13 +338,18 @@ class UsbDeviceEntry(CaptureModel, frozen=True):
     No serial, product or manufacturer string is recorded: nothing reads them,
     and a fixture would have to scrub each.
 
+    The reader also records ``version`` (bcdUSB) and ``bDeviceClass`` for a bug
+    report. They are not named here because no builder reads them: whether a
+    device has a BOS is decided by the reader and arrives as ``bos_none``, a
+    root hub is told by its directory name, and every device between a disk and
+    its root hub is a hub by its place in the chain. A key this model does not
+    name is ignored, so a capture carrying them still loads.
+
     Attributes:
         name: The device directory's name, ``usb1`` for a root hub, ``1-1.2`` below it.
         speed: The running speed in Mb/s, as the kernel writes it.
-        version: bcdUSB, which says whether the device has a BOS at all.
         rx_lanes: The lanes it receives on (USB 3.2).
         tx_lanes: The lanes it transmits on (USB 3.2).
-        device_class: bDeviceClass; ``09`` is a hub.
         interface_drivers: The drivers bound to its interfaces, ``uas`` or ``usb-storage`` for a disk.
         peer_hub: The sysfs path of the hub owning the other-speed half of the socket it is in.
         bos: Its BOS descriptor, from sysfs or usbfs.
@@ -354,10 +359,8 @@ class UsbDeviceEntry(CaptureModel, frozen=True):
 
     name: DeviceText = ""
     speed: DeviceText | None = None
-    version: DeviceText | None = None
     rx_lanes: DeviceText | None = None
     tx_lanes: DeviceText | None = None
-    device_class: DeviceText | None = Field(default=None, alias="bDeviceClass")
     interface_drivers: Entries[DeviceText] = ()
     peer_hub: DeviceText | None = None
     bos: EncodedPayload | None = None
