@@ -57,6 +57,64 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   the two series are now merged on the way in, every sample kept and ordered by
   the drive's own clock, and the store is written back with one series.
 
+- **Grading the other PCIe cards no longer slows every command on a large
+  machine.** Each graded link rebuilt the whole device tree to name what the
+  card carries, so the cost grew with links times devices, and every view pays
+  for it because the findings decide its exit code. It is now linear in the
+  machine, and the carrying clause is built only for a link that raises a hint.
+
+- **An ARI device behind one PCIe port is graded as one link.** A device with
+  more than eight functions spans two device numbers, and the hints grouped by
+  device number, so it raised two identical hints and the carrying clause
+  counted it twice.
+
+- **A switch card is never told to move to one of its own downstream ports.**
+  The free-slot search could offer the slot below the card itself, and nothing
+  below a card can carry more than the card's own uplink.
+
+- **"Not readable" is decided per port, not across the board.** One read
+  connector anywhere on the board turned an unread faster free port into "No
+  free slot on this board would carry more". The action now says the port was
+  not readable, and names it, exactly where a free port that would carry more
+  had its connector unread.
+
+- **The capped-card hint states its figure as a floor.** It said the card "runs
+  in full only in a PCIe Gen3x16 port" where any port at least that fast and
+  that wide would do; it now says the card needs "a port of at least PCIe
+  Gen3x16".
+
+- **A zero-width link reads `none` in a finding, as it does in every column.**
+  A sentence spelled it `PCIe Gen1x0`. No current rule writes one, so this
+  closes a gap before anything reaches it.
+
+- **A USB finding writes its figures with their bandwidth, as the columns do.**
+  `USB10G` is one 10G lane or two 5G lanes, so a fault between them read
+  "running at USB10G but both ends support USB10G". Every USB sentence now
+  carries the closed form - `USB10G (1.21 GB/s)` for one 10G lane,
+  `USB10G (1.00 GB/s)` for two 5G lanes. Finding titles change; a script
+  matching the old ones needs updating.
+
+- **On Windows, a USB 2 port whose connector answer is missing is no longer
+  graded as a USB 2 socket.** An unread USB-C twin was read as "no twin", so the
+  USB 2 half of a USB-C socket was graded USB480M and the finding sent the user
+  to another port. Such a socket's capability is now unread, and nothing is
+  graded against it.
+
+- **On Windows, the SuperSpeedPlus flag no longer outranks a device's own BOS.**
+  It set a Gen2x1 floor above a BOS that listed only 5G lanes, though two 5G
+  lanes are SuperSpeedPlus too. The flags are used only when the BOS was not
+  read, and the SuperSpeedPlus one claims the slower of its two shapes.
+
+- **The Linux USB capture model names only the fields a builder reads.**
+  `bDeviceClass` and `bcdUSB` were typed and read by nothing. A capture still
+  records both raw values, and every committed capture loads unchanged.
+
+- **`lsdsk config` shows a configuration path with brackets as it is.** The
+  configuration library printed each value's source line through Rich markup,
+  so a path like `cfg[red]x[/red]` was drawn without its brackets, naming a file
+  that does not exist, and one with an unmatched closing tag crashed the
+  command. Fixed in lib_layered_config 7.0.1, which is now the floor.
+
 - **`DomainModel.with_changes` no longer refuses a model whose public cached
   property was read first.** It built the new values from the instance's own
   dictionary, which holds a warmed `cached_property` beside the fields, and the
