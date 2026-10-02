@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.6.1] 2026-10-02 21:29:01
+
 ### Changed
 
 - **`lsdsk record --format json` reports a run with nothing new as `ok: true`.**
