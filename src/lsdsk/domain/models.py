@@ -894,6 +894,24 @@ class PciNode(DomainModel, frozen=True):
         return self.is_bridge or self.port_kind is not PciPortKind.UNKNOWN
 
     @property
+    def faces_downstream(self) -> bool:
+        """Whether this node's link registers describe the link BELOW it.
+
+        A root port and a switch's downstream port publish the link to the
+        device behind them; every other node publishes the link to the port
+        above it. So a device's link is paired with its parent only where the
+        parent faces downstream: paired with a switch's UPSTREAM port, it would
+        be read against the link that switch has to its own parent.
+
+        Example:
+            >>> PciNode(address="a", name="b", port_kind=PciPortKind.ROOT).faces_downstream
+            True
+            >>> PciNode(address="a", name="b", port_kind=PciPortKind.SWITCH_UPSTREAM).faces_downstream
+            False
+        """
+        return self.port_kind in (PciPortKind.ROOT, PciPortKind.SWITCH_DOWNSTREAM)
+
+    @property
     def is_storage(self) -> bool:
         """Whether this node is itself a storage controller.
 
