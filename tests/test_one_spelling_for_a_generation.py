@@ -129,8 +129,13 @@ def test_a_finding_spells_a_link_exactly_as_a_column_does() -> None:
     from lsdsk.adapters.render import theme
     from lsdsk.domain.diagnostics import format_pcie_sentence
 
-    for gtps, generation in ((2.5, 1), (5.0, 2), (8.0, 3), (16.0, 4), (32.0, 5), (64.0, 6)):
-        for width in (1, 2, 4, 8, 16):
+    # Width 0 is a link that never trained, which the column draws as
+    # theme.NO_LINK whatever speed sits beside it - including an unread one.
+    # A sentence spelling it "Gen1x0" would say a link runs.
+    for gtps, generation in ((None, None), (2.5, 1), (5.0, 2), (8.0, 3), (16.0, 4), (32.0, 5), (64.0, 6)):
+        for width in (0, 1, 2, 4, 8, 16):
+            if gtps is None and width != 0:
+                continue
             column = theme.format_pcie_generation(gtps, width)
             assert format_pcie_sentence(gtps, width) == f"PCIe {column}", (
                 f"generation {generation} x{width}: the sentence and the column disagree"

@@ -12,6 +12,11 @@ from __future__ import annotations
 
 from .models import UsbSpeed, pcie_generation
 
+#: How a sentence writes a link whose width was read as zero. The same word the
+#: render layer's ``theme.NO_LINK`` draws in a column, held together with it by
+#: ``tests/test_one_spelling_for_a_generation.py``.
+_NO_LINK_TRAINED = "none"
+
 
 def format_gbytes(value: float | None) -> str:
     """Render a GB/s figure for a message, or a placeholder when unknown.
@@ -48,15 +53,23 @@ def format_pcie_sentence(speed_gtps: float | None, width: int | None) -> str:
         width: The link's negotiated lane count, or ``None`` if unread.
 
     Returns:
-        The figure as a sentence writes it, or ``PCIe unknown`` when either half
-        was not read - never a half-figure, which would read as a measurement.
+        The figure as a sentence writes it; ``PCIe none`` for a width READ as
+        zero, whatever speed sits beside it, as the column draws it; or
+        ``PCIe unknown`` when either half was not read - never a half-figure,
+        which would read as a measurement.
 
     Example:
         >>> format_pcie_sentence(8.0, 8)
         'PCIe Gen3x8'
+        >>> format_pcie_sentence(2.5, 0)
+        'PCIe none'
         >>> format_pcie_sentence(None, None)
         'PCIe unknown'
     """
+    if width == 0:
+        # No lane trained. Spelling the halves would write "Gen1x0" from a
+        # register's reset speed, a figure that says a link runs.
+        return f"PCIe {_NO_LINK_TRAINED}"
     generation = pcie_generation(speed_gtps)
     if generation is None or width is None:
         return "PCIe unknown"
