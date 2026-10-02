@@ -392,7 +392,7 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
 
 _USB2 = UsbSpeed(lane_rate=UsbLaneRate.HIGH)
 _GEN1 = UsbSpeed(lane_rate=UsbLaneRate.GEN1)
-_GEN2 = UsbSpeed(lane_rate=UsbLaneRate.GEN2)
+_GEN1X2 = UsbSpeed(lane_rate=UsbLaneRate.GEN1, lanes=2)
 _ROOT_HUB_TYPE = 1
 _TRANSPORTS = {"uaspstor": UsbTransport.UAS, "usbstor": UsbTransport.BOT}
 
@@ -441,15 +441,26 @@ def _device_capability(port: UsbPortEntry, running: UsbSpeed | None) -> UsbSpeed
 
     A BOS lists lane speeds and never a lane count, so the running link is a
     lower bound on it, as on Linux.
+
+    The V2 flags stand in only where no BOS was read: a read BOS names the lane
+    speeds, which the flags cannot outrank. And a flag claims no more than it
+    proves. SuperSpeedPlus is one 10 Gb/s lane OR two 5 Gb/s lanes, so its
+    floor is two Gen 1 lanes, the slower of the two and true of both.
     """
-    protocols = _decoded(port.connection_v2, decode_connection_v2)
-    floor = None
-    if protocols is not None and protocols.superspeedplus_capable:
-        floor = _GEN2
-    elif protocols is not None and protocols.superspeed_capable:
-        floor = _GEN1
     declared = _decoded(port.bos, decode_bos)
-    return fastest(declared.fastest if declared is not None else None, floor, running)
+    if declared is not None:
+        return fastest(declared.fastest, running)
+    return fastest(_flag_floor(port), running)
+
+
+def _flag_floor(port: UsbPortEntry) -> UsbSpeed | None:
+    """The least a device can do by V2's capable-of flags alone, or ``None`` when they were not read."""
+    protocols = _decoded(port.connection_v2, decode_connection_v2)
+    if protocols is None:
+        return None
+    if protocols.superspeedplus_capable:
+        return _GEN1X2
+    return _GEN1 if protocols.superspeed_capable else None
 
 
 def _on_usb2_twin(port: UsbPortEntry, running: UsbSpeed | None) -> bool | None:

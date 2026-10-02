@@ -83,8 +83,12 @@ USB3_HUB_INFORMATION = bytes.fromhex("0300000004000c2a0400000090045e01") + bytes
 SSD_IN_USB3_HUB_CONNECTION = bytes([1]) + SSD_CONNECTION[1:]
 SSD_IN_USB3_HUB_CONNECTION_V2 = bytes.fromhex("0100000010000000040000000b000000")
 
+# The same port answering SuperSpeedPlus on two 5 Gb/s lanes (lane indexes count from zero).
+GEN1X2_SUPERSPEEDPLUS = bytes.fromhex("110000001800000035400500" + "01000000" + "b5400500" + "01000000")
+
 USB2 = UsbSpeed(lane_rate=UsbLaneRate.HIGH)
 GEN1 = UsbSpeed(lane_rate=UsbLaneRate.GEN1)
+GEN1X2 = UsbSpeed(lane_rate=UsbLaneRate.GEN1, lanes=2)
 GEN2 = UsbSpeed(lane_rate=UsbLaneRate.GEN2)
 
 
@@ -329,12 +333,36 @@ def test_a_socket_on_an_external_usb3_hub_is_as_fast_as_that_hub_declares() -> N
 
 @pytest.mark.os_agnostic
 def test_without_a_bos_the_capability_flags_still_say_what_the_device_can_do() -> None:
-    """A BOS that was not recorded leaves V2's capable-of flags, which set a floor under the device."""
+    """A BOS that was not recorded leaves V2's capable-of flags, which set a floor under the device.
+
+    SuperSpeedPlus-capable proves 10 Gb/s, but not whether that is one Gen 2
+    lane or two Gen 1 lanes, so the floor is the one true of both: two Gen 1
+    lanes, which carry the less of the two.
+    """
     link = _disk(_behind_usb2_hub(bos=None)).usb
 
     assert link is not None
     assert link.running == USB2
-    assert link.device_max == GEN2
+    assert link.device_max == GEN1X2, "SuperSpeedPlus-capable does not prove a Gen 2 lane"
+
+
+@pytest.mark.os_agnostic
+def test_without_a_bos_a_superspeed_capable_flag_sets_a_5g_floor() -> None:
+    superspeed_capable_only = bytes.fromhex("03000000100000000300000002000000")
+    link = _disk(_behind_usb2_hub(bos=None, connection_v2=superspeed_capable_only)).usb
+
+    assert link is not None
+    assert link.device_max == GEN1
+
+
+@pytest.mark.os_agnostic
+def test_a_bos_listing_only_5g_lanes_outranks_the_superspeedplus_capable_flag() -> None:
+    """Two Gen 1 lanes are SuperSpeedPlus too, so the flag cannot lift a read BOS to a Gen 2 lane."""
+    link = _disk(_direct(bos=USB3_HUB_BOS, superspeedplus=GEN1X2_SUPERSPEEDPLUS)).usb
+
+    assert link is not None
+    assert link.running == GEN1X2
+    assert link.device_max == GEN1X2, "the BOS says 5 Gb/s lanes and the link runs two of them"
 
 
 @pytest.mark.os_agnostic
