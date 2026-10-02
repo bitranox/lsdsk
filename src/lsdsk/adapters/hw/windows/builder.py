@@ -473,10 +473,12 @@ def _socket_capability(port: UsbPortEntry, hub_port: UsbPortEntry | None, *, twi
     A port that speaks no USB 3 can do 480 Mb/s, which is a reading. A USB 3
     port is as fast as the external hub it belongs to says it is through that
     hub's own BOS; a root hub says only "USB 3", so its ports stay unread. The
-    USB 2 half of a USB 3 socket is not the socket's capability either.
+    USB 2 half of a USB 3 socket is not the socket's capability either, and a
+    twin nobody read (``None``: the connector answer is missing) is not an
+    absent one - only ``False`` rules out a USB 3 half behind a USB 2 port.
     """
     protocols = _decoded(port.connection_v2, decode_connection_v2)
-    if protocols is None or twin:
+    if protocols is None or twin is not False:
         return None
     if not protocols.port_usb3:
         return _USB2

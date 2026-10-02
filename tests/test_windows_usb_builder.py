@@ -21,6 +21,7 @@ from typing import Any
 import pytest
 
 from lsdsk.adapters.hw.snapshot import build_from
+from lsdsk.domain.diagnostics import diagnose_usb_link
 from lsdsk.domain.enums import BusType, UsbLaneRate, UsbTransport
 from lsdsk.domain.models import Disk, UsbSpeed
 
@@ -347,3 +348,52 @@ def test_a_disk_under_a_usb_device_is_a_usb_disk_whatever_storage_bus_windows_na
     assert disk.bus is BusType.USB
     assert disk.usb is not None
     assert (disk.model, disk.firmware) == ("QEMU HARDDISK", "2.5+"), "IDENTIFY through the bridge is still read"
+
+
+def _twin_port_without_its_connector_answer() -> dict[str, Any]:
+    """The SSD on the USB 2 half of the USB-C socket, with the hub's connector answer missing."""
+    return _in_root_port(
+        1,
+        {
+            "connection": TWIN_CONNECTION,
+            "connection_v2": TWIN_CONNECTION_V2,
+            "connector": None,
+            "bos": SSD_BOS,
+        },
+    )
+
+
+@pytest.mark.os_agnostic
+def test_a_usb2_port_whose_connector_was_not_read_is_not_a_480m_socket() -> None:
+    """Only the connector answer says whether a USB 3 half exists, so without it the socket is unread.
+
+    The port speaks no USB 3 itself, which is exactly what the USB 2 half of a
+    USB-C socket looks like. Calling that a 480 Mb/s socket would send the
+    reader to another port for a disk whose own socket may do 10 Gb/s.
+    """
+    link = _disk(_twin_port_without_its_connector_answer()).usb
+
+    assert link is not None
+    assert link.running == USB2
+    assert link.on_usb2_twin is None, "nobody said whether the socket has a USB 3 half"
+    assert link.port_max is None, "an unread twin is not an absent one"
+
+
+@pytest.mark.os_agnostic
+def test_a_usb2_port_whose_connector_was_not_read_raises_no_finding_blaming_the_socket() -> None:
+    findings = diagnose_usb_link(_disk(_twin_port_without_its_connector_answer()))
+
+    assert len(findings) == 1, "the shortfall below the drive's own rate is still shown"
+    finding = findings[0]
+    assert "below its own" in finding.title, f"expected the unattributed shortfall, got: {finding.title}"
+    assert "port only offers" not in finding.title, finding.title
+
+
+@pytest.mark.os_agnostic
+def test_a_usb2_port_whose_connector_names_no_companion_is_still_a_480m_socket() -> None:
+    """The control: a connector answer that rules out a USB 3 half keeps the 480 Mb/s reading."""
+    link = _disk(_behind_usb2_hub()).usb
+
+    assert link is not None
+    assert link.on_usb2_twin is False
+    assert link.port_max == USB2
