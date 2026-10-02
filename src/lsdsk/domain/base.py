@@ -75,6 +75,13 @@ class DomainModel(BaseModel, frozen=True, extra="forbid"):
         :meth:`model_copy` routes its ``update`` through this method for the
         same reason.
 
+        The field mapping is read off ``type(self).model_fields`` rather than
+        ``dict(self)``: iterating a pydantic model yields its instance
+        ``__dict__``, which also holds whatever a warmed ``functools.cached_property``
+        stashed there, and that name is not a declared field, so a model with a
+        public cached property refused every call here with "Extra inputs are
+        not permitted" the moment one had been read.
+
         Args:
             **changes: Field values to replace, by field name.
 
@@ -96,7 +103,8 @@ class DomainModel(BaseModel, frozen=True, extra="forbid"):
                 ...
             pydantic_core._pydantic_core.ValidationError: ...
         """
-        return self.model_validate({**dict(self), **changes})
+        fields = {name: getattr(self, name) for name in type(self).model_fields}
+        return self.model_validate({**fields, **changes})
 
     def model_copy(self, *, update: Mapping[str, Any] | None = None, deep: bool = False) -> Self:
         """Return a copy that answers from its own fields, with ``update`` validated.

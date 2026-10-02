@@ -10,15 +10,34 @@ from the series it no longer held.
 
 from __future__ import annotations
 
+from functools import cached_property
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from lsdsk.adapters.hw.snapshot import load
+from lsdsk.domain.base import DomainModel
 from lsdsk.domain.history import DiskSeries, History
 
 SNAPSHOT = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
+
+
+class _HasAPublicIndex(DomainModel, frozen=True):
+    """A model with a public cached index, the shape ``with_changes`` must survive.
+
+    Every cached property this package ships is ``_``-named, so the gap stayed
+    latent: ``with_changes`` built its field mapping from ``dict(self)``, which
+    iterates a pydantic model's instance ``__dict__`` - the same place a warmed
+    ``functools.cached_property`` stashes its value - so a model carrying one
+    PUBLIC cached property refused the call once that property had been read.
+    """
+
+    value: int = 0
+
+    @cached_property
+    def doubled(self) -> int:
+        return self.value * 2
 
 
 @pytest.mark.os_agnostic
@@ -68,3 +87,19 @@ def test_a_copy_refuses_a_field_the_model_does_not_have() -> None:
     """``update=`` goes through validation, as ``with_changes`` does, so a typo is refused."""
     with pytest.raises(ValidationError, match="seires"):
         History(hostname="box").model_copy(update={"seires": ()})
+
+
+@pytest.mark.os_agnostic
+def test_with_changes_survives_a_warmed_public_cached_property() -> None:
+    """A warmed public index must not turn every later edit into a refusal.
+
+    The control is the read itself: without it the index is never stored in
+    ``__dict__`` and the defect this guards cannot show up at all.
+    """
+    original = _HasAPublicIndex(value=3)
+    assert original.doubled == 6, "the control: the index was never warmed"
+
+    changed = original.with_changes(value=4)
+
+    assert changed.value == 4
+    assert changed.doubled == 8
