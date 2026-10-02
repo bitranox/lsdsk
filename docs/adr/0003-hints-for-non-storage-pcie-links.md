@@ -21,6 +21,14 @@ power saving from a fault, and a finding whose usual answer is "this is normal" 
 nearly every desktop with a modern graphics card. Width and capability do not move with load. The
 running column of the tree still shows a speed-only shortfall.
 
+That width holds still is a measured claim, because AMD's power management levels name a lane
+width beside each speed and a card could in principle drop lanes while idle. Read from six AMD
+graphics functions of three chips, idle under automatic power management, two of them behind a
+dual-GPU card's own switch: none ran narrower than both ends of its link allowed. Every one that ran at x8 sat behind
+a port whose own maximum is x8, which is C, not A, and the one chip that publishes its levels
+lists x16 at all six. A card that does narrow its link at idle would raise A falsely, so a report
+of one is a reason to revisit this, with the level table as the evidence.
+
 **Which links.** Physical readings only, behind the same gate as the storage link rules. A device's
 link is paired with its PARENT only where the parent faces downstream (a root port or a switch's
 downstream port): those publish the link below them, while every other node publishes the link
