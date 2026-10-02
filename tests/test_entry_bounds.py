@@ -16,6 +16,7 @@ entries as cheap as a model accepts.
 
 from __future__ import annotations
 
+import errno
 import json
 import types
 import typing
@@ -173,3 +174,24 @@ def test_the_writer_refuses_a_store_with_more_series_than_the_reader_accepts(tmp
 
     save_history(History(hostname="box", series=(DiskSeries(identity="a", model="m", samples=(one,)),)), store)
     assert load_history(store, hostname="box").series, "the control: an ordinary store must still be written"
+
+
+@pytest.mark.os_agnostic
+def test_the_writer_refuses_a_single_series_with_more_samples_than_the_reader_accepts(tmp_path: Path) -> None:
+    """The per-series sample bound binds a ``DiskSeries`` built directly, not only a mapping read from a file.
+
+    ``HistoryFile`` does not revalidate a ``DiskSeries`` instance it is handed -
+    pydantic trusts a submodel it did not itself construct - so the non-mapping
+    branch of ``_refuse_an_oversized_series``, which reads ``samples`` off the
+    object with ``getattr`` before anything is validated, is the only guard on
+    this path.
+    """
+    store = tmp_path / "history.json"
+    one = Sample(power_on_hours=1, captured_at="")
+    oversized = DiskSeries.model_construct(identity="a", model="m", samples=(one,) * (MAX_ENTRIES + 1))
+
+    with pytest.raises(OSError) as excinfo:
+        save_history(History.model_construct(hostname="box", series=(oversized,)), store)
+
+    assert excinfo.value.errno == errno.EINVAL, f"a refused write left errno {excinfo.value.errno}"
+    assert not store.exists(), "a series its own reader would refuse was written"
