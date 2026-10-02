@@ -240,9 +240,11 @@ def _where_it_could_go(link: FabricLink, inventory: Inventory) -> str:
             "needs the PCIe capability, which takes root to read."
         )
     # Named by the card's own figure rather than "a faster port": a card short on
-    # lanes can sit in a port that is already the faster of the two.
+    # lanes can sit in a port that is already the faster of the two. The figure
+    # is a floor, not a match: any port at least that wide and that fast runs
+    # the card in full.
     own = format_pcie_sentence(link.card.link.max_speed_gtps, link.card.link.max_width)
-    return f"No free slot on this board would carry more; the card runs in full only in a {own} port."
+    return f"No free slot on this board would carry more; the card needs a port of at least {own} to run in full."
 
 
 def diagnose_fabric_links(inventory: Inventory) -> list[Finding]:

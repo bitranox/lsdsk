@@ -227,10 +227,14 @@ def test_the_hd_7990_is_sent_to_the_free_x16_slot() -> None:
 
 @pytest.mark.os_agnostic
 def test_a_card_short_on_lanes_is_not_told_it_needs_a_faster_port() -> None:
-    """The Hawaii card sits in a Gen5 x8 port: faster than the card, and too narrow."""
+    """The Hawaii card sits in a Gen5 x8 port: faster than the card, and too narrow.
+
+    The figure is a FLOOR: any x16 port of Gen3 or faster runs it in full, so the
+    action must not read as though only a Gen3x16 port would do.
+    """
     hawaii = next(f for f in diagnose_fabric_links(_machine("linux-nvme-board")) if f.subject == "0000:01:00.0")
     assert hawaii.action == (
-        "No free slot on this board would carry more; the card runs in full only in a PCIe Gen3x16 port."
+        "No free slot on this board would carry more; the card needs a port of at least PCIe Gen3x16 to run in full."
     )
     assert not hawaii.title.endswith(", is capped by its slot")
 
