@@ -463,13 +463,22 @@ def test_a_controller_name_cannot_inject_control_characters_either(
         assert not forged, f"{argv or 'bare'}: an injected newline forged a table row"
 
 
-def _fifo_carrying(path: Path, payload_bytes: int) -> threading.Thread:
+def _fifo_carrying(path: Path, payload_bytes: int, *, sent: list[int] | None = None) -> threading.Thread:
     """A FIFO fed ``payload_bytes`` by a writer that gives up when nobody reads.
 
     A FIFO is the case the directory entry cannot describe: ``st_size`` is 0
     whatever is about to come through it. The writer is a daemon thread so a
     regression cannot wedge the suite, and it swallows the broken pipe it gets
     when a correctly-bounded reader stops early.
+
+    Args:
+        path: Where to create the FIFO.
+        payload_bytes: How much the writer is willing to send in total.
+        sent: When given, a one-element list this appends each chunk's length
+            to as it is handed to the kernel - so a caller can tell how much
+            of ``payload_bytes`` actually left the writer before the reader
+            went away, which is the only way to tell a bounded read from an
+            unbounded one that happens to meet a payload sized to the bound.
     """
     os.mkfifo(path)
 
@@ -479,8 +488,11 @@ def _fifo_carrying(path: Path, payload_bytes: int) -> threading.Thread:
         try:
             with path.open("wb") as handle:
                 while remaining > 0:
-                    handle.write(chunk[:remaining])
-                    remaining -= min(remaining, len(chunk))
+                    piece = chunk[: min(remaining, len(chunk))]
+                    handle.write(piece)
+                    if sent is not None:
+                        sent.append(len(piece))
+                    remaining -= len(piece)
         except (BrokenPipeError, OSError):
             pass
 
@@ -509,6 +521,33 @@ def test_a_stream_whose_directory_entry_understates_it_is_still_bounded(tmp_path
         read_text_bounded(fifo, what="a snapshot")
     assert "Check the path" in str(raised.value)
     writer.join(timeout=30)
+
+
+@pytest.mark.os_linux
+@pytest.mark.skipif(not HAS_FIFO, reason="a FIFO needs os.mkfifo")
+def test_the_bounded_read_stops_one_byte_past_the_ceiling_not_at_end_of_stream(tmp_path: Path) -> None:
+    """The read must stop AT the ceiling, not merely accept a stream sized to it.
+
+    The test above sends exactly ``MAX_INPUT_BYTES + 1`` bytes, which an
+    UNBOUNDED ``handle.read()`` also reads in full before refusing on the
+    length check - so replacing the bounded read with one survives it and
+    reports the same refusal. A payload four times the ceiling tells the two
+    apart: a read that actually stops at ``MAX_INPUT_BYTES + 1`` closes the
+    FIFO with most of the payload still unsent, and the writer - blocked on a
+    pipe nobody is draining any more - never gets it past the kernel.
+    """
+    fifo = tmp_path / "capture.json"
+    sent: list[int] = []
+    writer = _fifo_carrying(fifo, MAX_INPUT_BYTES * 4, sent=sent)
+
+    with pytest.raises(ConfigurationError):
+        read_text_bounded(fifo, what="a snapshot")
+    writer.join(timeout=30)
+
+    delivered = sum(sent)
+    assert delivered <= MAX_INPUT_BYTES + 16 * 1024 * 1024, (
+        f"the reader let {delivered} bytes through, past the {MAX_INPUT_BYTES + 1} ceiling it is supposed to stop at"
+    )
 
 
 @pytest.mark.os_linux
