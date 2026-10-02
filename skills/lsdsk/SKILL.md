@@ -813,6 +813,8 @@ marker on the finding in front of you, which is what set the exit code.
 | Above its own temperature threshold                                 | Past the warning or critical limit the drive publishes                                                                            | Airflow and drive spacing. The bands are the drive's, not a fixed rule                                          |
 | Controller oversubscribed                                           | Its drives' links add up to more than the uplink figure, which can be a register default                                          | Check that figure before relaying it, and move a drive to a controller already fitted before any HBA. See below |
 | Publishes the PCIe floor as its link                                | An integrated function's register default, so not a ceiling                                                                       | Check the card's or board's specification for the real uplink; replace nothing on this figure. See below        |
+| Any other PCIe card: runs on fewer lanes than both ends support     | Card and port were both read and both support more lanes than trained: a contact, not the card's design                           | Reseat the card, check the slot and any riser. Not a storage finding: no cable, no bay. See below               |
+| Any other PCIe card: is capped by its slot                          | The card can do more than the port it sits in offers                                                                              | Move it to the free slot the action names; where it names none, nothing on this board helps. See below          |
 | Wear-out                                                            | Rated endurance consumed                                                                                                          | Plan a replacement, see the thresholds below                                                                    |
 | Reallocated sectors                                                 | Media degrading                                                                                                                   | Snapshot now, compare later                                                                                     |
 | Pending sectors                                                     | Unreadable, awaiting a write                                                                                                      | Back up first, then rewrite or replace                                                                          |
@@ -827,6 +829,24 @@ and as a hint that still names the slot when they fit the one the controller
 already has, so an empty controller or a pair of hard disks never reads as
 urgent. A PCIe drive counts at what its link can carry, not at the speed it
 rests at while idle.
+
+**Every PCIe card no storage rule grades gets two hints of its own.** A graphics
+card, a network card, or a switch or bridge carrying either is judged on its
+link to the port above it, and only ever as a hint, so these never set a
+non-zero exit code. They are not storage findings: the storage rows' advice
+(cable, bay, drives, `lsdsk slots` before a new board) does not apply to them.
+The title names the device at the card end of the link, which on a dual-GPU card
+or a riser is its switch or bridge chip, followed by what it carries:
+`<switch>, carrying 2x <graphics card>, is capped by its slot`. A link that only
+runs SLOWER than both ends support is never reported, because graphics cards
+lower their link speed while idle and retrain under load - read the running
+column of `lsdsk topology` under load before calling that a fault. The capped
+hint names a free slot only where the connector bits were read; when its action
+says that "was not readable", re-run as root on Linux, which is what tells a
+slot from an internal port. Where no free slot would help, the action names the
+port the card runs in full in. On Windows neither hint appears: the platform
+publishes no capability for the port above a card, and an unread end is never
+graded.
 
 **A USB disk is graded twice: its USB link by the four USB rows, and the drive
 inside the enclosure on its own `link` by the other rows.** A USB figure is the
