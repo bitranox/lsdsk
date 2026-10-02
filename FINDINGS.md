@@ -27,6 +27,11 @@ fault, and what it refuses to guess. Back to the [README](README.md).
   carry more. A link that is only running SLOWER is not reported: graphics
   cards lower their link speed while idle.
 - A drive held back by a slower port than it supports.
+- A USB disk running below what the drive, its socket and every hub on the way
+  could carry: on the USB 2 side of a USB 3 socket, below what both ends
+  support (the cable, a hub or the plug), or held at the ceiling of its socket
+  or a hub. A hub is never a finding of its own, and where the socket's
+  capability was not read the shortfall is reported without blaming either end.
 - Wear-out against configurable bands, and reallocated, pending and
   uncorrectable sectors and NVMe media errors on any count above zero.
 - Temperature against the limits the drive itself publishes, not a guess.

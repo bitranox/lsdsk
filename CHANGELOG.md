@@ -7,6 +7,14 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **The USB link of a USB disk, on Linux and Windows.** A USB 3 drive that came
+  up at USB 2 speed because of a cable, a hub or a half-seated plug runs at a
+  fraction of its speed and showed nowhere. lsdsk now reads the rate a USB disk
+  runs at, what the drive and the socket it is plugged into can do, the slowest
+  hub between them, and whether it came up on the USB 2 half of a USB 3
+  socket, and grades the link with four findings. The figures are in the
+  disk's `usb` object in the JSON. On Linux before kernel 6.9 the drive's own
+  capability needs root; on Windows the hub queries need no elevation.
 - **Hints for the PCIe links no storage rule grades.** A graphics card, a
   network card or a switch carrying either was drawn in the topology and
   judged nowhere. A card whose link runs on fewer lanes than both ends support
@@ -25,6 +33,9 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
+- **A USB disk on Linux reports `bus` as `usb`.** It reported `sata` or
+  `unknown` before, while Windows already said `usb`, so a script filtering on
+  `bus` sees the change.
 - **A USB disk is drawn under its host controller in the topology.** Its
   controller is a known PCI device, but a USB host controller is no storage
   class, so the tree put the disk under "not attached to a known controller" -

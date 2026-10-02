@@ -84,7 +84,9 @@ lsdsk runs unprivileged and says what that costs. Topology, link speeds,
 capacity and firmware read without any privilege. Four things need root or
 Administrator: SMART attributes and wear, the error counters that `trend` and
 `record` use, PCIe connector detection, and the AHCI capability register that
-gives a SATA controller its port speed and free-port count. Without them the
+gives a SATA controller its port speed and free-port count. On Linux before
+kernel 6.9 a fifth does too: what a USB disk itself can do, which older kernels
+publish only through usbfs. Without them the
 affected columns read `-` and the header says so.
 
 Reading the counters needs root, so a scheduled `lsdsk record` belongs in the

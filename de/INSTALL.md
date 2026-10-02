@@ -87,7 +87,8 @@ gelesen. Vier Dinge brauchen root oder Administrator: die SMART-Attribute und
 der Verschleiss, die Fehlerzähler, die `trend` und `record` verwenden, die
 Erkennung physischer PCIe-Steckplätze, und das AHCI-Fähigkeitsregister, aus dem
 ein SATA-Controller seine Anschlussgeschwindigkeit und die Zahl freier
-Anschlüsse bekommt. Ohne sie lesen die betroffenen Spalten `-`, und der Kopf der
+Anschlüsse bekommt. Unter Linux vor Kernel 6.9 kommt ein fünftes dazu: was eine
+USB-Platte selbst kann, das ältere Kernel nur über usbfs veröffentlichen. Ohne sie lesen die betroffenen Spalten `-`, und der Kopf der
 Ausgabe sagt es.
 
 Das Lesen der Zähler braucht root, ein geplantes `lsdsk record` gehört also in

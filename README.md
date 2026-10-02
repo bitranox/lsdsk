@@ -39,7 +39,8 @@ The command below needs `uv` and nothing else; if `uv` is not installed yet,
 Linux, macOS and Windows.
 
 For full information run `lsdsk` as root or Administrator. Without those rights you lose SMART
-wear, the error counters, PCIe connector detection and the SATA controllers' port count. The
+wear, the error counters, PCIe connector detection, the SATA controllers' port count and, on
+Linux before kernel 6.9, what a USB disk itself can do. The
 details are in [INSTALL.md](https://github.com/bitranox/lsdsk/blob/main/INSTALL.md#what-needs-root).
 
 The usual invocation is `uvx lsdsk@latest` - uv then installs the newest version in a virtual
@@ -75,15 +76,16 @@ prints text instead, most important findings first.
 ## Privileges
 
 `lsdsk` runs unprivileged too. Topology, PCIe link state, SATA capability and
-negotiated speed, SAS phy rates, capacity, controller firmware and NVMe
-temperature all read without elevated rights.
+negotiated speed, SAS phy rates, a USB disk's link, capacity, controller
+firmware and NVMe temperature all read without elevated rights.
 
-Four things do need root or Administrator:
+Five things do need root or Administrator:
 
 - **SMART attributes and wear.**
 - **The error counters, so `trend` and `record`.**
 - **PCIe slot numbers and whether a port is a real connector.**
 - **The AHCI capability register.**
+- **On Linux before kernel 6.9, what a USB disk itself can do.**
 
 Inside an LXC or Proxmox container these values cannot be read even with
 elevated rights.
@@ -131,8 +133,10 @@ device names Windows carries. See `NOTICE` for that database's licence.
 
 Linux reads sysfs and issues `SG_IO` ATA passthrough and NVMe admin ioctls
 directly. A SATA port's own speed comes from the AHCI controller's capability
-register. Windows uses `SetupAPI` and `DeviceIoControl` through `ctypes`, with
-no WMI and no PowerShell. Both platforms receive the same ATA IDENTIFY, ATA
+register. A USB disk's link comes from sysfs, and on a kernel before 6.9 the
+drive's own capability from a descriptor request through usbfs. Windows uses
+`SetupAPI` and `DeviceIoControl` through `ctypes`, with no WMI and no
+PowerShell, and reads a USB disk's link from its parent hub's port queries. Both platforms receive the same ATA IDENTIFY, ATA
 SMART and NVMe structures, so a single set of decoders serves both and is tested
 against captures from real hardware on every supported operating system.
 

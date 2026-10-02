@@ -41,7 +41,8 @@ ist, dokumentiert [INSTALL.md](INSTALL.md#am-einfachsten-installieren-und-ausfü
 
 Für die vollständige Auskunft führen Sie `lsdsk` am besten als root oder Administrator aus.
 Ohne Admin-Rechte fehlen SMART-Verschleiss, Fehlerzähler, die Erkennung
-physischer PCIe-Steckplätze und die Anschlusszahl der SATA-Controller. 
+physischer PCIe-Steckplätze, die Anschlusszahl der SATA-Controller und,
+unter Linux vor Kernel 6.9, was eine USB-Platte selbst kann.
 Die genaue Dokumentation dazu finden Sie unter [INSTALL.md](INSTALL.md#was-root-rechte-braucht).
 
 Der Aufruf erfolgt am besten mit `uvx lsdsk@latest` - uv installiert dann die letzte, aktuellste Version in 
@@ -78,16 +79,17 @@ Unter [REPORT.md](REPORT.md) finden Sie die Dokumentation zu diesem Report.
 ## Rechte
 
 `lsdsk` läuft auch ohne Privilegien. Topologie, PCIe-Zustand,
-SATA-Fähigkeit und ausgehandelte Geschwindigkeit, SAS-Phy-Raten, Kapazität,
-Controller-Firmware und NVMe-Temperatur werden sämtlich ohne erhöhte Rechte
-gelesen.
+SATA-Fähigkeit und ausgehandelte Geschwindigkeit, SAS-Phy-Raten, die
+Verbindung einer USB-Platte, Kapazität, Controller-Firmware und
+NVMe-Temperatur werden sämtlich ohne erhöhte Rechte gelesen.
 
-Vier Dinge brauchen jedoch root oder Administrator: 
+Fünf Dinge brauchen jedoch root oder Administrator:
 
 - **SMART-Attribute und Verschleiss.**
 - **Die Fehlerzähler, also `trend` und `record`.**
 - **PCIe-Steckplatznummern und ob ein Anschluss ein echter Steckverbinder ist.**
 - **Das AHCI-Fähigkeitsregister**
+- **Unter Linux vor Kernel 6.9, was eine USB-Platte selbst kann.**
 
 In einem LXC- oder Proxmox-Container können diese Werte auch mit erhöhten Rechten nicht gelesen werden.
 
@@ -139,9 +141,12 @@ Datenbank steht in `NOTICE`.
 
 Unter Linux liest es sysfs und setzt `SG_IO`-ATA-Passthrough- und
 NVMe-Admin-Ioctls unmittelbar ab. Die Geschwindigkeit eines SATA-Anschlusses
-kommt aus dem Fähigkeitsregister des AHCI-Controllers. 
-Unter Windows verwendet es `SetupAPI` und `DeviceIoControl` über `ctypes`, 
-ohne WMI und ohne PowerShell. Beide Plattformen erhalten dieselben
+kommt aus dem Fähigkeitsregister des AHCI-Controllers. Die Verbindung einer
+USB-Platte kommt aus sysfs, und vor Kernel 6.9 die Fähigkeit des Laufwerks
+selbst aus einer Deskriptor-Anfrage über usbfs.
+Unter Windows verwendet es `SetupAPI` und `DeviceIoControl` über `ctypes`,
+ohne WMI und ohne PowerShell, und liest die Verbindung einer USB-Platte aus
+den Port-Abfragen ihres übergeordneten Hubs. Beide Plattformen erhalten dieselben
 Strukturen aus ATA IDENTIFY, ATA SMART und NVMe, ein einziger Satz Dekoder
 bedient also beide und wird auf jedem unterstützten Betriebssystem gegen
 Aufnahmen echter Hardware geprüft.

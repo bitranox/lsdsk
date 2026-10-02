@@ -33,6 +33,12 @@ Fehler nennt, und was es zu raten ablehnt. Zurück zur [README](README.md).
   Link, der nur LANGSAMER läuft, wird nicht gemeldet: Grafikkarten senken ihre
   Link-Geschwindigkeit im Leerlauf.
 - Ein Laufwerk, das ein langsamerer Anschluss zurückhält, als es unterstützt.
+- Eine USB-Platte, die unter dem läuft, was Laufwerk, Buchse und jeder Hub
+  dazwischen tragen könnten: auf der USB-2-Seite einer USB-3-Buchse, unter dem,
+  was beide Enden unterstützen (Kabel, Hub oder Stecker), oder an der Grenze
+  ihrer Buchse oder eines Hubs. Ein Hub ist nie ein eigener Befund, und wo die
+  Fähigkeit der Buchse nicht gelesen wurde, wird der Rückstand gemeldet, ohne
+  einem der beiden Enden die Schuld zu geben.
 - Verschleiss gegen einstellbare Bänder, sowie umgelagerte, schwebende und nicht
   korrigierbare Sektoren und NVMe-Medienfehler bei jedem Stand über null.
 - Temperatur gegen die Grenzen, die das Laufwerk selbst veröffentlicht, nicht
