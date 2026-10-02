@@ -5,6 +5,24 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Added
+
+- **Hints for the PCIe links no storage rule grades.** A graphics card, a
+  network card or a switch carrying either was drawn in the topology and
+  judged nowhere. A card whose link runs on fewer lanes than both ends support
+  now gets a hint to reseat it, and a card its slot holds below what it can do
+  gets a hint naming a free slot that would carry more, where the connector
+  bits were read. A bridge or switch at the card end is named by what it
+  carries, so a dual-GPU card's PLX switch reads as carrying two Radeon HD
+  7990s. A link that only runs slower is not reported: graphics cards lower
+  their link speed while idle.
+
+### Fixed
+
+- **The topology tree draws a heading for every root complex.** A second root
+  complex used to continue in a column the first one had already closed, so
+  its devices read as children of the first.
+
 ### Changed
 
 - **A USB disk is drawn under its host controller in the topology.** Its

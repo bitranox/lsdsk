@@ -21,6 +21,11 @@ fault, and what it refuses to guess. Back to the [README](README.md).
   the one it has.
 - A controller capped by the mainboard, with the PCIe generation that would lift
   it and whether the attached drives can even use the difference.
+- Any other PCIe card - a graphics card, a network card, a switch carrying
+  either - whose link runs on fewer lanes than both ends support, or whose slot
+  caps it below what the card can do, as a hint naming a free slot that would
+  carry more. A link that is only running SLOWER is not reported: graphics
+  cards lower their link speed while idle.
 - A drive held back by a slower port than it supports.
 - Wear-out against configurable bands, and reallocated, pending and
   uncorrectable sectors and NVMe media errors on any count above zero.

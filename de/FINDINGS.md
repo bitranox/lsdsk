@@ -26,6 +26,12 @@ Fehler nennt, und was es zu raten ablehnt. Zurück zur [README](README.md).
 - Ein Controller, den das Mainboard begrenzt, mit der PCIe-Generation, die ihn
   anheben würde, und der Angabe, ob die angeschlossenen Laufwerke den
   Unterschied überhaupt nutzen können.
+- Jede andere PCIe-Karte - eine Grafikkarte, eine Netzwerkkarte, ein Switch,
+  der eine davon trägt -, deren Link auf weniger Lanes läuft, als beide Enden
+  unterstützen, oder deren Steckplatz sie unter das drosselt, was die Karte
+  kann, als Hinweis mit einem freien Steckplatz, der mehr tragen würde. Ein
+  Link, der nur LANGSAMER läuft, wird nicht gemeldet: Grafikkarten senken ihre
+  Link-Geschwindigkeit im Leerlauf.
 - Ein Laufwerk, das ein langsamerer Anschluss zurückhält, als es unterstützt.
 - Verschleiss gegen einstellbare Bänder, sowie umgelagerte, schwebende und nicht
   korrigierbare Sektoren und NVMe-Medienfehler bei jedem Stand über null.
