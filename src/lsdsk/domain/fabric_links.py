@@ -58,7 +58,11 @@ def _graded_elsewhere(inventory: Inventory) -> frozenset[str]:
 
 
 def fabric_links(inventory: Inventory) -> tuple[FabricLink, ...]:
-    """Every link these rules grade, one per device behind a downstream-facing port.
+    """Every link these rules grade, one per downstream-facing port with a device behind it.
+
+    Keyed by the port alone: a PCIe link carries one device, and an ARI device
+    with more than eight functions numbers them on into device 01, so a key on
+    bus:device would split it into two links raising the same hint twice.
 
     Args:
         inventory: The machine.
@@ -67,16 +71,16 @@ def fabric_links(inventory: Inventory) -> tuple[FabricLink, ...]:
         The links, ordered by the address of the device behind each port.
     """
     by_address = {node.address: node for node in inventory.pci_tree}
-    grouped: dict[tuple[str, str], list[PciNode]] = {}
+    grouped: dict[str, list[PciNode]] = {}
     for node in inventory.pci_tree:
         port = by_address.get(node.parent_address) if node.parent_address is not None else None
         if port is None or not port.faces_downstream:
             continue
-        grouped.setdefault((port.address, _device_of(node.address)), []).append(node)
+        grouped.setdefault(port.address, []).append(node)
     skipped = _graded_elsewhere(inventory)
     links = [
         FabricLink(port=by_address[port_address], functions=tuple(functions))
-        for (port_address, _device), functions in grouped.items()
+        for port_address, functions in grouped.items()
         if not any(function.address in skipped for function in functions)
     ]
     return tuple(sorted(links, key=lambda link: link.card.address))
@@ -97,15 +101,23 @@ def _devices_below(link: FabricLink, inventory: Inventory) -> list[PciNode]:
     Walks the card's own subtree through the machine's children index, so a
     card costs what sits below it rather than the whole tree.
     """
-    found: list[PciNode] = []
-    stack = [function.address for function in link.functions]
+    found: dict[str, PciNode] = {}
+    stack = list(link.functions)
     while stack:
-        for child in inventory.pci_children_of(stack.pop()):
+        parent = stack.pop()
+        for child in inventory.pci_children_of(parent.address):
             if child.is_bridge_family:
-                stack.append(child.address)
-            elif _is_function_zero(child):
-                found.append(child)
-    return sorted(found, key=lambda node: node.address)
+                stack.append(child)
+                continue
+            if not _is_function_zero(child):
+                continue
+            # A PCIe port carries ONE device, even where ARI numbers its
+            # functions on into device 01 and gives it a second "function 0";
+            # on a conventional bus each device number is a device of its own.
+            device = parent.address if parent.faces_downstream else _device_of(child.address)
+            if device not in found or child.address < found[device].address:
+                found[device] = child
+    return sorted(found.values(), key=lambda node: node.address)
 
 
 def carrying_clause(link: FabricLink, inventory: Inventory) -> str:

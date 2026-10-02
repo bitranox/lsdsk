@@ -352,3 +352,47 @@ def test_a_board_with_no_connector_read_and_no_faster_free_port_says_no_free_slo
     capped = _graded(_card(), slots=(here, _free_port(connector=None, width=8)))
     assert capped[0].action is not None
     assert capped[0].action.startswith("No free slot on this board would carry more")
+
+
+def _ari(parent: str, bus: str, name: str, *, functions: int = 16, **fields: Any) -> tuple[PciNode, ...]:
+    """One ARI device: more than eight functions, so its addresses run on into device 01."""
+    return tuple(
+        PciNode(address=f"{bus}:{index // 8:02x}.{index % 8}", name=name, parent_address=parent, **fields)
+        for index in range(functions)
+    )
+
+
+@pytest.mark.os_agnostic
+def test_an_ari_device_behind_one_port_is_one_link() -> None:
+    """A PCIe port carries ONE device, however its function numbers spill into device 01.
+
+    Keyed by port and bus:device, an ARI card with sixteen functions read as two
+    devices and raised the same hint twice.
+    """
+    lost = _link((8.0, 4), (8.0, 8))
+    card = _ari(PORT.address, "0000:01", "ari nic", class_code=0x020000, link=lost, pcie_capability_present=True)
+    inventory = Inventory(hostname="h", pci_tree=(ROOT, PORT, *card))
+    links = fabric_links(inventory)
+    assert [(link.card.address, len(link.functions)) for link in links] == [("0000:01:00.0", 16)]
+    assert [finding.subject for finding in diagnose_fabric_links(inventory)] == ["0000:01:00.0"]
+
+
+@pytest.mark.os_agnostic
+def test_an_ari_device_behind_a_switch_port_is_counted_once() -> None:
+    leg = LEG_A.with_changes(port_kind=PciPortKind.SWITCH_DOWNSTREAM)
+    tree = _tree(ROOT, PORT, SWITCH, leg, *_ari(leg.address, "0000:03", "ari nic", class_code=0x020000))
+    assert carrying_clause(FabricLink(port=PORT, functions=(SWITCH,)), tree) == ", carrying ari nic"
+
+
+@pytest.mark.os_agnostic
+def test_two_devices_on_a_conventional_bus_are_still_two() -> None:
+    """The control: below a bridge that is not a PCIe port, device numbers DO name separate devices."""
+    tree = _tree(
+        ROOT,
+        PORT,
+        SWITCH,
+        LEG_A,
+        _below(LEG_A.address, "0000:03:00.0", "NIC"),
+        _below(LEG_A.address, "0000:03:01.0", "NIC"),
+    )
+    assert carrying_clause(FabricLink(port=PORT, functions=(SWITCH,)), tree) == ", carrying 2x NIC"
