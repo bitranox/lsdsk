@@ -209,3 +209,64 @@ def test_a_machine_with_no_usb_disk_draws_no_usb_figure() -> None:
     """The control: the figures above come from the USB link, not from the page's furniture."""
     drawn = {match.group(0) for _, text in _usb_views(usb=False) for match in USB_FIGURE.finditer(text)}
     assert not drawn
+
+
+#: A USB figure carrying what it is worth, the closed form ADR 0002 fixes for
+#: every place a figure is drawn: ``USB10G (1.21 GB/s)``.
+USB_FIGURE_WITH_BANDWIDTH = re.compile(r"\bUSB(1\.5M|12M|480M|5G|10G|20G) \(\d+\.\d\d GB/s\)")
+
+
+def _every_usb_speed() -> list[Any]:
+    from lsdsk.domain.enums import UsbLaneRate
+    from lsdsk.domain.models import UsbSpeed
+
+    speeds = [UsbSpeed(lane_rate=rate) for rate in UsbLaneRate]
+    return speeds + [UsbSpeed(lane_rate=rate, lanes=2) for rate in (UsbLaneRate.GEN1, UsbLaneRate.GEN2)]
+
+
+@pytest.mark.os_agnostic
+def test_a_usb_finding_spells_a_rate_exactly_as_a_column_does() -> None:
+    """The USB sentence form is written in the domain, the column form in the render layer: tie them."""
+    from lsdsk.domain.pcie_text import format_usb_sentence
+
+    for speed in _every_usb_speed():
+        column = report.usb_speed_text(speed, bandwidth=True)
+        assert format_usb_sentence(speed) == column, f"{speed}: the sentence and the column disagree"
+
+
+@pytest.mark.os_agnostic
+def test_a_usb_finding_names_the_figures_the_disk_table_above_it_draws() -> None:
+    """On the rendered page: every USB figure a finding writes is one the disk table draws, bandwidth and all.
+
+    The disk runs two Gen 1 lanes on a link both ends of which do one Gen 2
+    lane. Both read ``USB10G`` without their bandwidth, so a sentence carrying
+    the bare figure said the link ran at what both ends support.
+    """
+    from lsdsk.adapters.render import tables
+    from lsdsk.domain.enums import BusType, UsbLaneRate
+    from lsdsk.domain.models import Disk, InterfaceLink, Inventory, UsbLink, UsbSpeed
+
+    gen2 = UsbSpeed(lane_rate=UsbLaneRate.GEN2)
+    link = UsbLink(
+        running=UsbSpeed(lane_rate=UsbLaneRate.GEN1, lanes=2), device_max=gen2, port_max=gen2, on_usb2_twin=False
+    )
+    disk = Disk(
+        node="sdb",
+        path="/dev/sdb",
+        model="Portable SSD",
+        bus=BusType.USB,
+        link=InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0),
+        usb=link,
+    )
+    machine = Inventory(hostname="usb-host", disks=(disk,))
+    findings = diagnose(machine)
+
+    table = _text(tables.render_disks(machine, findings, width=200))
+    sentences = _text(report.render_findings(findings), width=400)
+    drawn = {match.group(0) for match in USB_FIGURE_WITH_BANDWIDTH.finditer(table)}
+    written = {match.group(0) for match in USB_FIGURE_WITH_BANDWIDTH.finditer(sentences)}
+
+    assert {"USB10G (1.00 GB/s)", "USB10G (1.21 GB/s)"} <= drawn, f"the table drew {sorted(drawn)}"
+    assert written == {"USB10G (1.00 GB/s)", "USB10G (1.21 GB/s)"}, f"the findings wrote {sorted(written)}"
+    bare = re.findall(r"\bUSB10G\b(?! \()", sentences)
+    assert not bare, f"a finding writes a USB figure without its bandwidth: {sentences}"

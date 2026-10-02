@@ -10,6 +10,7 @@ from lsdsk.domain.models import Disk, InterfaceLink, Inventory, UsbLink, UsbSpee
 
 HIGH = UsbSpeed(lane_rate=UsbLaneRate.HIGH)
 GEN1 = UsbSpeed(lane_rate=UsbLaneRate.GEN1)
+GEN1X2 = UsbSpeed(lane_rate=UsbLaneRate.GEN1, lanes=2)
 GEN2 = UsbSpeed(lane_rate=UsbLaneRate.GEN2)
 
 
@@ -37,6 +38,15 @@ def test_a_link_below_both_read_ends_is_a_warning_and_says_both_ends() -> None:
     [finding] = diagnose_usb_link(_disk(UsbLink(running=GEN1, device_max=GEN2, port_max=GEN2, on_usb2_twin=False)))
     assert finding.severity is Severity.WARNING
     assert "both ends support USB10G" in finding.title
+
+
+@pytest.mark.os_agnostic
+def test_two_gen1_lanes_below_a_gen2_lane_do_not_read_as_the_same_rate() -> None:
+    """Gen1x2 and Gen2x1 are both USB10G on the box, so a sentence naming only that reads as no fault at all."""
+    usb = UsbLink(running=GEN1X2, device_max=GEN2, port_max=GEN2, on_usb2_twin=False)
+    [finding] = diagnose_usb_link(_disk(usb))
+
+    assert finding.title == "Portable SSD is running at USB10G (1.00 GB/s) but both ends support USB10G (1.21 GB/s)"
 
 
 @pytest.mark.os_agnostic

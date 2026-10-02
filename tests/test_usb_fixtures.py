@@ -113,7 +113,7 @@ def test_the_linux_usb_disk_raises_the_port_finding_and_nothing_else_about_its_l
 
     titles = [finding.title for finding in _usb_findings(machine, disk)]
 
-    assert titles == [f"{disk.model} can do USB10G but its port only offers USB480M"], titles
+    assert titles == [f"{disk.model} can do USB10G (1.21 GB/s) but its port only offers USB480M (0.06 GB/s)"], titles
 
 
 @pytest.mark.os_agnostic

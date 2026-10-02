@@ -1,4 +1,4 @@
-"""How a finding writes a PCIe figure and a bandwidth in a sentence.
+"""How a finding writes a link figure - PCIe or USB - and a bandwidth in a sentence.
 
 Kept below every rule module so a rule can be written without importing the
 module that runs all of them: ``diagnostics.diagnose`` calls the fabric-link
@@ -10,7 +10,7 @@ System Role:
 
 from __future__ import annotations
 
-from .models import pcie_generation
+from .models import UsbSpeed, pcie_generation
 
 
 def format_gbytes(value: float | None) -> str:
@@ -63,4 +63,31 @@ def format_pcie_sentence(speed_gtps: float | None, width: int | None) -> str:
     return f"PCIe Gen{generation}x{width}"
 
 
-__all__ = ["format_gbytes", "format_pcie_sentence"]
+def format_usb_sentence(speed: UsbSpeed) -> str:
+    """Render a USB rate for a sentence, closed and carrying what it is worth.
+
+    The bare figure is the rate on the box, and two links can share one:
+    10 Gb/s from one Gen 2 lane and from two Gen 1 lanes both read ``USB10G``
+    while carrying 1.21 and 1.00 GB/s. A sentence naming only the figure then
+    says a link runs "at USB10G but both ends support USB10G", which reads as no
+    fault at all. So the sentence writes what the column writes, bandwidth
+    included, and ``tests/test_one_spelling_for_a_generation.py`` holds the two
+    together, as it does for ``format_pcie_sentence``.
+
+    Args:
+        speed: The rate, read.
+
+    Returns:
+        The figure with its bandwidth in parentheses.
+
+    Example:
+        >>> from .enums import UsbLaneRate
+        >>> format_usb_sentence(UsbSpeed(lane_rate=UsbLaneRate.GEN1, lanes=2))
+        'USB10G (1.00 GB/s)'
+        >>> format_usb_sentence(UsbSpeed(lane_rate=UsbLaneRate.GEN2))
+        'USB10G (1.21 GB/s)'
+    """
+    return f"{speed.figure} ({format_gbytes(speed.bandwidth_gbps)})"
+
+
+__all__ = ["format_gbytes", "format_pcie_sentence", "format_usb_sentence"]

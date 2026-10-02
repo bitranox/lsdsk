@@ -40,7 +40,7 @@ from .models import (
     serial_bandwidth_gbps,
     shared_maker,
 )
-from .pcie_text import format_gbytes, format_pcie_sentence
+from .pcie_text import format_gbytes, format_pcie_sentence, format_usb_sentence
 from .placement import achievable_pcie, best_slot, free_slot_for, gain_in, seat_of
 from .thresholds import DEFAULT_THRESHOLDS
 
@@ -541,16 +541,15 @@ def _usb_cap_noticed(disk: Disk, ceiling: UsbSpeed) -> bool:
 def _usb_headroom(disk: Disk, ceiling: UsbSpeed) -> str:
     """Say whether the drive behind the bridge can feel the cap, judged by what its own link pulls."""
     demand = interface_demand_gbytes(disk)
-    carries = format_gbytes(ceiling.bandwidth_gbps)
     if demand is None:
         return "What the drive behind the bridge can pull was not read, so whether it feels this cap is not known."
     if demand > ceiling.bandwidth_gbps:
         return (
             f"The drive behind the bridge can pull {format_gbytes(demand)}, "
-            f"more than {ceiling.figure} carries ({carries})."
+            f"more than {format_usb_sentence(ceiling)} carries."
         )
     return (
-        f"The drive behind the bridge pulls about {format_gbytes(demand)}, which {ceiling.figure} "
+        f"The drive behind the bridge pulls about {format_gbytes(demand)}, which {format_usb_sentence(ceiling)} "
         "already carries, so this cap costs nothing today."
     )
 
@@ -560,9 +559,9 @@ def _usb2_fallback(disk: Disk, running: UsbSpeed, device: UsbSpeed) -> Finding:
     return Finding(
         severity=Severity.WARNING,
         subject=disk.path,
-        title=f"{disk.model} is running at {running.figure} on the USB 2 side of a USB 3 port",
+        title=f"{disk.model} is running at {format_usb_sentence(running)} on the USB 2 side of a USB 3 port",
         detail=(
-            f"The drive can do {device.figure} and the port has a USB 3 side, but the link came up at "
+            f"The drive can do {format_usb_sentence(device)} and the port has a USB 3 side, but the link came up at "
             "USB 2 speed. That is almost always a USB 2 cable or extension, a USB 2 hub in between, or a plug "
             "that is not fully seated."
         ),
@@ -575,7 +574,10 @@ def _usb_link_fault(disk: Disk, running: UsbSpeed, achievable: UsbSpeed) -> Find
     return Finding(
         severity=Severity.WARNING,
         subject=disk.path,
-        title=f"{disk.model} is running at {running.figure} but both ends support {achievable.figure}",
+        title=(
+            f"{disk.model} is running at {format_usb_sentence(running)} "
+            f"but both ends support {format_usb_sentence(achievable)}"
+        ),
         detail=(
             "Both the drive and the port it is in were read, so the slower link is a fault of what connects "
             "them: the cable, a hub, or the plug."
@@ -587,15 +589,15 @@ def _usb_link_fault(disk: Disk, running: UsbSpeed, achievable: UsbSpeed) -> Find
 def _usb_capped(disk: Disk, device: UsbSpeed, ceiling: _UsbCeiling) -> Finding:
     """The finding for a socket or hub that holds the disk below its own capability."""
     if ceiling.hub:
-        where = f"a hub between it and the machine runs at {ceiling.speed.figure}"
-        action = f"Connect it directly to the machine, or through a hub that runs at {device.figure}."
+        where = f"a hub between it and the machine runs at {format_usb_sentence(ceiling.speed)}"
+        action = f"Connect it directly to the machine, or through a hub that runs at {format_usb_sentence(device)}."
     else:
-        where = f"its port only offers {ceiling.speed.figure}"
-        action = f"A port that offers {device.figure} would recover the difference."
+        where = f"its port only offers {format_usb_sentence(ceiling.speed)}"
+        action = f"A port that offers {format_usb_sentence(device)} would recover the difference."
     return Finding(
         severity=Severity.WARNING if _usb_cap_noticed(disk, ceiling.speed) else Severity.HINT,
         subject=disk.path,
-        title=f"{disk.model} can do {device.figure} but {where}",
+        title=f"{disk.model} can do {format_usb_sentence(device)} but {where}",
         detail=_usb_headroom(disk, ceiling.speed),
         action=action,
     )
@@ -606,10 +608,10 @@ def _usb_unattributed(disk: Disk, running: UsbSpeed, device: UsbSpeed) -> Findin
     return Finding(
         severity=Severity.WARNING,
         subject=disk.path,
-        title=f"{disk.model} is running at {running.figure}, below its own {device.figure}",
+        title=f"{disk.model} is running at {format_usb_sentence(running)}, below its own {format_usb_sentence(device)}",
         detail=(
             "What the port can carry was not read, so this is not yet a fault: a port that only offers "
-            f"{running.figure} explains it exactly as well as a bad cable does."
+            f"{format_usb_sentence(running)} explains it exactly as well as a bad cable does."
         ),
         action="Establish what the port offers before treating it as a link fault.",
     )
