@@ -195,3 +195,26 @@ def test_the_writer_refuses_a_single_series_with_more_samples_than_the_reader_ac
 
     assert excinfo.value.errno == errno.EINVAL, f"a refused write left errno {excinfo.value.errno}"
     assert not store.exists(), "a series its own reader would refuse was written"
+
+
+@pytest.mark.os_agnostic
+def test_the_writers_refusal_quotes_an_oversized_identity_escaped_and_cut(tmp_path: Path) -> None:
+    """The reason a refused write reports stays inert and short, even when the identity itself is not.
+
+    ``_refuse_an_oversized_series`` builds its message around whatever
+    ``str(identity)`` hands it, unescaped and uncut. What reaches the caller is
+    whatever ``what_is_wrong_with_it`` renders from the resulting
+    ``ValidationError``, so this pins that the escaping and the length cut both
+    still apply there, not only on a hand-edited file.
+    """
+    store = tmp_path / "history.json"
+    one = Sample(power_on_hours=1, captured_at="")
+    evil_identity = "\x1b]8;;http://example.invalid\x1b\\" + "A" * 10_000
+    oversized = DiskSeries.model_construct(identity=evil_identity, model="m", samples=(one,) * (MAX_ENTRIES + 1))
+
+    with pytest.raises(OSError) as excinfo:
+        save_history(History.model_construct(hostname="box", series=(oversized,)), store)
+
+    message = str(excinfo.value)
+    assert "\x1b" not in message, f"a raw escape sequence reached the caller: {message!r}"
+    assert len(message) < 1000, f"the oversized identity was not cut: {len(message)} characters"
