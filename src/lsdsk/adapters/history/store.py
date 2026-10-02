@@ -37,6 +37,7 @@ import contextlib
 import errno
 import json
 import os
+import stat
 import sys
 import time
 from collections.abc import Generator, Mapping, Sequence, Sized
@@ -464,6 +465,51 @@ def _try_lock(descriptor: int) -> bool:
     return True
 
 
+_LOCK_IS_A_LINK = "the lock beside the counter store is a symbolic link, which lsdsk never follows"
+
+
+def _open_the_lock(lock: Path) -> int:
+    """Open the lock file, refusing anything at its name that is not a regular file.
+
+    The lock lives in whatever directory ``--history-file`` names, which can be
+    shared or group-writable, so its name is not ours to trust. A plain
+    ``O_CREAT`` followed a symlink planted there and created the link's target
+    with the store's mode, as whoever ran ``record``. ``O_NOFOLLOW`` makes the
+    kernel refuse the link at the open itself; Windows has no such flag, so it
+    gets the check-then-open the snapshot writer uses, which is weaker because
+    a link can appear between the two. ``O_NONBLOCK`` keeps a FIFO at the name
+    from hanging the open before ``fstat`` can refuse it, and means nothing for
+    a regular file.
+
+    Args:
+        lock: The lock file.
+
+    Returns:
+        A descriptor on a regular file, open for reading and writing.
+
+    Raises:
+        OSError: ``errno.ELOOP`` if the name is a symbolic link, ``errno.EINVAL``
+            if it is anything else that is not a regular file, or whatever the
+            open itself raised - ``PermissionError`` for a refusal.
+    """
+    follow_refused_by_the_kernel = getattr(os, "O_NOFOLLOW", 0)
+    if lock.is_symlink():
+        raise OSError(errno.ELOOP, _LOCK_IS_A_LINK, str(lock))
+    flags = os.O_RDWR | os.O_CREAT | follow_refused_by_the_kernel | getattr(os, "O_NONBLOCK", 0)
+    try:
+        descriptor = os.open(lock, flags, HISTORY_FILE_MODE)
+    except OSError as error:
+        # A link created between the check above and the open: the kernel's
+        # refusal names no cause a reader would recognise, so it is named here.
+        if lock.is_symlink():
+            raise OSError(errno.ELOOP, _LOCK_IS_A_LINK, str(lock)) from error
+        raise
+    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        raise OSError(errno.EINVAL, "the lock beside the counter store is not a regular file", str(lock))
+    return descriptor
+
+
 @contextlib.contextmanager
 def history_lock(path: Path, *, wait: float = LOCK_WAIT_SECONDS) -> Generator[None]:
     """Hold the store exclusively from reading it to writing it back.
@@ -485,8 +531,9 @@ def history_lock(path: Path, *, wait: float = LOCK_WAIT_SECONDS) -> Generator[No
 
     Raises:
         OSError: If the lock file cannot be created (``PermissionError`` for a
-            refusal), or another run held the store for longer than ``wait``
-            (``errno.EAGAIN``).
+            refusal), its name is a symbolic link (``errno.ELOOP``) or something
+            else that is not a regular file (``errno.EINVAL``), or another run
+            held the store for longer than ``wait`` (``errno.EAGAIN``).
 
     Example:
         >>> import tempfile
@@ -494,7 +541,7 @@ def history_lock(path: Path, *, wait: float = LOCK_WAIT_SECONDS) -> Generator[No
         ...     pass
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(path.with_name(f".{path.name}.lock"), os.O_RDWR | os.O_CREAT, HISTORY_FILE_MODE)
+    descriptor = _open_the_lock(path.with_name(f".{path.name}.lock"))
     try:
         deadline = time.monotonic() + wait
         while not _try_lock(descriptor):
