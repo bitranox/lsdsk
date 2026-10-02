@@ -504,6 +504,39 @@ async def test_a_page_without_a_table_still_scrolls() -> None:
 
 @pytest.mark.os_agnostic
 @pytest.mark.asyncio
+async def test_an_overflowing_long_page_wraps_at_the_width_a_scrollbar_leaves_it() -> None:
+    """A page the scrollbar takes columns from must wrap its lines narrower, not at the full width.
+
+    ``_lay_out`` renders once at the whole width to see whether the page
+    overflows the window, and only narrows by ``styles.scrollbar_size_vertical``
+    before the render a reader actually sees - the same width a
+    ``VerticalScroll`` would give a ``Static`` that needed a scrollbar. Skipping
+    that subtraction is invisible to a check that only counts lines or watches
+    the scrollbar appear: a page with no wrapping word still overflows and still
+    scrolls either way. This instead measures the cell width of every drawn
+    line against the width the scrollbar should have left it.
+    """
+    app = LsdskApp(inventory())
+    async with app.run_test(size=(40, 10)) as pilot:
+        await pilot.press("5")
+        await pilot.pause()
+
+        body = app.query_one("#smart-body", LongPage)
+        # One unbroken run far longer than the window, so every rendered line is
+        # filled to whatever width it was wrapped at - there is no word boundary
+        # for Rich to break on early - and the page is far taller than the
+        # window, so the scrollbar is reserved.
+        body.update(Text("x" * 2000))
+        await pilot.pause()
+
+        assert body.line_count > body.size.height, "the fixture must overflow the window to reserve a scrollbar"
+        narrowed = body.size.width - body.styles.scrollbar_size_vertical
+        widest = max(body.render_line(y).cell_length for y in range(body.line_count))
+        assert widest <= narrowed, f"a line is {widest} cells wide, wider than the {narrowed} the scrollbar leaves"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("page_key", "table_id"), [("3", "#disk-table"), ("4", "#health-table")])
 async def test_a_flagged_row_carries_its_colour(page_key: str, table_id: str) -> None:
     """Verify severity reaches the screen as colour, not only as a marker.
