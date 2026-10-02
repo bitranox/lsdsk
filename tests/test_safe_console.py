@@ -462,3 +462,35 @@ def test_two_threads_silencing_one_stream_duplicate_its_descriptor_once(
     finally:
         safe_console.restore_original_streams()
         stream.close()
+
+
+class _DepartedReaderStdout(io.StringIO):
+    """A stdout whose reader has gone: every write is a broken pipe."""
+
+    def write(self, text: str) -> int:
+        raise BrokenPipeError(errno.EPIPE, os.strerror(errno.EPIPE))
+
+
+@pytest.mark.os_agnostic
+def test_the_tee_writes_its_stderr_half_even_when_the_stdout_half_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A departed stdout reader must not cost the tee's stderr half its line.
+
+    ``_SafeTee.write`` puts the stdout half's write in a ``try``/``finally`` so
+    the stderr half still runs whatever stdout did. On the MAIN thread, with
+    ``records_failures`` left at its default ``False``, a departed stdout
+    reader raises ``SystemExit`` at that write; without the ``finally`` that
+    exception would propagate before the stderr half ever wrote its line, which
+    is exactly what happened before ``_SafeTee`` existed.
+    """
+    stderr = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", _DepartedReaderStdout())
+    monkeypatch.setattr(sys, "stderr", stderr)
+
+    tee = safe_console.safe_stream_to_both()
+    try:
+        with pytest.raises(SystemExit):
+            tee.write("a log line\n")
+    finally:
+        safe_console.restore_original_streams()
+
+    assert "a log line" in stderr.getvalue(), "the stderr half was skipped when the stdout half raised"
