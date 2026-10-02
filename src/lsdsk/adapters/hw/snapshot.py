@@ -17,6 +17,7 @@ import contextlib
 import errno
 import json
 import os
+import stat
 import sys
 from typing import TYPE_CHECKING, Annotated, Any, cast
 
@@ -288,9 +289,14 @@ def _write_in_place(path: Path, body: str) -> None:
         raise OSError(errno.ELOOP, message, str(path))
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | follow_refused_by_the_kernel
     descriptor = os.open(path, flags, SNAPSHOT_FILE_MODE)
+    is_our_file = stat.S_ISREG(os.fstat(descriptor).st_mode)
     write_through(descriptor, body, sync=False)
-    with contextlib.suppress(OSError):
-        path.chmod(SNAPSHOT_FILE_MODE)
+    # Narrowed only when the destination is a file this run made or replaced.
+    # A device or a FIFO is the system's, and root narrowing /dev/null to 0600
+    # would break every other program on the machine.
+    if is_our_file:
+        with contextlib.suppress(OSError):
+            path.chmod(SNAPSHOT_FILE_MODE)
 
 
 def _not_a_snapshot(path: Path, error: ValidationError) -> ConfigurationError:

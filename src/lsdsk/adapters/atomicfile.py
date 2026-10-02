@@ -18,7 +18,9 @@ Contents:
 from __future__ import annotations
 
 import contextlib
+import errno
 import os
+import stat
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -81,6 +83,30 @@ def write_through(descriptor: int, body: str, *, sync: bool) -> None:
             os.fsync(stream.fileno())
 
 
+def _is_written_into(path: Path) -> bool:
+    """Whether ``path`` is an existing destination that must be written INTO, not replaced.
+
+    A rename replaces the directory entry, which is right for a file and
+    destroys anything else: a FIFO a reader is waiting on, or - for root - the
+    system's own ``/dev/null``. A symlink is not one of these: it is replaced
+    deliberately, so a link planted at the destination is never traversed.
+
+    Raises:
+        OSError: If ``path`` exists and is neither a regular file, a symlink, a
+            character device nor a FIFO - a block device or a socket, which no
+            caller could mean to write a JSON document into.
+    """
+    try:
+        mode = os.lstat(path).st_mode
+    except FileNotFoundError:
+        return False
+    if stat.S_ISREG(mode) or stat.S_ISLNK(mode):
+        return False
+    if stat.S_ISCHR(mode) or stat.S_ISFIFO(mode):
+        return True
+    raise OSError(errno.EINVAL, f"{path} is not a regular file, a character device or a FIFO", str(path))
+
+
 def replace_atomically(
     path: Path,
     body: str,
@@ -100,17 +126,20 @@ def replace_atomically(
         path: The destination. Its directory must already exist.
         body: The whole file.
         mode: The permission bits the file ends with.
-        without_a_temporary_file: What to do instead when no temporary file can
-            be created beside the destination, called with ``path`` and
-            ``body``. Nothing has been written at that point; only the
-            atomicity is impossible. The snapshot writer writes in place there.
-            ``None`` - the history store - lets the refusal propagate, since a
-            history that cannot be replaced atomically is one a failed write
-            could destroy.
+        without_a_temporary_file: What to do instead when the destination
+            cannot be replaced by a rename, called with ``path`` and ``body``:
+            no temporary file can be created beside it, or it is a character
+            device or a FIFO, which a rename would destroy rather than write.
+            Nothing has been written at that point. The snapshot writer writes
+            in place there. ``None`` - the history store - refuses instead,
+            since a history that cannot be replaced atomically is one a failed
+            write could destroy.
 
     Raises:
-        OSError: If no temporary file can be created and no alternative was
-            given, or the write, the sync or the rename fails. The original
+        OSError: If no temporary file can be created, or the destination is
+            not a regular file, and no alternative was given; if it is a block
+            device or a socket whatever was given; or if the write, the sync
+            or the rename fails. The original
             exception propagates, so a ``PermissionError`` stays one. The
             temporary file is removed and any previous file at ``path`` is
             untouched.
@@ -123,6 +152,11 @@ def replace_atomically(
         ...     target.read_text(encoding="utf-8")
         '{}'
     """
+    if _is_written_into(path):
+        if without_a_temporary_file is None:
+            raise OSError(errno.EINVAL, f"{path} is not a regular file, so it cannot be replaced", str(path))
+        without_a_temporary_file(path, body)
+        return
     try:
         handle, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     except OSError:
