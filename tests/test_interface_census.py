@@ -197,6 +197,7 @@ def test_star_args_and_star_kwargs_count_toward_a_signature_s_width(tmp_path: Pa
         "tuple[int, int] | None",
         "Optional[tuple[int, int]]",
         "tuple[dict[str, int], dict[str, int]]",
+        "tuple[tuple[int, int], ...]",
     ],
 )
 def test_every_spelling_of_a_same_typed_pair_is_seen(tmp_path: Path, annotation: str) -> None:
@@ -204,7 +205,8 @@ def test_every_spelling_of_a_same_typed_pair_is_seen(tmp_path: Path, annotation:
 
     ``Tuple`` and an optional pair were not read as tuples at all, and a member
     carrying commas of its own was split at them, so two identical members read
-    as different ones.
+    as different ones. A variadic tuple OF pairs was skipped as "not a pair",
+    while every element a caller unpacks from it is one.
     """
     source = f"import typing\nfrom typing import Optional, Tuple\ndef pair() -> {annotation}: ...\n"
     figures = _census_of(tmp_path, {"domain/planted.py": source})

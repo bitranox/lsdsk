@@ -170,17 +170,35 @@ def return_shape(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
     """
     if node.returns is None:
         return None
-    annotation = _without_none(node.returns)
-    if not isinstance(annotation, ast.Subscript):
+    members = _tuple_members(_without_none(node.returns))
+    if members is None:
         return None
-    if _root_name(annotation.value) not in TUPLE_ROOTS:
+    if len(members) == len(VARIADIC) and _is_ellipsis(members[1]):
+        # A variadic tuple of pairs hands each caller a pair to unpack, so the
+        # pair is the shape: `tuple[tuple[str, str], ...]` is a same-typed swap
+        # waiting at every loop that unpacks it.
+        members = _tuple_members(members[0])
+        if members is None:
+            return None
+    if len(members) < SMALLEST_MULTI_VALUE or any(_is_ellipsis(member) for member in members):
         return None
-    inner = annotation.slice
-    if not isinstance(inner, ast.Tuple) or len(inner.elts) < SMALLEST_MULTI_VALUE:
+    return f"tuple[{', '.join(ast.unparse(member) for member in members)}]"
+
+
+#: How many members ``tuple[X, ...]`` has as written: the element and the ellipsis.
+VARIADIC = (None, None)
+
+
+def _is_ellipsis(expression: ast.expr) -> bool:
+    """Whether ``expression`` is the ``...`` of a variadic tuple."""
+    return isinstance(expression, ast.Constant) and expression.value is Ellipsis
+
+
+def _tuple_members(annotation: ast.expr) -> list[ast.expr] | None:
+    """The members of ``tuple[...]`` or ``Tuple[...]`` as written, or ``None`` for any other annotation."""
+    if not isinstance(annotation, ast.Subscript) or _root_name(annotation.value) not in TUPLE_ROOTS:
         return None
-    if any(isinstance(element, ast.Constant) and element.value is Ellipsis for element in inner.elts):
-        return None
-    return f"tuple[{', '.join(ast.unparse(element) for element in inner.elts)}]"
+    return list(annotation.slice.elts) if isinstance(annotation.slice, ast.Tuple) else None
 
 
 def walk(root: Path) -> Census:

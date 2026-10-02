@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from dataclasses import fields
 from functools import lru_cache
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, NamedTuple
 
 from rich.style import Style
 
@@ -53,11 +53,23 @@ PALETTE: Final = theme.Palette(
 )
 
 
+class HuePair(NamedTuple):
+    """One printed hue and what the interactive palette draws it as.
+
+    Named because both halves are hex strings: written as a bare pair, a loop
+    that unpacked them the wrong way round would recolour every interactive hue
+    with its printed one, and no type checker could see it.
+    """
+
+    printed: str
+    interactive: str
+
+
 # Bounded rather than @cache, for the reason tree._header_cells is: the key is
 # a caller-supplied palette, so nothing in the type stops the cache growing.
 # One palette ships, and the tests build a second.
 @lru_cache(maxsize=4)
-def _pairs(palette: theme.Palette) -> tuple[tuple[str, str], ...]:
+def _pairs(palette: theme.Palette) -> tuple[HuePair, ...]:
     """Every printed hue and its counterpart, computed once per palette.
 
     The pairs are a tuple rather than the mapping itself, because a cached
@@ -66,7 +78,7 @@ def _pairs(palette: theme.Palette) -> tuple[tuple[str, str], ...]:
     rest of the run.
     """
     return tuple(
-        (printed, interactive)
+        HuePair(printed, interactive)
         for printed, interactive in (
             (str(getattr(theme.PRINTED, field.name)), str(getattr(palette, field.name)))
             for field in fields(theme.Palette)
