@@ -479,6 +479,10 @@ def history_lock(path: Path, *, wait: float = LOCK_WAIT_SECONDS) -> Generator[No
         path: The store. The lock is ``.<name>.lock`` in the same directory.
         wait: How long to wait for another run before giving up.
 
+    Returns:
+        A context manager that holds the lock for the body of its ``with``
+        block and yields nothing.
+
     Raises:
         OSError: If the lock file cannot be created (``PermissionError`` for a
             refusal), or another run held the store for longer than ``wait``
