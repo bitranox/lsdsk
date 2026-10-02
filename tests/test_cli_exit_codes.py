@@ -1077,3 +1077,31 @@ def test_a_failed_write_stands_whoever_was_reading_because_it_is_about_the_desti
     assert outranks_a_departed_reader(int(ExitCode.GENERAL_ERROR)) is False, (
         "the control that must answer the OTHER way: an undelivered verdict still yields"
     )
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("document", "usage_clause", "argument_clause"),
+    [
+        ("COMMANDS.md", ("`2` for", "`13` when"), ("`22` for", "`70` when")),
+        ("de/COMMANDS.md", ("`2` für", "`13`, wenn"), ("`22` für", "`70`, wenn")),
+    ],
+)
+def test_the_command_reference_files_a_refused_set_under_two_and_a_section_name_under_22(
+    document: str, usage_clause: tuple[str, str], argument_clause: tuple[str, str]
+) -> None:
+    """A `--set` the tool cannot apply is a usage error (2); `config --section` naming none is 22.
+
+    The reference once filed "a configuration section ... the configuration
+    library rejects" under 22 without saying which option, and the only option a
+    reader types a section into is `--set` - which leaves 2, by design, because a
+    malformed override is a command line the tool refuses.
+    """
+    prose = " ".join((REPO / document).read_text(encoding="utf-8").split())
+
+    def clause(bounds: tuple[str, str]) -> str:
+        start = prose.index(bounds[0])
+        return prose[start : prose.index(bounds[1], start)]
+
+    assert "`--set`" in clause(usage_clause), f"{document}: the 2 clause does not name --set"
+    assert "`config --section`" in clause(argument_clause), f"{document}: the 22 clause does not name config --section"

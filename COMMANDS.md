@@ -93,13 +93,15 @@ machine-readable form is `lsdsk snapshot`. Exit codes are `0` for nothing
 actionable and `1` when a warning or critical was found, so it drops straight
 into a monitoring check. Errors use sysexits conventions rather than a single
 code: `2` for a command line the parser refuses, which is an unknown option, an
-unknown command, a missing required argument or a bad `--format` choice; `13` when
+unknown command, a missing required argument, a bad `--format` choice or a
+`--set` override naming a section or key the tool does not have; `13` when
 something needs privilege this run lacks - a `config-deploy`
 target that needs root, a diagnostic run whose hardware read the kernel refuses
 outright, a `snapshot` whose destination refuses to be written, and a
 `config-generate-examples` whose destination does; `22` for an
-argument the tool cannot act on, which is a
-configuration section or a `--profile` name the configuration library rejects,
+argument the tool cannot act on, which is a section
+`config --section` names that does not exist or a `--profile` name the
+configuration library rejects,
 and also an option that does not apply to the command, such as `snapshot` given
 `--replay`, or given `-o -` with `--format json`, which would put two documents on
 one stream, or `-o -` while the logging console writes to standard output too;

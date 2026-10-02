@@ -97,14 +97,16 @@ zu tun ist, und `1`, wenn eine Warnung oder ein kritischer Befund vorliegt, es
 passt also unmittelbar in eine Überwachungsprüfung. Fehler folgen den
 sysexits-Konventionen statt einem einzigen Code: `2` für eine Befehlszeile, die
 der Parser ablehnt, also eine unbekannte Option, einen unbekannten Befehl, ein
-fehlendes Pflichtargument oder eine ungültige `--format`-Wahl; `13`, wenn etwas ein Recht
+fehlendes Pflichtargument, eine ungültige `--format`-Wahl oder eine
+`--set`-Überschreibung, die einen Abschnitt oder Schlüssel nennt, den das
+Werkzeug nicht hat; `13`, wenn etwas ein Recht
 braucht, das dieser Lauf nicht hat - ein `config-deploy`-Ziel, das root
 verlangt, ein diagnostischer Lauf, dessen Hardwarelesung der Kernel rundweg
 verweigert, ein `snapshot`, dessen Ziel sich nicht schreiben lässt, und ein
 `config-generate-examples`, dessen Ziel das ebenso tut; `22` für
 ein Argument, mit dem das Werkzeug nichts anfangen
-kann, also einen Konfigurationsabschnitt oder einen `--profile`-Namen, den die
-Konfigurationsbibliothek ablehnt, und ebenso eine Option, die zum Befehl nicht
+kann, also einen Abschnitt, den `config --section` nennt und den es nicht gibt,
+oder einen `--profile`-Namen, den die Konfigurationsbibliothek ablehnt, und ebenso eine Option, die zum Befehl nicht
 passt, etwa `snapshot` mit `--replay`, oder mit `-o -` und `--format json`, was zwei
 Dokumente auf einen Datenstrom legen würde, oder `-o -`, während auch die
 Protokollkonsole auf die Standardausgabe schreibt; `70`, wenn dieses Werkzeug selbst
