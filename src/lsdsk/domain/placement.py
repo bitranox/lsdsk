@@ -159,4 +159,21 @@ def free_slot_for(seat: Seat, inventory: Inventory) -> PcieSlot | None:
     return best_slot(seat, inventory, lambda slot: slot.is_move_target)
 
 
-__all__ = ["Seat", "achievable_pcie", "best_slot", "free_slot_for", "gain_in", "seat_of"]
+def unread_free_slot_for(seat: Seat, inventory: Inventory) -> PcieSlot | None:
+    """Find an empty port that would serve a card better but whose connector bit nobody read.
+
+    Asked where :func:`free_slot_for` found nothing, so that a port which might
+    be a slot is never reported as absent. Judged per port: one connector read
+    elsewhere on the board says nothing about this one.
+
+    Args:
+        seat: The card and the port it sits behind now.
+        inventory: The machine whose ports are searched.
+
+    Returns:
+        The best such port, or ``None``.
+    """
+    return best_slot(seat, inventory, lambda slot: not slot.occupied and slot.connector_present is None)
+
+
+__all__ = ["Seat", "achievable_pcie", "best_slot", "free_slot_for", "gain_in", "seat_of", "unread_free_slot_for"]

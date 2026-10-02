@@ -279,6 +279,9 @@ _ADMITS: tuple[Callable[[PcieSlot], bool], ...] = (
     lambda slot: True,
     lambda slot: slot.is_move_target,
     lambda slot: slot.is_swap_candidate and (slot.occupant_need_gbps or 0.0) < 2.0,
+    # The search for a free port whose connector nobody read: it reads the
+    # occupancy and the connector bit, which is why both are in the grouping.
+    lambda slot: not slot.occupied and slot.connector_present is None,
 )
 
 

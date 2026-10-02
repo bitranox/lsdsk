@@ -1860,7 +1860,8 @@ class Inventory(DomainModel, frozen=True):
 
         That equivalence holds only for a test that reads nothing of a port but
         what the grouping reads: :attr:`PcieLink.max_speed_gtps` and
-        :attr:`PcieLink.max_width` of its link, :attr:`PcieSlot.is_move_target`,
+        :attr:`PcieLink.max_width` of its link, :attr:`PcieSlot.occupied`,
+        :attr:`PcieSlot.connector_present`, :attr:`PcieSlot.is_move_target`,
         :attr:`PcieSlot.is_swap_candidate` and, for a swap candidate,
         :attr:`PcieSlot.occupant_need_gbps`. A search reading more has to be
         added to :attr:`_placement_groups` first.
@@ -1908,6 +1909,8 @@ class Inventory(DomainModel, frozen=True):
             key = (
                 slot.link.max_speed_gtps,
                 slot.link.max_width,
+                slot.occupied,
+                slot.connector_present,
                 slot.is_move_target,
                 swap,
                 slot.occupant_need_gbps if swap else None,

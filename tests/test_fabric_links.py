@@ -300,3 +300,51 @@ def test_a_capped_card_is_told_where_it_could_go_only_on_a_read_connector(connec
     capped = _graded(_card(), slots=(here, wide))
     assert len(capped) == 1 and CAPPED in capped[0].title
     assert capped[0].action is not None and capped[0].action.startswith(advice)
+
+
+def _capped_with(*free: PcieSlot) -> str:
+    """The action of the capped hint on a board whose own port's connector WAS read."""
+    here = PcieSlot(address=PORT.address, link=PORT.link, occupied=True, connector_present=True)
+    capped = _graded(_card(), slots=(here, *free))
+    assert len(capped) == 1 and CAPPED in capped[0].title
+    assert capped[0].action is not None
+    return capped[0].action
+
+
+def _free_port(*, connector: bool | None, width: int = 16) -> PcieSlot:
+    return PcieSlot(
+        address="0000:00:03.0", link=PcieLink(max_speed_gtps=8.0, max_width=width), connector_present=connector
+    )
+
+
+@pytest.mark.os_agnostic
+def test_a_faster_free_port_whose_connector_was_not_read_is_not_called_absent() -> None:
+    """One read connector elsewhere on the board says nothing about THIS port.
+
+    The search used to ask whether ANY connector on the board was read, so one
+    read connector turned an unread, faster free port into "No free slot on
+    this board would carry more" - an unread value promoted to a finding.
+    """
+    action = _capped_with(_free_port(connector=None))
+    assert action.startswith("Whether a free slot would carry more was not readable"), action
+    assert "0000:00:03.0" in action and "PCIe Gen3x16" in action
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    "free",
+    [_free_port(connector=False), _free_port(connector=None, width=8)],
+    ids=["read-as-no-connector", "unread-but-no-faster"],
+)
+def test_no_free_slot_is_said_only_where_no_unread_port_could_help(free: PcieSlot) -> None:
+    """The controls: a port READ as no connector, or an unread one no faster than the seat, changes nothing."""
+    assert _capped_with(free).startswith("No free slot on this board would carry more")
+
+
+@pytest.mark.os_agnostic
+def test_a_board_with_no_connector_read_and_no_faster_free_port_says_no_free_slot() -> None:
+    """An unread connector matters only on a port that would carry more; elsewhere it decides nothing."""
+    here = PcieSlot(address=PORT.address, link=PORT.link, occupied=True)
+    capped = _graded(_card(), slots=(here, _free_port(connector=None, width=8)))
+    assert capped[0].action is not None
+    assert capped[0].action.startswith("No free slot on this board would carry more")

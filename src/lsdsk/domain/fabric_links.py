@@ -23,7 +23,7 @@ from .base import DomainModel
 from .enums import Severity
 from .models import Finding, PciNode, pcie_bandwidth_gbps
 from .pcie_text import format_gbytes, format_pcie_sentence
-from .placement import Seat, free_slot_for
+from .placement import Seat, free_slot_for, unread_free_slot_for
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -232,12 +232,15 @@ def _where_it_could_go(link: FabricLink, inventory: Inventory) -> str:
             f"Move it to the free slot at {free.address} ({figure}{number}). "
             "Check the slot is mechanically long enough or open-ended first."
         )
-    # A connector bit nobody read is not a missing slot: without root no port
-    # is known to end in one, and "no free slot" would claim what was not seen.
-    if not any(slot.connector_present is not None for slot in inventory.slots):
+    # A connector bit nobody read is not a missing slot, so "no free slot" is
+    # said only where no free port with an unread bit would carry more. Asked
+    # per port: one connector read elsewhere says nothing about this one.
+    unread = unread_free_slot_for(seat, inventory)
+    if unread is not None:
+        figure = format_pcie_sentence(unread.link.max_speed_gtps, unread.link.max_width)
         return (
-            "Whether a free slot would carry more was not readable: telling a slot from an internal port "
-            "needs the PCIe capability, which takes root to read."
+            f"Whether a free slot would carry more was not readable: the free port at {unread.address} ({figure}) "
+            "would, but telling a slot from an internal port needs the PCIe capability, which takes root to read."
         )
     # Named by the card's own figure rather than "a faster port": a card short on
     # lanes can sit in a port that is already the faster of the two. The figure
