@@ -494,12 +494,16 @@ cannot disagree.
 
 **A failed write is reported as a SKIP, not as an error, because the command
 still did something.** `lsdsk record --format json` whose store cannot be written
-exits `13` and still prints its action envelope - `ok` false, `data` naming the
-store and how many drives were read, and the refusal as a sentence in `skipped` -
-rather than the `error` object above. A store `record` cannot read answers the
-same way at `78`: `ok` false, `recorded` false, the reason in `skipped`. So a
-caller reading `error.type` alone sees nothing here: read `ok` first, then
-`skipped` for why.
+exits `13` (`74` when the cause is not permission) and still prints its action
+envelope - `ok` false, `recorded` false, `data` naming the store and how many
+drives were read, and the refusal as a sentence in `skipped` - rather than the
+`error` object above. A store `record` cannot read answers the same way at `78`.
+A run with nothing new to store, because no drive's power-on hours have advanced
+since the last reading, is healthy: exit `0`, `ok` true, `recorded` false and
+`skipped` empty. In every case `data.outcome` names what happened: `recorded`,
+`nothing new`, `store not readable`, `not permitted` or `could not write`. So a
+caller reading `error.type` alone sees nothing here: read `ok` first - false
+means the record has stopped growing - then `data.outcome` and `skipped` for why.
 
 **`141` is what a departed reader leaves, and which code wins does not depend on
 the format.** `lsdsk findings ... | head -5` leaves `141` rather than the verdict
@@ -578,8 +582,8 @@ Storing a reading is its entire purpose, so it writes even under `--replay` and
 even under `--format json` - `lsdsk record --replay other.json` is how you fold
 somebody else's capture into the history deliberately. It prints nothing in its
 human form, which is what suits it to a timer, but `--format json` gives it the
-same envelope every other command has, with `recorded`, `store` and `drives`
-inside `data`.
+same envelope every other command has, with `recorded`, `outcome`, `store` and
+`drives` inside `data`.
 So the rule is "a REPORTING command asked for JSON does not mutate state", not
 "lsdsk does not mutate state": put `topology`, `disks`, `health`, `smart`,
 `findings`, `slots`, `controllers` or `trend` in that pipeline, and leave
