@@ -47,7 +47,7 @@ from pydantic import BaseModel, BeforeValidator, Field, ValidationError, field_v
 from pydantic_core import PydanticCustomError
 
 from ...domain.errors import ConfigurationError, MissingFileError
-from ...domain.history import DiskSeries, History, Sample, thin
+from ...domain.history import DiskSeries, History, Sample, merge_duplicate_series, thin
 from ...domain.text import MAX_DEVICE_TEXT, visible_text
 from ..atomicfile import replace_atomically
 from ..textfile import MAX_INPUT_BYTES, fits_a_bounded_read, read_json_bounded
@@ -313,7 +313,8 @@ def load_history(path: Path, *, hostname: str, cap: int = MAX_SAMPLES_PER_DRIVE)
         )
         raise ConfigurationError(message)
 
-    return History(hostname=stored.hostname, series=tuple(_capped(series, cap) for series in stored.series))
+    series = merge_duplicate_series(stored.series)
+    return History(hostname=stored.hostname, series=tuple(_capped(one, cap) for one in series))
 
 
 def _capped(series: DiskSeries, cap: int) -> DiskSeries:

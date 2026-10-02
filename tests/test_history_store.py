@@ -626,3 +626,37 @@ def test_judging_a_loaded_store_costs_the_same_however_far_past_the_cap_it_grew(
 
     assert single > MAX_SAMPLES_PER_DRIVE, f"the smaller arm did {single} units of work, so the counter never ran"
     assert doubled < single * 1.1, f"doubling a store past the cap took {doubled} units of work against {single}"
+
+
+@pytest.mark.os_agnostic
+def test_a_store_naming_one_drive_twice_is_read_as_one_series_and_written_back_as_one(store: Path) -> None:
+    """Judged by the first series and rewritten from the last, the first one's samples were lost.
+
+    ``History.for_identity`` returns the first series a drive has, while
+    ``record`` folds a new reading into the last and writes that one back under
+    both slots. A store gets two series for one drive by being hand-edited or
+    merged, which nothing prevents, since it is a file a caller points
+    ``--history-file`` at. Merged on the way in, every sample of both survives.
+    """
+    duplicated = History(
+        hostname="box",
+        series=(
+            DiskSeries(identity="naa.1", model="X", samples=(Sample(power_on_hours=1, captured_at="a", crc_errors=1),)),
+            DiskSeries(identity="naa.2", model="Y", samples=(Sample(power_on_hours=7, captured_at="a"),)),
+            DiskSeries(identity="naa.1", model="X", samples=(Sample(power_on_hours=2, captured_at="b", crc_errors=3),)),
+        ),
+    )
+    save_history(duplicated, store)
+
+    loaded = load_history(store, hostname="box")
+
+    assert [series.identity for series in loaded.series] == ["naa.1", "naa.2"], loaded.series
+    first = loaded.for_identity("naa.1")
+    assert first is not None
+    assert [sample.power_on_hours for sample in first.samples] == [1, 2]
+
+    disk = Disk(node="sda", path="/dev/sda", model="X", wwn="naa.1", health=Health(power_on_hours=5, crc_errors=3))
+    save_history(record(loaded, [disk], "c"), store)
+    stored = json.loads(store.read_text(encoding="utf-8"))["series"]
+    assert [series["identity"] for series in stored] == ["naa.1", "naa.2"], stored
+    assert [sample["power_on_hours"] for sample in stored[0]["samples"]] == [1, 2, 5], stored[0]

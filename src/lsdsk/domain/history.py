@@ -566,6 +566,40 @@ def _fold_in(samples: tuple[Sample, ...], sample: Sample) -> tuple[Sample, ...]:
     return (*samples, sample)
 
 
+def merge_duplicate_series(series: Sequence[DiskSeries]) -> tuple[DiskSeries, ...]:
+    """One series per drive, every sample of each copy kept.
+
+    A store holding two series under one identity - hand-edited, or two stores
+    merged - was judged by the first and rewritten from the last, so the first
+    one's samples were silently dropped. Merging keeps all of them: ordered by
+    the drive's own clock, with a reading that repeats an hour replaced by the
+    later one in the file, which is the rule :func:`record` applies.
+
+    Args:
+        series: The series as stored, in file order.
+
+    Returns:
+        One series per identity, at the position its first copy held, carrying
+        the model of its last.
+
+    Example:
+        >>> a = DiskSeries(identity="naa.1", model="X", samples=(Sample(power_on_hours=2, captured_at="b"),))
+        >>> b = DiskSeries(identity="naa.1", model="X", samples=(Sample(power_on_hours=1, captured_at="a"),))
+        >>> [s.power_on_hours for s in merge_duplicate_series([a, b])[0].samples]
+        [1, 2]
+    """
+    merged: dict[str, DiskSeries] = {}
+    for one in series:
+        earlier = merged.get(one.identity)
+        if earlier is None:
+            merged[one.identity] = one
+            continue
+        by_hour: dict[int, Sample] = {sample.power_on_hours: sample for sample in (*earlier.samples, *one.samples)}
+        samples = tuple(by_hour[hour] for hour in sorted(by_hour))
+        merged[one.identity] = DiskSeries(identity=one.identity, model=one.model, samples=samples)
+    return tuple(merged.values())
+
+
 def has_new_readings(history: History, disks: Sequence[Disk]) -> bool:
     """Whether any drive has anything new to say since it was last recorded.
 
@@ -777,6 +811,7 @@ __all__ = [
     "has_new_readings",
     "has_recordable_drive",
     "identity_of",
+    "merge_duplicate_series",
     "record",
     "sample_from",
     "thin",

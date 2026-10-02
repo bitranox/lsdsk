@@ -50,6 +50,13 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   from reading it to writing it, and re-reads it under that lock; one held for
   over 30 seconds is reported as a failed write rather than waited on forever.
 
+- **A counter store that names one drive twice no longer loses one copy's
+  samples.** It was judged by the first series and rewritten from the last,
+  writing the last one back under both slots, so the first series' readings
+  were discarded for good. A store gets there by being hand-edited or merged;
+  the two series are now merged on the way in, every sample kept and ordered by
+  the drive's own clock, and the store is written back with one series.
+
 - **`DomainModel.with_changes` no longer refuses a model whose public cached
   property was read first.** It built the new values from the instance's own
   dictionary, which holds a warmed `cached_property` beside the fields, and the
