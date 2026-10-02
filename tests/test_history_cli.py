@@ -820,6 +820,61 @@ def test_recording_nothing_new_leaves_the_success_code(
     assert second.exit_code == 0, f"nothing new to record left {second.exit_code}"
 
 
+def _capture_with_every_counter_refused(tmp_path: Path) -> Path:
+    """`HEALTHY` as an unprivileged run reads it: every SMART reading refused.
+
+    Built with ``json.dumps`` from the committed capture, so the only difference
+    from a capture the suite already trusts is the refusal itself.
+    """
+    capture = json.loads(HEALTHY.read_text(encoding="utf-8"))
+    refusal = "[Errno 13] Permission denied"
+    capture["euid"] = 1000
+    capture["ata"] = {
+        node: {"identify_error": refusal, "smart_data_error": refusal, "smart_thresholds_error": refusal}
+        for node in capture["ata"]
+    }
+    capture["nvme"] = {
+        node: {"identify_controller_error": refusal, "smart_log_error": refusal} for node in capture["nvme"]
+    }
+    path = tmp_path / "refused.json"
+    path.write_text(json.dumps(capture), encoding="utf-8")
+    return path
+
+
+@pytest.mark.os_agnostic
+def test_a_record_that_could_read_no_drive_is_not_reported_as_nothing_new(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+) -> None:
+    """A run that read no drive's clock has not stored anything, and must say so.
+
+    Nothing new means every drive was asked and none had moved. With every
+    counter refused nobody was asked, so the store is never even created - and
+    reported as nothing new, a sampler run without privilege would read ok and
+    exit 0 every hour for as long as it ran.
+    """
+    refused = _capture_with_every_counter_refused(tmp_path)
+    store = tmp_path / "history.json"
+
+    for attempt in (1, 2):
+        code, envelope, stderr = _record_json(
+            cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(refused)
+        )
+        assert envelope["data"]["outcome"] == "no drive readable", f"run {attempt}: {envelope}"
+        assert envelope["ok"] is False, f"run {attempt}: a run that stored nothing it could read reported ok"
+        assert len(envelope["skipped"]) == 1 and "root or Administrator" in envelope["skipped"][0], envelope
+        assert code == ExitCode.GENERAL_ERROR, f"run {attempt} left {code}"
+        assert "Error: " in stderr, stderr
+    assert not store.exists(), "nothing was readable, so nothing should have been written"
+
+    # The control: the same machine with its counters readable records.
+    control, envelope, _ = _record_json(
+        cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(HEALTHY)
+    )
+    assert (control, envelope["data"]["outcome"]) == (0, "recorded"), envelope
+
+
 @pytest.mark.os_agnostic
 def test_a_record_that_could_not_write_leaves_a_code_a_timer_can_see(
     cli_runner: CliRunner,

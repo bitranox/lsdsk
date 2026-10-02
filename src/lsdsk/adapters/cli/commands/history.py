@@ -28,7 +28,7 @@ from lsdsk.adapters.textfile import read_json_bounded
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import ActionCommand, CliCommand, OutputFormat
 from lsdsk.domain.errors import ConfigurationError
-from lsdsk.domain.history import History, has_new_readings, record
+from lsdsk.domain.history import History, has_new_readings, has_recordable_drive, record
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 from .. import safe_console
@@ -125,6 +125,7 @@ class RecordOutcome(StrEnum):
 
     RECORDED = "recorded"
     NOTHING_NEW = "nothing new"
+    NO_DRIVE_READABLE = "no drive readable"
     STORE_NOT_READABLE = "store not readable"
     RECORDING_OFF = "recording off"
     NOT_PERMITTED = "not permitted"
@@ -176,6 +177,8 @@ def why_nothing_was_stored(attempt: RecordAttempt, path: Path) -> str | None:
             return None
         case RecordOutcome.NOTHING_NEW:
             return "no drive has advanced its power-on hours since the last reading"
+        case RecordOutcome.NO_DRIVE_READABLE:
+            return f"no drive's power-on hours could be read, so there was nothing to store{attempt.detail or ''}"
         case RecordOutcome.RECORDING_OFF:
             return "--no-record was given, so this run judged the counters without adding to them"
         case RecordOutcome.STORE_NOT_READABLE:
@@ -203,6 +206,10 @@ def record_exit_code(attempt: RecordAttempt) -> ExitCode:
     already gives a file it cannot use, and not 74: nothing was written, so an
     I/O code would send somebody looking at the wrong half of the operation.
 
+    A run that could read no drive's power-on hours is 1: the record is not
+    growing, but nothing about the store is wrong, so none of the store codes
+    fits. ``record`` reports no findings, so 1 cannot be read as one here.
+
     Args:
         attempt: What came of the write.
 
@@ -218,6 +225,8 @@ def record_exit_code(attempt: RecordAttempt) -> ExitCode:
         <ExitCode.PERMISSION_DENIED: 13>
         >>> record_exit_code(RecordAttempt(RecordOutcome.COULD_NOT_WRITE, "full"))
         <ExitCode.IO_ERROR: 74>
+        >>> record_exit_code(RecordAttempt(RecordOutcome.NO_DRIVE_READABLE, ""))
+        <ExitCode.GENERAL_ERROR: 1>
     """
     match attempt.outcome:
         case RecordOutcome.STORE_NOT_READABLE:
@@ -226,6 +235,8 @@ def record_exit_code(attempt: RecordAttempt) -> ExitCode:
             return ExitCode.PERMISSION_DENIED
         case RecordOutcome.COULD_NOT_WRITE:
             return ExitCode.IO_ERROR
+        case RecordOutcome.NO_DRIVE_READABLE:
+            return ExitCode.GENERAL_ERROR
         case RecordOutcome.RECORDED | RecordOutcome.NOTHING_NEW | RecordOutcome.RECORDING_OFF:
             return ExitCode.SUCCESS
 
@@ -280,6 +291,12 @@ def record_reading(
         return RecordAttempt(RecordOutcome.STORE_NOT_READABLE, read.refusal)
     if not settings.enabled:
         return RecordAttempt(RecordOutcome.RECORDING_OFF)
+    # Asked before "nothing new", which is a claim that every drive was asked and
+    # none had moved. With no drive's clock read that claim is false, and a
+    # sampler without privilege would report a healthy hour for as long as it ran.
+    if not has_recordable_drive(inventory.disks):
+        why = "" if inventory.privileged else " (reading SMART needs root or Administrator)"
+        return RecordAttempt(RecordOutcome.NO_DRIVE_READABLE, why)
     if not has_new_readings(history, inventory.disks):
         return RecordAttempt(RecordOutcome.NOTHING_NEW)
     first_ever = not settings.path.exists()
@@ -360,8 +377,9 @@ class RecordResult(ActionResult):
     `recorded` false is not on its own a failure: `outcome` says which of the
     reasons it was. ``nothing new`` means no drive's own clock has moved since the
     last reading, which is a healthy run, so it carries `ok` true and nothing in
-    `skipped`; the outcomes that mean the record has stopped growing carry their
-    sentence in `skipped` and a non-zero exit code.
+    `skipped`; the outcomes that mean the record has stopped growing - including
+    ``no drive readable``, a run that could not read any drive's clock - carry
+    their sentence in `skipped` and a non-zero exit code.
     """
 
     recorded: bool

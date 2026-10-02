@@ -298,12 +298,15 @@ Gb/s, per lane) and `lanes` (1 or 2). The speed is the lane rate times the lanes
 is 0.48 Gb/s. `usb` is `null` on every other disk.
 
 **A controller, inside `data.controllers`, carries `kind`**, which is one of
-`ahci`, `sas`, `nvme`, `raid`, `ide`, `other` or `unknown` - read from the PCI
-class code, so `unknown` means unclassified rather than absent. It carries
-`address`, `name`, `vendor`, `driver`, `firmware`, `link`, `port_count`,
+`ahci`, `sas`, `nvme`, `raid`, `ide` or `other` - read from the PCI class code,
+so `other` is a mass-storage device of a subclass with no name of its own. It
+carries `address`, `name`, `vendor`, `driver`, `firmware`, `link`, `port_count`,
 `ports_used`, `upstream`, `upstream_address`, `upstream_name` and
-`readings_refused` beside it. A filter for "the controllers that can carry disks"
-is `is_storage_controller` below, not a list of these values spelled out again.
+`readings_refused` beside it. **Every entry is already a storage controller**:
+both platforms list only PCI mass-storage devices (class `0x01`) there, so no
+filter is needed and none is exported. That is not the same as "every controller
+a disk hangs off": a USB disk's `controller_address` names its USB host
+controller, which is not a storage device and is not in `data.controllers`.
 
 **`data.virtual_disks` is a second list of the same shape**, holding the devices
 with no hardware behind them. It is always populated, whatever `--expand-virtual`
@@ -376,7 +379,6 @@ would report if its configuration deploys different thresholds.
 `count_by_severity(findings)` returns a count per `Severity` including the zeros,
 which is the whole split at once rather than the one-severity test the shell
 check above can make.
-`is_storage_controller(kind)` is the test the CLI filters controllers with.
 `format_pcie_sentence(speed_gtps, width)` writes a link the one way the whole tool
 writes it, so a sentence you compose agrees with the table beside it.
 `interface_demand_gbytes(disk)` and `attached_demand_gbytes(controller, inventory)`
@@ -441,7 +443,8 @@ not always `0`, though: one that cannot write what it was asked to write leaves
 `13` when it lacked permission and `74` for any other reason, with one stderr
 line saying which. `record` also leaves `78` when the counter-history store it
 would add to cannot be read, because it keeps that store rather than replacing
-it and the record has stopped growing. For `record`, which prints nothing at all
+it and the record has stopped growing, and `1` when it could read no drive's
+power-on hours at all, so there was nothing to store. For `record`, which prints nothing at all
 in human mode when it succeeds, that code is what a timer reads. Neither an
 internal error nor a failed write is one of the things `1` can mean: a crash leaves `70` and output
 that could not be written leaves `74`, so a check can act on `1` as a verdict
@@ -454,7 +457,7 @@ nothing, or a truncated report if the crash landed mid-write.
 | Code  | Means                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 |-------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `0`   | A reporting command found nothing actionable. `record`, `snapshot` and `config-*` exit `0` on success regardless                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `1`   | A reporting command found a warning or a critical. NOT a crash - that is `70` - and NOT a write that failed - that is `74`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `1`   | A reporting command found a warning or a critical. NOT a crash - that is `70` - and NOT a write that failed - that is `74`. From `record`, which reports no findings, it means no drive's power-on hours could be read, so nothing was stored                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `2`   | The command line was wrong. `USAGE_ERROR` in the envelope. See below, this one is misread constantly                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `13`  | Something needed privilege this run lacks: `config-deploy --target app` or `host` without root, a diagnostic run whose hardware read the kernel refused outright, or a `snapshot`, `record` or `config-generate-examples` whose destination refuses to be written. A field that merely could not be read is different - it degrades to `-` and names itself in `skipped`                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `22`  | `lsdsk config --section` named a section that does not exist, a `--profile` was rejected, `snapshot` was given a global `--replay`, or `-o -` together with `--format json` (the capture and the envelope would both be stdout) or while the logging console writes to stdout too, or `--format` was given to `report` or `tui`, which draw a page for a person - `findings --format json` is their machine-readable form - or `tui` was run where stdin, stdout or (on Linux and macOS) stderr is not a terminal. `--set SECTION.KEY=VALUE` is a different option and is not what produces this                                                                                                                                                                                                                                  |
@@ -500,8 +503,13 @@ drives were read, and the refusal as a sentence in `skipped` - rather than the
 `error` object above. A store `record` cannot read answers the same way at `78`.
 A run with nothing new to store, because no drive's power-on hours have advanced
 since the last reading, is healthy: exit `0`, `ok` true, `recorded` false and
-`skipped` empty. In every case `data.outcome` names what happened: `recorded`,
-`nothing new`, `store not readable`, `not permitted` or `could not write`. So a
+`skipped` empty. A run that could read NO drive's power-on hours - every SMART
+reading refused, typically because it ran without root or Administrator - stored
+nothing, and will store nothing until it can read one, so it is not "nothing new": exit `1`, `ok` false,
+`recorded` false, `outcome` `no drive readable`, and the reason in `skipped` and
+on stderr. In every case
+`data.outcome` names what happened: `recorded`, `nothing new`,
+`no drive readable`, `store not readable`, `not permitted` or `could not write`. So a
 caller reading `error.type` alone sees nothing here: read `ok` first - false
 means the record has stopped growing - then `data.outcome` and `skipped` for why.
 

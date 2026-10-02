@@ -196,6 +196,7 @@ def _row_for(path: Path, code: int) -> str:
 #: only COMMANDS.md learned either, so the skill told an agent that a bad TOML
 #: file was a bad snapshot. A new cause is added here with the test driving it.
 DOCUMENTED_CAUSES: dict[int, tuple[str, ...]] = {
+    1: ("warning or a critical", "`record`"),
     13: ("config-deploy", "config-generate-examples", "snapshot", "record"),
     22: ("--section", "--profile", "--replay", "`report`", "`tui`", "--format", "`-o -`"),
     74: ("snapshot", "record", "config-deploy", "config-generate-examples", "standard output"),

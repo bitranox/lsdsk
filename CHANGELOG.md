@@ -18,6 +18,23 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **`lsdsk record` no longer reports a run that could read no drive as
+  "nothing new".** Without root or Administrator every SMART reading is refused,
+  so no drive's power-on hours are known and nothing can be stored - and the run
+  above reported that as `ok: true` with `outcome: nothing new`, exit `0`, so an
+  unprivileged sampler looked healthy every hour while its store was never even
+  created. It now reports `outcome: no drive readable`, `ok: false`, the reason
+  in `skipped` and on stderr, and exits `1`.
+
+- **`lsdsk snapshot -o` writes into a FIFO or a character device instead of
+  replacing it.** The snapshot is renamed into place from a temporary file,
+  and a rename replaces whatever directory entry stood there: `-o <fifo>` left
+  a regular 0600 file where the FIFO had been, and as root `-o /dev/null`
+  replaced the system's null device. Such a destination is now written into,
+  with its mode left alone; a block device or a socket is refused, and so is
+  any of them as a `--history-file`, because the counter store is only ever
+  replaced whole.
+
 - **`DomainModel.with_changes` no longer refuses a model whose public cached
   property was read first.** It built the new values from the instance's own
   dictionary, which holds a warmed `cached_property` beside the fields, and the

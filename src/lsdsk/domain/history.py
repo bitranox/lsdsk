@@ -603,6 +603,30 @@ def has_new_readings(history: History, disks: Sequence[Disk]) -> bool:
     return False
 
 
+def has_recordable_drive(disks: Sequence[Disk]) -> bool:
+    """Whether this run read any drive that could be placed in the store at all.
+
+    :func:`has_new_readings` skips a drive with no identity or no clock, so on a
+    run where EVERY drive is like that it answers "nothing new" - which is a
+    claim that each drive was asked and none had moved, when none was asked.
+    This is the question that tells the two apart.
+
+    Args:
+        disks: The drives as this run read them.
+
+    Returns:
+        Whether at least one drive has both an identity and power-on hours.
+
+    Example:
+        >>> from lsdsk.domain.models import Disk, Health
+        >>> has_recordable_drive([Disk(node="sda", path="/dev/sda", model="X", wwn="naa.1")])
+        False
+        >>> has_recordable_drive([Disk(node="sda", path="/dev/sda", model="X", wwn="naa.1", health=Health(power_on_hours=5))])
+        True
+    """
+    return any(identity_of(disk) is not None and sample_from(disk, "") is not None for disk in disks)
+
+
 def untracked_disks(disks: Sequence[Disk]) -> tuple[str, ...]:
     """Name the drives this run could not record, and why not.
 
@@ -750,6 +774,7 @@ __all__ = [
     "Trend",
     "TrendVerdict",
     "has_new_readings",
+    "has_recordable_drive",
     "identity_of",
     "record",
     "sample_from",

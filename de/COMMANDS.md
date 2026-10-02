@@ -173,12 +173,15 @@ alles andere, wer nur nach `error.type` sucht, sieht hier nichts.
 
 `lsdsk record` nennt, welches seiner Ergebnisse eingetreten ist, statt eines
 Satzes für alle, und zwar in `data.outcome` - `recorded`, `nothing new`,
-`store not readable`, `not permitted` oder `could not write` -, denn sie bedeuten
-Verschiedenes: nichts Neues zum Ablegen, was in Ordnung ist und deshalb
-`ok: true` mit leerem `skipped` meldet; ein Speicher, der zu einer anderen Maschine gehört oder nicht
-gelesen werden kann, den `record` behält statt ersetzt; und ein fehlgeschlagener
-Schreibvorgang. Die letzten beiden bedeuten, dass der Verlauf nicht mehr wächst,
-und jeder hinterlässt einen Code - `78` für einen Speicher, der nicht gelesen
+`no drive readable`, `store not readable`, `not permitted` oder
+`could not write` -, denn sie bedeuten Verschiedenes: nichts Neues zum Ablegen,
+was in Ordnung ist und deshalb `ok: true` mit leerem `skipped` meldet; kein
+Laufwerk, dessen Betriebsstunden überhaupt gelesen werden konnten, meist ein Lauf
+ohne root- oder Administratorrechte; ein Speicher, der zu einer anderen Maschine
+gehört oder nicht gelesen werden kann, den `record` behält statt ersetzt; und ein
+fehlgeschlagener Schreibvorgang. Die letzten drei bedeuten, dass der Verlauf
+nicht mehr wächst, und jeder hinterlässt einen Code - `1`, wenn kein Laufwerk
+gelesen werden konnte, `78` für einen Speicher, der nicht gelesen
 werden kann, und bei einem fehlgeschlagenen Schreibvorgang `13`, wenn das
 Dateisystem die Rechte verweigert, und `74` bei jedem anderen Grund, dieselbe
 Aufteilung wie bei `snapshot` -, denn die menschenlesbare Form von `record`

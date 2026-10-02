@@ -161,16 +161,18 @@ caller that reads `ok` and the code first handles `record` like everything else;
 one that looks only for `error.type` sees nothing here.
 
 `lsdsk record` says which of its outcomes happened rather than one sentence for
-all of them, in `data.outcome` - `recorded`, `nothing new`, `store not readable`,
-`not permitted` or `could not write` - because they mean different things:
-nothing new to store, which is healthy and so reports `ok: true` with nothing in
-`skipped`; a store belonging to another machine or one that cannot be read, which
-`record` keeps rather than replaces; and a write that failed. The last two mean
-the record has stopped growing, and each leaves a code - `78` for a store that
-cannot be read, and for a failed write `13` when the filesystem refused
-permission and `74` for any other reason, the same split `snapshot` makes -
-because the human form of `record` is silent by design, so a timer that is not
-parsing JSON has nothing else to go on.
+all of them, in `data.outcome` - `recorded`, `nothing new`, `no drive readable`,
+`store not readable`, `not permitted` or `could not write` - because they mean
+different things: nothing new to store, which is healthy and so reports
+`ok: true` with nothing in `skipped`; no drive whose power-on hours could be read
+at all, typically a run without root or Administrator; a store belonging to
+another machine or one that cannot be read, which `record` keeps rather than
+replaces; and a write that failed. The last three mean the record has stopped
+growing, and each leaves a code - `1` when no drive could be read, `78` for a
+store that cannot be read, and for a failed write `13` when the filesystem
+refused permission and `74` for any other reason, the same split `snapshot`
+makes - because the human form of `record` is silent by design, so a timer that
+is not parsing JSON has nothing else to go on.
 
 `lsdsk --no-record record` is refused at `22` rather than obeyed. On every other
 command the flag means "judge the counters against the store without adding this
