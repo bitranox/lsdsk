@@ -760,6 +760,53 @@ def test_every_reason_record_stored_nothing_gets_its_own_sentence(
 
 
 @pytest.mark.os_agnostic
+def test_an_unreadable_store_prints_its_own_error_line_not_only_read_historys_warning(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+) -> None:
+    """``record``'s own ``Error:`` line is a separate sentence from ``read_history``'s warning.
+
+    ``read_history`` already names the store in a ``Warning:`` line when it stands
+    down from a store it cannot read, so a test asserting only that the path
+    appears somewhere in stderr passes whether or not ``cli_record`` goes on to
+    print its own ``Error: {reason}`` line for the exit-78 case. This pins that
+    second, distinct line.
+    """
+    store = tmp_path / "foreign.json"
+    _seed_foreign_store(store)
+
+    result = run(cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(SNAPSHOT))
+
+    assert result.exit_code == ExitCode.CONFIG_ERROR, f"an unreadable store left {result.exit_code}"
+    assert "Error: left the existing store at" in result.stderr, (
+        f"record's own Error line for the unreadable store is missing: {result.stderr!r}"
+    )
+
+
+@pytest.mark.os_agnostic
+def test_recording_nothing_new_leaves_the_success_code(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+) -> None:
+    """Nothing new to store is healthy, and the human-mode exit code is the only signal a timer sees.
+
+    The first run stores a reading; the second replays the same snapshot against
+    the same store, so no drive's power-on hours has moved and there is nothing
+    new to add. What ``ok``/``skipped`` should say about that case is a separate,
+    still-open question - this pins only today's exit code through the real CLI.
+    """
+    store = tmp_path / "nothing-new.json"
+    first = run(cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(HEALTHY))
+    assert first.exit_code == 0, "the control: the first run must store a reading for the second to have nothing new"
+
+    second = run(cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(HEALTHY))
+
+    assert second.exit_code == 0, f"nothing new to record left {second.exit_code}"
+
+
+@pytest.mark.os_agnostic
 def test_a_record_that_could_not_write_leaves_a_code_a_timer_can_see(
     cli_runner: CliRunner,
     production_factory: Callable[[], Any],
