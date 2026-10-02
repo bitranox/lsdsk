@@ -709,3 +709,39 @@ def test_a_camel_case_secret_is_redacted_in_both_modes(
     assert "mail.example.com" in result.output, "the section did not render, so this asserted nothing"
     for secret in ("hunter2-super-secret", "another-secret-value", "abcdef123456", "properly-named-secret"):
         assert secret not in result.output, f"{output_format}: {secret!r} reached the output"
+
+
+@pytest.mark.os_linux
+@pytest.mark.parametrize("directory", ["cfg[red]x[/red]", "cfg[/bad]y"], ids=["styled-looking", "unmatched-close"])
+def test_a_config_path_with_brackets_is_shown_as_it_is(
+    directory: str,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], AppServices],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    clear_config_cache: None,
+) -> None:
+    """The source line names the file a value came from, and a path is not markup.
+
+    The configuration library printed that line through Rich markup, so a path
+    with brackets in it was drawn without them - naming a file that does not
+    exist - or, with a closing tag that matched nothing, crashed the command.
+    Linux only, because this is the one platform whose user directory the test
+    can move to a path of its choosing.
+    """
+    from lsdsk import __init__conf__
+
+    root = tmp_path / directory
+    config = root / __init__conf__.LAYEREDCONF_SLUG / "config.toml"
+    config.parent.mkdir(parents=True)
+    config.write_text("[display]\npiped_width = 120\n", encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(root))
+
+    result: Result = cli_runner.invoke(cli_mod.cli, ["config", "--section", "display"], obj=production_factory)
+
+    assert result.exit_code == 0, result.output
+    # The console wraps a long line wherever it likes, so the path is looked for
+    # in the output with every line break and space taken out; the path itself
+    # has none.
+    assert " " not in str(config), "the control: the path must have no space for this to be a fair search"
+    assert str(config) in "".join(result.stdout.split()), f"the path was not shown verbatim:\n{result.stdout}"
