@@ -33,11 +33,13 @@ System Role:
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import json
 import os
 import sys
-from collections.abc import Mapping, Sequence, Sized
+import time
+from collections.abc import Generator, Mapping, Sequence, Sized
 from pathlib import Path
 from typing import Annotated, Any, NamedTuple, cast
 
@@ -433,14 +435,84 @@ class HistoryRead(NamedTuple):
     refusal: str | None = None
 
 
+#: How long a run waits for another to finish writing the store before giving
+#: up. A write takes milliseconds; a holder this slow has hung, and waiting on it
+#: forever would hang a timer behind it.
+LOCK_WAIT_SECONDS = 30.0
+
+#: How often a waiting run asks again.
+_LOCK_POLL_SECONDS = 0.05
+
+
+def _try_lock(descriptor: int) -> bool:
+    """Take the exclusive lock on ``descriptor`` without waiting; ``False`` when another run holds it."""
+    if sys.platform == "win32":
+        import msvcrt  # noqa: PLC0415 - Windows-only module
+
+        try:
+            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+        except OSError:
+            return False
+        return True
+    import fcntl  # noqa: PLC0415 - POSIX-only module
+
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return False
+    return True
+
+
+@contextlib.contextmanager
+def history_lock(path: Path, *, wait: float = LOCK_WAIT_SECONDS) -> Generator[None]:
+    """Hold the store exclusively from reading it to writing it back.
+
+    Two runs that overlap - a timer's ``record`` and an interactive ``lsdsk`` -
+    each read the store, add a reading and write the whole of it back, so the
+    one that wrote second replaced the other's sample with the copy it had read
+    before that sample existed. A lock on a file beside the store serialises
+    them. The operating system releases it when its holder exits however that
+    happens, so a crashed run leaves no lock behind, only an empty file.
+
+    Args:
+        path: The store. The lock is ``.<name>.lock`` in the same directory.
+        wait: How long to wait for another run before giving up.
+
+    Raises:
+        OSError: If the lock file cannot be created (``PermissionError`` for a
+            refusal), or another run held the store for longer than ``wait``
+            (``errno.EAGAIN``).
+
+    Example:
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as directory, history_lock(Path(directory) / "h.json"):
+        ...     pass
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(path.with_name(f".{path.name}.lock"), os.O_RDWR | os.O_CREAT, HISTORY_FILE_MODE)
+    try:
+        deadline = time.monotonic() + wait
+        while not _try_lock(descriptor):
+            if time.monotonic() >= deadline:
+                message = f"another lsdsk run has held the counter store for over {wait:g} seconds"
+                raise OSError(errno.EAGAIN, message, str(path))
+            time.sleep(_LOCK_POLL_SECONDS)
+        yield
+    finally:
+        # Closing the descriptor releases the lock on every platform.
+        os.close(descriptor)
+
+
 __all__ = [
     "HISTORY_FILE_MODE",
     "HISTORY_SCHEMA_VERSION",
+    "LOCK_WAIT_SECONDS",
     "MAX_SAMPLES_PER_DRIVE",
     "SYSTEM_STORE_DIR",
     "HistoryFile",
     "HistoryRead",
     "default_history_path",
+    "history_lock",
     "load_history",
     "read_history",
     "running_as_root",

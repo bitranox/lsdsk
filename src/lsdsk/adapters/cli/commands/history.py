@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Final, NamedTuple
 import lib_log_rich.runtime
 import rich_click as click
 
-from lsdsk.adapters.history.store import HistoryRead, load_history, save_history
+from lsdsk.adapters.history.store import HistoryRead, history_lock, load_history, save_history
 from lsdsk.adapters.hw.capture import CaptureEnvelope
 from lsdsk.adapters.textfile import read_json_bounded
 from lsdsk.domain.diagnostics import diagnose
@@ -307,23 +307,41 @@ def record_reading(
         is the caller's, because the two callers want opposite things from a
         failed write: see :func:`warn_if_the_store_was_not_written`.
     """
-    history = read.history
     declined = _why_not_to_record(inventory, read, settings)
     if declined is not None:
         return declined
     first_ever = not settings.path.exists()
-    stamp = captured_at or datetime.now(UTC).isoformat()
-    updated = record(history, inventory.disks, stamp, cap=settings.max_samples_per_drive)
     try:
-        save_history(updated, settings.path)
+        with history_lock(settings.path):
+            # Read again under the lock: `read` may be a copy from before
+            # another run stored its reading, and folding into it would write
+            # that reading away.
+            attempt = _record_into_the_current_store(inventory, settings, captured_at)
     except PermissionError as error:
         return RecordAttempt(RecordOutcome.NOT_PERMITTED, str(error))
     except OSError as error:
         return RecordAttempt(RecordOutcome.COULD_NOT_WRITE, str(error))
-    if first_ever and announce:
+    if attempt.stored and first_ever and announce:
         # Said once per machine, so a run that writes to disk is never a silent
         # surprise, and never again after that.
         safe_console.echo(f"Recording disk error counters to {settings.path} (--no-record turns this off).", err=True)
+    return attempt
+
+
+def _record_into_the_current_store(
+    inventory: Inventory, settings: HistorySettings, captured_at: str | None
+) -> RecordAttempt:
+    """Fold this reading into the store as it is on disk now, and write it back.
+
+    Raises:
+        OSError: If the store cannot be written; the caller names which kind.
+    """
+    current = read_history(inventory, settings)
+    declined = _why_not_to_record(inventory, current, settings)
+    if declined is not None:
+        return declined
+    stamp = captured_at or datetime.now(UTC).isoformat()
+    save_history(record(current.history, inventory.disks, stamp, cap=settings.max_samples_per_drive), settings.path)
     return RecordAttempt(RecordOutcome.RECORDED)
 
 

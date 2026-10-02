@@ -42,6 +42,14 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   difference between two names that looked identical. They are now removed
   with the controls, and a refusal quoting such text shows them as `\uNNNN`.
 
+- **Two overlapping runs no longer lose each other's counter readings.** Each
+  run read the store, added its reading and wrote the whole of it back, so
+  when a timer's `record` and an interactive `lsdsk` overlapped, the one that
+  wrote second replaced the other's sample with the copy it had read before
+  that sample existed. A run now holds a lock beside the store (`.<name>.lock`)
+  from reading it to writing it, and re-reads it under that lock; one held for
+  over 30 seconds is reported as a failed write rather than waited on forever.
+
 - **`DomainModel.with_changes` no longer refuses a model whose public cached
   property was read first.** It built the new values from the instance's own
   dictionary, which holds a warmed `cached_property` beside the fields, and the
