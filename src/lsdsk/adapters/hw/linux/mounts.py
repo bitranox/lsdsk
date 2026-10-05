@@ -1,0 +1,314 @@
+"""Read the Linux sources that say what uses each disk.
+
+Every function takes the root it reads from, so tests drive it over a fake
+tree and it stays in coverage, unlike the ioctl transport beside it. Nothing
+here needs privilege: mountinfo, /proc/swaps, sysfs and the udev database are
+all world-readable.
+
+System Role:
+    Adapter layer, reading half. Produces the plain mappings that
+    :mod:`.capture` types and :mod:`.builder` will turn into usage (a later
+    task); this module records sources only.
+
+Contents:
+    * :func:`read_mounts` - every mounted filesystem, from mountinfo.
+    * :func:`read_swaps` - every active swap, from ``/proc/swaps``.
+    * :func:`read_partitions` - a disk's partitions and what sits on each.
+    * :func:`read_stacked` - a device-mapper device's mapping and its holders.
+    * :func:`read_signatures` - the udev database's filesystem type and label.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from ....domain.errors import ConfigurationError, MissingFileError
+from ...textfile import read_text_bounded
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+# mountinfo on a container host with a ZFS root runs to tens of thousands of
+# characters for a few dozen mounts; a docker host with thousands of bind
+# mounts is the real ceiling this guards against, not the ordinary case. It is
+# the same order of magnitude as the other sysfs text bounds in this adapter
+# and far below a size that would matter.
+MAX_MOUNTINFO_BYTES = 8 * 1024 * 1024
+
+#: The most a single short sysfs attribute (a device number, a dm name or
+#: uuid, a udev database entry) is read as. The kernel caps a text attribute
+#: at one page; this is the same megabyte ceiling :mod:`..linux.reader` already
+#: applies to such an attribute, so nothing a live read keeps here is refused
+#: for a reason the reader beside it would accept.
+MAX_ATTRIBUTE_BYTES = 1024 * 1024
+
+# The kernel writes a space, tab, newline or backslash in a mount path as a
+# three-digit octal escape, so "/boot efi" arrives as "/boot\040efi".
+_OCTAL_ESCAPE = re.compile(r"\\([0-7]{3})")
+# The two udev properties this tool reads. The database also holds serials and
+# paths; keeping only these keeps a capture's new fields free of identifiers.
+_SIGNATURE_KEYS = {"ID_FS_TYPE": "fs_type", "ID_FS_LABEL": "fs_label"}
+
+# mountinfo's fields left of " - " run id, parent id, maj:min, root, mountpoint,
+# options[, optional tags]; field 4 (index 4, after a whitespace split) is the
+# mountpoint, so a row with fewer than five fields cannot carry one.
+_MIN_LEFT_FIELDS = 5
+# The fields right of " - " are fstype, source[, options]; at least the first
+# two are required to know the filesystem and where it came from.
+_MIN_RIGHT_FIELDS = 2
+
+
+def _unescape(text: str) -> str:
+    """Undo the kernel's octal escaping of a mountinfo path field."""
+    return _OCTAL_ESCAPE.sub(lambda match: chr(int(match.group(1), 8)), text)
+
+
+def _device_number_of(path: str) -> str | None:
+    """The ``maj:min`` of a device node, or None when it is not one.
+
+    Args:
+        path: A path that may name a device node, such as ``/dev/sda2``.
+
+    Returns:
+        ``"<major>:<minor>"``, or ``None`` when the path cannot be stat'd or
+        names something other than a device.
+    """
+    try:
+        rdev = Path(path).stat().st_rdev
+    except OSError:
+        return None
+    return f"{os.major(rdev)}:{os.minor(rdev)}" if rdev else None
+
+
+def read_mounts(path: Path = Path("/proc/self/mountinfo")) -> list[dict[str, str]] | None:
+    """Read every mounted filesystem from mountinfo.
+
+    Args:
+        path: The mountinfo file to read, overridable for a test.
+
+    Returns:
+        One row per mount, each carrying ``dev`` (the mounted device's own
+        ``maj:min``, field 3), ``mountpoint``, ``fstype`` and ``source`` (the
+        filesystem type and source after the ``" - "`` separator), plus
+        ``source_dev`` when the source names a resolvable ``/dev`` node. ``None``
+        when the file could not be read at all - a different fact from a
+        machine with no mounts, which mountinfo never reports.
+    """
+    try:
+        text = read_text_bounded(path, what="mountinfo")
+    except (MissingFileError, ConfigurationError):
+        return None
+
+    rows: list[dict[str, str]] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        row = _parse_mountinfo_line(line)
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
+def _parse_mountinfo_line(line: str) -> dict[str, str] | None:
+    """Parse one mountinfo row, or ``None`` for a malformed one.
+
+    The optional fields between field 6 and the separator vary in count, so
+    the line is split on the FIRST ``" - "`` that follows field 6 rather than
+    on a fixed index counted from the right.
+    """
+    left, separator, right = line.partition(" - ")
+    if not separator:
+        return None
+    left_fields = left.split()
+    right_fields = right.split(maxsplit=2)
+    if len(left_fields) < _MIN_LEFT_FIELDS or len(right_fields) < _MIN_RIGHT_FIELDS:
+        return None
+
+    row = {
+        "dev": left_fields[2],
+        "mountpoint": _unescape(left_fields[4]),
+        "fstype": right_fields[0],
+        "source": _unescape(right_fields[1]),
+    }
+    if row["source"].startswith("/dev/"):
+        source_dev = _device_number_of(row["source"])
+        if source_dev is not None:
+            row["source_dev"] = source_dev
+    return row
+
+
+def read_swaps(path: Path = Path("/proc/swaps")) -> list[dict[str, str]]:
+    """Read every active swap from ``/proc/swaps``.
+
+    Args:
+        path: The swaps file to read, overridable for a test.
+
+    Returns:
+        One row per swap, each carrying ``path`` and, when it resolves to a
+        device node, ``dev``. Empty when the file cannot be read or has no
+        swaps beyond its header.
+    """
+    try:
+        text = read_text_bounded(path, what="the swap list")
+    except (MissingFileError, ConfigurationError):
+        return []
+
+    rows: list[dict[str, str]] = []
+    for line in text.splitlines()[1:]:
+        fields = line.split()
+        if not fields:
+            continue
+        row = {"path": fields[0]}
+        dev = _device_number_of(fields[0])
+        if dev is not None:
+            row["dev"] = dev
+        rows.append(row)
+    return rows
+
+
+def read_partitions(node: Path) -> dict[str, dict[str, Any]]:
+    """Read a disk's partitions and what sits directly on each.
+
+    A sysfs disk directory holds other children too (``queue``, ``device``,
+    ``holders``, ``power``, ...); only a child carrying its own ``partition``
+    file is a partition.
+
+    Args:
+        node: The disk's ``/sys/block`` directory.
+
+    Returns:
+        One entry per partition, keyed by its kernel name, each carrying
+        ``dev`` when read and ``holders`` (sorted names of what sits on it).
+    """
+    partitions: dict[str, dict[str, Any]] = {}
+    if not node.is_dir():
+        return partitions
+    for child in sorted(node.iterdir()):
+        if not (child / "partition").is_file():
+            continue
+        entry: dict[str, Any] = {}
+        dev = _read_short_text(child / "dev")
+        if dev is not None:
+            entry["dev"] = dev
+        entry["holders"] = _holder_names(child)
+        partitions[child.name] = entry
+    return partitions
+
+
+def read_stacked(names: Iterable[str], root: Path = Path("/sys/block")) -> dict[str, dict[str, Any]]:
+    """Read every device-mapper device's mapping and what sits on it.
+
+    Follows holders transitively, so a crypt-under-LVM chain is captured in
+    one call: a holder of a seed device is read too, and its own holders in
+    turn, each name visited once.
+
+    Args:
+        names: The device-mapper device names to start from (a disk's or a
+            partition's holders).
+        root: The ``/sys/block`` directory, overridable for a test.
+
+    Returns:
+        One entry per device-mapper device reached, keyed by kernel name, each
+        carrying ``dev``, ``dm_name`` and ``dm_uuid`` where present, and
+        ``holders``.
+    """
+    found: dict[str, dict[str, Any]] = {}
+    seen: set[str] = set()
+    pending = list(names)
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        node = root / name
+        if not node.is_dir():
+            continue
+        entry: dict[str, Any] = {}
+        dev = _read_short_text(node / "dev")
+        if dev is not None:
+            entry["dev"] = dev
+        dm_name = _read_short_text(node / "dm" / "name")
+        if dm_name is not None:
+            entry["dm_name"] = dm_name
+        dm_uuid = _read_short_text(node / "dm" / "uuid")
+        if dm_uuid is not None:
+            entry["dm_uuid"] = dm_uuid
+        holders = _holder_names(node)
+        entry["holders"] = holders
+        found[name] = entry
+        pending.extend(holder for holder in holders if holder not in seen)
+    return found
+
+
+def read_signatures(devnums: Iterable[str], root: Path = Path("/run/udev/data")) -> dict[str, dict[str, str]] | None:
+    """Read the udev database's filesystem type and label for each device.
+
+    Args:
+        devnums: The ``maj:min`` device numbers to look up.
+        root: The udev database directory, overridable for a test.
+
+    Returns:
+        One entry per devnum that carries a filesystem type or label, keyed by
+        devnum. ``None`` when ``root`` is not a directory at all - this
+        container's own ``/run`` carries no udev database, which is a
+        different fact from every device having none.
+    """
+    if not root.is_dir():
+        return None
+
+    signatures: dict[str, dict[str, str]] = {}
+    for devnum in devnums:
+        found = _udev_signature(root / f"b{devnum}")
+        if found:
+            signatures[devnum] = found
+    return signatures
+
+
+def _udev_signature(path: Path) -> dict[str, str]:
+    """The filesystem type and label a udev database entry carries, if any."""
+    text = _read_short_text(path, limit=MAX_ATTRIBUTE_BYTES)
+    if text is None:
+        return {}
+    found: dict[str, str] = {}
+    for line in text.splitlines():
+        if not line.startswith("E:"):
+            continue
+        key, _, value = line[2:].partition("=")
+        name = _SIGNATURE_KEYS.get(key)
+        if name is not None:
+            found[name] = value
+    return found
+
+
+def _holder_names(node: Path) -> list[str]:
+    """The sorted names of what sits directly on a block device."""
+    holders = node / "holders"
+    try:
+        return sorted(child.name for child in holders.iterdir())
+    except OSError:
+        return []
+
+
+def _read_short_text(path: Path, *, limit: int = MAX_ATTRIBUTE_BYTES) -> str | None:
+    """Read one short sysfs attribute's stripped text, or ``None``."""
+    try:
+        with path.open("r", errors="replace") as handle:
+            raw = handle.read(limit + 1)
+    except OSError:
+        return None
+    if len(raw) > limit:
+        return None
+    return raw.strip()
+
+
+__all__ = [
+    "MAX_MOUNTINFO_BYTES",
+    "read_mounts",
+    "read_partitions",
+    "read_signatures",
+    "read_stacked",
+    "read_swaps",
+]

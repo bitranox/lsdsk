@@ -50,7 +50,7 @@ from ..capture import MAX_DEVICE_TEXT, MAX_PAYLOAD_BYTES
 from ..decode import ahci, pciids
 from ..decode.virtualization import container_markers_in_mounts
 from ..snapshot import SCHEMA_VERSION
-from . import usbfs
+from . import mounts, usbfs
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -687,7 +687,8 @@ def read_block(root: Path = Path("/sys/block")) -> dict[str, dict[str, Any]]:
         return disks
     for node in _entries(root):
         entry: dict[str, Any] = {"size": _read_attribute(node / "size")}
-        if _is_kernel_virtual(node, root):
+        virtual = _is_kernel_virtual(node, root)
+        if virtual:
             entry["virtual"] = True
         # The stable identifier lives at block level for NVMe and at device level
         # for SCSI and SATA, and both are readable without any privilege.
@@ -705,6 +706,14 @@ def read_block(root: Path = Path("/sys/block")) -> dict[str, dict[str, Any]]:
             monitors = sorted(device.glob("hwmon/hwmon*")) + sorted(device.glob("hwmon*"))
             if monitors:
                 entry["hwmon"] = [os.path.realpath(monitor) for monitor in monitors]
+        if not virtual:
+            # Only a real device has partitions and holders worth recording: a
+            # virtual one already says so via `virtual: True`, and what uses it
+            # (loop, zram, zvol) is not something mountinfo or device-mapper
+            # layers the same way a real disk's chain does.
+            entry["dev"] = _read_attribute(node / "dev")
+            entry["holders"] = sorted(p.name for p in _entries(node / "holders"))
+            entry["partitions"] = mounts.read_partitions(node)
         disks[node.name] = entry
     return disks
 
@@ -984,6 +993,19 @@ def read_system() -> dict[str, Any]:
     nvme_nodes = [node for node in block if node.startswith("nvme")]
     pci = read_pci()
 
+    # What device-mapper sits on a disk's own block node or on any of its
+    # partitions, so a crypt-under-LVM chain is followed from either end.
+    holders = {name for entry in block.values() for name in entry.get("holders", ())}
+    holders |= {
+        name for entry in block.values() for part in entry.get("partitions", {}).values() for name in part["holders"]
+    }
+    # Every device number this run has seen, so the udev database is looked up
+    # for exactly the devices a mount or a stacked layer could name.
+    devnums = [entry["dev"] for entry in block.values() if entry.get("dev")]
+    devnums += [
+        part["dev"] for entry in block.values() for part in entry.get("partitions", {}).values() if part.get("dev")
+    ]
+
     return {
         "schema": SCHEMA_VERSION,
         "captured_at": datetime.now(UTC).isoformat(),
@@ -1000,6 +1022,10 @@ def read_system() -> dict[str, Any]:
         "ata": read_ata_blobs(ata_nodes),
         "nvme": read_nvme_blobs(nvme_nodes),
         "usb": read_usb(block),
+        "mounts": mounts.read_mounts(),
+        "swaps": mounts.read_swaps(),
+        "stacked": mounts.read_stacked(sorted(holders)),
+        "signatures": mounts.read_signatures(devnums),
     }
 
 

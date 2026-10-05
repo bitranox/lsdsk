@@ -258,6 +258,91 @@ class VpdPages(CaptureModel, frozen=True):
     vpd_pg89: EncodedPayload | None = None
 
 
+class MountEntry(CaptureModel, frozen=True):
+    """One row of mountinfo.
+
+    Attributes:
+        dev: The mounted filesystem's own ``maj:min``, mountinfo's field 3.
+        mountpoint: Where it is mounted, with the kernel's octal path escapes
+            already undone.
+        fstype: The filesystem type, such as ``zfs`` or ``vfat``.
+        source: What was mounted, which is a dataset name for ``zfs``, a UUID
+            or label for many others, or a ``/dev/`` path.
+        source_dev: The ``maj:min`` of ``source``, when it names a resolvable
+            device node. ``None`` for a source that is not a device path (a
+            ZFS dataset, ``tmpfs``, an NFS export) and for one that could not
+            be resolved.
+    """
+
+    dev: DeviceText
+    mountpoint: DeviceText
+    fstype: DeviceText = ""
+    source: DeviceText = ""
+    source_dev: DeviceText | None = None
+
+
+class SwapEntry(CaptureModel, frozen=True):
+    """One row of ``/proc/swaps``, with its header already skipped.
+
+    Attributes:
+        path: The swap file or partition's path.
+        dev: Its ``maj:min``, when ``path`` resolves to a device node. ``None``
+            for a swap file on a filesystem.
+    """
+
+    path: DeviceText
+    dev: DeviceText | None = None
+
+
+class PartitionEntry(CaptureModel, frozen=True):
+    """One partition of a disk, from its sysfs child directory.
+
+    Attributes:
+        dev: The partition's own ``maj:min``, when read.
+        holders: What sits directly on it (a device-mapper device's kernel
+            name), keyed the same way :data:`LinuxCapture.stacked` is.
+    """
+
+    dev: DeviceText | None = None
+    holders: Entries[DeviceText] = ()
+
+
+class StackedEntry(CaptureModel, frozen=True):
+    """One device-mapper device sitting on a disk or a partition.
+
+    Attributes:
+        dev: The device's own ``maj:min``, when read.
+        dm_name: The mapping's name, such as ``cryptroot``, when the device
+            publishes one.
+        dm_uuid: The mapping's UUID, which names its TYPE (``CRYPT-LUKS2-...``,
+            ``LVM-...``) as its first dash-separated field.
+        holders: What sits directly on this device, so a crypt-under-LVM chain
+            is readable one layer at a time.
+    """
+
+    dev: DeviceText | None = None
+    dm_name: DeviceText | None = None
+    dm_uuid: DeviceText | None = None
+    holders: Entries[DeviceText] = ()
+
+
+class FilesystemSignature(CaptureModel, frozen=True):
+    """What the udev database says a block device's content is formatted as.
+
+    Only the two properties this tool reads: the database also carries
+    serials and by-id paths, and keeping those out of a capture's new fields
+    is what keeps them free of identifiers.
+
+    Attributes:
+        fs_type: The filesystem or RAID member type udev detected, such as
+            ``zfs_member``.
+        fs_label: The filesystem's own label, when it has one.
+    """
+
+    fs_type: DeviceText | None = None
+    fs_label: DeviceText | None = None
+
+
 class BlockEntry(CaptureModel, frozen=True):
     """One block device.
 
@@ -271,6 +356,12 @@ class BlockEntry(CaptureModel, frozen=True):
         device_path: The resolved sysfs path of that device.
         vpd: The VPD pages the device answered.
         hwmon: The resolved paths of the hardware monitors the device owns.
+        dev: The block device's own ``maj:min``, recorded for a non-virtual
+            device only - a virtual one is already named by ``virtual: True``.
+        holders: What sits directly on the whole device (never on one of its
+            partitions), such as a device-mapper device using the raw disk.
+        partitions: The device's partitions, keyed by kernel name, when it has
+            any.
     """
 
     size: DeviceText | None = None
@@ -282,6 +373,9 @@ class BlockEntry(CaptureModel, frozen=True):
     device_path: DeviceText = ""
     vpd: VpdPages = VpdPages()
     hwmon: Entries[DeviceText] = ()
+    dev: DeviceText | None = None
+    holders: Entries[DeviceText] = ()
+    partitions: EntryMap[DeviceText, PartitionEntry] | None = None
 
 
 class AtaBlobs(CaptureModel, frozen=True):
@@ -386,6 +480,16 @@ class LinuxCapture(CaptureHeader, frozen=True):
         ata: ATA passthrough results, keyed by node name.
         nvme: NVMe passthrough results, keyed by node name.
         usb: Every USB device between a USB disk and its root hub, keyed by sysfs path.
+        mounts: Every mounted filesystem, from mountinfo. ``None`` when
+            mountinfo could not be read at all, a different fact from a
+            machine with no mounts, which mountinfo never reports.
+        swaps: Every active swap.
+        stacked: Every device-mapper device reached from a disk's or a
+            partition's holders, keyed by kernel name (``dm-0``).
+        signatures: What the udev database says each device is formatted as,
+            keyed by ``maj:min``. ``None`` when the udev database itself is
+            not there, such as in a container with no ``/run/udev/data`` -
+            a different fact from no device carrying a signature.
     """
 
     platform: Literal[Platform.LINUX]
@@ -399,6 +503,10 @@ class LinuxCapture(CaptureHeader, frozen=True):
     ata: EntryMap[DeviceText, AtaBlobs] = Field(default_factory=dict[DeviceText, AtaBlobs])
     nvme: EntryMap[DeviceText, NvmeBlobs] = Field(default_factory=dict[DeviceText, NvmeBlobs])
     usb: EntryMap[DeviceText, UsbDeviceEntry] = Field(default_factory=dict[DeviceText, UsbDeviceEntry])
+    mounts: Entries[MountEntry] | None = None
+    swaps: Entries[SwapEntry] = ()
+    stacked: EntryMap[DeviceText, StackedEntry] = Field(default_factory=dict[DeviceText, StackedEntry])
+    signatures: EntryMap[DeviceText, FilesystemSignature] | None = None
 
 
 __all__ = [
@@ -408,14 +516,19 @@ __all__ = [
     "BlockEntry",
     "ClassEntry",
     "DeviceAttributes",
+    "FilesystemSignature",
     "HwmonEntry",
     "LinuxCapture",
+    "MountEntry",
     "NvmeBlobs",
     "NvmeClassEntry",
+    "PartitionEntry",
     "PciEntry",
     "QueueAttributes",
     "SasPhyEntry",
     "ScsiHostEntry",
+    "StackedEntry",
+    "SwapEntry",
     "SysfsClasses",
     "UsbDeviceEntry",
     "VpdPages",
