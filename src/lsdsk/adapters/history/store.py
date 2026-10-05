@@ -251,8 +251,10 @@ def load_history(path: Path, *, hostname: str, cap: int = MAX_SAMPLES_PER_DRIVE)
         samples long.
 
     Raises:
-        ConfigurationError: If the file is unreadable, malformed, written by a
-            newer lsdsk, or belongs to a different machine.
+        ConfigurationError: If the path names something that is not a
+            regular file (a FIFO, a device, a directory), or the file is
+            unreadable, malformed, written by a newer lsdsk, or belongs to a
+            different machine.
 
     Example:
         A directory the test owns, so the missing file is missing because this
@@ -265,6 +267,7 @@ def load_history(path: Path, *, hostname: str, cap: int = MAX_SAMPLES_PER_DRIVE)
         ...     load_history(Path(directory) / "history.json", hostname="box").series
         ()
     """
+    _refuse_a_store_that_is_not_a_file(path)
     try:
         payload: Any = read_json_bounded(path, what="a history store")
     # Asked of the READ rather than of path.exists(), which answers False for a
@@ -316,6 +319,35 @@ def load_history(path: Path, *, hostname: str, cap: int = MAX_SAMPLES_PER_DRIVE)
 
     series = merge_duplicate_series(stored.series)
     return History(hostname=stored.hostname, series=tuple(_capped(one, cap) for one in series))
+
+
+def _refuse_a_store_that_is_not_a_file(path: Path) -> None:
+    """Refuse a store path that names anything but a regular file, before it is opened.
+
+    The bounded reader accepts a FIFO on purpose, since ``--replay`` is fed from
+    a pipe, and opening one for reading blocks until something writes to it: a
+    FIFO given as ``--history-file`` hung every command with no message. The
+    writer already refuses every destination that is not a regular file, so the
+    reader applies the same rule. ``stat`` follows a symlink, so a link to a
+    real store is still read, as the writer would still replace it.
+
+    Args:
+        path: The store file.
+
+    Raises:
+        ConfigurationError: If ``path`` exists and is not a regular file.
+    """
+    try:
+        mode = path.stat().st_mode
+    # Absent or unreadable is the read's to classify, which it does by cause.
+    except OSError:
+        return
+    if not stat.S_ISREG(mode):
+        message = (
+            f"{path} is not a regular file, so it cannot be a history store. "
+            "Point --history-file at a file, or at a path where one can be created."
+        )
+        raise ConfigurationError(message)
 
 
 def _capped(series: DiskSeries, cap: int) -> DiskSeries:
