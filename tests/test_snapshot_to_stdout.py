@@ -11,6 +11,7 @@ so it now means exactly that. A file that really is called ``-`` is still one
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -348,3 +349,32 @@ def test_dev_stdout_redirected_to_a_file_carries_the_capture_as_a_dash_does(tmp_
     assert result.returncode == 0, f"left {result.returncode}: {result.stderr!r}"
     capture = json.loads(redirected.read_bytes())
     assert "hostname" in capture
+
+
+@pytest.mark.os_posix
+def test_an_output_this_user_may_write_but_not_read_is_written(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``-o`` is only ever written, so it may not be refused for being unreadable.
+
+    It was: click's path type checks readability by default, and macOS answers
+    that check for ``/dev/fd/1`` from the mode the descriptor was opened with, so
+    ``-o /dev/stdout`` on a pipe exited 2 with "File '/dev/stdout' is not
+    readable" while Linux, which answers from the pipe's own permissions, passed.
+    A write-only file is the same refusal on every POSIX runner.
+    """
+    if os.geteuid() == 0:
+        pytest.skip("root passes every permission check, so nothing here can be refused")
+    capture = _read_a_committed_capture(monkeypatch)
+    target = tmp_path / "capture.json"
+    target.write_text("{}", encoding="utf-8")
+    target.chmod(0o200)
+
+    result = cli_runner.invoke(cli, ["snapshot", "-o", str(target)], obj=production_factory)
+
+    assert result.exit_code == 0, f"left {result.exit_code}: {result.stderr}"
+    target.chmod(0o600)
+    assert json.loads(target.read_text(encoding="utf-8")) == capture, "the file does not hold the capture"

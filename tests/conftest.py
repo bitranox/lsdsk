@@ -21,8 +21,10 @@ from typing import TYPE_CHECKING, Any, cast
 import lib_cli_exit_tools
 import lib_log_rich.runtime
 import pytest
+import rich_click.rich_click as rich_click_globals
 from click.testing import CliRunner
 from lib_layered_config import Config
+from rich_click.rich_help_configuration import force_terminal_default, terminal_width_default
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
@@ -145,6 +147,17 @@ def this_machine_cannot_reach_into_the_suite(
         "RICH_CLICK_THEME",
     ):
         monkeypatch.delenv(chosen_elsewhere, raising=False)
+    # Deleting a variable reaches only what reads it from now on, and rich-click
+    # read three of them at IMPORT: `FORCE_TERMINAL` from GITHUB_ACTIONS,
+    # FORCE_COLOR and PY_COLORS, `WIDTH` and `MAX_WIDTH` from TERMINAL_WIDTH.
+    # Every run's help and error configuration is copied from those globals, so
+    # on a GitHub runner the usage-error panel stayed coloured whatever this
+    # fixture deleted - five tests reading a refusal's text failed in CI and
+    # nowhere else. Re-deriving them through rich-click's own defaults keeps its
+    # rule and applies it to the environment this test runs in.
+    monkeypatch.setattr(rich_click_globals, "FORCE_TERMINAL", force_terminal_default())
+    monkeypatch.setattr(rich_click_globals, "WIDTH", terminal_width_default())
+    monkeypatch.setattr(rich_click_globals, "MAX_WIDTH", terminal_width_default())
     _no_configuration_layer_reaches_in(state, monkeypatch)
 
 
