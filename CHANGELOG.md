@@ -5,10 +5,28 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
-## [1.6.2] 2026-10-05 16:57:31
+Neither 1.6.1 nor 1.6.2 was published to PyPI, so this is the first release on
+PyPI since 1.6.0 and carries both of their changes below as well.
 
-1.6.1 was never published to PyPI, so this is the first release on PyPI since
-1.6.0 and carries the 1.6.1 changes below as well.
+### Changed
+
+- **A `--set` value may nest 95 levels, not 100.** A value at the old limit was
+  accepted and then could not be printed by `config --format json` on Windows,
+  whose JSON writer stops at 98 levels; at 95 every accepted value prints there.
+
+### Fixed
+
+- **`config --format json` refuses a configuration too deep to write instead of
+  crashing on Windows.** A configuration file nested close to the 100 levels the
+  configuration library accepts ended with exit `1` and no envelope; it now
+  leaves `78` with a sentence naming the nesting and pointing at `--format
+  human`, which prints it.
+- **`snapshot -o /dev/stdout` works on macOS.** It was refused with "File
+  '/dev/stdout' is not readable" (exit `2`) whenever standard output was a pipe
+  or a file opened for writing, because the option asked for an output path to
+  be readable.
+
+## [1.6.2] 2026-10-05 16:57:31
 
 ### Changed
 

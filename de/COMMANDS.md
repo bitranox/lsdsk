@@ -101,7 +101,7 @@ fehlendes Pflichtargument, eine ungültige `--format`-Wahl oder eine
 `--set`-Überschreibung, die das Werkzeug nicht unterbringt - ein Schlüssel, den
 einer seiner eigenen Abschnitte (`thresholds`, `display`, `history`) nicht hat,
 ein Abschnitt, der sich nur um einen Tippfehler von einem dieser unterscheidet,
-oder ein Wert, der tiefer als 100 Ebenen verschachtelt ist. Ein Abschnitt, der
+oder ein Wert, der tiefer als 95 Ebenen verschachtelt ist. Ein Abschnitt, der
 keinem davon ähnelt, wird unverändert durchgereicht, weil er einer Bibliothek
 oder einem anderen Nutzer derselben Dateien gehört; `--set bogus.key=1` ändert
 also nichts und lässt den Exit-Code, den der Lauf ohnehin gehabt hätte; `13`,
@@ -121,7 +121,10 @@ ein zu meldender Fehler statt einer Aussage über die Maschine; `74`, wenn ein
 Schreibvorgang, den das Werkzeug ausführen sollte, aus einem anderen Grund als
 fehlenden Rechten scheiterte - ein volles Ziel, ein Ziel, das es nicht geben kann,
 eine Standardausgabe, die die Ausgabe ablehnte oder geschlossen ist; `78` für eine
-Konfiguration, die dieses Werkzeug nicht laden kann, für eine Datei, die keine
+Konfiguration, die dieses Werkzeug nicht laden kann, für eine Konfiguration,
+die `config --format json` nicht schreiben kann, weil sie tiefer verschachtelt
+ist, als der JSON-Schreiber dieser Plattform trägt (98 Ebenen unter Windows;
+`--format human` gibt sie aus), für eine Datei, die keine
 von dieser Fassung lesbare Aufnahme ist, für einen Zählerverlauf, den `record`
 nicht lesen kann, oder für eine Plattform ohne Hardwareleser. Behandeln Sie alles über `1` als "hat die Frage
 nicht beantwortet".

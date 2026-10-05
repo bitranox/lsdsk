@@ -132,7 +132,13 @@ def parse_override(raw: str) -> ConfigOverride:
 #: held to nothing: orjson parses 900 levels happily and the merge then exhausted
 #: the interpreter's stack, ending every command - whichever section it named -
 #: with a ``RecursionError`` and the code that means this tool broke.
-MAX_OVERRIDE_DEPTH: Final = 100
+#:
+#: It is five below the library's 100 because a value accepted here must also
+#: PRINT: ``config --format json`` carries it three levels below the top of its
+#: envelope, and pydantic-core's JSON writer stops at 98 levels on Windows (254 on
+#: Linux). At 100 the deepest accepted value printed 101 levels deep and crashed
+#: there; at 95 it prints 96, with two to spare.
+MAX_OVERRIDE_DEPTH: Final = 95
 
 
 def _nesting(value: object) -> int:

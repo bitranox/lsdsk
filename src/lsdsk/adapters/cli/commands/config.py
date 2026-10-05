@@ -29,7 +29,7 @@ from lsdsk.domain.errors import ConfigurationError
 from .. import safe_console
 from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION
 from ..context import CLIContext, get_cli_context
-from ..envelope import ActionResult, MappingResult, emit_action, fail
+from ..envelope import ActionResult, MappingResult, PayloadTooDeepError, emit_action, fail
 from ..exit_codes import ExitCode
 from ..typed_click import option
 
@@ -107,7 +107,17 @@ def cli_config(ctx: click.Context, output_format: OutputFormat, section: str | N
             fail(str(exc), ExitCode.INVALID_ARGUMENT, output_format=output_format)
         if output_format is OutputFormat.JSON:
             data = _redacted_config_data(effective_config, section)
-            emit_action(ActionCommand.CONFIG, MappingResult.model_validate(data))
+            try:
+                emit_action(ActionCommand.CONFIG, MappingResult.model_validate(data))
+            except PayloadTooDeepError:
+                # The library accepts 100 levels and the JSON writer stops at 98
+                # on Windows, so a file both layers accepted reached this.
+                fail(
+                    "the configuration nests deeper than JSON output can carry on this platform",
+                    ExitCode.CONFIG_ERROR,
+                    output_format=output_format,
+                    hint="--format human prints it.",
+                )
             return
         safe_console.echo()
         try:

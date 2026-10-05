@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 import rich_click as click
 from pydantic import BaseModel, SerializeAsAny
+from pydantic_core import PydanticSerializationError
 
 from lsdsk.domain.enums import ActionCommand, OutputFormat
 
@@ -35,6 +36,10 @@ from .exit_codes import ExitCode, error_type_for
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from typing import NoReturn
+
+
+class PayloadTooDeepError(ValueError):
+    """A result nests deeper than the JSON writer can carry on this platform."""
 
 
 class ActionResult(BaseModel, extra="forbid"):
@@ -108,6 +113,15 @@ class ActionEnvelope(BaseModel):
     skipped: list[str] = []
 
 
+#: The start of every message pydantic-core's recursion guard raises.
+#:
+#: It ends "(depth exceeded)" or "(id repeated)" depending on which check
+#: tripped, and both were measured on a merely deep tree: Windows reports the
+#: first past 98 levels, Linux the second past 254. A payload here is parsed from
+#: a file or a command line, so it is a tree and the guard can only mean depth.
+_RECURSION_GUARD = "Circular reference detected"
+
+
 def emit_action(command: ActionCommand, data: ActionResult, skipped: list[str] | None = None) -> None:
     """Write an acting command's result as JSON.
 
@@ -115,6 +129,10 @@ def emit_action(command: ActionCommand, data: ActionResult, skipped: list[str] |
         command: The command emitting this.
         data: What it did, as the command's own result model.
         skipped: What it did not do, and why.
+
+    Raises:
+        PayloadTooDeepError: `data` nests deeper than this platform's JSON writer
+            can carry. Nothing has been written when it is raised.
     """
     reasons = skipped or []
     envelope = ActionEnvelope(ok=not reasons, command=command, data=data, skipped=reasons)
@@ -123,7 +141,14 @@ def emit_action(command: ActionCommand, data: ActionResult, skipped: list[str] |
     # by_alias so a field renamed to satisfy Pydantic still lands under the key
     # a caller reads: SnapshotResult cannot call its field `schema`, and the
     # wire key is the contract.
-    safe_console.echo(envelope.model_dump_json(indent=2, by_alias=True))
+    try:
+        dumped = envelope.model_dump_json(indent=2, by_alias=True)
+    except PydanticSerializationError as exc:
+        if _RECURSION_GUARD not in str(exc):
+            raise
+        message = "the result nests deeper than this platform's JSON writer can carry"
+        raise PayloadTooDeepError(message) from exc
+    safe_console.echo(dumped)
 
 
 #: What a command is called when its name cannot be read from the invocation.
@@ -355,6 +380,7 @@ __all__ = [
     "ErrorDetail",
     "ErrorEnvelope",
     "MappingResult",
+    "PayloadTooDeepError",
     "RefusedBeforeTheRun",
     "asked_for_json",
     "emit_action",

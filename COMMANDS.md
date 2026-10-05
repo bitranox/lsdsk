@@ -96,7 +96,7 @@ code: `2` for a command line the parser refuses, which is an unknown option, an
 unknown command, a missing required argument, a bad `--format` choice or a
 `--set` override the tool refuses to place - a key one of its own sections
 (`thresholds`, `display`, `history`) does not have, a section one typo away from
-one of those, or a value nested deeper than 100 levels. A section that resembles
+one of those, or a value nested deeper than 95 levels. A section that resembles
 none of them is passed through untouched, because it belongs to a library or to
 another consumer of the same files, so `--set bogus.key=1` changes nothing and
 leaves the exit code the run would have left; `13` when
@@ -115,9 +115,11 @@ handled and a bug to report rather than anything about the machine; `74` when a
 write this tool was asked to make failed for a reason other than permission - a
 full disk, a destination that cannot exist, a standard output that refused the
 output or is closed; `78` for a
-configuration this tool cannot load, a file that is not a snapshot this version
-reads, a counter-history store `record` cannot read, or a platform with no
-hardware reader. Treat anything above `1` as "did not answer the question".
+configuration this tool cannot load, a configuration `config --format json`
+cannot write because it nests deeper than that platform's JSON writer carries
+(98 levels on Windows; `--format human` prints it), a file that is not a
+snapshot this version reads, a counter-history store `record` cannot read, or a
+platform with no hardware reader. Treat anything above `1` as "did not answer the question".
 
 `70` exists so that a monitoring check can tell a failing drive from a broken
 tool. Both left `1` before it, and the only way to tell which you had was to read
