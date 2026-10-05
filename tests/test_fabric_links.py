@@ -238,8 +238,12 @@ def test_a_card_short_on_lanes_is_not_told_it_needs_a_faster_port() -> None:
     """
     hawaii = next(f for f in diagnose_fabric_links(_machine("linux-nvme-board")) if f.subject == "0000:01:00.0")
     assert hawaii.action == (
-        "No free slot on this board would carry more; the card needs a port of at least PCIe Gen3x16 to run in full."
+        "No free slot on this board would carry more; the card needs a port with 16 lanes "
+        "at PCIe Gen3 or faster to run in full."
     )
+    # The port it sits in is Gen5x8 (31.50 GB/s): a figure-plus-bandwidth floor
+    # read as already met by it, so the floor names its two axes apart.
+    assert "at least" not in hawaii.action
     assert not hawaii.title.endswith(", is capped by its slot")
 
 

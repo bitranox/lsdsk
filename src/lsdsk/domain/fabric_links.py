@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from .base import DomainModel
 from .enums import Severity
-from .models import Finding, PciNode, pcie_bandwidth_gbps
+from .models import Finding, PciNode, pcie_bandwidth_gbps, pcie_generation
 from .pcie_text import format_gbytes, format_pcie_sentence
 from .placement import Seat, free_slot_for, unread_free_slot_for
 
@@ -279,11 +279,30 @@ def _where_it_could_go(link: FabricLink, inventory: Inventory) -> str:
             "would, but telling a slot from an internal port needs the PCIe capability, which takes root to read."
         )
     # Named by the card's own figure rather than "a faster port": a card short on
-    # lanes can sit in a port that is already the faster of the two. The figure
-    # is a floor, not a match: any port at least that wide and that fast runs
-    # the card in full.
-    own = format_pcie_sentence(link.card.link.max_speed_gtps, link.card.link.max_width)
-    return f"No free slot on this board would carry more; the card needs a port of at least {own} to run in full."
+    # lanes can sit in a port that is already the faster of the two.
+    floor = _port_floor(link.card.link.max_speed_gtps, link.card.link.max_width)
+    return f"No free slot on this board would carry more; the card needs a port with {floor} to run in full."
+
+
+def _port_floor(speed_gtps: float | None, width: int | None) -> str:
+    """The least port that runs a card in full, with its two axes named apart.
+
+    Written as lanes and a generation rather than as a figure such as
+    ``Gen3x16``: everywhere else a figure carries its bandwidth, so "at least
+    Gen3x16 (15.76 GB/s)" read as met by the Gen5x8 port (31.50 GB/s) the card
+    already sits in, which is wider in bandwidth and still too narrow.
+
+    Example:
+        >>> _port_floor(8.0, 16)
+        '16 lanes at PCIe Gen3 or faster'
+        >>> _port_floor(16.0, 1)
+        '1 lane at PCIe Gen4 or faster'
+    """
+    lanes = f"{width} lane" if width == 1 else f"{width} lanes"
+    generation = pcie_generation(speed_gtps)
+    # Reached only for a card whose own bandwidth was computed, so its speed
+    # has a generation; were it ever missing, the lanes alone are still true.
+    return lanes if generation is None else f"{lanes} at PCIe Gen{generation} or faster"
 
 
 def diagnose_fabric_links(inventory: Inventory) -> list[Finding]:
