@@ -588,16 +588,24 @@ def merge_duplicate_series(series: Sequence[DiskSeries]) -> tuple[DiskSeries, ..
         >>> [s.power_on_hours for s in merge_duplicate_series([a, b])[0].samples]
         [1, 2]
     """
-    merged: dict[str, DiskSeries] = {}
+    # One pass that groups the copies, then one build per drive. Folding each
+    # copy into everything merged so far rebuilt the series per copy, which is
+    # quadratic in a count the file chooses: 64,000 copies of one drive took
+    # 208 s. A dict keeps the order identities were first seen in.
+    copies: dict[str, list[DiskSeries]] = {}
     for one in series:
-        earlier = merged.get(one.identity)
-        if earlier is None:
-            merged[one.identity] = one
-            continue
-        by_hour: dict[int, Sample] = {sample.power_on_hours: sample for sample in (*earlier.samples, *one.samples)}
-        samples = tuple(by_hour[hour] for hour in sorted(by_hour))
-        merged[one.identity] = DiskSeries(identity=one.identity, model=one.model, samples=samples)
-    return tuple(merged.values())
+        copies.setdefault(one.identity, []).append(one)
+    return tuple(group[0] if len(group) == 1 else _merged(group) for group in copies.values())
+
+
+def _merged(copies: Sequence[DiskSeries]) -> DiskSeries:
+    """Two or more copies of one drive's series as one, in file order: a later copy wins a repeated hour."""
+    by_hour: dict[int, Sample] = {}
+    for copy in copies:
+        for sample in copy.samples:
+            by_hour[sample.power_on_hours] = sample
+    samples = tuple(by_hour[hour] for hour in sorted(by_hour))
+    return DiskSeries(identity=copies[-1].identity, model=copies[-1].model, samples=samples)
 
 
 def has_new_readings(history: History, disks: Sequence[Disk]) -> bool:
