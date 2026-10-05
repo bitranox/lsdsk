@@ -117,7 +117,7 @@ wo Sie ihn haben wollen. Beide sind global wie `--profile` und stehen daher vor
 dem Unterbefehl: `lsdsk --history-file /var/lib/lsdsk.json record`. Für eine
 dauerhafte Einstellung gibt es den Abschnitt `[history]` mit `enabled`, `path`
 und `max_samples_per_drive`; `lsdsk config` zeigt die wirksamen Werte und woher
-jeder stammt. Als root liegt der Speicher standardmässig unter
+jeder stammt. Als root unter Linux liegt der Speicher standardmässig unter
 `/var/lib/lsdsk/history.json`, weil das Aufgezeichnete eine Eigenschaft der
 Maschine ist und nicht dessen, der den Befehl getippt hat; ein Lauf ohne
 Root-Rechte behält einen Pfad je Benutzer, da er dort ohnehin nicht schreiben

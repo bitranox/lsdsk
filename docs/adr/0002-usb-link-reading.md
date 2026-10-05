@@ -64,6 +64,8 @@ exactly as `InterfaceLink.achievable_gbps` does: an end that was not read is nev
 **Spelling.** One closed form everywhere a figure is drawn - tables, the detail panel and a
 finding's sentence: `USB10G (1.21 GB/s)`. It follows the rate printed on the box, as `Gen3x8` does
 for PCIe, and the prefix keeps a USB rate from being read as a SATA rate in the same column.
+A figure below a hundredth of a GB/s - USB 1, at 12M and 1.5M - is written in MB/s instead,
+`USB12M (1.50 MB/s)`, because two decimals of GB/s would print a working link as carrying zero.
 
 **Rendering.** For a USB disk the disks table's `port`, `disk` and `link` columns show `port_max`,
 `device_max` and `running`, coloured by the same three-number rule as a SATA or PCIe row. The

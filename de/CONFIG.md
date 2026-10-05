@@ -465,7 +465,7 @@ dasselbe wie einer mit.
 | `path`                  | `""`    | Wo der Speicher liegt. Leer löst je Plattform UND je Rechtestufe auf                           |
 | `max_samples_per_drive` | `512`   | Messungen je Laufwerk, bevor die Reihe ausgedünnt wird                                         |
 
-Ein leerer `path` löst bei einem root-Lauf unter Linux oder macOS zu
+Ein leerer `path` löst bei einem root-Lauf unter Linux zu
 `/var/lib/lsdsk/history.json` auf, sonst zum Zustandsverzeichnis des Benutzers
 (`$XDG_STATE_HOME/lsdsk/`, `~/Library/Application Support/bitranox/lsdsk/`,
 `%LOCALAPPDATA%\bitranox\lsdsk\`). Das Lesen der Zähler braucht root, auf einem

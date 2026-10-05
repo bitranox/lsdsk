@@ -461,7 +461,7 @@ read with colour off says the same as one read with it on.
 | `max_samples_per_drive` | `512`   | Readings kept per drive before the series is thinned                              |
 
 An empty `path` resolves to `/var/lib/lsdsk/history.json` for a root run on
-Linux or macOS, and to the per-user state directory otherwise
+Linux, and to the per-user state directory otherwise
 (`$XDG_STATE_HOME/lsdsk/`, `~/Library/Application Support/bitranox/lsdsk/`,
 `%LOCALAPPDATA%\bitranox\lsdsk\`). Reading the counters needs root, so on a
 server the root path is the one that fills. `lsdsk record --format json` prints

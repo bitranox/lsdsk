@@ -5,6 +5,75 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **A capped card's advice names the lanes and the generation it needs.** "a
+  port of at least PCIe Gen3x16" read as met by the Gen5x8 port the card already
+  sat in, since every figure beside it carries a bandwidth and Gen5x8 carries
+  more; it now reads "a port with 16 lanes at PCIe Gen3 or faster".
+- **A root run on macOS keeps the per-user history store.** `/var/lib/lsdsk` is
+  a Linux convention, so only a root run on Linux defaults to it now. A relative
+  `XDG_STATE_HOME` is ignored, as the XDG specification requires, so a timer and
+  a shell started from different directories no longer keep two stores.
+- **A USB 1 rate is written in MB/s.** `USB12M (0.00 GB/s)` said a working
+  full-speed link carried nothing; it now reads `USB12M (1.50 MB/s)`, in the
+  columns and in a finding's sentence alike.
+
+### Fixed
+
+- **The history lock no longer follows a symlink.** A link planted at the
+  store's `.lock` name made `record` create the file it pointed to, which for
+  root in a directory others can write is a file anywhere on the machine. A
+  link, FIFO or anything else that is not a regular file there is refused, and
+  `record` reports it as a write it could not make (exit `74`).
+- **A FIFO or device given as the history store is refused instead of hanging
+  every command.** Reporting views warn and run without history; `record`
+  exits `78`.
+- **`snapshot -o` writes through a link to a FIFO or a character device.**
+  `-o /dev/stdout` failed with "Too many levels of symbolic links", and as root
+  the rename replaced the `/dev/stdout` link itself with a regular file. It now
+  behaves exactly like `-o -`; a link to a regular file is still replaced,
+  never followed.
+- **A malformed link field in a capture is read as not measured.** A speed of
+  `.` or `1.2.3`, or a link rate of `6..0`, ended every command with a bare
+  `ValueError` and no envelope; a width of four thousand digits ended it with
+  exit `70`; and a negative or impossible width was printed as a reading
+  (`Gen3x-8`). Widths outside 1 to 32 and speeds that are not a PCIe lane rate
+  are now "not measured", which also keeps the free-slot search linear when a
+  crafted capture gives every port a different shape.
+- **A malformed `[lib_log_rich]` value no longer stops the diagnosis.**
+  `--set lib_log_rich.console_level=WARN` ended every command at exit `22`
+  with the library's own error. A refused logging value now falls back to the
+  shipped setting with one warning naming the key, as a refused threshold
+  does; a `--set` value nested deeper than 100 levels is refused at exit `2`.
+- **The free-slot search never names a card's own slot.** A bridge card, or one
+  function of a two-function bridge, could be told to move into its own slot
+  or its sibling's.
+- **A free slot behind a narrower uplink is no longer offered as carrying
+  more.** A x16 port behind a x8 switch uplink still carries x8, so it is now
+  judged by the narrowest link between it and the root complex; an uplink that
+  was not read makes the slot no candidate rather than a capable one.
+- **Wear is coloured by the configured thresholds on every topology view.** A
+  capture with no PCI reading, and the interactive topology page, styled the
+  wear cell by the shipped figures while the findings used the configured ones.
+- **A Windows USB device never reads below what its SuperSpeedPlus flag
+  proves.** A device descriptor whose SuperSpeedPlus sublinks run at 5 Gb/s
+  decoded as one Gen 1 lane, below the two lanes the flag alone proves, so
+  reading more evidence gave a lower answer. The flag's floor now holds under
+  the descriptor.
+- **Device text loses every invisible character.** Line and paragraph
+  separators, variation selectors and the other default-ignorable code points
+  could make two names look identical; they are stripped like the format
+  characters before them, and an escaped code point above U+FFFF is written as
+  `\U` with eight digits so the text after it cannot be read as part of it.
+- **A history store naming one drive many times loads in linear time.** Each
+  further copy re-merged everything before it, so 64,000 copies took more than
+  three minutes, paid with the store locked; they now take a fraction of a
+  second.
+- **Grading the PCIe cards stays linear however deeply they nest.** A crafted
+  chain of 4,000 capped switch cards took 9 seconds; it takes under one.
+- **The lock-timeout error names the store once.**
+
 ## [1.6.1] 2026-10-02 21:29:01
 
 ### Changed

@@ -103,11 +103,12 @@ your choosing. Both are global, like `--profile`, so they go before the
 subcommand: `lsdsk --history-file /var/lib/lsdsk.json record`. For a permanent
 setting there is a `[history]` section with `enabled`, `path` and
 `max_samples_per_drive`; `lsdsk config` shows the effective values and where
-each came from. As root the store defaults to `/var/lib/lsdsk/history.json`,
-because what it records is a property of the machine rather than of whoever
-typed the command; a non-root run keeps a per-user path, since it could not
-write there anyway. The first reporting run that records names the file,
-once; `lsdsk record` writes silently unless asked for `--format json`.
+each came from. As root on Linux the store defaults to
+`/var/lib/lsdsk/history.json`, because what it records is a property of the
+machine rather than of whoever typed the command; a non-root run keeps a
+per-user path, since it could not write there anyway. The first reporting run
+that records names the file, once; `lsdsk record` writes silently unless asked
+for `--format json`.
 
 Every value the tool judges or lays out by is a configuration key: `[thresholds]`
 carries the wear bands, the CRC significance floor, the firmware-mismatch count

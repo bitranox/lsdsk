@@ -471,6 +471,7 @@ error and an absent `--replay` path is only one of its causes: an unknown
 option, an unknown command, a missing required argument, an invalid `--format`
 value, a `--history-file` that exists but cannot be opened (a store whose CONTENT is
 wrong is a different thing: it warns and the run continues), a malformed `--set`
+(including a value nested deeper than 100 levels)
 and a
 `--history-file` or `--no-record` placed after the subcommand all produce it
 too. A wrapper that reads `2` as "the capture is
@@ -566,8 +567,8 @@ information. So the store does not grow a row per drive per run, and a drive's
 newest row is always its latest reading. That is what makes `lsdsk trend`
 possible.
 
-**Where it lives depends on who is running.** A root run on Linux or macOS uses
-`/var/lib/lsdsk/history.json`; anyone else gets the per-user state directory:
+**Where it lives depends on who is running.** A root run on Linux uses
+`/var/lib/lsdsk/history.json`; anyone else, root on macOS included, gets the per-user state directory:
 `$XDG_STATE_HOME/lsdsk/history.json` or `~/.local/state/lsdsk/history.json` on
 Linux, `~/Library/Application Support/bitranox/lsdsk/` on macOS,
 `%LOCALAPPDATA%\bitranox\lsdsk\` on Windows. Reading
@@ -857,9 +858,10 @@ hint names a free slot only where the connector bits were read. It says "was
 not readable" only where a free port that WOULD carry more had its own connector
 bit unread, and it names that port: re-run as root on Linux, which is what tells
 a slot from an internal port. Where no free slot would help, the action says so
-and names the least port the card runs in full in - "a port of at least PCIe
-Gen3x16" means any port at least that fast and that wide, not one particular
-slot. On Windows neither hint appears: the platform
+and names the least port the card runs in full in - "a port with 16 lanes at
+PCIe Gen3 or faster" means BOTH at once: at least 16 lanes, each at Gen3 or a
+later generation. A Gen5x8 port carries more bandwidth than Gen3x16 and still
+does not qualify, because it has 8 lanes. It names no particular slot. On Windows neither hint appears: the platform
 publishes no capability for the port above a card, and an unread end is never
 graded.
 
@@ -869,7 +871,9 @@ whole link, the lane rate times the lanes: `USB480M` is USB 2, any figure ending
 in G is USB 3, and `USB10G` can be one 10G lane or two 5G lanes. Every column
 and finding writes a figure with its bandwidth, which tells the two apart in
 plain text - `USB10G (1.21 GB/s)` is one 10G lane, `USB10G (1.00 GB/s)` two 5G
-lanes - and the `usb` object in the JSON names the lanes outright. The title says which USB row it is: "but both
+lanes - and the `usb` object in the JSON names the lanes outright. A figure
+below a hundredth of a GB/s, which is USB 1, is written in MB/s instead:
+`USB12M (1.50 MB/s)`, `USB1.5M (0.19 MB/s)`. The title says which USB row it is: "but both
 ends support" means drive, port and every hub were read, "below its own" means
 the port was not. The PCIe advice does not carry over: `lsdsk slots` lists PCIe
 slots, not USB sockets, and `upstream_name` names a PCIe port only.
