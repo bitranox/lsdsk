@@ -31,10 +31,10 @@ class Seat(DomainModel, frozen=True):
             identified.
         port_address: The port's PCI address, which a search for a better seat
             never offers back.
-        below: Addresses below the card itself - a switch card's own
-            downstream ports - which a search never offers either: whatever
-            sits below a card reaches the machine through the card's own
-            uplink, so no port there can carry the card more.
+        below: Addresses that are part of the card - its own functions and
+            whatever sits below them, such as a switch card's own downstream
+            ports - which a search never offers either: all of them reach the
+            machine through the card's own uplink, so none can carry it more.
     """
 
     link: PcieLink

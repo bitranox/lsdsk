@@ -1931,7 +1931,7 @@ class Inventory(DomainModel, frozen=True):
             besides: The address of the port the searching controller already
                 sits behind, which is never a candidate.
             admits: The search's own test of a port.
-            below: Addresses below the searching card itself, which are never
+            below: Addresses that are part of the searching card, which are never
                 candidates either. Skipped port by port, like ``besides``, so
                 an equal port elsewhere in the same group still answers.
 

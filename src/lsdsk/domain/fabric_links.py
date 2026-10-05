@@ -120,10 +120,17 @@ def _devices_below(link: FabricLink, inventory: Inventory) -> list[PciNode]:
     return sorted(found.values(), key=lambda node: node.address)
 
 
-def _addresses_below(link: FabricLink, inventory: Inventory) -> frozenset[str]:
-    """Every address below the card: a switch card's own ports and what they carry."""
-    found: set[str] = set()
-    stack = [function.address for function in link.functions]
+def _addresses_of_the_card(link: FabricLink, inventory: Inventory) -> frozenset[str]:
+    """Every address that is part of the card: its own functions and everything below them.
+
+    The functions are included, not only what hangs below them: on Linux every
+    bridge-class device is a port record, so a bridge card is a free "slot" of
+    its own, and a two-function bridge chip's second function is a free one
+    beside it. All of them share the card's link, so none is somewhere else to
+    put the card.
+    """
+    found = {function.address for function in link.functions}
+    stack = list(found)
     while stack:
         for child in inventory.pci_children_of(stack.pop()):
             if child.address not in found:
@@ -258,7 +265,7 @@ def _where_it_could_go(link: FabricLink, inventory: Inventory) -> str:
         link=link.card.link,
         port=link.port.link,
         port_address=link.port.address,
-        below=_addresses_below(link, inventory),
+        below=_addresses_of_the_card(link, inventory),
     )
     free = free_slot_for(seat, inventory)
     if free is not None:

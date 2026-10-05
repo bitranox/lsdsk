@@ -443,3 +443,47 @@ def test_a_switch_card_is_still_sent_to_a_free_slot_beside_it() -> None:
     """
     beside = PcieSlot(address="0000:00:03.0", link=_X16, connector_present=True)
     assert _switch_action(beside).startswith("Move it to the free slot at 0000:00:03.0")
+
+
+def _bridge_card_action(*, sibling: bool, beside: PcieSlot | None = None) -> str:
+    """The action for a capped bridge card whose own slot record (or its sibling function's) is free.
+
+    On Linux every bridge-class device is a port record, so a PCIe-to-PCI
+    bridge card is a "slot" of its own, and a two-function bridge chip such as
+    an Intel 41210 has a second function with nothing behind it - free, and
+    wider than the port the card sits in.
+    """
+    bridge_link = _link((8.0, 8), (8.0, 16))
+    card = _card(name="bridge card", class_code=0x060400, link=bridge_link)
+    nodes = [ROOT, PORT, card]
+    slots = [
+        PcieSlot(address=PORT.address, link=PORT.link, occupied=True, connector_present=True),
+        PcieSlot(address=card.address, link=bridge_link, occupied=sibling, connector_present=True),
+    ]
+    if sibling:
+        other = _card("0000:01:00.2", name="bridge card", class_code=0x060400, link=bridge_link)
+        nodes += [other, _below(card.address, "0000:02:01.0", "PCI-X NIC", class_code=0x020000)]
+        slots.append(PcieSlot(address=other.address, link=bridge_link, connector_present=True))
+    if beside is not None:
+        slots.append(beside)
+    inventory = Inventory(hostname="h", pci_tree=tuple(nodes), slots=tuple(slots))
+    (capped,) = diagnose_fabric_links(inventory)
+    assert CAPPED in capped.title and capped.action is not None
+    return capped.action
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("sibling", [False, True], ids=["own-function", "sibling-function"])
+def test_a_bridge_card_is_never_sent_to_a_function_of_itself(*, sibling: bool) -> None:
+    """A card's own functions share its link, so none of them is somewhere else to put it."""
+    action = _bridge_card_action(sibling=sibling)
+    assert "0000:01:00" not in action, action
+    assert action.startswith("No free slot on this board would carry more")
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("sibling", [False, True], ids=["own-function", "sibling-function"])
+def test_a_bridge_card_is_still_sent_to_a_free_slot_beside_it(*, sibling: bool) -> None:
+    """The control: an identical free slot that is not part of the card is still offered."""
+    beside = PcieSlot(address="0000:00:03.0", link=_link((8.0, 8), (8.0, 16)), connector_present=True)
+    assert _bridge_card_action(sibling=sibling, beside=beside).startswith("Move it to the free slot at 0000:00:03.0")
