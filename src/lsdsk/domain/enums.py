@@ -166,6 +166,34 @@ class DiskKind(StrEnum):
     UNKNOWN = "unknown"
 
 
+class UseKind(StrEnum):
+    """What one use of a disk is.
+
+    Attributes:
+        MOUNT: A filesystem mounted straight from the disk or a partition of it.
+        LETTER: A Windows volume path, a drive letter or a folder mount.
+        SWAP: Active swap.
+        ZFS: A member of a ZFS pool, named by the pool.
+        LVM: A physical volume of an LVM volume group, named by the group.
+        MD: A member of a Linux software RAID array, named by its node.
+        CRYPT: Under a dm-crypt mapping, named by the mapping.
+        STACK: Under any other device-mapper device, named by it.
+
+    Example:
+        >>> UseKind.ZFS.value
+        'zfs'
+    """
+
+    MOUNT = "mount"
+    LETTER = "letter"
+    SWAP = "swap"
+    ZFS = "zfs"
+    LVM = "lvm"
+    MD = "md"
+    CRYPT = "crypt"
+    STACK = "stack"
+
+
 class ControllerKind(StrEnum):
     """What sort of storage controller this is, from its PCI class code.
 
@@ -381,4 +409,5 @@ __all__ = [
     "TreeDensity",
     "UsbLaneRate",
     "UsbTransport",
+    "UseKind",
 ]

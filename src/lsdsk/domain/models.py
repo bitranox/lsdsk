@@ -20,7 +20,17 @@ from typing import TYPE_CHECKING, NamedTuple, Self
 from pydantic import Field, model_validator
 
 from .base import DomainModel
-from .enums import BusType, ControllerKind, DiskKind, Environment, PciPortKind, Severity, UsbLaneRate, UsbTransport
+from .enums import (
+    BusType,
+    ControllerKind,
+    DiskKind,
+    Environment,
+    PciPortKind,
+    Severity,
+    UsbLaneRate,
+    UsbTransport,
+    UseKind,
+)
 from .pci_address import pci_address_order
 from .text import DeviceText, OptionalDeviceText
 
@@ -1462,6 +1472,48 @@ class Controller(DomainModel, frozen=True):
         return sum(end is not None for end in ends) == 1
 
 
+class DiskUse(DomainModel, frozen=True):
+    """One thing a disk is used for.
+
+    Attributes:
+        kind: What the use is.
+        name: The pool, volume group, array or mapping it belongs to; empty for
+            a mount, a letter or swap, which the mounts already name.
+        mounts: Where it is mounted: mountpoints on Linux, volume paths on
+            Windows. A ZFS use carries none, because a pool's datasets are
+            unbounded in number and say nothing about the disk.
+
+    Example:
+        >>> DiskUse(kind=UseKind.LVM, name="vg0", mounts=("/var",)).name
+        'vg0'
+    """
+
+    kind: UseKind
+    name: DeviceText = ""
+    mounts: tuple[DeviceText, ...] = ()
+
+
+class DiskUsage(DomainModel, frozen=True):
+    """Whether the machine boots from a disk, and what uses it.
+
+    An inventory that could not read this leaves ``Disk.usage`` at ``None``;
+    an empty ``uses`` is a reading that found nothing, which is a different
+    claim and is only made when every source that could have named the disk
+    was read.
+
+    Attributes:
+        boot: Whether the running system or a boot partition is on it.
+        uses: Everything found on it, in the order it was found.
+
+    Example:
+        >>> DiskUsage().uses
+        ()
+    """
+
+    boot: bool = False
+    uses: tuple[DiskUse, ...] = ()
+
+
 class Disk(DomainModel, frozen=True):
     """One physical disk, wherever it hangs.
 
@@ -1488,6 +1540,8 @@ class Disk(DomainModel, frozen=True):
             reason. A drive behind some RAID drivers refuses SMART passthrough,
             and without root no drive answers at all, so an empty ``health`` on
             its own cannot say whether the drive is fine or was never asked.
+        usage: Whether the machine boots from it and what uses it, or ``None``
+            where that could not be read.
 
     Example:
         >>> Disk(node="sda", path="/dev/sda", model="Samsung SSD 870 EVO 4TB").node
@@ -1509,6 +1563,7 @@ class Disk(DomainModel, frozen=True):
     usb: UsbLink | None = None
     health: Health | None = None
     readings_refused: tuple[RefusedReading, ...] = ()
+    usage: DiskUsage | None = None
 
 
 class Finding(DomainModel, frozen=True):
@@ -2404,6 +2459,8 @@ __all__ = [
     "PCIE_MAX_LINK_WIDTH",
     "Controller",
     "Disk",
+    "DiskUsage",
+    "DiskUse",
     "Finding",
     "Health",
     "InterfaceLink",
