@@ -1627,6 +1627,23 @@ class _EndDevice(NamedTuple):
     node: PciNode
 
 
+def _carried_through(node: PciNode) -> float | None:
+    """What a node's own link lets through to everything below it, in GB/s.
+
+    A root bus is the root complex itself and limits nothing. Every other node
+    on the way up is one end of a link the traffic crosses, so its capability
+    bounds it, and an end nobody read is ``None``: it could be the narrowest.
+    """
+    return inf if node.is_root else node.link.max_bandwidth_gbps
+
+
+def _lower_ceiling(left: float | None, right: float | None) -> float | None:
+    """The lower of two ceilings, where an unknown one makes the result unknown."""
+    if left is None or right is None:
+        return None
+    return min(left, right)
+
+
 class _PciTour:
     """The PCI tree walked once, depth first, so "below" is a test of two numbers.
 
@@ -1643,6 +1660,7 @@ class _PciTour:
 
     def __init__(self, inventory: Inventory) -> None:
         self.spans: dict[str, tuple[int, int]] = {}
+        self.ceilings: dict[str, float | None] = {}
         self._entries: list[_EndDevice] = []
         present = {node.address for node in inventory.pci_tree}
         starts = [node for node in inventory.pci_tree if node.parent_address not in present]
@@ -1655,6 +1673,9 @@ class _PciTour:
         """Walk one tree from ``start`` with an explicit stack, recording spans and end devices."""
         position = len(self.spans)
         self.spans[start.address] = (position, position)
+        # Nothing above the start of a walk was recorded, so nothing above it
+        # is known to limit it.
+        self.ceilings[start.address] = inf
         # Each frame: the node, its children still to visit, and the position of
         # the nearest non-bridge node at or above it.
         stack = [(start, iter(inventory.pci_children_of(start.address)), self._gate_of(start, position, -1))]
@@ -1670,6 +1691,7 @@ class _PciTour:
                 continue
             position = len(self.spans)
             self.spans[child.address] = (position, position)
+            self.ceilings[child.address] = _lower_ceiling(self.ceilings[parent.address], _carried_through(parent))
             self._note_end_device(child, parent=parent, position=position, gate=gate)
             stack.append((child, iter(inventory.pci_children_of(child.address)), self._gate_of(child, position, gate)))
 
@@ -1926,6 +1948,38 @@ class Inventory(DomainModel, frozen=True):
         """
         return self._pci_tour.end_devices_below(functions)
 
+    def uplink_ceiling_gbps(self, address: str) -> float | None:
+        """The most any port can pass on from the root complex, given the links above it, in GB/s.
+
+        Everything below a switch crosses the switch's uplink, so a x16 port
+        behind a x8 uplink carries x8 however wide the port is. Each link is
+        judged as a whole, by what its ends support, rather than by the lowest
+        speed of one link beside the narrowest width of another: a Gen4 x4 hop
+        and a Gen3 x16 hop carry 7.88 GB/s, not Gen3 x4.
+
+        Args:
+            address: The port's address.
+
+        Returns:
+            The lowest capability of any node between the port and its root
+            complex; ``math.inf`` where nothing above it limits it - a root
+            port, or a port the PCI tree does not hold, which leaves nothing
+            above it to read; ``None`` where a node above it published no
+            capability, because an unread end is never a capable one.
+
+        Example:
+            >>> bus = PciNode(address="0000:00", name="root bus")
+            >>> x8 = PcieLink(max_speed_gtps=8.0, max_width=8)
+            >>> root = PciNode(address="0000:00:01.0", name="root port", parent_address="0000:00", link=x8)
+            >>> leg = PciNode(address="0000:01:00.0", name="switch", parent_address="0000:00:01.0")
+            >>> machine = Inventory(hostname="h", pci_tree=(bus, root, leg))
+            >>> machine.uplink_ceiling_gbps("0000:00:01.0")
+            inf
+            >>> machine.uplink_ceiling_gbps("0000:01:00.0")
+            7.88
+        """
+        return self._pci_tour.ceilings.get(address, inf)
+
     @cached_property
     def _pci_tour(self) -> _PciTour:
         """The PCI tree walked once, depth first, once per machine."""
@@ -2083,7 +2137,8 @@ class Inventory(DomainModel, frozen=True):
 
         That equivalence holds only for a test that reads nothing of a port but
         what the grouping reads: :attr:`PcieLink.max_speed_gtps` and
-        :attr:`PcieLink.max_width` of its link, :attr:`PcieSlot.occupied`,
+        :attr:`PcieLink.max_width` of its link, :meth:`uplink_ceiling_gbps`,
+        :attr:`PcieSlot.occupied`,
         :attr:`PcieSlot.connector_present`, :attr:`PcieSlot.is_move_target`,
         :attr:`PcieSlot.is_swap_candidate` and, for a swap candidate,
         :attr:`PcieSlot.occupant_need_gbps`. A search reading more has to be
@@ -2144,6 +2199,7 @@ class Inventory(DomainModel, frozen=True):
             key = (
                 slot.link.max_speed_gtps,
                 slot.link.max_width,
+                self.uplink_ceiling_gbps(slot.address),
                 slot.occupied,
                 slot.connector_present,
                 slot.is_move_target,

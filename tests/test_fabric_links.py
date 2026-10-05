@@ -505,3 +505,54 @@ def test_a_bridge_card_is_still_sent_to_a_free_slot_beside_it(*, sibling: bool) 
     """The control: an identical free slot that is not part of the card is still offered."""
     beside = PcieSlot(address="0000:00:03.0", link=_link((8.0, 8), (8.0, 16)), connector_present=True)
     assert _bridge_card_action(sibling=sibling, beside=beside).startswith("Move it to the free slot at 0000:00:03.0")
+
+
+def _behind_a_switch_action(uplink: PcieLink) -> str:
+    """A Gen3 x16 GPU in a x8 downstream port, with a free x16 downstream port beside it on the same switch.
+
+    ``uplink`` is what the switch's upstream port and the root port above it
+    support: everything either downstream port carries crosses that link.
+    """
+    root_port = PORT.with_changes(address="0000:00:01.0", link=uplink)
+    upstream = _below(root_port.address, "0000:01:00.0", "switch up", 0x060400).with_changes(
+        port_kind=PciPortKind.SWITCH_UPSTREAM, link=uplink, pcie_capability_present=True
+    )
+    x8_leg, x16_leg = PcieLink(max_speed_gtps=8.0, max_width=8), PcieLink(max_speed_gtps=8.0, max_width=16)
+    down, free = (
+        _below(upstream.address, address, "switch down", 0x060400).with_changes(
+            port_kind=PciPortKind.SWITCH_DOWNSTREAM, link=link, pcie_capability_present=True
+        )
+        for address, link in (("0000:02:00.0", x8_leg), ("0000:02:01.0", x16_leg))
+    )
+    gpu = _card("0000:03:00.0", parent_address=down.address)
+    slots = (
+        PcieSlot(address=root_port.address, link=uplink, occupied=True, connector_present=True),
+        PcieSlot(address=upstream.address, link=uplink, occupied=True, connector_present=False),
+        PcieSlot(address=down.address, link=x8_leg, occupied=True, connector_present=True),
+        PcieSlot(address=free.address, link=x16_leg, connector_present=True),
+    )
+    inventory = Inventory(hostname="h", pci_tree=(ROOT, root_port, upstream, down, free, gpu), slots=slots)
+    (capped,) = diagnose_fabric_links(inventory)
+    assert CAPPED in capped.title and capped.subject == gpu.address and capped.action is not None
+    return capped.action
+
+
+@pytest.mark.os_agnostic
+def test_a_free_slot_behind_an_uplink_no_wider_than_the_seat_is_not_offered() -> None:
+    """Everything below a switch crosses its uplink, so a x16 port behind a x8 uplink carries x8."""
+    action = _behind_a_switch_action(PcieLink(max_speed_gtps=8.0, max_width=8))
+    assert action.startswith("No free slot on this board would carry more"), action
+
+
+@pytest.mark.os_agnostic
+def test_a_free_slot_behind_an_uplink_wide_enough_is_still_offered() -> None:
+    """The control: the same free port behind a x16 uplink does carry the card in full."""
+    action = _behind_a_switch_action(PcieLink(max_speed_gtps=8.0, max_width=16))
+    assert action.startswith("Move it to the free slot at 0000:02:01.0"), action
+
+
+@pytest.mark.os_agnostic
+def test_a_free_slot_behind_an_unread_uplink_is_not_offered() -> None:
+    """An unread end is never a capable one: a link above the port nobody read could be the narrowest."""
+    action = _behind_a_switch_action(PcieLink())
+    assert "0000:02:01.0" not in action, action

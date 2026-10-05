@@ -109,7 +109,7 @@ def _best_port_for(controller: Controller, inventory: Inventory) -> tuple[PcieSl
     """
     best: tuple[PcieSlot, float] | None = None
     for slot in inventory.placement_candidates(besides=controller.upstream_address, admits=_any_port):
-        gain = gain_in(slot, seat_of(controller))
+        gain = gain_in(slot, seat_of(controller), ceiling=inventory.uplink_ceiling_gbps(slot.address))
         if gain is None:
             continue
         if best is None or (gain, slot.capability_gbps or 0.0) > (best[1], best[0].capability_gbps or 0.0):

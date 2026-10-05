@@ -97,7 +97,7 @@ def _lower_int(left: int | None, right: int | None) -> int | None:
     return min(values) if values else None
 
 
-def gain_in(slot: PcieSlot, seat: Seat) -> float | None:
+def gain_in(slot: PcieSlot, seat: Seat, *, ceiling: float | None) -> float | None:
     """What a card would get in one slot, in GB/s.
 
     A slot that does not report its own speed and width is never a candidate.
@@ -106,20 +106,28 @@ def gain_in(slot: PcieSlot, seat: Seat) -> float | None:
     machine, which produced a confident recommendation to move a card into a
     slot slower than the one it already occupied.
 
+    The same holds for the links above the slot: a free x16 port behind a
+    switch whose uplink is x8 was offered as carrying a x16 card in full. So
+    the gain is bounded by ``ceiling``, and a ceiling nobody could read makes
+    the slot no candidate, for the reason an unread slot is none.
+
     Args:
         slot: The port the card would move to.
         seat: The card, whose own capability bounds what any port gives it.
+        ceiling: What the links between the slot and its root complex pass
+            on, as :meth:`Inventory.uplink_ceiling_gbps` gives it.
 
     Returns:
-        The bandwidth of the lower of the two ends, or ``None`` when the slot's
-        own capability was not read.
+        The bandwidth of the lower of the two ends, at most ``ceiling``, or
+        ``None`` when the slot's own capability or a link above it was not read.
     """
-    if slot.link.max_speed_gtps is None or slot.link.max_width is None:
+    if slot.link.max_speed_gtps is None or slot.link.max_width is None or ceiling is None:
         return None
-    return pcie_bandwidth_gbps(
+    gain = pcie_bandwidth_gbps(
         _lower(slot.link.max_speed_gtps, seat.link.max_speed_gtps),
         _lower_int(slot.link.max_width, seat.link.max_width),
     )
+    return None if gain is None else min(gain, ceiling)
 
 
 def best_slot(seat: Seat, inventory: Inventory, candidates: Callable[[PcieSlot], bool]) -> PcieSlot | None:
@@ -146,7 +154,7 @@ def best_slot(seat: Seat, inventory: Inventory, candidates: Callable[[PcieSlot],
     # one port per group of interchangeable ones rather than every port, which
     # is what keeps this search from costing the whole port list per card.
     for slot in inventory.placement_candidates(besides=seat.port_address, admits=candidates, inside=seat.own_functions):
-        gain = gain_in(slot, seat)
+        gain = gain_in(slot, seat, ceiling=inventory.uplink_ceiling_gbps(slot.address))
         if gain is not None and gain > best_bandwidth:
             best, best_bandwidth = slot, gain
     return best
