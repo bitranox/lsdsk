@@ -230,6 +230,14 @@ overlap the ones above and mean something else here. `74` stands even when the
 reader has also gone, because it is about the destination rather than about what
 a reader was shown.
 
+`config-deploy` and `config-generate-examples` have one `ok: false` that leaves
+`0`: when every target file already exists, nothing is written, and `skipped`
+says `every target file already exists; --force overwrites` (`every example
+file` for the examples). Finding the files already in place is the expected
+outcome of running either command twice, not a failed write, which leaves `13`
+or `74` instead. So a caller that reads only the exit code sees success, and one
+that reads `ok` learns that this run changed nothing.
+
 `2` is Click's usage error and means the command line was wrong, not that a file
 was missing: an unknown option, an unknown command, a missing argument and a bad
 `--format` choice all produce it, alongside a `--replay` path that is not there.

@@ -251,6 +251,15 @@ hier etwas anderes. `74` bleibt stehen, auch wenn der Leser ebenfalls gegangen
 ist, denn es sagt etwas über das Ziel, nicht über das, was ein Leser zu sehen
 bekam.
 
+`config-deploy` und `config-generate-examples` kennen ein `ok: false`, das `0`
+hinterlässt: Existiert jede Zieldatei bereits, wird nichts geschrieben, und
+`skipped` sagt `every target file already exists; --force overwrites` (bei den
+Beispielen `every example file`). Die Dateien schon vorzufinden ist das
+erwartete Ergebnis, wenn einer der beiden Befehle zweimal läuft, und kein
+gescheiterter Schreibvorgang; der hinterlässt `13` oder `74`. Ein Aufrufer, der
+nur den Exit-Code liest, sieht also Erfolg, und einer, der `ok` liest, erfährt,
+dass dieser Lauf nichts geändert hat.
+
 `2` ist der Verwendungsfehler von Click und heisst, dass die Befehlszeile falsch
 war, nicht dass eine Datei fehlte: eine unbekannte Option, ein unbekannter
 Befehl, ein fehlendes Argument und eine falsche `--format`-Wahl erzeugen ihn
