@@ -344,6 +344,7 @@ def _read_short_text(path: Path, *, limit: int = MAX_ATTRIBUTE_CHARS) -> str | N
 
 
 __all__ = [
+    "MAX_ATTRIBUTE_CHARS",
     "MAX_MOUNTINFO_BYTES",
     "read_mounts",
     "read_partitions",
