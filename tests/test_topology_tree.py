@@ -21,6 +21,7 @@ from rich.console import Console
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import report
 from lsdsk.domain.diagnostics import diagnose
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from rich.console import RenderableType
@@ -47,7 +48,7 @@ def _rendered(renderable: RenderableType, width: int = 200) -> str:
 
 def _line_for(address: str, host: str = "linux-sas-hba") -> str:
     machine = build_from(_load(host))
-    text = _rendered(report.render_tree(machine, diagnose(machine)))
+    text = _rendered(report.render_tree(machine, diagnose(machine), thresholds=DEFAULT_THRESHOLDS))
     return next(line for line in text.splitlines() if address in line)
 
 
@@ -97,7 +98,9 @@ def _fabric_lines(host: str, width: int = 200) -> list[str]:
     from lsdsk.domain.enums import TreeDensity
 
     machine = build_from(_load(host))
-    section = render_fabric(machine, diagnose(machine), width, FabricView(density=TreeDensity.FULL))
+    section = render_fabric(
+        machine, diagnose(machine), width, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS
+    )
     return _rendered(section, width=width).splitlines()
 
 
@@ -197,7 +200,9 @@ def test_an_unread_hop_is_dimmed_like_every_other_unread_figure() -> None:
     from lsdsk.domain.enums import TreeDensity
 
     machine = build_from(_load("windows-ahci"))
-    section = render_fabric(machine, diagnose(machine), 200, FabricView(density=TreeDensity.FULL))
+    section = render_fabric(
+        machine, diagnose(machine), 200, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS
+    )
     console = Console(file=io.StringIO(), width=200, color_system="truecolor")
 
     unread = [segment for segment in console.render(section) if segment.text.strip() == theme.NOT_READ]
@@ -272,7 +277,9 @@ def test_a_section_whose_hops_were_all_read_explains_nothing() -> None:
         ]
     )
     machine = Inventory(hostname="example", pci_tree=tree)
-    text = _rendered(render_fabric(machine, (), 160, FabricView(density=TreeDensity.FULL)), width=160)
+    text = _rendered(
+        render_fabric(machine, (), 160, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS), width=160
+    )
 
     assert "0000:01:00.0" in text, "the fixture drew nothing to judge"
     assert "= not read" not in text, text
@@ -289,7 +296,7 @@ def _disk_blocks(machine: Inventory, *, expand_virtual: bool = False) -> list[tu
     from lsdsk.domain.models import Disk
 
     view = FabricView(density=TreeDensity.FULL, expand_virtual=expand_virtual)
-    lines = fabric_lines(machine, diagnose(machine), 200, view)
+    lines = fabric_lines(machine, diagnose(machine), 200, view, thresholds=DEFAULT_THRESHOLDS)
     virtual = {disk.path for disk in machine.virtual_disks}
     blocks: list[tuple[str, list[tuple[str, str]]]] = []
     for line in lines:
@@ -349,7 +356,9 @@ def test_an_orphan_row_starts_under_its_own_header() -> None:
     )
     orphaned = machine.with_changes(disks=moved)
 
-    lines = fabric_lines(orphaned, diagnose(orphaned), 200, FabricView(density=TreeDensity.FULL))
+    lines = fabric_lines(
+        orphaned, diagnose(orphaned), 200, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS
+    )
     assert any("not attached to a known controller" in line.text.plain for line in lines)
     blocks = _disk_blocks(orphaned)
     assert "PhysicalDrive2" in [node for _, rows in blocks for _, node in rows]

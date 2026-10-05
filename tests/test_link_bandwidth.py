@@ -19,6 +19,7 @@ from lsdsk.adapters.render import detail, report, tables, theme
 from lsdsk.adapters.render.layout import Column, Layout
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.models import PcieLink
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from lsdsk.domain.models import Inventory
@@ -89,8 +90,15 @@ def _surfaces(machine: Inventory) -> list[tuple[str, tuple[Column, ...], list[di
         (
             "the disk-and-controller tree's disk table",
             report.DISK_COLUMNS,
-            _texts([report.disk_row(d, machine.port_link_for(d), bandwidth=True) for d in machine.disks]),
-            _texts([report.disk_row(d, machine.port_link_for(d)) for d in machine.disks]),
+            _texts(
+                [
+                    report.disk_row(d, machine.port_link_for(d), bandwidth=True, thresholds=DEFAULT_THRESHOLDS)
+                    for d in machine.disks
+                ]
+            ),
+            _texts(
+                [report.disk_row(d, machine.port_link_for(d), thresholds=DEFAULT_THRESHOLDS) for d in machine.disks]
+            ),
         ),
         (
             "the controllers table",

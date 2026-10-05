@@ -29,6 +29,7 @@ from lsdsk.adapters.render.tree import Fabric, FabricView, fabric_lines
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import TreeDensity
 from lsdsk.domain.models import PcieLink, PciNode
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from lsdsk.domain.models import Inventory
@@ -53,8 +54,8 @@ def _machine(host: str) -> Inventory:
 def _spines(inventory: Inventory, density: TreeDensity) -> list[str]:
     """The rule region of every line the section draws below the board line."""
     view = FabricView(density=density)
-    spine = Fabric.of(inventory, WIDTH, view).spine
-    lines = fabric_lines(inventory, diagnose(inventory), WIDTH, view)
+    spine = Fabric.of(inventory, WIDTH, view, thresholds=DEFAULT_THRESHOLDS).spine
+    lines = fabric_lines(inventory, diagnose(inventory), WIDTH, view, thresholds=DEFAULT_THRESHOLDS)
     board = next(index for index, line in enumerate(lines) if line.subject is inventory)
     return [line.text.plain[MARKER : MARKER + spine] for line in lines[board + 1 :]]
 
@@ -104,9 +105,11 @@ def test_every_root_complex_drawn_has_one_heading(host: str, density: TreeDensit
     """On every machine, a single root complex included."""
     inventory = _machine(host)
     view = FabricView(density=density)
-    lines = fabric_lines(inventory, diagnose(inventory), WIDTH, view)
+    lines = fabric_lines(inventory, diagnose(inventory), WIDTH, view, thresholds=DEFAULT_THRESHOLDS)
     headings = [match.group(1) for line in lines if (match := HEADING.search(line.text.plain.rstrip()))]
-    under_a_root = {node.parent_address for node, _level in Fabric.of(inventory, WIDTH, view).drawn()}
+    under_a_root = {
+        node.parent_address for node, _level in Fabric.of(inventory, WIDTH, view, thresholds=DEFAULT_THRESHOLDS).drawn()
+    }
     drawn_roots = sorted(node.address for node in inventory.pci_tree if node.is_root and node.address in under_a_root)
 
     assert sorted(headings) == drawn_roots
@@ -117,7 +120,9 @@ def test_every_root_complex_drawn_has_one_heading(host: str, density: TreeDensit
 def test_a_root_complex_heading_names_no_device_to_select() -> None:
     """A heading describes the section; the detail panel has nothing to say of a synthetic bus."""
     inventory = _machine("linux-usb-ehci")
-    lines = fabric_lines(inventory, diagnose(inventory), WIDTH, FabricView(density=TreeDensity.FULL))
+    lines = fabric_lines(
+        inventory, diagnose(inventory), WIDTH, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS
+    )
     headings = [line for line in lines if HEADING.search(line.text.plain.rstrip())]
 
     assert len(headings) == 2
@@ -130,7 +135,7 @@ def test_devices_with_no_bus_address_are_headed_as_unplaced_rather_than_as_a_roo
         PciNode(address=UNPLACED_ROOT, name="unplaced"),
         PciNode(address=r"PCI\VEN_1AF4&DEV_1000\3&13c0b0c5&0&50", name="virtio", parent_address=UNPLACED_ROOT),
     )
-    fabric = Fabric(nodes, WIDTH, FabricView(density=TreeDensity.FULL), drives_on=())
+    fabric = Fabric(nodes, WIDTH, FabricView(density=TreeDensity.FULL), drives_on=(), thresholds=DEFAULT_THRESHOLDS)
     plain = [fabric.row(node, {}).plain.rstrip() for node, _level in fabric.drawn()]
 
     assert not any(HEADING.search(line) for line in plain)
@@ -152,6 +157,6 @@ def test_a_root_complex_heading_adds_no_symbol_to_the_hop_legend() -> None:
             pcie_capability_present=True,
         ),
     )
-    fabric = Fabric(nodes, WIDTH, FabricView(density=TreeDensity.FULL), drives_on=())
+    fabric = Fabric(nodes, WIDTH, FabricView(density=TreeDensity.FULL), drives_on=(), thresholds=DEFAULT_THRESHOLDS)
 
     assert fabric.hop_legend() == ""

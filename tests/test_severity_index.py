@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 import pytest
 from rich.console import Console
 
+from lsdsk.adapters.config.tunables import DisplaySettings, Tunables
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import theme
 from lsdsk.adapters.render.full import render_full
@@ -25,6 +26,7 @@ from lsdsk.adapters.render.tree import render_fabric
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import Severity
 from lsdsk.domain.models import Finding, Inventory
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -86,7 +88,7 @@ def _walks_to_render(count: int, *, with_fabric: bool) -> int:
     console = Console(width=160, no_color=True)
     _CountedFindings.walks = 0
     with console.capture():
-        console.print(render_full(machine, findings, 160))
+        console.print(render_full(machine, findings, 160, tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings())))
     walks = _CountedFindings.walks
     # The control: every drive's warning reached a row of the TOPOLOGY section,
     # which is the tree this arm is named for - the fabric, or the
@@ -97,7 +99,7 @@ def _walks_to_render(count: int, *, with_fabric: bool) -> int:
     # every drive too, and a count over the whole page stayed satisfied by them
     # with every marker gone from the tree.
     with console.capture() as section:
-        console.print(render_fabric(machine, tuple(findings), 160))
+        console.print(render_fabric(machine, tuple(findings), 160, thresholds=DEFAULT_THRESHOLDS))
     marked = [
         line for line in section.get().splitlines() if "/dev/sdz" in line and theme.marker_for(Severity.WARNING) in line
     ]

@@ -29,6 +29,7 @@ from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import BusType, DiskKind
 from lsdsk.domain.models import Disk, Inventory, PciNode
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -168,21 +169,25 @@ class TestTheTreeCollapsesThemByDefault:
     """The default page is the whole machine at a glance, so it stays readable."""
 
     def test_the_tree_says_they_are_there(self, rendered: Callable[..., str]) -> None:
-        text = rendered(report.render_tree(build_from(_capture()), ()))
+        text = rendered(report.render_tree(build_from(_capture()), (), thresholds=DEFAULT_THRESHOLDS))
         assert "1 loop" in text
 
     def test_the_tree_does_not_list_them(self, rendered: Callable[..., str]) -> None:
         """A host with forty zvols would otherwise bury its real drives."""
-        text = rendered(report.render_tree(build_from(_capture()), ()))
+        text = rendered(report.render_tree(build_from(_capture()), (), thresholds=DEFAULT_THRESHOLDS))
         assert "zram0" not in text
 
     def test_expanding_lists_every_one(self, rendered: Callable[..., str]) -> None:
-        text = rendered(report.render_tree(build_from(_capture()), (), expand_virtual=True))
+        text = rendered(
+            report.render_tree(build_from(_capture()), (), expand_virtual=True, thresholds=DEFAULT_THRESHOLDS)
+        )
         assert "/dev/zram0" in text
         assert "/dev/loop0" in text
 
     def test_a_machine_without_any_says_nothing_about_them(self, rendered: Callable[..., str]) -> None:
-        text = rendered(report.render_tree(build_from(_capture_without_virtual_devices()), ()))
+        text = rendered(
+            report.render_tree(build_from(_capture_without_virtual_devices()), (), thresholds=DEFAULT_THRESHOLDS)
+        )
         assert "virtual" not in text.lower()
 
 
@@ -335,9 +340,11 @@ class TestADiskRowSurvivesAVirtualBus:
         if view == "disk table":
             text = rendered(tables.render_disks(machine, ()))
         elif view == "controller tree":
-            text = rendered(report.render_controller_disks(machine, ()))
+            text = rendered(report.render_controller_disks(machine, (), thresholds=DEFAULT_THRESHOLDS))
         else:
             machine = machine.with_changes(pci_tree=(PciNode(address="0000:00", name="root bus"),))
-            assert tree.fabric_lines(machine, ()), "the control: this drew the no-PCI fallback, not the fabric"
-            text = rendered(tree.render_fabric(machine, ()))
+            assert tree.fabric_lines(machine, (), thresholds=DEFAULT_THRESHOLDS), (
+                "the control: this drew the no-PCI fallback, not the fabric"
+            )
+            text = rendered(tree.render_fabric(machine, (), thresholds=DEFAULT_THRESHOLDS))
         assert "PhysicalDrive0" in text, text

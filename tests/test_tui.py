@@ -36,7 +36,7 @@ from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import Align
 from lsdsk.domain.history import DiskSeries, History, Sample, identity_of
 from lsdsk.domain.models import Inventory, PciNode
-from lsdsk.domain.thresholds import Thresholds
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -349,7 +349,7 @@ def test_when_a_column_can_shrink_it_shrinks_before_others_are_dropped() -> None
 @pytest.mark.os_agnostic
 def test_when_the_machine_is_empty_the_tree_says_so() -> None:
     """Verify an inventory with nothing in it renders a sentence, not a blank."""
-    rendered = render_tree(Inventory(hostname="empty"), ())
+    rendered = render_tree(Inventory(hostname="empty"), (), thresholds=DEFAULT_THRESHOLDS)
 
     assert "No storage controllers or disks found." in str(rendered)
 
@@ -1029,7 +1029,7 @@ async def test_the_topology_page_lays_the_fabric_out_at_the_width_it_was_given(w
 
     buffer = io.StringIO()
     Console(file=buffer, width=page_width, no_color=True).print(
-        render_fabric(machine, findings, page_width, FabricView(how_to_change=KEY_HINT))
+        render_fabric(machine, findings, page_width, FabricView(how_to_change=KEY_HINT), thresholds=DEFAULT_THRESHOLDS)
     )
     printed = [line.rstrip() for line in buffer.getvalue().splitlines()]
 
@@ -1293,7 +1293,9 @@ class TestTheTopologyPageCanBeMovedThrough:
 
         def rows(width: int) -> list[str]:
             return [
-                line.text.plain for line in fabric_lines(machine, findings, width, FabricView()) if _is_device_row(line)
+                line.text.plain
+                for line in fabric_lines(machine, findings, width, FabricView(), thresholds=DEFAULT_THRESHOLDS)
+                if _is_device_row(line)
             ]
 
         overrun = [width for width in range(20, 61) if any(len(row) > width for row in rows(width))]
@@ -1577,7 +1579,7 @@ async def test_a_controller_row_and_a_health_row_carry_every_value_the_printed_r
     assert differed, "no controller here draws a link, so the two forms never differed and this compared nothing"
 
     for index, disk in enumerate(machine.disks):
-        printed = tables.health_table_row(disk, severity_index(findings), app.history)
+        printed = tables.health_table_row(disk, severity_index(findings), app.history, thresholds=DEFAULT_THRESHOLDS)
         expected = [printed.marker[0], *(printed.cells[column.key][0] for column in tables.HEALTH_COLUMNS)]
         assert [cell.plain for cell in drawn_health[index]] == expected, disk.path
 
@@ -1672,3 +1674,38 @@ async def test_a_rescan_keeps_grading_by_the_configured_thresholds() -> None:
         await pilot.press("f9")
         await pilot.pause()
         assert app.findings == expected, "the rescan re-graded against the shipped defaults"
+
+
+async def _topology_wear_style(thresholds: Thresholds) -> str:
+    """The style the interactive topology page gives the 59 percent wear cell under `thresholds`."""
+    app = LsdskApp(inventory(), thresholds=thresholds)
+    async with app.run_test(size=(180, 50)) as pilot:
+        await pilot.press("1")
+        await pilot.pause()
+        options = app.query_one("#tree-lines", OptionList)
+        prompts = [options.get_option_at_index(index).prompt for index in range(options.option_count)]
+    rows = [p for p in prompts if isinstance(p, Text) and "/dev/nvme0n1" in p.plain and "59%" in p.plain]
+    assert len(rows) == 1, f"expected one topology row carrying the 59 percent drive, found {len(rows)}"
+    row = rows[0]
+    start = row.plain.index("59%")
+    styles = [str(span.style) for span in row.spans if span.start <= start < span.end]
+    assert styles, "the wear cell carries no style, so comparing two of them proves nothing"
+    return " ".join(styles)
+
+
+@pytest.mark.asyncio
+@pytest.mark.os_agnostic
+async def test_the_interactive_topology_page_colours_wear_by_the_configured_thresholds() -> None:
+    """The topology page drew its disk rows through `fabric_lines`, which was handed no thresholds.
+
+    Every other pane read the configured figures, so the same drive was green
+    on the topology page and amber on the health page beside it. The drive
+    here reads 59 percent: under the shipped warning, over the one configured.
+    """
+    lowered = Thresholds(wear_warning_percent=50, wear_critical_percent=99)
+    assert diagnose(inventory(), thresholds=lowered) != diagnose(inventory()), "the fixture cannot tell them apart"
+
+    shipped = await _topology_wear_style(DEFAULT_THRESHOLDS)
+    configured = await _topology_wear_style(lowered)
+
+    assert shipped != configured, "the topology page colours wear by the shipped figures whatever the run configured"

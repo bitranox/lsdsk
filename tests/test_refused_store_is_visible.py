@@ -23,6 +23,7 @@ from rich.console import Console
 from textual.widgets import Static
 
 from lsdsk.adapters.cli import cli
+from lsdsk.adapters.config.tunables import DisplaySettings, Tunables
 from lsdsk.adapters.history.store import HistoryRead
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render.full import render_full
@@ -30,6 +31,7 @@ from lsdsk.adapters.render.trend import render_trend
 from lsdsk.adapters.tui import LsdskApp
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.history import History
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -103,11 +105,27 @@ def test_the_whole_machine_page_carries_the_refusal_into_the_file_somebody_archi
     findings = diagnose(inventory)
     empty = History(hostname=inventory.hostname)
 
-    refused = drawn(render_full(inventory, findings, width=118, history=HistoryRead(empty, False, REFUSAL)))
+    refused = drawn(
+        render_full(
+            inventory,
+            findings,
+            width=118,
+            history=HistoryRead(empty, False, REFUSAL),
+            tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings()),
+        )
+    )
     assert NOTHING_EVER_RECORDED not in refused, "the page reads as a machine with nothing recorded yet"
     assert "could not be read" in refused
 
-    control = drawn(render_full(inventory, findings, width=118, history=HistoryRead(empty, writable=True)))
+    control = drawn(
+        render_full(
+            inventory,
+            findings,
+            width=118,
+            history=HistoryRead(empty, writable=True),
+            tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings()),
+        )
+    )
     assert NOTHING_EVER_RECORDED in control, "without a refusal the page must still say nothing was recorded"
 
 

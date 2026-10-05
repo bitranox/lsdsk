@@ -26,8 +26,7 @@ from rich.console import Group
 from rich.text import Text
 
 from ...domain.history import History
-from ...domain.thresholds import DEFAULT_THRESHOLDS
-from ..config.tunables import DEFAULT_PIPED_WIDTH, DisplaySettings, Tunables
+from ..config.tunables import DEFAULT_PIPED_WIDTH, Tunables
 from ..history.store import HistoryRead
 from . import report, tables, theme, tree
 from .trend import render_trend
@@ -62,7 +61,8 @@ def render_full(
     findings: Sequence[Finding],
     width: int = DEFAULT_WIDTH,
     history: HistoryRead | None = None,
-    tunables: Tunables | None = None,
+    *,
+    tunables: Tunables,
 ) -> RenderableType:
     """Render every view of one machine, in one page.
 
@@ -75,7 +75,9 @@ def render_full(
             happened. One value rather than two, because the trend section is
             drawn from both and a page given the samples without the reason
             reports a refused store as a machine nobody has ever recorded.
-        tunables: What this run judges and lays out by, or the shipped values.
+        tunables: What this run judges and lays out by. Required rather than
+            falling back to the shipped values, so a caller that drops it is
+            a type error instead of a page judged by figures nobody configured.
             Threaded through because these keys are only honoured by the
             sections below: without it `summary_limit` was read from
             configuration and passed nowhere at all, `wear_row_floor_percent`
@@ -90,7 +92,7 @@ def render_full(
     blank = Text("")
     read = history if history is not None else HistoryRead(History(hostname=host), writable=True)
     recorded = read.history
-    settled = tunables if tunables is not None else Tunables(DEFAULT_THRESHOLDS, DisplaySettings())
+    settled = tunables
     laid_out = settled.display
     sections: list[RenderableType] = [
         report.render_header(inventory),
@@ -103,7 +105,7 @@ def render_full(
             findings,
             width,
             tree.FabricView(density=laid_out.tree_density, expand_virtual=laid_out.expand_virtual),
-            settled.thresholds,
+            thresholds=settled.thresholds,
         ),
         blank,
         tables.render_controllers(inventory, findings, width=width),

@@ -317,7 +317,9 @@ def disk_table_row(disk: Disk, port: PcieLink | None = None, *, bandwidth: bool 
         Column key to its (text, style) pair, covering every key
         :data:`DISK_COLUMNS` names.
     """
-    shared = disk_row(disk, port, bandwidth=bandwidth)
+    # The shipped thresholds are passed knowingly: this table draws no wear
+    # cell, so the one disk_row styles is discarded below and judges nothing.
+    shared = disk_row(disk, port, bandwidth=bandwidth, thresholds=DEFAULT_THRESHOLDS)
     return {
         "device": shared["device"],
         "model": shared["model"],
@@ -385,7 +387,8 @@ def render_health(
     findings: Sequence[Finding],
     width: int = DEFAULT_WIDTH,
     history: History | None = None,
-    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    *,
+    thresholds: Thresholds,
 ) -> Table:
     """Render wear, temperature and error counters for every disk.
 
@@ -402,7 +405,7 @@ def render_health(
         A table of health readings.
     """
     severities = severity_index(findings)
-    rows = [health_table_row(disk, severities, history, thresholds) for disk in inventory.disks]
+    rows = [health_table_row(disk, severities, history, thresholds=thresholds) for disk in inventory.disks]
     return _render(f"Disk health on {inventory.hostname}", HEALTH_COLUMNS, TableRows(rows), width)
 
 
@@ -410,7 +413,8 @@ def health_table_row(
     disk: Disk,
     severities: Mapping[str, Severity],
     history: History | None = None,
-    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    *,
+    thresholds: Thresholds,
 ) -> MarkedRow:
     """One drive's health cells for every key in :data:`HEALTH_COLUMNS`, styled.
 

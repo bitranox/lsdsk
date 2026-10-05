@@ -20,6 +20,7 @@ from lsdsk.adapters.render.tree import FabricView, fabric_lines
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import BusType, TreeDensity, UsbTransport
 from lsdsk.domain.models import PciNode
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from lsdsk.domain.models import Disk, Finding, Inventory
@@ -130,7 +131,7 @@ def test_a_usb_disk_is_drawn_under_its_own_host_controller(host: str, density: T
     """
     machine = _machine(host)
     disk = _usb_disk(machine)
-    lines = fabric_lines(machine, diagnose(machine), 200, FabricView(density=density))
+    lines = fabric_lines(machine, diagnose(machine), 200, FabricView(density=density), thresholds=DEFAULT_THRESHOLDS)
 
     at = next(index for index, line in enumerate(lines) if line.subject == disk)
     above = [line.subject for line in lines[:at] if isinstance(line.subject, PciNode)]

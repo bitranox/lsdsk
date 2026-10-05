@@ -48,6 +48,7 @@ from lsdsk.adapters.validation import MAX_LISTED_PROBLEMS
 from lsdsk.domain.enums import TreeDensity
 from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.models import Inventory, PciNode
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -653,7 +654,7 @@ def test_a_parent_chain_deeper_than_the_frame_limit_is_still_drawn() -> None:
     )
     inventory = Inventory(hostname="deep-chain", pci_tree=tuple(nodes))
 
-    section = render_fabric(inventory, (), 200, FabricView(density=TreeDensity.FULL))
+    section = render_fabric(inventory, (), 200, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS)
 
     buffer = io.StringIO()
     Console(file=buffer, width=200, no_color=True).print(section)
@@ -704,7 +705,7 @@ def _parent_reads_to_render(levels: int) -> int:
     inventory = Inventory(hostname="deep-chain", pci_tree=tuple(nodes))
     assert all(type(node) is _CountingNode for node in inventory.pci_tree), "the inventory rebuilt the devices"
     _CountingNode.reads = 0
-    section = render_fabric(inventory, (), 200, FabricView(density=TreeDensity.FULL))
+    section = render_fabric(inventory, (), 200, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS)
     reads = _CountingNode.reads
     buffer = io.StringIO()
     Console(file=buffer, width=200, no_color=True).print(section)

@@ -18,6 +18,7 @@ from typing import Any, ClassVar
 import pytest
 from rich.console import Console
 
+from lsdsk.adapters.config.tunables import DisplaySettings, Tunables
 from lsdsk.adapters.history.store import HistoryRead
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render.full import render_full
@@ -582,7 +583,13 @@ def _identity_reads_to_report(count: int) -> int:
     machine = Inventory(hostname="scaled", disks=disks)
     _CountingSeries.reads = 0
     findings = diagnose(machine, history=history)
-    page = render_full(machine, findings, 200, HistoryRead(history=history, writable=True))
+    page = render_full(
+        machine,
+        findings,
+        200,
+        HistoryRead(history=history, writable=True),
+        tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings()),
+    )
     buffer = io.StringIO()
     Console(file=buffer, width=200, no_color=True).print(page)
     assert f"naa.{count - 1}" in buffer.getvalue(), "the last drive was not drawn, so the count is of the wrong work"

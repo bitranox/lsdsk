@@ -144,7 +144,7 @@ def render_fabric_for(
     inventory: Inventory,
     findings: Sequence[Finding],
     display: DisplaySettings,
-    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    thresholds: Thresholds,
 ) -> RenderableType:
     """The topology page's body, from the settings the page is showing.
 
@@ -160,7 +160,7 @@ def render_fabric_for(
     """
     from ..render import tree  # noqa: PLC0415 - keeps rich render off app import
 
-    return tree.FabricSection(inventory, findings, fabric_view_for(display), thresholds)
+    return tree.FabricSection(inventory, findings, fabric_view_for(display), thresholds=thresholds)
 
 
 #: The short label each page carries in the footer, in number-key order. Keyed by
@@ -656,7 +656,9 @@ class LsdskApp(App[None]):
         # A trend row is one COUNTER of one drive; the record is the drive's,
         # because that is what the row is about.
         disk = self._disk_of_trend_row.get(key) if page is CliCommand.TREND else self._disk_of.get(key)
-        return None if disk is None else detail.disk_detail(disk, self.inventory, self.history, self.thresholds)
+        return (
+            None if disk is None else detail.disk_detail(disk, self.inventory, self.history, thresholds=self.thresholds)
+        )
 
     def _show_detail(self, record: Detail | None) -> None:
         """Draw one record in the panel, with the active page's group first.
@@ -724,7 +726,7 @@ class LsdskApp(App[None]):
         table.add_columns(*HEALTH_COLUMNS)
         severities = report.severity_index(self.findings)
         for disk in self.inventory.disks:
-            row = tables.health_table_row(disk, severities, self.history, self.thresholds)
+            row = tables.health_table_row(disk, severities, self.history, thresholds=self.thresholds)
             table.add_row(*_marked(row, tables.HEALTH_COLUMNS), key=disk.node)
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
@@ -832,7 +834,11 @@ class LsdskApp(App[None]):
         """
         self._tree_width_used = self._tree_width()
         lines = fabric_lines(
-            self.inventory, self.findings, self._tree_width_used, fabric_view_for(self.display_settings)
+            self.inventory,
+            self.findings,
+            self._tree_width_used,
+            fabric_view_for(self.display_settings),
+            thresholds=self.thresholds,
         )
         options = self.query_one("#tree-lines", OptionList)
         options.display = bool(lines)
@@ -939,7 +945,7 @@ class LsdskApp(App[None]):
         if isinstance(subject, Inventory):
             return detail.machine_detail(subject)
         if isinstance(subject, Disk):
-            return detail.disk_detail(subject, self.inventory, self.history, self.thresholds)
+            return detail.disk_detail(subject, self.inventory, self.history, thresholds=self.thresholds)
         if isinstance(subject, PciNode):
             controller = next((one for one in self.inventory.controllers if one.address == subject.address), None)
             if controller is not None:

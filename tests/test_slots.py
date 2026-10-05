@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from lsdsk.adapters.config.tunables import DisplaySettings, Tunables
 from lsdsk.adapters.hw.linux.reader import parse_pcie_capability
 from lsdsk.adapters.render.report import (
     SLOTS_NEEDING_ROOT,
@@ -22,6 +23,7 @@ from lsdsk.adapters.render.report import (
     slot_verdict,
 )
 from lsdsk.domain.models import Inventory, PcieLink, PcieSlot, PortChild, representative_occupant
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -221,7 +223,9 @@ def test_the_full_page_carries_every_section(rendered: Callable[..., str]) -> No
     fixture = Path(__file__).parent / "fixtures" / "hw" / "linux-nvme-board.json"
     inventory = load(fixture)
 
-    output = rendered(render_full(inventory, diagnose(inventory)), width=200)
+    output = rendered(
+        render_full(inventory, diagnose(inventory), tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings())), width=200
+    )
 
     assert "MEG Z690 ACE" in output, "the mainboard"
     assert "PROBLEMS" in output, "the problem summary"
@@ -248,7 +252,9 @@ def test_the_full_page_leads_with_what_is_wrong(rendered: Callable[..., str]) ->
     fixture = Path(__file__).parent / "fixtures" / "hw" / "linux-nvme-board.json"
     inventory = load(fixture)
 
-    output = rendered(render_full(inventory, diagnose(inventory)), width=200)
+    output = rendered(
+        render_full(inventory, diagnose(inventory), tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings())), width=200
+    )
 
     assert output.index("PROBLEMS") < output.index("Topology on"), "problems come before topology"
     assert output.index("Topology on") < output.index("Disk health on"), "topology before health"
@@ -319,8 +325,8 @@ def test_an_nvme_row_is_graded_like_any_other_disk() -> None:
     drive = next(disk for disk in inventory.disks if disk.node == "nvme4n1")
     port = inventory.port_link_for(drive)
 
-    cells = report.disk_cells(drive, port)
-    styles = report.disk_cell_styles(drive, port)
+    cells = report.disk_cells(drive, port, thresholds=DEFAULT_THRESHOLDS)
+    styles = report.disk_cell_styles(drive, port, thresholds=DEFAULT_THRESHOLDS)
 
     assert cells["port"] == "Gen3x4", "the port column must show the seat, not the drive"
     assert cells["disk"] == "Gen4x4"
@@ -330,7 +336,7 @@ def test_an_nvme_row_is_graded_like_any_other_disk() -> None:
     # The drive is the only one of the three that is not the seat, and it is the
     # only one worth more: a reader who cannot price a generation off the top of
     # their head sees the shortfall here as a number.
-    carrying = report.disk_cells(drive, port, bandwidth=True)
+    carrying = report.disk_cells(drive, port, bandwidth=True, thresholds=DEFAULT_THRESHOLDS)
     assert carrying["port"] == "Gen3x4 (3.94 GB/s)"
     assert carrying["disk"] == "Gen4x4 (7.88 GB/s)"
     assert carrying["link"] == "Gen3x4 (3.94 GB/s)"
@@ -357,8 +363,8 @@ def test_every_view_grades_a_disk_the_same_way() -> None:
     # to surrender the detail here, the plain form would still be a substring of
     # nothing on the row and this test would fail loudly instead of comparing
     # two identical strings and proving nothing.
-    plain = report.disk_cells(drive, inventory.port_link_for(drive))
-    expected = report.disk_cells(drive, inventory.port_link_for(drive), bandwidth=True)
+    plain = report.disk_cells(drive, inventory.port_link_for(drive), thresholds=DEFAULT_THRESHOLDS)
+    expected = report.disk_cells(drive, inventory.port_link_for(drive), bandwidth=True, thresholds=DEFAULT_THRESHOLDS)
     assert expected["port"] != plain["port"], "the two forms must differ, or this compares nothing"
 
     table = tables.render_disks(inventory, findings, width=200)

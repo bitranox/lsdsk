@@ -25,6 +25,7 @@ from lsdsk.adapters.render.tree import FabricView, fabric_lines
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import TreeDensity
 from lsdsk.domain.models import PcieLink, PciNode
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from lsdsk.domain.models import Inventory
@@ -87,7 +88,9 @@ def test_the_hop_legend_explains_no_link() -> None:
 @pytest.mark.parametrize("address", [EMPTY_ROOT_PORT, DMI_PORT])
 def test_both_untrained_ports_draw_one_way_in_the_tree(address: str) -> None:
     machine = _machine("linux-usb-ehci")
-    lines = fabric_lines(machine, diagnose(machine), 200, FabricView(density=TreeDensity.FULL))
+    lines = fabric_lines(
+        machine, diagnose(machine), 200, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS
+    )
     row = next(
         line.text.plain for line in lines if isinstance(line.subject, PciNode) and line.subject.address == address
     )

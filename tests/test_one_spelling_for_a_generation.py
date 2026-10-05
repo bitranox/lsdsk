@@ -26,9 +26,11 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from rich.console import Console
 
+from lsdsk.adapters.config.tunables import DisplaySettings, Tunables
 from lsdsk.adapters.render import detail, report
 from lsdsk.adapters.render.full import render_full
 from lsdsk.domain.diagnostics import diagnose
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -71,7 +73,10 @@ def _text(renderable: object, width: int = 200) -> str:
 def _panels(machine: Inventory, findings: Sequence[Finding]) -> list[tuple[str, str]]:
     """Every detail panel a reader can open, with a label naming which it is."""
     records = [("machine", detail.machine_detail(machine))]
-    records += [(f"disk {disk.path}", detail.disk_detail(disk, machine)) for disk in machine.disks]
+    records += [
+        (f"disk {disk.path}", detail.disk_detail(disk, machine, thresholds=DEFAULT_THRESHOLDS))
+        for disk in machine.disks
+    ]
     records += [(f"controller {one.address}", detail.controller_detail(one, machine)) for one in machine.controllers]
     records += [(f"node {node.address}", detail.node_detail(node)) for node in machine.pci_tree]
     records += [(f"slot {slot.address}", detail.slot_detail(slot, machine)) for slot in machine.slots]
@@ -90,8 +95,14 @@ def _views(host: str) -> list[tuple[str, str]]:
     machine = _machine(host)
     findings = diagnose(machine)
     return [
-        ("the printed page", _text(render_full(machine, findings, width=200))),
-        ("the disk-and-controller tree", _text(report.render_controller_disks(machine, findings, width=200))),
+        (
+            "the printed page",
+            _text(render_full(machine, findings, width=200, tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings()))),
+        ),
+        (
+            "the disk-and-controller tree",
+            _text(report.render_controller_disks(machine, findings, width=200, thresholds=DEFAULT_THRESHOLDS)),
+        ),
         *_panels(machine, findings),
     ]
 
@@ -191,8 +202,14 @@ def _usb_views(*, usb: bool) -> list[tuple[str, str]]:
     findings = diagnose(machine)
     finding_text = " ".join(f"{one.title} {one.detail} {one.action or ''}" for one in findings)
     return [
-        ("the printed page", _text(render_full(machine, findings, width=200))),
-        ("the disk-and-controller tree", _text(report.render_controller_disks(machine, findings, width=200))),
+        (
+            "the printed page",
+            _text(render_full(machine, findings, width=200, tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings()))),
+        ),
+        (
+            "the disk-and-controller tree",
+            _text(report.render_controller_disks(machine, findings, width=200, thresholds=DEFAULT_THRESHOLDS)),
+        ),
         ("the findings", finding_text),
         *_panels(machine, findings),
     ]

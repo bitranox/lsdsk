@@ -43,7 +43,6 @@ from rich.text import Text
 from ...domain.diagnostics import attached_demand_gbytes
 from ...domain.enums import BusType, UsbTransport
 from ...domain.history import CounterKind
-from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from . import tables, theme
 from .report import findings_for, pcie_capability, serial_speed, slot_verdict, usb_speed_text
 
@@ -54,6 +53,7 @@ if TYPE_CHECKING:
 
     from ...domain.history import DiskSeries, History, Trend
     from ...domain.models import Controller, Disk, Finding, Health, Inventory, PcieLink, PcieSlot, PciNode
+    from ...domain.thresholds import Thresholds
     from .theme import Cell
 
 
@@ -201,7 +201,8 @@ def disk_detail(
     disk: Disk,
     inventory: Inventory,
     history: History | None = None,
-    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    *,
+    thresholds: Thresholds,
 ) -> Detail:
     """The whole record of one drive.
 
@@ -575,7 +576,7 @@ def _seat_values(disk: Disk, inventory: Inventory) -> tuple[tuple[str, Cell], ..
 def _health_values(
     health: Health | None,
     bus: BusType,
-    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    thresholds: Thresholds,
 ) -> tuple[tuple[str, Cell], ...]:
     """What the drive says about itself, limits included.
 

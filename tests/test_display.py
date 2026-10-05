@@ -13,7 +13,9 @@ import pytest
 from lib_layered_config import Config
 
 from lsdsk.adapters.config.display import display_config
+from lsdsk.adapters.config.tunables import DisplaySettings, Tunables
 from lsdsk.domain.enums import OutputFormat
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -197,12 +199,20 @@ def test_the_default_page_contains_every_section_a_command_can_show() -> None:
         Console(file=buffer, width=width, no_color=True).print(renderable)
         return buffer.getvalue()
 
-    page = rendered(render_full(machine, findings, width=width, history=HistoryRead(history, writable=True)))
+    page = rendered(
+        render_full(
+            machine,
+            findings,
+            width=width,
+            history=HistoryRead(history, writable=True),
+            tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings()),
+        )
+    )
     sections = {
-        "topology tree": render_fabric(machine, findings, width=width),
+        "topology tree": render_fabric(machine, findings, width=width, thresholds=DEFAULT_THRESHOLDS),
         "controllers": tables.render_controllers(machine, findings, width=width),
         "disks": tables.render_disks(machine, findings, width=width),
-        "health": tables.render_health(machine, findings, width=width),
+        "health": tables.render_health(machine, findings, width=width, thresholds=DEFAULT_THRESHOLDS),
         "smart": report.render_smart(machine, width=width),
         "slots": report.render_slots(machine, width=width),
         "trend": render_trend(machine, history, width=width),

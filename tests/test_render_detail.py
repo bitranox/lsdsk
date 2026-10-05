@@ -19,6 +19,7 @@ from lsdsk.adapters.render import detail, report, tables, theme
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import BusType
 from lsdsk.domain.models import PcieLink, PcieSlot
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from lsdsk.domain.models import Disk, Inventory
@@ -61,7 +62,9 @@ def _drawn(renderable: object, width: int = 118) -> str:
 
 
 def _disk_panel(machine: Inventory, disk: Disk, width: int = 118) -> str:
-    return _drawn(detail.render_detail(detail.disk_detail(disk, machine), diagnose(machine)), width)
+    return _drawn(
+        detail.render_detail(detail.disk_detail(disk, machine, thresholds=DEFAULT_THRESHOLDS), diagnose(machine)), width
+    )
 
 
 def _slot_panel(machine: Inventory, slot: PcieSlot, width: int = 118) -> str:
@@ -155,7 +158,7 @@ def test_the_panel_reads_its_shared_values_off_the_table_row_rather_than_derivin
             # The panel always has room, so it asks for the figures carrying
             # what they are worth; the comparison is against the same form.
             row = tables.disk_table_row(disk, machine.port_link_for(disk), bandwidth=True)
-            record = detail.disk_detail(disk, machine)
+            record = detail.disk_detail(disk, machine, thresholds=DEFAULT_THRESHOLDS)
             values = {name: cell for group in record.groups for name, cell in group.values}
             assert values["serial"] == row["serial"], f"{host} {disk.path}"
             assert values["wwn"] == row["wwn"], f"{host} {disk.path}"
@@ -168,7 +171,7 @@ def test_ordering_the_groups_moves_them_and_changes_nothing_else() -> None:
     """A page may choose what is read first; it may not choose what is there."""
     machine = _machine("linux-nvme-board")
     disk = machine.disks[0]
-    record = detail.disk_detail(disk, machine)
+    record = detail.disk_detail(disk, machine, thresholds=DEFAULT_THRESHOLDS)
     promoted = detail.order_groups(record.groups, (detail.HEALTH, detail.COUNTERS))
 
     assert [group.label for group in promoted][:2] == [detail.HEALTH, detail.COUNTERS]
@@ -208,7 +211,7 @@ def test_every_record_the_panel_can_show_renders_at_every_width(host: str) -> No
     machine = _machine(host)
     findings = diagnose(machine)
     records = [detail.machine_detail(machine)]
-    records += [detail.disk_detail(disk, machine) for disk in machine.disks]
+    records += [detail.disk_detail(disk, machine, thresholds=DEFAULT_THRESHOLDS) for disk in machine.disks]
     records += [detail.controller_detail(one, machine) for one in machine.controllers]
     records += [detail.node_detail(node) for node in machine.pci_tree]
     records += [detail.slot_detail(slot, machine) for slot in machine.slots]
@@ -276,7 +279,7 @@ def test_the_panel_names_the_capacity_and_writes_it_on_both_scales() -> None:
     for host in CAPTURES:
         machine = _machine(host)
         for disk in machine.disks:
-            record = detail.disk_detail(disk, machine)
+            record = detail.disk_detail(disk, machine, thresholds=DEFAULT_THRESHOLDS)
             identity = next(group for group in record.groups if group.label == detail.IDENTITY)
             named = dict(identity.values)
             assert "size" in named, f"{host} {disk.path}: the panel's identity group names no size"
@@ -305,7 +308,7 @@ def test_the_heading_does_not_carry_the_capacity_as_well() -> None:
         for disk in machine.disks:
             if disk.size_bytes is None:
                 continue
-            record = detail.disk_detail(disk, machine)
+            record = detail.disk_detail(disk, machine, thresholds=DEFAULT_THRESHOLDS)
             drawn = [cell[0] for cell in record.heading]
             for figure in (theme.format_size(disk.size_bytes), theme.format_size_both(disk.size_bytes)):
                 assert not any(figure in cell for cell in drawn), (
@@ -325,7 +328,7 @@ _LINK_FACTS = frozenset({"usb2 side", "transport"})
 
 def _link_pairs(machine: Inventory, disk: Disk) -> dict[str, str]:
     """The panel's link group for one drive, label to text."""
-    record = detail.disk_detail(disk, machine)
+    record = detail.disk_detail(disk, machine, thresholds=DEFAULT_THRESHOLDS)
     group = next(one for one in record.groups if one.label == detail.LINK)
     return {label: cell[0] for label, cell in group.values}
 
@@ -551,7 +554,7 @@ def test_every_value_an_nvme_drive_cannot_have_is_marked_absent_not_unread() -> 
     """
     machine = _machine("linux-nvme-board")
     drive = _nvme_drive_with_nothing_ata(machine)
-    record = detail.disk_detail(drive, machine)
+    record = detail.disk_detail(drive, machine, thresholds=DEFAULT_THRESHOLDS)
 
     counters = _values_of(record, detail.COUNTERS)
     health = _values_of(record, detail.HEALTH)
@@ -561,9 +564,10 @@ def test_every_value_an_nvme_drive_cannot_have_is_marked_absent_not_unread() -> 
     assert not wrong, f"on an NVMe drive these read as something other than {theme.NOT_APPLICABLE!r}: {wrong}"
 
     sata = next(one for one in machine.disks if one.bus is not BusType.NVME)
-    assert _values_of(detail.disk_detail(sata, machine), detail.HEALTH)["smart"] != theme.NOT_APPLICABLE, (
-        "a SATA drive's attribute summary was marked as not applying"
-    )
+    assert (
+        _values_of(detail.disk_detail(sata, machine, thresholds=DEFAULT_THRESHOLDS), detail.HEALTH)["smart"]
+        != theme.NOT_APPLICABLE
+    ), "a SATA drive's attribute summary was marked as not applying"
 
 
 @pytest.mark.os_agnostic
@@ -581,7 +585,7 @@ def test_an_nvme_drive_that_does_answer_an_ata_counter_keeps_its_figure() -> Non
     assert drive.health is not None
     answering = drive.with_changes(health=drive.health.with_changes(crc_errors=3))
 
-    counters = _values_of(detail.disk_detail(answering, machine), detail.COUNTERS)
+    counters = _values_of(detail.disk_detail(answering, machine, thresholds=DEFAULT_THRESHOLDS), detail.COUNTERS)
     assert counters["crc"] == "3", f"an NVMe drive reporting 3 CRC errors was drawn as {counters['crc']!r}"
     # The neighbours it did not answer are still absent, so the figure above is
     # not the panel having stopped marking the bus at all.
@@ -600,6 +604,6 @@ def test_a_drive_sold_as_500gb_is_labelled_on_both_scales_decimal_first() -> Non
     machine = _machine("linux-nvme-board")
     drive = machine.disks[0].with_changes(size_bytes=500_107_862_016)
 
-    identity = _values_of(detail.disk_detail(drive, machine), detail.IDENTITY)
+    identity = _values_of(detail.disk_detail(drive, machine, thresholds=DEFAULT_THRESHOLDS), detail.IDENTITY)
     assert identity["size"] == "500GB/466GiB", f"a 500GB drive's size was drawn as {identity['size']!r}"
     assert "size 500GB/466GiB" in _disk_panel(machine, drive)

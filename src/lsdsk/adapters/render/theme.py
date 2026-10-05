@@ -24,15 +24,14 @@ from typing import TYPE_CHECKING, Final, NamedTuple
 from ...domain.enums import BusType, DiskKind, PciPortKind, Severity
 from ...domain.models import PcieLink, pcie_generation
 
-#: A rendered cell: its text and the style to draw it in. Named once here so the
-#: functions that produce one and the tables that consume it agree by type
-#: rather than by convention.
-from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
-
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-#: One rendered table cell: the text, and the style it is drawn in.
+    from ...domain.thresholds import Thresholds
+
+#: One rendered table cell: the text, and the style it is drawn in. Named once
+#: here so the functions that produce one and the tables that consume it agree
+#: by type rather than by convention.
 #:
 #: Left an alias rather than promoted to a NamedTuple, which was measured: it
 #: would force 28 construction sites to spell ``Cell(...)`` to give 5 read sites
@@ -525,7 +524,7 @@ def format_temperature(
     return text, STYLE_AT_CAPABILITY
 
 
-def format_wear(percent_used: int | None, thresholds: Thresholds = DEFAULT_THRESHOLDS) -> Cell:
+def format_wear(percent_used: int | None, thresholds: Thresholds) -> Cell:
     """Render wear as a percentage consumed, and style it.
 
     The thresholds come as the OBJECT the rules judge by rather than as two
@@ -542,13 +541,14 @@ def format_wear(percent_used: int | None, thresholds: Thresholds = DEFAULT_THRES
         The text and its style, as one cell.
 
     Example:
-        >>> format_wear(1) == ('1%', STYLE_AT_CAPABILITY)
+        >>> from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
+        >>> format_wear(1, DEFAULT_THRESHOLDS) == ('1%', STYLE_AT_CAPABILITY)
         True
-        >>> format_wear(85) == ('85%', STYLE_BELOW_CAPABILITY)
+        >>> format_wear(85, DEFAULT_THRESHOLDS) == ('85%', STYLE_BELOW_CAPABILITY)
         True
-        >>> format_wear(97) == ('97%', STYLE_FAILING)
+        >>> format_wear(97, DEFAULT_THRESHOLDS) == ('97%', STYLE_FAILING)
         True
-        >>> format_wear(None) == ('-', STYLE_UNKNOWN)
+        >>> format_wear(None, DEFAULT_THRESHOLDS) == ('-', STYLE_UNKNOWN)
         True
     """
     if percent_used is None:

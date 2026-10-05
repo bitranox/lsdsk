@@ -32,6 +32,7 @@ from lsdsk.adapters.render.tree import (
 )
 from lsdsk.domain.enums import TreeDensity
 from lsdsk.domain.models import PcieLink, PciNode
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -207,7 +208,7 @@ def test_a_density_draws_every_device_it_keeps() -> None:
     for host in DENSITY_COUNTS:
         machine = build_from(_load(host))
         for density in tuple(TreeDensity):
-            fabric = Fabric.of(machine, 200, FabricView(density=density))
+            fabric = Fabric.of(machine, 200, FabricView(density=density), thresholds=DEFAULT_THRESHOLDS)
             drawn = {node.address for node, _level in fabric.drawn()}
             lost = fabric.kept - drawn
             assert not lost, f"{host} {density.value}: kept but never drawn: {sorted(lost)[:5]}"
@@ -251,7 +252,7 @@ def test_a_storage_controller_under_a_classless_device_is_still_drawn() -> None:
 
     buffer = io.StringIO()
     Console(file=buffer, width=120, no_color=True).print(
-        render_fabric(machine, (), 120, FabricView(density=TreeDensity.STORAGE_ONLY))
+        render_fabric(machine, (), 120, FabricView(density=TreeDensity.STORAGE_ONLY), thresholds=DEFAULT_THRESHOLDS)
     )
 
     assert "0000:01:00.0" in buffer.getvalue(), f"the controller vanished:\n{buffer.getvalue()}"
@@ -276,7 +277,7 @@ def test_the_fabric_fits_its_width_at_every_density(host: str, width: int) -> No
     for density in tuple(TreeDensity):
         buffer = io.StringIO()
         Console(file=buffer, width=width, no_color=True).print(
-            render_fabric(machine, findings, width, FabricView(density=density))
+            render_fabric(machine, findings, width, FabricView(density=density), thresholds=DEFAULT_THRESHOLDS)
         )
         lines = buffer.getvalue().splitlines()
         stranded = [f"{host} w{width} {density.value}" for line in lines if line.strip() in marker_alone]
@@ -292,7 +293,7 @@ def _rendered(machine: Any, findings: Any, density: TreeDensity) -> str:
 
     buffer = io.StringIO()
     Console(file=buffer, width=200, no_color=True).print(
-        render_fabric(machine, findings, 200, FabricView(density=density))
+        render_fabric(machine, findings, 200, FabricView(density=density), thresholds=DEFAULT_THRESHOLDS)
     )
     return buffer.getvalue()
 
@@ -440,7 +441,7 @@ def test_a_device_row_takes_one_line_at_every_width(host: str) -> None:
     machine = build_from(_load(host))
     findings = diagnose(machine)
     for width in range(20, 201):
-        fabric = Fabric.of(machine, width, FabricView(density=TreeDensity.FULL))
+        fabric = Fabric.of(machine, width, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS)
         console = Console(file=io.StringIO(), width=width, no_color=True)
         for node, _level in fabric.drawn():
             with console.capture() as capture:
@@ -481,7 +482,9 @@ def test_a_disk_row_takes_one_line_at_every_width(host: str) -> None:
     severities = severity_index(diagnose(machine))
     wrapped: list[str] = []
     for width in range(20, 201):
-        fabric = Fabric.of(machine, width, FabricView(density=TreeDensity.FULL, expand_virtual=True))
+        fabric = Fabric.of(
+            machine, width, FabricView(density=TreeDensity.FULL, expand_virtual=True), thresholds=DEFAULT_THRESHOLDS
+        )
         layout = fabric.measure(machine)
         rules = fabric.rules_under(None)
         lines: list[tuple[str, Any]] = [("header", disk_header_line(fabric, layout, rules))]
@@ -506,7 +509,9 @@ def test_a_disk_row_in_the_controller_tree_takes_one_line_at_every_width(host: s
     paths = {disk.path for disk in (*machine.disks, *machine.virtual_disks)}
 
     def drawn(width: int) -> list[RenderableType]:
-        group = report.render_controller_disks(machine, findings, width, expand_virtual=True)
+        group = report.render_controller_disks(
+            machine, findings, width, expand_virtual=True, thresholds=DEFAULT_THRESHOLDS
+        )
         assert isinstance(group, Group)
         return list(group.renderables)
 
@@ -542,7 +547,7 @@ def test_every_device_row_starts_its_columns_at_the_same_place(host: str) -> Non
 
     machine = build_from(_load(host))
     findings = diagnose(machine)
-    fabric = Fabric.of(machine, 200, FabricView(density=TreeDensity.FULL))
+    fabric = Fabric.of(machine, 200, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS)
 
     offsets = {
         fabric.row(node, severity_index(findings)).plain.index(node.address) for node, _level in fabric.devices()
@@ -568,7 +573,7 @@ def test_the_disk_header_sits_above_the_cells_it_labels() -> None:
     findings = diagnose(machine)
     buffer = io.StringIO()
     Console(file=buffer, width=160, no_color=True).print(
-        render_fabric(machine, findings, 160, FabricView(density=TreeDensity.FULL))
+        render_fabric(machine, findings, 160, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS)
     )
     lines = buffer.getvalue().splitlines()
 
@@ -602,8 +607,10 @@ def test_listing_the_virtual_devices_fits_the_columns_around_them() -> None:
         Console(file=buffer, width=120, no_color=True).print(renderable)
         return buffer.getvalue().splitlines()
 
-    fabric = rendered(render_fabric(machine, findings, 120, view))
-    old_table = rendered(render_controller_disks(machine, findings, 120, expand_virtual=True))
+    fabric = rendered(render_fabric(machine, findings, 120, view, thresholds=DEFAULT_THRESHOLDS))
+    old_table = rendered(
+        render_controller_disks(machine, findings, 120, expand_virtual=True, thresholds=DEFAULT_THRESHOLDS)
+    )
     sample = machine.virtual_disks[0].path
 
     in_fabric = next(line for line in fabric if sample in line)
@@ -640,7 +647,7 @@ def test_a_reduced_density_draws_no_bridge_that_leads_away_from_storage(host: st
         return node.is_storage or any(holds_storage(child) for child in node.children)
 
     for density in (TreeDensity.STORAGE_AND_SIBLINGS, TreeDensity.STORAGE_ONLY):
-        fabric = Fabric.of(machine, 200, FabricView(density=density))
+        fabric = Fabric.of(machine, 200, FabricView(density=density), thresholds=DEFAULT_THRESHOLDS)
         strays = [
             node.address for node, _level in fabric.drawn() if node.is_bridge_family and not holds_storage(node.address)
         ]
@@ -664,7 +671,9 @@ def test_the_tree_starts_at_the_board_that_carries_the_fabric() -> None:
     machine = build_from(_load("linux-nvme-board"))
     buffer = io.StringIO()
     Console(file=buffer, width=200, no_color=True).print(
-        render_fabric(machine, diagnose(machine), 200, FabricView(density=TreeDensity.STORAGE_ONLY))
+        render_fabric(
+            machine, diagnose(machine), 200, FabricView(density=TreeDensity.STORAGE_ONLY), thresholds=DEFAULT_THRESHOLDS
+        )
     )
     lines = [line.rstrip() for line in buffer.getvalue().splitlines() if line.strip()]
     board = next(line for line in lines if machine.board in line)
@@ -697,7 +706,13 @@ def test_the_top_line_says_only_what_the_capture_carries() -> None:
         machine = build_from(_load(host))
         buffer = io.StringIO()
         Console(file=buffer, width=200, no_color=True).print(
-            render_fabric(machine, diagnose(machine), 200, FabricView(density=TreeDensity.STORAGE_ONLY))
+            render_fabric(
+                machine,
+                diagnose(machine),
+                200,
+                FabricView(density=TreeDensity.STORAGE_ONLY),
+                thresholds=DEFAULT_THRESHOLDS,
+            )
         )
         lines = [line.rstrip() for line in buffer.getvalue().splitlines() if line.strip()]
         first_device = min(index for index, line in enumerate(lines) if DeviceLine.search(line))
@@ -814,7 +829,7 @@ def test_the_device_rows_carry_a_header_over_their_own_columns() -> None:
 
     machine = build_from(_load("linux-nvme-board"))
     findings = diagnose(machine)
-    fabric = Fabric.of(machine, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
+    fabric = Fabric.of(machine, 160, FabricView(density=TreeDensity.STORAGE_ONLY), thresholds=DEFAULT_THRESHOLDS)
     header = device_header_line(fabric).plain
     node, _level = fabric.devices()[0]
     row = fabric.row(node, severity_index(findings)).plain
@@ -827,7 +842,9 @@ def test_the_device_rows_carry_a_header_over_their_own_columns() -> None:
 
     buffer = io.StringIO()
     Console(file=buffer, width=160, no_color=True).print(
-        render_fabric(machine, findings, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
+        render_fabric(
+            machine, findings, 160, FabricView(density=TreeDensity.STORAGE_ONLY), thresholds=DEFAULT_THRESHOLDS
+        )
     )
     lines = buffer.getvalue().splitlines()
     first_device = min(index for index, line in enumerate(lines) if DeviceLine.search(line))
@@ -875,7 +892,7 @@ def test_the_header_names_exactly_the_columns_the_rows_draw() -> None:
     )
     seen = {True: 0, False: 0}
     for width in range(20, 201):
-        fabric = Fabric(tree, width, FabricView(density=TreeDensity.FULL), drives_on=())
+        fabric = Fabric(tree, width, FabricView(density=TreeDensity.FULL), drives_on=(), thresholds=DEFAULT_THRESHOLDS)
         header = device_header_line(fabric)
         node, _level = fabric.devices()[0]
         # Matches BOTH hop tiers: the narrow figure is a prefix of the wide
@@ -921,10 +938,12 @@ def test_a_disk_block_carries_the_rules_of_the_controller_above_it(host: str) ->
 
     machine = build_from(_load(host))
     findings = diagnose(machine)
-    fabric = Fabric.of(machine, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
+    fabric = Fabric.of(machine, 160, FabricView(density=TreeDensity.STORAGE_ONLY), thresholds=DEFAULT_THRESHOLDS)
     buffer = io.StringIO()
     Console(file=buffer, width=160, no_color=True).print(
-        render_fabric(machine, findings, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
+        render_fabric(
+            machine, findings, 160, FabricView(density=TreeDensity.STORAGE_ONLY), thresholds=DEFAULT_THRESHOLDS
+        )
     )
     lines = buffer.getvalue().splitlines()
 
@@ -986,10 +1005,12 @@ def test_nothing_drawn_between_two_siblings_breaks_the_rule_between_them(host: s
 
     machine = build_from(_load(host))
     findings = diagnose(machine)
-    fabric = Fabric.of(machine, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
+    fabric = Fabric.of(machine, 160, FabricView(density=TreeDensity.STORAGE_ONLY), thresholds=DEFAULT_THRESHOLDS)
     buffer = io.StringIO()
     Console(file=buffer, width=160, no_color=True).print(
-        render_fabric(machine, findings, 160, FabricView(density=TreeDensity.STORAGE_ONLY))
+        render_fabric(
+            machine, findings, 160, FabricView(density=TreeDensity.STORAGE_ONLY), thresholds=DEFAULT_THRESHOLDS
+        )
     )
     lines = buffer.getvalue().splitlines()
     rules = {TREE_PIPE[0], TREE_BRANCH[0], TREE_LAST[0]}
@@ -1035,8 +1056,10 @@ def test_the_printed_tree_and_the_selectable_one_are_built_from_one_list_of_line
             for width in (60, 80, 120, 200):
                 view = FabricView(density=density)
                 whole = io.StringIO()
-                Console(file=whole, width=width, no_color=True).print(render_fabric(machine, findings, width, view))
-                lines = fabric_lines(machine, findings, width, view)
+                Console(file=whole, width=width, no_color=True).print(
+                    render_fabric(machine, findings, width, view, thresholds=DEFAULT_THRESHOLDS)
+                )
+                lines = fabric_lines(machine, findings, width, view, thresholds=DEFAULT_THRESHOLDS)
                 rebuilt = io.StringIO()
                 Console(file=rebuilt, width=width, no_color=True).print(Group(*(line.text for line in lines)))
                 assert whole.getvalue() == rebuilt.getvalue(), f"{host} {density.value} w{width}"
@@ -1056,7 +1079,9 @@ def test_a_line_carries_the_thing_it_is_about_and_a_decorative_one_carries_nothi
 
     for host in DENSITY_COUNTS:
         machine = build_from(_load(host))
-        lines = fabric_lines(machine, diagnose(machine), 160, FabricView(density=TreeDensity.FULL))
+        lines = fabric_lines(
+            machine, diagnose(machine), 160, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS
+        )
         assert lines, host
         subjects = [line.subject for line in lines]
         assert subjects.count(machine) == 1, f"{host}: the board line is not about the machine exactly once"
@@ -1184,7 +1209,7 @@ def test_every_hop_cell_is_the_one_its_field_tier_was_measured_for(host: str) ->
     for density in TreeDensity:
         for width in range(20, 201):
             found, differing = _hop_cells_off_their_tier(
-                Fabric.of(machine, width, FabricView(density=density)), findings
+                Fabric.of(machine, width, FabricView(density=density), thresholds=DEFAULT_THRESHOLDS), findings
             )
             wrong.extend(f"{density.value} {one}" for one in found)
             discriminating += differing
@@ -1213,7 +1238,7 @@ def test_a_deep_fabric_draws_the_hop_tier_its_field_plan_chose() -> None:
     discriminating = 0
     for width in range(20, 201):
         found, differing = _hop_cells_off_their_tier(
-            Fabric(nodes, width, FabricView(density=TreeDensity.FULL), drives_on=()), ()
+            Fabric(nodes, width, FabricView(density=TreeDensity.FULL), drives_on=(), thresholds=DEFAULT_THRESHOLDS), ()
         )
         wrong.extend(found)
         discriminating += differing
@@ -1241,7 +1266,9 @@ def test_the_capable_column_draws_the_maximum_and_the_running_one_the_negotiated
     link_only = PciNode(address="0000:01:00.0", name="card", link=_UNEQUAL_HOP, pcie_capability_present=True)
     assert hop_cells(link_only, bandwidth=width == 200) == ((capable, ""), (running, ""))
 
-    fabric = Fabric(_deep_linked_chain(1), width, FabricView(density=TreeDensity.FULL), drives_on=())
+    fabric = Fabric(
+        _deep_linked_chain(1), width, FabricView(density=TreeDensity.FULL), drives_on=(), thresholds=DEFAULT_THRESHOLDS
+    )
     header = device_header_line(fabric).plain
     widths = {field.key: field.width for field in fabric.fields}
     node, _level = fabric.devices()[0]

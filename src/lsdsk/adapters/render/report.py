@@ -25,7 +25,6 @@ from ... import __init__conf__
 from ...domain.diagnostics import count_by_severity
 from ...domain.enums import Align, BusType, Environment, Severity
 from ...domain.models import pcie_bandwidth_gbps, pcie_generation, serial_bandwidth_gbps
-from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_SUMMARY_LIMIT
 from . import theme
 from .layout import GAP, GUTTER, TREE_BRANCH, TREE_LAST, Column, Layout, fit, natural_widths, pad
@@ -46,6 +45,7 @@ if TYPE_CHECKING:
         UsbLink,
         UsbSpeed,
     )
+    from ...domain.thresholds import Thresholds
     from .rows import Row
 
 # What is lost when the SMART path is unavailable, as the reader sees it named in
@@ -428,7 +428,7 @@ def disk_cells(
     port: PcieLink | None = None,
     *,
     bandwidth: bool = False,
-    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    thresholds: Thresholds,
 ) -> dict[str, str]:
     """Build the plain-text cells for one disk, before styling.
 
@@ -491,7 +491,7 @@ def disk_cell_styles(
     disk: Disk,
     port: PcieLink | None = None,
     *,
-    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    thresholds: Thresholds,
 ) -> dict[str, str]:
     """Style per cell, so colour only ever marks a measured relation.
 
@@ -555,7 +555,7 @@ def disk_row(
     port: PcieLink | None = None,
     *,
     bandwidth: bool = False,
-    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    thresholds: Thresholds,
 ) -> dict[str, theme.Cell]:
     """One disk's cells already paired with their styles.
 
@@ -721,6 +721,7 @@ def render_tree(
     width: int = DEFAULT_WIDTH,
     *,
     expand_virtual: bool = False,
+    thresholds: Thresholds,
 ) -> RenderableType:
     """Render the topology as one globally aligned tree.
 
@@ -735,11 +736,14 @@ def render_tree(
         expand_virtual: List every kernel-virtual device rather than tallying
             them. They are folded away by default because a host with forty
             zvols would otherwise bury the drives this view exists to show.
+        thresholds: What this run judges wear by. Required, because a default
+            here is how the no-PCI section came to colour wear by the shipped
+            figures while the findings beside it used the configured ones.
 
     Returns:
         A renderable tree.
     """
-    return render_controller_disks(inventory, findings, width, expand_virtual=expand_virtual)
+    return render_controller_disks(inventory, findings, width, expand_virtual=expand_virtual, thresholds=thresholds)
 
 
 def render_controller_disks(
@@ -748,7 +752,7 @@ def render_controller_disks(
     width: int = DEFAULT_WIDTH,
     *,
     expand_virtual: bool = False,
-    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    thresholds: Thresholds,
 ) -> RenderableType:
     """The disk-and-controller tree, as the topology section's no-PCI fallback.
 
@@ -766,8 +770,8 @@ def render_controller_disks(
         return Text("No storage controllers or disks found.", style=theme.STYLE_UNKNOWN)
 
     drawn = (*inventory.disks, *inventory.virtual_disks) if expand_virtual else inventory.disks
-    rows = [disk_cells(disk, inventory.port_link_for(disk), bandwidth=True) for disk in drawn]
-    plain = [disk_cells(disk, inventory.port_link_for(disk)) for disk in drawn]
+    rows = [disk_cells(disk, inventory.port_link_for(disk), bandwidth=True, thresholds=thresholds) for disk in drawn]
+    plain = [disk_cells(disk, inventory.port_link_for(disk), thresholds=thresholds) for disk in drawn]
     # The severity marker is appended after the fitted columns, so the columns
     # have to be fitted to a width that leaves room for it. Without the
     # reservation a flagged row lands exactly on the terminal width and the
@@ -814,7 +818,7 @@ def _virtual_lines(
     layout: Layout,
     *,
     expand_virtual: bool,
-    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    thresholds: Thresholds,
 ) -> list[RenderableType]:
     """The kernel-virtual group: a tally, or the devices themselves."""
     if not inventory.virtual_disks:
@@ -833,7 +837,7 @@ def _disk_lines(
     severities: Mapping[str, Severity],
     layout: Layout,
     inventory: Inventory,
-    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    thresholds: Thresholds,
 ) -> list[Text]:
     """Render every disk under one controller, with tree glyphs."""
     lines: list[Text] = []

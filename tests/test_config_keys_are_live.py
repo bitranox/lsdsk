@@ -411,3 +411,55 @@ def test_a_configured_wear_threshold_colours_the_cell_that_draws_wear() -> None:
 
     assert shipped == _coloured_row(["health", "--replay", target], device), "the row is not stable between runs"
     assert shipped != lowered, "the health table judges wear by the shipped figure whatever the configuration says"
+
+
+@pytest.mark.os_agnostic
+def test_a_configured_wear_threshold_colours_the_topology_of_a_capture_without_pci(tmp_path: Path) -> None:
+    """The no-PCI topology is drawn by the old disk-and-controller tree, and it judged by the shipped figure.
+
+    A capture that carries no PCI reading gets `report.render_controller_disks`
+    as its whole topology section, and the fabric renderer handed it nothing
+    but the inventory, the findings and a width: the wear cell there was
+    coloured against the shipped 80 percent whatever the run configured, while
+    the findings below it used the configured figure. The fabric arm above
+    cannot reach this branch, because every committed capture has a `pci`
+    section.
+
+    The capture is the SAS fixture with its PCI map emptied, which is the shape
+    a software-only environment publishes, and the drive is the one reading 59
+    percent: under the shipped warning, over the one configured here.
+    """
+    import json
+
+    capture = json.loads((FIXTURES / "linux-sas-hba.json").read_text(encoding="utf-8"))
+    capture["pci"] = {}
+    target = tmp_path / "no-pci.json"
+    target.write_text(json.dumps(capture), encoding="utf-8")
+    device = "/dev/nvme0n1"
+
+    # The disk row, not the finding lines that name the same device - the
+    # lowered run adds an endurance finding quoting the same 59 percent.
+    row = device
+    shipped = _coloured_wear_row(["topology", "--replay", str(target)], row)
+    lowered = _coloured_wear_row(
+        ["--set", "thresholds.wear_warning_percent=50", "topology", "--replay", str(target)], row
+    )
+
+    assert shipped == _coloured_wear_row(["topology", "--replay", str(target)], row), (
+        "the row is not stable between runs"
+    )
+    assert shipped != lowered, "the no-PCI topology judges wear by the shipped figure whatever the configuration says"
+
+
+def _coloured_wear_row(argv: list[str], device: str) -> str:
+    """The coloured disk row naming `device`: the one that also carries its size and its wear."""
+    result = subprocess.run(  # noqa: S603 - argv list, no shell, all values from this file
+        [sys.executable, "-m", "lsdsk", *argv],
+        capture_output=True,
+        check=False,
+        env={**os.environ, "FORCE_COLOR": "1", "COLUMNS": "200"},
+    )
+    output = result.stdout.decode(errors="replace")
+    rows = [line for line in output.splitlines() if device in line and "477GiB" in line and "59%" in line]
+    assert len(rows) == 1, f"expected one wear row for {device}, found {len(rows)} in:\n{output}"
+    return rows[0]

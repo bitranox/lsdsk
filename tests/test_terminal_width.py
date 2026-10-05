@@ -28,6 +28,8 @@ import fcntl
 import pty
 import termios
 
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
+
 FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba-later.json"
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
@@ -127,7 +129,9 @@ def test_no_width_strands_a_severity_marker_on_its_own_line() -> None:
         flagged_seen += len(findings)
         for width in range(20, 201):
             buffer = io.StringIO()
-            Console(file=buffer, width=width, no_color=True).print(render_tree(machine, findings, width=width))
+            Console(file=buffer, width=width, no_color=True).print(
+                render_tree(machine, findings, width=width, thresholds=DEFAULT_THRESHOLDS)
+            )
             stranded += [
                 f"{fixture.name} at width {width}" for line in buffer.getvalue().splitlines() if line.strip() in alone
             ]

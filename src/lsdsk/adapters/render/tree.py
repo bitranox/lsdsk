@@ -37,7 +37,6 @@ from rich.console import Group
 from rich.text import Text
 
 from ...domain.enums import PciPortKind, TreeDensity
-from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_TREE_DENSITY
 from ..hw.fabric import UNPLACED_ROOT
 from . import theme
@@ -72,6 +71,7 @@ if TYPE_CHECKING:
 
     from ...domain.enums import Severity
     from ...domain.models import Disk, Finding, Inventory, PciNode
+    from ...domain.thresholds import Thresholds
 
     #: What a drawn line of the fabric can be ABOUT. A device on the fabric, a
     #: drive under one of them, or - for the board line - the machine itself.
@@ -364,7 +364,7 @@ class Fabric:
         view: FabricView | None = None,
         *,
         drives_on: Collection[str],
-        thresholds: Thresholds = DEFAULT_THRESHOLDS,
+        thresholds: Thresholds,
     ) -> None:
         """Settle one render call's shared state.
 
@@ -424,7 +424,7 @@ class Fabric:
         width: int,
         view: FabricView | None = None,
         *,
-        thresholds: Thresholds = DEFAULT_THRESHOLDS,
+        thresholds: Thresholds,
     ) -> Fabric:
         """The fabric of one machine, its devices and the drives on them read together.
 
@@ -753,8 +753,11 @@ class Fabric:
         the old tree draws.
         """
         listed = (*inventory.disks, *inventory.virtual_disks) if self.expand_virtual else inventory.disks
-        rows = [disk_cells(disk, inventory.port_link_for(disk), bandwidth=True) for disk in listed]
-        plain = [disk_cells(disk, inventory.port_link_for(disk)) for disk in listed]
+        rows = [
+            disk_cells(disk, inventory.port_link_for(disk), bandwidth=True, thresholds=self.thresholds)
+            for disk in listed
+        ]
+        plain = [disk_cells(disk, inventory.port_link_for(disk), thresholds=self.thresholds) for disk in listed]
         available = self.width - _MARKER_WIDTH - self.spine
         return Layout.preferring(DISK_COLUMNS, rows, plain, available).on_one_line(available)
 
@@ -848,7 +851,8 @@ def fabric_lines(
     findings: Sequence[Finding],
     width: int = DEFAULT_WIDTH,
     view: FabricView = DEFAULT_VIEW,
-    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    *,
+    thresholds: Thresholds,
 ) -> tuple[FabricLine, ...]:
     """Every line the fabric section draws, each paired with what it is about.
 
@@ -961,7 +965,8 @@ def render_fabric(
     findings: Sequence[Finding],
     width: int = DEFAULT_WIDTH,
     view: FabricView = DEFAULT_VIEW,
-    thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    *,
+    thresholds: Thresholds,
 ) -> RenderableType:
     """The whole topology section.
 
@@ -983,7 +988,7 @@ def render_fabric(
     Returns:
         The fabric section.
     """
-    lines = fabric_lines(inventory, findings, width, view, thresholds)
+    lines = fabric_lines(inventory, findings, width, view, thresholds=thresholds)
     if lines:
         return Group(*(line.text for line in lines))
     # No PCI devices at all, and nothing the disk-and-controller table would
@@ -993,7 +998,7 @@ def render_fabric(
         return Text("No storage controllers or disks found.", style=theme.STYLE_UNKNOWN)
     # A capture with drives but no PCI reading: the disk-and-controller table
     # is the whole section, so the machine's storage is still shown.
-    return _no_pci_fallback(inventory, findings, width, expand_virtual=view.expand_virtual)
+    return _no_pci_fallback(inventory, findings, width, expand_virtual=view.expand_virtual, thresholds=thresholds)
 
 
 def board_line(inventory: Inventory, fabric: Fabric) -> Text:
@@ -1081,6 +1086,7 @@ def _no_pci_fallback(
     width: int,
     *,
     expand_virtual: bool,
+    thresholds: Thresholds,
 ) -> RenderableType:
     """The old disk-and-controller tree, kept for a capture carrying no PCI.
 
@@ -1088,8 +1094,12 @@ def _no_pci_fallback(
     all; the machine's storage is never hidden behind a fabric that does not
     exist, so the previous renderer still runs. Its keep is test-locked by the
     virtual-device tests that were written against it.
+
+    It is handed the run's thresholds like the fabric is: without them its wear
+    cell was coloured by the shipped figures while the findings printed beside
+    it used the configured ones.
     """
-    return render_controller_disks(inventory, findings, width, expand_virtual=expand_virtual)
+    return render_controller_disks(inventory, findings, width, expand_virtual=expand_virtual, thresholds=thresholds)
 
 
 def disk_header_line(fabric: Fabric, layout: Layout, rules: str) -> Text:
@@ -1138,10 +1148,11 @@ class FabricSection:
     Example:
         >>> from rich.console import Console
         >>> from lsdsk.domain.models import Disk, Inventory
+        >>> from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
         >>> machine = Inventory(hostname="example", disks=(Disk(path="/dev/sda", node="sda", model="A DRIVE"),))
         >>> console = Console(width=60, no_color=True)
         >>> with console.capture() as capture:
-        ...     console.print(FabricSection(machine, ()))
+        ...     console.print(FabricSection(machine, (), thresholds=DEFAULT_THRESHOLDS))
         >>> "A DRIVE" in capture.get()
         True
     """
@@ -1151,7 +1162,8 @@ class FabricSection:
         inventory: Inventory,
         findings: Sequence[Finding],
         view: FabricView = DEFAULT_VIEW,
-        thresholds: Thresholds = DEFAULT_THRESHOLDS,
+        *,
+        thresholds: Thresholds,
     ) -> None:
         """Hold what the section draws, without measuring anything yet.
 
@@ -1172,7 +1184,7 @@ class FabricSection:
 
     def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         """Render the section at the width the console offers right now."""
-        yield render_fabric(self.inventory, self.findings, options.max_width, self.view, self.thresholds)
+        yield render_fabric(self.inventory, self.findings, options.max_width, self.view, thresholds=self.thresholds)
 
 
 __all__ = [

@@ -982,7 +982,7 @@ def cli_topology(
                         density=effective_tree_density(ctx, tree_density),
                         expand_virtual=effective_expand_virtual(ctx, expand_virtual),
                     ),
-                    thresholds,
+                    thresholds=thresholds,
                 )
             )
         raise SystemExit(exit_code_for(findings))

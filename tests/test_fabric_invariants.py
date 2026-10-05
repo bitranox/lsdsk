@@ -33,6 +33,7 @@ from lsdsk.adapters.render.tree import (
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import PciPortKind, TreeDensity
 from lsdsk.domain.models import PcieLink, PciNode
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from lsdsk.domain.models import Inventory
@@ -60,7 +61,7 @@ def board_line(inventory: Inventory, width: int = 200) -> str:
     drawn depends on the machine - so a fixed offset would pass on one capture
     and read a legend on another.
     """
-    lines = drawn(render_fabric(inventory, (), width), width)
+    lines = drawn(render_fabric(inventory, (), width, thresholds=DEFAULT_THRESHOLDS), width)
     named = [line for line in lines if "PCI devices" in line]
     assert len(named) == 1, f"expected one board line, got {named}"
     return named[0]
@@ -98,7 +99,7 @@ def test_a_deep_fabric_still_takes_one_line_per_row_at_a_narrow_width(width: int
     captures are too shallow to reach it, so the input is built here.
     """
     nodes = deep_chain(9)
-    fabric = Fabric(nodes, width, FabricView(density=TreeDensity.FULL), drives_on=())
+    fabric = Fabric(nodes, width, FabricView(density=TreeDensity.FULL), drives_on=(), thresholds=DEFAULT_THRESHOLDS)
     console = Console(file=io.StringIO(), width=width, no_color=True)
 
     # Row by row, not the finished section: a wrapped row and two devices are
@@ -121,7 +122,7 @@ def test_the_spine_formula_is_two_per_level_plus_the_margin() -> None:
     something else.
     """
     inventory = machine("linux-sas-hba.json")
-    fabric = Fabric.of(inventory, DEFAULT_WIDTH, FabricView(density=TreeDensity.FULL))
+    fabric = Fabric.of(inventory, DEFAULT_WIDTH, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS)
     deepest = max((fabric.level_of(node) for node, _level in fabric.drawn()), default=0)
 
     assert fabric.spine == 2 * deepest + 2, f"deepest level {deepest} gave spine {fabric.spine}"
@@ -204,8 +205,8 @@ def test_a_section_lays_itself_out_at_the_console_width_it_is_given(width: int) 
     inventory = machine("linux-sas-hba.json")
     findings = diagnose(inventory)
 
-    through_the_section = drawn(FabricSection(inventory, findings), width)
-    through_the_command = drawn(render_fabric(inventory, findings, width), width)
+    through_the_section = drawn(FabricSection(inventory, findings, thresholds=DEFAULT_THRESHOLDS), width)
+    through_the_command = drawn(render_fabric(inventory, findings, width, thresholds=DEFAULT_THRESHOLDS), width)
 
     assert through_the_section == through_the_command, (
         f"at width {width} the section drew {len(through_the_section)} lines and the command {len(through_the_command)}"
@@ -220,8 +221,8 @@ def test_the_two_widths_really_do_produce_different_pages() -> None:
     ignored the width entirely, which is the mutation it exists to catch.
     """
     inventory = machine("linux-sas-hba.json")
-    narrow = drawn(FabricSection(inventory, ()), 60)
-    wide = drawn(FabricSection(inventory, ()), 200)
+    narrow = drawn(FabricSection(inventory, (), thresholds=DEFAULT_THRESHOLDS), 60)
+    wide = drawn(FabricSection(inventory, (), thresholds=DEFAULT_THRESHOLDS), 200)
     assert narrow != wide, "the section drew the same page at 60 and 200 columns"
     assert DEFAULT_WIDTH not in (60, 200), "the mutation's constant must differ from both arms"
 
@@ -246,7 +247,9 @@ def test_both_headers_of_a_section_are_drawn_in_the_same_style() -> None:
     """
     inventory = machine("linux-sas-hba.json")
     interactive = "#D7A13B"
-    fabric = Fabric.of(inventory, 200, FabricView(density=TreeDensity.FULL, header_style=interactive))
+    fabric = Fabric.of(
+        inventory, 200, FabricView(density=TreeDensity.FULL, header_style=interactive), thresholds=DEFAULT_THRESHOLDS
+    )
 
     device_styles = {str(span.style) for span in device_header_line(fabric).spans}
     disk_styles = {
@@ -266,6 +269,6 @@ def test_the_printed_section_still_uses_the_printed_header_style() -> None:
     wrong colour.
     """
     inventory = machine("linux-sas-hba.json")
-    fabric = Fabric.of(inventory, 200, FabricView(density=TreeDensity.FULL))
+    fabric = Fabric.of(inventory, 200, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS)
     styles = {str(span.style) for span in device_header_line(fabric).spans}
     assert styles == {theme.STYLE_HEADER}, styles
