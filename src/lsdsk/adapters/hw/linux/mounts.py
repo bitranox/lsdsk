@@ -36,14 +36,27 @@ if TYPE_CHECKING:
 # mounts is the real ceiling this guards against, not the ordinary case. It is
 # the same order of magnitude as the other sysfs text bounds in this adapter
 # and far below a size that would matter.
+#
+# This is the EFFECTIVE bound :func:`read_mounts` and :func:`read_swaps`
+# enforce, well under :data:`..textfile.read_text_bounded`'s own 64 MiB
+# ceiling: that ceiling exists to catch a mistyped path to an unrelated huge
+# file, not to say a sane mountinfo or swap list could ever approach it. A
+# file at or past this bound is treated exactly like one that could not be
+# read at all - ``None`` from :func:`read_mounts`, an empty list from
+# :func:`read_swaps` - because this reader has no way to tell "this is really
+# mountinfo and it is huge" from "this is not mountinfo", and the honest
+# answer to either is the same one an unreadable file gets.
 MAX_MOUNTINFO_BYTES = 8 * 1024 * 1024
 
-#: The most a single short sysfs attribute (a device number, a dm name or
-#: uuid, a udev database entry) is read as. The kernel caps a text attribute
-#: at one page; this is the same megabyte ceiling :mod:`..linux.reader` already
-#: applies to such an attribute, so nothing a live read keeps here is refused
-#: for a reason the reader beside it would accept.
-MAX_ATTRIBUTE_BYTES = 1024 * 1024
+#: The most characters a single short sysfs attribute (a device number, a dm
+#: name or uuid, a udev database entry) is read as. The kernel caps a text
+#: attribute at one page; this is the same ceiling :mod:`..linux.reader`
+#: already applies to such an attribute, so nothing a live read keeps here is
+#: refused for a reason the reader beside it would accept. Named for what it
+#: counts: the read happens in text mode (``path.open("r")``), so the ceiling
+#: is on decoded characters, not encoded bytes - the two differ for any
+#: attribute holding non-ASCII text.
+MAX_ATTRIBUTE_CHARS = 1024 * 1024
 
 # The kernel writes a space, tab, newline or backslash in a mount path as a
 # three-digit octal escape, so "/boot efi" arrives as "/boot\040efi".
@@ -83,23 +96,33 @@ def _device_number_of(path: str) -> str | None:
     return f"{os.major(rdev)}:{os.minor(rdev)}" if rdev else None
 
 
-def read_mounts(path: Path = Path("/proc/self/mountinfo")) -> list[dict[str, str]] | None:
+def read_mounts(
+    path: Path = Path("/proc/self/mountinfo"),
+    *,
+    limit: int = MAX_MOUNTINFO_BYTES,
+) -> list[dict[str, str]] | None:
     """Read every mounted filesystem from mountinfo.
 
     Args:
         path: The mountinfo file to read, overridable for a test.
+        limit: The most UTF-8 bytes this file is accepted as, overridable for
+            a test. See :data:`MAX_MOUNTINFO_BYTES` for the shipped figure and
+            why a file past it is refused the same way an unreadable one is.
 
     Returns:
         One row per mount, each carrying ``dev`` (the mounted device's own
         ``maj:min``, field 3), ``mountpoint``, ``fstype`` and ``source`` (the
         filesystem type and source after the ``" - "`` separator), plus
         ``source_dev`` when the source names a resolvable ``/dev`` node. ``None``
-        when the file could not be read at all - a different fact from a
-        machine with no mounts, which mountinfo never reports.
+        when the file could not be read at all, or is larger than `limit` -
+        a different fact from a machine with no mounts, which mountinfo never
+        reports.
     """
     try:
         text = read_text_bounded(path, what="mountinfo")
     except (MissingFileError, ConfigurationError):
+        return None
+    if len(text.encode("utf-8")) > limit:
         return None
 
     rows: list[dict[str, str]] = []
@@ -140,20 +163,30 @@ def _parse_mountinfo_line(line: str) -> dict[str, str] | None:
     return row
 
 
-def read_swaps(path: Path = Path("/proc/swaps")) -> list[dict[str, str]]:
+def read_swaps(
+    path: Path = Path("/proc/swaps"),
+    *,
+    limit: int = MAX_MOUNTINFO_BYTES,
+) -> list[dict[str, str]]:
     """Read every active swap from ``/proc/swaps``.
 
     Args:
         path: The swaps file to read, overridable for a test.
+        limit: The most UTF-8 bytes this file is accepted as, overridable for
+            a test. See :data:`MAX_MOUNTINFO_BYTES` for the shipped figure;
+            the swap list shares it with mountinfo rather than having its own,
+            since both are the same order of magnitude of sysfs-adjacent text.
 
     Returns:
         One row per swap, each carrying ``path`` and, when it resolves to a
-        device node, ``dev``. Empty when the file cannot be read or has no
-        swaps beyond its header.
+        device node, ``dev``. Empty when the file cannot be read, is larger
+        than `limit`, or has no swaps beyond its header.
     """
     try:
         text = read_text_bounded(path, what="the swap list")
     except (MissingFileError, ConfigurationError):
+        return []
+    if len(text.encode("utf-8")) > limit:
         return []
 
     rows: list[dict[str, str]] = []
@@ -269,7 +302,7 @@ def read_signatures(devnums: Iterable[str], root: Path = Path("/run/udev/data"))
 
 def _udev_signature(path: Path) -> dict[str, str]:
     """The filesystem type and label a udev database entry carries, if any."""
-    text = _read_short_text(path, limit=MAX_ATTRIBUTE_BYTES)
+    text = _read_short_text(path, limit=MAX_ATTRIBUTE_CHARS)
     if text is None:
         return {}
     found: dict[str, str] = {}
@@ -292,8 +325,14 @@ def _holder_names(node: Path) -> list[str]:
         return []
 
 
-def _read_short_text(path: Path, *, limit: int = MAX_ATTRIBUTE_BYTES) -> str | None:
-    """Read one short sysfs attribute's stripped text, or ``None``."""
+def _read_short_text(path: Path, *, limit: int = MAX_ATTRIBUTE_CHARS) -> str | None:
+    """Read one short sysfs attribute's stripped text, or ``None``.
+
+    Args:
+        path: The attribute to read.
+        limit: The most characters it may carry, in text mode. See
+            :data:`MAX_ATTRIBUTE_CHARS`.
+    """
     try:
         with path.open("r", errors="replace") as handle:
             raw = handle.read(limit + 1)

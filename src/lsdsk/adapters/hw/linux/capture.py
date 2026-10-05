@@ -360,8 +360,12 @@ class BlockEntry(CaptureModel, frozen=True):
             device only - a virtual one is already named by ``virtual: True``.
         holders: What sits directly on the whole device (never on one of its
             partitions), such as a device-mapper device using the raw disk.
-        partitions: The device's partitions, keyed by kernel name, when it has
-            any.
+            Never ``None``: an empty tuple carries no not-read case of its
+            own, unlike `partitions` below.
+        partitions: The device's partitions, keyed by kernel name. ``None``
+            when they were never read - a virtual device, which has none to
+            read, or a capture older than this field - a different fact from
+            an empty mapping, which means they were read and there are none.
     """
 
     size: DeviceText | None = None

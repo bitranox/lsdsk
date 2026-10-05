@@ -413,8 +413,16 @@ from lsdsk.domain.enums import Environment, UseKind
 
 def _capture(block: dict[str, Any], **extra: Any) -> LinuxCapture:
     reading: dict[str, Any] = {
-        "schema": 2, "platform": "linux", "hostname": "h", "kernel": "6.1", "pci": {}, "block": block,
-        "mounts": [], "swaps": [], "stacked": {}, "signatures": {},
+        "schema": 2,
+        "platform": "linux",
+        "hostname": "h",
+        "kernel": "6.1",
+        "pci": {},
+        "block": block,
+        "mounts": [],
+        "swaps": [],
+        "stacked": {},
+        "signatures": {},
     }
     reading.update(extra)
     return LinuxCapture.model_validate(reading)
@@ -527,10 +535,12 @@ Use a small frozen NamedTuple `_Sources(mounts_by_dev, swap_devs, boot_pools)` b
 ```python
 ESP = uuid.UUID("C12A7328-F81F-11D2-BA4B-00A0C93EC93B")
 
+
 def _extents(*disks: int) -> bytes:
     # VOLUME_DISK_EXTENTS: DWORD count, 4 bytes of padding, then 24-byte DISK_EXTENTs.
     body = b"".join(struct.pack("<I4xqq", disk, 0, 1 << 30) for disk in disks)
     return struct.pack("<I4x", len(disks)) + body
+
 
 def _partition(style: int, type_guid: uuid.UUID) -> bytes:
     # PARTITION_INFORMATION_EX: style, pad, offset, length, number, two BOOLEANs, pad, then the GPT union.

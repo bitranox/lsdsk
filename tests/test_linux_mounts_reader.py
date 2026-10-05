@@ -37,6 +37,17 @@ def test_an_unreadable_mountinfo_is_not_read_rather_than_empty(tmp_path: Path) -
 
 
 @pytest.mark.os_agnostic
+def test_a_mountinfo_over_the_limit_is_refused_like_an_unreadable_one(tmp_path: Path) -> None:
+    path = tmp_path / "mountinfo"
+    path.write_text(MOUNTINFO, encoding="utf-8")
+    # RED proof the limit is actually consulted: a limit this file is well
+    # under passes, the same tiny limit set one byte below the file's own
+    # encoded size does not.
+    assert mounts.read_mounts(path, limit=len(MOUNTINFO.encode("utf-8"))) is not None
+    assert mounts.read_mounts(path, limit=len(MOUNTINFO.encode("utf-8")) - 1) is None
+
+
+@pytest.mark.os_agnostic
 def test_swap_rows_skip_the_header(tmp_path: Path) -> None:
     path = tmp_path / "swaps"
     path.write_text(
@@ -44,6 +55,64 @@ def test_swap_rows_skip_the_header(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert [row["path"] for row in mounts.read_swaps(path)] == ["/dev/nvme4n1p1"]
+
+
+@pytest.mark.os_agnostic
+def test_an_absent_swap_list_is_empty(tmp_path: Path) -> None:
+    assert mounts.read_swaps(tmp_path / "absent") == []
+
+
+@pytest.mark.os_agnostic
+def test_an_unreadable_swap_list_is_empty(tmp_path: Path) -> None:
+    unreadable = tmp_path / "swaps"
+    unreadable.mkdir()  # a directory cannot be read as the swap list
+    assert mounts.read_swaps(unreadable) == []
+
+
+@pytest.mark.os_agnostic
+def test_a_swap_list_over_the_limit_is_refused_like_an_unreadable_one(tmp_path: Path) -> None:
+    content = "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n/dev/nvme4n1p1   partition\t8388604\t\t0\t\t-2\n"
+    path = tmp_path / "swaps"
+    path.write_text(content, encoding="utf-8")
+    assert mounts.read_swaps(path, limit=len(content.encode("utf-8"))) != []
+    assert mounts.read_swaps(path, limit=len(content.encode("utf-8")) - 1) == []
+
+
+@pytest.mark.os_agnostic
+def test_read_partitions_on_an_absent_disk_directory_is_empty(tmp_path: Path) -> None:
+    assert mounts.read_partitions(tmp_path / "absent") == {}
+
+
+@pytest.mark.os_agnostic
+def test_read_partitions_on_a_path_that_is_not_a_directory_is_empty(tmp_path: Path) -> None:
+    not_a_dir = tmp_path / "sda"
+    not_a_dir.write_text("not a directory", encoding="utf-8")
+    assert mounts.read_partitions(not_a_dir) == {}
+
+
+@pytest.mark.os_agnostic
+def test_an_oversized_attribute_is_not_read_as_a_partition_s_device_number(tmp_path: Path) -> None:
+    disk = tmp_path / "sda"
+    part = disk / "sda2"
+    part.mkdir(parents=True)
+    (part / "partition").write_text("2\n", encoding="utf-8")
+    # One character past MAX_ATTRIBUTE_CHARS: the attribute is refused as
+    # unreadable, which read_partitions reflects by leaving "dev" out rather
+    # than reporting a truncated value.
+    (part / "dev").write_text("8" * (mounts.MAX_ATTRIBUTE_CHARS + 1), encoding="utf-8")
+    assert mounts.read_partitions(disk) == {"sda2": {"holders": []}}
+
+
+@pytest.mark.os_agnostic
+def test_read_stacked_on_an_absent_root_is_empty(tmp_path: Path) -> None:
+    assert mounts.read_stacked(["dm-0"], tmp_path / "absent") == {}
+
+
+@pytest.mark.os_agnostic
+def test_read_stacked_on_a_root_that_is_not_a_directory_is_empty(tmp_path: Path) -> None:
+    not_a_dir = tmp_path / "block"
+    not_a_dir.write_text("not a directory", encoding="utf-8")
+    assert mounts.read_stacked(["dm-0"], not_a_dir) == {}
 
 
 @pytest.mark.os_agnostic
