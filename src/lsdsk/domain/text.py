@@ -38,6 +38,38 @@ from pydantic import AfterValidator, Field
 # hide a difference; it is simply removed with the rest.
 _UNSAFE = frozenset(range(0x00, 0x20)) | {0x7F} | frozenset(range(0x80, 0xA0))
 
+#: The Unicode Default_Ignorable_Code_Point ranges, inclusive. Most are format
+#: characters, which the category test already catches; the rest are combining
+#: marks, letters or unassigned code points that a terminal draws as nothing -
+#: the grapheme joiner, the Hangul fillers, the Khmer inherent vowels, the
+#: Mongolian and plain variation selectors and their supplement - so a stripper
+#: keyed on ``Cf`` alone let them hide a difference between two identifiers. The
+#: whole property is listed rather than only its non-``Cf`` members so the set
+#: reads against the Unicode table line for line.
+_DEFAULT_IGNORABLE = (
+    (0x00AD, 0x00AD),
+    (0x034F, 0x034F),
+    (0x061C, 0x061C),
+    (0x115F, 0x1160),
+    (0x17B4, 0x17B5),
+    (0x180B, 0x180F),
+    (0x200B, 0x200F),
+    (0x202A, 0x202E),
+    (0x2060, 0x206F),
+    (0x3164, 0x3164),
+    (0xFE00, 0xFE0F),
+    (0xFEFF, 0xFEFF),
+    (0xFFA0, 0xFFA0),
+    (0xFFF0, 0xFFF8),
+    (0x1BCA0, 0x1BCA3),
+    (0x1D173, 0x1D17A),
+    (0xE0000, 0xE0FFF),
+)
+
+#: Line and paragraph separators: a terminal may break the line on them, which
+#: splits one table row into two that look like separate rows.
+_SEPARATOR_CATEGORIES = frozenset({"Cf", "Zl", "Zp"})
+
 
 def _is_unsafe(character: str) -> bool:
     r"""Whether a terminal would act on ``character`` rather than show it.
@@ -46,14 +78,21 @@ def _is_unsafe(character: str) -> bool:
     right-to-left override or isolate reorders the rest of its line on screen,
     and a zero-width space or joiner hides a difference between two strings that
     look identical. None of them is a control character, so a stripper that knew
-    only the controls passed them through. A device identifier has no use for
-    any of them.
+    only the controls passed them through. The line and paragraph separators
+    (``Zl``, ``Zp``) and the default-ignorable code points outside ``Cf`` are
+    unsafe for the same two reasons. A device identifier has no use for any of
+    them.
 
     Example:
         >>> _is_unsafe("\u202e"), _is_unsafe("\x1b"), _is_unsafe("e")
         (True, True, False)
+        >>> _is_unsafe("\u2028"), _is_unsafe("\ufe0f"), _is_unsafe("\U000e0100")
+        (True, True, True)
     """
-    return ord(character) in _UNSAFE or unicodedata.category(character) == "Cf"
+    code = ord(character)
+    if code in _UNSAFE or unicodedata.category(character) in _SEPARATOR_CATEGORIES:
+        return True
+    return any(low <= code <= high for low, high in _DEFAULT_IGNORABLE)
 
 
 #: How much of one untrusted value a message quotes before cutting it. Enough to
@@ -129,8 +168,9 @@ def visible_text(value: str, limit: int = QUOTED_TEXT_LIMIT) -> str:
         limit: The most characters of it to show.
 
     Returns:
-        The text with every control character written as ``\xNN``, cut to
-        ``limit`` characters plus the mark where it was longer.
+        The text with every unsafe character written as its fixed-width escape
+        (``\xNN``, ``\uNNNN`` or ``\UNNNNNNNN``), cut to ``limit`` characters
+        plus the mark where it was longer.
 
     Example:
         >>> print(visible_text("0000:00:1f.2\x1b]0;title\x07"))
@@ -160,16 +200,25 @@ def visible_text(value: str, limit: int = QUOTED_TEXT_LIMIT) -> str:
 #: The first code point a two-digit ``\xNN`` escape cannot spell.
 _PAST_TWO_HEX_DIGITS = 0x100
 
+#: The first code point a four-digit ``\uNNNN`` escape cannot spell.
+_PAST_FOUR_HEX_DIGITS = 0x10000
+
 
 def _escaped(character: str) -> str:
     r"""The escape a message shows in place of a character it must not emit.
 
+    Every form is fixed-width, as Python's own string literals are: a ``\u``
+    followed by five digits would read as a four-digit code point and a stray
+    digit, so ``A`` + U+E0001 + ``1B`` could not be told from U+E000 + ``11B``.
+
     Example:
-        >>> _escaped("\x1b"), _escaped("\u202e")
-        ('\\x1b', '\\u202e')
+        >>> _escaped("\x1b"), _escaped("\u202e"), _escaped("\U000e0001")
+        ('\\x1b', '\\u202e', '\\U000e0001')
     """
     code = ord(character)
-    return f"\\x{code:02x}" if code < _PAST_TWO_HEX_DIGITS else f"\\u{code:04x}"
+    if code < _PAST_TWO_HEX_DIGITS:
+        return f"\\x{code:02x}"
+    return f"\\u{code:04x}" if code < _PAST_FOUR_HEX_DIGITS else f"\\U{code:08x}"
 
 
 def _clean_optional(value: str | None) -> str | None:

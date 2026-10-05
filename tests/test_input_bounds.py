@@ -279,6 +279,87 @@ def test_a_capture_cannot_reorder_or_hide_text_with_format_characters(
     assert device_text("ab\u202ecd\u200b") == "abcd"
 
 
+#: Characters a terminal shows as nothing, or breaks a line on, that are NOT in
+#: category Cf: the line and paragraph separators (Zl, Zp), and the
+#: Default_Ignorable_Code_Point members that are combining marks or letters - the
+#: grapheme joiner, the Hangul fillers, the Khmer inherent vowels, the Mongolian
+#: variation selectors, the variation selectors and their supplement. A stripper
+#: keyed on Cf passed every one of them.
+INVISIBLE_NOT_FORMAT = (
+    "\u2028",
+    "\u2029",
+    "\u034f",
+    "\u115f",
+    "\u1160",
+    "\u17b4",
+    "\u17b5",
+    "\u180b",
+    "\u180f",
+    "\u3164",
+    "\ufe00",
+    "\ufe0f",
+    "\uffa0",
+    "\U000e0100",
+    "\U000e01ef",
+)
+
+
+@pytest.mark.os_agnostic
+def test_a_capture_cannot_break_or_hide_text_with_separators_or_ignorable_characters(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    """A line separator in a model broke its row, and an ignorable mark hid a difference.
+
+    None of these is a control or a format character, so the Cf-keyed stripper
+    passed them through: measured before this, U+2028 and U+2029 reached the
+    printed report eleven times from one crafted capture.
+    """
+    import json
+
+    from lsdsk.adapters.cli import cli
+    from lsdsk.domain.text import device_text
+
+    for character in INVISIBLE_NOT_FORMAT:
+        assert device_text(f"a{character}b") == "ab", f"U+{ord(character):04X} survived device_text"
+
+    source = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
+    capture: dict[str, Any] = json.loads(source.read_text(encoding="utf-8"))
+    capture["hostname"] = "box\u2028evil\u2029"
+    block: dict[str, Any] = capture.get("block") or {}
+    device: dict[str, Any] = block[sorted(block)[0]].setdefault("device", {})
+    device["model"] = "MODEL" + "".join(INVISIBLE_NOT_FORMAT)
+    crafted = tmp_path / "separators.json"
+    crafted.write_text(json.dumps(capture), encoding="utf-8")
+
+    for argv in (["disks"], []):
+        result = cli_runner.invoke(cli, [*argv, "--replay", str(crafted)], obj=production_factory, color=False)
+        assert "boxevil" in result.stdout, f"{argv or 'bare'}: the hostname was dropped rather than cleaned"
+        leaked = sorted({hex(ord(c)) for c in result.stdout if c in INVISIBLE_NOT_FORMAT})
+        assert not leaked, f"{argv or 'bare'}: invisible characters reached the terminal: {leaked}"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [
+        pytest.param("A\U000e0001" + "1B", "A\\U000e00011B", id="a tag character before a digit"),
+        pytest.param("A\u202e1B", "A\\u202e1B", id="a BMP format character"),
+        pytest.param("A\x1b1B", "A\\x1b1B", id="a C0 control"),
+    ],
+)
+def test_a_quoted_escape_names_one_code_point_whatever_follows_it(value: str, shown: str) -> None:
+    r"""`\u` followed by five hex digits read as `\u` plus four and a stray digit.
+
+    Above U+FFFF the escape was ``\u`` and however many digits the code point
+    took, so ``A`` + U+E0001 + ``1B`` printed as ``A\ue00011B``: a reader
+    cannot tell U+E0001 then ``1B`` from U+E000 then ``11B``. The fixed-width
+    ``\U`` form says exactly where the code point ends.
+    """
+    from lsdsk.domain.text import visible_text
+
+    assert visible_text(value) == shown
+
+
 @pytest.mark.os_agnostic
 def test_a_capture_cannot_inject_control_characters_into_the_terminal(
     cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
