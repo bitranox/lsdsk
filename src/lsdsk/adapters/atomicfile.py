@@ -22,6 +22,7 @@ import errno
 import os
 import stat
 import tempfile
+from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -83,13 +84,33 @@ def write_through(descriptor: int, body: str, *, sync: bool) -> None:
             os.fsync(stream.fileno())
 
 
-def _is_written_into(path: Path) -> bool:
-    """Whether ``path`` is an existing destination that must be written INTO, not replaced.
+class _Destination(Enum):
+    """What a write has to do with whatever stands at its destination."""
+
+    #: A regular file, nothing at all, or a link to either or to nothing: renamed over.
+    REPLACE = auto()
+    #: A character device or a FIFO itself: written into by the caller's in-place writer.
+    WRITE_INTO = auto()
+    #: A symlink whose target is a character device or a FIFO: written into through the link.
+    WRITE_THROUGH_THE_LINK = auto()
+
+
+def _is_a_stream(mode: int) -> bool:
+    """Whether ``mode`` is a character device or a FIFO, which are written into rather than replaced."""
+    return stat.S_ISCHR(mode) or stat.S_ISFIFO(mode)
+
+
+def _destination_at(path: Path) -> _Destination:
+    """What stands at ``path``, as far as a write to it is concerned.
 
     A rename replaces the directory entry, which is right for a file and
     destroys anything else: a FIFO a reader is waiting on, or - for root - the
-    system's own ``/dev/null``. A symlink is not one of these: it is replaced
-    deliberately, so a link planted at the destination is never traversed.
+    system's own ``/dev/null``. A symlink is replaced deliberately when it leads
+    to a file or to nothing, so a link planted at the destination is never
+    traversed into somebody's file. A link to a character device or a FIFO is
+    the exception, because that is what ``/dev/stdout`` is: replacing it put a
+    regular 0600 file in ``/dev`` for root, and for anyone left a FIFO's reader
+    with nothing.
 
     Raises:
         OSError: If ``path`` exists and is neither a regular file, a symlink, a
@@ -99,12 +120,43 @@ def _is_written_into(path: Path) -> bool:
     try:
         mode = os.lstat(path).st_mode
     except FileNotFoundError:
-        return False
-    if stat.S_ISREG(mode) or stat.S_ISLNK(mode):
-        return False
-    if stat.S_ISCHR(mode) or stat.S_ISFIFO(mode):
-        return True
+        return _Destination.REPLACE
+    if stat.S_ISLNK(mode):
+        try:
+            target = path.stat().st_mode
+        # A dangling link, a loop or a target this process may not look at:
+        # nothing says a stream is behind it, so it is replaced as before.
+        except OSError:
+            return _Destination.REPLACE
+        return _Destination.WRITE_THROUGH_THE_LINK if _is_a_stream(target) else _Destination.REPLACE
+    if stat.S_ISREG(mode):
+        return _Destination.REPLACE
+    if _is_a_stream(mode):
+        return _Destination.WRITE_INTO
     raise OSError(errno.EINVAL, f"{path} is not a regular file, a character device or a FIFO", str(path))
+
+
+def _write_through_the_link(path: Path, body: str) -> None:
+    """Write into the character device or FIFO a symlink leads to.
+
+    The open follows the link, which is the point. What it reached is checked
+    on the DESCRIPTOR rather than trusted from the earlier look, so a link
+    retargeted at a regular file in between is refused rather than written
+    through: that is the traversal the rename path exists to prevent. No
+    ``O_CREAT``, so a link that dangles by now creates nothing, and no sync,
+    which on a character device fails with ``EINVAL`` rather than meaning
+    anything.
+
+    Raises:
+        OSError: If the open or the write fails, or the link no longer leads to
+            a character device or a FIFO (``errno.EINVAL``).
+    """
+    descriptor = os.open(path, os.O_WRONLY)
+    if not _is_a_stream(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        message = f"{path} no longer leads to a character device or a FIFO, so it is not written through"
+        raise OSError(errno.EINVAL, message, str(path))
+    write_through(descriptor, body, sync=False)
 
 
 def replace_atomically(
@@ -120,7 +172,10 @@ def replace_atomically(
     rename is only atomic within one filesystem. A rename never follows the last
     component either, so a symlink planted at the destination is replaced
     rather than traversed, and the file is never briefly readable at the
-    ambient umask on its way to ``mode``.
+    ambient umask on its way to ``mode``. The one link that is followed is a
+    link to a character device or a FIFO, such as ``/dev/stdout``, and only
+    when the caller accepts a write that is not atomic: it is written through,
+    since replacing it would put a regular file where the stream was.
 
     Args:
         path: The destination. Its directory must already exist.
@@ -131,15 +186,19 @@ def replace_atomically(
             no temporary file can be created beside it, or it is a character
             device or a FIFO, which a rename would destroy rather than write.
             Nothing has been written at that point. The snapshot writer writes
-            in place there. ``None`` - the history store - refuses instead,
-            since a history that cannot be replaced atomically is one a failed
-            write could destroy.
+            in place there. A symlink to a character device or a FIFO is
+            not handed to it, because an in-place writer refuses a link; this
+            function writes through that link itself, but only when an
+            alternative was given. ``None`` - the history store - refuses
+            every such destination instead, since a history that cannot be
+            replaced atomically is one a failed write could destroy.
 
     Raises:
         OSError: If no temporary file can be created, or the destination is
             not a regular file, and no alternative was given; if it is a block
-            device or a socket whatever was given; or if the write, the sync
-            or the rename fails. The original
+            device or a socket whatever was given; if a link that led to a
+            character device or a FIFO no longer does when it is opened; or if
+            the write, the sync or the rename fails. The original
             exception propagates, so a ``PermissionError`` stays one. The
             temporary file is removed and any previous file at ``path`` is
             untouched.
@@ -152,10 +211,17 @@ def replace_atomically(
         ...     target.read_text(encoding="utf-8")
         '{}'
     """
-    if _is_written_into(path):
+    destination = _destination_at(path)
+    if destination is not _Destination.REPLACE:
         if without_a_temporary_file is None:
             raise OSError(errno.EINVAL, f"{path} is not a regular file, so it cannot be replaced", str(path))
-        without_a_temporary_file(path, body)
+        # The caller's in-place writer refuses a symlink, which is right for
+        # the no-temporary-file case it exists for; a link that leads to a
+        # stream is written through here instead.
+        if destination is _Destination.WRITE_THROUGH_THE_LINK:
+            _write_through_the_link(path, body)
+        else:
+            without_a_temporary_file(path, body)
         return
     try:
         handle, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")

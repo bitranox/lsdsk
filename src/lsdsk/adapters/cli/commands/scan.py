@@ -18,6 +18,7 @@ knows which section they want.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple, Protocol, TextIO
@@ -1267,9 +1268,35 @@ class _CaptureDestination(NamedTuple):
 
 def _destination_for(output: str) -> _CaptureDestination:
     """Read the raw ``-o`` argument into a destination."""
-    if output == STANDARD_OUTPUT:
+    if output == STANDARD_OUTPUT or _is_this_process_standard_output(Path(output)):
         return _CaptureDestination(path=None, named="standard output")
     return _CaptureDestination(path=Path(output), named=output)
+
+
+def _is_this_process_standard_output(path: Path) -> bool:
+    """Whether ``path`` leads to the very file this process's descriptor 1 is open on.
+
+    ``-o /dev/stdout`` (or ``/dev/fd/1``) names standard output as surely as
+    ``-o -`` does, so it is written the same way: the capture alone on stdout,
+    with no ``Wrote`` line after it to spoil the document. Asked by identity
+    rather than by spelling, because the link leads wherever descriptor 1 was
+    sent - a pipe, a terminal, or a regular file the shell redirected to. That
+    last one is the case the file writer cannot be trusted with: following the
+    link there is the traversal it refuses, and replacing the link was what
+    root did to ``/dev/stdout`` itself.
+
+    Args:
+        path: The ``-o`` argument.
+
+    Returns:
+        Whether it is this process's standard output. ``False`` whenever either
+        side cannot be looked at, or the platform gives no inode to compare.
+    """
+    try:
+        named, ours = path.stat(), os.fstat(1)
+    except (OSError, ValueError):
+        return False
+    return named.st_ino != 0 and (named.st_dev, named.st_ino) == (ours.st_dev, ours.st_ino)
 
 
 @click.command("snapshot", context_settings=CLICK_CONTEXT_SETTINGS)

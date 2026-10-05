@@ -11,8 +11,10 @@ so it now means exactly that. A file that really is called ``-`` is still one
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from typing import IO, TYPE_CHECKING, Any, NamedTuple, cast
 
 import pytest
 
@@ -307,3 +309,42 @@ def test_a_log_stream_that_leaves_the_capture_alone_is_not_refused(
     assert result.exit_code == 0, result.output
     if output == "-":
         assert json.loads(result.stdout) == capture, "stdout is not the capture that was read"
+
+
+def _snapshot_to_dev_stdout(stdout: int | IO[bytes]) -> subprocess.CompletedProcess[bytes]:
+    """Run ``snapshot -o /dev/stdout`` in a real process, its descriptor 1 being ``stdout``.
+
+    A real process, because what ``/dev/stdout`` reaches is the process's own
+    descriptor 1, which a CliRunner never replaces.
+    """
+    argv = [sys.executable, "-m", "lsdsk", "--no-record", "snapshot", "-o", "/dev/stdout"]
+    return subprocess.run(  # noqa: S603 - argv is built here, no shell
+        argv, stdout=stdout, stderr=subprocess.PIPE, cwd=str(Path(__file__).parent.parent), check=False, timeout=120
+    )
+
+
+@pytest.mark.os_posix
+def test_dev_stdout_on_a_pipe_carries_the_capture_as_a_dash_does() -> None:
+    """Measured before this: exit 74, ``[Errno 40] Too many levels of symbolic links``."""
+    result = _snapshot_to_dev_stdout(subprocess.PIPE)
+
+    assert result.returncode == 0, f"left {result.returncode}: {result.stderr!r}"
+    capture = json.loads(result.stdout)  # nothing but the capture, or this raises
+    assert "hostname" in capture, f"stdout is not a capture: {result.stdout[:200]!r}"
+
+
+@pytest.mark.os_posix
+def test_dev_stdout_redirected_to_a_file_carries_the_capture_as_a_dash_does(tmp_path: Path) -> None:
+    """The redirected case: ``/dev/stdout`` then leads to a REGULAR file, which the rename path would replace.
+
+    As root that rename replaced the ``/dev/stdout`` link itself; unprivileged it
+    failed. Recognised as this process's own standard output, it is written
+    exactly as ``-o -`` writes it.
+    """
+    redirected = tmp_path / "capture.json"
+    with redirected.open("wb") as stdout:
+        result = _snapshot_to_dev_stdout(stdout)
+
+    assert result.returncode == 0, f"left {result.returncode}: {result.stderr!r}"
+    capture = json.loads(redirected.read_bytes())
+    assert "hostname" in capture

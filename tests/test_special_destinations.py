@@ -9,6 +9,7 @@ where the FIFO had been and the reader waiting on it got nothing, and as root
 
 from __future__ import annotations
 
+import contextlib
 import os
 import stat
 import threading
@@ -98,3 +99,90 @@ def test_a_regular_file_is_still_replaced_atomically(tmp_path: Path) -> None:
 
     assert calls == []
     assert target.read_text(encoding="utf-8") == "new"
+
+
+def _release_a_blocked_reader(fifo: Path) -> None:
+    """Give a reader stuck opening ``fifo`` its end of stream, so a failing arm leaves no thread blocked."""
+    with contextlib.suppress(OSError):
+        os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
+
+
+@pytest.mark.os_posix
+@pytest.mark.skipif(not HAS_FIFO, reason="a FIFO needs os.mkfifo")
+def test_a_link_to_a_fifo_is_written_into_and_both_are_left_standing(tmp_path: Path) -> None:
+    """``-o /dev/stdout`` on a pipe is this shape: a link, in a directory, to a FIFO.
+
+    Measured before this: the link was renamed over with a regular 0600 file in
+    any writable directory - as root, ``/dev`` itself - and the FIFO's reader got
+    nothing at all.
+    """
+    fifo = tmp_path / "pipe"
+    os.mkfifo(fifo, 0o644)
+    link = tmp_path / "stdout"
+    link.symlink_to(fifo)
+    received: list[bytes] = []
+    reader = _drain(fifo, received)
+
+    try:
+        save(CAPTURE, link)
+    finally:
+        reader.join(timeout=10)
+        _release_a_blocked_reader(fifo)
+        reader.join(timeout=10)
+
+    assert link.is_symlink(), "the link was replaced by a regular file"
+    assert stat.S_ISFIFO(os.lstat(fifo).st_mode), "the FIFO behind the link was replaced"
+    assert received and b'"hostname"' in received[0], f"the reader received {received!r}"
+
+
+@pytest.mark.os_posix
+def test_a_link_to_a_character_device_is_written_into_not_renamed_over(tmp_path: Path) -> None:
+    """``/dev/stdout`` for root: a link in a directory where the temporary file CAN be created."""
+    link = tmp_path / "null"
+    link.symlink_to("/dev/null")
+
+    save(CAPTURE, link)
+
+    assert link.is_symlink(), "the link was replaced by a regular file"
+    assert link.readlink() == Path("/dev/null")
+    assert [entry.name for entry in tmp_path.iterdir()] == ["null"], "a temporary file was left behind"
+
+
+@pytest.mark.os_posix
+@pytest.mark.skipif(not HAS_FIFO, reason="a FIFO needs os.mkfifo")
+def test_the_history_store_refuses_a_link_to_a_fifo_as_it_refuses_the_fifo(tmp_path: Path) -> None:
+    fifo = tmp_path / "pipe"
+    os.mkfifo(fifo)
+    link = tmp_path / "history.json"
+    link.symlink_to(fifo)
+
+    with pytest.raises(OSError, match="not a regular file"):
+        save_history(History(hostname="box"), link)
+
+    assert link.is_symlink(), "the refusal still replaced the link"
+
+
+@pytest.mark.os_posix
+def test_a_link_to_a_regular_file_is_still_replaced_never_traversed(tmp_path: Path) -> None:
+    """The control: following a link is for a device or a FIFO, never for somebody's file."""
+    victim = tmp_path / "victim"
+    victim.write_text("theirs", encoding="utf-8")
+    link = tmp_path / "store.json"
+    link.symlink_to(victim)
+
+    replace_atomically(link, "ours", mode=0o600)
+
+    assert victim.read_text(encoding="utf-8") == "theirs", "the write traversed the link into its target"
+    assert not link.is_symlink() and link.read_text(encoding="utf-8") == "ours"
+
+
+@pytest.mark.os_posix
+def test_a_dangling_link_is_still_replaced(tmp_path: Path) -> None:
+    """The control: a link to nothing is not followed into creating its target."""
+    link = tmp_path / "store.json"
+    link.symlink_to(tmp_path / "nowhere")
+
+    replace_atomically(link, "ours", mode=0o600)
+
+    assert not (tmp_path / "nowhere").exists(), "the write created the link's target"
+    assert not link.is_symlink() and link.read_text(encoding="utf-8") == "ours"
