@@ -249,7 +249,7 @@ def record_exit_code(attempt: RecordAttempt) -> ExitCode:
             return ExitCode.SUCCESS
 
 
-def warn_if_the_store_was_not_written(attempt: RecordAttempt) -> None:
+def warn_if_the_store_was_not_written(attempt: RecordAttempt, path: Path) -> None:
     """Report a failed write for a command that records only incidentally.
 
     ``report`` and ``health`` record because they happen to have read the
@@ -261,9 +261,39 @@ def warn_if_the_store_was_not_written(attempt: RecordAttempt) -> None:
 
     Args:
         attempt: What came of the write.
+        path: The store, named here because the detail leaves it out when the
+            filesystem's own error named it.
     """
     if attempt.outcome in _WRITE_FAILED:
-        safe_console.echo(f"Warning: could not record counter history: {attempt.detail}", err=True)
+        safe_console.echo(f"Warning: could not record counter history to {path}: {attempt.detail}", err=True)
+
+
+def _in_its_own_words(error: OSError, store: Path) -> str:
+    """The filesystem's error as a sentence about the store, without naming the store twice.
+
+    ``str(OSError)`` ends with the filename it carries, and every sentence that
+    reports this detail already names the store, so a refusal about the store
+    itself read ``... to X: [Errno 11] ...: 'X'``. The filename stays when it is
+    a DIFFERENT file - the lock, a temporary file, a directory in the way -
+    because there it is the part that says where the fault is.
+
+    Args:
+        error: What the write raised.
+        store: The store the sentence already names.
+
+    Returns:
+        The detail to report.
+
+    Example:
+        >>> from pathlib import Path
+        >>> _in_its_own_words(OSError(11, "held too long", "h.json"), Path("h.json"))
+        '[Errno 11] held too long'
+        >>> _in_its_own_words(OSError(13, "denied", ".h.json.lock"), Path("h.json"))
+        "[Errno 13] denied: '.h.json.lock'"
+    """
+    if error.filename is None or error.filename2 is not None or Path(error.filename) != store:
+        return str(error)
+    return f"[Errno {error.errno}] {error.strerror}" if error.errno is not None else str(error.strerror)
 
 
 def _why_not_to_record(inventory: Inventory, read: HistoryRead, settings: HistorySettings) -> RecordAttempt | None:
@@ -322,9 +352,9 @@ def record_reading(
             # that reading away.
             attempt = _record_into_the_current_store(inventory, settings, captured_at)
     except PermissionError as error:
-        return RecordAttempt(RecordOutcome.NOT_PERMITTED, str(error))
+        return RecordAttempt(RecordOutcome.NOT_PERMITTED, _in_its_own_words(error, settings.path))
     except OSError as error:
-        return RecordAttempt(RecordOutcome.COULD_NOT_WRITE, str(error))
+        return RecordAttempt(RecordOutcome.COULD_NOT_WRITE, _in_its_own_words(error, settings.path))
     if attempt.stored and first_ever and announce:
         # Said once per machine, so a run that writes to disk is never a silent
         # surprise, and never again after that.
@@ -378,7 +408,7 @@ def analyse(
     findings = diagnose(inventory, history=read.history, thresholds=thresholds)
     if replay is None and output_format is OutputFormat.HUMAN:
         attempt = record_reading(inventory, read, settings)
-        warn_if_the_store_was_not_written(attempt)
+        warn_if_the_store_was_not_written(attempt, settings.path)
         if attempt.history is not None:
             read = HistoryRead(attempt.history, writable=True)
     return Analysis(inventory, findings, read)

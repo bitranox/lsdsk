@@ -422,30 +422,6 @@ def _refuse_what_the_reader_would_refuse(body: str, path: Path) -> None:
         raise OSError(errno.EFBIG, message, str(path))
 
 
-def read_history(*, hostname: str, path: Path | None = None, cap: int = MAX_SAMPLES_PER_DRIVE) -> History:
-    """Read the store at the configured location.
-
-    Args:
-        hostname: The machine being read now.
-        path: Override the default location.
-        cap: The most samples any one drive keeps.
-
-    Returns:
-        What has been recorded for this machine.
-    """
-    return load_history(path or default_history_path(), hostname=hostname, cap=cap)
-
-
-def write_history(history: History, *, path: Path | None = None) -> None:
-    """Replace the store at the configured location.
-
-    Args:
-        history: What to store.
-        path: Override the default location.
-    """
-    save_history(history, path or default_history_path())
-
-
 class HistoryRead(NamedTuple):
     """What the store held, and whether this run may write over it.
 
@@ -602,8 +578,6 @@ __all__ = [
     "default_history_path",
     "history_lock",
     "load_history",
-    "read_history",
     "running_as_root",
     "save_history",
-    "write_history",
 ]

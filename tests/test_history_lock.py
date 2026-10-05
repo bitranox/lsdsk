@@ -177,3 +177,30 @@ def test_a_record_that_cannot_take_the_lock_is_a_write_that_failed(
     assert isinstance(attempt, RecordAttempt), f"came back as {attempt!r}"
     assert attempt.outcome is RecordOutcome.COULD_NOT_WRITE, f"came back as {attempt!r}"
     assert not settings.path.exists(), "a run that held no lock wrote the store"
+
+
+def test_a_lock_given_up_on_names_the_store_and_its_errno_once(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The OSError carries the store as its filename, and the sentence around it named it again.
+
+    Measured before this: ``could not write counter history to X: [Errno 11]
+    another lsdsk run has held the counter store for over 30 seconds: 'X'``.
+    """
+    store = tmp_path / "history.json"
+    monkeypatch.setattr(store_module, "LOCK_WAIT_SECONDS", 0.1)
+    release, holder = _hold_the_lock(store)
+    try:
+        result = cli_runner.invoke(
+            cli, ["--history-file", str(store), "record", "--replay", str(SNAPSHOT)], obj=production_factory
+        )
+    finally:
+        release.set()
+        holder.join(timeout=10)
+
+    assert result.exit_code == ExitCode.IO_ERROR, f"left {result.exit_code}: {result.stderr!r}"
+    errors = [line for line in result.stderr.splitlines() if line.startswith("Error:")]
+    assert len(errors) == 1, f"expected one Error line: {result.stderr!r}"
+    assert "another lsdsk run" in errors[0], f"refused for another reason: {errors[0]}"
+    assert errors[0].count(str(store)) == 1, f"the store is named more than once: {errors[0]}"
+    assert errors[0].count("Errno") == 1, f"the errno is given more than once: {errors[0]}"

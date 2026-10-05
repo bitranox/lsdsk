@@ -10,9 +10,7 @@ from .store import (
     HistoryRead,
     default_history_path,
     load_history,
-    read_history,
     save_history,
-    write_history,
 )
 
 __all__ = [
@@ -23,7 +21,5 @@ __all__ = [
     "HistoryRead",
     "default_history_path",
     "load_history",
-    "read_history",
     "save_history",
-    "write_history",
 ]
