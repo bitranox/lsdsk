@@ -5,6 +5,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.6.2] 2026-10-05 16:57:31
+
+1.6.1 was never published to PyPI, so this is the first release on PyPI since
+1.6.0 and carries the 1.6.1 changes below as well.
+
 ### Changed
 
 - **A capped card's advice names the lanes and the generation it needs.** "a
