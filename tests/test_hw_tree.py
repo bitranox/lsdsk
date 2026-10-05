@@ -20,6 +20,7 @@ from lsdsk.adapters.hw import snapshot
 from lsdsk.adapters.hw.fabric import UNPLACED_ROOT, NodeSource, assemble, port_kind_of
 from lsdsk.domain.enums import CliCommand, PciPortKind
 from lsdsk.domain.models import PcieLink
+from lsdsk.domain.pci_address import pci_address_order
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "hw"
 ALL_HOSTS = (
@@ -204,7 +205,7 @@ def test_a_windows_bridge_carries_its_children_and_no_port_kinds() -> None:
     bridge = by_address["0000:05:01.0"]
     assert bridge.is_bridge
     assert set(bridge.children) == {"0000:06:03.0", "0000:06:07.0", "0000:06:08.0", "0000:06:12.0"}
-    assert bridge.children == tuple(sorted(bridge.children))
+    assert bridge.children == tuple(sorted(bridge.children, key=pci_address_order))
     for child in bridge.children:
         assert by_address[child].parent_address == "0000:05:01.0"
     assert all(not node.is_port or node.port_kind is PciPortKind.UNKNOWN for node in inventory.pci_tree)

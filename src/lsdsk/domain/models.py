@@ -21,6 +21,7 @@ from pydantic import Field, model_validator
 
 from .base import DomainModel
 from .enums import BusType, ControllerKind, DiskKind, Environment, PciPortKind, Severity, UsbLaneRate, UsbTransport
+from .pci_address import pci_address_order
 from .text import DeviceText, OptionalDeviceText
 
 if TYPE_CHECKING:
@@ -1741,9 +1742,9 @@ class _PciTour:
                 if entry.gate > enter:
                     continue
                 held = found.get(entry.key)
-                if held is None or entry.node.address < held.address:
+                if held is None or pci_address_order(entry.node.address) < pci_address_order(held.address):
                     found[entry.key] = entry.node
-        return sorted(found.values(), key=lambda node: node.address)
+        return sorted(found.values(), key=lambda node: pci_address_order(node.address))
 
 
 class Inventory(DomainModel, frozen=True):

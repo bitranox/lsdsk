@@ -23,6 +23,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, TypeVar
 
+from ....domain.disk_name import disk_name_order
 from ....domain.enums import BusType, ControllerKind, DiskKind, PciPortKind, UsbLaneRate, UsbTransport
 from ....domain.models import (
     Controller,
@@ -39,6 +40,7 @@ from ....domain.models import (
     UsbSpeed,
     representative_occupant,
 )
+from ....domain.pci_address import pci_address_order
 from ....domain.text import device_text, first_reported
 from ..decode import pciids
 from ..decode.ata_identify import decode_identify
@@ -210,7 +212,7 @@ def build_controllers(capture: WindowsCapture) -> tuple[Controller, ...]:
                 vendor=parse_int(entry.vendor, 16),
             )
         )
-    return tuple(controllers)
+    return tuple(sorted(controllers, key=lambda controller: pci_address_order(controller.address)))
 
 
 def build_slots(capture: WindowsCapture) -> tuple[PcieSlot, ...]:
@@ -260,7 +262,7 @@ def build_slots(capture: WindowsCapture) -> tuple[PcieSlot, ...]:
                 occupant_count=len(behind),
             )
         )
-    return tuple(slots)
+    return tuple(sorted(slots, key=lambda slot: pci_address_order(slot.address)))
 
 
 def _health_from(
@@ -387,7 +389,7 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
                 readings_refused=_refusals_for(entry, record),
             )
         )
-    return tuple(disks)
+    return tuple(sorted(disks, key=lambda disk: disk_name_order(disk.node)))
 
 
 _USB2 = UsbSpeed(lane_rate=UsbLaneRate.HIGH)

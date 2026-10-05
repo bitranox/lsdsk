@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from .base import DomainModel
 from .enums import Severity
 from .models import Finding, PciNode, pcie_bandwidth_gbps, pcie_generation
+from .pci_address import pci_address_order
 from .pcie_text import format_gbytes, format_pcie_sentence
 from .placement import Seat, free_slot_for, unread_free_slot_for
 
@@ -43,7 +44,7 @@ class FabricLink(DomainModel, frozen=True):
     @property
     def card(self) -> PciNode:
         """The function whose registers stand for the link: the lowest address."""
-        return min(self.functions, key=lambda node: node.address)
+        return min(self.functions, key=lambda node: pci_address_order(node.address))
 
 
 def _graded_elsewhere(inventory: Inventory) -> frozenset[str]:
@@ -78,7 +79,7 @@ def fabric_links(inventory: Inventory) -> tuple[FabricLink, ...]:
         for port_address, functions in grouped.items()
         if not any(function.address in skipped for function in functions)
     ]
-    return tuple(sorted(links, key=lambda link: link.card.address))
+    return tuple(sorted(links, key=lambda link: pci_address_order(link.card.address)))
 
 
 #: How many distinct names a carrying clause spells out before it counts the rest.

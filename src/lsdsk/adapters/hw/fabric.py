@@ -19,11 +19,11 @@ System Role:
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING, NamedTuple
 
 from ...domain.enums import PciPortKind
 from ...domain.models import PciNode
+from ...domain.pci_address import DUPLICATE_MARK, PCI_ADDRESS_SHAPE, pci_address_order
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -104,21 +104,12 @@ class NodeSource(NamedTuple):
     pcie_capability_present: bool | None = None
 
 
-#: A PCI address, as either platform writes one. The domain is four digits or
-#: more, because an Intel VMD re-enumerates its drives into domain 0x10000.
-_PCI_ADDRESS_SHAPE = re.compile(r"^[0-9a-f]{4,}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]$")
-
 #: Where a device whose identifier is not an address goes. Windows publishes no
 #: address for some devices and the builder falls back to the instance
 #: identifier, which carries no bus to derive: splitting one on its last colon
 #: produced the EMPTY string, so every such device shared a root labelled with
 #: nothing and devices from different buses were merged into it.
 UNPLACED_ROOT = "unplaced"
-
-#: What separates a duplicated address from the copy that already took it.
-#: Chosen because it cannot occur in a PCI address, so a reader can never take
-#: the result for one.
-DUPLICATE_MARK = "#"
 
 
 def _root_bus(address: str) -> str:
@@ -143,7 +134,7 @@ def _root_bus(address: str) -> str:
         'unplaced'
     """
     base = address.partition(DUPLICATE_MARK)[0]
-    if not _PCI_ADDRESS_SHAPE.match(base):
+    if not PCI_ADDRESS_SHAPE.match(base):
         return UNPLACED_ROOT
     return base.rpartition(":")[0]
 
@@ -254,7 +245,9 @@ def assemble(sources: Sequence[NodeSource]) -> tuple[PciNode, ...]:
     # A bus is a root bus exactly where some device on it attaches to the
     # synthetic root, which is also what keeps a bridged secondary bus from
     # growing a root of its own.
-    root_buses = sorted({_root_bus(address) for address, parent in raw.items() if parent is None})
+    root_buses = sorted(
+        {_root_bus(address) for address, parent in raw.items() if parent is None}, key=pci_address_order
+    )
     for address, parent in raw.items():
         if parent is None:
             # Reserved for the synthetic roots alone; a real device hangs
@@ -269,7 +262,12 @@ def assemble(sources: Sequence[NodeSource]) -> tuple[PciNode, ...]:
             children.setdefault(parent, []).append(address)
 
     nodes = [
-        PciNode(address=bus, name=bus, parent_address=None, children=tuple(sorted(children.get(bus, ()))))
+        PciNode(
+            address=bus,
+            name=bus,
+            parent_address=None,
+            children=tuple(sorted(children.get(bus, ()), key=pci_address_order)),
+        )
         for bus in root_buses
     ]
     nodes.extend(
@@ -285,9 +283,9 @@ def assemble(sources: Sequence[NodeSource]) -> tuple[PciNode, ...]:
             connector_present=source.connector_present,
             physical_slot_number=source.physical_slot_number,
             parent_address=raw[source.address],
-            children=tuple(sorted(children.get(source.address, ()))),
+            children=tuple(sorted(children.get(source.address, ()), key=pci_address_order)),
         )
-        for source in sorted(by_address.values(), key=lambda item: item.address)
+        for source in sorted(by_address.values(), key=lambda item: pci_address_order(item.address))
     )
     return tuple(nodes)
 
@@ -342,7 +340,6 @@ def _cycle_above(parents: Mapping[str, str | None], start: str, resolved: set[st
 
 
 __all__ = [
-    "DUPLICATE_MARK",
     "UNPLACED_ROOT",
     "NodeSource",
     "assemble",

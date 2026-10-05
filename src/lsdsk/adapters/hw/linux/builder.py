@@ -22,6 +22,7 @@ import math
 import re
 from typing import TYPE_CHECKING, NamedTuple
 
+from ....domain.disk_name import disk_name_order
 from ....domain.enums import BusType, ControllerKind, DiskKind, UsbLaneRate, UsbTransport
 from ....domain.models import (
     PCIE_MAX_LINK_WIDTH,
@@ -39,6 +40,7 @@ from ....domain.models import (
     is_pcie_lane_rate,
     representative_occupant,
 )
+from ....domain.pci_address import pci_address_order
 from ....domain.text import device_text, first_reported
 from ..decode import pciids
 from ..decode.ahci import decode_capabilities
@@ -407,7 +409,7 @@ def build_controllers(capture: LinuxCapture) -> tuple[Controller, ...]:
                 readings_refused=refusals_of({"ahci-port-count": entry.ahci_error}),
             )
         )
-    return tuple(controllers)
+    return tuple(sorted(controllers, key=lambda controller: pci_address_order(controller.address)))
 
 
 def _pci_database(capture: LinuxCapture) -> pciids.Database | None:
@@ -468,7 +470,7 @@ def build_slots(capture: LinuxCapture) -> tuple[PcieSlot, ...]:
                 occupant_count=len(present),
             )
         )
-    return tuple(slots)
+    return tuple(sorted(slots, key=lambda slot: pci_address_order(slot.address)))
 
 
 class _HwmonReading(NamedTuple):
@@ -931,12 +933,12 @@ def build_disks(capture: LinuxCapture) -> tuple[Disk, ...]:
         capture: A Linux reading.
 
     Returns:
-        Disks in node order, kernel-virtual devices excluded.
+        Disks in drive-number order, kernel-virtual devices excluded.
     """
     indexed = _index_capture(capture)
     return tuple(
         _build_one(node, block, indexed)
-        for node, block in sorted(capture.block.items())
+        for node, block in sorted(capture.block.items(), key=lambda item: disk_name_order(item[0]))
         if not _is_kernel_virtual(block)
     )
 
@@ -966,7 +968,7 @@ def build_virtual_disks(capture: LinuxCapture) -> tuple[Disk, ...]:
     indexed = _index_capture(capture)
     return tuple(
         _build_one(node, block, indexed).with_changes(bus=BusType.VIRTUAL, kind=DiskKind.UNKNOWN)
-        for node, block in sorted(capture.block.items())
+        for node, block in sorted(capture.block.items(), key=lambda item: disk_name_order(item[0]))
         if _is_kernel_virtual(block)
     )
 

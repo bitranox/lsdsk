@@ -37,6 +37,7 @@ from rich.console import Group
 from rich.text import Text
 
 from ...domain.enums import PciPortKind, TreeDensity
+from ...domain.pci_address import pci_address_order
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_TREE_DENSITY
 from ..hw.fabric import UNPLACED_ROOT
 from . import theme
@@ -476,7 +477,7 @@ class Fabric:
         for node in devices:
             grouped.setdefault(node.parent_address, []).append(node)
         for group in grouped.values():
-            group.sort(key=lambda item: item.address)
+            group.sort(key=lambda item: pci_address_order(item.address))
         return grouped
 
     def _kept(self) -> set[str]:
