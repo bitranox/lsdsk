@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.6.4] 2026-10-05 20:11:15
+
 ### Changed
 
 - **Controllers, slots and the topology tree are listed in PCI-address order on
