@@ -1060,7 +1060,7 @@ class UsbSpeed(DomainModel, frozen=True):
         >>> UsbSpeed(lane_rate=UsbLaneRate.GEN2).figure
         'USB10G'
         >>> UsbSpeed(lane_rate=UsbLaneRate.GEN2, lanes=2).bandwidth_gbps
-        2.4242
+        2.424242
     """
 
     lane_rate: UsbLaneRate
@@ -1081,8 +1081,12 @@ class UsbSpeed(DomainModel, frozen=True):
 
     @property
     def bandwidth_gbps(self) -> float:
-        """What the link carries for data after line coding, in GB/s."""
-        return round(self.signalling_mbps * _USB_LINE_EFFICIENCY[self.lane_rate] / _MBPS_PER_GBYTE, 4)
+        """What the link carries for data after line coding, in GB/s.
+
+        Rounded to six decimals, a thousandth of a MB/s: a USB 1 rate is written
+        in MB/s, and four decimals of GB/s turned 0.19 MB/s into 0.20.
+        """
+        return round(self.signalling_mbps * _USB_LINE_EFFICIENCY[self.lane_rate] / _MBPS_PER_GBYTE, 6)
 
     @property
     def figure(self) -> str:

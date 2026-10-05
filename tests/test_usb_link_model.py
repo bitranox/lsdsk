@@ -18,13 +18,13 @@ HIGH = UsbSpeed(lane_rate=UsbLaneRate.HIGH)
 @pytest.mark.parametrize(
     ("speed", "figure", "gbps"),
     [
-        (UsbSpeed(lane_rate=UsbLaneRate.LOW), "USB1.5M", 0.0002),
+        (UsbSpeed(lane_rate=UsbLaneRate.LOW), "USB1.5M", 0.000188),
         (UsbSpeed(lane_rate=UsbLaneRate.FULL), "USB12M", 0.0015),
         (HIGH, "USB480M", 0.06),
         (GEN1, "USB5G", 0.5),
-        (GEN2, "USB10G", 1.2121),
+        (GEN2, "USB10G", 1.212121),
         (GEN1X2, "USB10G", 1.0),
-        (GEN2X2, "USB20G", 2.4242),
+        (GEN2X2, "USB20G", 2.424242),
     ],
 )
 def test_a_usb_speed_is_spelled_by_its_total_rate_and_priced_by_its_line_coding(

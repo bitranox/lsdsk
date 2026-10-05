@@ -297,7 +297,7 @@ def test_a_usb_finding_names_the_figures_the_disk_table_above_it_draws() -> None
 @pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("rate", "written"),
-    [("FULL", "USB12M (1.50 MB/s)"), ("LOW", "USB1.5M (0.20 MB/s)"), ("HIGH", "USB480M (0.06 GB/s)")],
+    [("FULL", "USB12M (1.50 MB/s)"), ("LOW", "USB1.5M (0.19 MB/s)"), ("HIGH", "USB480M (0.06 GB/s)")],
 )
 def test_a_usb_1_rate_names_what_it_carries_rather_than_zero(rate: str, written: str) -> None:
     """``USB12M (0.00 GB/s)`` said a working full-speed link carried nothing.
@@ -305,7 +305,8 @@ def test_a_usb_1_rate_names_what_it_carries_rather_than_zero(rate: str, written:
     Below a hundredth of a GB/s two decimals of GB/s round to zero, so a figure
     that small is written in MB/s, by the sentence and the column alike. The
     MB/s figures are the bandwidth model's own: 12 Mb/s at a line efficiency of
-    one is 1.5 MB/s, and 1.5 Mb/s is 0.0002 GB/s after the model's rounding.
+    one is 1.5 MB/s, and 1.5 Mb/s is 0.1875 MB/s. A model that rounded to four
+    decimals of GB/s printed that as 0.20 MB/s, a figure the link never carries.
     """
     from lsdsk.domain.enums import UsbLaneRate
     from lsdsk.domain.models import UsbSpeed
