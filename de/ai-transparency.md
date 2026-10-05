@@ -59,7 +59,7 @@ denen das Werkzeug etwas behauptete, das es nicht gemessen hatte.
 
 ## Was geprüft ist, und was nicht
 
-Auf echter Hardware geprüft, durchweg Linux:
+Auf echter Hardware geprüft, unter Linux:
 
 - Jede Messung Feld für Feld gegen `smartctl --json -x` über 19 Platten eines
   Speicherservers verglichen: 207 von 207 stimmten überein, und die zwei
@@ -73,12 +73,21 @@ Auf echter Hardware geprüft, durchweg Linux:
   Überbuchung zu bestätigen: zwei SSDs lasen einzeln je 400 MB/s und gemeinsam
   je 206 MB/s, eine geteilte Decke genau dort, wo PCIe 2.0 x1 sie vorhersagt.
 
+Auf einem physischen Windows-Rechner geprüft, einem Desktop mit Intel-Z790-Board,
+mit erhöhten Rechten:
+
+- Der End-to-End-Vertragslauf, live und mit seiner eigenen Aufnahme erneut
+  abgespielt, erkannte jedes Laufwerk und las seinen Zustand über alle drei
+  Übertragungswege dort: NVMe, SATA und eine USB-Platte mit 10 Gb/s. Die
+  eingecheckte Aufnahme `windows-usb-uas` stammt von diesem Rechner.
+
 Nicht geprüft:
 
-- Kein physischer Windows-Rechner. Der Windows-Pfad läuft auf virtuellen
-  Maschinen und auf dem Windows-Runner der CI, und die einzige Windows-Aufnahme
-  in diesem Repository ist ein QEMU-Gast. Die Zuordnung ist damit überall
-  geprüft, die Übertragung aber nicht gegen echte Windows-Hardware belegt.
+- Unter Windows kein Feld-für-Feld-Vergleich gegen `smartctl`, wie er unter
+  Linux gemacht wurde. Und überhaupt keine PCIe-Fähigkeit einer Windows-Bridge,
+  weil Windows für eine Bridge keine veröffentlicht; eine langsame Verbindung
+  wird dort gemeldet, ohne ihrem Anschluss angelastet zu werden. Die übrigen
+  Windows-Aufnahmen hier sind virtuelle Maschinen.
 - Kein SAS-Expander, kein Hardware-RAID-Controller, und kein Laufwerk nahe am
   Ende seiner Lebensdauer. Diese Hardware stand nicht zur Verfügung.
 

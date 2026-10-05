@@ -5,6 +5,25 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **Controllers, slots and the topology tree are listed in PCI-address order on
+  every platform.** Windows listed them by device identifier, which is vendor
+  order (`02:00.0`, `00:17.0`, `00:0e.0`). Addresses are now compared as
+  numbers, so an Intel VMD domain (`10000:`) follows `ffff:` and a second device
+  at one address marked `#10` follows `#2`.
+- **Drives are listed by drive number.** `PhysicalDrive10` follows
+  `PhysicalDrive2`, and `sdaa` follows `sdz`; a Windows machine listed its drives
+  as `PhysicalDrive1`, `0`, `2`.
+
+### Fixed
+
+- **Pressing `d` in the interactive view keeps the cursor on the same device.**
+  It kept the line number, so after a density change the highlight and the
+  detail panel landed on whatever the new density drew there, which read as a
+  device sitting under the wrong port. A device the new density does not draw
+  hands the cursor to its nearest drawn ancestor.
+
 ## [1.6.3] 2026-10-05 18:03:42
 
 Neither 1.6.1 nor 1.6.2 was published to PyPI, so this is the first release on

@@ -48,7 +48,7 @@ several places where the tool asserted something it had not measured.
 
 ## What's been checked, and what hasn't
 
-Checked, on real hardware, all of it Linux:
+Checked, on real hardware, on Linux:
 
 - Every reading compared field by field against `smartctl --json -x` across 19 disks on a
   storage server: 207 of 207 agreed, and the two apparent differences were proven to be a
@@ -60,11 +60,18 @@ Checked, on real hardware, all of it Linux:
   400 MB/s each alone and 206 MB/s each together, a shared ceiling exactly where PCIe 2.0 x1
   predicts.
 
+Checked on a physical Windows machine, a desktop Intel Z790 board, run elevated:
+
+- The end-to-end contract run, live and replaying its own capture, identified every drive and
+  read its health over all three transports there: NVMe, SATA, and a 10 Gb/s USB disk. The
+  committed `windows-usb-uas` capture comes from that machine.
+
 Not checked:
 
-- No physical Windows machine. The Windows path runs on virtual machines and on the CI's Windows
-  runner, and the only Windows capture in this repository is a QEMU guest, so the mapping is
-  tested everywhere while the transport is not proven against real Windows hardware.
+- On Windows, no field-by-field comparison against `smartctl`, as was done on Linux. And no
+  Windows PCIe bridge capability at all, because Windows publishes none for a bridge, so a slow
+  link there is reported without being blamed on its port. The other Windows captures here are
+  virtual machines.
 - No SAS expander, no hardware RAID controller, and no drive close to end of life. That hardware
   was not available.
 
