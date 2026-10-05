@@ -7,7 +7,8 @@ eliminating duplication between module entry (__main__.py) and console script
 Contents:
     * :func:`init_logging` - idempotent logging initialization with layered config.
     * :func:`run_log_demo` - one line per severity, on the same guarded console.
-    * :func:`_build_runtime_config` - constructs RuntimeConfig from layered sources.
+    * :func:`_build_runtime_config` - constructs RuntimeConfig from a ``[lib_log_rich]`` table.
+    * :func:`_start_runtime` - starts it, falling back on a value the library refuses.
 
 System Role:
     Lives in the adapters/platform layer. All entry points (module execution,
@@ -17,6 +18,9 @@ System Role:
 
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
+from contextlib import contextmanager
 from functools import partial
 from typing import TYPE_CHECKING, Final, cast
 
@@ -29,13 +33,26 @@ from pydantic import BaseModel, ConfigDict
 
 from lsdsk import __init__conf__
 
+from ...domain.text import visible_text
+
 # A sibling adapter, not a layer breach: safe_console owns this project's answer to
 # a stream whose reader has gone, and that answer has to be the same one wherever
 # the writing happens.
 from ..cli import safe_console
+from ..config.loader import shipped_section
+from ..config.values import RejectedValue, rendered
+from .refusals import (
+    REFUSALS,
+    changed_keys,
+    ignored_sentence,
+    offending_keys,
+    offending_variables,
+    variable_sentence,
+    with_shipped_values,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Generator, Sequence
     from typing import IO
 
     from lib_layered_config import Config
@@ -66,26 +83,29 @@ class LoggingConfigModel(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-def _build_runtime_config(config: Config) -> lib_log_rich.runtime.RuntimeConfig:
-    """Build RuntimeConfig from a Config object.
+def _build_runtime_config(section: Mapping[str, object]) -> lib_log_rich.runtime.RuntimeConfig:
+    """Build RuntimeConfig from a ``[lib_log_rich]`` table.
 
     Centralizes the mapping from lib_layered_config to lib_log_rich
     RuntimeConfig. Uses Pydantic for single-parse validation at the boundary.
 
     Args:
-        config: Already-loaded layered configuration object.
+        section: The ``[lib_log_rich]`` table, as the layers merged it or as the
+            package ships it.
 
     Returns:
         Fully configured runtime settings ready for lib_log_rich.init().
 
+    Raises:
+        pydantic.ValidationError: When ``service`` or ``environment`` is not text,
+            or the library's own model refuses a value.
+
     Note:
-        Configuration is read from the [lib_log_rich] section. All parameters
-        documented in defaultconfig.toml can be specified. Unspecified values
-        use lib_log_rich's built-in defaults. The service and environment
-        parameters default to package metadata when not configured.
+        All parameters documented in defaultconfig.toml can be specified.
+        Unspecified values use lib_log_rich's built-in defaults. The service and
+        environment parameters default to package metadata when not configured.
     """
-    log_raw: object = config.get("lib_log_rich", default={})
-    parsed = LoggingConfigModel.model_validate(cast("dict[str, object]", log_raw) if log_raw else {})
+    parsed = LoggingConfigModel.model_validate(dict(section))
 
     # Apply defaults for required fields
     service = parsed.service or __init__conf__.name
@@ -203,9 +223,119 @@ def init_logging(config: Config) -> None:
     if lib_log_rich.runtime.is_initialised():
         return
     lib_log_rich.config.enable_dotenv()
-    runtime_config = _build_runtime_config(config)
-    lib_log_rich.runtime.init(runtime_config)
-    lib_log_rich.runtime.attach_std_logging()
+    configured, notes = _configured_section(config)
+    notes.extend(_start_runtime(configured, shipped_section(_SECTION)))
+    for note in notes:
+        safe_console.echo(note, err=True)
+    if lib_log_rich.runtime.is_initialised():
+        lib_log_rich.runtime.attach_std_logging()
+
+
+#: The section lib_log_rich's settings live under.
+_SECTION: Final = "lib_log_rich"
+
+
+def _configured_section(config: Config) -> tuple[dict[str, object], list[str]]:
+    """The ``[lib_log_rich]`` table to start from, and a warning if it is not a table.
+
+    Args:
+        config: The merged configuration.
+
+    Returns:
+        The table, or the shipped one in place of a value that is not a table,
+        with the warning saying so.
+    """
+    raw: object = config.get(_SECTION, default={})
+    if isinstance(raw, Mapping):
+        return dict(cast("Mapping[str, object]", raw)), []
+    note = RejectedValue(
+        dotted=_SECTION, raw=visible_text(rendered(raw)), reason="not a table", used="the shipped logging settings"
+    )
+    return shipped_section(_SECTION), [note.as_sentence()]
+
+
+def _refused_by(section: Mapping[str, object]) -> BaseException | None:
+    """Start the logging runtime from `section`, answering what refused it if anything did.
+
+    Args:
+        section: The ``[lib_log_rich]`` table to start from.
+
+    Returns:
+        ``None`` once the runtime is running, or what the library raised.
+    """
+    try:
+        lib_log_rich.runtime.init(_build_runtime_config(section))
+    except REFUSALS as refused:
+        return refused
+    return None
+
+
+@contextmanager
+def _set_aside(names: Sequence[str]) -> Generator[None]:
+    """Take `names` out of the environment for the duration, and put them back.
+
+    Args:
+        names: Environment variables to hide.
+
+    Yields:
+        Nothing; the variables are absent inside the block.
+    """
+    kept = {name: os.environ.pop(name) for name in names if name in os.environ}
+    try:
+        yield
+    finally:
+        os.environ.update(kept)
+
+
+def _start_runtime(configured: Mapping[str, object], shipped: Mapping[str, object]) -> list[str]:
+    """Start the runtime, falling back to the shipped settings for any value it refused.
+
+    Logging is set up before any command runs, so a value the library refused
+    used to end every command - the diagnosis included - with the library's own
+    exception and no envelope. The rule the rest of the configuration follows
+    applies here too: a value the tool cannot use falls back to the shipped one
+    and says so.
+
+    The attempts after the first narrow what is trusted: the refused settings put
+    back to their shipped values; then the ``LOG_*`` variables the refusal is
+    about set aside for the start, because lib_log_rich reads those ahead of
+    every setting and no fallback in this tool's configuration can outrank one;
+    then both, with the shipped table whole. Every command binds a logging
+    context, so running on with no runtime at all is not an option. If the
+    shipped settings with those variables set aside are refused too, that is a
+    fault in this tool, and the original refusal is raised.
+
+    Args:
+        configured: The ``[lib_log_rich]`` table as the layers merged it.
+        shipped: The same table as the package ships it.
+
+    Returns:
+        The warnings to print, empty when the settings were used as given.
+
+    Raises:
+        ValueError: The library's refusal, when nothing above could repair it.
+        TypeError: Likewise.
+    """
+    refused = _refused_by(configured)
+    if refused is None:
+        return []
+    offenders = offending_keys(refused, configured, shipped)
+    variables = offending_variables(refused, os.environ)
+    attempts: tuple[tuple[Mapping[str, object], Sequence[str], Sequence[str]], ...] = (
+        (with_shipped_values(configured, shipped, offenders), (), offenders),
+        (configured, variables, ()),
+        (shipped, variables, changed_keys(configured, shipped)),
+    )
+    for section, hidden, keys in attempts:
+        # Read before the variables are hidden: the sentence quotes their values.
+        notes = [variable_sentence(name, refused=refused, environ=os.environ) for name in hidden]
+        with _set_aside(hidden):
+            if _refused_by(section) is None:
+                return [
+                    *(ignored_sentence(key, refused=refused, configured=configured, shipped=shipped) for key in keys),
+                    *notes,
+                ]
+    raise refused
 
 
 #: The preview's lines, one per severity, worded as lib_log_rich's own demo words them.

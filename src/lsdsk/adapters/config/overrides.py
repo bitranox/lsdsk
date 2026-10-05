@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
 from enum import StrEnum
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Final, cast
 
 import orjson
 from lib_layered_config import Config
@@ -76,8 +76,9 @@ def parse_override(raw: str) -> ConfigOverride:
         Parsed ConfigOverride with section, key_path tuple, and coerced value.
 
     Raises:
-        ValueError: If the string lacks ``=``, has no dot in the key, or has
-            empty section/key components.
+        ValueError: If the string lacks ``=``, has no dot in the key, has
+            empty section/key components, or nests deeper than
+            :data:`MAX_OVERRIDE_DEPTH`.
 
     Examples:
         >>> override = parse_override("lib_log_rich.console_level=DEBUG")
@@ -111,11 +112,53 @@ def parse_override(raw: str) -> ConfigOverride:
     if not all(key_parts):
         raise ValueError(f"Invalid override {raw!r}: key path contains empty component")
 
-    return ConfigOverride(
-        section=section,
-        key_path=key_parts,
-        value=coerce_value(value_str),
-    )
+    value = coerce_value(value_str)
+    # Counted from the top of the configuration, as the library counts a file's or
+    # a variable's nesting: the section and every key in the path are levels too.
+    if 1 + len(key_parts) + _nesting(value) > MAX_OVERRIDE_DEPTH:
+        # The key alone is quoted: the value is the part that is too large to repeat.
+        msg = (
+            f"Invalid override for {path_part!r}: its value nests deeper than "
+            f"the {MAX_OVERRIDE_DEPTH} levels a configuration may have"
+        )
+        raise ValueError(msg)
+    return ConfigOverride(section=section, key_path=key_parts, value=value)
+
+
+#: The deepest a ``--set`` may nest, section and key path included.
+#:
+#: The file and environment layers are already held to this by lib_layered_config,
+#: which refuses anything deeper as a configuration error. A ``--set`` value was
+#: held to nothing: orjson parses 900 levels happily and the merge then exhausted
+#: the interpreter's stack, ending every command - whichever section it named -
+#: with a ``RecursionError`` and the code that means this tool broke.
+MAX_OVERRIDE_DEPTH: Final = 100
+
+
+def _nesting(value: object) -> int:
+    """How many levels of tables and lists `value` holds, a scalar being none.
+
+    Walked with an explicit stack, because the values it exists to measure are
+    the ones deep enough to exhaust a recursive walk.
+
+    Example:
+        >>> _nesting(1), _nesting([]), _nesting({"a": [1, {"b": 2}]})
+        (0, 1, 3)
+    """
+    deepest = 0
+    pending: list[tuple[object, int]] = [(value, 0)]
+    while pending:
+        item, depth = pending.pop()
+        if isinstance(item, dict):
+            children: list[object] = list(cast("dict[str, object]", item).values())
+        elif isinstance(item, list):
+            children = list(cast("list[object]", item))
+        else:
+            deepest = max(deepest, depth)
+            continue
+        deepest = max(deepest, depth + 1)
+        pending.extend((child, depth + 1) for child in children)
+    return deepest
 
 
 def coerce_value(raw: str) -> CoercedValue:
@@ -402,6 +445,7 @@ def apply_overrides(config: Config, raw_overrides: tuple[str, ...]) -> Config:
 
 
 __all__ = [
+    "MAX_OVERRIDE_DEPTH",
     "CoercedValue",
     "ConfigOverride",
     "OverrideLayer",

@@ -125,6 +125,7 @@ module exists that is not listed here, or a listed path does not exist.
 ### Adapters - logging
 
 - `src/lsdsk/adapters/logging/setup.py` - Centralized logging initialization for all entry points.
+- `src/lsdsk/adapters/logging/refusals.py` - Which `[lib_log_rich]` setting the logging library refused, in this tool's words.
 
 ### Adapters - in-memory, for tests
 

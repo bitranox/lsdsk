@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import copy
+import tomllib
+from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
-from typing import Protocol
+from types import MappingProxyType
+from typing import Protocol, cast
 
 from lib_layered_config import (
     DEFAULT_MAX_PROFILE_LENGTH,
@@ -215,8 +219,72 @@ class _ConfigLoader:
 get_config: ConfigLoaderProtocol = _ConfigLoader()
 
 
+def _deep_merge(base: dict[str, object], update: Mapping[str, object]) -> None:
+    """Merge `update` into `base` in place, a nested table key by key.
+
+    Args:
+        base: The table being built.
+        update: A later file's table, whose values win.
+
+    Example:
+        >>> table: dict[str, object] = {"s": {"a": 1, "b": 2}}
+        >>> _deep_merge(table, {"s": {"b": 3}})
+        >>> table
+        {'s': {'a': 1, 'b': 3}}
+    """
+    for key, value in update.items():
+        existing = base.get(key)
+        if isinstance(existing, dict) and isinstance(value, Mapping):
+            _deep_merge(cast("dict[str, object]", existing), cast("Mapping[str, object]", value))
+        else:
+            base[key] = value
+
+
+@lru_cache(maxsize=1)
+def _shipped_tables() -> Mapping[str, object]:
+    """Every table the package ships, merged in the order the defaults layer reads them.
+
+    Returns:
+        A read-only view of the merged shipped tables.
+    """
+    base = get_default_config_path()
+    # The library's own rule for a default file: the file itself, then its
+    # companion ``<stem>.d`` directory in name order.
+    paths = [base, *sorted((base.parent / f"{base.stem}.d").glob("*.toml"))]
+    merged: dict[str, object] = {}
+    for path in paths:
+        _deep_merge(merged, tomllib.loads(path.read_text(encoding="utf-8")))
+    return MappingProxyType(merged)
+
+
+def shipped_section(section: str) -> dict[str, object]:
+    """One section as the package ships it, before any file, variable or ``--set``.
+
+    The merged configuration cannot answer this: once a reader overrides a key,
+    the shipped value is gone from it. A fallback for a value the tool cannot use
+    needs exactly that value, so it is read from the shipped files themselves.
+
+    Args:
+        section: The top-level table, ``lib_log_rich`` for example.
+
+    Returns:
+        A fresh copy of the table, empty when the package ships none.
+
+    Example:
+        >>> shipped_section("lib_log_rich")["console_level"]
+        'INFO'
+        >>> shipped_section("no_such_section")
+        {}
+    """
+    table = _shipped_tables().get(section)
+    if not isinstance(table, Mapping):
+        return {}
+    return copy.deepcopy(dict(cast("Mapping[str, object]", table)))
+
+
 __all__ = [
     "get_config",
     "get_default_config_path",
+    "shipped_section",
     "validate_profile",
 ]
