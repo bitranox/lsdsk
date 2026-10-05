@@ -1379,22 +1379,68 @@ class TestTheTopologyPageCanBeMovedThrough:
 
     @pytest.mark.os_agnostic
     @pytest.mark.asyncio
-    async def test_the_density_key_keeps_the_cursor_where_the_reader_left_it(self) -> None:
-        """A redraw that throws the cursor back to the top loses the reader's place."""
-        app = LsdskApp(inventory())
+    async def test_the_density_key_keeps_the_cursor_on_the_same_device(self) -> None:
+        """A density change keeps the DEVICE under the cursor, not its line number.
+
+        Keeping the index put the highlight and the detail panel on whichever
+        device the new density happened to draw at that line, which read as the
+        device having moved under another port. windows-ahci is the capture whose
+        reduced densities differ, so the device's line really does move here; the
+        control below requires that, or keeping the index would pass too.
+        """
+        app = LsdskApp(inventory_from("windows-ahci.json"))
         async with app.run_test(size=(140, 45)) as pilot:
             await pilot.press("1")
             await pilot.pause()
-            for _step in range(3):
-                await pilot.press("down")
+            options = app.query_one("#tree-lines", OptionList)
+            chosen = max(index for index, line in enumerate(app.tree_lines) if isinstance(line.subject, PciNode))
+            device = app.tree_lines[chosen].subject
+            options.highlighted = chosen
+            await pilot.pause()
+            positions = [chosen]
+            for _press in range(3):
+                await pilot.press("d")
                 await pilot.pause()
-            before = app.query_one("#tree-lines", OptionList).highlighted
+                highlighted = options.highlighted
+                assert highlighted is not None
+                assert app.tree_lines[highlighted].subject == device, "the cursor left the device on a density change"
+                positions.append(highlighted)
+
+        assert len(set(positions)) > 1, f"the device never changed line ({positions}), so this proved nothing"
+
+    @pytest.mark.os_agnostic
+    @pytest.mark.asyncio
+    async def test_a_device_the_new_density_drops_hands_the_cursor_to_its_drawn_ancestor(self) -> None:
+        """The nearest ancestor still drawn is the reader's place; the top of the list is not."""
+        app = LsdskApp(inventory_from("windows-ahci.json"))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.press("1")
+            await pilot.pause()
+            least = {line.subject for line in app.tree_lines if isinstance(line.subject, PciNode)}
+            for _press in range(2):
+                await pilot.press("d")
+                await pilot.pause()
+            by_address = {node.address: node for node in app.inventory.pci_tree}
+            options = app.query_one("#tree-lines", OptionList)
+            dropped = next(
+                index
+                for index, line in enumerate(app.tree_lines)
+                if isinstance(line.subject, PciNode)
+                and line.subject not in least
+                and by_address.get(line.subject.parent_address or "") in least
+            )
+            device = app.tree_lines[dropped].subject
+            assert isinstance(device, PciNode)
+            options.highlighted = dropped
+            await pilot.pause()
             await pilot.press("d")
             await pilot.pause()
-            after = app.query_one("#tree-lines", OptionList).highlighted
+            highlighted = options.highlighted
+            assert highlighted is not None
+            landed = app.tree_lines[highlighted].subject
 
-        assert before is not None and before > 0
-        assert after == before, f"the cursor moved from {before} to {after} on a density change"
+        assert isinstance(landed, PciNode)
+        assert landed.address == device.parent_address, f"{device.address} handed the cursor to {landed.address}"
 
 
 @pytest.mark.os_agnostic

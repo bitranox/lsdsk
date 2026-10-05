@@ -841,6 +841,11 @@ class LsdskApp(App[None]):
             thresholds=self.thresholds,
         )
         options = self.query_one("#tree-lines", OptionList)
+        # Read before the lines are replaced: it is the DEVICE that is kept
+        # across the redraw, never the line number. A density change draws a
+        # different set of lines, and keeping the index put the highlight and
+        # the detail panel on whatever the new density drew there.
+        kept = None if options.highlighted is None else self._subject_at(options.highlighted)
         options.display = bool(lines)
         self.query_one("#tree-fallback", VerticalScroll).display = not lines
         self._tree_lines = lines
@@ -851,9 +856,6 @@ class LsdskApp(App[None]):
                 )
             )
             return
-        # Kept across the redraw, or a resize and a density change would both
-        # throw the reader back to the first device every time.
-        keep = options.highlighted
         options.clear_options()
         options.add_options(
             [
@@ -861,8 +863,9 @@ class LsdskApp(App[None]):
                 for index, line in enumerate(lines)
             ]
         )
-        if keep is not None and keep < len(lines) and lines[keep].subject is not None:
-            options.highlighted = keep
+        place = None if kept is None else self._line_of(kept, lines)
+        if place is not None:
+            options.highlighted = place
             return
         # Opened, or reopened on a line that is gone: start on the first thing
         # there is to say something about rather than on nothing, so the panel
@@ -870,6 +873,32 @@ class LsdskApp(App[None]):
         first = next((index for index, line in enumerate(lines) if line.subject is not None), None)
         if first is not None:
             options.highlighted = first
+
+    def _line_of(self, subject: FabricSubject, lines: Sequence[FabricLine]) -> int | None:
+        """Where the reader's place is among freshly drawn lines.
+
+        The subject's own line where it is still drawn; for a device the new
+        density dropped, the line of its nearest ancestor that is drawn, since
+        that is where the device would sit; otherwise nothing, and the caller
+        starts at the top.
+
+        Args:
+            subject: What the cursor was on before the redraw.
+            lines: The lines now drawn.
+
+        Returns:
+            The option index to highlight, or ``None``.
+        """
+        drawn = {line.subject: index for index, line in enumerate(lines) if line.subject is not None}
+        if subject in drawn:
+            return drawn[subject]
+        if not isinstance(subject, PciNode):
+            return None
+        by_address = {node.address: node for node in self.inventory.pci_tree}
+        parent = by_address.get(subject.parent_address or "")
+        while parent is not None and parent not in drawn:
+            parent = by_address.get(parent.parent_address or "")
+        return None if parent is None else drawn[parent]
 
     def _tree_width(self) -> int:
         """Columns the fabric may draw in, as the list will actually offer them.
