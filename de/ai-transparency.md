@@ -81,6 +81,9 @@ mit erhöhten Rechten:
   Übertragungswege dort: NVMe, SATA und eine USB-Platte mit 10 Gb/s. Die
   eingecheckte Aufnahme `windows-usb-uas` stammt von diesem Rechner.
 
+Ebenfalls auf echter Hardware geprüft: ein Laufwerk nahe am Ende seiner
+Lebensdauer.
+
 Nicht geprüft:
 
 - Unter Windows kein Feld-für-Feld-Vergleich gegen `smartctl`, wie er unter
@@ -88,8 +91,8 @@ Nicht geprüft:
   weil Windows für eine Bridge keine veröffentlicht; eine langsame Verbindung
   wird dort gemeldet, ohne ihrem Anschluss angelastet zu werden. Die übrigen
   Windows-Aufnahmen hier sind virtuelle Maschinen.
-- Kein SAS-Expander, kein Hardware-RAID-Controller, und kein Laufwerk nahe am
-  Ende seiner Lebensdauer. Diese Hardware stand nicht zur Verfügung.
+- Kein SAS-Expander und kein Hardware-RAID-Controller. Diese Hardware stand
+  nicht zur Verfügung.
 
 ## Es selbst nachprüfen
 

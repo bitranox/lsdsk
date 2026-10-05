@@ -66,14 +66,15 @@ Checked on a physical Windows machine, a desktop Intel Z790 board, run elevated:
   read its health over all three transports there: NVMe, SATA, and a 10 Gb/s USB disk. The
   committed `windows-usb-uas` capture comes from that machine.
 
+Also checked on real hardware: a drive close to the end of its life.
+
 Not checked:
 
 - On Windows, no field-by-field comparison against `smartctl`, as was done on Linux. And no
   Windows PCIe bridge capability at all, because Windows publishes none for a bridge, so a slow
   link there is reported without being blamed on its port. The other Windows captures here are
   virtual machines.
-- No SAS expander, no hardware RAID controller, and no drive close to end of life. That hardware
-  was not available.
+- No SAS expander and no hardware RAID controller. That hardware was not available.
 
 ## Checking it yourself
 
