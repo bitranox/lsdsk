@@ -183,6 +183,24 @@ def test_every_function_of_a_bridge_card_contributes_what_it_carries() -> None:
     assert carrying_clause(FabricLink(port=PORT, functions=(first, second)), _tree(*tree)) == ", carrying 2x NIC"
 
 
+@pytest.mark.os_agnostic
+def test_what_hangs_below_a_device_that_is_not_a_bridge_is_not_carried_by_the_card() -> None:
+    """A card carries what it reaches through bridges alone, as the walk below it always did.
+
+    An Intel VMD is a storage-class device that re-enumerates the drives behind
+    it under ports of its own, so a VMD behind a switch card has children. The
+    card carries the VMD; the VMD's drives are the VMD's business, and an index
+    that answers "below" by position alone would hand them to the card too.
+    """
+    vmd = _below(LEG_A.address, "0000:03:00.0", "VMD", 0x010400)
+    vmd_port = _below(vmd.address, "10000:e0:06.0", "VMD port", 0x060400)
+    tree = (ROOT, PORT, SWITCH, LEG_A, vmd, vmd_port, _below(vmd_port.address, "10000:e1:00.0", "NVMe"))
+    assert carrying_clause(FabricLink(port=PORT, functions=(SWITCH,)), _tree(*tree)) == ", carrying VMD"
+    # The control: the same drive reached through bridges alone is carried.
+    direct = (ROOT, PORT, SWITCH, LEG_A, _below(LEG_A.address, "0000:03:00.0", "NVMe"))
+    assert carrying_clause(FabricLink(port=PORT, functions=(SWITCH,)), _tree(*direct)) == ", carrying NVMe"
+
+
 LANES = "runs on fewer lanes than both ends support"
 CAPPED = "is capped by its slot"
 

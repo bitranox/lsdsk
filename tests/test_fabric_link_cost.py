@@ -27,9 +27,16 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 #: How many times the doubled machine may cost the single one. A rebuild of the
-#: tree per link multiplied the work by 3.1 to 3.8 on a doubling at these sizes;
-#: a walk of each link's own subtree doubles it.
+#: tree per link multiplied the work by 3.1 to 3.8 on a doubling; the subtree
+#: index doubles it exactly.
 _ACCEPTABLE_GROWTH = 2.5
+
+#: The machine sizes doubled between. Large enough that a children lookup
+#: scanning the whole tree on every call - 2.35 times the work at 150 cards,
+#: under the ceiling - shows as 2.92 (cards) and 2.75 (chain) here: a
+#: quadratic term has to outgrow the linear work of ``diagnose`` around it
+#: before a ratio can see it.
+_SINGLE, _DOUBLED = 500, 1000
 
 _PORT = PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8)
 _CAPPED_CARD = PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=16)
@@ -98,9 +105,90 @@ def test_doubling_the_cards_does_not_quadruple_the_fabric_grading(
     build: Callable[[int], Inventory], *, capped: bool
 ) -> None:
     """Twice the cards costs about twice the work, whether or not a card earns a hint."""
-    single = _work_to_diagnose(build(150), capped=capped)
-    doubled = _work_to_diagnose(build(300), capped=capped)
+    single = _work_to_diagnose(build(_SINGLE), capped=capped)
+    doubled = _work_to_diagnose(build(_DOUBLED), capped=capped)
     assert doubled / single <= _ACCEPTABLE_GROWTH, (
-        f"doubling 150 cards took {doubled} steps against {single}, "
+        f"doubling {_SINGLE} cards took {doubled} steps against {single}, "
         f"{doubled / single:.2f} times the work: a rule is walking the whole tree per link"
+    )
+
+
+_SWITCH_LEG = PcieLink(current_speed_gtps=8.0, current_width=8, max_speed_gtps=8.0, max_width=8)
+
+
+def _chain(depth: int) -> Inventory:
+    """``depth`` capped switch cards, each plugged into a downstream port of the one above, a GPU at the bottom.
+
+    Every card is a graded link and every one is capped, so each asks for its
+    title (what it carries) and for a free slot (what is part of it) - and
+    each of those is the whole chain below it.
+    """
+    tree = [PciNode(address="0000:00", name="root bus")]
+    slots: list[PcieSlot] = []
+    port, kind = "0000:00:01.0", PciPortKind.ROOT
+    tree.append(
+        PciNode(
+            address=port,
+            name="root port",
+            class_code=0x060400,
+            parent_address="0000:00",
+            port_kind=kind,
+            link=_PORT,
+            pcie_capability_present=True,
+        )
+    )
+    for level in range(depth):
+        card, leg = f"{level + 1:04x}:01:00.0", f"{level + 1:04x}:02:00.0"
+        slots.append(PcieSlot(address=port, link=_PORT, occupied=True, occupant_address=card))
+        tree.append(
+            PciNode(
+                address=card,
+                name="switch card",
+                class_code=0x060400,
+                parent_address=port,
+                port_kind=PciPortKind.SWITCH_UPSTREAM,
+                link=_CAPPED_CARD,
+                pcie_capability_present=True,
+            )
+        )
+        tree.append(
+            PciNode(
+                address=leg,
+                name="switch leg",
+                class_code=0x060400,
+                parent_address=card,
+                port_kind=PciPortKind.SWITCH_DOWNSTREAM,
+                link=_SWITCH_LEG,
+                pcie_capability_present=True,
+            )
+        )
+        slots.append(PcieSlot(address=card, link=_CAPPED_CARD, occupied=True, occupant_address=leg))
+        port = leg
+    tree.append(PciNode(address="ffff:01:00.0", name="GPU", class_code=0x030000, parent_address=port))
+    slots.append(PcieSlot(address=port, link=_SWITCH_LEG, occupied=True, occupant_address="ffff:01:00.0"))
+    return Inventory(hostname="chain", pci_tree=tuple(tree), slots=tuple(slots))
+
+
+def _work_to_grade_the_chain(depth: int) -> int:
+    findings, work = work_to_run(lambda: diagnose(_chain(depth)))
+    capped = [finding for finding in findings if "is capped by its slot" in finding.title]
+    # The controls: every card was graded as capped, and every title walked
+    # the chain to its bottom, so a walk cut short cannot pass as a cheap one.
+    assert len(capped) == depth, f"{len(capped)} of {depth} cards were graded as capped"
+    assert all(", carrying GPU," in finding.title for finding in capped), capped[0].title
+    return work
+
+
+@pytest.mark.os_agnostic
+def test_doubling_the_depth_of_a_chain_of_switch_cards_does_not_quadruple_the_grading() -> None:
+    """Each card's subtree is the rest of the chain, so a walk per card made the grading quadratic in depth.
+
+    Measured on a crafted capture before the subtree index: 4000 nested capped
+    switch cards took 9.2 s.
+    """
+    single = _work_to_grade_the_chain(_SINGLE)
+    doubled = _work_to_grade_the_chain(_DOUBLED)
+    assert doubled / single <= _ACCEPTABLE_GROWTH, (
+        f"doubling the chain from {_SINGLE} cards took {doubled} steps against {single}, "
+        f"{doubled / single:.2f} times the work: a rule walks each card's whole subtree"
     )

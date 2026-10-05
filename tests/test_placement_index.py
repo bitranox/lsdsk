@@ -298,7 +298,7 @@ _ADMITS: tuple[Callable[[PcieSlot], bool], ...] = (
     besides=st.one_of(st.none(), _ADDRESS),
     floor=st.sampled_from([0.0, 0.25, 3.94, 7.88]),
     admits=st.sampled_from(_ADMITS),
-    below=st.frozensets(_ADDRESS, max_size=3),
+    inside=st.frozensets(_ADDRESS, max_size=3),
 )
 @settings(max_examples=500, deadline=None)
 def test_the_candidates_hold_every_port_a_search_could_choose(
@@ -307,20 +307,20 @@ def test_the_candidates_hold_every_port_a_search_could_choose(
     besides: str | None,
     floor: float,
     admits: Callable[[PcieSlot], bool],
-    below: frozenset[str],
+    inside: frozenset[str],
 ) -> None:
     """A search over one port per group names the port a search over all of them names.
 
-    ``below`` is a card's own subtree, skipped port by port: dropping a whole
+    ``inside`` is a card's own functions, skipped port by port: dropping a whole
     group because its first port is the card's own would lose an equal port
     elsewhere on the board.
     """
     machine = Inventory(hostname="generated", slots=ports)
-    candidates = machine.placement_candidates(besides=besides, admits=admits, below=below)
+    candidates = machine.placement_candidates(besides=besides, admits=admits, inside=inside)
     assert _first_better_than(
-        candidates, card, floor=floor, besides=besides, admits=admits, below=below
-    ) is _first_better_than(ports, card, floor=floor, besides=besides, admits=admits, below=below)
-    if admits is _ADMITS[0] and not below:
+        candidates, card, floor=floor, besides=besides, admits=admits, below=inside
+    ) is _first_better_than(ports, card, floor=floor, besides=besides, admits=admits, below=inside)
+    if admits is _ADMITS[0] and not inside:
         assert _most_capable(candidates, card, besides=besides) is _most_capable(ports, card, besides=besides)
 
 

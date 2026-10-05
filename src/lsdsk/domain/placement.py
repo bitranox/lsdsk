@@ -31,16 +31,17 @@ class Seat(DomainModel, frozen=True):
             identified.
         port_address: The port's PCI address, which a search for a better seat
             never offers back.
-        below: Addresses that are part of the card - its own functions and
-            whatever sits below them, such as a switch card's own downstream
-            ports - which a search never offers either: all of them reach the
-            machine through the card's own uplink, so none can carry it more.
+        own_functions: The card's own function addresses. A search never
+            offers one of them, nor anything below them - a switch card's own
+            downstream ports, a bridge card's second function: all of them
+            reach the machine through the card's own uplink, so none can carry
+            it more.
     """
 
     link: PcieLink
     port: PcieLink | None = None
     port_address: OptionalDeviceText = None
-    below: frozenset[str] = frozenset()
+    own_functions: frozenset[str] = frozenset()
 
 
 def seat_of(controller: Controller) -> Seat:
@@ -144,7 +145,7 @@ def best_slot(seat: Seat, inventory: Inventory, candidates: Callable[[PcieSlot],
     # seat it is already in as somewhere better to be. The machine hands over
     # one port per group of interchangeable ones rather than every port, which
     # is what keeps this search from costing the whole port list per card.
-    for slot in inventory.placement_candidates(besides=seat.port_address, admits=candidates, below=seat.below):
+    for slot in inventory.placement_candidates(besides=seat.port_address, admits=candidates, inside=seat.own_functions):
         gain = gain_in(slot, seat)
         if gain is not None and gain > best_bandwidth:
             best, best_bandwidth = slot, gain

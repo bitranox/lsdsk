@@ -12,6 +12,7 @@ System Role:
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from functools import cached_property
 from math import inf, isnan
 from typing import TYPE_CHECKING, NamedTuple, Self
@@ -1606,6 +1607,119 @@ class _FirstAbove:
         return None
 
 
+class _EndDevice(NamedTuple):
+    """One device at the end of the fabric, as a card's title names what it carries.
+
+    Attributes:
+        position: Where its first function stands in the tree's depth-first order.
+        gate: The position of the nearest node at or above its parent that is
+            not a bridge, or ``-1`` where there is none. A card whose own
+            function stands below that node does not reach this device through
+            bridges alone, so the device is not one the card carries.
+        key: What makes two functions one device: the port above it where that
+            port carries one device, otherwise its bus and device number.
+        node: The function that stands for the device.
+    """
+
+    position: int
+    gate: int
+    key: str
+    node: PciNode
+
+
+class _PciTour:
+    """The PCI tree walked once, depth first, so "below" is a test of two numbers.
+
+    Each node gets the position it was entered at and the last position inside
+    it, so a node lies below another exactly when its position falls in the
+    other's span. Asked per graded card, a walk of the card's own subtree made
+    a chain of cards nested inside each other cost the square of its depth:
+    measured, 4000 nested switch cards took 9.2 s.
+
+    A node is walked once, whatever a crafted tree claims: a parent missing
+    from the tree, or a cycle, starts a walk of its own rather than repeating
+    or losing one.
+    """
+
+    def __init__(self, inventory: Inventory) -> None:
+        self.spans: dict[str, tuple[int, int]] = {}
+        self._entries: list[_EndDevice] = []
+        present = {node.address for node in inventory.pci_tree}
+        starts = [node for node in inventory.pci_tree if node.parent_address not in present]
+        for start in (*starts, *inventory.pci_tree):
+            if start.address not in self.spans:
+                self._walk(start, inventory)
+        self._positions = [entry.position for entry in self._entries]
+
+    def _walk(self, start: PciNode, inventory: Inventory) -> None:
+        """Walk one tree from ``start`` with an explicit stack, recording spans and end devices."""
+        position = len(self.spans)
+        self.spans[start.address] = (position, position)
+        # Each frame: the node, its children still to visit, and the position of
+        # the nearest non-bridge node at or above it.
+        stack = [(start, iter(inventory.pci_children_of(start.address)), self._gate_of(start, position, -1))]
+        while stack:
+            parent, children, gate = stack[-1]
+            child = next(children, None)
+            if child is None:
+                stack.pop()
+                enter, _ = self.spans[parent.address]
+                self.spans[parent.address] = (enter, len(self.spans) - 1)
+                continue
+            if child.address in self.spans:
+                continue
+            position = len(self.spans)
+            self.spans[child.address] = (position, position)
+            self._note_end_device(child, parent=parent, position=position, gate=gate)
+            stack.append((child, iter(inventory.pci_children_of(child.address)), self._gate_of(child, position, gate)))
+
+    @staticmethod
+    def _gate_of(node: PciNode, position: int, above: int) -> int:
+        """The nearest non-bridge position at or above a node: its own, when it is not a bridge."""
+        return above if node.is_bridge_family else position
+
+    def _note_end_device(self, node: PciNode, *, parent: PciNode, position: int, gate: int) -> None:
+        """Record a node that ends the fabric: not a bridge, and the first function of its device."""
+        if node.is_bridge_family or node.address.rpartition(".")[2].partition("#")[0] != "0":
+            return
+        # A PCIe port carries ONE device, even where ARI numbers its functions
+        # on into device 01 and gives it a second "function 0"; on a
+        # conventional bus each device number is a device of its own.
+        key = parent.address if parent.faces_downstream else node.address.rpartition(".")[0]
+        self._entries.append(_EndDevice(position, gate, key, node))
+
+    def holds(self, roots: frozenset[str], address: str) -> bool:
+        """Whether an address is one of ``roots`` or anywhere below one of them."""
+        if address in roots:
+            return True
+        span = self.spans.get(address)
+        if span is None:
+            return False
+        at = span[0]
+        return any(self.spans[root][0] <= at <= self.spans[root][1] for root in roots if root in self.spans)
+
+    def end_devices_below(self, functions: Sequence[str]) -> list[PciNode]:
+        """The devices at the end of the fabric that some of ``functions`` reach through bridges alone.
+
+        Costs the end devices inside the functions' spans, found by bisection,
+        rather than every node below them.
+        """
+        found: dict[str, PciNode] = {}
+        for function in functions:
+            span = self.spans.get(function)
+            if span is None:
+                continue
+            enter, last = span
+            low, high = bisect_right(self._positions, enter), bisect_right(self._positions, last)
+            for entry in self._entries[low:high]:
+                if entry.gate > enter:
+                    continue
+                held = found.get(entry.key)
+                if held is None or entry.node.address < held.address:
+                    found[entry.key] = entry.node
+        return sorted(found.values(), key=lambda node: node.address)
+
+
 class Inventory(DomainModel, frozen=True):
     """Everything one scan found on one machine.
 
@@ -1756,9 +1870,9 @@ class Inventory(DomainModel, frozen=True):
     def _pci_children(self) -> Mapping[str, tuple[PciNode, ...]]:
         """The PCI tree's nodes keyed by their parent's address, once per machine.
 
-        The fabric-link rules walk below every graded card, and rebuilding this
-        map per card made grading a machine cost the product of its links and
-        its devices.
+        The subtree index walks the whole tree through it, and rebuilding this
+        map per node, or scanning the tree per lookup, made grading a machine
+        cost the product of its links and its devices.
 
         Returns:
             Each parent address against the nodes directly below it.
@@ -1768,6 +1882,54 @@ class Inventory(DomainModel, frozen=True):
             if node.parent_address is not None:
                 grouped.setdefault(node.parent_address, []).append(node)
         return {parent: tuple(nodes) for parent, nodes in grouped.items()}
+
+    def pci_subtree_holds(self, roots: frozenset[str], address: str) -> bool:
+        """Whether an address is one of ``roots`` or anywhere below one of them in the PCI tree.
+
+        Args:
+            roots: The addresses whose subtrees are asked about.
+            address: The address to place.
+
+        Returns:
+            Whether it is a root or lies below one; an address absent from the
+            tree lies below nothing.
+
+        Example:
+            >>> bus = PciNode(address="0000:00", name="root bus")
+            >>> card = PciNode(address="0000:00:02.0", name="card", parent_address="0000:00")
+            >>> machine = Inventory(hostname="h", pci_tree=(bus, card))
+            >>> machine.pci_subtree_holds(frozenset({"0000:00"}), "0000:00:02.0")
+            True
+            >>> machine.pci_subtree_holds(frozenset({"0000:00:02.0"}), "0000:00")
+            False
+        """
+        return self._pci_tour.holds(roots, address)
+
+    def pci_end_devices_below(self, functions: Sequence[str]) -> list[PciNode]:
+        """The devices at the end of the fabric some of ``functions`` reach through bridges alone.
+
+        A device is named once, by its lowest first function, and only where
+        every node between one of ``functions`` and it is a bridge: what hangs
+        below a device that is not a bridge is that device's business.
+
+        Args:
+            functions: The addresses of a card's own functions.
+
+        Returns:
+            One node per device, in address order.
+
+        Example:
+            >>> bus = PciNode(address="0000:00", name="root bus")
+            >>> card = PciNode(address="0000:00:02.0", name="card", parent_address="0000:00")
+            >>> [node.name for node in Inventory(hostname="h", pci_tree=(bus, card)).pci_end_devices_below(["0000:00"])]
+            ['card']
+        """
+        return self._pci_tour.end_devices_below(functions)
+
+    @cached_property
+    def _pci_tour(self) -> _PciTour:
+        """The PCI tree walked once, depth first, once per machine."""
+        return _PciTour(self)
 
     @cached_property
     def _slot_by_address(self) -> Mapping[str, PcieSlot]:
@@ -1906,7 +2068,7 @@ class Inventory(DomainModel, frozen=True):
         return {bus: tuple(slots) for bus, slots in grouped.items()}
 
     def placement_candidates(
-        self, *, besides: str | None, admits: Callable[[PcieSlot], bool], below: frozenset[str] = frozenset()
+        self, *, besides: str | None, admits: Callable[[PcieSlot], bool], inside: frozenset[str] = frozenset()
     ) -> tuple[PcieSlot, ...]:
         """Return every port a search for a better seat could choose, one per group of interchangeable ports.
 
@@ -1931,13 +2093,14 @@ class Inventory(DomainModel, frozen=True):
             besides: The address of the port the searching controller already
                 sits behind, which is never a candidate.
             admits: The search's own test of a port.
-            below: Addresses that are part of the searching card, which are never
-                candidates either. Skipped port by port, like ``besides``, so
+            inside: The searching card's own functions: a port at one of them
+                or anywhere below one is part of the card, so never a
+                candidate either. Skipped port by port, like ``besides``, so
                 an equal port elsewhere in the same group still answers.
 
         Returns:
             The first admitted port of each group that is neither at ``besides``
-            nor ``below``, in inventory order.
+            nor ``inside`` the card, in inventory order.
 
         Example:
             >>> link = PcieLink(max_speed_gtps=8.0, max_width=4)
@@ -1956,7 +2119,12 @@ class Inventory(DomainModel, frozen=True):
             if not admits(group[0].slot):
                 continue
             first = next(
-                (placed for placed in group if placed.slot.address != besides and placed.slot.address not in below),
+                (
+                    placed
+                    for placed in group
+                    if placed.slot.address != besides
+                    and not (inside and self.pci_subtree_holds(inside, placed.slot.address))
+                ),
                 None,
             )
             if first is not None:

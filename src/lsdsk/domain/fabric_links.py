@@ -46,11 +46,6 @@ class FabricLink(DomainModel, frozen=True):
         return min(self.functions, key=lambda node: node.address)
 
 
-def _device_of(address: str) -> str:
-    """The bus:device part of an address, which every function of it shares."""
-    return address.rpartition(".")[0]
-
-
 def _graded_elsewhere(inventory: Inventory) -> frozenset[str]:
     """Addresses a storage rule already grades: controllers, and what a drive hangs off."""
     hosts = {disk.controller_address for disk in inventory.disks if disk.controller_address is not None}
@@ -90,55 +85,6 @@ def fabric_links(inventory: Inventory) -> tuple[FabricLink, ...]:
 _NAMES_SPELLED_OUT = 2
 
 
-def _is_function_zero(node: PciNode) -> bool:
-    """Whether a node is a device's first function, which stands for the device."""
-    return node.address.rpartition(".")[2].partition("#")[0] == "0"
-
-
-def _devices_below(link: FabricLink, inventory: Inventory) -> list[PciNode]:
-    """The end devices below the card, walked from an explicit stack, first functions only.
-
-    Walks the card's own subtree through the machine's children index, so a
-    card costs what sits below it rather than the whole tree.
-    """
-    found: dict[str, PciNode] = {}
-    stack = list(link.functions)
-    while stack:
-        parent = stack.pop()
-        for child in inventory.pci_children_of(parent.address):
-            if child.is_bridge_family:
-                stack.append(child)
-                continue
-            if not _is_function_zero(child):
-                continue
-            # A PCIe port carries ONE device, even where ARI numbers its
-            # functions on into device 01 and gives it a second "function 0";
-            # on a conventional bus each device number is a device of its own.
-            device = parent.address if parent.faces_downstream else _device_of(child.address)
-            if device not in found or child.address < found[device].address:
-                found[device] = child
-    return sorted(found.values(), key=lambda node: node.address)
-
-
-def _addresses_of_the_card(link: FabricLink, inventory: Inventory) -> frozenset[str]:
-    """Every address that is part of the card: its own functions and everything below them.
-
-    The functions are included, not only what hangs below them: on Linux every
-    bridge-class device is a port record, so a bridge card is a free "slot" of
-    its own, and a two-function bridge chip's second function is a free one
-    beside it. All of them share the card's link, so none is somewhere else to
-    put the card.
-    """
-    found = {function.address for function in link.functions}
-    stack = list(found)
-    while stack:
-        for child in inventory.pci_children_of(stack.pop()):
-            if child.address not in found:
-                found.add(child.address)
-                stack.append(child.address)
-    return frozenset(found)
-
-
 def carrying_clause(link: FabricLink, inventory: Inventory) -> str:
     """What a bridge or switch card carries, for the title of its finding.
 
@@ -154,7 +100,8 @@ def carrying_clause(link: FabricLink, inventory: Inventory) -> str:
         ``""`` for a card with nothing behind it, otherwise ``", carrying "``
         and the names, at most two spelled out and the rest counted.
     """
-    counted = Counter(node.name for node in _devices_below(link, inventory))
+    functions = [function.address for function in link.functions]
+    counted = Counter(node.name for node in inventory.pci_end_devices_below(functions))
     if not counted:
         return ""
     names = [f"{count}x {name}" if count > 1 else name for name, count in counted.items()]
@@ -265,7 +212,7 @@ def _where_it_could_go(link: FabricLink, inventory: Inventory) -> str:
         link=link.card.link,
         port=link.port.link,
         port_address=link.port.address,
-        below=_addresses_of_the_card(link, inventory),
+        own_functions=frozenset(function.address for function in link.functions),
     )
     free = free_slot_for(seat, inventory)
     if free is not None:
