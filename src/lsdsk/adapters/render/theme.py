@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Final, NamedTuple
 
 from ...domain.enums import BusType, DiskKind, PciPortKind, Severity
 from ...domain.models import PcieLink, pcie_generation
+from ...domain.pcie_text import format_bytes_rate
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -833,23 +834,28 @@ def format_bandwidth(gbps: float | None) -> str:
     One spelling for the whole tool, because a figure written two ways in one
     view reads as two measurements. Never in bits: the link shapes it stands
     beside are already a rate, and ``6G`` next to ``0.60 GB/s`` is one link
-    written on two scales eight times apart.
+    written on two scales eight times apart. The unit is chosen by the
+    domain's :func:`format_bytes_rate`, which a finding's sentence writes
+    through too, so a USB 1 figure reads ``1.50 MB/s`` in both rather than a
+    zero in GB/s.
 
     Args:
-        gbps: The usable rate in GIGABITS per second, or ``None``.
+        gbps: The usable rate in GIGABYTES per second, or ``None``.
 
     Returns:
-        The figure in GB/s, or the not-read marker.
+        The figure in GB/s (MB/s below a hundredth of one), or the not-read marker.
 
     Example:
         >>> format_bandwidth(7.876)
         '7.88 GB/s'
         >>> format_bandwidth(0.6)
         '0.60 GB/s'
+        >>> format_bandwidth(0.0015)
+        '1.50 MB/s'
         >>> format_bandwidth(None)
         '-'
     """
-    return "-" if gbps is None else f"{gbps:.2f} GB/s"
+    return "-" if gbps is None else format_bytes_rate(gbps)
 
 
 def with_bandwidth(figure: str, gbps: float | None) -> str:

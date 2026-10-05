@@ -17,9 +17,42 @@ from .models import UsbSpeed, pcie_generation
 #: ``tests/test_one_spelling_for_a_generation.py``.
 _NO_LINK_TRAINED = "none"
 
+#: Below this many GB/s two decimals of GB/s round to zero, so the figure is
+#: written in MB/s instead: a full-speed USB link carries 0.0015 GB/s, and
+#: ``0.00 GB/s`` beside it said a working link carried nothing.
+_SMALLEST_GBYTES_FIGURE = 0.01
+
+_MBYTES_PER_GBYTE = 1000
+
+
+def format_bytes_rate(value: float) -> str:
+    """Write a bandwidth given in GB/s, in GB/s or - below a hundredth - in MB/s.
+
+    The one place the unit is chosen: a finding's sentence and the render
+    layer's column both write through it, so the two cannot pick different
+    units for one figure.
+
+    Args:
+        value: The bandwidth in GB/s.
+
+    Returns:
+        The figure with two decimals and its unit.
+
+    Example:
+        >>> format_bytes_rate(7.876)
+        '7.88 GB/s'
+        >>> format_bytes_rate(0.0015)
+        '1.50 MB/s'
+        >>> format_bytes_rate(0.0)
+        '0.00 GB/s'
+    """
+    if 0 < value < _SMALLEST_GBYTES_FIGURE:
+        return f"{value * _MBYTES_PER_GBYTE:.2f} MB/s"
+    return f"{value:.2f} GB/s"
+
 
 def format_gbytes(value: float | None) -> str:
-    """Render a GB/s figure for a message, or a placeholder when unknown.
+    """Render a bandwidth for a message, or a placeholder when unknown.
 
     Args:
         value: The bandwidth in GB/s, or ``None`` if unread.
@@ -33,7 +66,7 @@ def format_gbytes(value: float | None) -> str:
         >>> format_gbytes(None)
         'unknown'
     """
-    return "unknown" if value is None else f"{value:.2f} GB/s"
+    return "unknown" if value is None else format_bytes_rate(value)
 
 
 def format_pcie_sentence(speed_gtps: float | None, width: int | None) -> str:
@@ -103,4 +136,4 @@ def format_usb_sentence(speed: UsbSpeed) -> str:
     return f"{speed.figure} ({format_gbytes(speed.bandwidth_gbps)})"
 
 
-__all__ = ["format_gbytes", "format_pcie_sentence", "format_usb_sentence"]
+__all__ = ["format_bytes_rate", "format_gbytes", "format_pcie_sentence", "format_usb_sentence"]
