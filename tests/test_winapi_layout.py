@@ -24,6 +24,7 @@ import ctypes
 import importlib
 import pkgutil
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -36,10 +37,14 @@ from lsdsk.adapters.hw.windows import winapi as api
 #: that Linux and macOS use. Matched by NAME in the source, never by the class:
 #: the fixed-width names are aliases of these same classes on one platform or
 #: the other, so the class cannot tell the trap from the correct declaration.
-FOLLOWING_THE_MACHINE = frozenset({"c_ulong", "c_long", "c_ulonglong", "c_longlong", "c_size_t"})
+#: ``c_wchar`` is the C ``wchar_t``: two bytes on Windows and four on Linux and
+#: macOS, so a WCHAR array declared with it is twice the size off Windows.
+FOLLOWING_THE_MACHINE = frozenset({"c_ulong", "c_long", "c_ulonglong", "c_longlong", "c_size_t", "c_wchar"})
 
 #: The ``ctypes.wintypes`` names, every one taken from the running machine.
-FROM_WINTYPES = frozenset({"DWORD", "ULONG", "BOOL", "BOOLEAN", "WORD", "USHORT", "UINT", "INT", "LONG", "ULONG64"})
+FROM_WINTYPES = frozenset(
+    {"DWORD", "ULONG", "BOOL", "BOOLEAN", "WORD", "USHORT", "UINT", "INT", "LONG", "ULONG64", "WCHAR"}
+)
 
 #: Structures whose every field is a fixed width, so the size is the same
 #: number on any machine Windows runs on.
@@ -157,13 +162,84 @@ def test_a_usb_hub_ioctl_code_is_built_from_its_function_number(name: str, funct
     assert getattr(api, name) == expected
 
 
+def _names_fields(target: ast.expr) -> bool:
+    """Whether an assignment target is ``_fields_`` - in a class body, or set on the class afterwards."""
+    return getattr(target, "id", "") == "_fields_" or (isinstance(target, ast.Attribute) and target.attr == "_fields_")
+
+
 def _fields_value(node: ast.AST) -> ast.expr | None:
     """The value ``node`` assigns to a structure's ``_fields_``, annotated or not; None for anything else."""
-    if isinstance(node, ast.Assign) and any(getattr(target, "id", "") == "_fields_" for target in node.targets):
+    if isinstance(node, ast.Assign) and any(_names_fields(target) for target in node.targets):
         return node.value
-    if isinstance(node, ast.AnnAssign) and getattr(node.target, "id", "") == "_fields_":
+    if isinstance(node, ast.AnnAssign) and _names_fields(node.target):
         return node.value
     return None
+
+
+#: What a top-level name in one module stands for: a dotted ``ctypes`` path such
+#: as ``ctypes.c_ulong`` or ``ctypes.wintypes``, a sibling module of the package
+#: as ``.winapi``, or the expression a module-level alias assigns.
+_Binding = str | ast.expr
+
+
+def _bindings(source: str) -> dict[str, _Binding]:
+    """Every top-level import and plain assignment in ``source``, by the name it binds."""
+    bound: dict[str, _Binding] = {}
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                # `import ctypes.wintypes` binds `ctypes`; with `as` it binds the full path.
+                bound[alias.asname or alias.name.split(".")[0]] = (
+                    alias.name if alias.asname else alias.name.split(".")[0]
+                )
+        elif isinstance(node, ast.ImportFrom):
+            base = "." * node.level + (node.module or "")
+            for alias in node.names:
+                joined = f"{base}{alias.name}" if base.endswith(".") else f"{base}.{alias.name}"
+                bound[alias.asname or alias.name] = joined
+        elif isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            bound[node.targets[0].id] = node.value
+    return bound
+
+
+def _resolved(
+    node: ast.expr, bound: dict[str, _Binding], siblings: dict[str, dict[str, _Binding]], depth: int = 0
+) -> str | None:
+    """The dotted path ``node`` stands for, followed through aliases and sibling modules; None where it leaves both.
+
+    A name nobody bound resolves to itself, so a bare ``c_ulong`` with no import
+    in sight - the planted controls - is still judged by its spelling.
+    """
+    if depth > len(bound) + 8:
+        return None
+    if isinstance(node, ast.Name):
+        binding = bound.get(node.id, node.id)
+        if isinstance(binding, str):
+            return _into_sibling(binding, siblings, depth)
+        return _resolved(binding, bound, siblings, depth + 1)
+    if not isinstance(node, ast.Attribute):
+        return None
+    base = _resolved(node.value, bound, siblings, depth + 1)
+    return None if base is None else _into_sibling(f"{base}.{node.attr}", siblings, depth)
+
+
+def _into_sibling(path: str, siblings: dict[str, dict[str, _Binding]], depth: int) -> str | None:
+    """Follow a relative ``.module.name`` path into that sibling's own bindings; any other path is returned as is."""
+    if not path.startswith("."):
+        return path
+    module, _, name = path.lstrip(".").partition(".")
+    if module not in siblings or not name:
+        return path
+    sibling = siblings[module]
+    return _resolved(ast.Name(id=name), sibling, siblings, depth + 1) if name in sibling else None
+
+
+def _is_machine_width(path: str) -> bool:
+    """Whether a resolved dotted path names a ctypes type whose width follows the running machine."""
+    module, _, name = path.rpartition(".")
+    if module in {"ctypes", ""}:
+        return name in FOLLOWING_THE_MACHINE
+    return module in {"ctypes.wintypes", "wintypes"} and name in FROM_WINTYPES
 
 
 def _under_a_pointer(fields: ast.expr) -> set[int]:
@@ -176,33 +252,41 @@ def _under_a_pointer(fields: ast.expr) -> set[int]:
     }
 
 
-def _spelled_machine_width(node: ast.Name | ast.Attribute) -> str | None:
-    """The spelling of ``node`` when it names a machine-width type, else None."""
-    if isinstance(node, ast.Name):
-        return node.id if node.id in FOLLOWING_THE_MACHINE else None
-    if node.attr in FOLLOWING_THE_MACHINE:
-        return f"{getattr(node.value, 'id', '?')}.{node.attr}"
-    if getattr(node.value, "id", "") == "wintypes" and node.attr in FROM_WINTYPES:
-        return f"wintypes.{node.attr}"
-    return None
+def _spelled_machine_width(
+    node: ast.Name | ast.Attribute, bound: dict[str, _Binding], siblings: dict[str, dict[str, _Binding]]
+) -> str | None:
+    """How ``node`` is spelled, plus what it resolves to where that differs, when it names a machine-width type."""
+    path = _resolved(node, bound, siblings)
+    if path is None or not _is_machine_width(path):
+        return None
+    spelling = ast.unparse(node)
+    return spelling if path == spelling else f"{spelling} ({path})"
 
 
-def _offending_fields(source: str, *, origin: str) -> list[str]:
-    """Every non-pointer ``_fields_`` entry in ``source`` spelled with a machine-width type.
+def _offending_fields(source: str, *, origin: str, siblings: dict[str, str] | None = None) -> list[str]:
+    """Every non-pointer ``_fields_`` entry in ``source`` naming a machine-width type.
 
     Judged by SPELLING, never by the class a field resolves to at runtime: ctypes
     defines its fixed-width names as aliases of the platform's own C types, so
     ``c_uint32 is c_ulong`` on Windows and ``c_uint64 is c_ulong`` on Linux, and
     an identity check flags every correct ``ULONG = c_uint32`` field on one
     platform or every 64-bit one on the other.
+
+    The spelling is followed through the module's own imports and top-level
+    aliases first, and into ``siblings`` (the package's other modules, by name)
+    for a relative import, because the name inside ``_fields_`` is rarely the
+    one that decides the width: ``_F = ctypes.c_ulong`` or ``from ctypes
+    import c_ulong as U32`` put the trap one line away from the field.
     """
+    bound = _bindings(source)
+    others = {name: _bindings(text) for name, text in (siblings or {}).items()}
     offenders: list[str] = []
     for fields in _fields_declarations(source):
         exempt = _under_a_pointer(fields)
         for inner in ast.walk(fields):
             if not isinstance(inner, ast.Name | ast.Attribute) or id(inner) in exempt:
                 continue
-            spelling = _spelled_machine_width(inner)
+            spelling = _spelled_machine_width(inner, bound, others)
             if spelling is not None:
                 offenders.append(f"{origin}:{inner.lineno}: {spelling}")
     return offenders
@@ -219,25 +303,35 @@ def _windows_sources() -> dict[Path, str]:
     return {path: path.read_text(encoding="utf-8") for path in sorted(package_dir.rglob("*.py"))}
 
 
-def _windows_structures() -> list[type[ctypes.Structure]]:
-    """Every ``ctypes.Structure`` this project defines under ``adapters/hw/windows/``.
+def _layouts_defined_in(module: types.ModuleType) -> list[type[ctypes.Structure | ctypes.Union]]:
+    """Every ``ctypes.Structure`` or ``ctypes.Union`` class ``module`` itself defines.
+
+    A union carries ``_fields_`` and a layout exactly as a structure does, so a
+    count of structures alone let one stand outside the coverage control. Only
+    classes the module DEFINES are kept (``__module__`` matches), so a layout
+    imported from ``winapi`` into another module's namespace is not counted twice.
+    """
+    return [
+        value
+        for value in vars(module).values()
+        if isinstance(value, type)
+        and issubclass(value, ctypes.Structure | ctypes.Union)
+        and value.__module__ == module.__name__
+    ]
+
+
+def _windows_structures() -> list[type[ctypes.Structure | ctypes.Union]]:
+    """Every ``ctypes.Structure`` or ``ctypes.Union`` this project defines under ``adapters/hw/windows/``.
 
     Imports each module in the package rather than reading one file's text, so a
     structure declared in a file winapi.py's own AST sweep never looks at - such
     as ``windows/reader.py``'s ``_SatRequest`` - is swept automatically, and so
-    is one added in a future file. Only classes the module itself DEFINES are
-    kept (``__module__`` matches), so a structure imported from ``winapi`` into
-    another module's namespace is not counted twice.
+    is one added in a future file.
     """
     package_dir = Path(windows_package.__file__).parent
-    structures: list[type[ctypes.Structure]] = []
+    structures: list[type[ctypes.Structure | ctypes.Union]] = []
     for info in pkgutil.iter_modules([str(package_dir)]):
-        module = importlib.import_module(f"{windows_package.__name__}.{info.name}")
-        structures.extend(
-            value
-            for value in vars(module).values()
-            if isinstance(value, type) and issubclass(value, ctypes.Structure) and value.__module__ == module.__name__
-        )
+        structures.extend(_layouts_defined_in(importlib.import_module(f"{windows_package.__name__}.{info.name}")))
     return structures
 
 
@@ -255,10 +349,14 @@ def test_no_field_of_any_windows_structure_takes_its_width_from_the_running_mach
     and is the whole defect. Pointer types are exempt, because a pointer IS the
     machine's word.
     """
+    sources = _windows_sources()
+    # Keyed by module name, so `from . import winapi as api` and `api.ULONG`
+    # are judged by what winapi.py binds ULONG to, not by the spelling `api.ULONG`.
+    siblings = {path.stem: source for path, source in sources.items()}
     offenders = [
         offender
-        for path, source in _windows_sources().items()
-        for offender in _offending_fields(source, origin=path.name)
+        for path, source in sources.items()
+        for offender in _offending_fields(source, origin=path.name, siblings=siblings)
     ]
     assert not offenders, "a field whose width follows the running machine: " + "; ".join(offenders)
 
@@ -303,3 +401,89 @@ def test_the_general_sweep_does_not_flag_a_pointer_field() -> None:
     """Its control for the exception: a pointer field must stay exempt in the general sweep too."""
     source = 'class _Clean:\n    _fields_: tuple = (("reserved", ctypes.POINTER(ctypes.c_ulong)),)\n'
     assert _offending_fields(source, origin="planted") == []
+
+
+#: Each way a module can bring a machine-width type into a ``_fields_`` entry
+#: under another name. The sweep judged the spelling INSIDE ``_fields_`` only, so
+#: every one of these read as clean: the name it saw was ``_F``, ``U32``, a bare
+#: ``DWORD`` or ``wt.DWORD``, none of which is on either list.
+_FIELD = "class _O:\n    _fields_ = (('f', {}),)\n"
+_ALIASED_OFFENDERS = {
+    "a module-level alias": "import ctypes\n_F = ctypes.c_ulong\n" + _FIELD.format("_F"),
+    "an alias of an alias": "import ctypes\n_A = ctypes.c_ulong\n_B = _A\n" + _FIELD.format("_B"),
+    "a renamed ctypes import": "from ctypes import c_ulong as U32\n" + _FIELD.format("U32"),
+    "a bare wintypes import": "from ctypes.wintypes import DWORD\n" + _FIELD.format("DWORD"),
+    "a renamed wintypes module": "from ctypes import wintypes as wt\n" + _FIELD.format("wt.DWORD"),
+    "a dotted wintypes import": "import ctypes.wintypes as wt\n" + _FIELD.format("wt.ULONG"),
+    "a renamed ctypes module": "import ctypes as C\n" + _FIELD.format("C.c_ulong"),
+    "a wide character array": "import ctypes\n" + _FIELD.format("ctypes.c_wchar * 8"),
+    "a wintypes wide character": "from ctypes import wintypes\n" + _FIELD.format("wintypes.WCHAR"),
+    "fields assigned after the class": "import ctypes\nclass _O:\n    pass\n_O._fields_ = (('f', ctypes.c_ulong),)\n",
+}
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("source", list(_ALIASED_OFFENDERS.values()), ids=list(_ALIASED_OFFENDERS))
+def test_the_general_sweep_resolves_a_name_before_judging_it(source: str) -> None:
+    """Its control for indirection: the trap is caught however the name reached the field."""
+    field_line = source.rstrip("\n").count("\n") + 1
+    offenders = _offending_fields(source, origin="planted")
+    assert len(offenders) == 1, f"expected one offender, got {offenders}"
+    assert offenders[0].startswith(f"planted:{field_line}: "), offenders
+
+
+@pytest.mark.os_agnostic
+def test_the_general_sweep_follows_a_name_into_a_sibling_module() -> None:
+    """``api.ULONG`` is only as fixed as winapi.py declares it, so the sweep reads that declaration."""
+    winapi = "import ctypes\nULONG = ctypes.c_ulong\n"
+    source = (
+        "import ctypes\nfrom . import winapi as api\nclass _O(ctypes.Structure):\n    _fields_ = (('f', api.ULONG),)\n"
+    )
+    fixed = "import ctypes\nULONG = ctypes.c_uint32\n"
+
+    assert _offending_fields(source, origin="planted", siblings={"winapi": winapi}) == [
+        "planted:4: api.ULONG (ctypes.c_ulong)"
+    ]
+    assert _offending_fields(source, origin="planted", siblings={"winapi": fixed}) == []
+
+
+@pytest.mark.os_agnostic
+def test_a_union_is_counted_among_the_layouts_the_sweep_must_reach() -> None:
+    """A ``ctypes.Union`` has ``_fields_`` and a layout too, and was not counted at all."""
+    module = types.ModuleType("planted")
+
+    class _Overlay(ctypes.Union):
+        _fields_ = (("word", ctypes.c_uint32), ("bytes", ctypes.c_uint8 * 4))
+
+    class _Record(ctypes.Structure):
+        _fields_ = (("word", ctypes.c_uint32),)
+
+    _Overlay.__module__ = _Record.__module__ = module.__name__
+    vars(module).update(_Overlay=_Overlay, _Record=_Record)
+
+    assert {layout.__name__ for layout in _layouts_defined_in(module)} == {"_Overlay", "_Record"}
+
+
+@pytest.mark.os_agnostic
+def test_the_sat_request_buffers_sit_where_the_sdk_sample_puts_them() -> None:
+    """``_SatRequest`` is the SDK sample's SCSI_PASS_THROUGH_WITH_BUFFERS: the request, a ULONG filler, the buffers.
+
+    The buffered IOCTL reads the sense and data buffers at the offsets the
+    request NAMES, so these two offsets are where the drive answers. On x64
+    Windows the request is 56 bytes, so the filler sits at 56, the 32-byte sense
+    buffer at 60 and the data at 92. Stated as the arithmetic so a 32-bit runner
+    asserts its own figures, and as the x64 numbers where the word is 8.
+    """
+    # Reached by name through the same discovery the sweep uses: the layout is
+    # private to reader.py, and the subject here is exactly that private layout.
+    layout = next(found for found in _windows_structures() if found.__name__ == "_SatRequest")
+
+    def offset(field: str) -> int:
+        return int(getattr(layout, field).offset)
+
+    request = ctypes.sizeof(api.SCSI_PASS_THROUGH)
+    assert offset("filler") == request
+    assert offset("sense") == request + 4
+    assert offset("data") == request + 4 + 32
+    if ctypes.sizeof(ctypes.c_void_p) == 8:
+        assert (offset("sense"), offset("data")) == (60, 92)
