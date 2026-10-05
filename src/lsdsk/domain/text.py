@@ -66,6 +66,12 @@ _DEFAULT_IGNORABLE = (
     (0xE0000, 0xE0FFF),
 )
 
+#: Every code point stripped by number rather than by category, as one set.
+#: Every string a domain model holds is cleaned one character at a time, so the
+#: test has to be one lookup: walking the ranges above for each ordinary letter
+#: made a diagnosis seven times slower. About 4,200 entries.
+_UNSAFE_CODES = _UNSAFE | frozenset(code for low, high in _DEFAULT_IGNORABLE for code in range(low, high + 1))
+
 #: Line and paragraph separators: a terminal may break the line on them, which
 #: splits one table row into two that look like separate rows.
 _SEPARATOR_CATEGORIES = frozenset({"Cf", "Zl", "Zp"})
@@ -89,10 +95,7 @@ def _is_unsafe(character: str) -> bool:
         >>> _is_unsafe("\u2028"), _is_unsafe("\ufe0f"), _is_unsafe("\U000e0100")
         (True, True, True)
     """
-    code = ord(character)
-    if code in _UNSAFE or unicodedata.category(character) in _SEPARATOR_CATEGORIES:
-        return True
-    return any(low <= code <= high for low, high in _DEFAULT_IGNORABLE)
+    return ord(character) in _UNSAFE_CODES or unicodedata.category(character) in _SEPARATOR_CATEGORIES
 
 
 #: How much of one untrusted value a message quotes before cutting it. Enough to

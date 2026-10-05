@@ -2051,9 +2051,14 @@ def test_diagnosing_a_machine_at_the_input_ceiling_does_not_cost_minutes() -> No
     drive, so the 64 MB `MAX_INPUT_BYTES` admits several thousand.
 
     Measured here on this shape, 3200 drives on 200 controllers: 58.1 seconds
-    before, 0.16 after. The ceiling below is two orders of magnitude above the
-    measurement and one below the old cost, so it separates the two on any
-    machine that can run the suite at all rather than pinning a speed.
+    before, 0.16 after. The ceiling below is sixty times that and a sixth of
+    the old cost. Read the margin against the coverage tracer, not the bare
+    figure: CI runs this under it, and on Python 3.12 and 3.13 (the C tracer,
+    not ``sys.monitoring``) the same shape costs 0.9 to 1.2 seconds here. A
+    constant-factor slowdown elsewhere in the domain eats that margin long
+    before it shows in a local run - a sanitiser that walked a range table per
+    character took it to 10 seconds on CI while the plain figure read 0.7.
+    The deterministic guard for that is the per-character work count below.
 
     The shape matters as much as the size. Every port has to be the SAME speed,
     or the search returns on the first faster controller it meets and never
@@ -2096,6 +2101,44 @@ def test_diagnosing_a_machine_at_the_input_ceiling_does_not_cost_minutes() -> No
     # only that nothing ran. One finding per drive is what it produces.
     assert len(findings) == len(disks), f"the shape produced {len(findings)} findings, so it missed the rules"
     assert took < 10.0, f"diagnosing {len(disks)} drives on {len(controllers)} controllers took {took:.1f}s"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(("clean", "most_per_character"), [("device_text", 8), ("visible_text", 14)])
+def test_cleaning_an_ordinary_character_costs_a_lookup_not_a_walk_through_a_table(
+    clean: str, most_per_character: int
+) -> None:
+    """Every string a domain model holds is cleaned one character at a time.
+
+    So the per-character cost multiplies into everything: the finding sentences
+    alone run to hundreds of characters per drive. Testing a code point against
+    a list of Unicode ranges made every ordinary letter walk the whole list, and
+    the input-ceiling diagnosis above went from 0.12s to 0.9s - under the
+    coverage tracer on Python 3.12 and 3.13 that is 7 to 10 seconds, which is
+    where the clock arm above started failing on CI.
+
+    Counted rather than timed, so it holds on every runner: 6 steps a
+    character for ``device_text`` and 12 for ``visible_text`` with a set lookup,
+    45 and 51 or more with the walk, on 3.11 and on 3.14 alike.
+    """
+    from workcount import work_to_run
+
+    from lsdsk.domain.text import device_text, visible_text
+
+    value = "Samsung SSD 870 EVO 1TB " * 40
+    # visible_text stops at its quote limit, so the limit is lifted past the
+    # value: otherwise most of it is never read and the count says nothing.
+    cleaners: dict[str, Callable[[], str]] = {
+        "device_text": lambda: device_text(value),
+        "visible_text": lambda: visible_text(value, limit=len(value)),
+    }
+    cleaned, work = work_to_run(cleaners[clean])
+
+    # The control: an ordinary string comes back whole (device_text also trims
+    # the ends), so the count is the cost of keeping every character rather
+    # than of dropping some.
+    assert cleaned.strip() == value.strip()
+    assert work / len(value) <= most_per_character, f"{clean} took {work / len(value):.1f} steps a character"
 
 
 @pytest.mark.os_agnostic
