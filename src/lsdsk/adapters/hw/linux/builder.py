@@ -18,11 +18,13 @@ System Role:
 
 from __future__ import annotations
 
+import math
 import re
 from typing import TYPE_CHECKING, NamedTuple
 
 from ....domain.enums import BusType, ControllerKind, DiskKind, UsbLaneRate, UsbTransport
 from ....domain.models import (
+    PCIE_MAX_LINK_WIDTH,
     Controller,
     Disk,
     Health,
@@ -34,6 +36,7 @@ from ....domain.models import (
     PortChild,
     UsbLink,
     UsbSpeed,
+    is_pcie_lane_rate,
     representative_occupant,
 )
 from ....domain.text import device_text, first_reported
@@ -101,26 +104,102 @@ _SYSFS_SECTOR_BYTES = 512
 # published and decoding that text is this layer's tolerant job.
 _MAX_SYSFS_SECTORS = 2**64 - 1
 
+# A rate is a decimal number with at most one point, anchored at both ends of
+# the number: ``[0-9.]+`` took ``.``, ``1.2.3`` and ``6..0`` as numbers and
+# ``float`` then raised, ending every command with a bare ValueError.
+_PCIE_SPEED = re.compile(r"(\d+(?:\.\d+)?)\s*GT/s")
+_LINK_RATE = re.compile(r"(\d+(?:\.\d+)?)\s*Gb")
+
 
 def parse_pcie_speed(text: str | None) -> float | None:
     """Parse a sysfs PCIe link speed such as ``8.0 GT/s PCIe``.
+
+    A rate the specification does not define for a lane is not a reading
+    either: no PCIe link runs at 7 GT/s, and a run of 400 nines would
+    otherwise reach every comparison as infinity.
 
     Args:
         text: The sysfs value, or ``None``.
 
     Returns:
-        The rate in GT/s, or ``None`` when absent or unparsable.
+        The rate in GT/s, or ``None`` when absent, unparsable, or not a PCIe
+        lane rate.
 
     Example:
         >>> parse_pcie_speed("8.0 GT/s PCIe")
         8.0
         >>> parse_pcie_speed("Unknown") is None
         True
+        >>> parse_pcie_speed("6..0 GT/s PCIe") is None
+        True
+        >>> parse_pcie_speed("7.0 GT/s PCIe") is None
+        True
+    """
+    rate = _leading_rate(text, _PCIE_SPEED)
+    return rate if rate is not None and is_pcie_lane_rate(rate) else None
+
+
+def parse_pcie_width(text: str | None) -> int | None:
+    """Parse the width a PCIe end is capable of, such as ``16``.
+
+    Max Link Width names 1 to 32 lanes. Sysfs prints 255 for a device whose
+    register holds no width, and a crafted capture can hold anything, so a
+    value outside that range is not measured rather than printed as ``x255``
+    or ``x-8``, or overflowing a later conversion.
+
+    Args:
+        text: The sysfs or captured value, or ``None``.
+
+    Returns:
+        The width in lanes, or ``None``.
+
+    Example:
+        >>> parse_pcie_width("16")
+        16
+        >>> parse_pcie_width("255") is None
+        True
+    """
+    width = parse_int(text)
+    return width if width is not None and 1 <= width <= PCIE_MAX_LINK_WIDTH else None
+
+
+def parse_pcie_running_width(text: str | None) -> int | None:
+    """Parse the width a PCIe link negotiated, where zero is a reading.
+
+    Zero lanes is a link that never trained, which a rule grades critical, so
+    unlike :func:`parse_pcie_width` it is kept; past 32 lanes, or below zero,
+    nothing negotiated it.
+
+    Args:
+        text: The sysfs or captured value, or ``None``.
+
+    Returns:
+        The width in lanes, or ``None``.
+
+    Example:
+        >>> parse_pcie_running_width("0")
+        0
+        >>> parse_pcie_running_width("-8") is None
+        True
+    """
+    width = parse_int(text)
+    return width if width is not None and 0 <= width <= PCIE_MAX_LINK_WIDTH else None
+
+
+def _leading_rate(text: str | None, pattern: re.Pattern[str]) -> float | None:
+    """The number a rate string starts with, or ``None`` when it is absent or not finite.
+
+    The pattern admits one decimal point at most, so ``float`` cannot refuse
+    what it matched; a run of digits can still overflow to infinity, which is
+    no rate either.
     """
     if not text:
         return None
-    match = re.match(r"([0-9.]+)\s*GT/s", text)
-    return float(match.group(1)) if match else None
+    match = pattern.match(text)
+    if match is None:
+        return None
+    rate = float(match.group(1))
+    return rate if math.isfinite(rate) else None
 
 
 def parse_link_rate(text: str | None) -> float | None:
@@ -142,11 +221,10 @@ def parse_link_rate(text: str | None) -> float | None:
         True
         >>> parse_link_rate("Unknown") is None
         True
+        >>> parse_link_rate("1.2.3 Gbit") is None
+        True
     """
-    if not text:
-        return None
-    match = re.match(r"([0-9.]+)\s*Gb", text)
-    return float(match.group(1)) if match else None
+    return _leading_rate(text, _LINK_RATE)
 
 
 def controller_address_of(device_path: str) -> str | None:
@@ -181,9 +259,9 @@ def _pcie_link(entry: PciEntry) -> PcieLink:
     """Build a PCIe link from one sysfs PCI device's attributes."""
     return PcieLink(
         current_speed_gtps=parse_pcie_speed(entry.current_link_speed),
-        current_width=parse_int(entry.current_link_width),
+        current_width=parse_pcie_running_width(entry.current_link_width),
         max_speed_gtps=parse_pcie_speed(entry.max_link_speed),
-        max_width=parse_int(entry.max_link_width),
+        max_width=parse_pcie_width(entry.max_link_width),
     )
 
 
@@ -984,5 +1062,7 @@ __all__ = [
     "controller_address_of",
     "controller_kind_of",
     "parse_link_rate",
+    "parse_pcie_running_width",
     "parse_pcie_speed",
+    "parse_pcie_width",
 ]

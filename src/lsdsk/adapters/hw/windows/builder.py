@@ -56,7 +56,7 @@ from ..decode.usb import (
 )
 from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble
-from ..linux.builder import controller_kind_of, parse_pcie_speed
+from ..linux.builder import controller_kind_of, parse_pcie_running_width, parse_pcie_speed, parse_pcie_width
 from ..refusals import refusals_of
 from .capture import HealthBlobs
 
@@ -77,9 +77,9 @@ def _pcie_link(entry: PciEntry) -> PcieLink:
     """Build a PCIe link from one captured device's properties."""
     return PcieLink(
         current_speed_gtps=parse_pcie_speed(entry.current_link_speed),
-        current_width=parse_int(entry.current_link_width),
+        current_width=parse_pcie_running_width(entry.current_link_width),
         max_speed_gtps=parse_pcie_speed(entry.max_link_speed),
-        max_width=parse_int(entry.max_link_width),
+        max_width=parse_pcie_width(entry.max_link_width),
     )
 
 

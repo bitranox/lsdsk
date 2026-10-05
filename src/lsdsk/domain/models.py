@@ -178,6 +178,29 @@ def serial_bandwidth_gbps(gbps: float | None) -> float | None:
     return None if gbps is None else round(gbps / _SERIAL_ENCODING_DIVISOR, 3)
 
 
+#: The widest link the PCIe specification defines: the Max Link Width field of
+#: the Link Capabilities register names nothing past x32.
+PCIE_MAX_LINK_WIDTH = 32
+
+
+def is_pcie_lane_rate(speed_gtps: float) -> bool:
+    """Whether a signalling rate is one the PCIe specification defines for a lane.
+
+    Args:
+        speed_gtps: A rate in GT/s.
+
+    Returns:
+        Whether a PCIe link can run at it.
+
+    Example:
+        >>> is_pcie_lane_rate(16.0)
+        True
+        >>> is_pcie_lane_rate(7.0)
+        False
+    """
+    return speed_gtps in _PCIE_LANE_GBPS
+
+
 def pcie_bandwidth_gbps(speed_gtps: float | None, width: int | None) -> float | None:
     """Return usable one-direction bandwidth for a PCIe link.
 
@@ -2149,6 +2172,7 @@ class Inventory(DomainModel, frozen=True):
 
 
 __all__ = [
+    "PCIE_MAX_LINK_WIDTH",
     "Controller",
     "Disk",
     "Finding",
@@ -2163,6 +2187,7 @@ __all__ = [
     "SmartAttribute",
     "UsbLink",
     "UsbSpeed",
+    "is_pcie_lane_rate",
     "pci_bus_of",
     "pci_class_name",
     "pcie_bandwidth_gbps",
