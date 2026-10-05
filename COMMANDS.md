@@ -94,7 +94,12 @@ actionable and `1` when a warning or critical was found, so it drops straight
 into a monitoring check. Errors use sysexits conventions rather than a single
 code: `2` for a command line the parser refuses, which is an unknown option, an
 unknown command, a missing required argument, a bad `--format` choice or a
-`--set` override naming a section or key the tool does not have; `13` when
+`--set` override the tool refuses to place - a key one of its own sections
+(`thresholds`, `display`, `history`) does not have, a section one typo away from
+one of those, or a value nested deeper than 100 levels. A section that resembles
+none of them is passed through untouched, because it belongs to a library or to
+another consumer of the same files, so `--set bogus.key=1` changes nothing and
+leaves the exit code the run would have left; `13` when
 something needs privilege this run lacks - a `config-deploy`
 target that needs root, a diagnostic run whose hardware read the kernel refuses
 outright, a `snapshot` whose destination refuses to be written, and a

@@ -98,8 +98,14 @@ passt also unmittelbar in eine Überwachungsprüfung. Fehler folgen den
 sysexits-Konventionen statt einem einzigen Code: `2` für eine Befehlszeile, die
 der Parser ablehnt, also eine unbekannte Option, einen unbekannten Befehl, ein
 fehlendes Pflichtargument, eine ungültige `--format`-Wahl oder eine
-`--set`-Überschreibung, die einen Abschnitt oder Schlüssel nennt, den das
-Werkzeug nicht hat; `13`, wenn etwas ein Recht
+`--set`-Überschreibung, die das Werkzeug nicht unterbringt - ein Schlüssel, den
+einer seiner eigenen Abschnitte (`thresholds`, `display`, `history`) nicht hat,
+ein Abschnitt, der sich nur um einen Tippfehler von einem dieser unterscheidet,
+oder ein Wert, der tiefer als 100 Ebenen verschachtelt ist. Ein Abschnitt, der
+keinem davon ähnelt, wird unverändert durchgereicht, weil er einer Bibliothek
+oder einem anderen Nutzer derselben Dateien gehört; `--set bogus.key=1` ändert
+also nichts und lässt den Exit-Code, den der Lauf ohnehin gehabt hätte; `13`,
+wenn etwas ein Recht
 braucht, das dieser Lauf nicht hat - ein `config-deploy`-Ziel, das root
 verlangt, ein diagnostischer Lauf, dessen Hardwarelesung der Kernel rundweg
 verweigert, ein `snapshot`, dessen Ziel sich nicht schreiben lässt, und ein
