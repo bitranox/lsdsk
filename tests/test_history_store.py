@@ -453,6 +453,33 @@ def test_the_default_path_follows_xdg_state_on_linux(monkeypatch: pytest.MonkeyP
     assert default_history_path() == tmp_path / "xdgstate" / "lsdsk" / "history.json"
 
 
+def test_a_relative_xdg_state_home_is_ignored(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The XDG spec says a relative value is invalid and must be ignored.
+
+    Honoured, it put the store under whatever directory the run started in, so
+    a timer and an interactive run kept two different histories of one machine.
+    """
+    monkeypatch.setattr("sys.platform", "linux")
+    monkeypatch.setattr("os.geteuid", lambda: 1000, raising=False)
+    monkeypatch.setenv("XDG_STATE_HOME", "relative/state")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    # Path.home() reads USERPROFILE on Windows; see the test below.
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    assert default_history_path() == tmp_path / ".local" / "state" / "lsdsk" / "history.json"
+
+
+def test_a_root_run_on_macos_keeps_the_application_support_store(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``/var/lib`` is a Linux convention; a Mac keeps state under Application Support, root or not."""
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("os.geteuid", lambda: 0, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    expected = tmp_path / "Library" / "Application Support" / "bitranox" / "lsdsk" / "history.json"
+    assert default_history_path() == expected
+
+
 def test_the_default_path_falls_back_to_local_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr("sys.platform", "linux")
     monkeypatch.delenv("XDG_STATE_HOME", raising=False)

@@ -209,15 +209,21 @@ def running_as_root() -> bool:
 def default_history_path() -> Path:
     """Where history lives when the configuration does not say otherwise.
 
+    ``XDG_STATE_HOME`` is honoured only when it is absolute: the XDG spec calls
+    a relative value invalid and says to ignore it, and honoured it put the
+    store under whatever directory the run happened to start in.
+
     Returns:
-        ``/var/lib/lsdsk/history.json`` for a root run on a POSIX host, and the
-        per-user state file otherwise.
+        ``/var/lib/lsdsk/history.json`` for a root run on Linux, and the
+        per-user state file otherwise - including a root run on macOS, which
+        where ``/var/lib`` is a Linux convention and state belongs under
+        Application Support.
 
     Example:
         >>> default_history_path().name
         'history.json'
     """
-    if sys.platform != "win32" and running_as_root():
+    if sys.platform.startswith("linux") and running_as_root():
         return SYSTEM_STORE_DIR / _FILENAME
     if sys.platform == "win32":
         base = os.environ.get("LOCALAPPDATA")
@@ -226,7 +232,7 @@ def default_history_path() -> Path:
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / _VENDOR / _APP / _FILENAME
     state = os.environ.get("XDG_STATE_HOME")
-    root = Path(state) if state else Path.home() / ".local" / "state"
+    root = Path(state) if state and Path(state).is_absolute() else Path.home() / ".local" / "state"
     return root / _APP / _FILENAME
 
 
