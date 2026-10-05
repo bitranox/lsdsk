@@ -43,6 +43,15 @@ every other root-only reading. A device that STALLs the request (one whose `bcdU
 has no BOS, which is an answer rather than a refusal. A refused open or IOCTL, on either platform,
 is a `RefusedReading` named `usb-link`; a kernel that does not publish the attribute is not one.
 
+**Device capability on Windows.** The V2 capable-of flags set a floor under what the device can do:
+SuperSpeed-capable proves one Gen 1 lane, and SuperSpeedPlus-capable proves two Gen 1 lanes, the
+slower of its two shapes (one Gen 2 lane or two Gen 1 lanes) and true of both. A read BOS refines
+that figure above the floor and never below it. A BOS lists lane speeds and never a lane count, so a
+SuperSpeedPlus capability whose sublinks run at 5 Gb/s reads, on its own, as one Gen 1 lane - less
+than the flag already proves - and believing it would give the device a lower answer for having
+published more. The running link is a lower bound too, so the capability is the fastest of the BOS,
+the flag floor and the running rate.
+
 **Model.** `Disk` gains `usb: UsbLink | None`, beside `link` (the drive's own SATA figures from
 IDENTIFY, unchanged) and `pcie`. `UsbLink` carries `running`, `device_max`, `port_max`, `upstream`,
 `on_usb2_twin` and `transport`. Rates are a `UsbSpeed`: a `UsbLaneRate` (1.5M, 12M, 480M, 5G,

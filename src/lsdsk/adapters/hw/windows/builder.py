@@ -442,15 +442,16 @@ def _device_capability(port: UsbPortEntry, running: UsbSpeed | None) -> UsbSpeed
     A BOS lists lane speeds and never a lane count, so the running link is a
     lower bound on it, as on Linux.
 
-    The V2 flags stand in only where no BOS was read: a read BOS names the lane
-    speeds, which the flags cannot outrank. And a flag claims no more than it
-    proves. SuperSpeedPlus is one 10 Gb/s lane OR two 5 Gb/s lanes, so its
-    floor is two Gen 1 lanes, the slower of the two and true of both.
+    A read BOS refines the answer ABOVE the V2 flags' floor and never below it.
+    A flag claims no more than it proves: SuperSpeedPlus is one 10 Gb/s lane
+    OR two 5 Gb/s lanes, so its floor is two Gen 1 lanes, the slower of the two
+    and true of both. A BOS naming 5 Gb/s sublinks cannot say which, so taken
+    alone it reads one Gen 1 lane - less than the flag proves - and the device
+    would get a lower answer for having given more evidence. The floor can
+    never over-claim, so the fastest of the three is always safe.
     """
     declared = _decoded(port.bos, decode_bos)
-    if declared is not None:
-        return fastest(declared.fastest, running)
-    return fastest(_flag_floor(port), running)
+    return fastest(declared.fastest if declared is not None else None, _flag_floor(port), running)
 
 
 def _flag_floor(port: UsbPortEntry) -> UsbSpeed | None:

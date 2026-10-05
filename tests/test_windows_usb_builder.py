@@ -366,6 +366,32 @@ def test_a_bos_listing_only_5g_lanes_outranks_the_superspeedplus_capable_flag() 
 
 
 @pytest.mark.os_agnostic
+def test_a_superspeedplus_bos_with_5g_sublinks_never_reads_below_the_flag_floor() -> None:
+    """A read BOS refines the capability above the SuperSpeedPlus flag's floor, never below it.
+
+    The SSD's own BOS carries a SuperSpeedPlus capability; with its two
+    sublink attributes rewritten to 5 Gb/s it decodes to one Gen 1 lane,
+    because a BOS lists lane speeds and never a lane count. The V2 flag says
+    the same device is SuperSpeedPlus-capable, which proves at least two Gen 1
+    lanes. Believing the BOS alone gave the device LESS with more evidence
+    than the flag gave it with the BOS unread - and blamed a 480M hub for
+    capping a 5 Gb/s device that can do 10.
+    """
+    sublinks_at_10g = bytes.fromhex("30400a00b0400a00")
+    assert SSD_BOS.count(sublinks_at_10g) == 1, "the fixture no longer carries the sublinks this rewrites"
+    five_gig_sublinks = SSD_BOS.replace(sublinks_at_10g, bytes.fromhex("30400500b0400500"))
+
+    link = _disk(_behind_usb2_hub(bos=five_gig_sublinks)).usb
+    control = _disk(_behind_usb2_hub()).usb
+
+    assert link is not None
+    assert control is not None
+    assert link.running == USB2, "the arm must not be lifted by the running link"
+    assert link.device_max == GEN1X2, "the BOS was believed below what the SuperSpeedPlus flag proves"
+    assert control.device_max == GEN2, "a BOS naming a 10 Gb/s lane still refines above the floor"
+
+
+@pytest.mark.os_agnostic
 def test_a_disk_under_a_usb_device_is_a_usb_disk_whatever_storage_bus_windows_names() -> None:
     """USB-ness comes from the device chain, not from the storage descriptor's bus, which a bridge driver chooses."""
     payload = _behind_usb2_hub()
