@@ -36,7 +36,13 @@ from pathlib import Path
 from rich.console import Console
 
 #: Printing goes through rich rather than ``print``, which the lint rules refuse.
-SAY = Console()
+#:
+#: As plain text, though: every shape this prints is a subscripted annotation, and
+#: rich's markup parser read ``[str, Cell]`` as a style tag and dropped it, so
+#: ``tuple[tuple[str, Cell], ...]`` printed as ``tuple`` and two different shapes
+#: became one JSON key. Highlighting would colour the JSON a caller parses, and a
+#: soft wrap keeps a long line from being broken at the console's width.
+SAY = Console(markup=False, highlight=False, emoji=False, soft_wrap=True)
 
 SRC = Path(__file__).resolve().parent.parent / "src" / "lsdsk"
 

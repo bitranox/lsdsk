@@ -231,3 +231,48 @@ def test_this_project_returns_no_same_typed_anonymous_tuple(figures: Any) -> Non
     """
     assert figures.anonymous_multi_value_returns > 0, "the control: the census found no multi-value return at all"
     assert figures.same_typed_return_shapes == {}, figures.same_typed_return_shapes
+
+
+#: Two same-typed shapes whose bracketed members rich would read as markup tags,
+#: plus a shape nested a level deeper, which is the one the real tree prints.
+_BRACKETED_SHAPES: Final = (
+    "def first() -> tuple[str, str]: ...\n"
+    "def second() -> tuple[str, str]: ...\n"
+    "def third() -> tuple[int, int]: ...\n"
+    "def fourth() -> tuple[tuple[str, Cell], ...]: ...\n"
+)
+
+
+def _printed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], *argv: str) -> str:
+    """Run the census's own ``main`` over a synthetic tree and return what it printed."""
+    package = tmp_path / "src" / "lsdsk"
+    package.mkdir(parents=True)
+    (package / "planted.py").write_text(_BRACKETED_SHAPES, encoding="utf-8")
+    monkeypatch.setattr(CENSUS, "SRC", package)
+    monkeypatch.setattr(sys, "argv", ["interface_census.py", *argv])
+    assert CENSUS.main() == 0
+    return capsys.readouterr().out
+
+
+@pytest.mark.os_agnostic
+def test_a_shape_survives_the_printed_report_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A shape is printed as written, not as rich's markup parser leaves it.
+
+    The report printed ``tuple[tuple[str, Cell], ...]`` as ``tuple``, because
+    rich read ``[str, Cell]`` as a style tag and dropped it.
+    """
+    printed = _printed(tmp_path, monkeypatch, capsys)
+    assert "('tuple[str, str]', 2)" in printed, printed
+    assert "'tuple[int, int]': 1" in printed, printed
+
+
+@pytest.mark.os_agnostic
+def test_two_shapes_stay_two_keys_in_the_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Eaten markup made two different shapes one JSON key, so one count overwrote the other."""
+    emitted: dict[str, Any] = json.loads(_printed(tmp_path, monkeypatch, capsys, "--json"))
+    assert emitted["same_typed_return_shapes"] == {"tuple[str, str]": 2, "tuple[int, int]": 1}
+    assert emitted["largest_return_shape"] == ["tuple[str, str]", 2]
