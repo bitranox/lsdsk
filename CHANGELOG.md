@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.6.3] 2026-10-05 18:03:42
+
 Neither 1.6.1 nor 1.6.2 was published to PyPI, so this is the first release on
 PyPI since 1.6.0 and carries both of their changes below as well.
 
