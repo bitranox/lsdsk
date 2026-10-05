@@ -23,10 +23,9 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   configuration library accepts ended with exit `1` and no envelope; it now
   leaves `78` with a sentence naming the nesting and pointing at `--format
   human`, which prints it.
-- **`snapshot -o /dev/stdout` works on macOS.** It was refused with "File
-  '/dev/stdout' is not readable" (exit `2`) whenever standard output was a pipe
-  or a file opened for writing, because the option asked for an output path to
-  be readable.
+- **`snapshot -o` writes a file this user may write but not read.** It was
+  refused with "File '...' is not readable" (exit `2`), because the option asked
+  an output path to be readable.
 
 ## [1.6.2] 2026-10-05 16:57:31
 

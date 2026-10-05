@@ -1305,9 +1305,8 @@ def _is_this_process_standard_output(path: Path) -> bool:
     "--output",
     "-o",
     "output",
-    # Only ever written. click checks readability by default, and macOS answers
-    # that for /dev/fd/1 from the descriptor's open mode, so `-o /dev/stdout` on
-    # a pipe was refused as unreadable there.
+    # Only ever written, so never required to be readable: click's default
+    # check refused an existing target this user may write but not read.
     type=click.Path(dir_okay=False, readable=False, writable=True, allow_dash=True),
     required=True,
     help="Where to write the snapshot. '-' writes it to standard output; './-' is a file named '-'.",

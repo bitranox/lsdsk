@@ -316,7 +316,10 @@ def _snapshot_to_dev_stdout(stdout: int | IO[bytes]) -> subprocess.CompletedProc
     """Run ``snapshot -o /dev/stdout`` in a real process, its descriptor 1 being ``stdout``.
 
     A real process, because what ``/dev/stdout`` reaches is the process's own
-    descriptor 1, which a CliRunner never replaces.
+    descriptor 1, which a CliRunner never replaces. That process reads this
+    machine's hardware, so the tests using it are Linux-only: macOS has a
+    ``/dev/stdout`` but no hardware reader, and its snapshot leaves 78 before any
+    write is attempted.
     """
     argv = [sys.executable, "-m", "lsdsk", "--no-record", "snapshot", "-o", "/dev/stdout"]
     return subprocess.run(  # noqa: S603 - argv is built here, no shell
@@ -324,7 +327,7 @@ def _snapshot_to_dev_stdout(stdout: int | IO[bytes]) -> subprocess.CompletedProc
     )
 
 
-@pytest.mark.os_posix
+@pytest.mark.os_linux
 def test_dev_stdout_on_a_pipe_carries_the_capture_as_a_dash_does() -> None:
     """Measured before this: exit 74, ``[Errno 40] Too many levels of symbolic links``."""
     result = _snapshot_to_dev_stdout(subprocess.PIPE)
@@ -334,7 +337,7 @@ def test_dev_stdout_on_a_pipe_carries_the_capture_as_a_dash_does() -> None:
     assert "hostname" in capture, f"stdout is not a capture: {result.stdout[:200]!r}"
 
 
-@pytest.mark.os_posix
+@pytest.mark.os_linux
 def test_dev_stdout_redirected_to_a_file_carries_the_capture_as_a_dash_does(tmp_path: Path) -> None:
     """The redirected case: ``/dev/stdout`` then leads to a REGULAR file, which the rename path would replace.
 
@@ -360,11 +363,8 @@ def test_an_output_this_user_may_write_but_not_read_is_written(
 ) -> None:
     """``-o`` is only ever written, so it may not be refused for being unreadable.
 
-    It was: click's path type checks readability by default, and macOS answers
-    that check for ``/dev/fd/1`` from the mode the descriptor was opened with, so
-    ``-o /dev/stdout`` on a pipe exited 2 with "File '/dev/stdout' is not
-    readable" while Linux, which answers from the pipe's own permissions, passed.
-    A write-only file is the same refusal on every POSIX runner.
+    click's path type checks readability by default, which refused an existing
+    target this user may write but not read with exit 2, "is not readable".
     """
     if os.geteuid() == 0:
         pytest.skip("root passes every permission check, so nothing here can be refused")
