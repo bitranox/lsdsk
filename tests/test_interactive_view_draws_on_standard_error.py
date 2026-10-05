@@ -46,6 +46,11 @@ FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
 #: alternate screen. The printed page never writes it.
 ALTERNATE_SCREEN = b"\x1b[?1049h"
 
+#: Text only a painted frame of the view carries: the capture's hostname, which
+#: its header draws. Looked for AFTER the switch to the alternate screen, so the
+#: printed page, which names it too, cannot satisfy it.
+PAINTED = b"linux-sas-hba"
+
 #: How long a run that should end on its own gets before it is called hung.
 HANG_SECONDS = 60
 
@@ -81,10 +86,12 @@ class _Drain(threading.Thread):
                 return
             self.received.extend(chunk)
 
-    def wait_for(self, marker: bytes, *, seconds: float) -> bool:
+    def wait_for(self, marker: bytes, *, seconds: float, after: bytes = b"") -> bool:
+        """Whether `marker` arrives before `seconds` pass, somewhere after the first `after`."""
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            if marker in self.received:
+            start = self.received.find(after)
+            if start >= 0 and marker in self.received[start:]:
                 return True
             time.sleep(0.1)
         return False
@@ -129,8 +136,14 @@ def _at_a_terminal(argv: list[str], *, stderr: str, tmp_path: Path, press_q: boo
     drain = _Drain(master)
     drain.start()
     try:
-        if press_q and drain.wait_for(ALTERNATE_SCREEN, seconds=HANG_SECONDS):
-            time.sleep(1)
+        # Pressed once the view has PAINTED, an event, rather than a fixed second
+        # after it took the terminal, a guess about how long a runner needs. The
+        # press is then known to reach a mounted screen whose bindings are live.
+        # (Measured, an earlier press is held in the terminal's input buffer and
+        # still handled; the pause was never what made this work.) A view that
+        # never paints is not pressed at all, and the run ends as a hang the test
+        # reports after HANG_SECONDS.
+        if press_q and drain.wait_for(PAINTED, after=ALTERNATE_SCREEN, seconds=HANG_SECONDS):
             os.write(master, b"q")
         try:
             code: int | None = process.wait(timeout=HANG_SECONDS)

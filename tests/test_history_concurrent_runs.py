@@ -8,18 +8,42 @@ copy of the store it had read before that sample existed.
 
 from __future__ import annotations
 
+import inspect
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from lsdsk.adapters.cli.commands.history import read_history, record_reading
 from lsdsk.adapters.config.history import HistorySettings
 from lsdsk.adapters.history.store import history_lock, load_history
 from lsdsk.adapters.hw.snapshot import load as load_inventory
 
+if TYPE_CHECKING:
+    from types import FrameType
+
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 EARLIER = load_inventory(FIXTURES / "linux-sas-hba.json")
 LATER = load_inventory(FIXTURES / "linux-sas-hba-later.json")
+
+
+class _RefusedOnce:
+    """A thread profile that notes the moment a thread waits inside ``history_lock``.
+
+    ``history_lock`` sleeps only between attempts, so a call to ``time.sleep``
+    made from its own frame is reached only after an attempt was refused: the
+    recorder has met the held store, rather than merely not got round to it yet.
+    Installed with :func:`threading.setprofile`, which reaches only the threads
+    started after it, so the holder is never watched.
+    """
+
+    def __init__(self) -> None:
+        self.seen = threading.Event()
+        self._lock_code = inspect.unwrap(history_lock).__code__
+
+    def __call__(self, frame: FrameType, event: str, arg: object) -> None:
+        if event == "c_call" and frame.f_code is self._lock_code and arg is time.sleep:
+            self.seen.set()
 
 
 def _hours(store: Path) -> set[int]:
@@ -59,9 +83,21 @@ def test_a_run_waits_for_the_store_another_run_is_writing(tmp_path: Path) -> Non
     recorder = threading.Thread(
         target=lambda: (record_reading(EARLIER, read, settings, announce=False), finished.set()), daemon=True
     )
-    recorder.start()
-    time.sleep(0.3)
+    refused = _RefusedOnce()
+    threading.setprofile(refused)
+    try:
+        recorder.start()
+    finally:
+        threading.setprofile(None)
+    # Waiting on what the recorder did rather than on the clock: a fixed sleep
+    # passed vacuously whenever the thread had not reached the lock yet, which on
+    # a slow runner is exactly when nothing had been tested. Bounded, and the
+    # bound fails the test rather than hanging it.
+    deadline = time.monotonic() + 10
+    while not (refused.seen.is_set() or finished.is_set()) and time.monotonic() < deadline:
+        time.sleep(0.01)
     assert not finished.is_set(), "this run wrote while another held the store"
+    assert refused.seen.is_set(), "this run never met the held store within 10 seconds"
 
     release.set()
     recorder.join(timeout=10)
