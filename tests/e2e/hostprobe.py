@@ -254,6 +254,57 @@ def usb_link_read(invocation: list[str]) -> tuple[list[dict[str, Any]], dict[str
     return [check(name, not unread, detail)], facts
 
 
+def _use_text(use: dict[str, Any]) -> str:
+    """One recorded use, as ``<kind>:<name>`` plus its mounts when it has any."""
+    kind = use.get("kind")
+    name = use.get("name") or ""
+    mounts = cast("list[str]", use.get("mounts") or [])
+    label = f"{kind}:{name}" if name else str(kind)
+    return f"{label} -> {', '.join(mounts)}" if mounts else label
+
+
+def usage_boot_disk_found(invocation: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Whether the boot disk was found, which only a live run's own mounts show.
+
+    A replayed capture cannot fail this, because the capture already holds
+    whatever the reader resolved. This is read-only on both platforms, so it
+    runs on every host regardless of privilege; inside a container the host's
+    own use of its disks is invisible, and every disk reads unread rather than
+    finding nothing, which is the other reading this check accepts.
+    """
+    name = "usage:boot-disk-found"
+    code, out, _ = run(invocation, ["disks", "--format", "json"])
+    if code not in DOCUMENTED_EXITS:
+        return [check(name, False, f"exit {code}")], {}
+    try:
+        disks: list[dict[str, Any]] = json.loads(out)["data"]["disks"]
+    except Exception as error:
+        return [check(name, False, type(error).__name__)], {}
+
+    usages = [d.get("usage") for d in disks if str(d.get("bus")) != "virtual"]
+    booted = [u for u in usages if u and u.get("boot")]
+    per_disk = {
+        str(d.get("path")): (
+            None
+            if d.get("usage") is None
+            else {
+                "boot": bool(d["usage"].get("boot")),
+                "uses": [_use_text(u) for u in cast("list[dict[str, Any]]", d["usage"].get("uses") or [])],
+            }
+        )
+        for d in disks
+        if str(d.get("bus")) != "virtual"
+    }
+    facts: dict[str, Any] = {"usage_by_disk": per_disk}
+    return [
+        check(
+            name,
+            bool(booted) or all(u is None for u in usages),
+            f"{len(booted)} boot disk(s) among {len(usages)}; all unread means a container",
+        )
+    ], facts
+
+
 def snapshot_refuses_replay(invocation: list[str], workdir: Path) -> list[dict[str, Any]]:
     """It captures the machine it runs on, so --replay must not silently apply.
 
@@ -288,6 +339,9 @@ def main() -> int:
         usb, usb_facts = usb_link_read(invocation)
         checks += usb
         facts.update(usb_facts)
+        usage, usage_facts = usage_boot_disk_found(invocation)
+        checks += usage
+        facts.update(usage_facts)
         checks += snapshot_refuses_replay(invocation, workdir)
 
     envelope = {

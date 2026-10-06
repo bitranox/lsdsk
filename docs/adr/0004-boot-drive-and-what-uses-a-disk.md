@@ -49,8 +49,10 @@ be mapped.
 count is unbounded. The boot mark leads the cell (`boot zfs:rpool`, `boot C:`).
 
 **Where.** A `used by` column at the end of the disks table, printed and interactive alike,
-dropped before any other column on a narrow page and capped at `display.used_by_width` with a
-marked cut, plus the full text in the detail panel and a `usage` field in the JSON payload.
+dropped before any other column on a narrow page and flexible and clipped with a marked cut like
+`model`, with no configuration key: a key no committed capture can move would fail the live-key
+harness, and nothing in this cell grows without bound the way an NVMe WWN does, plus the full text
+in the detail panel and a `usage` field in the JSON payload.
 
 **Three states, never two.** `-` is a reading not taken - a capture older than these fields, or a
 source absent or refused - and is named in the legend; `not mounted` is a reading taken that
@@ -64,3 +66,32 @@ not-read arm; the resolving logic is tested with hand-built captures, and the re
 asserts that the disk under `/` carries `boot` on every host it visits. Whether an unelevated
 Windows session may open a volume handle is measured before the reader is written; if it may not,
 the refusal is recorded like every other refused reading and the run is not `ok`.
+
+On a virtual Windows 11 machine, extending the volume-enumeration probe with
+IOCTL_DISK_GET_PARTITION_INFO_EX on the same zero-access volume handle used
+for IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS confirmed the FAT32 "SYSTEM" volume
+reports GPT partition style (PartitionStyle = 1) with PartitionType GUID
+C12A7328-F81F-11D2-BA4B-00A0C93EC93B, the defined EFI System Partition type,
+both run elevated and run unelevated through a LIMITED-run-level scheduled
+task (confirmed unelevated via shell32.IsUserAnAdmin() returning false inside
+the task). On this machine every volume handle opened successfully and every
+IOCTL_DISK_GET_PARTITION_INFO_EX call succeeded in BOTH the elevated and the
+unelevated run: no volume-level open or partition-info read needed
+administrator rights. On a physical Windows machine, the same elevated probe
+read partition style and type for every volume including the boot disk's
+FAT32 ESP (same GUID, is_esp true) and its data volumes (GPT "Basic data
+partition" and "Microsoft reserved partition" types); the one volume that
+failed to open even elevated (error 5, access denied) was an unrelated,
+separately-secured volume on that machine, and a BitLocker-locked volume on an
+MBR disk (its filesystem query failed with 0x80310000, FVE_E_LOCKED_VOLUME)
+still opened, mapped to its disk, and reported PartitionStyle 0, which is
+PARTITION_STYLE_MBR and correctly not an EFI system partition. Neither STOP condition in the
+task brief fired: the unelevated run did not fail to open every volume (it
+opened all of them), and IOCTL_DISK_GET_PARTITION_INFO_EX did not fail on
+any handle it could open. Both unmeasured readings are now measured, and
+Task 5 does not need to record a refusal for either.
+
+A real-hardware run against five ZFS-root Proxmox nodes, a Proxmox Backup Server node and a
+physical Windows machine found a boot disk on every reachable host: on each ZFS-root host, exactly
+the two members of its root mirror carried `boot`, each reporting `zfs:rpool`, and the Windows
+host's single boot disk reported `boot` with its system drive letter.
