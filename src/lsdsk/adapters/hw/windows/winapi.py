@@ -82,6 +82,11 @@ IOCTL_SCSI_GET_ADDRESS = 0x00041018
 IOCTL_ATA_PASS_THROUGH_DIRECT = 0x0004D030
 IOCTL_SCSI_PASS_THROUGH = 0x0004D004
 IOCTL_STORAGE_GET_DEVICE_NUMBER = 0x002D1080
+IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS = 0x00560000
+IOCTL_DISK_GET_PARTITION_INFO_EX = 0x00070048
+
+# PARTITION_INFORMATION_EX.PartitionStyle.
+PARTITION_STYLE_GPT = 1
 
 # USB hub ioctls, each CTL_CODE(FILE_DEVICE_USB, function, METHOD_BUFFERED,
 # FILE_ANY_ACCESS), issued on a handle to the HUB and naming the port in the
@@ -586,6 +591,26 @@ def configure_prototypes(setupapi: WinLibrary, cfgmgr32: WinLibrary, kernel32: W
     kernel32.CloseHandle.restype = BOOL
     kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
 
+    kernel32.FindFirstVolumeW.restype = wintypes.HANDLE
+    kernel32.FindFirstVolumeW.argtypes = (wintypes.LPWSTR, DWORD)
+    kernel32.FindNextVolumeW.restype = BOOL
+    kernel32.FindNextVolumeW.argtypes = (wintypes.HANDLE, wintypes.LPWSTR, DWORD)
+    kernel32.FindVolumeClose.restype = BOOL
+    kernel32.FindVolumeClose.argtypes = (wintypes.HANDLE,)
+    kernel32.GetVolumePathNamesForVolumeNameW.restype = BOOL
+    kernel32.GetVolumePathNamesForVolumeNameW.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.LPWSTR,
+        DWORD,
+        ctypes.POINTER(DWORD),
+    )
+    kernel32.GetSystemWindowsDirectoryW.restype = ctypes.c_uint32
+    kernel32.GetSystemWindowsDirectoryW.argtypes = (wintypes.LPWSTR, ctypes.c_uint32)
+    kernel32.GetVolumePathNameW.restype = BOOL
+    kernel32.GetVolumePathNameW.argtypes = (wintypes.LPCWSTR, wintypes.LPWSTR, DWORD)
+    kernel32.GetVolumeNameForVolumeMountPointW.restype = BOOL
+    kernel32.GetVolumeNameForVolumeMountPointW.argtypes = (wintypes.LPCWSTR, wintypes.LPWSTR, DWORD)
+
 
 # The registry hive that holds the firmware's own description of the machine.
 HKEY_LOCAL_MACHINE = 0x80000002
@@ -667,6 +692,7 @@ __all__ = [
     "INVALID_HANDLE_VALUE",
     "IOCTL_ATA_PASS_THROUGH_DIRECT",
     "IOCTL_DISK_GET_LENGTH_INFO",
+    "IOCTL_DISK_GET_PARTITION_INFO_EX",
     "IOCTL_SCSI_GET_ADDRESS",
     "IOCTL_SCSI_PASS_THROUGH",
     "IOCTL_STORAGE_GET_DEVICE_NUMBER",
@@ -678,10 +704,12 @@ __all__ = [
     "IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX_V2",
     "IOCTL_USB_GET_NODE_CONNECTION_SUPERSPEEDPLUS_INFORMATION",
     "IOCTL_USB_GET_PORT_CONNECTOR_PROPERTIES",
+    "IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS",
     "LINK_SPEED_GTPS",
     "NVME_DATA_TYPE_IDENTIFY",
     "NVME_DATA_TYPE_LOG_PAGE",
     "OPEN_EXISTING",
+    "PARTITION_STYLE_GPT",
     "PCI_DEVICE_PROPERTY_FMTID",
     "PCI_PROP_BASE_CLASS",
     "PCI_PROP_CURRENT_LINK_SPEED",

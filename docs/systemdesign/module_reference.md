@@ -53,6 +53,8 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/hw/windows/builder.py` - Turn a captured Windows reading into the domain inventory.
 - `src/lsdsk/adapters/hw/windows/capture.py` - The typed shape of a Windows reading.
 - `src/lsdsk/adapters/hw/windows/reader.py` - Read storage topology and device blobs from a live Windows system.
+- `src/lsdsk/adapters/hw/windows/usage.py` - Resolve what uses each Windows disk, from what the reader recorded.
+- `src/lsdsk/adapters/hw/windows/volumes.py` - Read Windows volumes: what each one is mounted as, and which disk it sits on.
 - `src/lsdsk/adapters/hw/windows/winapi.py` - Win32 structures and bindings used to read storage hardware.
 
 ### Adapters - hardware, shared

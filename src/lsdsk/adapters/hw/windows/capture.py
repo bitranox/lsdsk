@@ -257,8 +257,29 @@ class UsbHubEntry(CaptureModel, frozen=True):
     error: DeviceText | None = None
 
 
+class VolumeEntry(CaptureModel, frozen=True):
+    """What one volume answered, keyed in :class:`WindowsCapture` by its GUID path.
+
+    Attributes:
+        paths: Every mount path the volume answers to: a drive letter, a bare
+            folder mount, or both when a letter is also mounted as a folder.
+        disks: The disk numbers the volume's extents span; more than one for a
+            spanned or striped dynamic volume, none for a volume this machine
+            could not place on a disk at all (a RAM disk).
+        esp: Whether the volume's partition is the EFI System Partition, or
+            ``None`` when the partition ioctl itself failed.
+        error: Why the volume could not be opened, in which case neither ioctl
+            was issued.
+    """
+
+    paths: Entries[DeviceText] = ()
+    disks: Entries[Annotated[int, Field(ge=0, le=_UINT32_MAX)]] = ()
+    esp: bool | None = None
+    error: DeviceText | None = None
+
+
 class WindowsCapture(CaptureHeader, frozen=True):
-    """A whole Windows reading.
+    r"""A whole Windows reading.
 
     Attributes:
         platform: Always Windows; it is what selects this model.
@@ -276,6 +297,13 @@ class WindowsCapture(CaptureHeader, frozen=True):
             capture taken before USB links were read.
         usb_hubs: Every hub one of those ports belongs to, keyed by its
             instance identifier.
+        volumes: Every volume Windows enumerated, keyed by its
+            ``\\?\Volume{...}\`` GUID path. ``None`` for a capture taken
+            before volumes were read, which leaves every disk's usage
+            undecidable rather than claiming none was found.
+        windows_volume: The GUID path of the volume the Windows directory
+            lives on, so the builder can mark its disk as boot. ``None`` when
+            it could not be resolved.
     """
 
     platform: Literal[Platform.WINDOWS]
@@ -287,6 +315,8 @@ class WindowsCapture(CaptureHeader, frozen=True):
     disks: EntryMap[DeviceText, DiskEntry] = Field(default_factory=dict[DeviceText, DiskEntry])
     usb_ports: EntryMap[DeviceText, UsbPortEntry] = Field(default_factory=dict[DeviceText, UsbPortEntry])
     usb_hubs: EntryMap[DeviceText, UsbHubEntry] = Field(default_factory=dict[DeviceText, UsbHubEntry])
+    volumes: EntryMap[DeviceText, VolumeEntry] | None = None
+    windows_volume: DeviceText | None = None
 
 
 __all__ = [
@@ -297,6 +327,7 @@ __all__ = [
     "StorageDescriptor",
     "UsbHubEntry",
     "UsbPortEntry",
+    "VolumeEntry",
     "WindowsCapture",
     "bus_type_of",
 ]

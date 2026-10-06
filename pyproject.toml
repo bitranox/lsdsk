@@ -321,6 +321,7 @@ omit = [
     # Windows machine, which tests/test_hw_builder.py replays through the pure
     # Windows builder; that builder is measured normally.
     "*/adapters/hw/windows/reader.py",
+    "*/adapters/hw/windows/volumes.py",
     "*/adapters/hw/windows/winapi.py",
     # The Linux transport is the same case: it needs a real /sys and real block
     # devices to issue ioctls against, neither of which a Windows or macOS runner

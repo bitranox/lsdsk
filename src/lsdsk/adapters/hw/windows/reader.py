@@ -46,6 +46,7 @@ from ..ata_commands import (
 from ..capture import MAX_DEVICE_TEXT
 from ..decode import pciids, usb
 from ..snapshot import SCHEMA_VERSION
+from . import volumes
 from . import winapi as api
 from .capture import bus_type_of
 
@@ -1191,6 +1192,8 @@ def read_system() -> dict[str, Any]:
         "disks": disks,
         "usb_ports": usb_reading.ports,
         "usb_hubs": usb_reading.hubs,
+        "volumes": volumes.read_volumes(tree.kernel32),
+        "windows_volume": volumes.read_windows_volume(tree.kernel32),
         "cwd": os.getcwd(),  # noqa: PTH109 - recorded as context for a bug report, not used as a path
     }
 
