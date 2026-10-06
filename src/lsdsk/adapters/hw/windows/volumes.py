@@ -1,18 +1,16 @@
 """Read Windows volumes: what each one is mounted as, and which disk it sits on.
 
-The two Win32 responses this enumerates (``VOLUME_DISK_EXTENTS`` and
-``PARTITION_INFORMATION_EX``) are parsed from raw bytes at fixed SDK offsets
-rather than through a declared ``ctypes.Structure``. That is what keeps the two
-parsers testable on every runner: :func:`parse_disk_extents` and
-:func:`parse_is_esp` sit above the impure part of this module for exactly that
-reason, and :mod:`tests.test_windows_volume_parsing` exercises them directly.
-
 Opening a volume needs no privilege at all - Task 1 measured this on two real
 Windows hosts, unelevated and elevated alike, and every open and every ioctl
 below succeeded either way.  A volume this cannot open (a RAM disk that
 refuses even Administrator) is recorded with an ``error`` and nothing else;
 :mod:`.usage` is what turns that into an undecidable disk rather than a false
 "not mounted".
+
+The two Win32 responses this issues (``VOLUME_DISK_EXTENTS`` and
+``PARTITION_INFORMATION_EX``) are decoded by :mod:`.volume_layout`, which also
+owns the struct layouts this module sizes its ioctl buffers from; not one line
+of the I/O below can execute on a Linux or macOS runner.
 
 System Role:
     Adapter layer, reading half for the Windows "used by" column.  Produces the
@@ -22,94 +20,19 @@ System Role:
 from __future__ import annotations
 
 import ctypes
-import struct
-import uuid
 from ctypes import wintypes
 from typing import Any
 
 from . import winapi as api
+from .volume_layout import EXTENT_ENTRY, EXTENTS_HEADER, MAX_EXTENTS, PARTITION_HEAD, parse_disk_extents, parse_is_esp
 
-#: The EFI System Partition's GPT partition type GUID.
-_ESP_TYPE_GUID = uuid.UUID("C12A7328-F81F-11D2-BA4B-00A0C93EC93B")
-
-# VOLUME_DISK_EXTENTS: a DWORD count, padded to 8 bytes because the first
-# DISK_EXTENT that follows holds a LARGE_INTEGER and so needs 8-byte alignment.
-_EXTENTS_HEADER = struct.Struct("<I4x")
-# DISK_EXTENT: DiskNumber (DWORD, padded the same way), StartingOffset and
-# ExtentLength (both LARGE_INTEGER).
-_EXTENT_ENTRY = struct.Struct("<I4xqq")
-#: The most members this reads from a spanned or striped dynamic volume. A
-#: configuration wider than this is not one anyone runs, and the ioctl buffer
-#: below is sized once from it rather than probed and retried.
-_MAX_EXTENTS = 32
-_EXTENTS_BUFFER_SIZE = _EXTENTS_HEADER.size + _MAX_EXTENTS * _EXTENT_ENTRY.size
-
-# PARTITION_INFORMATION_EX: PartitionStyle (int, padded to 8), StartingOffset,
-# PartitionLength (both LARGE_INTEGER), PartitionNumber (DWORD), two BOOLEANs
-# and their padding, then the Mbr/Gpt union. The GPT arm's own PartitionType
-# GUID is the union's first field, so it sits right after the fixed head.
-_PARTITION_HEAD = struct.Struct("<i4xqqIBB2x")
-_PARTITION_TYPE_OFFSET = _PARTITION_HEAD.size
-_PARTITION_INFO_SIZE = _PARTITION_HEAD.size + 112  # the Gpt union's full width
+_EXTENTS_BUFFER_SIZE = EXTENTS_HEADER.size + MAX_EXTENTS * EXTENT_ENTRY.size
+_PARTITION_INFO_SIZE = PARTITION_HEAD.size + 112  # the Gpt union's full width
 
 #: How wide a buffer to offer for a volume's mount paths. A volume path is a
 #: drive letter or a short folder mount, so this is generous rather than tight.
 _PATHS_BUFFER_CHARS = 4096
 _MAX_PATH = 260
-
-
-def parse_disk_extents(raw: bytes) -> list[int]:
-    """Read the disk numbers a volume's extents span, from a raw ioctl response.
-
-    Args:
-        raw: The bytes ``IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS`` returned.
-
-    Returns:
-        Each extent's disk number, in the order the driver reported them. A
-        count the buffer does not have room for is clamped to what is there,
-        and a buffer too short to carry even the header names nothing.
-
-    Example:
-        >>> import struct
-        >>> raw = struct.pack("<I4x", 1) + struct.pack("<I4xqq", 3, 0, 1 << 20)
-        >>> parse_disk_extents(raw)
-        [3]
-    """
-    if len(raw) < _EXTENTS_HEADER.size:
-        return []
-    (declared,) = _EXTENTS_HEADER.unpack_from(raw)
-    available = (len(raw) - _EXTENTS_HEADER.size) // _EXTENT_ENTRY.size
-    count = min(declared, available)
-    return [
-        _EXTENT_ENTRY.unpack_from(raw, _EXTENTS_HEADER.size + index * _EXTENT_ENTRY.size)[0] for index in range(count)
-    ]
-
-
-def parse_is_esp(raw: bytes) -> bool | None:
-    """Read whether a partition is the EFI System Partition, from a raw ioctl response.
-
-    Args:
-        raw: The bytes ``IOCTL_DISK_GET_PARTITION_INFO_EX`` returned.
-
-    Returns:
-        ``True`` for a GPT partition whose type is the ESP GUID, ``False`` for
-        any other GPT type or an MBR partition, and ``None`` when the buffer
-        is too short to carry even the partition style.
-
-    Example:
-        >>> import struct, uuid
-        >>> esp = uuid.UUID("C12A7328-F81F-11D2-BA4B-00A0C93EC93B")
-        >>> head = struct.pack("<i4xqqIBB2x", 1, 0, 1 << 20, 1, 0, 0)
-        >>> parse_is_esp(head + esp.bytes_le + bytes(112 - 16))
-        True
-    """
-    if len(raw) < _PARTITION_TYPE_OFFSET + 16:
-        return None
-    (style,) = struct.unpack_from("<i", raw, 0)
-    if style != api.PARTITION_STYLE_GPT:
-        return False
-    type_guid = uuid.UUID(bytes_le=raw[_PARTITION_TYPE_OFFSET : _PARTITION_TYPE_OFFSET + 16])
-    return type_guid == _ESP_TYPE_GUID
 
 
 def _volume_paths(kernel32: api.WinLibrary, volume: str) -> tuple[str, ...]:
@@ -253,4 +176,4 @@ def read_windows_volume(kernel32: api.WinLibrary) -> str | None:
     return volume_guid.value
 
 
-__all__ = ["parse_disk_extents", "parse_is_esp", "read_volumes", "read_windows_volume"]
+__all__ = ["read_volumes", "read_windows_volume"]

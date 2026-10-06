@@ -2,7 +2,8 @@
 
 Both ``VOLUME_DISK_EXTENTS`` and ``PARTITION_INFORMATION_EX`` are parsed at
 fixed SDK offsets rather than through a declared ``ctypes.Structure``, which is
-what keeps them testable on every runner (see :mod:`lsdsk.adapters.hw.windows.volumes`).
+what keeps them testable on every runner (see
+:mod:`lsdsk.adapters.hw.windows.volume_layout`).
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import uuid
 
 import pytest
 
-from lsdsk.adapters.hw.windows.volumes import parse_disk_extents, parse_is_esp
+from lsdsk.adapters.hw.windows.volume_layout import parse_disk_extents, parse_is_esp
 
 ESP = uuid.UUID("C12A7328-F81F-11D2-BA4B-00A0C93EC93B")
 OTHER = uuid.UUID("EBD0A0A2-B9E5-4433-87C0-68B6B72699C7")  # Microsoft Basic Data
