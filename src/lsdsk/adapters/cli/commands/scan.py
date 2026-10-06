@@ -1320,8 +1320,9 @@ def cli_snapshot(ctx: click.Context, output: str, output_format: OutputFormat) -
     reproducible bug report as well as a way to inspect a server from your desk:
     ``ssh host lsdsk snapshot -o - > capture.json`` brings one home in one line.
 
-    A capture holds every drive's serial number and this machine's hostname,
-    so treat it as identifying data before attaching it anywhere public.
+    A capture holds every drive's serial number, this machine's hostname and
+    where its disks are mounted, so treat it as identifying data before
+    attaching it anywhere public.
 
     Refuses rather than ignores a global ``--replay``. This command always reads
     the machine it runs on, so honouring the flag would mean re-serialising
@@ -1465,8 +1466,8 @@ def _report_the_capture(destination: _CaptureDestination, output_format: OutputF
         # none at all: a "Wrote" line ahead of the document would make the
         # redirected file one ``--replay`` refuses.
         safe_console.echo(
-            "Note: the capture on standard output holds every drive's serial number and this "
-            "machine's hostname. Treat it as identifying data before sharing it.",
+            "Note: the capture on standard output holds every drive's serial number, this "
+            "machine's hostname and where its disks are mounted. Treat it as identifying data before sharing it.",
             err=True,
         )
         return
@@ -1486,8 +1487,8 @@ def _report_the_capture(destination: _CaptureDestination, output_format: OutputF
     # On stderr in both modes, so stdout stays exactly what a script parses:
     # the path line in human mode, the envelope in JSON mode.
     safe_console.echo(
-        f"Note: {destination.named} holds every drive's serial number and this machine's hostname. "
-        "Treat it as identifying data before sharing it.",
+        f"Note: {destination.named} holds every drive's serial number, this machine's hostname "
+        "and where its disks are mounted. Treat it as identifying data before sharing it.",
         err=True,
     )
 

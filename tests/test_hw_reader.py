@@ -126,6 +126,23 @@ class TestAnUnresolvableLinkIsNeverCalledVirtual:
         assert entry.get("virtual") is not True
 
 
+@pytest.mark.os_linux
+def test_a_disk_whose_directory_cannot_be_listed_costs_only_its_own_partitions(sysfs: Path) -> None:
+    """One unlistable disk must not abort the whole reading, nor read as partitionless."""
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("root lists a directory whatever its mode, so the refusal cannot be planted")
+    sda = sysfs / _PCI_BLOCK / "sda"
+    sda.chmod(0o300)  # still searchable, so every attribute reads; only the listing fails
+    try:
+        block = read_block(sysfs / "block")
+    finally:
+        sda.chmod(0o700)
+    assert "partitions" not in block["sda"], "an unlisted disk was recorded as having no partitions"
+    assert block["sr0"]["partitions"] == {}
+
+
 @pytest.mark.os_agnostic
 def test_the_windows_reader_decides_nvme_through_the_shared_bus_conversion() -> None:
     """The choice between NVMe and ATA passthrough must not re-derive its own bus mapping.

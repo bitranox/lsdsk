@@ -226,11 +226,15 @@ def save(capture: dict[str, Any], path: Path) -> None:
     typed model would silently drop all of that from every new snapshot;
     validating through it and then writing what was actually read does not.
 
-    A snapshot names the machine, its kernel and every drive's serial number, and
-    the run that produces the most complete one is a privileged run. Left at the
-    ambient umask it lands group- and world-readable, so it is narrowed to the
-    same mode this project already uses for a user-scoped file. Widening it to
-    share the capture is then a deliberate act rather than the default.
+    A snapshot names the machine, its kernel and every drive's serial number,
+    and where each disk is used: its mountpoints or drive letters and the names
+    of the pools, volume groups and arrays it belongs to. A Linux capture leaves
+    out network shares, FUSE mounts and LVM or LUKS UUIDs; a Windows capture
+    keys each volume by its volume GUID path. The run that produces the most
+    complete one is a privileged run. Left at the ambient umask it lands group-
+    and world-readable, so it is narrowed to the same mode this project already
+    uses for a user-scoped file. Widening it to share the capture is then a
+    deliberate act rather than the default.
 
     The write goes to a temporary file in the destination's directory and is
     then renamed over it, which is what makes the mode above worth anything.

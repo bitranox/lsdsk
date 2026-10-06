@@ -7,8 +7,10 @@ all world-readable.
 
 System Role:
     Adapter layer, reading half. Produces the plain mappings that
-    :mod:`.capture` types and :mod:`.builder` will turn into usage (a later
-    task); this module records sources only.
+    :mod:`.capture` types and :mod:`.usage` resolves into what uses each disk;
+    this module records sources only, and only the parts of them the resolver
+    reads, so a capture carries no network share, home-directory FUSE mount or
+    volume UUID.
 
 Contents:
     * :func:`read_mounts` - every mounted filesystem, from mountinfo.
@@ -41,11 +43,11 @@ if TYPE_CHECKING:
 # enforce, well under :data:`..textfile.read_text_bounded`'s own 64 MiB
 # ceiling: that ceiling exists to catch a mistyped path to an unrelated huge
 # file, not to say a sane mountinfo or swap list could ever approach it. A
-# file at or past this bound is treated exactly like one that could not be
-# read at all - ``None`` from :func:`read_mounts`, an empty list from
-# :func:`read_swaps` - because this reader has no way to tell "this is really
-# mountinfo and it is huge" from "this is not mountinfo", and the honest
-# answer to either is the same one an unreadable file gets.
+# file larger than this bound is treated exactly like one that could not be
+# read at all - ``None`` from :func:`read_mounts` and :func:`read_swaps` alike
+# - because this reader has no way to tell "this is really mountinfo and it is
+# huge" from "this is not mountinfo", and the honest answer to either is the
+# same one an unreadable file gets.
 MAX_MOUNTINFO_BYTES = 8 * 1024 * 1024
 
 #: The most characters a single short sysfs attribute (a device number, a dm
@@ -72,6 +74,14 @@ _MIN_LEFT_FIELDS = 5
 # The fields right of " - " are fstype, source[, options]; at least the first
 # two are required to know the filesystem and where it came from.
 _MIN_RIGHT_FIELDS = 2
+# A ZFS dataset has an anonymous device number, so its source is the one way to
+# join it to its pool; every other source is either a device path (already
+# resolved to source_dev) or something no disk sits behind.
+_ZFS = "zfs"
+# Major 0 is the kernel's anonymous device range: tmpfs, NFS, FUSE, overlay and
+# every other mount with no block device behind it, plus btrfs and ZFS, whose
+# real devices are found another way.
+_ANONYMOUS_MAJOR = "0"
 
 
 def _unescape(text: str) -> str:
@@ -110,13 +120,16 @@ def read_mounts(
             why a file past it is refused the same way an unreadable one is.
 
     Returns:
-        One row per mount, each carrying ``dev`` (the mounted device's own
-        ``maj:min``, field 3), ``mountpoint``, ``fstype`` and ``source`` (the
-        filesystem type and source after the ``" - "`` separator), plus
-        ``source_dev`` when the source names a resolvable ``/dev`` node. ``None``
-        when the file could not be read at all, or is larger than `limit` -
-        a different fact from a machine with no mounts, which mountinfo never
-        reports.
+        One row per mount a disk can sit behind, each carrying ``dev`` (the
+        mounted device's own ``maj:min``, field 3), ``mountpoint`` and
+        ``fstype``, plus ``source_dev`` when the source names a resolvable
+        ``/dev`` node and, for ZFS only, ``source`` narrowed to the pool name.
+        A row with an anonymous device number and no resolvable source (tmpfs,
+        NFS, FUSE, overlay) is left out, and so is every other source text: an
+        NFS or sshfs source names a host and a user, and nothing reads it.
+        ``None`` when the file could not be read at all, or is larger than
+        `limit` - a different fact from a machine with no mounts, which
+        mountinfo never reports.
     """
     try:
         text = read_text_bounded(path, what="mountinfo")
@@ -136,11 +149,12 @@ def read_mounts(
 
 
 def _parse_mountinfo_line(line: str) -> dict[str, str] | None:
-    """Parse one mountinfo row, or ``None`` for a malformed one.
+    """Parse one mountinfo row, or ``None`` for a malformed or unwanted one.
 
     The optional fields between field 6 and the separator vary in count, so
     the line is split on the FIRST ``" - "`` that follows field 6 rather than
-    on a fixed index counted from the right.
+    on a fixed index counted from the right. A row no disk can sit behind is
+    ``None`` too (see :func:`read_mounts`).
     """
     left, separator, right = line.partition(" - ")
     if not separator:
@@ -150,16 +164,16 @@ def _parse_mountinfo_line(line: str) -> dict[str, str] | None:
     if len(left_fields) < _MIN_LEFT_FIELDS or len(right_fields) < _MIN_RIGHT_FIELDS:
         return None
 
-    row = {
-        "dev": left_fields[2],
-        "mountpoint": _unescape(left_fields[4]),
-        "fstype": right_fields[0],
-        "source": _unescape(right_fields[1]),
-    }
-    if row["source"].startswith("/dev/"):
-        source_dev = _device_number_of(row["source"])
-        if source_dev is not None:
-            row["source_dev"] = source_dev
+    row = {"dev": left_fields[2], "mountpoint": _unescape(left_fields[4]), "fstype": right_fields[0]}
+    source = _unescape(right_fields[1])
+    source_dev = _device_number_of(source) if source.startswith("/dev/") else None
+    if source_dev is not None:
+        row["source_dev"] = source_dev
+    if row["fstype"] == _ZFS:
+        # The dataset path below the pool is never read, and can name a user.
+        row["source"] = source.split("/", 1)[0]
+    elif row["dev"].split(":", 1)[0] == _ANONYMOUS_MAJOR and source_dev is None:
+        return None
     return row
 
 
@@ -167,7 +181,7 @@ def read_swaps(
     path: Path = Path("/proc/swaps"),
     *,
     limit: int = MAX_MOUNTINFO_BYTES,
-) -> list[dict[str, str]]:
+) -> list[dict[str, str]] | None:
     """Read every active swap from ``/proc/swaps``.
 
     Args:
@@ -179,15 +193,16 @@ def read_swaps(
 
     Returns:
         One row per swap, each carrying ``path`` and, when it resolves to a
-        device node, ``dev``. Empty when the file cannot be read, is larger
-        than `limit`, or has no swaps beyond its header.
+        device node, ``dev``. Empty when the file has no swaps beyond its
+        header; ``None`` when it cannot be read or is larger than `limit`,
+        because an unread swap list cannot say a disk carries no swap.
     """
     try:
         text = read_text_bounded(path, what="the swap list")
     except (MissingFileError, ConfigurationError):
-        return []
+        return None
     if len(text.encode("utf-8")) > limit:
-        return []
+        return None
 
     rows: list[dict[str, str]] = []
     for line in text.splitlines()[1:]:
@@ -202,7 +217,7 @@ def read_swaps(
     return rows
 
 
-def read_partitions(node: Path) -> dict[str, dict[str, Any]]:
+def read_partitions(node: Path) -> dict[str, dict[str, Any]] | None:
     """Read a disk's partitions and what sits directly on each.
 
     A sysfs disk directory holds other children too (``queue``, ``device``,
@@ -210,18 +225,23 @@ def read_partitions(node: Path) -> dict[str, dict[str, Any]]:
     file is a partition.
 
     Args:
-        node: The disk's ``/sys/block`` directory.
+        node: The disk's (or a stacked device's) ``/sys/block`` directory.
 
     Returns:
         One entry per partition, keyed by its kernel name, each carrying
         ``dev`` when read and ``holders`` (sorted names of what sits on it).
+        Empty when ``node`` is not a directory. ``None`` when it is one but
+        could not be listed, so one unreadable disk degrades to "not read"
+        for that disk alone instead of aborting the whole reading.
     """
     partitions: dict[str, dict[str, Any]] = {}
-    if not node.is_dir():
-        return partitions
-    for child in sorted(node.iterdir()):
-        if not (child / "partition").is_file():
-            continue
+    try:
+        if not node.is_dir():
+            return partitions
+        children = sorted(child for child in node.iterdir() if (child / "partition").is_file())
+    except OSError:
+        return None
+    for child in children:
         entry: dict[str, Any] = {}
         dev = _read_short_text(child / "dev")
         if dev is not None:
@@ -245,8 +265,9 @@ def read_stacked(names: Iterable[str], root: Path = Path("/sys/block")) -> dict[
 
     Returns:
         One entry per device-mapper device reached, keyed by kernel name, each
-        carrying ``dev``, ``dm_name`` and ``dm_uuid`` where present, and
-        ``holders``.
+        carrying ``dev``, ``dm_name`` and the type prefix of ``dm_uuid``
+        (``LVM-``, ``CRYPT-``, ``mpath-``) where present, ``holders``, and
+        ``partitions`` (a partitioned md array is mounted through these).
     """
     found: dict[str, dict[str, Any]] = {}
     seen: set[str] = set()
@@ -259,21 +280,53 @@ def read_stacked(names: Iterable[str], root: Path = Path("/sys/block")) -> dict[
         node = root / name
         if not node.is_dir():
             continue
-        entry: dict[str, Any] = {}
-        dev = _read_short_text(node / "dev")
-        if dev is not None:
-            entry["dev"] = dev
-        dm_name = _read_short_text(node / "dm" / "name")
-        if dm_name is not None:
-            entry["dm_name"] = dm_name
-        dm_uuid = _read_short_text(node / "dm" / "uuid")
-        if dm_uuid is not None:
-            entry["dm_uuid"] = dm_uuid
-        holders = _holder_names(node)
-        entry["holders"] = holders
+        entry = _read_stacked_entry(node)
         found[name] = entry
-        pending.extend(holder for holder in holders if holder not in seen)
+        below = [*entry["holders"], *(h for part in entry["partitions"].values() for h in part["holders"])]
+        pending.extend(holder for holder in below if holder not in seen)
     return found
+
+
+def _read_stacked_entry(node: Path) -> dict[str, Any]:
+    """Read one stacked device's number, mapping, holders and partitions."""
+    entry: dict[str, Any] = {}
+    dev = _read_short_text(node / "dev")
+    if dev is not None:
+        entry["dev"] = dev
+    dm_name = _read_short_text(node / "dm" / "name")
+    if dm_name is not None:
+        entry["dm_name"] = dm_name
+    dm_uuid = _uuid_type(_read_short_text(node / "dm" / "uuid"))
+    if dm_uuid is not None:
+        entry["dm_uuid"] = dm_uuid
+    entry["holders"] = _holder_names(node)
+    # A stacked device whose directory cannot be listed still names its own
+    # layer; only the mounts reached through its partitions go unseen.
+    entry["partitions"] = read_partitions(node) or {}
+    return entry
+
+
+def _uuid_type(dm_uuid: str | None) -> str | None:
+    """The type prefix of a device-mapper UUID, without the identifier after it.
+
+    Args:
+        dm_uuid: A mapping UUID such as ``LVM-<pv uuid><lv uuid>`` or
+            ``CRYPT-LUKS2-<uuid>-<name>``, when one was read.
+
+    Returns:
+        The first dash-separated field with its dash (``LVM-``, ``CRYPT-``),
+        which is all the resolver reads, or ``None`` when there is none.
+
+    Example:
+        >>> _uuid_type("CRYPT-LUKS2-0123abcd-cryptroot")
+        'CRYPT-'
+        >>> _uuid_type("nodash") is None
+        True
+    """
+    if dm_uuid is None:
+        return None
+    kind, separator, _ = dm_uuid.partition("-")
+    return f"{kind}-" if kind and separator else None
 
 
 def read_signatures(devnums: Iterable[str], root: Path = Path("/run/udev/data")) -> dict[str, dict[str, str]] | None:

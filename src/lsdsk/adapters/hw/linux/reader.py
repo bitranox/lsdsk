@@ -713,7 +713,11 @@ def read_block(root: Path = Path("/sys/block")) -> dict[str, dict[str, Any]]:
             # layers the same way a real disk's chain does.
             entry["dev"] = _read_attribute(node / "dev")
             entry["holders"] = sorted(p.name for p in _entries(node / "holders"))
-            entry["partitions"] = mounts.read_partitions(node)
+            partitions = mounts.read_partitions(node)
+            # Left out when the disk's directory could not be listed, which the
+            # capture reads as "not read" rather than as "no partitions".
+            if partitions is not None:
+                entry["partitions"] = partitions
         disks[node.name] = entry
     return disks
 
