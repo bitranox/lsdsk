@@ -56,7 +56,9 @@ def test_swap_rows_skip_the_header(tmp_path: Path) -> None:
         "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n/dev/nvme4n1p1   partition\t8388604\t\t0\t\t-2\n",
         encoding="utf-8",
     )
-    assert [row["path"] for row in mounts.read_swaps(path)] == ["/dev/nvme4n1p1"]
+    rows = mounts.read_swaps(path)
+    assert rows is not None
+    assert [row["path"] for row in rows] == ["/dev/nvme4n1p1"]
 
 
 @pytest.mark.os_agnostic
@@ -188,7 +190,7 @@ def test_a_capture_accepts_a_minimal_reading_carrying_every_new_field() -> None:
         }
     )
     assert capture.mounts is not None and capture.mounts[0].fstype == "zfs"
-    assert capture.swaps[0].dev == "259:1"
+    assert capture.swaps is not None and capture.swaps[0].dev == "259:1"
     assert capture.stacked["dm-0"].dm_name == "cryptroot"
     assert capture.signatures is not None and capture.signatures["8:67"].fs_type == "zfs_member"
 
