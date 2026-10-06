@@ -5,6 +5,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Added
+
+- **A `used by` column on the disks table, and a boot mark.** Every disk now reports whether the
+  machine boots from it and what it is used for - a mount, a drive letter, swap, or the ZFS pool,
+  LVM group, md array or dm-crypt mapping it belongs to. Read with no subprocess and no elevated
+  rights on either platform; `-` marks a disk that could not be read and `not mounted` one that
+  was read and carries nothing. The full text is also in the disk detail panel and in the JSON
+  envelope's `usage` field.
+
 ## [1.6.4] 2026-10-05 20:11:15
 
 ### Changed

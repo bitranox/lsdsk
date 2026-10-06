@@ -80,6 +80,12 @@ Spalten daneben abzuziehen: die Zeile läuft seitlich hinaus, und ein Pager
 schiebt sie (`lsdsk disks --full-wwn | less -S`). Der JSON-Umschlag trägt jede
 WWN immer vollständig, gleich was die menschenlesbare Ansicht angefordert hat.
 
+Die Spalte `used by` am Ende dieser Tabelle hat keine eigene Option und keinen eigenen
+Konfigurationsschlüssel: sie ist flexibel und wird wie `model` mit einem markierten Schnitt
+gekürzt, und sie ist die erste Spalte, die auf einer schmalen Seite entfällt. Ihr vollständiger
+Text steht immer in der Detailtafel und im Feld `usage` des JSON-Umschlags, gleich was die
+Tabelle gekürzt oder weggelassen hat.
+
 `lsdsk snapshot` braucht ein Ziel: `-o FILE`, ausgeschrieben `--output FILE`.
 `-o -` schreibt die Aufnahme stattdessen auf die Standardausgabe; halten Sie
 stderr dann aus der Umleitung heraus: `2>&1`, `&>` oder `ssh -t` legen den

@@ -280,7 +280,7 @@ an `IndentationError`, which exits `1` - the same code these checks use for
 
 **A disk, inside `data.disks`, carries `node`, `path`, `model`, `serial`,
 `firmware`, `wwn`, `size_bytes`, `kind`, `bus`, `controller_address`, `link`,
-`pcie`, `usb`, `health` and `readings_refused`.** Every one but `node`, `path`,
+`pcie`, `usb`, `usage`, `health` and `readings_refused`.** Every one but `node`, `path`,
 `model`, `bus` and `readings_refused` may be `null`, which means it was not read
 rather than that it is zero. `readings_refused` is a list, empty on a drive that
 answered everything, and each entry is an object of `reading` and `reason`: what
@@ -295,7 +295,11 @@ enclosure, and `usb` is the USB link from the machine to that bridge: an object 
 `lane_rate` (`1.5M`, `12M`, `480M`, `5G` or `10G`, where `M` is Mb/s and `G` is
 Gb/s, per lane) and `lanes` (1 or 2). The speed is the lane rate times the lanes:
 `{"lane_rate": "10G", "lanes": 2}` is 20 Gb/s and `{"lane_rate": "480M", "lanes": 1}`
-is 0.48 Gb/s. `usb` is `null` on every other disk.
+is 0.48 Gb/s. `usb` is `null` on every other disk. `usage` is an object of `boot`
+and `uses` (each use an object of `kind`, `name` and `mounts`), and feeds the
+table's `used by` column, which prints one of three things: `-` when the disk
+was not read, `not mounted` when it was read and nothing uses it, or the boot
+and use text otherwise, such as `boot zfs:rpool` or `lvm:vg0 -> /var`.
 
 **A controller, inside `data.controllers`, carries `kind`**, which is one of
 `ahci`, `sas`, `nvme`, `raid`, `ide` or `other` - read from the PCI class code,

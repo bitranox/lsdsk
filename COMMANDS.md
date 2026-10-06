@@ -79,6 +79,11 @@ the row runs off the side and a pager scrolls it (`lsdsk disks --full-wwn |
 less -S`). The JSON envelope always carries every WWN in full, whatever the
 human view was asked for.
 
+The `used by` column at the end of that table has no option or configuration key of its own: it is
+flexible and clipped with a marked cut like `model`, and the first column dropped on a narrow page.
+Its full text is always in the detail panel and in the JSON envelope's `usage` field, whatever the
+table dropped or clipped.
+
 `lsdsk snapshot` needs somewhere to write: `-o FILE`, spelled `--output FILE`
 in full. `-o -` writes the capture to standard output instead, so keep stderr off
 that redirect: `2>&1`, `&>` or `ssh -t` put the serial-number notice into the

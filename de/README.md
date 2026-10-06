@@ -17,7 +17,8 @@
 lsdsk ist ein Speicher-Diagnosewerkzeug für Linux und Windows: es gruppiert jedes
 Laufwerk unter dem Controller und dem PCIe-Pfad, an dem es hängt, misst die Verbindung
 der Ports, der Laufwerke und die aktuell ausgehandelten Geschwindigkeiten, 
-SMART-Daten und Fehlerzähler, und gibt eine Handlungsempfehlung.
+SMART-Daten und Fehlerzähler, zeigt, von welcher Platte das System startet und was
+jede Platte nutzt, und gibt eine Handlungsempfehlung.
 
 Das c't Magazin hat dieses Tool am 17. September 2026 vorgestellt:
 [Kommandozeilentool lsdsk: Performance-Engpässe bei SSDs und Controllern finden](https://www.heise.de/ratgeber/Kommandozeilentool-lsdsk-Performance-Engpaesse-bei-SSDs-und-Controllern-finden-11440011.html).
