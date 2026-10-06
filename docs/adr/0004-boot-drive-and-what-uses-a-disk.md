@@ -85,13 +85,11 @@ failed to open even elevated (error 5, access denied) was an unrelated,
 separately-secured volume on that machine, and a BitLocker-locked volume on an
 MBR disk (its filesystem query failed with 0x80310000, FVE_E_LOCKED_VOLUME)
 still opened, mapped to its disk, and reported PartitionStyle 0, which is
-PARTITION_STYLE_MBR and correctly not an EFI system partition. Neither STOP condition in the
-task brief fired: the unelevated run did not fail to open every volume (it
-opened all of them), and IOCTL_DISK_GET_PARTITION_INFO_EX did not fail on
-any handle it could open. Both unmeasured readings are now measured, and
-Task 5 does not need to record a refusal for either.
+PARTITION_STYLE_MBR and correctly not an EFI system partition. So an unelevated
+process can open every ordinary volume, and the partition query succeeds on
+every handle that opens; neither reading needs to be recorded as refused.
 
-A real-hardware run against five ZFS-root Proxmox nodes, a Proxmox Backup Server node and a
+A real-hardware run against four ZFS-root Proxmox nodes, a Proxmox Backup Server node and a
 physical Windows machine found a boot disk on every reachable host: on each ZFS-root host, exactly
 the two members of its root mirror carried `boot`, each reporting `zfs:rpool`, and the Windows
 host's single boot disk reported `boot` with its system drive letter.
