@@ -320,14 +320,18 @@ class StackedEntry(CaptureModel, frozen=True):
             is readable one layer at a time.
         partitions: The device's own partitions, keyed by kernel name. A
             partitioned md array (IMSM or DDF fake RAID) is mounted through
-            these, and they are not among its holders.
+            these, and they are not among its holders. ``None`` when they
+            were never read - this device's own sysfs directory could not be
+            listed, or a capture older than this field - a different fact
+            from an empty mapping, which means they were read and there are
+            none.
     """
 
     dev: DeviceText | None = None
     dm_name: DeviceText | None = None
     dm_uuid: DeviceText | None = None
     holders: Entries[DeviceText] = ()
-    partitions: EntryMap[DeviceText, PartitionEntry] = Field(default_factory=dict[DeviceText, PartitionEntry])
+    partitions: EntryMap[DeviceText, PartitionEntry] | None = None
 
 
 class FilesystemSignature(CaptureModel, frozen=True):

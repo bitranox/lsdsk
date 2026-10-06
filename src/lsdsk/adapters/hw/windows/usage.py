@@ -145,14 +145,14 @@ def resolve_usage(capture: WindowsCapture, environment: Environment) -> dict[str
     disk_numbers = _disk_numbers(nodes)
     mounts = _letter_mounts(volumes, disk_numbers)
     boot_nodes = _boot_nodes(capture, volumes, disk_numbers)
-    any_volume_error = any(_blocks_not_mounted(entry) for entry in volumes.values())
+    any_volume_blocks = any(_blocks_not_mounted(entry) for entry in volumes.values())
 
     result: dict[str, DiskUsage | None] = {}
     for node in nodes:
         node_mounts = tuple(mounts.get(node, ()))
         boot = node in boot_nodes
         uses = (DiskUse(kind=UseKind.LETTER, mounts=node_mounts),) if node_mounts else ()
-        if not uses and not boot and any_volume_error:
+        if not uses and not boot and any_volume_blocks:
             result[node] = None
         else:
             result[node] = DiskUsage(boot=boot, uses=uses)

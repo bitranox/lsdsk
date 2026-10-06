@@ -512,3 +512,39 @@ def test_the_control_for_the_unread_sources_is_not_mounted() -> None:
     usage = resolve_usage(capture, BARE_METAL)
     assert usage["sda"] is not None
     assert usage["sda"].uses == ()
+
+
+@pytest.mark.os_agnostic
+def test_undecidable_treats_an_unread_stacked_closure_as_undecided() -> None:
+    # Direct test of the private helper, not resolve_usage: _stack_use always
+    # names its holder's own layer (see
+    # test_lvm_without_a_mapping_name_falls_back_to_the_kernel_name, which
+    # keeps a bare "lvm:dm-0" use with no mount at all), so a disk with ANY
+    # holder never resolves to an empty merge - resolve_usage has no way to
+    # reach _undecidable's stacked branch end to end. This locks down the
+    # mechanism itself: a disk whose holder closure reaches a stacked device
+    # that was never listed (partitions is None) cannot rule out a hidden
+    # use, which _undecidable must fold into its unread tuple.
+    from lsdsk.adapters.hw.linux import usage as linux_usage
+
+    undecidable = linux_usage._undecidable  # pyright: ignore[reportPrivateUsage] - no public seam reaches this
+
+    capture = _capture(block={"sda": _disk("8:0")}, stacked={"md126": {"dev": "9:126", "holders": []}})
+    block = capture.block["sda"]
+    assert undecidable(block, capture, [None], ["md126"]) is True
+
+
+@pytest.mark.os_agnostic
+def test_the_control_for_an_unread_stacked_closure_is_the_read_case() -> None:
+    # Same shape as above, except the stacked device's partitions WERE read
+    # (and found empty): every source that could have named a use through it
+    # was read, so its closure must not count as unread.
+    from lsdsk.adapters.hw.linux import usage as linux_usage
+
+    undecidable = linux_usage._undecidable  # pyright: ignore[reportPrivateUsage] - no public seam reaches this
+
+    capture = _capture(
+        block={"sda": _disk("8:0")}, stacked={"md126": {"dev": "9:126", "holders": [], "partitions": {}}}
+    )
+    block = capture.block["sda"]
+    assert undecidable(block, capture, [None], ["md126"]) is False

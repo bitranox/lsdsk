@@ -272,3 +272,41 @@ def test_a_disk_directory_that_cannot_be_listed_reads_its_partitions_as_not_read
         assert mounts.read_partitions(disk) is None
     finally:
         disk.chmod(0o700)
+
+
+@pytest.mark.os_linux
+def test_a_stacked_device_whose_directory_cannot_be_listed_reads_its_partitions_as_not_read(tmp_path: Path) -> None:
+    """An unlistable stacked device must still name its own layer, not read as partitionless."""
+    if os.geteuid() == 0:
+        pytest.skip("root lists a directory whatever its mode, so the refusal cannot be planted")
+    dm = tmp_path / "dm-0"
+    (dm / "dm").mkdir(parents=True)
+    (dm / "holders" / "dm-1").mkdir(parents=True)
+    (dm / "dev").write_text("253:0\n", encoding="utf-8")
+    (dm / "dm" / "name").write_text("cryptroot\n", encoding="utf-8")
+    (dm / "dm" / "uuid").write_text("CRYPT-LUKS2-abc-cryptroot\n", encoding="utf-8")
+    dm.chmod(0o300)  # still searchable, so every attribute reads; only the listing fails
+    try:
+        found = mounts.read_stacked(["dm-0"], tmp_path)
+    finally:
+        dm.chmod(0o700)
+    assert "partitions" not in found["dm-0"], "an unlisted stacked device was recorded as having no partitions"
+    assert found["dm-0"]["dev"] == "253:0"
+    assert found["dm-0"]["dm_name"] == "cryptroot"
+    assert found["dm-0"]["holders"] == ["dm-1"]
+
+
+@pytest.mark.os_agnostic
+def test_a_stacked_device_without_a_partitions_key_reads_as_not_read() -> None:
+    """A capture older than this field, or one holding an unlistable device, still validates."""
+    capture = LinuxCapture.model_validate(
+        {
+            "schema": 1,
+            "platform": "linux",
+            "hostname": "example",
+            "kernel": "6.1.0",
+            "pci": {},
+            "stacked": {"dm-0": {"dev": "253:0", "dm_name": "cryptroot", "holders": []}},
+        }
+    )
+    assert capture.stacked["dm-0"].partitions is None

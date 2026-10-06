@@ -282,7 +282,8 @@ def read_stacked(names: Iterable[str], root: Path = Path("/sys/block")) -> dict[
             continue
         entry = _read_stacked_entry(node)
         found[name] = entry
-        below = [*entry["holders"], *(h for part in entry["partitions"].values() for h in part["holders"])]
+        parts: dict[str, dict[str, Any]] = entry.get("partitions") or {}
+        below = [*entry["holders"], *(h for part in parts.values() for h in part["holders"])]
         pending.extend(holder for holder in below if holder not in seen)
     return found
 
@@ -300,9 +301,15 @@ def _read_stacked_entry(node: Path) -> dict[str, Any]:
     if dm_uuid is not None:
         entry["dm_uuid"] = dm_uuid
     entry["holders"] = _holder_names(node)
-    # A stacked device whose directory cannot be listed still names its own
-    # layer; only the mounts reached through its partitions go unseen.
-    entry["partitions"] = read_partitions(node) or {}
+    # A stacked device whose own directory cannot be listed still names its
+    # layer (dev, dm_name, dm_uuid, holders survive); its partitions key is
+    # omitted so the capture reads as "not read" rather than as "no
+    # partitions" - the same not-read/empty distinction BlockEntry keeps for
+    # a disk, so a disk reached only through this device's unread partitions
+    # stays undecidable instead of reading "not mounted".
+    partitions = read_partitions(node)
+    if partitions is not None:
+        entry["partitions"] = partitions
     return entry
 
 
