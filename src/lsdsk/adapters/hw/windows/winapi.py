@@ -88,6 +88,11 @@ IOCTL_DISK_GET_PARTITION_INFO_EX = 0x00070048
 # PARTITION_INFORMATION_EX.PartitionStyle.
 PARTITION_STYLE_GPT = 1
 
+# GetDriveTypeW's answers for the two kinds of volume no physical disk sits
+# behind, from winbase.h.
+DRIVE_CDROM = 5
+DRIVE_RAMDISK = 6
+
 # USB hub ioctls, each CTL_CODE(FILE_DEVICE_USB, function, METHOD_BUFFERED,
 # FILE_ANY_ACCESS), issued on a handle to the HUB and naming the port in the
 # request. Every one is a query.
@@ -610,6 +615,8 @@ def configure_prototypes(setupapi: WinLibrary, cfgmgr32: WinLibrary, kernel32: W
     kernel32.GetVolumePathNameW.argtypes = (wintypes.LPCWSTR, wintypes.LPWSTR, DWORD)
     kernel32.GetVolumeNameForVolumeMountPointW.restype = BOOL
     kernel32.GetVolumeNameForVolumeMountPointW.argtypes = (wintypes.LPCWSTR, wintypes.LPWSTR, DWORD)
+    kernel32.GetDriveTypeW.restype = ctypes.c_uint32
+    kernel32.GetDriveTypeW.argtypes = (wintypes.LPCWSTR,)
 
 
 # The registry hive that holds the firmware's own description of the machine.
@@ -680,6 +687,8 @@ __all__ = [
     "DIGCF_ALLCLASSES",
     "DIGCF_DEVICEINTERFACE",
     "DIGCF_PRESENT",
+    "DRIVE_CDROM",
+    "DRIVE_RAMDISK",
     "DWORD",
     "FILE_SHARE_READ",
     "FILE_SHARE_WRITE",

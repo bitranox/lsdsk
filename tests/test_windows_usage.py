@@ -96,11 +96,24 @@ def test_a_spanned_volume_marks_both_of_its_disks() -> None:
     assert usage["PhysicalDrive3"].uses == (DiskUse(kind=UseKind.LETTER, mounts=("E:\\",)),)
 
 
+#: What the reader records for a volume whose extents ioctl failed: no disks,
+#: and the reason. GetDriveTypeW's answers, as winapi names them.
+_EXTENTS_FAILED = "could not read the volume's disk extents (error 1)"
+DRIVE_FIXED = 3
+DRIVE_CDROM = 5
+DRIVE_RAMDISK = 6
+
+
 @pytest.mark.os_agnostic
-def test_a_volume_that_names_no_disk_reaches_no_disk() -> None:
+@pytest.mark.parametrize("drive_type", [DRIVE_CDROM, DRIVE_RAMDISK], ids=["cdrom", "ramdisk"])
+def test_a_volume_that_names_no_disk_reaches_no_disk(drive_type: int) -> None:
+    # A RAM disk or an optical drive has no disk extents to report, so its
+    # failure says nothing about any physical disk and blocks nothing.
     capture = _capture(
         disks={"\\\\?\\p0": _disk("PhysicalDrive0")},
-        volumes={"\\\\?\\Volume{x}\\": _volume(paths=("X:\\",), disks=())},
+        volumes={
+            "\\\\?\\Volume{x}\\": _volume(paths=("X:\\",), disks=(), error=_EXTENTS_FAILED, drive_type=drive_type)
+        },
     )
     usage = resolve_usage(capture, BARE_METAL)
     assert usage["PhysicalDrive0"] is not None
@@ -109,11 +122,49 @@ def test_a_volume_that_names_no_disk_reaches_no_disk() -> None:
 
 
 @pytest.mark.os_agnostic
+def test_a_failing_volume_with_no_path_at_all_blocks_nothing() -> None:
+    capture = _capture(
+        disks={"\\\\?\\p0": _disk("PhysicalDrive0")},
+        volumes={"\\\\?\\Volume{x}\\": _volume(error="could not open the volume (error 5)")},
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    assert usage["PhysicalDrive0"] is not None
+    assert usage["PhysicalDrive0"].uses == ()
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("drive_type", [DRIVE_FIXED, None], ids=["fixed", "type-unread"])
+def test_a_failing_fixed_volume_with_a_path_still_blocks_not_mounted(drive_type: int | None) -> None:
+    # The measured case: a separately secured fixed volume refuses to open even
+    # elevated, and it could sit on any disk.
+    capture = _capture(
+        disks={"\\\\?\\p0": _disk("PhysicalDrive0")},
+        volumes={
+            "\\\\?\\Volume{x}\\": _volume(
+                paths=("X:\\",), error="could not open the volume (error 5)", drive_type=drive_type
+            )
+        },
+    )
+    assert resolve_usage(capture, BARE_METAL) == {"PhysicalDrive0": None}
+
+
+@pytest.mark.os_agnostic
+def test_a_volume_whose_paths_were_not_read_blocks_not_mounted() -> None:
+    capture = _capture(
+        disks={"\\\\?\\p0": _disk("PhysicalDrive0")},
+        volumes={"\\\\?\\Volume{x}\\": _volume(disks=(0,), paths_error="could not read the volume's paths (error 1)")},
+    )
+    assert resolve_usage(capture, BARE_METAL) == {"PhysicalDrive0": None}
+
+
+@pytest.mark.os_agnostic
 def test_a_volume_that_could_not_open_leaves_an_unresolved_disk_undecided() -> None:
     capture = _capture(
         disks={"\\\\?\\p0": _disk("PhysicalDrive0"), "\\\\?\\p1": _disk("PhysicalDrive1")},
         volumes={
-            "\\\\?\\Volume{bad}\\": _volume(error="could not open the volume (error 5)"),
+            "\\\\?\\Volume{bad}\\": _volume(
+                paths=("X:\\",), error="could not open the volume (error 5)", drive_type=DRIVE_FIXED
+            ),
             "\\\\?\\Volume{c}\\": _volume(paths=("C:\\",), disks=(1,)),
         },
     )

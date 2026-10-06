@@ -268,14 +268,23 @@ class VolumeEntry(CaptureModel, frozen=True):
             could not place on a disk at all (a RAM disk).
         esp: Whether the volume's partition is the EFI System Partition, or
             ``None`` when the partition ioctl itself failed.
-        error: Why the volume could not be opened, in which case neither ioctl
-            was issued.
+        error: Why the volume could not be opened (neither ioctl was then
+            issued), or why its disk-extents ioctl failed.
+        paths_error: Why the volume's mount paths could not be read, in which
+            case `paths` is empty without meaning the volume has none.
+        drive_type: What ``GetDriveTypeW`` answered for the volume's first
+            path (``DRIVE_FIXED``, ``DRIVE_CDROM``, ...), so the resolver can
+            tell a failure on an optical drive or a RAM disk, which can sit on
+            no physical disk, from one on a fixed volume. ``None`` for a volume
+            with no path.
     """
 
     paths: Entries[DeviceText] = ()
     disks: Entries[Annotated[int, Field(ge=0, le=_UINT32_MAX)]] = ()
     esp: bool | None = None
     error: DeviceText | None = None
+    paths_error: DeviceText | None = None
+    drive_type: int | None = Field(default=None, ge=0, le=_UINT32_MAX)
 
 
 class WindowsCapture(CaptureHeader, frozen=True):

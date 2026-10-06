@@ -1,11 +1,11 @@
 """Read Windows volumes: what each one is mounted as, and which disk it sits on.
 
-Opening a volume needs no privilege at all - Task 1 measured this on two real
-Windows hosts, unelevated and elevated alike, and every open and every ioctl
-below succeeded either way.  A volume this cannot open (a RAM disk that
-refuses even Administrator) is recorded with an ``error`` and nothing else;
-:mod:`.usage` is what turns that into an undecidable disk rather than a false
-"not mounted".
+Opening a volume needs no privilege: on a virtual and a physical Windows
+host, unelevated and elevated alike, every ordinary volume opened and every
+ioctl below succeeded. A volume this cannot open (one that refuses even
+Administrator) is recorded with an ``error``, its paths and the drive type of
+its first path; :mod:`.usage` decides from those whether its failure leaves a
+disk undecidable rather than a false "not mounted".
 
 The two Win32 responses this issues (``VOLUME_DISK_EXTENTS`` and
 ``PARTITION_INFORMATION_EX``) are decoded by :mod:`.volume_layout`, which also
@@ -24,10 +24,16 @@ from ctypes import wintypes
 from typing import Any
 
 from . import winapi as api
-from .volume_layout import EXTENT_ENTRY, EXTENTS_HEADER, MAX_EXTENTS, PARTITION_HEAD, parse_disk_extents, parse_is_esp
+from .volume_layout import (
+    EXTENT_ENTRY,
+    EXTENTS_HEADER,
+    MAX_EXTENTS,
+    PARTITION_INFORMATION_EX_SIZE,
+    parse_disk_extents,
+    parse_is_esp,
+)
 
 _EXTENTS_BUFFER_SIZE = EXTENTS_HEADER.size + MAX_EXTENTS * EXTENT_ENTRY.size
-_PARTITION_INFO_SIZE = PARTITION_HEAD.size + 112  # the Gpt union's full width
 
 #: How wide a buffer to offer for a volume's mount paths. A volume path is a
 #: drive letter or a short folder mount, so this is generous rather than tight.
@@ -35,20 +41,31 @@ _PATHS_BUFFER_CHARS = 4096
 _MAX_PATH = 260
 
 
-def _volume_paths(kernel32: api.WinLibrary, volume: str) -> tuple[str, ...]:
-    """Return every mount path a volume answers to.
+def _volume_paths(kernel32: api.WinLibrary, volume: str) -> tuple[tuple[str, ...], str | None]:
+    """Return every mount path a volume answers to, or why they were not read.
 
     ``GetVolumePathNamesForVolumeNameW`` writes a Windows "multi-string": each
-    path NUL-terminated, the whole list ending in a second NUL.
+    path NUL-terminated, the whole list ending in a second NUL. Offered too
+    small a buffer it fails with ``ERROR_MORE_DATA`` and reports the length it
+    needs (measured on two real hosts), so one retry at that length follows;
+    the call keys on the reported length rather than the error code, which is
+    what the length is for.
+
+    Returns:
+        The paths, and ``None``; or no paths and why they could not be read,
+        which is a different fact from a volume with no path at all.
     """
-    buffer = ctypes.create_unicode_buffer(_PATHS_BUFFER_CHARS)
-    needed = wintypes.DWORD()
-    ok = kernel32.GetVolumePathNamesForVolumeNameW(volume, buffer, _PATHS_BUFFER_CHARS, ctypes.byref(needed))
-    if not ok or not needed.value:
-        return ()
-    raw = ctypes.string_at(ctypes.addressof(buffer), needed.value * ctypes.sizeof(wintypes.WCHAR))
-    parts = raw.decode("utf-16-le", errors="replace").split("\x00")
-    return tuple(part for part in parts if part)
+    size = _PATHS_BUFFER_CHARS
+    for _ in range(2):
+        buffer = ctypes.create_unicode_buffer(size)
+        needed = wintypes.DWORD()
+        if kernel32.GetVolumePathNamesForVolumeNameW(volume, buffer, size, ctypes.byref(needed)):
+            parts = ctypes.wstring_at(ctypes.addressof(buffer), min(needed.value, size)).split("\x00")
+            return tuple(part for part in parts if part), None
+        if needed.value <= size:
+            break
+        size = needed.value
+    return (), f"could not read the volume's paths (error {api.last_error()})"
 
 
 def _disk_extents(kernel32: api.WinLibrary, handle: int) -> tuple[list[int], str | None]:
@@ -77,7 +94,7 @@ def _disk_extents(kernel32: api.WinLibrary, handle: int) -> tuple[list[int], str
 
 def _is_esp(kernel32: api.WinLibrary, handle: int) -> bool | None:
     """Issue the partition-info ioctl and parse whether it is the ESP."""
-    response = ctypes.create_string_buffer(_PARTITION_INFO_SIZE)
+    response = ctypes.create_string_buffer(PARTITION_INFORMATION_EX_SIZE)
     returned = wintypes.DWORD()
     ok = kernel32.DeviceIoControl(
         handle,
@@ -85,7 +102,7 @@ def _is_esp(kernel32: api.WinLibrary, handle: int) -> bool | None:
         None,
         0,
         response,
-        _PARTITION_INFO_SIZE,
+        PARTITION_INFORMATION_EX_SIZE,
         ctypes.byref(returned),
         None,
     )
@@ -95,7 +112,7 @@ def _is_esp(kernel32: api.WinLibrary, handle: int) -> bool | None:
 
 
 def _read_one_volume(kernel32: api.WinLibrary, volume: str) -> dict[str, Any]:
-    """Read one volume's mount paths, disk extents and ESP status.
+    """Read one volume's mount paths, drive type, disk extents and ESP status.
 
     Args:
         kernel32: The typed facade over the Win32 entry points.
@@ -104,7 +121,15 @@ def _read_one_volume(kernel32: api.WinLibrary, volume: str) -> dict[str, Any]:
     Returns:
         One volume's reading, shaped for the capture model to type.
     """
-    entry: dict[str, Any] = {"paths": list(_volume_paths(kernel32, volume))}
+    paths, paths_error = _volume_paths(kernel32, volume)
+    entry: dict[str, Any] = {"paths": list(paths)}
+    if paths_error is not None:
+        entry["paths_error"] = paths_error
+    if paths:
+        # Asked of the first path rather than the GUID path: measured on a
+        # volume that refuses to open, its letter answered DRIVE_FIXED while
+        # its GUID path answered DRIVE_NO_ROOT_DIR.
+        entry["drive_type"] = int(kernel32.GetDriveTypeW(paths[0]))
     handle = kernel32.CreateFileW(
         volume.rstrip("\\"),
         0,

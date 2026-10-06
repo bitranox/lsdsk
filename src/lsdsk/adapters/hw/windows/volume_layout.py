@@ -41,6 +41,12 @@ MAX_EXTENTS = 32
 # GUID is the union's first field, so it sits right after the fixed head.
 PARTITION_HEAD = struct.Struct("<i4xqqIBB2x")
 _PARTITION_TYPE_OFFSET = PARTITION_HEAD.size
+# The union's widest arm, PARTITION_INFORMATION_GPT: PartitionType and
+# PartitionId (two GUIDs), Attributes (DWORD64) and Name (36 WCHARs).
+_GPT_UNION = struct.Struct("<16s16sQ72s")
+#: The whole PARTITION_INFORMATION_EX, which :mod:`.volumes` offers as its
+#: response buffer so the GPT arm is never cut short.
+PARTITION_INFORMATION_EX_SIZE = PARTITION_HEAD.size + _GPT_UNION.size
 
 
 def parse_disk_extents(raw: bytes) -> list[int]:
@@ -83,7 +89,7 @@ def parse_is_esp(raw: bytes) -> bool | None:
         >>> import struct, uuid
         >>> esp = uuid.UUID("C12A7328-F81F-11D2-BA4B-00A0C93EC93B")
         >>> head = struct.pack("<i4xqqIBB2x", 1, 0, 1 << 20, 1, 0, 0)
-        >>> parse_is_esp(head + esp.bytes_le + bytes(112 - 16))
+        >>> parse_is_esp(head + esp.bytes_le + bytes(PARTITION_INFORMATION_EX_SIZE - len(head) - 16))
         True
     """
     if len(raw) < _PARTITION_TYPE_OFFSET + 16:
@@ -100,6 +106,7 @@ __all__ = [
     "EXTENT_ENTRY",
     "MAX_EXTENTS",
     "PARTITION_HEAD",
+    "PARTITION_INFORMATION_EX_SIZE",
     "parse_disk_extents",
     "parse_is_esp",
 ]
