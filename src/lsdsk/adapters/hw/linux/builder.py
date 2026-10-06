@@ -53,6 +53,7 @@ from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble, port_kind_of
 from ..refusals import refusals_of
 from .capture import AtaBlobs, NvmeBlobs, NvmeClassEntry
+from .usage import resolve_usage
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -1024,15 +1025,16 @@ def build_inventory(capture: LinuxCapture) -> Inventory:
         >>> build_inventory(LinuxCapture.model_validate(reading)).hostname
         'example'
     """
-    disks = build_disks(capture)
     controllers = build_controllers(capture)
+    environment, detail = classify(capture.environment)
+
+    usage = resolve_usage(capture, environment)
+    disks = tuple(disk.with_changes(usage=usage.get(disk.node)) for disk in build_disks(capture))
 
     used: dict[str, int] = {}
     for disk in disks:
         if disk.controller_address is not None:
             used[disk.controller_address] = used.get(disk.controller_address, 0) + 1
-
-    environment, detail = classify(capture.environment)
 
     return Inventory(
         hostname=device_text(capture.hostname) or "unknown",

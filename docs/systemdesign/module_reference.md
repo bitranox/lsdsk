@@ -45,6 +45,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/hw/linux/capture.py` - The typed shape of a Linux reading.
 - `src/lsdsk/adapters/hw/linux/mounts.py` - Read the Linux sources that say what uses each disk: mountinfo, swaps, partitions, device-mapper holders and udev signatures.
 - `src/lsdsk/adapters/hw/linux/reader.py` - Read storage topology and device blobs from a live Linux system.
+- `src/lsdsk/adapters/hw/linux/usage.py` - Resolve what uses each Linux disk, from what the reader recorded.
 - `src/lsdsk/adapters/hw/linux/usbfs.py` - Fetch a USB device's BOS through usbfs, for kernels that do not publish it in sysfs.
 
 ### Adapters - hardware, Windows
