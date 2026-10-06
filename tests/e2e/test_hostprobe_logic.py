@@ -225,8 +225,8 @@ def _usage_cli(disks: list[dict[str, Any]], environment: str):
     return run
 
 
-_BOOT = {"boot": True, "uses": [{"kind": "mount", "name": "", "mounts": ["/"]}]}
-_DATA = {"boot": False, "uses": []}
+_BOOT: dict[str, Any] = {"boot": True, "uses": [{"kind": "mount", "name": "", "mounts": ["/"]}]}
+_DATA: dict[str, Any] = {"boot": False, "uses": []}
 
 
 @pytest.mark.os_agnostic
