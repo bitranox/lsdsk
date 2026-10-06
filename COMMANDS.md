@@ -82,7 +82,9 @@ human view was asked for.
 The `used by` column at the end of that table has no option or configuration key of its own: it is
 flexible and clipped with a marked cut like `model`, and the first column dropped on a narrow page.
 Its full text is always in the detail panel and in the JSON envelope's `usage` field, whatever the
-table dropped or clipped.
+table dropped or clipped. See
+[FINDINGS.md](FINDINGS.md#what-uses-a-disk-and-what-not-mounted-means) for what each state of
+that column means and where it reads from.
 
 `lsdsk snapshot` needs somewhere to write: `-o FILE`, spelled `--output FILE`
 in full. `-o -` writes the capture to standard output instead, so keep stderr off

@@ -19,6 +19,8 @@ Laufwerk unter dem Controller und dem PCIe-Pfad, an dem es hängt, misst die Ver
 der Ports, der Laufwerke und die aktuell ausgehandelten Geschwindigkeiten, 
 SMART-Daten und Fehlerzähler, zeigt, von welcher Platte das System startet und was
 jede Platte nutzt, und gibt eine Handlungsempfehlung.
+[FINDINGS.md](FINDINGS.md#was-eine-platte-nutzt-und-was-not-mounted-bedeutet) sagt genau, wann
+es eine Platte als `not mounted` bezeichnen kann und wann stattdessen `-` steht.
 
 Das c't Magazin hat dieses Tool am 17. September 2026 vorgestellt:
 [Kommandozeilentool lsdsk: Performance-Engpässe bei SSDs und Controllern finden](https://www.heise.de/ratgeber/Kommandozeilentool-lsdsk-Performance-Engpaesse-bei-SSDs-und-Controllern-finden-11440011.html).

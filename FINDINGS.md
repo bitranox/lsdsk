@@ -171,3 +171,58 @@ means something different. lsdsk detects which and says so:
 - In a **virtual machine** the disks and link speeds are the hypervisor's
   invention, so the link and placement rules are suppressed rather than
   reporting cable faults on an emulated controller.
+
+## What uses a disk, and what `not mounted` means
+
+The `used by` column on the disks page has three states, not two. `-` means nobody could
+look. `not mounted` means somebody looked and found nothing. Anything else is what was found:
+the `boot` mark first if it applies, then the mounts, pool or stacked device that disk belongs
+to - a mount path or a Windows drive letter, the single word `swap`, `zfs:<pool>` for a ZFS
+member, or `<kind>:<name>` for an LVM, md, dm-crypt or other device-mapper stack, with its own
+mounts appended after `->` when it has any.
+
+`not mounted` is a claim about completeness, not just about a hit. On Linux it can only be made
+once the udev database was read, the swap list was read, and the disk's own device number and
+every one of its partitions' device numbers were read; miss any of those and a disk with
+nothing found reads `-` instead. On Windows it can only be made once no volume's failure could
+be hiding a use of that disk: a volume that failed to open, or whose disk extents query failed,
+still blocks the claim unless it has no path at all or its drive type is a CD-ROM or a RAM
+disk, neither of which could sit behind a volume's letter anyway. A volume whose own path list
+could not be read blocks the claim outright, with no exception. A container always reads `-`:
+the host's use of its disks is a fact about the host, invisible from inside a shared kernel.
+
+Boot is decided differently on each platform, because the two keep different evidence. On Linux
+it is the disk under `/`, plus any disk under a mounted `/boot`, `/boot/efi` or `/efi`, and a
+ZFS root pool marks every one of its member disks. On Windows it is the disk, or disks for a
+spanned volume, holding the Windows directory, plus every disk carrying an EFI system
+partition - every one, not only the one actually used to boot, because telling them apart would
+take more than this tool reads, and marking too many is the safer mistake.
+
+None of this starts a subprocess or makes a network request. Linux reads mountinfo,
+`/proc/swaps`, sysfs holders and partitions, and the udev database, all world-readable. Windows
+enumerates volumes and reads each one's disk extents, drive type and partition layout. Neither
+platform needs elevated rights for any of it.
+
+ZFS shows the pool, `zfs:rpool`, never the datasets under it, since a pool can carry any number
+of them. A partition's own filesystem signature beats a whole-disk one: ZFS keeps two of its
+labels at the end of a vdev, so a pool partition running to the end of its disk can make a
+probe of the whole disk find a member too, and the partition's own signature is what overrides
+that.
+
+Two honest gaps. A btrfs filesystem spanning several disks is named in mountinfo by only one of
+them, so its other members read `-`: joining them would mean reading the filesystem's own UUID,
+which this tool does not do. A disk whose holder's partitions could not be listed names that
+holder but not the mounts reached through it, for the same reason - the device is seen, what
+sits on its unread partitions is not.
+
+`not mounted` is not a verdict that a disk is unused, only that nothing this tool reads found a
+use. A disk passed through to a virtual machine, a member of a Storage Spaces pool, an exported
+ZFS pool, or a disk in use by something outside what lsdsk reads can all show it.
+
+A snapshot keeps only what resolving usage needs: mountpoints and filesystem types, a ZFS
+pool's name (never its datasets), and a device-mapper mapping's type prefix (`LVM-`, `CRYPT-`)
+rather than its full UUID. It drops a network or tmpfs mount's source and any filesystem UUID.
+A device-backed swap keeps its path; a swap file does not, because nothing downstream reads it
+and it can name a user or a project. A Windows volume is keyed by a per-capture ordinal rather
+than its GUID path, and a Fedora-style `luks-<UUID>` mapping name is recorded as the literal
+`luks`.

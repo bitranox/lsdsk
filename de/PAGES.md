@@ -58,7 +58,9 @@ wo das nicht gelesen wurde, `not mounted`, wo gelesen wurde und nichts die Platt
 Startmarkierung und die Einhängepunkte, den Pool oder die Struktur, zu der sie gehört, etwa
 `boot zfs:rpool` oder `lvm:vg0 -> /var`. `not mounted` heisst nicht, dass die Platte gefahrlos
 gelöscht werden kann: Eine an eine virtuelle Maschine durchgereichte Platte, ein Mitglied von
-Speicherplätzen (Storage Spaces) oder ein exportierter ZFS-Pool kann es ebenso zeigen.
+Speicherplätzen (Storage Spaces) oder ein exportierter ZFS-Pool kann es ebenso zeigen. Siehe
+[FINDINGS.md](FINDINGS.md#was-eine-platte-nutzt-und-was-not-mounted-bedeutet) für die genauen
+Bedingungen, unter denen `not mounted` gilt und wann stattdessen `-` steht.
 
 ## 4 Gesundheit
 

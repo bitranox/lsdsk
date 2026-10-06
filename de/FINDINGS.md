@@ -194,3 +194,66 @@ Antwort etwas anderes bedeutet. lsdsk erkennt, welches von beidem, und sagt es:
   Verbindungsgeschwindigkeiten eine Erfindung des Hypervisors, die Regeln zu
   Verbindung und Bestückung werden daher unterdrückt, statt Kabelfehler an einem
   emulierten Controller zu melden.
+
+## Was eine Platte nutzt, und was `not mounted` bedeutet
+
+Die Spalte `used by` auf der Plattenseite kennt drei Zustände, nicht zwei. `-` heisst, niemand
+konnte nachsehen. `not mounted` heisst, es wurde nachgesehen und nichts gefunden. Alles andere
+ist das Ergebnis: zuerst die `boot`-Markierung, falls sie zutrifft, dann die Einhängepunkte, der
+Pool oder die gestapelte Struktur, zu der die Platte gehört - ein Einhängepunkt oder ein
+Windows-Laufwerksbuchstabe, das eine Wort `swap`, `zfs:<pool>` für ein ZFS-Mitglied, oder
+`<kind>:<name>` für eine LVM-, md-, dm-crypt- oder andere Device-Mapper-Struktur, mit ihren
+eigenen Einhängepunkten nach `->`, sofern vorhanden.
+
+`not mounted` ist eine Aussage über Vollständigkeit, nicht nur über einen Treffer. Unter Linux
+darf sie nur gemacht werden, wenn die udev-Datenbank gelesen wurde, die Swap-Liste gelesen wurde
+und die eigene Gerätenummer der Platte sowie die jeder ihrer Partitionen gelesen wurde; fehlt
+eines davon, zeigt eine Platte ohne Fund stattdessen `-`. Unter Windows darf sie nur gemacht
+werden, wenn kein Laufwerk durch einen eigenen Fehler eine Nutzung dieser Platte verdecken
+könnte: Ein Laufwerk, das sich nicht öffnen liess oder dessen Extents-Abfrage fehlschlug,
+blockiert die Aussage weiterhin, ausser es hat gar keinen Pfad oder sein Laufwerkstyp ist ein
+CD-ROM- oder ein RAM-Laufwerk - keines von beiden könnte ohnehin hinter dem Buchstaben eines
+Laufwerks sitzen. Ein Laufwerk, dessen eigene Pfadliste sich nicht lesen liess, blockiert die
+Aussage ausnahmslos. Ein Container zeigt immer `-`: Die Nutzung seiner Platten durch den Wirt ist
+eine Tatsache über den Wirt, von innen eines gemeinsamen Kernels nicht sichtbar.
+
+Der Start wird auf jeder Plattform anders entschieden, weil beide unterschiedliche Belege
+führen. Unter Linux ist es die Platte unter `/`, plus jede Platte unter einem eingehängten
+`/boot`, `/boot/efi` oder `/efi`, und ein ZFS-Root-Pool markiert jedes seiner Mitglieder. Unter
+Windows ist es die Platte, oder die Platten bei einem übergreifenden Volume, die das
+Windows-Verzeichnis trägt, plus jede Platte mit einer EFI-Systempartition - jede, nicht nur die
+tatsächlich zum Start genutzte, denn sie zu unterscheiden würde mehr brauchen, als dieses
+Werkzeug liest, und zu viele zu markieren ist der sicherere Fehler.
+
+Nichts davon startet einen Unterprozess oder stellt eine Netzwerkanfrage. Linux liest
+mountinfo, `/proc/swaps`, die Holder und Partitionen in sysfs und die udev-Datenbank, alles
+weltweit lesbar. Windows zählt Volumes auf und liest für jedes die Disk-Extents, den
+Laufwerkstyp und das Partitionslayout. Keine der beiden Plattformen braucht dafür erhöhte
+Rechte.
+
+ZFS zeigt den Pool, `zfs:rpool`, nie die Datasets darunter, da ein Pool beliebig viele davon
+tragen kann. Die eigene Dateisystem-Signatur einer Partition schlägt eine Signatur der ganzen
+Platte: ZFS hält zwei seiner vier Labels am Ende eines Vdevs, sodass eine Pool-Partition, die
+bis zum Ende ihrer Platte läuft, auch die ganze Platte als Mitglied erscheinen lassen kann, und
+die eigene Signatur der Partition ist es, die das aufhebt.
+
+Zwei ehrliche Lücken. Ein btrfs-Dateisystem, das sich über mehrere Platten spannt, wird in
+mountinfo nur von einer davon genannt, sodass seine übrigen Mitglieder `-` zeigen: Sie
+zusammenzuführen würde bedeuten, die eigene UUID des Dateisystems zu lesen, was dieses
+Werkzeug nicht tut. Eine Platte, deren Partitionen auf einem Holder sich nicht auflisten liessen,
+nennt diesen Holder, aber nicht die Einhängepunkte dahinter, aus demselben Grund - das Gerät
+wird gesehen, was auf seinen ungelesenen Partitionen liegt, nicht.
+
+`not mounted` ist kein Urteil, dass eine Platte ungenutzt ist, nur dass nichts, was dieses
+Werkzeug liest, eine Nutzung fand. Eine an eine virtuelle Maschine durchgereichte Platte, ein
+Mitglied eines Storage-Spaces-Pools, ein exportierter ZFS-Pool oder eine Platte, die von etwas
+genutzt wird, das lsdsk nicht liest, können das alle ebenso zeigen.
+
+Eine Momentaufnahme behält nur, was die Auflösung der Nutzung braucht: Einhängepunkte und
+Dateisystemtypen, den Namen eines ZFS-Pools (nie seine Datasets), und das Typpräfix einer
+Device-Mapper-Zuordnung (`LVM-`, `CRYPT-`) statt ihrer vollen UUID. Sie lässt die Quelle eines
+Netzwerk- oder tmpfs-Einhängepunkts weg, ebenso jede Dateisystem-UUID. Ein geräte-gestützter
+Swap behält seinen Pfad; eine Swap-Datei nicht, weil nichts nachgelagert ihn liest und er einen
+Benutzer oder ein Projekt nennen könnte. Ein Windows-Volume wird über eine Ordnungszahl pro
+Momentaufnahme referenziert statt über seinen GUID-Pfad, und ein Fedora-typischer
+`luks-<UUID>`-Zuordnungsname wird als das wörtliche `luks` aufgezeichnet.

@@ -18,6 +18,8 @@ lsdsk is a storage diagnostic for Linux and Windows: it groups every drive under
 controller and the PCIe path it hangs off, reads what the ports and the drives can do and what
 they actually negotiated, reads SMART data and error counters, shows which disk the machine boots
 from and what uses each one, and recommends what to act on.
+[FINDINGS.md](https://github.com/bitranox/lsdsk/blob/main/FINDINGS.md#what-uses-a-disk-and-what-not-mounted-means)
+says exactly when it can call a disk `not mounted` and when it falls back to `-` instead.
 
 c't Magazin covered it on 17 September 2026, in German:
 [Kommandozeilentool lsdsk: Performance-Engpässe bei SSDs und Controllern finden](https://www.heise.de/ratgeber/Kommandozeilentool-lsdsk-Performance-Engpaesse-bei-SSDs-und-Controllern-finden-11440011.html).

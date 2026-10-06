@@ -54,7 +54,9 @@ The last column, `used by`, says whether the machine boots from the disk and wha
 where that was not read, `not mounted` where it was read and nothing uses the disk, otherwise the
 boot mark and the mounts, pool or stack it belongs to, such as `boot zfs:rpool` or
 `lvm:vg0 -> /var`. `not mounted` does not mean the disk is safe to wipe: a disk passed through to
-a virtual machine, a Storage Spaces member or an exported ZFS pool can show it too.
+a virtual machine, a Storage Spaces member or an exported ZFS pool can show it too. See
+[FINDINGS.md](FINDINGS.md#what-uses-a-disk-and-what-not-mounted-means) for exactly when `not
+mounted` can be claimed and when it falls back to `-`.
 
 ## 4 Health
 

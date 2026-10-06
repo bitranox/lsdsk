@@ -84,7 +84,9 @@ Die Spalte `used by` am Ende dieser Tabelle hat keine eigene Option und keinen e
 Konfigurationsschlüssel: sie ist flexibel und wird wie `model` mit einem markierten Schnitt
 gekürzt, und sie ist die erste Spalte, die auf einer schmalen Seite entfällt. Ihr vollständiger
 Text steht immer in der Detailtafel und im Feld `usage` des JSON-Umschlags, gleich was die
-Tabelle gekürzt oder weggelassen hat.
+Tabelle gekürzt oder weggelassen hat. Siehe
+[FINDINGS.md](FINDINGS.md#was-eine-platte-nutzt-und-was-not-mounted-bedeutet) dafür, was jeder
+Zustand dieser Spalte bedeutet und woher er gelesen wird.
 
 `lsdsk snapshot` braucht ein Ziel: `-o FILE`, ausgeschrieben `--output FILE`.
 `-o -` schreibt die Aufnahme stattdessen auf die Standardausgabe; halten Sie
