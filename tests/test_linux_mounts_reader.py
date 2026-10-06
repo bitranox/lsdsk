@@ -53,12 +53,17 @@ def test_a_mountinfo_over_the_limit_is_refused_like_an_unreadable_one(tmp_path: 
 def test_swap_rows_skip_the_header(tmp_path: Path) -> None:
     path = tmp_path / "swaps"
     path.write_text(
-        "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n/dev/nvme4n1p1   partition\t8388604\t\t0\t\t-2\n",
+        "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n/home/alice/swapfile\t\tfile\t\t4194300\t\t0\t\t-2\n",
         encoding="utf-8",
     )
     rows = mounts.read_swaps(path)
-    assert rows is not None
-    assert len(rows) == 1
+    # Exactly the one data row: if the header were not skipped, it would
+    # parse as a second row (its first field resolves to no device node too,
+    # so it would be silently indistinguishable from a real row at a glance).
+    assert rows == [{}]
+    dumped = json.dumps(rows)
+    for header_word in ("Filename", "Type", "Size", "Used", "Priority"):
+        assert header_word not in dumped
 
 
 @pytest.mark.os_agnostic

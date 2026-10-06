@@ -80,6 +80,8 @@ class FakeVolumeKernel:
     def FindFirstVolumeW(self, buffer: ctypes.Array[ctypes.c_wchar], size: int) -> int:  # noqa: N802 - Win32 name
         del size
         self._order = list(self.volumes)
+        if not self._order:
+            return cast("int", api.INVALID_HANDLE_VALUE)
         buffer.value = self._order.pop(0)
         return 7
 
@@ -222,6 +224,25 @@ def test_the_volumes_section_carries_no_guid_path_and_keeps_the_windows_volume_j
     assert set(by_ordinal) == {"0", "1"}
     assert windows_ordinal is not None
     assert by_ordinal[windows_ordinal]["paths"] == ["C:\\"]
+
+
+@pytest.mark.os_agnostic
+def test_an_empty_volume_set_reads_as_an_empty_mapping() -> None:
+    fake = FakeVolumeKernel({})
+    by_ordinal, windows_ordinal = read_volumes_section(cast("api.WinLibrary", fake))
+    assert by_ordinal == {}
+    assert windows_ordinal is None
+
+
+@pytest.mark.os_agnostic
+def test_a_windows_volume_not_among_the_enumerated_volumes_joins_to_none() -> None:
+    fake = FakeVolumeKernel(
+        {VOLUME_C: FakeVolume(paths=("C:\\",), disks=(0,))},
+        windows_volume=VOLUME_X,
+    )
+    by_ordinal, windows_ordinal = read_volumes_section(cast("api.WinLibrary", fake))
+    assert set(by_ordinal) == {"0"}
+    assert windows_ordinal is None
 
 
 @pytest.mark.os_agnostic
