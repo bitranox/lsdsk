@@ -258,7 +258,7 @@ class UsbHubEntry(CaptureModel, frozen=True):
 
 
 class VolumeEntry(CaptureModel, frozen=True):
-    """What one volume answered, keyed in :class:`WindowsCapture` by its GUID path.
+    """What one volume answered, keyed in :class:`WindowsCapture` by a per-capture ordinal.
 
     Attributes:
         paths: Every mount path the volume answers to: a drive letter, a bare
@@ -306,13 +306,17 @@ class WindowsCapture(CaptureHeader, frozen=True):
             capture taken before USB links were read.
         usb_hubs: Every hub one of those ports belongs to, keyed by its
             instance identifier.
-        volumes: Every volume Windows enumerated, keyed by its
-            ``\\?\Volume{...}\`` GUID path. ``None`` for a capture taken
-            before volumes were read, which leaves every disk's usage
-            undecidable rather than claiming none was found.
-        windows_volume: The GUID path of the volume the Windows directory
-            lives on, so the builder can mark its disk as boot. ``None`` when
-            it could not be resolved.
+        volumes: Every volume Windows enumerated, keyed by an opaque ordinal
+            string local to this capture (``"0"``, ``"1"``, ...) rather than
+            its ``\\?\Volume{...}\`` GUID path, which never reaches a
+            capture. ``None`` for a capture taken before volumes were read,
+            which leaves every disk's usage undecidable rather than claiming
+            none was found. A capture taken before this field held the
+            ordinal keys the GUID path itself; either way the key is opaque
+            and only ever looked up, never parsed.
+        windows_volume: The ordinal key, within :attr:`volumes`, of the
+            volume the Windows directory lives on, so the builder can mark
+            its disk as boot. ``None`` when it could not be resolved.
     """
 
     platform: Literal[Platform.WINDOWS]

@@ -58,7 +58,33 @@ def test_swap_rows_skip_the_header(tmp_path: Path) -> None:
     )
     rows = mounts.read_swaps(path)
     assert rows is not None
-    assert [row["path"] for row in rows] == ["/dev/nvme4n1p1"]
+    assert len(rows) == 1
+
+
+@pytest.mark.os_agnostic
+def test_a_swap_file_path_is_not_recorded_when_it_resolves_to_no_device_node(tmp_path: Path) -> None:
+    path = tmp_path / "swaps"
+    path.write_text(
+        "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n/home/alice/swapfile\t\tfile\t\t4194300\t\t0\t\t-2\n",
+        encoding="utf-8",
+    )
+    rows = mounts.read_swaps(path)
+    assert rows == [{}]
+    assert "alice" not in json.dumps(rows)
+    assert "swapfile" not in json.dumps(rows)
+
+
+@pytest.mark.os_linux
+def test_a_device_backed_swap_row_keeps_its_path_and_dev(tmp_path: Path) -> None:
+    path = tmp_path / "swaps"
+    path.write_text(
+        "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n/dev/null\t\tpartition\t8388604\t\t0\t\t-2\n",
+        encoding="utf-8",
+    )
+    rows = mounts.read_swaps(path)
+    assert rows is not None
+    rdev = Path("/dev/null").stat().st_rdev
+    assert rows[0] == {"path": "/dev/null", "dev": f"{os.major(rdev)}:{os.minor(rdev)}"}
 
 
 @pytest.mark.os_agnostic
@@ -244,6 +270,38 @@ def test_a_mapping_uuid_keeps_only_its_type_prefix(tmp_path: Path) -> None:
     found = mounts.read_stacked(["dm-1"], tmp_path)
     assert found["dm-1"]["dm_uuid"] == "LVM-"
     assert uuid[4:] not in json.dumps(found)
+
+
+@pytest.mark.os_agnostic
+def test_a_fedora_style_luks_uuid_mapping_name_is_recorded_as_luks(tmp_path: Path) -> None:
+    dm = tmp_path / "dm-2"
+    (dm / "dm").mkdir(parents=True)
+    (dm / "dev").write_text("253:2\n", encoding="utf-8")
+    dm_uuid = "0123abcd-4567-89ef-0123-456789abcdef"
+    (dm / "dm" / "name").write_text(f"luks-{dm_uuid}\n", encoding="utf-8")
+    found = mounts.read_stacked(["dm-2"], tmp_path)
+    assert found["dm-2"]["dm_name"] == "luks"
+    assert dm_uuid not in json.dumps(found)
+
+
+@pytest.mark.os_agnostic
+def test_a_user_chosen_mapping_name_passes_through_unchanged(tmp_path: Path) -> None:
+    dm = tmp_path / "dm-3"
+    (dm / "dm").mkdir(parents=True)
+    (dm / "dev").write_text("253:3\n", encoding="utf-8")
+    (dm / "dm" / "name").write_text("cryptroot\n", encoding="utf-8")
+    found = mounts.read_stacked(["dm-3"], tmp_path)
+    assert found["dm-3"]["dm_name"] == "cryptroot"
+
+
+@pytest.mark.os_agnostic
+def test_a_near_miss_luks_prefixed_name_passes_through_unchanged(tmp_path: Path) -> None:
+    dm = tmp_path / "dm-4"
+    (dm / "dm").mkdir(parents=True)
+    (dm / "dev").write_text("253:4\n", encoding="utf-8")
+    (dm / "dm" / "name").write_text("luks-notauuid\n", encoding="utf-8")
+    found = mounts.read_stacked(["dm-4"], tmp_path)
+    assert found["dm-4"]["dm_name"] == "luks-notauuid"
 
 
 @pytest.mark.os_agnostic

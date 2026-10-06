@@ -12,6 +12,11 @@ The two Win32 responses this issues (``VOLUME_DISK_EXTENTS`` and
 owns the struct layouts this module sizes its ioctl buffers from; not one line
 of the I/O below can execute on a Linux or macOS runner.
 
+This module's own two functions still key and name a volume by its GUID path;
+:func:`.reader.read_volumes_section` is where that GUID is rewritten to a
+capture-local ordinal before anything is written to a snapshot, so no GUID
+path reaches a capture.
+
 System Role:
     Adapter layer, reading half for the Windows "used by" column.  Produces the
     plain mapping :mod:`.capture` types and :mod:`.usage` resolves.

@@ -12,6 +12,7 @@ while ``GetDriveTypeW`` on its letter still answers ``DRIVE_FIXED``.
 from __future__ import annotations
 
 import ctypes
+import json
 import struct
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -20,7 +21,10 @@ import pytest
 
 from lsdsk.adapters.hw.windows import volumes
 from lsdsk.adapters.hw.windows import winapi as api
-from lsdsk.adapters.hw.windows.capture import VolumeEntry
+from lsdsk.adapters.hw.windows.capture import VolumeEntry, WindowsCapture
+from lsdsk.adapters.hw.windows.reader import read_volumes_section
+from lsdsk.adapters.hw.windows.usage import resolve_usage
+from lsdsk.domain.enums import Environment
 
 DRIVE_FIXED = 3
 
@@ -47,9 +51,31 @@ class FakeVolumeKernel:
     """``kernel32`` as the volume reader sees it."""
 
     volumes: dict[str, FakeVolume]
+    windows_volume: str | None = None
     path_calls: list[int] = field(default_factory=list[int])
     _order: list[str] = field(default_factory=list[str])
     _handles: dict[int, str] = field(default_factory=dict[int, str])
+
+    def GetSystemWindowsDirectoryW(self, buffer: ctypes.Array[ctypes.c_wchar], size: int) -> int:  # noqa: N802 - Win32 name
+        del size
+        buffer.value = "C:\\Windows"
+        return 1
+
+    def GetVolumePathNameW(  # noqa: N802 - the Win32 entry point's own name
+        self, path: str, buffer: ctypes.Array[ctypes.c_wchar], size: int
+    ) -> int:
+        del path, size
+        buffer.value = "C:\\"
+        return 1
+
+    def GetVolumeNameForVolumeMountPointW(  # noqa: N802 - the Win32 entry point's own name
+        self, mount_path: str, buffer: ctypes.Array[ctypes.c_wchar], size: int
+    ) -> int:
+        del mount_path, size
+        if self.windows_volume is None:
+            return 0
+        buffer.value = self.windows_volume
+        return 1
 
     def FindFirstVolumeW(self, buffer: ctypes.Array[ctypes.c_wchar], size: int) -> int:  # noqa: N802 - Win32 name
         del size
@@ -178,3 +204,45 @@ def test_a_volume_with_no_path_asks_no_drive_type() -> None:
     assert entry["paths"] == []
     assert "drive_type" not in entry
     assert "paths_error" not in entry
+
+
+@pytest.mark.os_agnostic
+def test_the_volumes_section_carries_no_guid_path_and_keeps_the_windows_volume_join() -> None:
+    fake = FakeVolumeKernel(
+        {
+            VOLUME_C: FakeVolume(paths=("C:\\",), disks=(0,)),
+            VOLUME_X: FakeVolume(paths=("X:\\",), disks=(1,)),
+        },
+        windows_volume=VOLUME_C,
+    )
+    by_ordinal, windows_ordinal = read_volumes_section(cast("api.WinLibrary", fake))
+    recorded = json.dumps({"volumes": by_ordinal, "windows_volume": windows_ordinal})
+    for guid_fragment in ("Volume{c}", "Volume{x}", "\\\\?\\"):
+        assert guid_fragment not in recorded, guid_fragment
+    assert set(by_ordinal) == {"0", "1"}
+    assert windows_ordinal is not None
+    assert by_ordinal[windows_ordinal]["paths"] == ["C:\\"]
+
+
+@pytest.mark.os_agnostic
+def test_the_boot_disk_is_still_found_through_the_ordinal_join() -> None:
+    fake = FakeVolumeKernel(
+        {VOLUME_C: FakeVolume(paths=("C:\\",), disks=(1,))},
+        windows_volume=VOLUME_C,
+    )
+    by_ordinal, windows_ordinal = read_volumes_section(cast("api.WinLibrary", fake))
+    capture = WindowsCapture.model_validate(
+        {
+            "schema": 2,
+            "platform": "win32",
+            "hostname": "h",
+            "kernel": "10.0",
+            "pci": {},
+            "disks": {"\\\\?\\p0": {"node": "PhysicalDrive1"}},
+            "volumes": by_ordinal,
+            "windows_volume": windows_ordinal,
+        }
+    )
+    usage = resolve_usage(capture, Environment.BARE_METAL)
+    assert usage["PhysicalDrive1"] is not None
+    assert usage["PhysicalDrive1"].boot is True

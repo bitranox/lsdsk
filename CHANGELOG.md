@@ -15,7 +15,9 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   through to a virtual machine, a Storage Spaces member or an exported ZFS pool can show it too.
   The full text is also in the disk detail panel and in the JSON envelope's `usage` field. A
   snapshot now also records where each disk is mounted; on Linux it leaves out network shares,
-  FUSE mounts and LVM or LUKS UUIDs.
+  FUSE mounts, LVM or LUKS UUIDs, and a swap file's path (a swap partition keeps its `/dev/...`
+  path); a Fedora/anaconda `luks-<UUID>` mapping name is recorded as `luks`. On Windows a volume's
+  machine-unique GUID path never reaches the capture, keyed instead by a per-capture ordinal.
 
 ## [1.6.4] 2026-10-05 20:11:15
 

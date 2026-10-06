@@ -285,12 +285,16 @@ class SwapEntry(CaptureModel, frozen=True):
     """One row of ``/proc/swaps``, with its header already skipped.
 
     Attributes:
-        path: The swap file or partition's path.
+        path: The swap partition's device path, present only when it
+            resolved to a device node. ``None`` for a swap file on a
+            filesystem, whose path reaches nothing downstream and can name a
+            user or a project, and for an older capture taken before this
+            field was narrowed, which recorded every swap file's path too.
         dev: Its ``maj:min``, when ``path`` resolves to a device node. ``None``
             for a swap file on a filesystem.
     """
 
-    path: DeviceText
+    path: DeviceText | None = None
     dev: DeviceText | None = None
 
 

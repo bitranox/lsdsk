@@ -82,6 +82,12 @@ _ZFS = "zfs"
 # every other mount with no block device behind it, plus btrfs and ZFS, whose
 # real devices are found another way.
 _ANONYMOUS_MAJOR = "0"
+# Fedora/anaconda names a LUKS mapping "luks-<the volume's own UUID>" by
+# default; a user-chosen name such as "cryptroot" carries no such identifier
+# and is left alone.
+_LUKS_UUID_MAPPING_NAME = re.compile(
+    r"^luks-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+)
 
 
 def _unescape(text: str) -> str:
@@ -192,10 +198,13 @@ def read_swaps(
             since both are the same order of magnitude of sysfs-adjacent text.
 
     Returns:
-        One row per swap, each carrying ``path`` and, when it resolves to a
-        device node, ``dev``. Empty when the file has no swaps beyond its
-        header; ``None`` when it cannot be read or is larger than `limit`,
-        because an unread swap list cannot say a disk carries no swap.
+        One row per swap. A row whose entry resolves to a device node carries
+        ``path`` and ``dev``; a swap FILE's path is read by nothing
+        downstream (:mod:`.usage` joins only on ``dev``) and can name a user
+        or a project, so it is recorded as an empty row instead. Empty when
+        the file has no swaps beyond its header; ``None`` when it cannot be
+        read or is larger than `limit`, because an unread swap list cannot
+        say a disk carries no swap.
     """
     try:
         text = read_text_bounded(path, what="the swap list")
@@ -209,11 +218,8 @@ def read_swaps(
         fields = line.split()
         if not fields:
             continue
-        row = {"path": fields[0]}
         dev = _device_number_of(fields[0])
-        if dev is not None:
-            row["dev"] = dev
-        rows.append(row)
+        rows.append({"path": fields[0], "dev": dev} if dev is not None else {})
     return rows
 
 
@@ -265,8 +271,10 @@ def read_stacked(names: Iterable[str], root: Path = Path("/sys/block")) -> dict[
 
     Returns:
         One entry per device-mapper device reached, keyed by kernel name, each
-        carrying ``dev``, ``dm_name`` and the type prefix of ``dm_uuid``
-        (``LVM-``, ``CRYPT-``, ``mpath-``) where present, ``holders``, and
+        carrying ``dev``, ``dm_name`` (a Fedora-style ``luks-<UUID>`` default
+        name narrowed to ``"luks"``, any other name untouched) and the type
+        prefix of ``dm_uuid`` (``LVM-``, ``CRYPT-``, ``mpath-``) where
+        present, ``holders``, and
         ``partitions`` (a partitioned md array is mounted through these).
     """
     found: dict[str, dict[str, Any]] = {}
@@ -288,6 +296,28 @@ def read_stacked(names: Iterable[str], root: Path = Path("/sys/block")) -> dict[
     return found
 
 
+def _scrub_dm_name(dm_name: str) -> str:
+    """Replace a Fedora-style ``luks-<UUID>`` mapping name with the literal ``"luks"``.
+
+    Args:
+        dm_name: The mapping name ``dm/name`` published.
+
+    Returns:
+        ``"luks"`` for the default anaconda name, unchanged otherwise - a
+        user-chosen name such as ``cryptroot`` is not machine-unique by
+        construction and carries no identifier to remove.
+
+    Example:
+        >>> _scrub_dm_name("luks-0123abcd-4567-89ef-0123-456789abcdef")
+        'luks'
+        >>> _scrub_dm_name("cryptroot")
+        'cryptroot'
+        >>> _scrub_dm_name("luks-notauuid")
+        'luks-notauuid'
+    """
+    return "luks" if _LUKS_UUID_MAPPING_NAME.match(dm_name) else dm_name
+
+
 def _read_stacked_entry(node: Path) -> dict[str, Any]:
     """Read one stacked device's number, mapping, holders and partitions."""
     entry: dict[str, Any] = {}
@@ -296,7 +326,7 @@ def _read_stacked_entry(node: Path) -> dict[str, Any]:
         entry["dev"] = dev
     dm_name = _read_short_text(node / "dm" / "name")
     if dm_name is not None:
-        entry["dm_name"] = dm_name
+        entry["dm_name"] = _scrub_dm_name(dm_name)
     dm_uuid = _uuid_type(_read_short_text(node / "dm" / "uuid"))
     if dm_uuid is not None:
         entry["dm_uuid"] = dm_uuid

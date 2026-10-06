@@ -27,7 +27,10 @@ member. The udev database (`/run/udev/data/b<maj>:<min>`, world-readable) record
 `ID_FS_TYPE=zfs_member` and the pool name in `ID_FS_LABEL` for each member partition, and the
 mount's source names the pool (`rpool/ROOT/...`), which joins the two. The capture keeps only what
 this resolution reads: a mount with no block device behind it (tmpfs, NFS, FUSE), any source other
-than a ZFS pool name, and a mapping UUID past its type prefix (`LVM-`, `CRYPT-`) are left out.
+than a ZFS pool name, a mapping UUID past its type prefix (`LVM-`, `CRYPT-`), and a swap FILE's
+path (only a device-backed swap's `/dev/...` path and `dev` are kept; the resolver joins on `dev`
+alone) are left out. A Fedora/anaconda-default `luks-<UUID>` mapping name is narrowed to the
+literal `luks`; any other mapping name, chosen by the user, is left as it is.
 
 **Partition evidence beats a whole-disk signature.** ZFS keeps two of its four labels at the END
 of a vdev, so a pool partition that runs to the end of its disk makes a probe of the WHOLE disk
@@ -40,7 +43,10 @@ when no partition of that disk carries one.
 reader already records. A spanned volume names several disks. A BitLocker-locked volume still
 maps; a volume with no disk behind it (a RAM disk) maps to none. The reader also records what
 `GetDriveTypeW` answers for each volume's first path, so a failure on an optical drive or a RAM
-disk, or on a volume with no path at all, is told apart from one on a fixed volume.
+disk, or on a volume with no path at all, is told apart from one on a fixed volume. Every volume
+is enumerated and opened by its `\\?\Volume{...}\` GUID path, but that path is machine-unique and
+unused by anything downstream; the capture keys and joins its volumes by a per-capture ordinal
+string instead (`"0"`, `"1"`, ... in enumeration order), so no GUID path reaches a snapshot.
 
 **Boot.** A disk is marked `boot` when it holds the running system or a boot partition: on Linux
 every disk under `/` plus any disk holding a MOUNTED `/boot`, `/boot/efi` or `/efi` (systemd's

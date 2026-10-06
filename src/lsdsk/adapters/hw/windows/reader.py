@@ -1158,6 +1158,33 @@ def read_environment() -> dict[str, Any]:
     return evidence
 
 
+def read_volumes_section(kernel32: api.WinLibrary) -> tuple[dict[str, dict[str, Any]], str | None]:
+    r"""Read every volume and the Windows volume, keyed by a per-capture ordinal.
+
+    ``volumes.read_volumes`` and ``volumes.read_windows_volume`` key and name
+    volumes by their ``\\?\Volume{...}\`` GUID path, which is machine-unique
+    and otherwise unused: :mod:`.usage` only ever joins ``windows_volume``
+    into ``volumes`` by looking the key up, never reads the key's shape, and
+    nothing downstream parses a GUID out of it either. This is the one place
+    that join is rebuilt on an opaque ordinal string (``"0"``, ``"1"``, ... in
+    enumeration order) instead, so no GUID path reaches the capture a snapshot
+    writes to disk.
+
+    Args:
+        kernel32: The typed facade over the Win32 entry points.
+
+    Returns:
+        Every volume keyed by its ordinal, and the Windows volume's ordinal
+        key (``None`` when it could not be resolved).
+    """
+    by_guid = volumes.read_volumes(kernel32)
+    windows_guid = volumes.read_windows_volume(kernel32)
+    ordinals = {guid: str(index) for index, guid in enumerate(by_guid)}
+    by_ordinal = {ordinals[guid]: entry for guid, entry in by_guid.items()}
+    windows_ordinal = ordinals.get(windows_guid) if windows_guid is not None else None
+    return by_ordinal, windows_ordinal
+
+
 def read_system() -> dict[str, Any]:
     """Read the whole storage subsystem from this Windows machine.
 
@@ -1173,6 +1200,7 @@ def read_system() -> dict[str, Any]:
     usb_reading = read_usb_ports(tree.kernel32, disks, tree.usb_devices(), tree.usb_hubs())
     for path, error in usb_reading.disk_errors.items():
         disks[path]["usb_link_error"] = error
+    volume_entries, windows_volume = read_volumes_section(tree.kernel32)
 
     return {
         "schema": SCHEMA_VERSION,
@@ -1192,8 +1220,8 @@ def read_system() -> dict[str, Any]:
         "disks": disks,
         "usb_ports": usb_reading.ports,
         "usb_hubs": usb_reading.hubs,
-        "volumes": volumes.read_volumes(tree.kernel32),
-        "windows_volume": volumes.read_windows_volume(tree.kernel32),
+        "volumes": volume_entries,
+        "windows_volume": windows_volume,
         "cwd": os.getcwd(),  # noqa: PTH109 - recorded as context for a bug report, not used as a path
     }
 
@@ -1210,5 +1238,6 @@ __all__ = [
     "read_environment",
     "read_system",
     "read_usb_ports",
+    "read_volumes_section",
     "sat_passthrough",
 ]

@@ -188,6 +188,23 @@ def test_crypt_over_lvm_reports_the_first_layer_with_every_mount_below_it() -> N
 
 
 @pytest.mark.os_agnostic
+def test_a_fedora_style_luks_mapping_name_already_scrubbed_at_capture_time_reads_crypt_luks() -> None:
+    # The reader narrows "luks-<UUID>" to "luks" before it ever reaches a
+    # capture (see test_linux_mounts_reader.py); this is the resolver's half
+    # of that contract, that a scrubbed name still renders as "crypt:luks".
+    capture = _capture(
+        block={"sda": _disk("8:0", partitions={"sda2": {"dev": "8:2", "holders": ["dm-0"]}})},
+        mounts=[_mount("253:0", "/")],
+        stacked={"dm-0": {"dev": "253:0", "dm_name": "luks", "dm_uuid": "CRYPT-LUKS2-abc", "holders": []}},
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    sda = usage["sda"]
+    assert sda is not None
+    assert sda.uses[0].kind == UseKind.CRYPT
+    assert sda.uses[0].name == "luks"
+
+
+@pytest.mark.os_agnostic
 def test_an_md_member_names_its_array() -> None:
     capture = _capture(
         block={"sda": _disk("8:0", partitions={"sda1": {"dev": "8:1", "holders": ["md0"]}})},
