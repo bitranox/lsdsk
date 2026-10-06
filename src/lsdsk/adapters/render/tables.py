@@ -92,6 +92,7 @@ DISK_COLUMNS: tuple[Column, ...] = (
     Column("disk", "disk", priority=1),
     Column("link", "link", priority=0),
     Column("controller", "controller", priority=2, flexible=True, min_width=12),
+    Column("used_by", "used by", priority=8, flexible=True, min_width=8),
 )
 
 HEALTH_COLUMNS: tuple[Column, ...] = (
@@ -304,7 +305,7 @@ def disk_table_row(disk: Disk, port: PcieLink | None = None, *, bandwidth: bool 
     """One disk's cells for every key in :data:`DISK_COLUMNS`, already styled.
 
     Built once here rather than assembled separately by the printed table and
-    the TUI disk page: both need the same twelve columns, and picking most of
+    the TUI disk page: both need the same thirteen columns, and picking most of
     them out of :func:`report.disk_row` by hand while adding the rest inline is
     how the two views drifted apart before.
 
@@ -336,6 +337,7 @@ def disk_table_row(disk: Disk, port: PcieLink | None = None, *, bandwidth: bool 
             disk.controller_address or "-",
             theme.STYLE_IDENTIFIER if disk.controller_address else theme.STYLE_UNKNOWN,
         ),
+        "used_by": theme.format_usage(disk.usage),
     }
 
 

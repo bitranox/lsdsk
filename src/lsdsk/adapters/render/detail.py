@@ -232,7 +232,15 @@ def disk_detail(
     groups = (
         DetailGroup(
             IDENTITY,
-            (("size", size), ("serial", row["serial"]), ("firmware", row["firmware"]), ("wwn", row["wwn"])),
+            (
+                # First: whether this drive is safe to pull is the question a
+                # reader opens the panel to answer, before any other value.
+                ("used by", row["used_by"]),
+                ("size", size),
+                ("serial", row["serial"]),
+                ("firmware", row["firmware"]),
+                ("wwn", row["wwn"]),
+            ),
         ),
         DetailGroup(LINK, _disk_link_values(disk, row, inventory.port_link_for(disk))),
         DetailGroup(SEAT, _seat_values(disk, inventory)),

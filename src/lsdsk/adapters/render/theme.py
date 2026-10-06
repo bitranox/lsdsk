@@ -21,8 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING, Final, NamedTuple
 
-from ...domain.enums import BusType, DiskKind, PciPortKind, Severity
-from ...domain.models import PcieLink, pcie_generation
+from ...domain.enums import BusType, DiskKind, PciPortKind, Severity, UseKind
+from ...domain.models import DiskUsage, DiskUse, PcieLink, pcie_generation
 from ...domain.pcie_text import format_bytes_rate
 
 if TYPE_CHECKING:
@@ -444,6 +444,80 @@ def format_bus(bus: BusType) -> str:
     return "-" if bus is BusType.UNKNOWN else bus.value.upper()
 
 
+#: A Windows drive letter's volume path, e.g. ``C:`` plus a trailing separator:
+#: the letter alone is what a reader calls the whole disk by.
+_VOLUME_ROOT_LEN: Final = 3
+
+
+def _mount_text(mount: str) -> str:
+    """One mount or volume path as a reader would ask for it.
+
+    A Windows drive letter's volume path names the root plus a trailing
+    separator; the letter alone is what a reader calls it by, so only that
+    root form is shortened. A folder mount keeps its whole path, which is the
+    only thing that names it.
+    """
+    return mount[:2] if len(mount) == _VOLUME_ROOT_LEN and mount.endswith(":\\") else mount
+
+
+def _use_text(use: DiskUse) -> str:
+    """One use, as the ``used by`` cell writes it.
+
+    Swap has no name and no mounts, so it is the single word. A mount or a
+    letter is the places it is mounted, joined - a disk can carry several
+    partitions mounted at once. Anything else (ZFS, LVM, MD, CRYPT, STACK) is
+    named by its pool, group, array or mapping, with the mounts appended only
+    where it has any: a ZFS use never does (ADR 0004 - a pool's datasets are
+    not listed), and an LVM/MD/CRYPT/STACK use with nothing mounted on it yet
+    is named without a dangling arrow.
+    """
+    if use.kind is UseKind.SWAP:
+        return "swap"
+    if use.kind in {UseKind.MOUNT, UseKind.LETTER}:
+        return ", ".join(_mount_text(mount) for mount in use.mounts)
+    label = f"{use.kind.value}:{use.name}"
+    if use.kind is UseKind.ZFS or not use.mounts:
+        return label
+    return f"{label} -> {', '.join(use.mounts)}"
+
+
+def format_usage(usage: DiskUsage | None) -> Cell:
+    """Render what a disk boots and is used for, in one short cell.
+
+    Three states, never two: :data:`NOT_READ` says nobody could look;
+    :data:`NOT_MOUNTED` says somebody looked and the disk carries nothing; any
+    other text is what was found. The caller decides which applies - this
+    function never promotes an empty reading to either of the other two.
+
+    Args:
+        usage: The disk's boot flag and uses, or ``None`` where it could not
+            be read.
+
+    Returns:
+        The cell: its text, and :data:`STYLE_UNKNOWN` only for the unread
+        state - ``not mounted`` is a real reading and is not dimmed like one.
+
+    Example:
+        >>> format_usage(None)
+        ('-', '#6E7687')
+        >>> format_usage(DiskUsage())
+        ('not mounted', '')
+        >>> format_usage(DiskUsage(boot=True, uses=(DiskUse(kind=UseKind.ZFS, name="rpool"),)))
+        ('boot zfs:rpool', '')
+    """
+    if usage is None:
+        return NOT_READ, STYLE_UNKNOWN
+    parts = [_use_text(use) for use in usage.uses]
+    if usage.boot:
+        parts.insert(0, "boot")
+    if not parts:
+        return NOT_MOUNTED, ""
+    head, *rest = parts
+    if usage.boot and rest:
+        return f"{head} {', '.join(rest)}", ""
+    return ", ".join(parts), ""
+
+
 def format_pcie_generation(speed_gtps: float | None, width: int | None) -> str:
     """Render a PCIe link as a marketing generation and a width.
 
@@ -789,6 +863,13 @@ def link_pair_cells(link: PcieLink, *, bandwidth: bool = False) -> LinkPair:
 NOT_READ = "-"
 LEGACY = "legacy"
 
+#: What the ``used by`` cell prints when the reading WAS taken and found
+#: nothing: every source that could have named the disk was read, and none of
+#: them did. Distinct from :data:`NOT_READ`, which says nobody could look, and
+#: not styled :data:`STYLE_UNKNOWN` for the same reason - a real reading of
+#: nothing is not an unread value.
+NOT_MOUNTED: Final = "not mounted"
+
 #: What a link column prints when the register WAS read and says no lane is
 #: trained: an empty port, or a function with no link of its own. Neither the
 #: dash, which says nobody read it, nor the figure its halves would spell, which
@@ -939,6 +1020,7 @@ __all__ = [
     "AT_MOST",
     "LEGACY",
     "NOT_APPLICABLE",
+    "NOT_MOUNTED",
     "NOT_READ",
     "NO_LINK",
     "PRINTED",
@@ -970,6 +1052,7 @@ __all__ = [
     "format_size_both",
     "format_speed",
     "format_temperature",
+    "format_usage",
     "format_wear",
     "hop_legend",
     "hop_link_cells",
