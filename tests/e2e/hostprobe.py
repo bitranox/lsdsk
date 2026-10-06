@@ -268,41 +268,44 @@ def usage_boot_disk_found(invocation: list[str]) -> tuple[list[dict[str, Any]], 
 
     A replayed capture cannot fail this, because the capture already holds
     whatever the reader resolved. This is read-only on both platforms, so it
-    runs on every host regardless of privilege; inside a container the host's
-    own use of its disks is invisible, and every disk reads unread rather than
-    finding nothing, which is the other reading this check accepts.
+    runs on every host regardless of privilege. Inside a container the host's
+    own use of its disks is invisible and every disk reads unread rather than
+    finding nothing; that is the other reading this check accepts, and ONLY
+    when the envelope says the run was in a container, because on bare metal
+    or a guest it means the reading broke. A host with no disk proves nothing
+    and fails, and a disk whose JSON carries no ``usage`` key at all is a
+    schema regression, not an unread reading.
     """
     name = "usage:boot-disk-found"
     code, out, _ = run(invocation, ["disks", "--format", "json"])
     if code not in DOCUMENTED_EXITS:
         return [check(name, False, f"exit {code}")], {}
     try:
-        disks: list[dict[str, Any]] = json.loads(out)["data"]["disks"]
+        data: dict[str, Any] = json.loads(out)["data"]
+        disks: list[dict[str, Any]] = data["disks"]
     except Exception as error:
         return [check(name, False, type(error).__name__)], {}
 
-    usages = [d.get("usage") for d in disks if str(d.get("bus")) != "virtual"]
+    real = [d for d in disks if str(d.get("bus")) != "virtual"]
+    keyless = [str(d.get("path")) for d in real if "usage" not in d]
+    usages = [d.get("usage") for d in real]
     booted = [u for u in usages if u and u.get("boot")]
-    per_disk = {
-        str(d.get("path")): (
-            None
-            if d.get("usage") is None
-            else {
-                "boot": bool(d["usage"].get("boot")),
-                "uses": [_use_text(u) for u in cast("list[dict[str, Any]]", d["usage"].get("uses") or [])],
-            }
-        )
-        for d in disks
-        if str(d.get("bus")) != "virtual"
-    }
-    facts: dict[str, Any] = {"usage_by_disk": per_disk}
-    return [
-        check(
-            name,
-            bool(booted) or all(u is None for u in usages),
-            f"{len(booted)} boot disk(s) among {len(usages)}; all unread means a container",
-        )
-    ], facts
+    in_container = data.get("environment") == "container"
+    facts: dict[str, Any] = {"usage_by_disk": {str(d.get("path")): _usage_fact(d.get("usage")) for d in real}}
+    if not real or keyless:
+        why = f"no usage key on {', '.join(keyless)}" if keyless else "no disk on this host proves nothing"
+        return [check(name, False, why)], facts
+    unread_in_container = in_container and all(u is None for u in usages)
+    detail = f"{len(booted)} boot disk(s) among {len(usages)}; environment {data.get('environment')}"
+    return [check(name, bool(booted) or unread_in_container, detail)], facts
+
+
+def _usage_fact(usage: Any) -> dict[str, Any] | None:
+    """One disk's recorded usage, condensed for the facts the probe reports."""
+    if usage is None:
+        return None
+    uses = cast("list[dict[str, Any]]", usage.get("uses") or [])
+    return {"boot": bool(usage.get("boot")), "uses": [_use_text(u) for u in uses]}
 
 
 def snapshot_refuses_replay(invocation: list[str], workdir: Path) -> list[dict[str, Any]]:

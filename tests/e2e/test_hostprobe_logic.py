@@ -19,7 +19,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from hostprobe import DOCUMENTED_EXITS, check, resolve, smart_actually_read, usb_link_read
+from hostprobe import DOCUMENTED_EXITS, check, resolve, smart_actually_read, usage_boot_disk_found, usb_link_read
 
 
 def _disk(bus: str, *, model: str | None = "ACME", hours: int | None = 100) -> dict[str, Any]:
@@ -200,3 +200,71 @@ def test_a_host_with_no_usb_disk_passes_and_says_it_proved_nothing(monkeypatch: 
     assert found["passed"]
     assert found["detail"] == "no usb disk on this host"
     assert facts["usb_disks"] == 0
+
+
+_NO_USAGE = object()
+
+
+def _used_disk(path: str, usage: object) -> dict[str, Any]:
+    """A disk as ``disks --format json`` writes it, with ``usage`` left out for ``_NO_USAGE``."""
+    disk: dict[str, Any] = {**_disk("sata"), "path": path}
+    if usage is not _NO_USAGE:
+        disk["usage"] = usage
+    return disk
+
+
+def _usage_cli(disks: list[dict[str, Any]], environment: str):
+    """The CLI's ``disks`` envelope, carrying the environment the check keys on."""
+    import json
+
+    payload = json.dumps({"ok": True, "command": "disks", "data": {"disks": disks, "environment": environment}})
+
+    def run(_invocation: list[str], _args: list[str]) -> tuple[int, str, str]:
+        return 0, payload, ""
+
+    return run
+
+
+_BOOT = {"boot": True, "uses": [{"kind": "mount", "name": "", "mounts": ["/"]}]}
+_DATA = {"boot": False, "uses": []}
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("disks", "environment"),
+    [
+        pytest.param([_used_disk("/dev/sda", _BOOT), _used_disk("/dev/sdb", _DATA)], "bare-metal", id="boot-found"),
+        pytest.param([_used_disk("/dev/sda", None), _used_disk("/dev/sdb", None)], "container", id="container-unread"),
+    ],
+)
+def test_the_boot_disk_check_passes_a_found_boot_disk_and_an_unread_container(
+    monkeypatch: pytest.MonkeyPatch, disks: list[dict[str, Any]], environment: str
+) -> None:
+    """The controls: a host whose boot disk was found, and a container that can see no host use."""
+    import hostprobe
+
+    monkeypatch.setattr(hostprobe, "run", _usage_cli(disks, environment))
+    results, _ = usage_boot_disk_found(["lsdsk"])
+    assert results[0]["passed"], results[0]["detail"]
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("disks", "environment"),
+    [
+        pytest.param([_used_disk("/dev/sda", None)], "bare-metal", id="bare-metal-all-unread"),
+        pytest.param([_used_disk("/dev/sda", None)], "vm", id="vm-all-unread"),
+        pytest.param([], "container", id="no-disks"),
+        pytest.param([_used_disk("/dev/sda", _BOOT), _used_disk("/dev/sdb", _NO_USAGE)], "bare-metal", id="no-key"),
+        pytest.param([_used_disk("/dev/sda", _NO_USAGE)], "container", id="container-no-key"),
+    ],
+)
+def test_the_boot_disk_check_fails_a_broken_reading(
+    monkeypatch: pytest.MonkeyPatch, disks: list[dict[str, Any]], environment: str
+) -> None:
+    """All unread is accepted only in a container; no disks or a missing ``usage`` key always fail."""
+    import hostprobe
+
+    monkeypatch.setattr(hostprobe, "run", _usage_cli(disks, environment))
+    results, _ = usage_boot_disk_found(["lsdsk"])
+    assert not results[0]["passed"], results[0]["detail"]
