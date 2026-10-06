@@ -16,7 +16,7 @@ from ....domain.models import DiskUsage, DiskUse
 from .capture import BlockEntry, FilesystemSignature, LinuxCapture, StackedEntry
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Mapping
 
 #: Mountpoints whose disk the machine boots from. ``/efi`` is systemd's
 #: recommended mountpoint for the EFI system partition, the same intent as
@@ -165,30 +165,6 @@ def _closure(name: str, stacked: Mapping[str, StackedEntry]) -> list[str]:
         if entry is not None:
             queue.extend(_holders_of(entry))
     return closure
-
-
-def _any_unread_stacked(holders: Iterable[str], stacked: Mapping[str, StackedEntry]) -> bool:
-    """Whether a leaf's holder closure reaches a stacked device with unread partitions.
-
-    A stacked device whose own sysfs directory could not be listed still
-    names itself as a layer (see :func:`_closure`), but anything mounted
-    through one of ITS partitions is unseen - a disk reached only that way
-    cannot be called "not mounted".
-
-    Args:
-        holders: What sits directly on a disk or one of its partitions.
-        stacked: Every stacked device, keyed by kernel name.
-
-    Returns:
-        Whether any member of any holder's closure has ``partitions is None``.
-    """
-    for holder in holders:
-        members = [holder, *_closure(holder, stacked)]
-        for member in members:
-            entry = stacked.get(member)
-            if entry is not None and entry.partitions is None:
-                return True
-    return False
 
 
 def _lvm_group(dm_name: str) -> str:
@@ -357,22 +333,17 @@ def _undecidable(
     block: BlockEntry,
     capture: LinuxCapture,
     signatures: list[FilesystemSignature | None],
-    holders: list[str],
 ) -> bool:
     """Whether a disk that resolved nothing could still be in use.
 
     "Not mounted" is claimed only when every source that could have named the
     disk was read, and when nothing on it is a member of a filesystem whose
-    other members mountinfo cannot reach - and when none of its holders'
-    stacked closure has an unread partitions set (see
-    :func:`_any_unread_stacked`), which can hide a mount this disk reaches
-    only through a stacked device's own partition.
+    other members mountinfo cannot reach.
 
     Args:
         block: The disk's block entry.
         capture: A Linux reading.
         signatures: The signatures that counted for this disk's leaves.
-        holders: Every holder found on this disk and its partitions.
 
     Returns:
         Whether an empty reading of this disk must be reported as not read.
@@ -384,7 +355,6 @@ def _undecidable(
         block.dev is None,
         partitions is None,
         partitions is not None and any(partition.dev is None for partition in partitions.values()),
-        _any_unread_stacked(holders, capture.stacked),
     )
     unjoinable = any(sig is not None and sig.fs_type in _UNJOINABLE_MEMBER_TYPES for sig in signatures)
     return any(unread) or unjoinable
@@ -420,10 +390,8 @@ def _disk_usage(block: BlockEntry, capture: LinuxCapture, sources: _Sources) -> 
         uses.extend(_leaf_uses(partition.dev, partition.holders, signature, sources, capture.stacked))
 
     merged = _merge(uses)
-    if not merged:
-        holders = [*block.holders, *(h for partition in partitions for h in partition.holders)]
-        if _undecidable(block, capture, [whole_signature, *partition_signatures], holders):
-            return None
+    if not merged and _undecidable(block, capture, [whole_signature, *partition_signatures]):
+        return None
     return DiskUsage(boot=_is_boot(merged, sources.boot_pools), uses=merged)
 
 

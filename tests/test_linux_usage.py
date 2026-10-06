@@ -515,36 +515,36 @@ def test_the_control_for_the_unread_sources_is_not_mounted() -> None:
 
 
 @pytest.mark.os_agnostic
-def test_undecidable_treats_an_unread_stacked_closure_as_undecided() -> None:
-    # Direct test of the private helper, not resolve_usage: _stack_use always
-    # names its holder's own layer (see
-    # test_lvm_without_a_mapping_name_falls_back_to_the_kernel_name, which
-    # keeps a bare "lvm:dm-0" use with no mount at all), so a disk with ANY
-    # holder never resolves to an empty merge - resolve_usage has no way to
-    # reach _undecidable's stacked branch end to end. This locks down the
-    # mechanism itself: a disk whose holder closure reaches a stacked device
-    # that was never listed (partitions is None) cannot rule out a hidden
-    # use, which _undecidable must fold into its unread tuple.
-    from lsdsk.adapters.hw.linux import usage as linux_usage
-
-    undecidable = linux_usage._undecidable  # pyright: ignore[reportPrivateUsage] - no public seam reaches this
-
-    capture = _capture(block={"sda": _disk("8:0")}, stacked={"md126": {"dev": "9:126", "holders": []}})
-    block = capture.block["sda"]
-    assert undecidable(block, capture, [None], ["md126"]) is True
+def test_a_disk_with_an_unread_stacked_closure_still_names_its_holder_with_no_mounts() -> None:
+    # md126 is the only holder, and its own partitions were never listed
+    # (partitions is None): a mount on what would have been md126p1 cannot be
+    # joined to it, so the disk must read exactly one MD use with no mounts -
+    # never None (that would read as "could not be checked") and never a
+    # mount this capture never saw.
+    capture = _capture(
+        block={"sda": _disk("8:0", holders=("md126",))},
+        mounts=[_mount("259:1", "/srv")],
+        stacked={"md126": {"dev": "9:126", "holders": []}},
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    sda = usage["sda"]
+    assert sda is not None
+    assert sda.uses == (DiskUse(kind=UseKind.MD, name="md126"),)
 
 
 @pytest.mark.os_agnostic
-def test_the_control_for_an_unread_stacked_closure_is_the_read_case() -> None:
-    # Same shape as above, except the stacked device's partitions WERE read
-    # (and found empty): every source that could have named a use through it
-    # was read, so its closure must not count as unread.
-    from lsdsk.adapters.hw.linux import usage as linux_usage
-
-    undecidable = linux_usage._undecidable  # pyright: ignore[reportPrivateUsage] - no public seam reaches this
-
+def test_the_control_for_an_unread_stacked_closure_carries_its_partition_s_mount() -> None:
+    # Same shape as above, except md126's partitions WERE read and md126p1 is
+    # mounted at /srv: the MD use must carry that mount. This is the control
+    # that proves the reader-side None handling above is not simply dropping
+    # every mount - it fails if _devs_of or _holders_of stop treating a read
+    # (but empty) partitions mapping as distinct from an unread one.
     capture = _capture(
-        block={"sda": _disk("8:0")}, stacked={"md126": {"dev": "9:126", "holders": [], "partitions": {}}}
+        block={"sda": _disk("8:0", holders=("md126",))},
+        mounts=[_mount("259:1", "/srv")],
+        stacked={"md126": {"dev": "9:126", "holders": [], "partitions": {"md126p1": {"dev": "259:1", "holders": []}}}},
     )
-    block = capture.block["sda"]
-    assert undecidable(block, capture, [None], ["md126"]) is False
+    usage = resolve_usage(capture, BARE_METAL)
+    sda = usage["sda"]
+    assert sda is not None
+    assert sda.uses == (DiskUse(kind=UseKind.MD, name="md126", mounts=("/srv",)),)
