@@ -327,3 +327,188 @@ def test_every_committed_linux_fixture_predates_usage_capture(fixture_path: Path
     inventory = build_from(reading)
     for disk in inventory.disks:
         assert disk.usage is None
+
+
+@pytest.mark.os_agnostic
+def test_a_holder_on_the_whole_disk_is_found_even_when_a_partition_table_is_left_over() -> None:
+    # A multipath path disk: device-mapper holds the raw disk, and the stale
+    # partition table it still carries must not hide that.
+    capture = _capture(
+        block={"sdh": _disk("8:112", partitions={"sdh1": {"dev": "8:113", "holders": []}}, holders=("dm-3",))},
+        mounts=[_mount("253:3", "/data")],
+        stacked={"dm-3": {"dev": "253:3", "dm_name": "mpatha", "dm_uuid": "mpath-", "holders": []}},
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    sdh = usage["sdh"]
+    assert sdh is not None
+    assert sdh.uses == (DiskUse(kind=UseKind.STACK, name="mpatha", mounts=("/data",)),)
+
+
+@pytest.mark.os_agnostic
+def test_a_mount_on_the_whole_disk_is_found_beside_its_partitions() -> None:
+    capture = _capture(
+        block={"sdi": _disk("8:128", partitions={"sdi1": {"dev": "8:129", "holders": []}})},
+        mounts=[_mount("8:128", "/raw"), _mount("8:129", "/part")],
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    sdi = usage["sdi"]
+    assert sdi is not None
+    assert set(sdi.uses[0].mounts) == {"/raw", "/part"}
+    assert len(sdi.uses) == 1
+
+
+@pytest.mark.os_agnostic
+def test_swap_on_the_whole_disk_is_found_beside_its_partitions() -> None:
+    capture = _capture(
+        block={"sdi": _disk("8:128", partitions={"sdi1": {"dev": "8:129", "holders": []}})},
+        swaps=[{"path": "/dev/sdi", "dev": "8:128"}],
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    sdi = usage["sdi"]
+    assert sdi is not None
+    assert sdi.uses == (DiskUse(kind=UseKind.SWAP),)
+
+
+@pytest.mark.os_agnostic
+def test_a_whole_disk_signature_counts_when_no_partition_carries_one() -> None:
+    capture = _capture(
+        block={"sdj": _disk("8:144", partitions={"sdj1": {"dev": "8:145", "holders": []}})},
+        signatures={"8:144": {"fs_type": "zfs_member", "fs_label": "tank"}},
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    sdj = usage["sdj"]
+    assert sdj is not None
+    assert sdj.uses == (DiskUse(kind=UseKind.ZFS, name="tank"),)
+
+
+@pytest.mark.os_agnostic
+def test_a_whole_disk_signature_is_ignored_when_a_partition_carries_one() -> None:
+    capture = _capture(
+        block={"sdk": _disk("8:160", partitions={"sdk1": {"dev": "8:161", "holders": []}})},
+        signatures={
+            "8:160": {"fs_type": "zfs_member", "fs_label": "old"},
+            "8:161": {"fs_type": "ext4"},
+        },
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    sdk = usage["sdk"]
+    assert sdk is not None
+    assert sdk.uses == ()
+
+
+@pytest.mark.os_agnostic
+def test_a_partitioned_md_array_reaches_the_mount_on_its_own_partition() -> None:
+    # IMSM/DDF fake RAID: md126 holds the whole member disks and is itself
+    # partitioned; md126p1 is a partition of md126, not one of its holders.
+    capture = _capture(
+        block={
+            "sda": _disk("8:0", holders=("md126",)),
+            "sdb": _disk("8:16", holders=("md126",)),
+        },
+        mounts=[_mount("259:1", "/")],
+        stacked={
+            "md126": {"dev": "9:126", "holders": [], "partitions": {"md126p1": {"dev": "259:1", "holders": []}}},
+        },
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    for node in ("sda", "sdb"):
+        resolved = usage[node]
+        assert resolved is not None
+        assert resolved.boot is True
+        assert resolved.uses == (DiskUse(kind=UseKind.MD, name="md126", mounts=("/",)),)
+
+
+@pytest.mark.os_agnostic
+def test_a_stacked_device_s_partition_holders_are_followed_too() -> None:
+    capture = _capture(
+        block={"sda": _disk("8:0", holders=("md126",))},
+        mounts=[_mount("253:0", "/var")],
+        stacked={
+            "md126": {"dev": "9:126", "holders": [], "partitions": {"md126p2": {"dev": "259:2", "holders": ["dm-0"]}}},
+            "dm-0": {"dev": "253:0", "dm_name": "vg0-var", "dm_uuid": "LVM-", "holders": []},
+        },
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    sda = usage["sda"]
+    assert sda is not None
+    assert sda.uses == (DiskUse(kind=UseKind.MD, name="md126", mounts=("/var",)),)
+
+
+@pytest.mark.os_agnostic
+def test_a_btrfs_member_that_resolved_nothing_is_not_read_rather_than_not_mounted() -> None:
+    # mountinfo names one source device of a multi-device btrfs filesystem;
+    # the other member cannot be joined to that mount, so it must not read as
+    # unused.
+    capture = _capture(
+        block={
+            "sdb": _disk("8:16", partitions={"sdb1": {"dev": "8:17", "holders": []}}),
+            "sdc": _disk("8:32", partitions={"sdc1": {"dev": "8:33", "holders": []}}),
+        },
+        mounts=[{"dev": "0:40", "mountpoint": "/", "fstype": "btrfs", "source_dev": "8:17"}],
+        signatures={"8:17": {"fs_type": "btrfs"}, "8:33": {"fs_type": "btrfs"}},
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    sdb = usage["sdb"]
+    assert sdb is not None
+    assert sdb.boot is True
+    assert usage["sdc"] is None
+
+
+@pytest.mark.os_agnostic
+def test_lvm_without_a_mapping_name_falls_back_to_the_kernel_name() -> None:
+    capture = _capture(
+        block={"sda": _disk("8:0", partitions={"sda2": {"dev": "8:2", "holders": ["dm-0"]}})},
+        stacked={"dm-0": {"dev": "253:0", "dm_uuid": "LVM-", "holders": []}},
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    sda = usage["sda"]
+    assert sda is not None
+    assert sda.uses == (DiskUse(kind=UseKind.LVM, name="dm-0"),)
+
+
+@pytest.mark.os_agnostic
+def test_swap_on_a_crypt_mapping_reads_swap_below_the_crypt_layer() -> None:
+    capture = _capture(
+        block={"sda": _disk("8:0", partitions={"sda3": {"dev": "8:3", "holders": ["dm-1"]}})},
+        swaps=[{"path": "/dev/dm-1", "dev": "253:1"}],
+        stacked={"dm-1": {"dev": "253:1", "dm_name": "cryptswap", "dm_uuid": "CRYPT-", "holders": []}},
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    sda = usage["sda"]
+    assert sda is not None
+    assert sda.uses == (DiskUse(kind=UseKind.CRYPT, name="cryptswap", mounts=("swap",)),)
+
+
+@pytest.mark.os_agnostic
+def test_an_esp_mounted_at_efi_marks_its_disk_boot() -> None:
+    capture = _capture(
+        block={"nvme0n1": _disk("259:0", partitions={"nvme0n1p1": {"dev": "259:1", "holders": []}})},
+        mounts=[_mount("259:1", "/efi", fstype="vfat")],
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    nvme0n1 = usage["nvme0n1"]
+    assert nvme0n1 is not None
+    assert nvme0n1.boot is True
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("block", "extra"),
+    [
+        pytest.param(_disk("8:0", partitions={"sda1": {"holders": []}}), {}, id="partition-dev-unread"),
+        pytest.param({"holders": [], "partitions": {}}, {}, id="disk-dev-unread"),
+        pytest.param({"dev": "8:0", "holders": []}, {}, id="partitions-unread"),
+        pytest.param(_disk("8:0", partitions={"sda1": {"dev": "8:1", "holders": []}}), {"swaps": None}, id="swaps"),
+    ],
+)
+def test_an_unread_source_makes_an_otherwise_empty_disk_not_read(block: dict[str, Any], extra: dict[str, Any]) -> None:
+    capture = _capture(block={"sda": block}, **extra)
+    assert resolve_usage(capture, BARE_METAL) == {"sda": None}
+
+
+@pytest.mark.os_agnostic
+def test_the_control_for_the_unread_sources_is_not_mounted() -> None:
+    capture = _capture(block={"sda": _disk("8:0", partitions={"sda1": {"dev": "8:1", "holders": []}})})
+    usage = resolve_usage(capture, BARE_METAL)
+    assert usage["sda"] is not None
+    assert usage["sda"].uses == ()

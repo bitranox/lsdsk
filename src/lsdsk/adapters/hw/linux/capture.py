@@ -318,12 +318,16 @@ class StackedEntry(CaptureModel, frozen=True):
             ``LVM-...``) as its first dash-separated field.
         holders: What sits directly on this device, so a crypt-under-LVM chain
             is readable one layer at a time.
+        partitions: The device's own partitions, keyed by kernel name. A
+            partitioned md array (IMSM or DDF fake RAID) is mounted through
+            these, and they are not among its holders.
     """
 
     dev: DeviceText | None = None
     dm_name: DeviceText | None = None
     dm_uuid: DeviceText | None = None
     holders: Entries[DeviceText] = ()
+    partitions: EntryMap[DeviceText, PartitionEntry] = Field(default_factory=dict[DeviceText, PartitionEntry])
 
 
 class FilesystemSignature(CaptureModel, frozen=True):
@@ -364,8 +368,9 @@ class BlockEntry(CaptureModel, frozen=True):
             own, unlike `partitions` below.
         partitions: The device's partitions, keyed by kernel name. ``None``
             when they were never read - a virtual device, which has none to
-            read, or a capture older than this field - a different fact from
-            an empty mapping, which means they were read and there are none.
+            read, a disk whose sysfs directory could not be listed, or a
+            capture older than this field - a different fact from an empty
+            mapping, which means they were read and there are none.
     """
 
     size: DeviceText | None = None
@@ -487,7 +492,8 @@ class LinuxCapture(CaptureHeader, frozen=True):
         mounts: Every mounted filesystem, from mountinfo. ``None`` when
             mountinfo could not be read at all, a different fact from a
             machine with no mounts, which mountinfo never reports.
-        swaps: Every active swap.
+        swaps: Every active swap. ``None`` when ``/proc/swaps`` could not be
+            read, a different fact from a machine with no swap.
         stacked: Every device-mapper device reached from a disk's or a
             partition's holders, keyed by kernel name (``dm-0``).
         signatures: What the udev database says each device is formatted as,
@@ -508,7 +514,7 @@ class LinuxCapture(CaptureHeader, frozen=True):
     nvme: EntryMap[DeviceText, NvmeBlobs] = Field(default_factory=dict[DeviceText, NvmeBlobs])
     usb: EntryMap[DeviceText, UsbDeviceEntry] = Field(default_factory=dict[DeviceText, UsbDeviceEntry])
     mounts: Entries[MountEntry] | None = None
-    swaps: Entries[SwapEntry] = ()
+    swaps: Entries[SwapEntry] | None = None
     stacked: EntryMap[DeviceText, StackedEntry] = Field(default_factory=dict[DeviceText, StackedEntry])
     signatures: EntryMap[DeviceText, FilesystemSignature] | None = None
 

@@ -18,10 +18,18 @@ from .capture import BlockEntry, FilesystemSignature, LinuxCapture, StackedEntry
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-#: Mountpoints whose disk the machine boots from.
-BOOT_MOUNTS = frozenset({"/", "/boot", "/boot/efi"})
+#: Mountpoints whose disk the machine boots from. ``/efi`` is systemd's
+#: recommended mountpoint for the EFI system partition, the same intent as
+#: ``/boot/efi``.
+BOOT_MOUNTS = frozenset({"/", "/boot", "/boot/efi", "/efi"})
 
 _ZFS_MEMBER = "zfs_member"
+
+# Filesystems that span several devices while mountinfo names only one of them
+# as the mount's source. The other members cannot be joined to the mount from
+# what the reader records, so one that resolved nothing is undecided rather
+# than unused.
+_UNJOINABLE_MEMBER_TYPES = frozenset({"btrfs"})
 
 # LVM writes a dash inside a group or volume name as two, so the single dash is
 # the separator between them.
@@ -76,9 +84,10 @@ def _swap_devs(capture: LinuxCapture) -> frozenset[str]:
         capture: A Linux reading.
 
     Returns:
-        The ``maj:min`` of every swap that resolved to a device node.
+        The ``maj:min`` of every swap that resolved to a device node; empty
+        when the swap list was not read.
     """
-    return frozenset(swap.dev for swap in capture.swaps if swap.dev)
+    return frozenset(swap.dev for swap in capture.swaps or () if swap.dev)
 
 
 def _boot_pools(capture: LinuxCapture) -> frozenset[str]:
@@ -98,6 +107,35 @@ def _boot_pools(capture: LinuxCapture) -> frozenset[str]:
     )
 
 
+def _holders_of(entry: StackedEntry) -> list[str]:
+    """What sits on a stacked device, directly or on one of its own partitions.
+
+    Args:
+        entry: A stacked device's reading.
+
+    Returns:
+        The device's own holders, then each of its partitions' holders.
+    """
+    return [*entry.holders, *(holder for partition in entry.partitions.values() for holder in partition.holders)]
+
+
+def _devs_of(entry: StackedEntry) -> list[str]:
+    """Every ``maj:min`` a mount or a swap could name for a stacked device.
+
+    A partitioned md array (IMSM or DDF fake RAID) is mounted through its own
+    partitions, which are not its holders, so they are listed here beside the
+    device itself.
+
+    Args:
+        entry: A stacked device's reading.
+
+    Returns:
+        The device's own number, then each of its partitions', where read.
+    """
+    candidates = (entry.dev, *(partition.dev for partition in entry.partitions.values()))
+    return [dev for dev in candidates if dev]
+
+
 def _closure(name: str, stacked: Mapping[str, StackedEntry]) -> list[str]:
     """Every device-mapper device transitively stacked on top of ``name``.
 
@@ -111,7 +149,7 @@ def _closure(name: str, stacked: Mapping[str, StackedEntry]) -> list[str]:
     """
     visited = {name}
     closure: list[str] = []
-    queue = list(stacked.get(name, StackedEntry()).holders)
+    queue = _holders_of(stacked.get(name, StackedEntry()))
     while queue:
         candidate = queue.pop(0)
         if candidate in visited:
@@ -120,7 +158,7 @@ def _closure(name: str, stacked: Mapping[str, StackedEntry]) -> list[str]:
         closure.append(candidate)
         entry = stacked.get(candidate)
         if entry is not None:
-            queue.extend(entry.holders)
+            queue.extend(_holders_of(entry))
     return closure
 
 
@@ -150,7 +188,7 @@ def _stack_kind(name: str, dm_uuid: str | None, dm_name: str | None) -> tuple[Us
         The use kind and the name it should be reported under.
     """
     if dm_uuid is not None and dm_uuid.startswith("LVM-"):
-        return UseKind.LVM, _lvm_group(dm_name) if dm_name else ""
+        return UseKind.LVM, _lvm_group(dm_name) if dm_name else name
     if dm_uuid is not None and dm_uuid.startswith("CRYPT-"):
         return UseKind.CRYPT, dm_name or name
     if dm_uuid is None and name.startswith("md"):
@@ -182,11 +220,8 @@ def _stack_use(name: str, stacked: Mapping[str, StackedEntry], sources: _Sources
     members = [name, *_closure(name, stacked)]
     mounts: list[str] = []
     is_swap = False
-    for member in members:
-        member_entry = stacked.get(member)
-        dev = member_entry.dev if member_entry is not None else None
-        if dev is None:
-            continue
+    devs = [dev for member in members for dev in _devs_of(stacked.get(member, StackedEntry()))]
+    for dev in devs:
         for mountpoint in sources.mounts_by_dev.get(dev, ()):
             if mountpoint not in mounts:
                 mounts.append(mountpoint)
@@ -289,13 +324,43 @@ def _is_boot(merged: tuple[DiskUse, ...], boot_pools: frozenset[str]) -> bool:
     return under_boot_mount or boot_pool_member
 
 
+def _undecidable(block: BlockEntry, capture: LinuxCapture, signatures: list[FilesystemSignature | None]) -> bool:
+    """Whether a disk that resolved nothing could still be in use.
+
+    "Not mounted" is claimed only when every source that could have named the
+    disk was read, and when nothing on it is a member of a filesystem whose
+    other members mountinfo cannot reach.
+
+    Args:
+        block: The disk's block entry.
+        capture: A Linux reading.
+        signatures: The signatures that counted for this disk's leaves.
+
+    Returns:
+        Whether an empty reading of this disk must be reported as not read.
+    """
+    partitions = block.partitions
+    unread = (
+        capture.signatures is None,
+        capture.swaps is None,
+        block.dev is None,
+        partitions is None,
+        partitions is not None and any(partition.dev is None for partition in partitions.values()),
+    )
+    unjoinable = any(sig is not None and sig.fs_type in _UNJOINABLE_MEMBER_TYPES for sig in signatures)
+    return any(unread) or unjoinable
+
+
 def _disk_usage(block: BlockEntry, capture: LinuxCapture, sources: _Sources) -> DiskUsage | None:
     """What one disk is used for.
 
-    The disk's own partitions are its leaves when it has any; a disk with no
-    partition table is its own single leaf. A partition's own udev signature
-    always beats the whole disk's: the whole-disk signature is read only in
-    the no-partitions branch, never alongside a partition's.
+    The whole disk is always a leaf: a holder, mount or swap on the raw device
+    (a multipath path, a whole-disk md member) counts even when a leftover
+    partition table is still there. Each partition is a leaf too. A
+    partition's own udev signature beats the whole disk's: the whole-disk
+    signature is consulted only when no partition carries one, because a
+    filesystem that runs to the end of its disk (ZFS keeps labels there) makes
+    the whole disk look like a member too.
 
     Args:
         block: The disk's block entry.
@@ -303,21 +368,20 @@ def _disk_usage(block: BlockEntry, capture: LinuxCapture, sources: _Sources) -> 
         sources: The capture's cross-referencing tables.
 
     Returns:
-        The disk's usage, or ``None`` when nothing was found and the udev
-        database was absent, so an empty reading cannot be told from one
-        that simply never got to look.
+        The disk's usage, or ``None`` when nothing was found and the reading
+        cannot rule out a use it did not see (see :func:`_undecidable`).
     """
-    uses: list[DiskUse] = []
-    if block.partitions:
-        for partition in block.partitions.values():
-            signature = _signature_of(partition.dev, capture)
-            uses.extend(_leaf_uses(partition.dev, partition.holders, signature, sources, capture.stacked))
-    else:
-        signature = _signature_of(block.dev, capture)
-        uses.extend(_leaf_uses(block.dev, block.holders, signature, sources, capture.stacked))
+    partitions = tuple((block.partitions or {}).values())
+    partition_signatures = [_signature_of(partition.dev, capture) for partition in partitions]
+    carried = any(signature is not None for signature in partition_signatures)
+    whole_signature = None if carried else _signature_of(block.dev, capture)
+
+    uses = _leaf_uses(block.dev, block.holders, whole_signature, sources, capture.stacked)
+    for partition, signature in zip(partitions, partition_signatures, strict=True):
+        uses.extend(_leaf_uses(partition.dev, partition.holders, signature, sources, capture.stacked))
 
     merged = _merge(uses)
-    if not merged and capture.signatures is None:
+    if not merged and _undecidable(block, capture, [whole_signature, *partition_signatures]):
         return None
     return DiskUsage(boot=_is_boot(merged, sources.boot_pools), uses=merged)
 
