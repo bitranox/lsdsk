@@ -233,8 +233,10 @@ def disk_detail(
         DetailGroup(
             IDENTITY,
             (
-                # First: whether this drive is safe to pull is the question a
-                # reader opens the panel to answer, before any other value.
+                # First: whether the machine boots from this drive and what
+                # uses it is what a reader checks before pulling or reusing
+                # it. "not mounted" alone does not make it safe: a disk passed
+                # through to a VM or an exported ZFS pool reads the same.
                 ("used by", row["used_by"]),
                 ("size", size),
                 ("serial", row["serial"]),

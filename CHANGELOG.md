@@ -11,8 +11,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   machine boots from it and what it is used for - a mount, a drive letter, swap, or the ZFS pool,
   LVM group, md array or dm-crypt mapping it belongs to. Read with no subprocess and no elevated
   rights on either platform; `-` marks a disk that could not be read and `not mounted` one that
-  was read and carries nothing. The full text is also in the disk detail panel and in the JSON
-  envelope's `usage` field.
+  was read and carries nothing. `not mounted` does not mean a disk is safe to wipe: a disk passed
+  through to a virtual machine, a Storage Spaces member or an exported ZFS pool can show it too.
+  The full text is also in the disk detail panel and in the JSON envelope's `usage` field. A
+  snapshot now also records where each disk is mounted; on Linux it leaves out network shares,
+  FUSE mounts and LVM or LUKS UUIDs.
 
 ## [1.6.4] 2026-10-05 20:11:15
 

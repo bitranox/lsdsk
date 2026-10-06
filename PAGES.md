@@ -50,9 +50,11 @@ One row per drive, with the identity you need to order a replacement: model, WWN
 firmware, then size, bus and the three speeds. `port` is what the seat can give, `disk` what the
 drive can do, `link` what the two of them agreed on.
 `size` gives the capacity in decimal and in powers of two.
-The last column, `used by`, names what the disk boots and holds: `-` where that was not read,
-`not mounted` where it was read and nothing uses the disk, otherwise the boot mark and the mounts,
-pool or stack it belongs to, such as `boot zfs:rpool` or `lvm:vg0 -> /var`.
+The last column, `used by`, says whether the machine boots from the disk and what uses it: `-`
+where that was not read, `not mounted` where it was read and nothing uses the disk, otherwise the
+boot mark and the mounts, pool or stack it belongs to, such as `boot zfs:rpool` or
+`lvm:vg0 -> /var`. `not mounted` does not mean the disk is safe to wipe: a disk passed through to
+a virtual machine, a Storage Spaces member or an exported ZFS pool can show it too.
 
 ## 4 Health
 

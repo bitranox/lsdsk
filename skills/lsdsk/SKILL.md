@@ -46,9 +46,10 @@ For a TICKET or a handover, still send a snapshot rather than redirected text:
 `lsdsk snapshot -o file.json` captures the raw reading, so the recipient can
 replay every section at any width and any privilege question is settled by the
 capture itself. A `lsdsk > report.txt` is a picture of one moment at one width.
-A snapshot names the machine and every drive in it, so check who can read the
-ticket before attaching one; `lsdsk snapshot` says the same on stderr when it
-writes the file.
+A snapshot names the machine, every drive in it and where each disk is used:
+its mountpoints or drive letters and the pools, volume groups and arrays it
+belongs to. So check who can read the ticket before attaching one; `lsdsk
+snapshot` says the same on stderr when it writes the file.
 
 The page is the whole report: mainboard, problem summary, the PCI fabric,
 the controller table, disk identities, wear and error counters, SMART
@@ -300,6 +301,8 @@ and `uses` (each use an object of `kind`, `name` and `mounts`), and feeds the
 table's `used by` column, which prints one of three things: `-` when the disk
 was not read, `not mounted` when it was read and nothing uses it, or the boot
 and use text otherwise, such as `boot zfs:rpool` or `lvm:vg0 -> /var`.
+`not mounted` does not mean the disk is safe to wipe: a disk passed through to a
+virtual machine, a Storage Spaces member or an exported ZFS pool shows it too.
 
 **A controller, inside `data.controllers`, carries `kind`**, which is one of
 `ahci`, `sas`, `nvme`, `raid`, `ide` or `other` - read from the PCI class code,

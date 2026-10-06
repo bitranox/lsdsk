@@ -53,10 +53,12 @@ brauchen: Modell, WWN, Seriennummer und Firmware, dann Grösse, Bus und die drei
 Geschwindigkeiten. `port` ist, was der Steckplatz hergibt, `disk`, was das
 Laufwerk kann, `link`, worauf die beiden sich geeinigt haben. 
 `size` zeigt die Grösse in Dezimal und in Zweierpotenzen.
-Die letzte Spalte, `used by`, nennt, wovon die Platte startet und wofür sie verwendet wird: `-`,
+Die letzte Spalte, `used by`, zeigt, ob das System von der Platte startet und was sie nutzt: `-`,
 wo das nicht gelesen wurde, `not mounted`, wo gelesen wurde und nichts die Platte nutzt, sonst die
 Startmarkierung und die Einhängepunkte, den Pool oder die Struktur, zu der sie gehört, etwa
-`boot zfs:rpool` oder `lvm:vg0 -> /var`.
+`boot zfs:rpool` oder `lvm:vg0 -> /var`. `not mounted` heisst nicht, dass die Platte gefahrlos
+gelöscht werden kann: Eine an eine virtuelle Maschine durchgereichte Platte, ein Mitglied von
+Speicherplätzen (Storage Spaces) oder ein exportierter ZFS-Pool kann es ebenso zeigen.
 
 ## 4 Gesundheit
 

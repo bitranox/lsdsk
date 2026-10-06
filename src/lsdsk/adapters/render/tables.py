@@ -4,7 +4,7 @@ Each answers a single question, so its columns can be more specific than the
 combined tree affords.
 
 They drop columns by priority as the terminal narrows, using the same fitting
-rules as the tree. Twelve columns do not fit an eighty-column terminal by any
+rules as the tree. Thirteen columns do not fit an eighty-column terminal by any
 arrangement, and a table that squeezes every column down to two characters has
 kept all of its data and lost all of its meaning.
 
