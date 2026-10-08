@@ -14,12 +14,11 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import lsdsk.adapters.cli.commands.history as history_commands
-from lsdsk.adapters.cli import safe_console
 from lsdsk.adapters.cli.commands.history import read_history, record_reading
 from lsdsk.adapters.config.history import HistorySettings
-from lsdsk.adapters.history.store import history_lock, load_history
+from lsdsk.adapters.history.store import history_lock, load_history, save_history
 from lsdsk.adapters.hw.snapshot import load as load_inventory
+from lsdsk.domain.history import record
 
 if TYPE_CHECKING:
     from types import FrameType
@@ -29,6 +28,9 @@ if TYPE_CHECKING:
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 EARLIER = load_inventory(FIXTURES / "linux-sas-hba.json")
 LATER = load_inventory(FIXTURES / "linux-sas-hba-later.json")
+EARLIER_HOURS = {
+    hours for disk in EARLIER.disks if disk.health is not None and (hours := disk.health.power_on_hours) is not None
+}
 
 
 class _RefusedOnce:
@@ -109,63 +111,52 @@ def test_a_run_waits_for_the_store_another_run_is_writing(tmp_path: Path) -> Non
     assert _hours(settings.path), "it finished without storing its reading"
 
 
-def test_the_second_of_two_concurrent_first_ever_runs_does_not_announce_again(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_a_run_that_finds_the_store_created_while_it_waited_does_not_announce_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``first_ever`` has to be decided under the lock, not from a peek taken before it.
+    """Whether this run is the machine's first is decided holding the lock, not before.
 
-    Two runs that both start against an empty store each used to read
-    ``path.exists()`` before even trying for the lock, so both saw "nothing
-    here yet" and each printed the one-time announcement once its turn to
-    write came round. This holds the first run paced right where it is about
-    to write - still inside the lock - starts the second only then, and lets
-    the second in once the first has finished. The second must see the store
-    the first one just wrote and stay quiet.
+    Two runs starting against an empty store each used to look for the file
+    before trying for the lock, so both saw nothing there and both printed the
+    once-per-machine announcement when their turn to write came round. Here
+    the other run holds the real lock, this run reaches it and waits, the other
+    run creates the store and lets go: this run then finds a store it did not
+    create and must stay quiet about it.
     """
     settings = HistorySettings(path=tmp_path / "history.json")
-    read_before_anything_is_written = {
-        "earlier": read_history(EARLIER, settings),
-        "later": read_history(LATER, settings),
-    }
+    read = read_history(EARLIER, settings)
+    other = read_history(LATER, settings)
+    held = threading.Event()
+    write_now = threading.Event()
 
-    about_to_write = threading.Event()
-    allowed_to_write = threading.Event()
-    first_save_seen = threading.Event()
-    real_save_history = history_commands.save_history
+    def other_run() -> None:
+        with history_lock(settings.path):
+            held.set()
+            write_now.wait(timeout=10)
+            save_history(record(other.history, LATER.disks, "t-other"), settings.path)
 
-    def paced_save_history(history: object, path: Path) -> None:
-        if not first_save_seen.is_set():
-            first_save_seen.set()
-            about_to_write.set()
-            assert allowed_to_write.wait(timeout=10), "the test never released the first writer"
-        real_save_history(history, path)  # type: ignore[arg-type]
+    holder = threading.Thread(target=other_run, daemon=True)
+    holder.start()
+    assert held.wait(timeout=10), "the control: the other run never took the lock"
 
-    monkeypatch.setattr(history_commands, "save_history", paced_save_history)
+    finished = threading.Event()
+    recorder = threading.Thread(target=lambda: (record_reading(EARLIER, read, settings), finished.set()), daemon=True)
+    refused = _RefusedOnce()
+    threading.setprofile(refused)
+    try:
+        recorder.start()
+    finally:
+        threading.setprofile(None)
+    deadline = time.monotonic() + 10
+    while not (refused.seen.is_set() or finished.is_set()) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert refused.seen.is_set(), "this run never met the held store within 10 seconds"
 
-    announcements: list[str] = []
+    write_now.set()
+    holder.join(timeout=10)
+    recorder.join(timeout=10)
+    assert finished.is_set(), "this run never finished after the other let go"
+    assert EARLIER_HOURS, "the control: the capture carries no power-on hours to record"
+    assert _hours(settings.path) >= EARLIER_HOURS, "the control: this run stored nothing, so nothing to announce"
 
-    def capture_echo(message: object = "", **_kwargs: object) -> None:
-        announcements.append(str(message))
-
-    monkeypatch.setattr(safe_console, "echo", capture_echo)
-
-    first = threading.Thread(
-        target=lambda: record_reading(EARLIER, read_before_anything_is_written["earlier"], settings),
-        daemon=True,
-    )
-    first.start()
-    assert about_to_write.wait(timeout=10), "the first run never reached the point of writing"
-
-    second = threading.Thread(
-        target=lambda: record_reading(LATER, read_before_anything_is_written["later"], settings),
-        daemon=True,
-    )
-    second.start()
-
-    allowed_to_write.set()
-    first.join(timeout=10)
-    second.join(timeout=10)
-    assert not first.is_alive(), "the first run never finished"
-    assert not second.is_alive(), "the second run never finished"
-
-    assert len(announcements) == 1, f"expected exactly one announcement, got {announcements}"
+    assert "Recording disk error counters" not in capsys.readouterr().err
