@@ -29,6 +29,7 @@ import pytest
 
 import lsdsk
 from lsdsk.adapters.cli.exit_codes import ExitCode
+from lsdsk.adapters.config.loader import SHIPPED_COMPANION_FILES
 
 _PACKAGE = Path(lsdsk.__file__).resolve().parent
 _SHIPPED = Path("adapters") / "config" / "defaultconfig.toml"
@@ -122,3 +123,32 @@ def test_an_unreadable_shipped_configuration_refuses_as_a_configuration_error(tm
     assert run.code == ExitCode.CONFIG_ERROR, run.stderr
     assert "shipped configuration" in run.stderr
     assert "PermissionError" not in run.stderr
+
+
+@pytest.mark.os_agnostic
+def test_a_missing_companion_file_refuses_as_damage_to_the_installation(tmp_path: Path) -> None:
+    """A deleted file under ``defaultconfig.d`` is damage, not a smaller configuration.
+
+    The companion directory was read by globbing what exists, so a missing
+    ``60-thresholds.toml`` merely removed its keys from the shipped defaults and
+    the run went on with whatever the code fell back to, exit 0 and no sentence.
+    """
+    root = _copy_of_the_package(tmp_path)
+    (root / "lsdsk" / _SHIPPED.parent / "defaultconfig.d" / "60-thresholds.toml").unlink()
+    run = _launch(root, ["config", "--format", "json"])
+    assert run.code == ExitCode.CONFIG_ERROR, run.stderr
+    assert "shipped configuration" in run.stderr
+    assert "60-thresholds.toml" in run.stderr, "the refusal does not name the file that is gone"
+    assert json.loads(run.stdout)["error"]["type"] == "CONFIG_ERROR"
+
+
+@pytest.mark.os_agnostic
+def test_the_expected_companion_files_are_exactly_the_ones_the_package_ships() -> None:
+    """The list the loader checks against must follow the directory, in both directions.
+
+    A file added to ``defaultconfig.d`` and not to the list would never be missed
+    when it went; a name left in the list after its file was removed would refuse
+    every installation.
+    """
+    shipped = sorted(path.name for path in (_PACKAGE / _SHIPPED.parent / "defaultconfig.d").glob("*.toml"))
+    assert list(SHIPPED_COMPANION_FILES) == shipped

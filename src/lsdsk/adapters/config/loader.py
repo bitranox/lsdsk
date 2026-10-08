@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
-from typing import Protocol, cast
+from typing import Final, Protocol, cast
 
 from lib_layered_config import (
     DEFAULT_MAX_PROFILE_LENGTH,
@@ -252,6 +252,46 @@ def _deep_merge(base: dict[str, object], update: Mapping[str, object]) -> None:
             base[key] = value
 
 
+#: The files the package ships beside ``defaultconfig.toml``, in the order they are read.
+#:
+#: The directory used to be read by globbing what exists, so a deleted file was
+#: indistinguishable from a package that never had it: its keys silently left the
+#: shipped defaults. Naming them makes a missing one damage to the installation.
+#: ``tests/test_shipped_config_damaged.py`` holds this equal to the directory's
+#: own listing, so a file added there is added here or the suite says so.
+SHIPPED_COMPANION_FILES: Final = (
+    "40-layered-config.toml",
+    "50-history.toml",
+    "60-thresholds.toml",
+    "70-display.toml",
+    "90-logging.toml",
+)
+
+
+def _shipped_paths() -> list[Path]:
+    """Every shipped file in reading order, naming the one that is missing when one is.
+
+    Returns:
+        ``defaultconfig.toml`` then each companion file.
+
+    Raises:
+        DamagedInstallationError: When a companion file the package is known to
+            ship is not there.
+    """
+    base = get_default_config_path()
+    companions = base.parent / f"{base.stem}.d"
+    # The library's own rule for a default file: the file itself, then its
+    # companion ``<stem>.d`` directory in name order.
+    paths = [base, *(companions / name for name in SHIPPED_COMPANION_FILES)]
+    for path in paths[1:]:
+        if not path.is_file():
+            message = (
+                f"lsdsk's own shipped configuration is incomplete, so the installation is damaged: {path.name} is gone"
+            )
+            raise DamagedInstallationError(message)
+    return [base, *sorted(companions.glob("*.toml"))]
+
+
 @lru_cache(maxsize=1)
 def _shipped_tables() -> Mapping[str, object]:
     """Every table the package ships, merged in the order the defaults layer reads them.
@@ -263,12 +303,8 @@ def _shipped_tables() -> Mapping[str, object]:
         DamagedInstallationError: When a shipped file is missing, cannot be
             read, or does not parse.
     """
-    base = get_default_config_path()
-    # The library's own rule for a default file: the file itself, then its
-    # companion ``<stem>.d`` directory in name order.
-    paths = [base, *sorted((base.parent / f"{base.stem}.d").glob("*.toml"))]
     merged: dict[str, object] = {}
-    for path in paths:
+    for path in _shipped_paths():
         try:
             table = tomllib.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
@@ -325,6 +361,7 @@ def shipped_section(section: str) -> dict[str, object]:
 
 
 __all__ = [
+    "SHIPPED_COMPANION_FILES",
     "DamagedInstallationError",
     "get_config",
     "get_default_config_path",
