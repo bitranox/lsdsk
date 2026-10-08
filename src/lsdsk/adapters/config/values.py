@@ -22,7 +22,7 @@ System Role:
 from __future__ import annotations
 
 from pathlib import Path, PurePath
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Final, cast
 
 from ...domain.base import DomainModel
 from ...domain.enums import TreeDensity
@@ -81,6 +81,10 @@ class RejectedValue(DomainModel, frozen=True):
     def as_sentence(self) -> str:
         """The warning, worded once for every surface that reports it."""
         return f"Warning: ignoring {self.dotted}={self.raw}: {self.reason}. Using {self.used}."
+
+
+#: What a section given as a single value is told: the shipped table judges the run instead.
+REASON_SECTION: Final = "not a table"
 
 
 def rendered(value: object) -> str:
@@ -365,13 +369,27 @@ class SectionValues:
     """
 
     def __init__(self, section: str, config: Config) -> None:
-        """Take the section's table, or an empty one when it is absent or not a table."""
+        """Take the section's table, or an empty one when it is absent or not a table.
+
+        A section that is present but not a table (``history = false``) is
+        recorded as refused: none of its keys can be read, so the shipped section
+        is what judges the run, and that has to be said.
+        """
         raw: object = config.get(section, {})
         self._section = section
         # A layered-config value is Any by nature; the isinstance check is what
         # makes the cast true.
         self._table = cast("dict[str, Any]", raw) if isinstance(raw, dict) else {}
-        self._rejected: list[RejectedValue] = []
+        self._rejected: list[RejectedValue] = [] if isinstance(raw, dict) else [self._not_a_table(raw)]
+
+    def _not_a_table(self, raw: object) -> RejectedValue:
+        """The refusal for a section given as a single value."""
+        return RejectedValue(
+            dotted=self._section,
+            raw=rendered(raw),
+            reason=REASON_SECTION,
+            used=f"the shipped [{self._section}] section",
+        )
 
     @property
     def rejected(self) -> tuple[RejectedValue, ...]:
@@ -442,6 +460,7 @@ __all__ = [
     "REASON_PATH",
     "REASON_POSITIVE_FLOAT",
     "REASON_POSITIVE_INT",
+    "REASON_SECTION",
     "USED_PLATFORM_STATE_FILE",
     "RejectedValue",
     "SectionValues",
