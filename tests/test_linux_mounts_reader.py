@@ -13,10 +13,16 @@ from lsdsk.adapters.hw.linux.capture import LinuxCapture
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 
+# The reader stats a /dev source on the machine running the test, so a fixture
+# naming a real node (/dev/sda1) reads differently on a host that has one: a
+# GitHub runner does, a dev container does not. Every source here names a node
+# no machine has; the one test that needs a real node uses /dev/null.
+ABSENT_NODE = "/dev/lsdsk-test-absent"
+
 MOUNTINFO = (
     "22 1 0:28 / / rw,relatime shared:1 - zfs rpool/ROOT/pve-1 rw,xattr\n"
-    "30 22 8:2 / /boot\\040efi rw - vfat /dev/sda2 rw\n"
-    "31 22 0:40 / /srv rw - btrfs /dev/sdb1 rw\n"
+    f"30 22 8:2 / /boot\\040efi rw - vfat {ABSENT_NODE}2 rw\n"
+    f"31 22 0:40 / /srv rw - btrfs {ABSENT_NODE}3 rw\n"
 )
 
 
@@ -41,7 +47,9 @@ def test_an_unreadable_mountinfo_is_not_read_rather_than_empty(tmp_path: Path) -
 @pytest.mark.os_agnostic
 def test_a_mountinfo_over_the_limit_is_refused_like_an_unreadable_one(tmp_path: Path) -> None:
     path = tmp_path / "mountinfo"
-    path.write_text(MOUNTINFO, encoding="utf-8")
+    # Bytes, not write_text: on Windows write_text turns every \n into \r\n,
+    # so the file would sit one byte per line above the limit computed below.
+    path.write_bytes(MOUNTINFO.encode("utf-8"))
     # RED proof the limit is actually consulted: a limit this file is well
     # under passes, the same tiny limit set one byte below the file's own
     # encoded size does not.
@@ -113,9 +121,10 @@ def test_a_swap_list_with_only_its_header_is_empty_not_unread(tmp_path: Path) ->
 
 @pytest.mark.os_agnostic
 def test_a_swap_list_over_the_limit_is_refused_like_an_unreadable_one(tmp_path: Path) -> None:
-    content = "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n/dev/nvme4n1p1   partition\t8388604\t\t0\t\t-2\n"
+    content = f"Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n{ABSENT_NODE}1   partition\t8388604\t\t0\t\t-2\n"
     path = tmp_path / "swaps"
-    path.write_text(content, encoding="utf-8")
+    # Bytes, for the same \r\n reason as the mountinfo limit test above.
+    path.write_bytes(content.encode("utf-8"))
     assert mounts.read_swaps(path, limit=len(content.encode("utf-8"))) not in ([], None)
     assert mounts.read_swaps(path, limit=len(content.encode("utf-8")) - 1) is None
 
@@ -244,7 +253,7 @@ PRIVATE_MOUNTINFO = (
     "40 22 0:60 / /mnt/share rw - nfs4 fileserver.example:/export/alice rw\n"
     "41 22 0:55 / /home/alice/remote rw - fuse.sshfs alice@fileserver.example:/export rw\n"
     "42 22 0:30 / /run/user/1000 rw - tmpfs tmpfs rw\n"
-    "43 22 8:1 /home/alice/projects /srv/projects rw - ext4 /dev/sda1 rw\n"
+    f"43 22 8:1 /home/alice/projects /srv/projects rw - ext4 {ABSENT_NODE}1 rw\n"
 )
 
 
