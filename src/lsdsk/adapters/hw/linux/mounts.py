@@ -116,7 +116,7 @@ def _device_number_of(path: str) -> str | None:
     """
     try:
         rdev = Path(path).stat().st_rdev
-    except OSError:
+    except (OSError, ValueError):
         return None
     return f"{os.major(rdev)}:{os.minor(rdev)}" if rdev else None
 

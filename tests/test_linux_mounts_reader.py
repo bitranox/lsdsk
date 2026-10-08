@@ -437,3 +437,18 @@ def test_a_stacked_device_without_a_partitions_key_reads_as_not_read() -> None:
         }
     )
     assert capture.stacked["dm-0"].partitions is None
+
+
+@pytest.mark.os_agnostic
+def test_a_swap_path_carrying_a_nul_byte_is_an_empty_row_not_a_crash(tmp_path: Path) -> None:
+    """An octal-escaped NUL unescapes to a path Path.stat refuses with ValueError.
+
+    It is as unreadable as any other path the swap list names, so it gets the
+    same empty row rather than aborting the whole reading.
+    """
+    path = tmp_path / "swaps"
+    path.write_text(
+        "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n/dev/bad\\000name\t\tpartition\t8388604\t\t0\t\t-2\n",
+        encoding="utf-8",
+    )
+    assert mounts.read_swaps(path) == [{}]
