@@ -134,8 +134,10 @@ def _load_or_refuse(ctx: click.Context, services: AppServices, *, profile: str |
 
     Raises:
         RefusedBeforeTheRun: With ``INVALID_ARGUMENT`` for a profile name the
-            library refuses, and ``CONFIG_ERROR`` when the configuration cannot
-            load or the package's own shipped configuration is damaged.
+            library refuses, ``PERMISSION_DENIED`` when a configuration file is
+            unreadable for lack of permission, and ``CONFIG_ERROR`` when the
+            configuration cannot load for any other reason or the package's
+            own shipped configuration is damaged.
     """
     if profile is not None:
         try:
@@ -149,6 +151,10 @@ def _load_or_refuse(ctx: click.Context, services: AppServices, *, profile: str |
     try:
         return services.get_config(profile=profile, dotenv_path=env_file)
     except ConfigError as error:
+        _refuse_before_the_run(ctx, str(error), ExitCode.CONFIG_ERROR)
+    except PermissionError as error:
+        _refuse_before_the_run(ctx, str(error), ExitCode.PERMISSION_DENIED)
+    except OSError as error:
         _refuse_before_the_run(ctx, str(error), ExitCode.CONFIG_ERROR)
 
 
