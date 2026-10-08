@@ -23,6 +23,7 @@ from __future__ import annotations
 from enum import IntEnum
 from typing import Final
 
+import click
 import lib_cli_exit_tools
 
 
@@ -240,6 +241,8 @@ def code_for_an_unhandled_exception(exc: BaseException) -> int:
         70
         >>> code_for_an_unhandled_exception(KeyboardInterrupt())
         130
+        >>> code_for_an_unhandled_exception(click.exceptions.Abort())
+        130
     """
     from .safe_console import (  # noqa: PLC0415 - import cycle: safe_console reads this module's codes
         UnwritableStandardOutputError,
@@ -250,6 +253,11 @@ def code_for_an_unhandled_exception(exc: BaseException) -> int:
         return int(ExitCode.BROKEN_PIPE)
     if isinstance(exc, UnwritableStandardOutputError):
         return int(ExitCode.IO_ERROR)
+    if isinstance(exc, click.exceptions.Abort):
+        # Under standalone_mode=False click turns a KeyboardInterrupt into Abort
+        # (a RuntimeError) before it reaches us, so the interrupt would otherwise
+        # fall through to the crash code below.
+        return int(ExitCode.SIGNAL_INT)
     if isinstance(exc, (OSError, KeyboardInterrupt, SystemExit)):
         return lib_cli_exit_tools.get_system_exit_code(exc)
     return int(ExitCode.SOFTWARE_ERROR)

@@ -190,6 +190,10 @@ def _answer_an_unhandled_exception(exc: BaseException) -> int:
         # Windows it arrives as a plain OSError carrying EINVAL, and printing it
         # told somebody who quit their pager that an argument was invalid.
         return code
+    if isinstance(exc, click.exceptions.Abort):
+        # Click has already written the newline that ends the interrupted line;
+        # an interrupt is the reader's own act, so no message or traceback follows.
+        return code
     if isinstance(exc, safe_console.UnwritableStandardOutputError):
         # The destination refused, which is not a crash: one sentence saying so
         # rather than a traceback that reads as the tool breaking.
