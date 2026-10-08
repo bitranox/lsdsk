@@ -21,7 +21,7 @@ from lib_log_rich.runtime import RuntimeConfig
 
 from lsdsk.adapters.cli.main import main
 from lsdsk.adapters.config.loader import get_config
-from lsdsk.adapters.logging.string_forms import with_documented_forms
+from lsdsk.adapters.logging.setup import with_documented_forms
 from lsdsk.composition import build_production
 
 SHIPPED = files("lsdsk.adapters.config").joinpath("defaultconfig.d", "90-logging.toml").read_text(encoding="utf-8")
