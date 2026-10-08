@@ -17,6 +17,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   of the list, the volumes it did return were taken as all of them, so every disk on a volume it
   never named showed `not mounted`. Such a reading now counts as not read, and every disk shows
   `-` in the `used by` column.
+- **A crash leaves exit code 70 on every platform, as documented.** An internal error raised as a
+  `ValueError` or `TypeError` left 22 - the code for an invalid argument - or 87 on Windows, a
+  code lsdsk does not document, so a monitoring check read a bug in the tool as a mistake in its
+  own command line. Only an operating-system error, an interrupt or a stated exit still leaves
+  its own code.
 
 ## [1.7.0] 2026-10-08 10:27:22
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import re
@@ -960,6 +961,74 @@ def test_a_code_the_resolver_derived_from_the_exception_is_not_relabelled_as_a_c
     assert code_for_an_unhandled_exception(OSError(errno.EPERM, "Operation not permitted")) == ExitCode.GENERAL_ERROR
     assert code_for_an_unhandled_exception(KeyboardInterrupt()) == ExitCode.SIGNAL_INT
     assert code_for_an_unhandled_exception(BrokenPipeError()) == ExitCode.BROKEN_PIPE
+
+
+_BUGS_THE_LIBRARY_HAS_A_CODE_FOR = (
+    ValueError("a bug"),
+    TypeError("a bug"),
+    UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"),
+)
+
+
+def _services_whose_info_raises(exc: BaseException) -> Callable[[], Any]:
+    """Production services, except that ``info`` meets ``exc`` - a crash with no click wrapper."""
+
+    def raise_it() -> None:
+        raise exc
+
+    return lambda: dataclasses.replace(build_production(), print_info=raise_it)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("exc", _BUGS_THE_LIBRARY_HAS_A_CODE_FOR, ids=lambda exc: type(exc).__name__)
+def test_a_crash_leaves_70_even_where_the_library_maps_its_exception_type(
+    exc: BaseException, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ValueError escaping a command is a bug in this tool, not an invalid argument.
+
+    ``lib_cli_exit_tools`` maps ValueError and TypeError to 22 (87 on Windows),
+    and 22 is what this tool documents for a bad argument, so a monitoring check
+    read a crash as its own mistake. Driven through ``main`` with a services
+    container whose port raises, which is the real entry point's own seam.
+    """
+    code = cli_mod.main(["info"], services_factory=_services_whose_info_raises(exc))
+    captured = capsys.readouterr()
+    assert code == ExitCode.SOFTWARE_ERROR, f"{type(exc).__name__} left {code}"
+    assert type(exc).__name__ in captured.err, "the crash must still be reported, only under its own code"
+
+
+@pytest.mark.os_agnostic
+def test_a_refusal_the_kernel_gave_from_inside_a_command_keeps_its_errno(capsys: pytest.CaptureFixture[str]) -> None:
+    """The control for the arm above: an OSError is taken at its word, so 70 is not simply every answer."""
+    import errno
+
+    denied = PermissionError(errno.EACCES, "Permission denied")
+    code = cli_mod.main(["info"], services_factory=_services_whose_info_raises(denied))
+    capsys.readouterr()
+    assert code == errno.EACCES
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(("platform", "os_name"), [("linux", "posix"), ("darwin", "posix"), ("win32", "nt")])
+@pytest.mark.parametrize("exc", _BUGS_THE_LIBRARY_HAS_A_CODE_FOR, ids=lambda exc: type(exc).__name__)
+def test_no_platform_map_turns_a_crash_into_an_argument_error(
+    exc: BaseException, platform: str, os_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows maps the same exceptions to 87, a code this tool documents nowhere.
+
+    The library picks its table from ``os.name`` and this tool's own Windows
+    readings ask ``sys.platform``, both at call time, so both interpreter answers
+    are patched as the pair a real machine gives - patching ``sys.platform`` alone
+    left the library on its POSIX table and the Windows arm proved nothing.
+    """
+    import sys
+
+    from lsdsk.adapters.cli.exit_codes import code_for_an_unhandled_exception
+
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr(os, "name", os_name)
+
+    assert code_for_an_unhandled_exception(exc) == ExitCode.SOFTWARE_ERROR
 
 
 @pytest.mark.os_agnostic

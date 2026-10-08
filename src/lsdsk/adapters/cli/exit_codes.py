@@ -207,8 +207,12 @@ def code_for_an_unhandled_exception(exc: BaseException) -> int:
     is itself 1, so an ``OSError`` carrying it resolves to exactly the fallback's
     value: keyed on the number, a refusal the kernel gave would be reported as a
     bug in this tool. An ``OSError`` is therefore taken at its word whatever it
-    resolves to, and only an exception the resolver could not place at all
-    becomes :attr:`ExitCode.SOFTWARE_ERROR`.
+    resolves to, as are an interrupt (130) and a stated exit, whose codes say
+    what happened. Every other exception becomes :attr:`ExitCode.SOFTWARE_ERROR`,
+    including the ones the resolver does have a number for: it maps
+    ``ValueError`` and ``TypeError`` to 22 (87 on Windows), and 22 is what this
+    tool leaves for an argument the caller got wrong, so a bug escaping a
+    command read as the caller's own mistake.
 
     A departed reader is taken out first, because on Windows it arrives as an
     ``OSError`` this would otherwise take at its word. Writing to a closed pipe
@@ -232,6 +236,8 @@ def code_for_an_unhandled_exception(exc: BaseException) -> int:
     Example:
         >>> code_for_an_unhandled_exception(RuntimeError("boom"))
         70
+        >>> code_for_an_unhandled_exception(ValueError("a bug, not a bad argument"))
+        70
         >>> code_for_an_unhandled_exception(KeyboardInterrupt())
         130
     """
@@ -244,9 +250,8 @@ def code_for_an_unhandled_exception(exc: BaseException) -> int:
         return int(ExitCode.BROKEN_PIPE)
     if isinstance(exc, UnwritableStandardOutputError):
         return int(ExitCode.IO_ERROR)
-    code = lib_cli_exit_tools.get_system_exit_code(exc)
-    if code != int(ExitCode.GENERAL_ERROR) or isinstance(exc, OSError):
-        return code
+    if isinstance(exc, (OSError, KeyboardInterrupt, SystemExit)):
+        return lib_cli_exit_tools.get_system_exit_code(exc)
     return int(ExitCode.SOFTWARE_ERROR)
 
 
