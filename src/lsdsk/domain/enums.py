@@ -393,6 +393,18 @@ class ActionCommand(StrEnum):
     SNAPSHOT = "snapshot"
 
 
+class WriteOutcome(StrEnum):
+    """What a command that writes configuration files did about them.
+
+    Both members are a successful run. ``ALREADY_PRESENT`` is the expected
+    result of running the command twice, so it is reported here rather than as a
+    skipped line that would turn ``ok`` false at exit 0.
+    """
+
+    WRITTEN = "written"
+    ALREADY_PRESENT = "already present"
+
+
 __all__ = [
     "ActionCommand",
     "Align",
@@ -410,4 +422,5 @@ __all__ = [
     "UsbLaneRate",
     "UsbTransport",
     "UseKind",
+    "WriteOutcome",
 ]

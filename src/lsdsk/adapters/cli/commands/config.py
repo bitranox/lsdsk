@@ -23,7 +23,7 @@ from lsdsk.adapters.config.overrides import apply_overrides
 from lsdsk.adapters.config.permissions import get_permission_defaults
 from lsdsk.adapters.config.secrets import redact_secrets
 from lsdsk.domain.deployment import DeployRequest
-from lsdsk.domain.enums import ActionCommand, DeployTarget, OutputFormat
+from lsdsk.domain.enums import ActionCommand, DeployTarget, OutputFormat, WriteOutcome
 from lsdsk.domain.errors import ConfigurationError
 
 from .. import safe_console
@@ -43,19 +43,34 @@ class DeployResult(ActionResult):
     """Which configuration files were written, and under which profile.
 
     An empty `deployed` is the documented outcome when the files already exist,
-    not a failure; the envelope's `skipped` says which of the two it was.
+    not a failure; `outcome` says which of the two it was, and the envelope is
+    `ok` either way.
     """
 
+    outcome: WriteOutcome
     deployed: list[str]
     profile: str | None
     permissions_set: bool
 
 
 class GenerateExamplesResult(ActionResult):
-    """Which example files were scaffolded, and where."""
+    """Which example files were scaffolded, and where; `outcome` says whether any were."""
 
+    outcome: WriteOutcome
     generated: list[str]
     destination: str
+
+
+def _outcome_of(written: list[Path]) -> WriteOutcome:
+    """Whether a run wrote files, or found every one already in place.
+
+    Args:
+        written: The paths the run wrote.
+
+    Returns:
+        ``WRITTEN`` when there are any, otherwise ``ALREADY_PRESENT``.
+    """
+    return WriteOutcome.WRITTEN if written else WriteOutcome.ALREADY_PRESENT
 
 
 @click.command("config", context_settings=CLICK_CONTEXT_SETTINGS)
@@ -460,14 +475,15 @@ def _report_deployment_result(
         emit_action(
             ActionCommand.CONFIG_DEPLOY,
             DeployResult(
+                outcome=_outcome_of(deployed_paths),
                 deployed=[str(path) for path in deployed_paths],
                 profile=profile,
                 permissions_set=set_permissions,
             ),
             # Writing nothing is the documented outcome when the files already
-            # exist, not an error; a caller has to be able to tell it from a
-            # deploy that failed, which exits non-zero instead.
-            skipped=[] if deployed_paths else ["every target file already exists; --force overwrites"],
+            # exist, not an error: `ok` agrees with the exit code, and `outcome`
+            # tells it from a deploy that wrote. A deploy that failed exits
+            # non-zero instead.
         )
         return
     if deployed_paths:
@@ -521,8 +537,11 @@ def cli_config_generate_examples(
             if output_format is OutputFormat.JSON:
                 emit_action(
                     ActionCommand.CONFIG_GENERATE_EXAMPLES,
-                    GenerateExamplesResult(generated=[str(p) for p in paths], destination=str(destination)),
-                    skipped=[] if paths else ["every example file already exists; --force overwrites"],
+                    GenerateExamplesResult(
+                        outcome=_outcome_of(paths),
+                        generated=[str(p) for p in paths],
+                        destination=str(destination),
+                    ),
                 )
             elif paths:
                 safe_console.echo(f"\nGenerated {len(paths)} example file(s):")
