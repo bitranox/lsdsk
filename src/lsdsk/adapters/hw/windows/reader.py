@@ -169,6 +169,11 @@ class _DeviceTree:
         self.setupapi = setupapi
         self.cfgmgr32 = cfgmgr32
         self.kernel32 = kernel32
+        # Why a DISK interface could not be turned into a path, one text per
+        # interface that was dropped; refilled by every :meth:`disk_interfaces`.
+        # Only disks are recorded: a hub that cannot be listed is not a disk the
+        # machine has, and the USB pass says so for itself.
+        self.unreadable_interfaces: list[str] = []
 
     def enumerate_pci(self) -> dict[str, dict[str, Any]]:
         """Read every present PCI device with its properties."""
@@ -424,13 +429,20 @@ class _DeviceTree:
 
     def disk_interfaces(self) -> list[tuple[str, list[str]]]:
         """Return every disk's interface path and the instances above it, nearest first."""
+        self.unreadable_interfaces = []
         return [
             (path, [] if devinst is None else self._ancestor_instances(devinst))
-            for path, devinst in self._interfaces(api.GUID_DEVINTERFACE_DISK)
+            for path, devinst in self._interfaces(api.GUID_DEVINTERFACE_DISK, unreadable=self.unreadable_interfaces)
         ]
 
-    def _interfaces(self, interface_class: str) -> list[tuple[str, int | None]]:
-        """Return the path and device instance of every present interface of one class."""
+    def _interfaces(self, interface_class: str, *, unreadable: list[str] | None = None) -> list[tuple[str, int | None]]:
+        """Return the path and device instance of every present interface of one class.
+
+        Args:
+            interface_class: The interface class GUID, as text.
+            unreadable: Where to record why an interface was dropped, or ``None``
+                to drop it without a record.
+        """
         guid = api.parse_guid(interface_class)
         handle = self.setupapi.SetupDiGetClassDevsW(
             ctypes.byref(guid), None, None, api.DIGCF_PRESENT | api.DIGCF_DEVICEINTERFACE
@@ -446,21 +458,32 @@ class _DeviceTree:
                 handle, None, ctypes.byref(guid), index, ctypes.byref(interface)
             ):
                 index += 1
-                path, devinst = self._interface_detail(handle, interface)
+                path, devinst, error = self._interface_detail(handle, interface)
                 if path:
                     found.append((path, devinst))
+                elif error is not None and unreadable is not None:
+                    unreadable.append(error)
             return found
         finally:
             self.setupapi.SetupDiDestroyDeviceInfoList(handle)
 
-    def _interface_detail(self, handle: int, interface: api.SP_DEVICE_INTERFACE_DATA) -> tuple[str | None, int | None]:
-        """Return one interface's device path and its device instance."""
+    def _interface_detail(
+        self, handle: int, interface: api.SP_DEVICE_INTERFACE_DATA
+    ) -> tuple[str | None, int | None, str | None]:
+        """Return one interface's device path, its device instance and why neither was had.
+
+        A path is the only handle the reader has on a disk, so an interface whose
+        path could not be read cannot be opened or asked anything. Dropping it
+        silently would show a machine with one disk fewer than it has, which is
+        the same picture as a machine that has that many; the reason is returned
+        so the caller can say a disk went unread.
+        """
         required = wintypes.DWORD()
         self.setupapi.SetupDiGetDeviceInterfaceDetailW(
             handle, ctypes.byref(interface), None, 0, ctypes.byref(required), None
         )
         if required.value == 0:
-            return None, None
+            return None, None, f"Win32 error {api.last_error()}"
         buffer = ctypes.create_string_buffer(required.value)
         # SP_DEVICE_INTERFACE_DETAIL_DATA_W begins with its own size, and that
         # size is the BUILD's rather than a constant - see the constant's own
@@ -480,9 +503,9 @@ class _DeviceTree:
             ctypes.byref(info),
         )
         if not ok:
-            return None, None
+            return None, None, f"Win32 error {api.last_error()}"
         path = ctypes.wstring_at(ctypes.addressof(buffer) + 4)
-        return path, info.DevInst
+        return path, info.DevInst, None
 
 
 def _open_device(kernel32: api.WinLibrary, path: str) -> tuple[int | None, bool]:
@@ -1261,6 +1284,32 @@ def read_volumes_section(
     return by_ordinal, windows_ordinal
 
 
+def read_disks(tree: _DeviceTree) -> dict[str, dict[str, Any]]:
+    """Read every disk the device tree lists, and name the ones it could not list a path for.
+
+    Args:
+        tree: The device tree to enumerate disk interfaces through.
+
+    Returns:
+        One reading per disk keyed by its interface path, plus one record
+        carrying only an ``error`` for each interface whose path could not be
+        read, keyed by a label saying so, which the builder reports as a
+        refused ``device`` reading.
+    """
+    disks: dict[str, dict[str, Any]] = {}
+    for path, ancestors in tree.disk_interfaces():
+        disks[path] = read_disk(tree.kernel32, path, ancestors)
+    for position, reason in enumerate(tree.unreadable_interfaces, start=1):
+        label = f"unreadable disk interface {position}"
+        disks[label] = {
+            "path": label,
+            "parent": None,
+            "ancestors": [],
+            "error": f"could not read the device interface path, {reason}",
+        }
+    return disks
+
+
 def read_system() -> dict[str, Any]:
     """Read the whole storage subsystem from this Windows machine.
 
@@ -1269,10 +1318,7 @@ def read_system() -> dict[str, Any]:
     """
     tree = _DeviceTree()
     pci = tree.enumerate_pci()
-    disks: dict[str, dict[str, Any]] = {}
-    for path, ancestors in tree.disk_interfaces():
-        record = read_disk(tree.kernel32, path, ancestors)
-        disks[path] = record
+    disks = read_disks(tree)
     usb_reading = read_usb_ports(tree.kernel32, disks, tree.usb_devices(), tree.usb_hubs())
     for path, error in usb_reading.disk_errors.items():
         disks[path]["usb_link_error"] = error
@@ -1311,6 +1357,7 @@ __all__ = [
     "query_property",
     "read_ata",
     "read_disk",
+    "read_disks",
     "read_environment",
     "read_system",
     "read_usb_ports",
