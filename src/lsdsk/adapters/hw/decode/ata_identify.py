@@ -35,13 +35,12 @@ _ROTATION_RATE_SSD = 1
 _ROTATION_RATE_MIN_RPM = 0x0401
 _ROTATION_RATE_MAX_RPM = 0xFFFE
 
-# ACS defines word 106 bit 12 as "logical sector size is larger than 256
-# words (512 bytes)" - so a word count of 256 or less contradicts the very
-# bit that says to read it. At the other end, no shipped ATA device publishes
-# a logical sector past the 4Kn format (4096 bytes = 2048 words); ACS leaves
-# the field able to hold up to 0xFFFFFFFF words, which is how a device that
-# left it at the all-ones "nothing reported" pattern read as a 131070-byte
-# sector. Outside this range the value is not trusted into a capacity.
+# Word 106 bit 12 says the logical sector is LARGER than 256 words (512
+# bytes), so a count of 256 or less in words 117-118 contradicts the bit that
+# sent the decoder there. The ceiling is the 4Kn format, 2048 words (4096
+# bytes), the largest logical sector an ATA drive ships with; the field itself
+# can hold up to 0xFFFFFFFF words, and garbage there once multiplied a 4 TB
+# drive into a 67-exabyte capacity. Outside this range the size is not known.
 _MIN_LOGICAL_SECTOR_WORDS = 257
 _MAX_LOGICAL_SECTOR_WORDS = 2048
 
@@ -169,11 +168,11 @@ def _sector_geometry(words: tuple[int, ...]) -> SectorGeometry:
     """Return the addressable sector count and logical sector size.
 
     When word 106 claims a larger-than-512-byte logical sector but words 117
-    and 118 hold a word count no real ATA device could publish, neither the
-    claimed sector size nor the sector count can be trusted: multiplying a
-    plausible-looking 512-byte guess by the (otherwise genuine) sector count
-    would still misreport a drive that really does use a large logical
-    sector, so the capacity is withheld entirely rather than guessed.
+    and 118 hold a word count no real ATA device publishes, the sector SIZE is
+    unknown, and so is every capacity built from it. The count is withheld
+    (``sectors`` None, so ``AtaIdentity.size_bytes`` is None) rather than
+    multiplied by a 512-byte guess: the drive said its sector is larger, so the
+    guess would understate the capacity of exactly the drive that said so.
     """
     lba48 = words[100] | (words[101] << 16) | (words[102] << 32) | (words[103] << 48)
     lba28 = words[60] | (words[61] << 16)
