@@ -5,7 +5,40 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.7.1] 2026-10-08 18:20:37
+
+### Added
+
+- **`trend --format json` carries the trend.** The envelope's `data.trend` holds one entry per
+  counter the printed table shows a row for: the drive's path, the counter, and the verdict with
+  whatever total, delta, span, rate and `were due` figure the evidence supports, taken from the
+  same objects the table draws from. A script no longer has to scrape the table for a rate. Every
+  other command's envelope carries `"trend": null`.
+
 ### Fixed
+
+- **An oversized logging setting no longer crashes lsdsk.** A `[lib_log_rich]` number too large
+  for the platform's integers, such as a mistyped `ring_buffer_size` given through an
+  `LSDSK___LIB_LOG_RICH__*` environment variable, ended every command with exit 70 and a bare
+  `OverflowError`, with no JSON envelope. It now falls back to the shipped value with a warning,
+  as a wrong-typed value already did.
+- **`--traceback` now covers a crash before any command runs.** The flag took effect only after the
+  configuration was loaded and logging had started, so a crash in either printed the same
+  one-line summary with and without it.
+- **A garbled sector size in a drive's identify data no longer inflates its capacity.** Where the
+  kernel's own size could not be read, the capacity came from the drive's identify data, and a
+  logical sector size outside anything an ATA drive publishes was multiplied in as it stood: one
+  4 TB drive read as 59616 PiB. Such a size now leaves the capacity unknown.
+- **A swap device whose path holds a space is no longer shown as unused on Linux.** The kernel
+  escapes a space, tab, newline or backslash in `/proc/swaps` as it does in the mount table, and
+  the swap list was not unescaped, so such a device never matched its disk.
+- **A drive whose power-on clock went backwards is recorded, and reported as reset.** On a machine
+  with that one drive the reading was never stored, because nothing had advanced, so `trend` kept
+  judging the old pair; beside a second drive that advanced, the same event was stored and read as
+  a reset. Both now record it and report the reset.
+- **Two first-ever runs at once announce the history store once.** Both looked for the store before
+  taking its lock, so two runs starting together against an empty store each printed the
+  once-per-machine `Recording disk error counters to ...` line.
 
 - **A mount path that is not valid UTF-8 no longer stops the scan on Linux.** Linux allows any
   bytes in a path, so a share or a removable disk mounted under a folder named in a legacy
