@@ -119,7 +119,7 @@ class TestDriverResolution:
 
         assert "driver" not in entry
 
-    def test_a_driver_symlink_mismatch_is_real(self, fixture_pci_keys: set[str]) -> None:
+    def test_the_driver_key_is_one_the_real_reader_writes(self, fixture_pci_keys: set[str]) -> None:
         """RED control: `driver` is a key the real reader really writes somewhere."""
         assert "driver" in fixture_pci_keys
 
