@@ -66,6 +66,7 @@ from .usage import resolve_usage
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
+    from ..decode.ata_identify import AtaIdentity
     from ..decode.nvme import NvmeIdentity
     from .capture import DiskEntry, PciEntry, UsbPortEntry, WindowsCapture
 
@@ -302,6 +303,33 @@ def _health_from(
     return None
 
 
+# Transports Windows names for a disk it reaches through an adapter without
+# telling SATA from SAS: the drive behind decides, as on Linux.
+_ADAPTER_BUSES = frozenset({BusType.SAS, BusType.UNKNOWN})
+
+
+def _bus_of(bus: BusType, *, identity: AtaIdentity | None, usb: UsbLink | None) -> BusType:
+    """Say which bus a disk is on, as the Linux builder does for the same drive.
+
+    A drive that answers ATA IDENTIFY is SATA even when the adapter in front of
+    it (an HBA, a RAID volume) is reported as SAS, SCSI or RAID. A USB disk and
+    a hypervisor's disk keep what they are.
+
+    Args:
+        bus: The transport Windows reported.
+        identity: The decoded IDENTIFY answer, when the drive gave one.
+        usb: The disk's USB link, when it hangs off one.
+
+    Returns:
+        The bus to show.
+    """
+    if usb is not None:
+        return BusType.USB
+    if identity is not None and bus in _ADAPTER_BUSES:
+        return BusType.SATA
+    return bus
+
+
 def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
     """Build every disk found in a Windows capture.
 
@@ -322,15 +350,17 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
         usb_chain = _usb_chain(entry, capture)
         usb = _usb_link(usb_chain, capture)
 
+        # Decoded whenever the reader got an IDENTIFY answer, whatever transport
+        # Windows names: a SATA drive behind an LSI HBA or a RAID volume is
+        # reported as sas/scsi/raid, and an answer to ATA IDENTIFY is what makes
+        # a drive SATA. A USB disk's came through the bridge by SAT passthrough.
         identity = None
-        # A USB disk's IDENTIFY came through the bridge by SAT passthrough.
-        if bus in (BusType.SATA, BusType.USB) or (usb is not None and not is_nvme):
-            blob = decode_base64(record.identify)
-            if blob is not None:
-                try:
-                    identity = decode_identify(blob)
-                except ValueError:
-                    identity = None
+        blob = None if is_nvme else decode_base64(record.identify)
+        if blob is not None:
+            try:
+                identity = decode_identify(blob)
+            except ValueError:
+                identity = None
 
         nvme_identity = None
         if is_nvme:
@@ -376,7 +406,7 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
                 ),
                 size_bytes=entry.size_bytes,
                 kind=kind,
-                bus=BusType.USB if usb is not None else bus,
+                bus=_bus_of(bus, identity=identity, usb=usb),
                 controller_address=controller,
                 # The reader records no port capability for a disk, so the port
                 # end of the link stays unmeasured.
