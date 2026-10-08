@@ -19,11 +19,14 @@ buffer and is written with ``ctypes.memmove``.
 from __future__ import annotations
 
 import ctypes
+import json
 import struct
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
+from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.hw.windows import winapi as api
 from lsdsk.adapters.hw.windows.reader import (
     _MAX_SIBLINGS,  # pyright: ignore[reportPrivateUsage] - this is the seam under test
@@ -642,3 +645,144 @@ def test_usb_devices_reads_parent_port_and_service_for_every_present_device() ->
     assert found["USB\\DISK"].parent == "USB\\HUB"
     assert found["USB\\DISK"].port == 3
     assert found["USB\\DISK"].service == "UASPStor"
+
+
+# ---------------------------------------------------------------------------
+# _pci_entry(): every field it writes, asserted exactly. One happy-path test
+# above held the default case only; each test below varies ONE input.
+# ---------------------------------------------------------------------------
+
+_PCI_FMTID = api.PCI_DEVICE_PROPERTY_FMTID
+_DEV_FMTID = api.DEVICE_PROPERTY_FMTID
+
+
+def _uint(properties: dict[tuple[int, str, int], tuple[int, bytes]], fmtid: str, pid: int, value: int) -> None:
+    """Set one UINT32 property of the PCI device under test."""
+    properties[(_PCI_DEVINST, fmtid, pid)] = (api.DEVPROP_TYPE_UINT32, _uint_bytes(value))
+
+
+def _entry_of(properties: dict[tuple[int, str, int], tuple[int, bytes]], **graph: Any) -> dict[str, Any]:
+    """Run ``enumerate_pci`` over one device with the given properties and cfgmgr32 graph."""
+    ids: dict[int, str] = {_PCI_DEVINST: _PCI_INSTANCE, **graph.pop("device_ids", {})}
+    setupapi = FakeSetupApi(by_enumerator={"PCI": [_PCI_DEVINST]}, properties=properties)
+    cfgmgr32 = FakeCfgmgr32(device_ids=ids, **graph)
+    return _tree(setupapi=setupapi, cfgmgr32=cfgmgr32).enumerate_pci()[_PCI_INSTANCE]
+
+
+@pytest.mark.os_agnostic
+def test_a_current_link_width_of_zero_is_recorded_as_a_reading_not_dropped() -> None:
+    properties = _pci_properties()
+    _uint(properties, _PCI_FMTID, api.PCI_PROP_CURRENT_LINK_WIDTH, 0)
+    entry = _entry_of(properties)
+    assert entry["current_link_width"] == "0"
+    assert entry["max_link_width"] == "16"
+
+
+@pytest.mark.os_agnostic
+def test_a_zero_width_link_read_off_the_device_tree_is_dead_once_built() -> None:
+    """The reader's "0" must reach the domain as a dead link, not as an unread one."""
+    properties = _pci_properties()
+    _uint(properties, _PCI_FMTID, api.PCI_PROP_CURRENT_LINK_WIDTH, 0)
+    entry = _entry_of(properties)
+    payload = load_windows_capture()
+    bridge = "PCI\\VEN_1B36&DEV_000C&SUBSYS_00001B36&REV_00\\3&11583659&0&E0"
+    payload["pci"][bridge] = {**entry, "instance_id": bridge, "class": "0x060400", "address": "0000:00:1c.0"}
+    slots = {slot.address: slot for slot in build_from(payload).slots}
+    assert slots["0000:00:1c.0"].link.current_width == 0
+    assert slots["0000:00:1c.0"].link.is_dead is True
+
+
+def load_windows_capture() -> dict[str, Any]:
+    """Load the committed Windows capture as a fresh dict a test may modify."""
+    path = Path(__file__).parent / "fixtures" / "hw" / "windows-ahci.json"
+    with path.open(encoding="utf-8") as handle:
+        loaded: dict[str, Any] = json.load(handle)
+    return loaded
+
+
+@pytest.mark.os_agnostic
+def test_the_description_names_the_device_when_no_friendly_name_is_published() -> None:
+    properties = _pci_properties()
+    del properties[(_PCI_DEVINST, _DEV_FMTID, api.DEVICE_PROP_FRIENDLYNAME)]
+    properties[(_PCI_DEVINST, _DEV_FMTID, api.DEVICE_PROP_DEVICEDESC)] = (
+        api.DEVPROP_TYPE_STRING,
+        _string_bytes("PCI Express Root Port"),
+    )
+    assert _entry_of(properties)["name"] == "PCI Express Root Port"
+
+
+@pytest.mark.os_agnostic
+def test_a_friendly_name_wins_over_the_description() -> None:
+    properties = _pci_properties()
+    properties[(_PCI_DEVINST, _DEV_FMTID, api.DEVICE_PROP_DEVICEDESC)] = (
+        api.DEVPROP_TYPE_STRING,
+        _string_bytes("the description"),
+    )
+    assert _entry_of(properties)["name"] == "Intel Root Port"
+
+
+@pytest.mark.os_agnostic
+def test_a_device_with_no_name_property_at_all_carries_no_name_key() -> None:
+    properties = _pci_properties()
+    del properties[(_PCI_DEVINST, _DEV_FMTID, api.DEVICE_PROP_FRIENDLYNAME)]
+    assert "name" not in _entry_of(properties)
+
+
+@pytest.mark.os_agnostic
+def test_the_parent_and_every_child_are_recorded_by_instance_identifier() -> None:
+    parent, first, second = 20, 21, 22
+    entry = _entry_of(
+        _pci_properties(),
+        device_ids={parent: "PCI\\PARENT", first: "PCI\\FIRST", second: "PCI\\SECOND"},
+        parents={_PCI_DEVINST: parent},
+        children={_PCI_DEVINST: first},
+        siblings={first: second},
+    )
+    assert entry["parent"] == "PCI\\PARENT"
+    assert entry["children"] == ["PCI\\FIRST", "PCI\\SECOND"]
+
+
+@pytest.mark.os_agnostic
+def test_a_non_zero_programming_interface_completes_the_class_string() -> None:
+    properties = _pci_properties()
+    _uint(properties, _PCI_FMTID, api.PCI_PROP_BASE_CLASS, 0x01)
+    _uint(properties, _PCI_FMTID, api.PCI_PROP_SUB_CLASS, 0x06)
+    _uint(properties, _PCI_FMTID, api.PCI_PROP_PROG_IF, 0x01)
+    assert _entry_of(properties)["class"] == "0x010601"
+
+
+@pytest.mark.os_agnostic
+def test_a_class_with_no_base_or_sub_class_published_carries_no_class_key() -> None:
+    properties = _pci_properties()
+    del properties[(_PCI_DEVINST, _PCI_FMTID, api.PCI_PROP_BASE_CLASS)]
+    assert "class" not in _entry_of(properties)
+
+
+@pytest.mark.os_agnostic
+def test_the_address_carries_the_bus_the_device_and_the_function_exactly() -> None:
+    properties = _pci_properties()
+    _uint(properties, _DEV_FMTID, api.DEVICE_PROP_BUSNUMBER, 0x1A)
+    _uint(properties, _DEV_FMTID, api.DEVICE_PROP_ADDRESS, (0x1C << 16) | 3)
+    assert _entry_of(properties)["address"] == "0000:1a:1c.3"
+
+
+@pytest.mark.os_agnostic
+def test_the_slot_number_and_both_maximum_link_figures_are_recorded() -> None:
+    properties = _pci_properties()
+    _uint(properties, _PCI_FMTID, api.PCI_PROP_MAX_LINK_SPEED, 4)
+    _uint(properties, _PCI_FMTID, api.PCI_PROP_MAX_LINK_WIDTH, 8)
+    _uint(properties, _DEV_FMTID, api.DEVICE_PROP_UINUMBER, 7)
+    entry = _entry_of(properties)
+    assert entry["slot_number"] == 7
+    assert entry["max_link_speed"] == "16.0 GT/s PCIe"
+    assert entry["max_link_width"] == "8"
+
+
+@pytest.mark.os_agnostic
+def test_an_unknown_link_speed_code_leaves_the_speed_key_absent() -> None:
+    properties = _pci_properties()
+    _uint(properties, _PCI_FMTID, api.PCI_PROP_CURRENT_LINK_SPEED, 99)
+    _uint(properties, _PCI_FMTID, api.PCI_PROP_MAX_LINK_SPEED, 0)
+    entry = _entry_of(properties)
+    assert "current_link_speed" not in entry
+    assert "max_link_speed" not in entry
