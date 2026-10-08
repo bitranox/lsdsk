@@ -3,9 +3,10 @@
 Provides a single :class:`ExitCode` enum so every ``SystemExit`` raised by a
 CLI command carries a meaningful, grep-friendly integer instead of a bare ``1``.
 
-Signal codes 130 and 143 are informational constants only - the application never
-raises ``SystemExit`` with those values; ``lib_cli_exit_tools`` translates the
-signal. 141 is NOT one of them, however much it looks like one: nothing
+Signal codes 130 and 143 are never raised as ``SystemExit`` by the application.
+130 is the answer :func:`code_for_an_unhandled_exception` gives an interrupt -
+click's ``Abort`` as well as a raw ``KeyboardInterrupt`` - and 143 is left to
+the signal's own default. 141 is NOT one of them, however much it looks like one: nothing
 translates a broken pipe, because click catches the ``EPIPE`` in its own
 ``main`` and calls ``sys.exit(1)`` before anything here runs, and 1 is this
 tool's code for an actionable finding. So ``adapters/cli/safe_console`` raises
@@ -45,7 +46,8 @@ class ExitCode(IntEnum):
       warning or a critical was found, and output that never arrived is no
       verdict at all
     * 78: EX_CONFIG (sysexits.h)
-    * 128+N: signal N. 130 and 143 are informational, raised by nobody here;
+    * 128+N: signal N. 130 is what an interrupt (Ctrl-C) leaves, mapped by
+      :func:`code_for_an_unhandled_exception`; 143 is raised by nobody here;
       141 is raised by :mod:`lsdsk.adapters.cli.safe_console` when a reader
       closes the pipe, since click would otherwise report that as a 1.
 
