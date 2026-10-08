@@ -233,7 +233,7 @@ Rechte.
 
 ZFS zeigt den Pool, `zfs:rpool`, nie die Datasets darunter, da ein Pool beliebig viele davon
 tragen kann. Die eigene Dateisystem-Signatur einer Partition schlägt eine Signatur der ganzen
-Platte: ZFS hält zwei seiner vier Labels am Ende eines Vdevs, sodass eine Pool-Partition, die
+Platte: ZFS hält zwei seiner Labels am Ende eines Vdevs, sodass eine Pool-Partition, die
 bis zum Ende ihrer Platte läuft, auch die ganze Platte als Mitglied erscheinen lassen kann, und
 die eigene Signatur der Partition ist es, die das aufhebt.
 

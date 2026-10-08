@@ -14,11 +14,17 @@
 [![Maintainability](https://qlty.sh/gh/bitranox/projects/lsdsk/maintainability.svg)](https://qlty.sh/gh/bitranox/projects/lsdsk)
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
-lsdsk ist ein Speicher-Diagnosewerkzeug für Linux und Windows: es gruppiert jedes
-Laufwerk unter dem Controller und dem PCIe-Pfad, an dem es hängt, misst die Verbindung
-der Ports, der Laufwerke und die aktuell ausgehandelten Geschwindigkeiten, 
-SMART-Daten und Fehlerzähler, zeigt, von welcher Platte das System startet und was
-jede Platte nutzt, und gibt eine Handlungsempfehlung.
+lsdsk ist ein Speicher-Diagnosewerkzeug für Linux und Windows. Es gruppiert jedes
+Laufwerk unter dem Controller und dem PCIe- oder USB-Pfad, an dem es hängt, liest, was
+Ports und Laufwerke können und was sie tatsächlich ausgehandelt haben, liest SMART-Daten und
+Fehlerzähler und gibt eine Handlungsempfehlung.
+
+USB-Laufwerke werden wie interne behandelt. lsdsk zeigt, wie schnell eine USB-Platte läuft
+und was Laufwerk und Anschluß leisten könnten, meldet ein USB-3-Laufwerk, das nur mit
+USB-2-Geschwindigkeit angebunden ist, und liest SMART durch die USB-Bridge, sofern die Bridge
+es durchreicht. Für jede Platte zeigt es, ob das System von ihr startet und wo sie eingebunden
+ist: die Laufwerksbuchstaben unter Windows, die Einhängepunkte unter Linux oder den ZFS-Pool,
+die LVM-Volumegruppe, das RAID-Array oder das verschlüsselte Volume, zu dem sie gehört.
 [FINDINGS.md](FINDINGS.md#was-eine-platte-nutzt-und-was-not-mounted-bedeutet) sagt genau, wann
 es eine Platte als `not mounted` bezeichnen kann und wann stattdessen `-` steht.
 

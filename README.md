@@ -14,10 +14,17 @@
 [![Maintainability](https://qlty.sh/gh/bitranox/projects/lsdsk/maintainability.svg)](https://qlty.sh/gh/bitranox/projects/lsdsk)
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
-lsdsk is a storage diagnostic for Linux and Windows: it groups every drive under the
-controller and the PCIe path it hangs off, reads what the ports and the drives can do and what
-they actually negotiated, reads SMART data and error counters, shows which disk the machine boots
-from and what uses each one, and recommends what to act on.
+lsdsk is a storage diagnostic for Linux and Windows. It groups every drive under the
+controller and the PCIe or USB path it hangs off, reads what the ports and the drives can do
+and what they actually negotiated, reads SMART data and error counters, and recommends what to
+act on.
+
+USB drives are covered like internal ones. lsdsk shows the speed a USB disk runs at against
+what the drive and its socket can do, flags a USB 3 drive that came up at USB 2 speed, and
+reads SMART through the USB bridge where the bridge passes it on. For every disk it shows
+whether the machine boots from it and what it is mapped to: the drive letters on Windows, the
+mount points on Linux, or the ZFS pool, LVM volume group, RAID array or encrypted volume it
+belongs to.
 [FINDINGS.md](https://github.com/bitranox/lsdsk/blob/main/FINDINGS.md#what-uses-a-disk-and-what-not-mounted-means)
 says exactly when it can call a disk `not mounted` and when it falls back to `-` instead.
 
