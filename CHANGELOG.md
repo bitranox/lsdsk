@@ -12,6 +12,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   encoding put invalid UTF-8 into `/proc/self/mountinfo`, and every command that reads the disks
   failed with exit 22 and no report for any disk. Such a byte now shows as a replacement character
   in that one mount path; `/proc/swaps` is read the same way.
+- **A failed volume enumeration no longer reads as "not mounted" on Windows.** When Windows
+  refused to list the volumes, or stopped part-way through with an error rather than at the end
+  of the list, the volumes it did return were taken as all of them, so every disk on a volume it
+  never named showed `not mounted`. Such a reading now counts as not read, and every disk shows
+  `-` in the `used by` column.
 
 ## [1.7.0] 2026-10-08 10:27:22
 

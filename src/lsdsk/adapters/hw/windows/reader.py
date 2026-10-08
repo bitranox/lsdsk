@@ -51,7 +51,7 @@ from . import winapi as api
 from .capture import bus_type_of
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping, Sequence
+    from collections.abc import Callable, Iterator, Mapping, Sequence
 
 # PCI hardware identifiers look like PCI\VEN_8086&DEV_A182&SUBSYS_...&REV_11.
 _HARDWARE_ID = re.compile(r"PCI\\VEN_([0-9A-F]{4})&DEV_([0-9A-F]{4})", re.IGNORECASE)
@@ -1158,7 +1158,9 @@ def read_environment() -> dict[str, Any]:
     return evidence
 
 
-def read_volumes_section(kernel32: api.WinLibrary) -> tuple[dict[str, dict[str, Any]], str | None]:
+def read_volumes_section(
+    kernel32: api.WinLibrary, *, last_error: Callable[[], int] = api.last_error
+) -> tuple[dict[str, dict[str, Any]] | None, str | None]:
     r"""Read every volume and the Windows volume, keyed by a per-capture ordinal.
 
     ``volumes.read_volumes`` and ``volumes.read_windows_volume`` key and name
@@ -1172,12 +1174,16 @@ def read_volumes_section(kernel32: api.WinLibrary) -> tuple[dict[str, dict[str, 
 
     Args:
         kernel32: The typed facade over the Win32 entry points.
+        last_error: Answers ``GetLastError`` for the call that just failed.
 
     Returns:
         Every volume keyed by its ordinal, and the Windows volume's ordinal
-        key (``None`` when it could not be resolved).
+        key (``None`` when it could not be resolved); ``(None, None)`` when the
+        volumes could not be enumerated.
     """
-    by_guid = volumes.read_volumes(kernel32)
+    by_guid = volumes.read_volumes(kernel32, last_error=last_error)
+    if by_guid is None:
+        return None, None
     windows_guid = volumes.read_windows_volume(kernel32)
     ordinals = {guid: str(index) for index, guid in enumerate(by_guid)}
     by_ordinal = {ordinals[guid]: entry for guid, entry in by_guid.items()}

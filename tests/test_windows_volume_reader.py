@@ -15,7 +15,7 @@ import ctypes
 import json
 import struct
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
@@ -26,7 +26,12 @@ from lsdsk.adapters.hw.windows.reader import read_volumes_section
 from lsdsk.adapters.hw.windows.usage import resolve_usage
 from lsdsk.domain.enums import Environment
 
+if TYPE_CHECKING:
+    from lsdsk.domain.models import DiskUsage
+
 DRIVE_FIXED = 3
+ERROR_ACCESS_DENIED = 5
+ERROR_NOT_READY = 21
 
 
 @dataclass
@@ -52,6 +57,9 @@ class FakeVolumeKernel:
 
     volumes: dict[str, FakeVolume]
     windows_volume: str | None = None
+    first_error: int | None = None
+    next_error: int | None = None
+    error: int = 0
     path_calls: list[int] = field(default_factory=list[int])
     _order: list[str] = field(default_factory=list[str])
     _handles: dict[int, str] = field(default_factory=dict[int, str])
@@ -77,17 +85,23 @@ class FakeVolumeKernel:
         buffer.value = self.windows_volume
         return 1
 
+    def last_error(self) -> int:
+        """The error the last failing call left, as ``GetLastError`` reports it."""
+        return self.error
+
     def FindFirstVolumeW(self, buffer: ctypes.Array[ctypes.c_wchar], size: int) -> int:  # noqa: N802 - Win32 name
         del size
         self._order = list(self.volumes)
-        if not self._order:
+        if self.first_error is not None or not self._order:
+            self.error = api.ERROR_NO_MORE_FILES if self.first_error is None else self.first_error
             return cast("int", api.INVALID_HANDLE_VALUE)
         buffer.value = self._order.pop(0)
         return 7
 
     def FindNextVolumeW(self, handle: int, buffer: ctypes.Array[ctypes.c_wchar], size: int) -> int:  # noqa: N802 - Win32 name
         del handle, size
-        if not self._order:
+        if self.next_error is not None or not self._order:
+            self.error = api.ERROR_NO_MORE_FILES if self.next_error is None else self.next_error
             return 0
         buffer.value = self._order.pop(0)
         return 1
@@ -154,7 +168,30 @@ class FakeVolumeKernel:
 
 
 def _read(fake: FakeVolumeKernel) -> dict[str, dict[str, Any]]:
-    return volumes.read_volumes(cast("api.WinLibrary", fake))
+    by_guid = volumes.read_volumes(cast("api.WinLibrary", fake), last_error=fake.last_error)
+    assert by_guid is not None
+    return by_guid
+
+
+def _section(fake: FakeVolumeKernel) -> tuple[dict[str, dict[str, Any]] | None, str | None]:
+    return read_volumes_section(cast("api.WinLibrary", fake), last_error=fake.last_error)
+
+
+def _usage(fake: FakeVolumeKernel, node: str) -> DiskUsage | None:
+    by_ordinal, windows_ordinal = _section(fake)
+    capture = WindowsCapture.model_validate(
+        {
+            "schema": 2,
+            "platform": "win32",
+            "hostname": "h",
+            "kernel": "10.0",
+            "pci": {},
+            "disks": {"\\\\?\\p0": {"node": node}},
+            "volumes": by_ordinal,
+            "windows_volume": windows_ordinal,
+        }
+    )
+    return resolve_usage(capture, Environment.BARE_METAL)[node]
 
 
 VOLUME_C = "\\\\?\\Volume{c}\\"
@@ -217,10 +254,11 @@ def test_the_volumes_section_carries_no_guid_path_and_keeps_the_windows_volume_j
         },
         windows_volume=VOLUME_C,
     )
-    by_ordinal, windows_ordinal = read_volumes_section(cast("api.WinLibrary", fake))
+    by_ordinal, windows_ordinal = _section(fake)
     recorded = json.dumps({"volumes": by_ordinal, "windows_volume": windows_ordinal})
     for guid_fragment in ("Volume{c}", "Volume{x}", "\\\\?\\"):
         assert guid_fragment not in recorded, guid_fragment
+    assert by_ordinal is not None
     assert set(by_ordinal) == {"0", "1"}
     assert windows_ordinal is not None
     assert by_ordinal[windows_ordinal]["paths"] == ["C:\\"]
@@ -229,9 +267,37 @@ def test_the_volumes_section_carries_no_guid_path_and_keeps_the_windows_volume_j
 @pytest.mark.os_agnostic
 def test_an_empty_volume_set_reads_as_an_empty_mapping() -> None:
     fake = FakeVolumeKernel({})
-    by_ordinal, windows_ordinal = read_volumes_section(cast("api.WinLibrary", fake))
+    by_ordinal, windows_ordinal = _section(fake)
     assert by_ordinal == {}
     assert windows_ordinal is None
+
+
+@pytest.mark.os_agnostic
+def test_a_volume_enumeration_refused_at_its_first_call_leaves_every_disk_undecided() -> None:
+    fake = FakeVolumeKernel({VOLUME_X: FakeVolume(paths=("X:\\",), disks=(1,))}, first_error=ERROR_ACCESS_DENIED)
+    assert _usage(fake, "PhysicalDrive1") is None
+    assert _section(fake) == (None, None)
+
+
+@pytest.mark.os_agnostic
+def test_a_volume_enumeration_that_fails_part_way_leaves_every_disk_undecided() -> None:
+    fake = FakeVolumeKernel(
+        {
+            VOLUME_C: FakeVolume(paths=("C:\\",), disks=(0,)),
+            VOLUME_X: FakeVolume(paths=("X:\\",), disks=(1,)),
+        },
+        next_error=ERROR_NOT_READY,
+    )
+    assert _usage(fake, "PhysicalDrive1") is None
+    assert _section(fake) == (None, None)
+
+
+@pytest.mark.os_agnostic
+def test_an_enumeration_that_ends_normally_still_decides_a_disk_on_no_volume() -> None:
+    fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",), disks=(0,))})
+    usage = _usage(fake, "PhysicalDrive1")
+    assert usage is not None
+    assert usage.uses == ()
 
 
 @pytest.mark.os_agnostic
@@ -240,7 +306,8 @@ def test_a_windows_volume_not_among_the_enumerated_volumes_joins_to_none() -> No
         {VOLUME_C: FakeVolume(paths=("C:\\",), disks=(0,))},
         windows_volume=VOLUME_X,
     )
-    by_ordinal, windows_ordinal = read_volumes_section(cast("api.WinLibrary", fake))
+    by_ordinal, windows_ordinal = _section(fake)
+    assert by_ordinal is not None
     assert set(by_ordinal) == {"0"}
     assert windows_ordinal is None
 
@@ -251,19 +318,6 @@ def test_the_boot_disk_is_still_found_through_the_ordinal_join() -> None:
         {VOLUME_C: FakeVolume(paths=("C:\\",), disks=(1,))},
         windows_volume=VOLUME_C,
     )
-    by_ordinal, windows_ordinal = read_volumes_section(cast("api.WinLibrary", fake))
-    capture = WindowsCapture.model_validate(
-        {
-            "schema": 2,
-            "platform": "win32",
-            "hostname": "h",
-            "kernel": "10.0",
-            "pci": {},
-            "disks": {"\\\\?\\p0": {"node": "PhysicalDrive1"}},
-            "volumes": by_ordinal,
-            "windows_volume": windows_ordinal,
-        }
-    )
-    usage = resolve_usage(capture, Environment.BARE_METAL)
-    assert usage["PhysicalDrive1"] is not None
-    assert usage["PhysicalDrive1"].boot is True
+    usage = _usage(fake, "PhysicalDrive1")
+    assert usage is not None
+    assert usage.boot is True

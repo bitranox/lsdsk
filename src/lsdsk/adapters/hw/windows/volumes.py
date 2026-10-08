@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import winapi as api
 from .volume_layout import (
@@ -37,6 +37,9 @@ from .volume_layout import (
     parse_disk_extents,
     parse_is_esp,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _EXTENTS_BUFFER_SIZE = EXTENTS_HEADER.size + MAX_EXTENTS * EXTENT_ENTRY.size
 
@@ -160,28 +163,37 @@ def _read_one_volume(kernel32: api.WinLibrary, volume: str) -> dict[str, Any]:
     return entry
 
 
-def read_volumes(kernel32: api.WinLibrary) -> dict[str, dict[str, Any]]:
+def read_volumes(
+    kernel32: api.WinLibrary, *, last_error: Callable[[], int] = api.last_error
+) -> dict[str, dict[str, Any]] | None:
     r"""Enumerate every volume on this machine and read what it is used for.
+
+    Both enumeration calls report the end of the list as a failure carrying
+    ``ERROR_NO_MORE_FILES``; any other failure means the set was not read, or
+    not read to its end. That is returned as ``None`` rather than as the
+    volumes seen so far, because :mod:`.usage` reads a mapping as complete
+    and would call every disk on a missing volume "not mounted".
 
     Args:
         kernel32: The typed facade over the Win32 entry points.
+        last_error: Answers ``GetLastError`` for the call that just failed.
 
     Returns:
-        One entry per volume, keyed by its ``\\?\Volume{...}\`` GUID path.
+        One entry per volume, keyed by its ``\\?\Volume{...}\`` GUID path, or
+        ``None`` when the enumeration failed.
     """
     volumes: dict[str, dict[str, Any]] = {}
     buffer = ctypes.create_unicode_buffer(_MAX_PATH)
     handle = kernel32.FindFirstVolumeW(buffer, _MAX_PATH)
     if handle == api.INVALID_HANDLE_VALUE:
-        return volumes
+        return volumes if last_error() == api.ERROR_NO_MORE_FILES else None
     try:
         while True:
             volumes[buffer.value] = _read_one_volume(kernel32, buffer.value)
             if not kernel32.FindNextVolumeW(handle, buffer, _MAX_PATH):
-                break
+                return volumes if last_error() == api.ERROR_NO_MORE_FILES else None
     finally:
         kernel32.FindVolumeClose(handle)
-    return volumes
 
 
 def read_windows_volume(kernel32: api.WinLibrary) -> str | None:
