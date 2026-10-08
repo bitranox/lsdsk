@@ -1492,6 +1492,31 @@ class DiskUse(DomainModel, frozen=True):
     name: DeviceText = ""
     mounts: tuple[DeviceText, ...] = ()
 
+    @model_validator(mode="after")
+    def _only_what_the_kind_can_say(self) -> Self:
+        """Refuse a use that says what its kind never does.
+
+        The ``used by`` cell shows a mount, a letter or swap by its mounts alone and
+        a ZFS pool by its name alone, so a name on the first or a mount on the
+        second would be data the reader is never shown - and a renderer that had to
+        drop it would be the only thing standing between ADR 0004 and a pool's
+        datasets on the page.
+        """
+        if self.mounts and self.kind in _USES_WITHOUT_MOUNTS:
+            msg = f"a {self.kind.value} use carries no mounts"
+            raise ValueError(msg)
+        if self.name and self.kind in _USES_WITHOUT_NAME:
+            msg = f"a {self.kind.value} use carries no name"
+            raise ValueError(msg)
+        return self
+
+
+#: Kinds the ``used by`` cell names without listing mounts: a pool's datasets
+#: are unbounded and say nothing about the disk, and swap is the one word.
+_USES_WITHOUT_MOUNTS = frozenset({UseKind.ZFS, UseKind.SWAP})
+#: Kinds whose mounts already name them, so a name would never be shown.
+_USES_WITHOUT_NAME = frozenset({UseKind.MOUNT, UseKind.LETTER, UseKind.SWAP})
+
 
 class DiskUsage(DomainModel, frozen=True):
     """Whether the machine boots from a disk, and what uses it.

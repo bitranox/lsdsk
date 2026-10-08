@@ -467,16 +467,17 @@ def _use_text(use: DiskUse) -> str:
     letter is the places it is mounted, joined - a disk can carry several
     partitions mounted at once. Anything else (ZFS, LVM, MD, CRYPT, STACK) is
     named by its pool, group, array or mapping, with the mounts appended only
-    where it has any: a ZFS use never does (ADR 0004 - a pool's datasets are
-    not listed), and an LVM/MD/CRYPT/STACK use with nothing mounted on it yet
-    is named without a dangling arrow.
+    where it has any: an LVM/MD/CRYPT/STACK use with nothing mounted on it yet
+    is named without a dangling arrow. A ZFS use never has any, and that is the
+    model's rule rather than this function's (``DiskUse`` refuses one built with
+    mounts, ADR 0004), so nothing here has to drop data to keep it.
     """
     if use.kind is UseKind.SWAP:
         return "swap"
     if use.kind in {UseKind.MOUNT, UseKind.LETTER}:
         return ", ".join(_mount_text(mount) for mount in use.mounts)
     label = f"{use.kind.value}:{use.name}"
-    if use.kind is UseKind.ZFS or not use.mounts:
+    if not use.mounts:
         return label
     return f"{label} -> {', '.join(use.mounts)}"
 
