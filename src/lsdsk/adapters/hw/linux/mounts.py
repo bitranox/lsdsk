@@ -227,8 +227,14 @@ def read_swaps(
         fields = line.split()
         if not fields:
             continue
-        dev = _device_number_of(fields[0])
-        rows.append({"path": fields[0], "dev": dev} if dev is not None else {})
+        # The kernel escapes space, tab, newline and backslash the same way in
+        # every seq_file path it publishes (seq_file_path), /proc/swaps field 0
+        # included, so it must be undone here exactly as read_mounts does for
+        # mountinfo - otherwise a swap on a path carrying one of those bytes
+        # never resolves to its device node.
+        swap_path = _unescape(fields[0])
+        dev = _device_number_of(swap_path)
+        rows.append({"path": swap_path, "dev": dev} if dev is not None else {})
     return rows
 
 

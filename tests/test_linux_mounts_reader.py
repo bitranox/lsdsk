@@ -100,6 +100,30 @@ def test_a_device_backed_swap_row_keeps_its_path_and_dev(tmp_path: Path) -> None
     assert rows[0] == {"path": "/dev/null", "dev": f"{os.major(rdev)}:{os.minor(rdev)}"}
 
 
+@pytest.mark.os_linux
+def test_a_swap_path_with_an_escaped_space_still_resolves_to_its_device(tmp_path: Path) -> None:
+    """A swap path with an escaped space must still resolve to its device.
+
+    The kernel escapes space (and tab, newline, backslash) in /proc/swaps
+    field 0 the same way it does in mountinfo, so read_swaps must undo it
+    before resolving the path to a device node - RED on the unfixed source,
+    which passed the raw, still-escaped text straight to ``Path(...).stat()``
+    and so could never find a device with such a byte in its name.
+    """
+    link = tmp_path / "swap file"
+    link.symlink_to("/dev/null")
+    path = tmp_path / "swaps"
+    path.write_text(
+        f"Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n{link}".replace(" ", "\\040")
+        + "\t\tpartition\t8388604\t\t0\t\t-2\n",
+        encoding="utf-8",
+    )
+    rows = mounts.read_swaps(path)
+    assert rows is not None
+    rdev = Path("/dev/null").stat().st_rdev
+    assert rows[0] == {"path": str(link), "dev": f"{os.major(rdev)}:{os.minor(rdev)}"}
+
+
 @pytest.mark.os_agnostic
 def test_an_absent_swap_list_is_not_read_rather_than_empty(tmp_path: Path) -> None:
     assert mounts.read_swaps(tmp_path / "absent") is None
