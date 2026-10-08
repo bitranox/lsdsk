@@ -13,6 +13,7 @@ import uuid
 
 import pytest
 
+from lsdsk.adapters.hw.windows import volume_layout
 from lsdsk.adapters.hw.windows.volume_layout import parse_disk_extents, parse_is_esp
 
 ESP = uuid.UUID("C12A7328-F81F-11D2-BA4B-00A0C93EC93B")
@@ -71,3 +72,49 @@ def test_an_mbr_partition_is_never_esp() -> None:
 @pytest.mark.os_agnostic
 def test_a_short_partition_buffer_is_undecided() -> None:
     assert parse_is_esp(b"\x01\x00\x00\x00") is None
+
+
+#: Sizes from winioctl.h, written as numbers rather than derived from a format
+#: string: the builders above use the same strings as the parser, so a wrong
+#: string would move the parser and its test input together and stay green.
+SDK_SIZES = {
+    # VOLUME_DISK_EXTENTS up to Extents[0]: DWORD NumberOfDiskExtents, then
+    # padding to the 8-byte alignment of DISK_EXTENT's LARGE_INTEGERs.
+    "EXTENTS_HEADER": 8,
+    # DISK_EXTENT: DWORD DiskNumber, padding, LARGE_INTEGER StartingOffset and ExtentLength.
+    "EXTENT_ENTRY": 24,
+    # PARTITION_INFORMATION_EX up to its union: PARTITION_STYLE, padding, two
+    # LARGE_INTEGERs, DWORD PartitionNumber, two BOOLEANs, padding.
+    "PARTITION_HEAD": 32,
+}
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(("name", "size"), sorted(SDK_SIZES.items()))
+def test_each_layout_is_the_size_the_sdk_gives_it(name: str, size: int) -> None:
+    assert getattr(volume_layout, name).size == size
+
+
+@pytest.mark.os_agnostic
+def test_the_partition_buffer_holds_the_widest_arm_of_the_union() -> None:
+    """PARTITION_INFORMATION_EX is 144 bytes: the 32-byte head plus PARTITION_INFORMATION_GPT (112)."""
+    assert volume_layout.PARTITION_INFORMATION_EX_SIZE == 144
+
+
+@pytest.mark.os_agnostic
+def test_extents_are_read_at_the_sdk_offsets_of_a_hand_laid_buffer() -> None:
+    """Built byte by byte at the winioctl.h offsets, never through the parser's own format strings."""
+    raw = bytearray(8 + 2 * 24)
+    raw[0:4] = (2).to_bytes(4, "little")  # NumberOfDiskExtents
+    raw[8:12] = (5).to_bytes(4, "little")  # Extents[0].DiskNumber
+    raw[32:36] = (9).to_bytes(4, "little")  # Extents[1].DiskNumber
+    assert parse_disk_extents(bytes(raw)) == [5, 9]
+
+
+@pytest.mark.os_agnostic
+def test_the_partition_type_is_read_at_the_sdk_offset_of_a_hand_laid_buffer() -> None:
+    """The GPT arm's PartitionType is the union's first field, at byte 32 of PARTITION_INFORMATION_EX."""
+    raw = bytearray(144)
+    raw[0:4] = (1).to_bytes(4, "little")  # PartitionStyle = PARTITION_STYLE_GPT
+    raw[32:48] = ESP.bytes_le
+    assert parse_is_esp(bytes(raw)) is True
