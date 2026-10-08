@@ -62,6 +62,9 @@ _NVME_IDENTIFY_LENGTH = 4096
 _NVME_SMART_LOG_LENGTH = 512
 _NVME_SMART_LOG_ID = 0x02
 
+# The reason recorded for a read the process could not even attempt.
+_NEEDS_ADMINISTRATOR = "needs Administrator to open the device for passthrough"
+
 # A device tree is a handful of levels deep. The bound only stops a malformed
 # tree from being walked forever.
 _MAX_TREE_DEPTH = 64
@@ -737,7 +740,7 @@ def sat_passthrough(
 
 def nvme_protocol_data(
     kernel32: api.WinLibrary, handle: int, *, data_type: int, request_value: int, length: int
-) -> bytes:
+) -> tuple[bytes, str | None]:
     """Fetch an NVMe identify structure or log page through the storage stack.
 
     Args:
@@ -748,7 +751,8 @@ def nvme_protocol_data(
         length: How many bytes the structure occupies.
 
     Returns:
-        The raw structure, for the shared NVMe decoder.
+        The raw structure for the shared NVMe decoder and ``None``, or empty
+        bytes and the Win32 error when the storage stack refused the query.
     """
     header = ctypes.sizeof(api.STORAGE_PROPERTY_QUERY) + ctypes.sizeof(api.STORAGE_PROTOCOL_SPECIFIC_DATA)
     total = header + length
@@ -786,9 +790,9 @@ def nvme_protocol_data(
         None,
     )
     if not ok:
-        return b""
+        return b"", f"Win32 error {api.last_error()}"
     start = offset + protocol.ProtocolDataOffset
-    return buffer.raw[start : start + length]
+    return buffer.raw[start : start + length], None
 
 
 def _disk_length(kernel32: api.WinLibrary, handle: int) -> int | None:
@@ -878,33 +882,47 @@ def read_disk(kernel32: api.WinLibrary, path: str, ancestors: list[str]) -> dict
         # a transport name two different ways.
         bus = bus_type_of(entry["device"].get("bus_type", ""))
         if bus is BusType.NVME:
-            entry["nvme"] = _read_nvme(kernel32, handle)
+            entry["nvme"] = _read_nvme(kernel32, handle, passthrough=passthrough)
         elif passthrough:
             entry["ata"] = read_ata(kernel32, handle)
         else:
-            entry["ata"] = {"identify_error": "needs Administrator to open the device for passthrough"}
+            entry["ata"] = {"identify_error": _NEEDS_ADMINISTRATOR}
     finally:
         kernel32.CloseHandle(handle)
     return entry
 
 
-def _read_nvme(kernel32: api.WinLibrary, handle: int) -> dict[str, str]:
-    """Read the NVMe identify structure and health log."""
+def _read_nvme(kernel32: api.WinLibrary, handle: int, *, passthrough: bool) -> dict[str, str]:
+    """Read the NVMe identify structure and health log.
+
+    Each structure is recorded under its label, or the reason it was refused
+    under ``<label>_error``, as :func:`read_ata` does: a refusal that left no
+    trace would read as a drive with nothing to report.
+
+    Args:
+        kernel32: The typed facade over the Win32 entry points.
+        handle: An open handle to the device.
+        passthrough: Whether the handle carries write access. Without it a
+            refusal is named for what the person can change, not for the
+            Win32 code.
+
+    Returns:
+        The reading, shaped for the capture model to type.
+    """
     record: dict[str, str] = {}
-    identify = nvme_protocol_data(
-        kernel32, handle, data_type=api.NVME_DATA_TYPE_IDENTIFY, request_value=1, length=_NVME_IDENTIFY_LENGTH
-    )
-    if identify:
-        record["identify_controller"] = base64.b64encode(identify).decode("ascii")
-    log = nvme_protocol_data(
-        kernel32,
-        handle,
-        data_type=api.NVME_DATA_TYPE_LOG_PAGE,
-        request_value=_NVME_SMART_LOG_ID,
-        length=_NVME_SMART_LOG_LENGTH,
-    )
-    if log:
-        record["smart_log"] = base64.b64encode(log).decode("ascii")
+    for label, error_label, data_type, request_value, length in (
+        ("identify_controller", "identify_controller_error", api.NVME_DATA_TYPE_IDENTIFY, 1, _NVME_IDENTIFY_LENGTH),
+        ("smart_log", "smart_log_error", api.NVME_DATA_TYPE_LOG_PAGE, _NVME_SMART_LOG_ID, _NVME_SMART_LOG_LENGTH),
+    ):
+        payload, refusal = nvme_protocol_data(
+            kernel32, handle, data_type=data_type, request_value=request_value, length=length
+        )
+        if payload:
+            record[label] = base64.b64encode(payload).decode("ascii")
+        else:
+            record[error_label] = refusal or "no data returned"
+            if not passthrough:
+                record[error_label] = _NEEDS_ADMINISTRATOR
     return record
 
 
