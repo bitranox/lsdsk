@@ -35,6 +35,16 @@ _ROTATION_RATE_SSD = 1
 _ROTATION_RATE_MIN_RPM = 0x0401
 _ROTATION_RATE_MAX_RPM = 0xFFFE
 
+# ACS defines word 106 bit 12 as "logical sector size is larger than 256
+# words (512 bytes)" - so a word count of 256 or less contradicts the very
+# bit that says to read it. At the other end, no shipped ATA device publishes
+# a logical sector past the 4Kn format (4096 bytes = 2048 words); ACS leaves
+# the field able to hold up to 0xFFFFFFFF words, which is how a device that
+# left it at the all-ones "nothing reported" pattern read as a 131070-byte
+# sector. Outside this range the value is not trusted into a capacity.
+_MIN_LOGICAL_SECTOR_WORDS = 257
+_MAX_LOGICAL_SECTOR_WORDS = 2048
+
 
 @dataclass(frozen=True, slots=True)
 class AtaIdentity:
@@ -156,7 +166,15 @@ class SectorGeometry(NamedTuple):
 
 
 def _sector_geometry(words: tuple[int, ...]) -> SectorGeometry:
-    """Return the addressable sector count and logical sector size."""
+    """Return the addressable sector count and logical sector size.
+
+    When word 106 claims a larger-than-512-byte logical sector but words 117
+    and 118 hold a word count no real ATA device could publish, neither the
+    claimed sector size nor the sector count can be trusted: multiplying a
+    plausible-looking 512-byte guess by the (otherwise genuine) sector count
+    would still misreport a drive that really does use a large logical
+    sector, so the capacity is withheld entirely rather than guessed.
+    """
     lba48 = words[100] | (words[101] << 16) | (words[102] << 32) | (words[103] << 48)
     lba28 = words[60] | (words[61] << 16)
     sectors = lba48 or lba28 or None
@@ -167,7 +185,11 @@ def _sector_geometry(words: tuple[int, ...]) -> SectorGeometry:
     # words 117 and 118, expressed in 16-bit words rather than bytes.
     geometry = words[106]
     if geometry & 0x4000 and not geometry & 0x8000 and geometry & 0x1000:
-        sector_size = (words[117] | (words[118] << 16)) * 2 or 512
+        logical_words = words[117] | (words[118] << 16)
+        if _MIN_LOGICAL_SECTOR_WORDS <= logical_words <= _MAX_LOGICAL_SECTOR_WORDS:
+            sector_size = logical_words * 2
+        else:
+            sectors = None
     return SectorGeometry(sectors, sector_size)
 
 
