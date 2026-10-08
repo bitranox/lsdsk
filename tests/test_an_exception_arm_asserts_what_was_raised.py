@@ -21,8 +21,16 @@ TESTS = Path(__file__).resolve().parent
 
 
 def _is_raises(call: ast.expr) -> bool:
-    """Whether this context expression is a ``pytest.raises(...)`` call."""
-    return isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "raises"
+    """Whether this context expression is a ``pytest.raises(...)`` call, in either spelling.
+
+    ``pytest.raises(...)`` is an attribute call and ``raises(...)`` after
+    ``from pytest import raises`` is a bare-name one; both open the same block.
+    """
+    if not isinstance(call, ast.Call):
+        return False
+    if isinstance(call.func, ast.Attribute):
+        return call.func.attr == "raises"
+    return isinstance(call.func, ast.Name) and call.func.id == "raises"
 
 
 def _derived_from(name: str, inside: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
@@ -178,3 +186,27 @@ def test_the_predicate_can_answer_both_ways(body: str, expected: bool, why: str)
     assert isinstance(function, ast.FunctionDef)
 
     assert _asserted_on("exc", function) is expected, f"{why}: got {not expected}"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("context", "expected"),
+    [
+        pytest.param("pytest.raises(ValueError)", True, id="pytest.raises"),
+        pytest.param("raises(ValueError)", True, id="raises imported from pytest"),
+        pytest.param("open('f')", False, id="an unrelated call"),
+        pytest.param("lock", False, id="a bare name"),
+    ],
+)
+def test_the_guard_sees_every_spelling_of_a_raises_block(context: str, expected: bool) -> None:
+    """A spelling the guard cannot see is a block it never counts.
+
+    ``from pytest import raises`` turns every block into a bare-name call, and a
+    detector keyed on the attribute form alone skips them silently - the total
+    does not grow and nothing reports the block, so an unasserted arm written
+    that way passes the guard written to refuse it.
+    """
+    with_statement = ast.parse(f"with {context}:\n    pass\n").body[0]
+    assert isinstance(with_statement, ast.With)
+
+    assert _is_raises(with_statement.items[0].context_expr) is expected
