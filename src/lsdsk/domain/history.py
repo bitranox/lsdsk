@@ -735,10 +735,28 @@ def _previous_reading(usable: list[Sample]) -> Sample:
         1004
     """
     latest = usable[-1]
+    for index in range(len(usable) - 2, -1, -1):
+        candidate = usable[index]
+        if candidate.power_on_hours != latest.power_on_hours and _can_be_a_base(usable, index, latest):
+            return candidate
     for candidate in reversed(usable[:-1]):
         if candidate.power_on_hours != latest.power_on_hours:
             return candidate
     return usable[-2]
+
+
+def _can_be_a_base(usable: list[Sample], index: int, latest: Sample) -> bool:
+    """Whether the row at ``index`` may anchor a rate ending at ``latest``.
+
+    A row whose clock stepped backwards from the row before it is a stray (or
+    the first row of a swapped drive's new run), and a later reading must not
+    be rated across the gap it opens. A base also has to sit at or before the
+    latest reading's own hour, or the span would run backwards.
+    """
+    candidate = usable[index]
+    if candidate.power_on_hours > latest.power_on_hours:
+        return False
+    return index == 0 or candidate.power_on_hours >= usable[index - 1].power_on_hours
 
 
 def _rising(kind: CounterKind, previous: Sample, latest: Sample, delta: int, thresholds: Thresholds) -> Trend:

@@ -135,6 +135,21 @@ def test_power_on_hours_that_fell_is_a_reset() -> None:
     assert trend.verdict is TrendVerdict.RESET
 
 
+def test_a_stray_backward_row_is_never_the_base_of_a_later_rate() -> None:
+    """One backward reading, then the clock carries on: the rate spans the real hour."""
+    samples = series_of(crc_sample(1000, 10), crc_sample(5, 10), crc_sample(1001, 510))
+    trend = trend_for(samples, CounterKind.CRC_ERRORS)
+    assert trend.verdict is TrendVerdict.RISING
+    assert (trend.delta, trend.span_hours, trend.per_hour) == (500, 1, 500)
+
+
+def test_a_swapped_drive_is_rated_from_its_own_new_clock_once_it_has_two_rows() -> None:
+    """The control: after a real reset the new run is the base, never the old clock."""
+    samples = series_of(crc_sample(1000, 10), crc_sample(5, 0), crc_sample(15, 100))
+    trend = trend_for(samples, CounterKind.CRC_ERRORS)
+    assert (trend.verdict, trend.span_hours, trend.per_hour) == (TrendVerdict.RISING, 10, 10.0)
+
+
 # --------------------------------------------------------------------------
 # Quiet is self-calibrating, and that is the whole point
 # --------------------------------------------------------------------------
