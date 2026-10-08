@@ -530,6 +530,57 @@ def test_a_drive_that_cannot_be_tracked_is_not_an_answer_either_way() -> None:
     assert has_new_readings(History(hostname="box"), [untrackable]) is False
 
 
+def _crc_drive(power_on_hours: int, errors: int, *, wwn: str = "naa.1", node: str = "sda") -> Disk:
+    """A drive carrying power-on hours and a CRC count, for the clock-fell arms."""
+    health = Health(power_on_hours=power_on_hours, crc_errors=errors)
+    return Disk(node=node, path=f"/dev/{node}", model="X", wwn=wwn, health=health)
+
+
+@pytest.mark.os_agnostic
+def test_a_clock_that_fell_has_something_to_say_on_a_single_drive_machine() -> None:
+    """A clock moving backwards is a real event, not silence, even alone in the run.
+
+    Before the fix this read ``False``: the limit only asked whether the clock
+    had moved FORWARD, so a lone drive falling from 100 to 5 power-on hours was
+    never recorded and the trend kept judging the stale pair. The companion
+    arm below shows the same fall records and reaches RESET once a second,
+    unrelated drive in the run happens to advance - which is the inconsistency
+    this fix removes by answering the same way either way.
+    """
+    stored = record(History(hostname="box"), [_crc_drive(100, 10)], T0)
+
+    assert has_new_readings(stored, [_crc_drive(5, 10)]) is True
+
+
+@pytest.mark.os_agnostic
+def test_recording_a_fallen_clock_on_a_single_drive_machine_ends_in_reset() -> None:
+    """The write end, the rate limit and the verdict agree on a single-drive machine."""
+    history = record(History(hostname="box"), [_crc_drive(100, 10)], T0)
+    assert has_new_readings(history, [_crc_drive(5, 10)]) is True
+    history = record(history, [_crc_drive(5, 10)], T1)
+
+    assert [s.power_on_hours for s in history.series[0].samples] == [100, 5]
+    trend = trend_for(history.series[0], CounterKind.CRC_ERRORS)
+    assert trend.verdict is TrendVerdict.RESET
+
+
+@pytest.mark.os_agnostic
+def test_recording_a_fallen_clock_beside_an_advancing_sibling_also_ends_in_reset() -> None:
+    """The same event, with a second drive advancing: one event, one verdict either way."""
+    drives = [_crc_drive(100, 10, wwn="naa.1", node="sda"), _crc_drive(5, 1, wwn="naa.2", node="sdb")]
+    history = record(History(hostname="box"), drives, T0)
+    fallen_and_advanced = [_crc_drive(5, 10, wwn="naa.1", node="sda"), _crc_drive(7, 1, wwn="naa.2", node="sdb")]
+
+    assert has_new_readings(history, fallen_and_advanced) is True
+    history = record(history, fallen_and_advanced, T1)
+
+    naa1 = history.for_identity("naa.1")
+    assert naa1 is not None
+    assert [s.power_on_hours for s in naa1.samples] == [100, 5]
+    trend = trend_for(naa1, CounterKind.CRC_ERRORS)
+    assert trend.verdict is TrendVerdict.RESET
+
+
 # --------------------------------------------------------------------------
 # Linear work
 # --------------------------------------------------------------------------

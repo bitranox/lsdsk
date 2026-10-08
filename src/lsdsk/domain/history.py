@@ -617,6 +617,16 @@ def has_new_readings(history: History, disks: Sequence[Disk]) -> bool:
     says they were, so storing the second one adds a row and no information. A
     drive never seen before always has something to say.
 
+    The clock moving in EITHER direction counts as new. A clock that fell is
+    not silence: ``trend_for`` reports it as :attr:`TrendVerdict.RESET`, which
+    is a real event the domain chooses to speak rather than hide, so the write
+    end has to let that reading through too. Keying this on "only forward"
+    once made the same backward-clock event answer differently depending on
+    an unrelated drive in the same run: a lone drive falling from 100 to 5
+    power-on hours answered ``False`` (never recorded, trend stuck judging a
+    stale pair), while the identical fall alongside a second drive that
+    advanced answered ``True`` only because the OTHER drive moved.
+
     Args:
         history: What has been recorded so far.
         disks: The drives as this run read them.
@@ -631,6 +641,9 @@ def has_new_readings(history: History, disks: Sequence[Disk]) -> bool:
         True
         >>> has_new_readings(record(History(hostname="box"), [disk], "t"), [disk])
         False
+        >>> fallen = Disk(node="sda", path="/dev/sda", model="X", wwn="naa.1", health=Health(power_on_hours=1))
+        >>> has_new_readings(record(History(hostname="box"), [disk], "t"), [fallen])
+        True
     """
     for disk in disks:
         identity = identity_of(disk)
@@ -640,7 +653,7 @@ def has_new_readings(history: History, disks: Sequence[Disk]) -> bool:
         series = history.for_identity(identity)
         if series is None or not series.samples:
             return True
-        if sample.power_on_hours > series.samples[-1].power_on_hours:
+        if sample.power_on_hours != series.samples[-1].power_on_hours:
             return True
     return False
 
