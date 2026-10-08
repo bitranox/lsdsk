@@ -18,6 +18,7 @@ import pytest
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.hw.windows import reader
 from lsdsk.adapters.hw.windows import winapi as api
+from lsdsk.domain.text import MAX_DEVICE_TEXT
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "windows-ahci.json"
 
@@ -146,3 +147,26 @@ def test_devices_are_accessible_when_any_disk_opened() -> None:
 @pytest.mark.os_agnostic
 def test_a_machine_with_no_disks_has_no_accessible_devices() -> None:
     assert reader.devices_accessible({}) is False
+
+
+@pytest.mark.os_agnostic
+def test_a_registry_string_past_the_capture_bound_is_dropped_not_recorded() -> None:
+    values = {"SystemManufacturer": "x" * (MAX_DEVICE_TEXT + 1), "SystemProductName": "Product"}
+    evidence = reader.read_environment(read_value=lambda _path, name: values.get(name, ""))
+    assert "dmi_vendor" not in evidence
+    assert evidence["dmi_product"] == "Product"
+
+
+@pytest.mark.os_agnostic
+def test_one_oversized_registry_string_does_not_refuse_the_capture() -> None:
+    values = {"SystemManufacturer": "x" * (MAX_DEVICE_TEXT + 1), "BaseBoardProduct": "Board"}
+    payload = cast("dict[str, Any]", json.loads(_FIXTURE.read_text(encoding="utf-8")))
+    payload["environment"] = reader.read_environment(read_value=lambda _path, name: values.get(name, ""))
+    assert build_from(payload).disks
+
+
+@pytest.mark.os_agnostic
+def test_a_registry_string_at_the_bound_is_kept() -> None:
+    value = "y" * MAX_DEVICE_TEXT
+    evidence = reader.read_environment(read_value=lambda _path, name: value if name == "SystemManufacturer" else "")
+    assert evidence["dmi_vendor"] == value

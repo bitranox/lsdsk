@@ -1225,12 +1225,19 @@ def read_usb_ports(
     return UsbReading(ports=asked.ports, hubs=asked.hub_entries, disk_errors=disk_errors)
 
 
-def read_environment() -> dict[str, Any]:
+def read_environment(*, read_value: Callable[[str, str], str] = api.read_registry_string) -> dict[str, Any]:
     """Gather the evidence that says whether this is metal, a guest or a container.
 
     The system manufacturer and product the firmware reports are the Windows
     equivalent of DMI, and they live in the registry, so this needs no extra
     dependency and no subprocess.
+
+    A value longer than :data:`MAX_DEVICE_TEXT` is left out rather than stored:
+    firmware chooses these strings, and stored, one oversized value would make
+    the capture model refuse the whole scan.
+
+    Args:
+        read_value: Reads one registry string by key path and value name.
 
     Returns:
         The raw strings, for the pure classifier to interpret.
@@ -1242,8 +1249,8 @@ def read_environment() -> dict[str, Any]:
         ("BaseBoardManufacturer", "dmi_board_vendor"),
         ("BaseBoardProduct", "dmi_board_name"),
     ):
-        value = api.read_registry_string(api.SYSTEM_BIOS_KEY, name)
-        if value:
+        value = read_value(api.SYSTEM_BIOS_KEY, name)
+        if value and len(value) <= MAX_DEVICE_TEXT:
             evidence[field] = value
     # Windows containers set this, and it is the only signal a guest process has.
     if os.environ.get("CONTAINER_SANDBOX_MOUNT_POINT"):
