@@ -344,9 +344,16 @@ def record_reading(
     declined = _why_not_to_record(inventory, read, settings)
     if declined is not None:
         return declined
-    first_ever = not settings.path.exists()
     try:
         with history_lock(settings.path):
+            # Decided HERE, holding the lock, rather than before trying for it:
+            # two runs starting against an empty store both used to peek at
+            # `path.exists()` before either had written anything, so both read
+            # "nothing here yet" and both announced once their turn to write
+            # came round. The lock serialises every write, so whichever run
+            # is actually about to create the file is the only one that can
+            # ever see it absent at this point.
+            first_ever = not settings.path.exists()
             # Read again under the lock: `read` may be a copy from before
             # another run stored its reading, and folding into it would write
             # that reading away.
