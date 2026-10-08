@@ -752,7 +752,9 @@ def nvme_protocol_data(
 
     Returns:
         The raw structure for the shared NVMe decoder and ``None``, or empty
-        bytes and the Win32 error when the storage stack refused the query.
+        bytes and why it is not a reading: the Win32 error when the storage
+        stack refused the query, the byte count when it accepted the query
+        without moving the whole structure.
     """
     header = ctypes.sizeof(api.STORAGE_PROPERTY_QUERY) + ctypes.sizeof(api.STORAGE_PROTOCOL_SPECIFIC_DATA)
     total = header + length
@@ -792,6 +794,13 @@ def nvme_protocol_data(
     if not ok:
         return b"", f"Win32 error {api.last_error()}"
     start = offset + protocol.ProtocolDataOffset
+    # A success that moved nothing leaves the zeros the buffer was allocated
+    # with, which decode as a healthy drive. The driver rewrites the length
+    # field to what it moved and the call reports how far into the buffer it
+    # wrote; the smaller of the two is what can be believed.
+    moved = min(protocol.ProtocolDataLength, max(returned.value - start, 0), length)
+    if moved < length:
+        return b"", f"{moved} of {length} bytes returned"
     return buffer.raw[start : start + length], None
 
 
@@ -920,10 +929,29 @@ def _read_nvme(kernel32: api.WinLibrary, handle: int, *, passthrough: bool) -> d
         if payload:
             record[label] = base64.b64encode(payload).decode("ascii")
         else:
-            record[error_label] = refusal or "no data returned"
-            if not passthrough:
-                record[error_label] = _NEEDS_ADMINISTRATOR
+            record[error_label] = _refusal_text(refusal, passthrough=passthrough)
     return record
+
+
+def _refusal_text(refusal: str | None, *, passthrough: bool) -> str:
+    """Say why an NVMe page was not read.
+
+    A Win32 error from a handle opened without write access is most likely the
+    missing privilege, so it is named for what the person can change. A short
+    answer is a different fact and keeps its own count.
+
+    Args:
+        refusal: What the query reported, if anything.
+        passthrough: Whether the handle carries write access.
+
+    Returns:
+        The text recorded under the page's ``_error`` key.
+    """
+    if refusal is None:
+        return "no data returned"
+    if not passthrough and refusal.startswith("Win32 error"):
+        return _NEEDS_ADMINISTRATOR
+    return refusal
 
 
 def read_ata(kernel32: api.WinLibrary, handle: int) -> dict[str, str]:

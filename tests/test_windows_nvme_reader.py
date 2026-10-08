@@ -49,6 +49,9 @@ class FakeNvmeKernel32:
         answer: What the protocol query returns for ``(data_type)``: the payload bytes, or
             ``None`` for an ioctl failure.
         opens_for_passthrough: Whether ``CreateFileW`` grants the read-write access passthrough needs.
+        rewrites_length: Whether the driver writes the bytes it moved into ``ProtocolDataLength``,
+            as the storage stack does; ``False`` leaves the length the request asked for.
+        reports_moved: The byte count ``DeviceIoControl`` reports, or ``None`` for header plus payload.
     """
 
     def __init__(
@@ -56,10 +59,14 @@ class FakeNvmeKernel32:
         *,
         answer: Callable[[int], bytes | None],
         opens_for_passthrough: bool = True,
+        rewrites_length: bool = True,
+        reports_moved: int | None = None,
     ) -> None:
         """Answer protocol queries through ``answer``."""
         self.answer = answer
         self.opens_for_passthrough = opens_for_passthrough
+        self.rewrites_length = rewrites_length
+        self.reports_moved = reports_moved
 
     def CreateFileW(self, path: str, access: int, *_rest: object) -> int:  # noqa: N802 - the Win32 name
         del path
@@ -116,7 +123,9 @@ class FakeNvmeKernel32:
         if payload is None:
             return 0
         ctypes.memmove(ctypes.addressof(buffer) + _DATA_AT, payload, len(payload))
-        _referent(returned).value = _DATA_AT + len(payload)
+        if self.rewrites_length:
+            protocol.ProtocolDataLength = len(payload)
+        _referent(returned).value = _DATA_AT + len(payload) if self.reports_moved is None else self.reports_moved
         return 1
 
 
@@ -181,3 +190,35 @@ def test_a_refused_nvme_read_reaches_the_disk_as_a_refused_reading() -> None:
 def test_a_fully_answered_nvme_read_refuses_nothing() -> None:
     entry = _read(FakeNvmeKernel32(answer=_full))
     assert _inventory_with(entry).disks[0].readings_refused == ()
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("moved", [0, 100, 511])
+def test_a_query_that_succeeds_but_moves_fewer_bytes_than_asked_is_a_refusal(moved: int) -> None:
+    fake = FakeNvmeKernel32(answer=lambda data_type: _full(data_type)[:moved])
+    record = _read(fake)["nvme"]
+    assert record["smart_log_error"] == f"{moved} of 512 bytes returned"
+    assert record["identify_controller_error"] == f"{moved} of 4096 bytes returned"
+    assert "smart_log" not in record
+    assert "identify_controller" not in record
+
+
+@pytest.mark.os_agnostic
+def test_a_byte_count_shorter_than_the_payload_is_a_refusal_even_if_the_length_field_is_not_rewritten() -> None:
+    fake = FakeNvmeKernel32(answer=_full, rewrites_length=False, reports_moved=_DATA_AT)
+    record = _read(fake)["nvme"]
+    assert record["smart_log_error"] == "0 of 512 bytes returned"
+
+
+@pytest.mark.os_agnostic
+def test_a_query_that_moved_nothing_reaches_the_disk_as_a_refusal_not_a_healthy_zero_reading() -> None:
+    entry = _read(FakeNvmeKernel32(answer=lambda _type: b""))
+    disk = _inventory_with(entry).disks[0]
+    assert {reading.reading for reading in disk.readings_refused} >= {"identify-controller", "smart-log"}
+    assert disk.health is None or disk.health.ok is None
+
+
+@pytest.mark.os_agnostic
+def test_an_unprivileged_short_answer_keeps_its_own_reason() -> None:
+    fake = FakeNvmeKernel32(answer=lambda _type: b"", opens_for_passthrough=False)
+    assert _read(fake)["nvme"]["smart_log_error"] == "0 of 512 bytes returned"

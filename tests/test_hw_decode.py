@@ -401,3 +401,27 @@ def test_values_match_the_reference_tools_for_a_known_drive() -> None:
     assert health.percent_used is not None and 0 <= health.percent_used <= 10  # attribute 177: 96 normalised
     assert health.bytes_written is not None
     assert health.bytes_written >= 21_986_625_196 * 512 * 0.99  # attribute 241 raw, counted in sectors
+
+
+@pytest.mark.os_agnostic
+def test_an_all_zero_nvme_health_page_is_no_reading_not_a_healthy_one() -> None:
+    """A page of zeros is a command that moved nothing, not a drive with no wear and no errors.
+
+    The ATA decoder already answers an all-zero table with no verdict; the NVMe
+    one answered ``ok=True`` and zero counters, which no drive can report (its
+    composite temperature would be zero kelvin).
+    """
+    health = decode_smart_log(bytes(512))
+    assert health.ok is None
+    assert health.power_on_hours is None
+    assert health.media_errors is None
+    assert health == decode_health(bytes(512))
+
+
+@pytest.mark.os_agnostic
+def test_a_nvme_health_page_with_one_byte_set_is_still_a_reading() -> None:
+    blob = bytearray(512)
+    blob[3] = 100
+    health = decode_smart_log(bytes(blob))
+    assert health.ok is True
+    assert health.available_spare == 100

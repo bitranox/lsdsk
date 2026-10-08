@@ -99,22 +99,30 @@ def decode_smart_log(blob: bytes, identity: NvmeIdentity | None = None) -> Healt
             temperature thresholds; without it those stay ``None``.
 
     Returns:
-        The drive's health.
+        The drive's health, or a health with no reading in it when the page is
+        all zeros: no drive reports a composite temperature of zero kelvin, so
+        such a page is a command that moved nothing, and reading it as a drive
+        with no wear and no errors would be the opposite of what happened. The
+        ATA decoder answers an empty table the same way.
 
     Raises:
         ValueError: If the buffer is shorter than one log page.
 
     Example:
-        >>> health = decode_smart_log(bytes(512))
+        >>> health = decode_smart_log(bytes([0, 0, 0, 100]) + bytes(508))
         >>> health.percent_used
         0
         >>> health.ok
+        True
+        >>> decode_smart_log(bytes(512)).ok is None
         True
     """
     if len(blob) < SMART_LOG_LENGTH:
         message = f"SMART log is {len(blob)} bytes, expected at least {SMART_LOG_LENGTH}"
         raise ValueError(message)
 
+    if not any(blob[:SMART_LOG_LENGTH]):
+        return Health()
     critical_warning = blob[0]
     composite_kelvin = struct.unpack_from("<H", blob, 1)[0]
     return Health(
