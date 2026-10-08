@@ -283,9 +283,9 @@ def _collector_paused() -> Generator[None]:
     """Hold the cyclic collector off while a store is parsed, then put it back as found.
 
     Parsing builds many thousands of small acyclic objects, each allocation
-    counting toward a collection that frees nothing: measured on a store of
-    1000 drives at 128 samples each, 2.24 s against 0.50 s with the collector
-    off. The state is restored in a ``finally`` and to whatever it was, so a
+    counting toward a collection that frees nothing, so with the collector on
+    the parse grows faster than the store does. The state is restored in a
+    ``finally`` and to whatever it was, so a
     caller that had already disabled the collector keeps it disabled.
     """
     was_enabled = gc.isenabled()
