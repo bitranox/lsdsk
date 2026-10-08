@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.7.0] 2026-10-08 10:27:22
+
 ### Added
 
 - **A `used by` column on the disks table, and a boot mark.** Every disk now reports whether the
