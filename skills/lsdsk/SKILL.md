@@ -544,9 +544,9 @@ the output format would be useless to a wrapper that uses both.
 
 That ranking is about a code the run DECIDED. A command already writing when the
 reader leaves exits `141` at that failing write, before it has decided anything -
-so `lsdsk config --section nosuch` piped into a reader that has gone leaves `141`
-and not `22`, because it prints the configuration before it discovers the section
-is missing. Judge a command line by running it with its output going somewhere
+`lsdsk config | head -c 0` leaves `141`, while `lsdsk config --section nosuch |
+head -c 0` leaves `22`, because that command refuses the missing section before it
+writes a byte. Judge a command line by running it with its output going somewhere
 that stays.
 
 Do not parse what did arrive, either. Whether any of the output reached the
