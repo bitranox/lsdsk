@@ -170,3 +170,61 @@ def test_a_registry_string_at_the_bound_is_kept() -> None:
     value = "y" * MAX_DEVICE_TEXT
     evidence = reader.read_environment(read_value=lambda _path, name: value if name == "SystemManufacturer" else "")
     assert evidence["dmi_vendor"] == value
+
+
+def _temperature_answer(size: int) -> bytes:
+    """A one-sensor temperature descriptor as the driver sends it, cut to ``size`` bytes."""
+    descriptor = api.STORAGE_TEMPERATURE_DATA_DESCRIPTOR()
+    descriptor.InfoCount = 1
+    descriptor.WarningTemperature = 70
+    descriptor.CriticalTemperature = 80
+    descriptor.TemperatureInfo[0].Temperature = 45
+    return bytes(descriptor)[:size]
+
+
+class _TemperatureKernel:
+    """A ``kernel32`` answering only the temperature property, with ``answer`` as its reply."""
+
+    def __init__(self, answer: bytes) -> None:
+        """Hold the reply."""
+        self.answer = answer
+
+    def DeviceIoControl(  # noqa: N802 - the Win32 name
+        self,
+        handle: int,
+        code: int,
+        in_buffer: object,
+        in_size: int,
+        out_buffer: object,
+        out_size: int,
+        returned: object,
+        overlapped: object,
+    ) -> int:
+        del handle, code, in_size, overlapped
+        if getattr(in_buffer, "_obj").PropertyId != api.STORAGE_DEVICE_TEMPERATURE_PROPERTY:  # noqa: B009 - CArgObject
+            return 0
+        ctypes.memmove(cast("ctypes.Array[ctypes.c_char]", out_buffer), self.answer, min(len(self.answer), out_size))
+        getattr(returned, "_obj").value = len(self.answer)  # noqa: B009 - the documented way to reach a byref's referent
+        return 1
+
+
+def _temperature_of(answer: bytes) -> dict[str, int]:
+    kernel32 = cast("api.WinLibrary", _TemperatureKernel(answer))
+    return reader._temperature(kernel32, 1)  # pyright: ignore[reportPrivateUsage] - the seam under test
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("size", [34, 36])
+def test_a_one_sensor_temperature_answer_is_read_at_the_exact_and_the_padded_size(size: int) -> None:
+    assert _temperature_of(_temperature_answer(size)) == {"temperature_c": 45, "warning_c": 70, "critical_c": 80}
+
+
+@pytest.mark.os_agnostic
+def test_a_temperature_answer_too_short_for_its_first_sensor_is_no_reading() -> None:
+    assert _temperature_of(_temperature_answer(33)) == {}
+
+
+@pytest.mark.os_agnostic
+def test_a_temperature_answer_with_no_sensor_is_no_reading() -> None:
+    descriptor = api.STORAGE_TEMPERATURE_DATA_DESCRIPTOR()
+    assert _temperature_of(bytes(descriptor)) == {}

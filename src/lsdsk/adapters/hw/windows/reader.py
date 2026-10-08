@@ -860,12 +860,21 @@ def _seek_penalty(kernel32: api.WinLibrary, handle: int) -> bool | None:
 
 
 def _temperature(kernel32: api.WinLibrary, handle: int) -> dict[str, int]:
-    """Read the device's temperature and its own thresholds, when offered."""
+    """Read the device's temperature and its own thresholds, when offered.
+
+    The answer is judged at the size the driver says it holds, not at the size
+    this module's padded structure happens to have: the structure ends in an
+    array of sensors, and a driver with one sensor sends the header plus one
+    sensor, two bytes short of the compiler's padded size.
+    """
     raw = query_property(kernel32, handle, api.STORAGE_DEVICE_TEMPERATURE_PROPERTY, 512)
-    if len(raw) < ctypes.sizeof(api.STORAGE_TEMPERATURE_DATA_DESCRIPTOR):
+    header = api.STORAGE_TEMPERATURE_DATA_DESCRIPTOR.TemperatureInfo.offset
+    if len(raw) < header:
         return {}
-    descriptor = api.STORAGE_TEMPERATURE_DATA_DESCRIPTOR.from_buffer_copy(raw)
-    if not descriptor.InfoCount:
+    descriptor = api.STORAGE_TEMPERATURE_DATA_DESCRIPTOR.from_buffer_copy(
+        raw.ljust(ctypes.sizeof(api.STORAGE_TEMPERATURE_DATA_DESCRIPTOR), b"\x00")
+    )
+    if not descriptor.InfoCount or len(raw) < header + ctypes.sizeof(api.STORAGE_TEMPERATURE_INFO):
         return {}
     values: dict[str, int] = {"temperature_c": descriptor.TemperatureInfo[0].Temperature}
     if descriptor.WarningTemperature:
