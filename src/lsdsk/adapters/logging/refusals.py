@@ -31,10 +31,16 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
 
 #: The library raises ``ValueError`` (pydantic's ``ValidationError`` is one) for a
-#: value it cannot use, and ``TypeError`` where a value has the wrong shape for a
-#: call it makes with it. Anything else is a fault in this tool or the library
-#: and is left to reach the handler that honours ``--traceback``.
-REFUSALS: Final = (ValueError, TypeError)
+#: value it cannot use, ``TypeError`` where a value has the wrong shape for a
+#: call it makes with it, and ``OverflowError`` where a value is the right shape
+#: but too large for a C-sized call: ``ring_buffer_size`` is handed straight to
+#: ``collections.deque(maxlen=...)``, whose ``maxlen`` is a C ``Py_ssize_t``, so
+#: an int past that range raises ``OverflowError`` rather than ``ValueError`` -
+#: measured with ``ring_buffer_size`` set to ``10**27``, which otherwise escaped
+#: as a bare ``OverflowError: Python int too large to convert to C ssize_t`` with
+#: no envelope. Anything else is a fault in this tool or the library and is left
+#: to reach the handler that honours ``--traceback``.
+REFUSALS: Final = (ValueError, TypeError, OverflowError)
 
 #: How the library prefixes a refusal from its settings resolver; it says nothing
 #: a reader of the warning needs.

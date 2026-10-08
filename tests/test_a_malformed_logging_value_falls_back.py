@@ -114,6 +114,56 @@ def test_the_fallback_names_the_shipped_value_in_force_instead(
 
 
 @pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    "key",
+    [
+        "LSDSK___LIB_LOG_RICH__RING_BUFFER_SIZE",
+        "LSDSK___LIB_LOG_RICH__QUEUE_MAXSIZE",
+    ],
+)
+def test_a_numeric_logging_value_too_large_for_a_c_sized_call_falls_back_too(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    control: Result,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    key: str,
+) -> None:
+    """Some numeric settings reach a C ``Py_ssize_t`` and raise ``OverflowError``, not ``ValueError``.
+
+    ``ring_buffer_size`` is handed straight to ``collections.deque(maxlen=...)``,
+    whose ``maxlen`` IS such a call, so a value past the platform's ``ssize_t``
+    range used to escape every handler: ``REFUSALS`` named only ``ValueError``
+    and ``TypeError``, so ``OverflowError: Python int too large to convert to C
+    ssize_t`` reached the top with an empty stdout and exit 70, confirmed on
+    this source with no fallback and no envelope. ``queue_maxsize`` reaches
+    ``queue.Queue(maxsize=...)``, which stores an oversized value without
+    converting it, so it is included here as the control that must keep
+    working with no warning at all - not every numeric setting shares the
+    fault, and the fix must not warn about one that never refused anything.
+
+    ``--history-file`` is pointed at `tmp_path` so this does not touch the
+    developer's own counter history.
+    """
+    history_file = tmp_path / "history.json"
+    get_config.cache_clear()
+    monkeypatch.setenv(key, "999999999999999999999999999")
+    result = _disks(cli_runner, production_factory, "--history-file", str(history_file))
+
+    said = _said(result)
+    if key == "LSDSK___LIB_LOG_RICH__QUEUE_MAXSIZE":
+        assert result.exit_code == control.exit_code, f"left {result.exit_code}: {said[-400:]}"
+        assert "lib_log_rich" not in said, f"queue_maxsize never refuses this value: {said}"
+        return
+    assert result.exit_code == control.exit_code, f"left {result.exit_code}: {said[-400:]}"
+    envelope = json.loads(result.stdout)
+    assert envelope["command"] == "disks"
+    assert "Warning: ignoring lib_log_rich.ring_buffer_size=999999999999999999999999999" in said, said
+    assert "OverflowError" not in said, f"the library's bare exception name is not a message for a reader: {said}"
+    assert lib_log_rich.runtime.is_initialised(), "the fallback left the run with no logging at all"
+
+
+@pytest.mark.os_agnostic
 def test_a_refused_logging_value_from_the_environment_falls_back_too(
     cli_runner: CliRunner,
     production_factory: Callable[[], Any],

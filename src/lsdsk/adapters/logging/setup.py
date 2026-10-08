@@ -315,6 +315,7 @@ def _start_runtime(configured: Mapping[str, object], shipped: Mapping[str, objec
     Raises:
         ValueError: The library's refusal, when nothing above could repair it.
         TypeError: Likewise.
+        OverflowError: Likewise, for a value too large for a C-sized call.
     """
     refused = _refused_by(configured)
     if refused is None:
