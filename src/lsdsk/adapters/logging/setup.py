@@ -8,7 +8,7 @@ Contents:
     * :func:`init_logging` - idempotent logging initialization with layered config.
     * :func:`run_log_demo` - one line per severity, on the same guarded console.
     * :func:`_build_runtime_config` - constructs RuntimeConfig from a ``[lib_log_rich]`` table.
-    * :func:`_start_runtime` - starts it, falling back on a value the library refuses.
+    * :func:`start_runtime` - starts it, falling back on a value the library refuses.
 
 System Role:
     Lives in the adapters/platform layer. All entry points (module execution,
@@ -226,7 +226,7 @@ def init_logging(config: Config) -> None:
         return
     lib_log_rich.config.enable_dotenv()
     configured, notes = _configured_section(config)
-    notes.extend(_start_runtime(configured, shipped_section(_SECTION)))
+    notes.extend(start_runtime(configured, shipped_section(_SECTION)))
     for note in notes:
         safe_console.echo(note, err=True)
     if lib_log_rich.runtime.is_initialised():
@@ -290,7 +290,7 @@ def _set_aside(names: Sequence[str]) -> Generator[None]:
         os.environ.update(kept)
 
 
-def _start_runtime(configured: Mapping[str, object], shipped: Mapping[str, object]) -> list[str]:
+def start_runtime(configured: Mapping[str, object], shipped: Mapping[str, object]) -> list[str]:
     """Start the runtime, falling back to the shipped settings for any value it refused.
 
     Logging is set up before any command runs, so a value the library refused
@@ -414,4 +414,5 @@ __all__ = [
     "LoggingConfigModel",
     "init_logging",
     "run_log_demo",
+    "start_runtime",
 ]
