@@ -9,8 +9,10 @@ disk undecidable rather than a false "not mounted".
 
 The two Win32 responses this issues (``VOLUME_DISK_EXTENTS`` and
 ``PARTITION_INFORMATION_EX``) are decoded by :mod:`.volume_layout`, which also
-owns the struct layouts this module sizes its ioctl buffers from; not one line
-of the I/O below can execute on a Linux or macOS runner.
+owns the struct layouts this module sizes its ioctl buffers from. Every Win32
+call here goes through the ``kernel32`` facade a caller hands in, so a fake of
+it runs this module on any runner and it is measured for coverage like the
+pure code, unlike :mod:`.reader`, whose device tree loads the real DLLs.
 
 This module's own two functions still key and name a volume by its GUID path;
 :func:`.reader.read_volumes_section` is where that GUID is rewritten to a

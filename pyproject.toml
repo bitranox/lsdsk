@@ -314,14 +314,15 @@ markers = [
 [tool.coverage.run]
 branch = true
 omit = [
-    # The Windows transport binds Windows DLLs and issues DeviceIoControl, so not
-    # one line of it can execute on a Linux or macOS runner. Counting it as
-    # uncovered measures which platform the suite ran on, not how well the code
-    # is tested. Its output is covered instead by a capture taken from a real
-    # Windows machine, which tests/test_hw_builder.py replays through the pure
-    # Windows builder; that builder is measured normally.
+    # The Windows transport binds Windows DLLs and issues DeviceIoControl, so most
+    # of it cannot execute on a Linux or macOS runner. Counting it as uncovered
+    # measures which platform the suite ran on, not how well the code is tested.
+    # Its output is covered instead by a capture taken from a real Windows
+    # machine, which tests/test_hw_builder.py replays through the pure Windows
+    # builder; that builder is measured normally. windows/volumes.py is NOT here:
+    # every call it makes goes through the kernel32 facade it is handed, so the
+    # fake in tests/test_windows_volume_reader.py runs it on every runner.
     "*/adapters/hw/windows/reader.py",
-    "*/adapters/hw/windows/volumes.py",
     "*/adapters/hw/windows/winapi.py",
     # The Linux transport is the same case: it needs a real /sys and real block
     # devices to issue ioctls against, neither of which a Windows or macOS runner

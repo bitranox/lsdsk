@@ -14,6 +14,7 @@ from __future__ import annotations
 import ctypes
 import json
 import struct
+import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
@@ -30,6 +31,18 @@ if TYPE_CHECKING:
     from lsdsk.domain.models import DiskUsage
 
 DRIVE_FIXED = 3
+ESP_TYPE = uuid.UUID("C12A7328-F81F-11D2-BA4B-00A0C93EC93B")
+BASIC_DATA_TYPE = uuid.UUID("EBD0A0A2-B9E5-4433-87C0-68B6B72699C7")
+
+
+def _gpt_partition(type_guid: uuid.UUID) -> bytes:
+    """PARTITION_INFORMATION_EX for a GPT partition: style at byte 0, PartitionType at byte 32, 144 in all."""
+    raw = bytearray(144)
+    raw[0:4] = (1).to_bytes(4, "little")
+    raw[32:48] = type_guid.bytes_le
+    return bytes(raw)
+
+
 ERROR_ACCESS_DENIED = 5
 ERROR_NOT_READY = 21
 
@@ -43,12 +56,15 @@ class FakeVolume:
         drive_type: What ``GetDriveTypeW`` answers for its first path.
         disks: Its extents' disk numbers, or ``None`` when that ioctl fails.
         openable: Whether ``CreateFileW`` opens it.
+        esp: Whether its GPT partition is the EFI System Partition, or ``None``
+            when the partition ioctl fails.
     """
 
     paths: tuple[str, ...] | None = ()
     drive_type: int = DRIVE_FIXED
     disks: tuple[int, ...] | None = (0,)
     openable: bool = True
+    esp: bool | None = None
 
 
 @dataclass
@@ -155,12 +171,16 @@ class FakeVolumeKernel:
         overlapped: object,
     ) -> int:
         del in_buffer, in_size, overlapped
-        if code != api.IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS:
+        volume = self.volumes[self._handles[handle]]
+        if code == api.IOCTL_DISK_GET_PARTITION_INFO_EX:
+            answer = _gpt_partition(ESP_TYPE if volume.esp else BASIC_DATA_TYPE) if volume.esp is not None else None
+        elif code == api.IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS and volume.disks is not None:
+            disks = volume.disks
+            answer = struct.pack("<I4x", len(disks)) + b"".join(struct.pack("<I4xqq", d, 0, 1 << 30) for d in disks)
+        else:
+            answer = None
+        if answer is None:
             return 0
-        disks = self.volumes[self._handles[handle]].disks
-        if disks is None:
-            return 0
-        answer = struct.pack("<I4x", len(disks)) + b"".join(struct.pack("<I4xqq", d, 0, 1 << 30) for d in disks)
         assert len(answer) <= out_size
         ctypes.memmove(out_buffer, answer, len(answer))
         getattr(returned, "_obj").value = len(answer)  # noqa: B009 - a CArgObject's referent
@@ -321,3 +341,42 @@ def test_the_boot_disk_is_still_found_through_the_ordinal_join() -> None:
     usage = _usage(fake, "PhysicalDrive1")
     assert usage is not None
     assert usage.boot is True
+
+
+@pytest.mark.os_agnostic
+def test_an_efi_system_partition_marks_its_disk_boot_though_windows_lives_elsewhere() -> None:
+    fake = FakeVolumeKernel(
+        {
+            VOLUME_C: FakeVolume(paths=("C:\\",), disks=(0,)),
+            VOLUME_X: FakeVolume(paths=(), disks=(1,), esp=True),
+        },
+        windows_volume=VOLUME_C,
+    )
+    usage = _usage(fake, "PhysicalDrive1")
+    assert usage is not None
+    assert usage.boot is True
+
+
+@pytest.mark.os_agnostic
+def test_a_partition_of_another_type_does_not_mark_its_disk_boot() -> None:
+    """The control: it is the ESP type that marks boot, not a partition answering at all."""
+    fake = FakeVolumeKernel(
+        {
+            VOLUME_C: FakeVolume(paths=("C:\\",), disks=(0,)),
+            VOLUME_X: FakeVolume(paths=(), disks=(1,), esp=False),
+        },
+        windows_volume=VOLUME_C,
+    )
+    usage = _usage(fake, "PhysicalDrive1")
+    assert usage is not None
+    assert usage.boot is False
+    assert _read(fake)[VOLUME_X]["esp"] is False
+
+
+@pytest.mark.os_agnostic
+def test_a_volume_whose_extents_cannot_be_read_records_why_and_leaves_disks_undecided() -> None:
+    fake = FakeVolumeKernel({VOLUME_X: FakeVolume(paths=("X:\\",), disks=None)})
+    entry = _read(fake)[VOLUME_X]
+    assert entry["disks"] == []
+    assert entry["error"].startswith("could not read the volume's disk extents")
+    assert _usage(fake, "PhysicalDrive1") is None
