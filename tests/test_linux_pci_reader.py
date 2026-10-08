@@ -22,7 +22,10 @@ from pathlib import Path
 import pytest
 
 from lsdsk.adapters.hw.decode import ahci
+from lsdsk.adapters.hw.linux.builder import build_controllers
+from lsdsk.adapters.hw.linux.capture import LinuxCapture
 from lsdsk.adapters.hw.linux.reader import read_classes, read_pci
+from lsdsk.adapters.hw.snapshot import parse_capture
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 
@@ -146,6 +149,41 @@ class TestChildEnumeration:
         entry = read_pci(tmp_path)["0000:00:01.0"]
 
         assert entry["children"] == ["0000:05:00.0"]
+
+    def test_an_address_named_file_or_dangling_link_is_never_collected_as_a_child(self, tmp_path: Path) -> None:
+        bridge = _device(tmp_path, "0000:00:01.0", **{"class": "0x060400"})
+        (bridge / "0000:05:00.0").mkdir()
+        (bridge / "0000:05:00.1").write_text("not a directory\n", encoding="utf-8")
+        (bridge / "0000:05:00.2").symlink_to(tmp_path / "nowhere")
+
+        entry = read_pci(tmp_path)["0000:00:01.0"]
+
+        assert entry["children"] == ["0000:05:00.0"]
+
+    def test_the_entry_path_is_the_resolved_device_directory(self, tmp_path: Path) -> None:
+        real = _device(tmp_path / "devices" / "pci0000:00" / "0000:00:01.0", "0000:01:00.0", **{"class": "0x010601"})
+        bus = tmp_path / "bus"
+        bus.mkdir()
+        (bus / "0000:01:00.0").symlink_to(real)
+
+        entry = read_pci(bus)["0000:01:00.0"]
+
+        assert entry["path"] == os.path.realpath(real)
+        assert entry["path"] != str(bus / "0000:01:00.0")
+
+    def test_the_resolved_path_is_what_names_a_controllers_upstream_bridge(self, tmp_path: Path) -> None:
+        real = _device(tmp_path / "devices" / "pci0000:00" / "0000:00:01.0", "0000:01:00.0", **{"class": "0x010601"})
+        bus = tmp_path / "bus"
+        bus.mkdir()
+        (bus / "0000:01:00.0").symlink_to(real)
+        capture = parse_capture(
+            {"schema": 2, "platform": "linux", "hostname": "example", "kernel": "6.1.0", "pci": read_pci(bus)}
+        )
+        assert isinstance(capture, LinuxCapture)
+
+        (controller,) = build_controllers(capture)
+
+        assert controller.upstream_address == "0000:00:01.0"
 
     def test_a_device_with_no_children_carries_no_children_key(self, tmp_path: Path) -> None:
         _device(tmp_path, "0000:00:1f.2", **{"class": "0x010601"})
