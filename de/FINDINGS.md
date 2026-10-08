@@ -213,8 +213,10 @@ werden, wenn kein Laufwerk durch einen eigenen Fehler eine Nutzung dieser Platte
 könnte: Ein Laufwerk, das sich nicht öffnen liess oder dessen Extents-Abfrage fehlschlug,
 blockiert die Aussage weiterhin, ausser es hat gar keinen Pfad oder sein Laufwerkstyp ist ein
 CD-ROM- oder ein RAM-Laufwerk - keines von beiden könnte ohnehin hinter dem Buchstaben eines
-Laufwerks sitzen. Ein Laufwerk, dessen eigene Pfadliste sich nicht lesen liess, blockiert die
-Aussage ausnahmslos. Ein Container zeigt immer `-`: Die Nutzung seiner Platten durch den Wirt ist
+Laufwerks sitzen. Ein Laufwerk ohne Pfad, das als EFI-Systempartition gelesen wurde, blockiert
+sie trotzdem: Die ESP hat absichtlich keinen Buchstaben, und eine ESP auf unbekannter Platte
+könnte die Startmarke jeder Platte sein. Ein Laufwerk, dessen eigene Pfadliste sich nicht lesen
+liess, blockiert die Aussage ausnahmslos. Ein Container zeigt immer `-`: Die Nutzung seiner Platten durch den Wirt ist
 eine Tatsache über den Wirt, von innen eines gemeinsamen Kernels nicht sichtbar.
 
 Der Start wird auf jeder Plattform anders entschieden, weil beide unterschiedliche Belege

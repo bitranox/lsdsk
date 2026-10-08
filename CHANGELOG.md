@@ -12,6 +12,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   encoding put invalid UTF-8 into `/proc/self/mountinfo`, and every command that reads the disks
   failed with exit 22 and no report for any disk. Such a byte now shows as a replacement character
   in that one mount path; `/proc/swaps` is read the same way.
+- **An EFI system partition whose disk cannot be read no longer hides the boot disk on Windows.**
+  The partition carries no drive letter, and a failure on a volume without one was ignored, so
+  when Windows named the partition as the EFI system partition but refused to say which disk it
+  sits on, that disk showed `not mounted` and no boot mark. Such a failure now leaves every disk
+  with nothing found as `-`. A letterless volume that is not an EFI system partition is still
+  ignored, so a hidden recovery volume does not blank the column.
 - **A failed volume enumeration no longer reads as "not mounted" on Windows.** When Windows
   refused to list the volumes, or stopped part-way through with an error rather than at the end
   of the list, the volumes it did return were taken as all of them, so every disk on a volume it

@@ -380,3 +380,40 @@ def test_a_volume_whose_extents_cannot_be_read_records_why_and_leaves_disks_unde
     assert entry["disks"] == []
     assert entry["error"].startswith("could not read the volume's disk extents")
     assert _usage(fake, "PhysicalDrive1") is None
+
+
+def _esp_beside_c(esp_volume: FakeVolume) -> FakeVolumeKernel:
+    """Windows on disk 0 behind C:, and a second volume with no letter on disk 1."""
+    return FakeVolumeKernel(
+        {VOLUME_C: FakeVolume(paths=("C:\\",), disks=(0,)), VOLUME_X: esp_volume},
+        windows_volume=VOLUME_C,
+    )
+
+
+@pytest.mark.os_agnostic
+def test_an_esp_whose_disk_cannot_be_read_leaves_the_disks_undecided() -> None:
+    """A known ESP on an unknown disk could be any disk's boot mark, letter or not."""
+    fake = _esp_beside_c(FakeVolume(paths=(), disks=None, esp=True))
+    entry = _read(fake)[VOLUME_X]
+    assert entry["esp"] is True
+    assert entry["error"].startswith("could not read the volume's disk extents")
+    assert _usage(fake, "PhysicalDrive1") is None
+
+
+@pytest.mark.os_agnostic
+def test_a_letterless_volume_that_is_not_an_esp_still_does_not_block() -> None:
+    """The control: a hidden recovery or reserved volume failing keeps "not mounted" decidable."""
+    fake = _esp_beside_c(FakeVolume(paths=(), disks=None, esp=False))
+    usage = _usage(fake, "PhysicalDrive1")
+    assert usage is not None
+    assert (usage.boot, usage.uses) == (False, ())
+
+
+@pytest.mark.os_agnostic
+def test_a_letterless_volume_that_refuses_to_open_still_does_not_block() -> None:
+    """The control: a volume never opened carries no ESP reading, so it is not taken for one."""
+    fake = _esp_beside_c(FakeVolume(paths=(), disks=None, openable=False))
+    assert "esp" not in _read(fake)[VOLUME_X]
+    usage = _usage(fake, "PhysicalDrive1")
+    assert usage is not None
+    assert (usage.boot, usage.uses) == (False, ())

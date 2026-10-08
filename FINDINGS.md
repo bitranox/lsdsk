@@ -187,7 +187,9 @@ every one of its partitions' device numbers were read; miss any of those and a d
 nothing found reads `-` instead. On Windows it can only be made once no volume's failure could
 be hiding a use of that disk: a volume that failed to open, or whose disk extents query failed,
 still blocks the claim unless it has no path at all or its drive type is a CD-ROM or a RAM
-disk, neither of which could sit behind a volume's letter anyway. A volume whose own path list
+disk, neither of which could sit behind a volume's letter anyway. A volume with no path that
+was read as the EFI system partition still blocks it: the ESP carries no letter by design, and
+an ESP whose disk is unknown could be any disk's boot mark. A volume whose own path list
 could not be read blocks the claim outright, with no exception. A container always reads `-`:
 the host's use of its disks is a fact about the host, invisible from inside a shared kernel.
 

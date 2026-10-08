@@ -106,7 +106,11 @@ def _blocks_not_mounted(entry: VolumeEntry) -> bool:
     that failed to open or to report its extents could sit on any disk, unless
     it is an optical drive or a RAM disk, or answers to no path at all: those
     are nothing a reader looks for under a letter, and a machine's every
-    hidden recovery or reserved volume would otherwise blank the column.
+    hidden recovery or reserved volume would otherwise blank the column. An
+    EFI System Partition is the exception to "no path at all": it carries no
+    letter by design, and a known ESP on an unknown disk could be any disk's
+    boot mark. Only an ESP the reader actually READ as one counts - a volume
+    that would not open carries no partition reading, and is not taken for one.
 
     Args:
         entry: One volume the reader enumerated.
@@ -116,7 +120,11 @@ def _blocks_not_mounted(entry: VolumeEntry) -> bool:
     """
     if entry.paths_error is not None:
         return True
-    if entry.error is None or not entry.paths:
+    if entry.error is None:
+        return False
+    if entry.esp is True:
+        return True
+    if not entry.paths:
         return False
     return entry.drive_type not in _DISKLESS_DRIVE_TYPES
 
