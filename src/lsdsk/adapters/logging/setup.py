@@ -51,6 +51,7 @@ from .refusals import (
     variable_sentence,
     with_shipped_values,
 )
+from .string_forms import with_documented_forms
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator, Sequence
@@ -248,7 +249,7 @@ def _configured_section(config: Config) -> tuple[dict[str, object], list[str]]:
     """
     raw: object = config.get(_SECTION, default={})
     if isinstance(raw, Mapping):
-        return dict(cast("Mapping[str, object]", raw)), []
+        return with_documented_forms(cast("Mapping[str, object]", raw)), []
     note = RejectedValue(
         dotted=_SECTION, raw=visible_text(rendered(raw)), reason="not a table", used="the shipped logging settings"
     )
