@@ -712,12 +712,31 @@ work fixes nothing.
 Rates are per power-on hour of the drive, not per hour of wall clock, so they
 hold on a machine that is mostly switched off.
 
-**`trend --format json` does not carry the trend.** Every reporting command
-returns the same machine-wide envelope, and none of its fields is the verdict,
-the rate or the `were due` figure - those exist in the human table only. A
-rising counter reaches JSON only where it also produced a finding, inside that
-finding's `detail`. Drive an automated decision from `findings`, and read the
-human table when you need the rate.
+**`trend --format json` carries the trend in `data.trend`**, one entry per
+row of the table. Each names the `device` and the `counter` - `crc_errors`
+(the table's `interface CRC`), `reallocated_sectors`, `pending_sectors`,
+`uncorrectable_sectors`, `media_errors` or `percent_used` - and its `trend`
+holds the `verdict` (`rising`, `quiet`, `too-close`, `first-sample` or `reset`),
+`latest` (the total), `delta`, `span_hours`, `per_hour` (the rate) and
+`expected_from_lifetime` (the `were due` figure), each `null` where the table
+shows a dash:
+
+```json
+        "device": "/dev/sdc",
+        "counter": "crc_errors",
+        "trend": {
+          "kind": "crc_errors",
+          "verdict": "rising",
+          "latest": 99361,
+          "delta": 16,
+          "span_hours": 16,
+          "per_hour": 1.0,
+          "expected_from_lifetime": null
+        }
+```
+
+Every other command carries `"trend": null`. Never scrape the table for a rate:
+drive a rate threshold from `data.trend`.
 
 `trend` says what is moving; `lsdsk findings` says how bad it is and what to do,
 already graded by the same history. Pair them: pick the drive from `trend`,

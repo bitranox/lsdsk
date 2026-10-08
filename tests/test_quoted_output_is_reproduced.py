@@ -292,6 +292,14 @@ QUOTED: tuple[QuotedBlock, ...] = (
         exit_code=1,
         history=_SAS_HISTORY,
     ),
+    QuotedBlock(
+        document="skills/lsdsk/SKILL.md",
+        first_line='        "device": "/dev/sdc",',
+        argv=("trend", "--format", "json", *_replay("linux-sas-hba-later")),
+        width=160,
+        exit_code=1,
+        history=_SAS_HISTORY,
+    ),
 )
 
 #: Output-shaped blocks that are deliberately NOT tool output, each with why.
