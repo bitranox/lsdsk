@@ -9,6 +9,7 @@ grow without bound.
 
 from __future__ import annotations
 
+import gc
 import itertools
 import json
 import os
@@ -687,3 +688,72 @@ def test_a_store_naming_one_drive_twice_is_read_as_one_series_and_written_back_a
     stored = json.loads(store.read_text(encoding="utf-8"))["series"]
     assert [series["identity"] for series in stored] == ["naa.1", "naa.2"], stored
     assert [sample["power_on_hours"] for sample in stored[0]["samples"]] == [1, 2, 5], stored[0]
+
+
+def _collections_during(action: Any) -> int:
+    """Count the cyclic collections that start while `action` runs."""
+    started: list[str] = []
+
+    def note(phase: str, info: dict[str, int]) -> None:
+        if phase == "start":
+            started.append(phase)
+
+    gc.callbacks.append(note)
+    try:
+        action()
+    finally:
+        gc.callbacks.remove(note)
+    return len(started)
+
+
+def _big_store(tmp_path: Path) -> Path:
+    series = tuple(
+        DiskSeries(
+            identity=f"naa.{drive}",
+            model="X",
+            samples=tuple(Sample(power_on_hours=hour, captured_at="2020-01-01T00:00:00Z") for hour in range(1, 65)),
+        )
+        for drive in range(60)
+    )
+    path = tmp_path / "history.json"
+    save_history(History(hostname="box", series=series), path)
+    return path
+
+
+@pytest.mark.os_agnostic
+def test_parsing_a_store_runs_no_cyclic_collection(tmp_path: Path) -> None:
+    """The parse allocates thousands of acyclic objects; collecting among them is pure cost."""
+    store = _big_store(tmp_path)
+
+    during_load = _collections_during(lambda: load_history(store, hostname="box"))
+    # The control: the same process, collector enabled, allocating comparably,
+    # does collect, so a zero above is the pause and not a quiet interpreter.
+    during_allocation = _collections_during(lambda: [[index] for index in range(50_000)])
+
+    assert during_allocation > 0, "the instrument saw no collection at all, so zero proved nothing"
+    assert during_load == 0
+
+
+def _set_collector(*, enabled: bool) -> None:
+    if enabled:
+        gc.enable()
+    else:
+        gc.disable()
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("was_enabled", [True, False])
+def test_loading_a_store_leaves_the_collector_as_it_found_it(tmp_path: Path, was_enabled: bool) -> None:
+    store = _big_store(tmp_path)
+    bad = tmp_path / "bad.json"
+    bad.write_text("{", encoding="utf-8")
+    before = gc.isenabled()
+    try:
+        _set_collector(enabled=was_enabled)
+        load_history(store, hostname="box")
+        assert gc.isenabled() is was_enabled
+        with pytest.raises(ConfigurationError, match="Could not read the history store"):
+            load_history(bad, hostname="box")
+        assert gc.isenabled() is was_enabled, "a refused store left the collector changed"
+    finally:
+        _set_collector(enabled=before)
