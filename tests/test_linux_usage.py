@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import json
+import signal
+import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import pytest
 
 from lsdsk.adapters.hw.linux.capture import LinuxCapture
 from lsdsk.adapters.hw.linux.usage import resolve_usage
 from lsdsk.domain.enums import Environment, UseKind
-from lsdsk.domain.models import DiskUse
+from lsdsk.domain.models import DiskUsage, DiskUse
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def _capture(block: dict[str, Any], **extra: Any) -> LinuxCapture:
@@ -40,6 +45,29 @@ def _mount(dev: str, mountpoint: str, fstype: str = "ext4", source: str = "") ->
 
 
 BARE_METAL = Environment.BARE_METAL
+
+_T = TypeVar("_T")
+
+
+def _within_seconds(seconds: float, call: Callable[[], _T]) -> _T:
+    """Run ``call``, failing rather than hanging if it outlives ``seconds``.
+
+    The bound is a timer the resolver cannot see, so a cycle guard that stops
+    working fails this arm by name instead of spinning the whole suite.
+    """
+    assert sys.platform != "win32", "SIGALRM is POSIX-only; mark the caller os_posix"
+
+    def expire(signum: int, frame: object) -> None:
+        del signum, frame
+        raise TimeoutError(f"still running after {seconds} s")
+
+    previous = signal.signal(signal.SIGALRM, expire)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        return call()
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 @pytest.mark.os_agnostic
@@ -565,3 +593,33 @@ def test_the_control_for_an_unread_stacked_closure_carries_its_partition_s_mount
     sda = usage["sda"]
     assert sda is not None
     assert sda.uses == (DiskUse(kind=UseKind.MD, name="md126", mounts=("/srv",)),)
+
+
+@pytest.mark.os_posix  # bounded by SIGALRM, which Windows does not have; the resolver itself is platform-neutral
+def test_a_device_mapper_cycle_ends_and_reports_each_mount_once() -> None:
+    # dm-0 and dm-1 each list the other as a holder. Nothing the kernel builds
+    # looks like this, but a capture is untrusted input, and the walk below a
+    # holder must end on it rather than revisit the pair forever.
+    capture = _capture(
+        block={"sda": _disk("8:0", holders=("dm-0",))},
+        mounts=[_mount("253:1", "/srv")],
+        stacked={
+            "dm-0": {"dev": "253:0", "dm_name": "vg0-a", "dm_uuid": "LVM-a", "holders": ["dm-1"]},
+            "dm-1": {"dev": "253:1", "dm_name": "vg0-b", "dm_uuid": "LVM-b", "holders": ["dm-0"]},
+        },
+    )
+    usage = _within_seconds(5, lambda: resolve_usage(capture, BARE_METAL))
+    assert usage["sda"] == DiskUsage(uses=(DiskUse(kind=UseKind.LVM, name="vg0", mounts=("/srv",)),))
+
+
+@pytest.mark.os_agnostic
+def test_a_holder_missing_from_the_stacked_table_ends_the_walk_there() -> None:
+    # dm-0 names dm-9 as its holder, but the capture recorded no dm-9: the walk
+    # keeps what it reached and does not invent anything below it.
+    capture = _capture(
+        block={"sda": _disk("8:0", holders=("dm-0",))},
+        mounts=[_mount("253:0", "/data")],
+        stacked={"dm-0": {"dev": "253:0", "dm_name": "vg0-data", "dm_uuid": "LVM-a", "holders": ["dm-9"]}},
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    assert usage["sda"] == DiskUsage(uses=(DiskUse(kind=UseKind.LVM, name="vg0", mounts=("/data",)),))
