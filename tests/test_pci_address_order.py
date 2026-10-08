@@ -52,6 +52,14 @@ def test_a_root_bus_label_sorts_ahead_of_the_devices_on_it() -> None:
     ]
 
 
+def test_a_domain_of_fewer_than_four_digits_is_not_an_address() -> None:
+    # sysfs pads a domain to four digits at least, so a shorter one names no
+    # device; read as an address it would sort among real ones as domain 1.
+    for short in ("1:03:00.0", "000:03:00.0", "1:03"):
+        assert pci_address_order(short).not_an_address, short
+    assert not pci_address_order("0000:03:00.0").not_an_address
+
+
 def test_an_identifier_that_is_not_an_address_sorts_after_every_address() -> None:
     instance = r"PCI\VEN_1AF4&DEV_1000\3&13c0b0c5&0&50"
     assert _ordered(instance, "unplaced", "10000:e1:00.0", "0000:00:00.0") == [
