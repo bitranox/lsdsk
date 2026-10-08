@@ -35,16 +35,14 @@ def _release_a_blocked_reader(fifo: Path) -> None:
         os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
 
 
-@pytest.mark.skipif(not HAS_FIFO, reason="a FIFO needs os.mkfifo")
-def test_a_fifo_given_as_the_store_is_refused_rather_than_waited_on(tmp_path: Path) -> None:
-    fifo = tmp_path / "history.json"
-    os.mkfifo(fifo)
+def _load_without_blocking(store: Path, fifo: Path) -> BaseException | History:
+    """Load ``store``, failing by name if the read blocks on ``fifo`` waiting for a writer."""
     outcome: list[BaseException | History] = []
 
     def load() -> None:
         try:
-            outcome.append(load_history(fifo, hostname="box"))
-        except Exception as error:  # recorded and asserted on below
+            outcome.append(load_history(store, hostname="box"))
+        except Exception as error:  # recorded and asserted on by the caller
             outcome.append(error)
 
     # Bounded by this test's own join rather than by the code under test, so a
@@ -57,9 +55,42 @@ def test_a_fifo_given_as_the_store_is_refused_rather_than_waited_on(tmp_path: Pa
     finally:
         _release_a_blocked_reader(fifo)
         reader.join(timeout=5)
+    assert len(outcome) == 1, f"came back as {outcome!r}"
+    return outcome[0]
 
-    assert len(outcome) == 1 and isinstance(outcome[0], ConfigurationError), f"came back as {outcome!r}"
-    assert "not a regular file" in str(outcome[0]), f"refused for another reason: {outcome[0]}"
+
+@pytest.mark.skipif(not HAS_FIFO, reason="a FIFO needs os.mkfifo")
+def test_a_fifo_given_as_the_store_is_refused_rather_than_waited_on(tmp_path: Path) -> None:
+    fifo = tmp_path / "history.json"
+    os.mkfifo(fifo)
+
+    outcome = _load_without_blocking(fifo, fifo)
+
+    assert isinstance(outcome, ConfigurationError), f"came back as {outcome!r}"
+    assert "not a regular file" in str(outcome), f"refused for another reason: {outcome}"
+
+
+@pytest.mark.skipif(not HAS_FIFO, reason="a FIFO needs os.mkfifo")
+def test_a_store_swapped_for_a_fifo_after_its_check_is_refused_too(tmp_path: Path) -> None:
+    """The check and the open used to ask the PATH at two moments, so a FIFO swapped in between was opened.
+
+    Somebody who can write the history directory can make that swap, and every
+    command reading the history then hangs. The swap is simulated by a path whose
+    ``stat`` still answers for the regular store while the name it opens is a FIFO.
+    """
+    real = tmp_path / "real.json"
+    save_history(History(hostname="box"), real)
+    fifo = tmp_path / "history.json"
+    os.mkfifo(fifo)
+
+    class CheckedBeforeTheSwap(type(fifo)):  # the concrete PosixPath, which a subclass needs before 3.12
+        def stat(self, *, follow_symlinks: bool = True) -> os.stat_result:
+            return real.stat(follow_symlinks=follow_symlinks)
+
+    outcome = _load_without_blocking(CheckedBeforeTheSwap(fifo), fifo)
+
+    assert isinstance(outcome, ConfigurationError), f"came back as {outcome!r}"
+    assert "not a regular file" in str(outcome), f"refused for another reason: {outcome}"
 
 
 @pytest.mark.skipif(not HAS_FIFO, reason="a FIFO needs os.mkfifo")

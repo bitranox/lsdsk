@@ -51,7 +51,7 @@ from ...domain.errors import ConfigurationError, MissingFileError
 from ...domain.history import DiskSeries, History, Sample, merge_duplicate_series, thin
 from ...domain.text import MAX_DEVICE_TEXT, visible_text
 from ..atomicfile import replace_atomically
-from ..textfile import MAX_INPUT_BYTES, fits_a_bounded_read, read_json_bounded
+from ..textfile import MAX_INPUT_BYTES, NotARegularFileError, fits_a_bounded_read, read_json_bounded
 from ..validation import BOUNDED, MAX_ENTRIES, what_is_wrong_with_it
 
 HISTORY_SCHEMA_VERSION = 1
@@ -275,7 +275,11 @@ def load_history(path: Path, *, hostname: str, cap: int = MAX_SAMPLES_PER_DRIVE)
     """
     _refuse_a_store_that_is_not_a_file(path)
     try:
-        payload: Any = read_json_bounded(path, what="a history store")
+        payload: Any = read_json_bounded(path, what="a history store", regular_file_only=True)
+    except NotARegularFileError as error:
+        # The same refusal as the path check above, met on the open descriptor:
+        # a FIFO put at the path after that check would otherwise block here.
+        raise _not_a_store(path) from error
     # Asked of the READ rather than of path.exists(), which answers False for a
     # store this process may not look at exactly as it does for one that was
     # never written: the OSError is swallowed inside it. Read as absent, an
@@ -349,11 +353,16 @@ def _refuse_a_store_that_is_not_a_file(path: Path) -> None:
     except OSError:
         return
     if not stat.S_ISREG(mode):
-        message = (
-            f"{path} is not a regular file, so it cannot be a history store. "
-            "Point --history-file at a file, or at a path where one can be created."
-        )
-        raise ConfigurationError(message)
+        raise _not_a_store(path)
+
+
+def _not_a_store(path: Path) -> ConfigurationError:
+    """The refusal for a store path that names anything but a regular file."""
+    message = (
+        f"{path} is not a regular file, so it cannot be a history store. "
+        "Point --history-file at a file, or at a path where one can be created."
+    )
+    return ConfigurationError(message)
 
 
 def _capped(series: DiskSeries, cap: int) -> DiskSeries:

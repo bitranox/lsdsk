@@ -21,12 +21,16 @@ Contents:
     * :func:`read_json_bounded` - the same read, parsed, refusing a repeated key.
     * :func:`fits_a_bounded_read` - whether a file this tool is about to write
       is one it could read back.
+    * :class:`NotARegularFileError` - what a read that asked for a regular file
+      found instead.
 """
 
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, Final
+import os
+import stat
+from typing import TYPE_CHECKING, Any, BinaryIO, Final
 
 from lsdsk.domain.errors import ConfigurationError, MissingFileError
 from lsdsk.domain.text import visible_text
@@ -74,6 +78,16 @@ _BOM_CODECS: Final[tuple[tuple[bytes, str], ...]] = (
 # and tens of gigabytes an unbounded count cost - and a document past either
 # bound is still refused in this tool's own words.
 MAX_INPUT_BYTES = 64 * 1024 * 1024
+
+#: Open flags for a read that must not wait on a pipe. Non-blocking makes a FIFO
+#: open at once, writer or not, so it can be refused rather than waited on; a
+#: regular file ignores the flag. ``O_BINARY`` keeps Windows' C runtime from
+#: translating line endings under a descriptor ``os.fdopen`` reads as bytes.
+_OPEN_WITHOUT_WAITING = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+
+
+class NotARegularFileError(ConfigurationError):
+    """A read that asked for a regular file opened something else - a FIFO, a device, a directory."""
 
 
 def fits_a_bounded_read(body: str) -> bool:
@@ -154,7 +168,7 @@ def read_text_bounded(path: Path, *, what: str, errors: str = "strict") -> str:
     return _read_bytes_bounded(path, what=what).decode("utf-8", errors=errors)
 
 
-def _read_bytes_bounded(path: Path, *, what: str) -> bytes:
+def _read_bytes_bounded(path: Path, *, what: str, regular_file_only: bool = False) -> bytes:
     """Read a file's bytes, refusing one too large to be what it claims.
 
     Shared by :func:`read_text_bounded`, which always assumes UTF-8, and
@@ -172,12 +186,16 @@ def _read_bytes_bounded(path: Path, *, what: str) -> bytes:
     Args:
         path: The file to read.
         what: What the file was expected to be, for the refusal message.
+        regular_file_only: Refuse whatever the path opens to unless it is a
+            regular file, judged on the OPEN descriptor.
 
     Returns:
         The file's raw bytes.
 
     Raises:
         MissingFileError: If the file is not there.
+        NotARegularFileError: If ``regular_file_only`` and the path opened to
+            anything else.
         ConfigurationError: If the file cannot be read, or is larger than
             :data:`MAX_INPUT_BYTES`.
     """
@@ -194,7 +212,7 @@ def _read_bytes_bounded(path: Path, *, what: str) -> bytes:
         raise ConfigurationError(message)
 
     try:
-        with path.open("rb") as handle:
+        with _open_regular_file(path, what=what) if regular_file_only else path.open("rb") as handle:
             # One byte past the ceiling: enough to know the file is over it
             # without ever holding more than that, which is the same shape
             # ``read_bundled_pci_ids`` uses for the decompressed database.
@@ -213,7 +231,7 @@ def _read_bytes_bounded(path: Path, *, what: str) -> bytes:
     return raw
 
 
-def read_json_bounded(path: Path, *, what: str) -> Any:
+def read_json_bounded(path: Path, *, what: str, regular_file_only: bool = False) -> Any:
     """Read a bounded file and parse it as JSON, refusing one that repeats a key.
 
     JSON says nothing about an object naming one key twice, and CPython
@@ -235,6 +253,8 @@ def read_json_bounded(path: Path, *, what: str) -> Any:
     Args:
         path: The file to read.
         what: What the file was expected to be, for the refusal message.
+        regular_file_only: Refuse a FIFO, device or directory without waiting
+            on it. Off for ``--replay``, which is fed from a pipe on purpose.
 
     Returns:
         Whatever the document holds, untyped as JSON always is; the caller's
@@ -242,6 +262,8 @@ def read_json_bounded(path: Path, *, what: str) -> Any:
 
     Raises:
         MissingFileError: If the file is not there.
+        NotARegularFileError: If ``regular_file_only`` and the path opened to
+            anything but a regular file.
         ConfigurationError: If the file cannot be read or is too large.
         ValueError: If any object in it names one key twice. Left as the
             plain error `json.loads` already raises for a malformed number,
@@ -259,7 +281,7 @@ def read_json_bounded(path: Path, *, what: str) -> Any:
         ...
         ValueError: the key 'a' is given twice in one object
     """
-    text = _decode_bounded_bytes_by_bom(_read_bytes_bounded(path, what=what))
+    text = _decode_bounded_bytes_by_bom(_read_bytes_bounded(path, what=what, regular_file_only=regular_file_only))
     return json.loads(text, object_pairs_hook=_object_without_repeated_keys)
 
 
@@ -340,4 +362,26 @@ def _unreadable(path: Path, what: str, error: OSError) -> ConfigurationError:
     return ConfigurationError(message)
 
 
-__all__ = ["MAX_INPUT_BYTES", "fits_a_bounded_read", "read_json_bounded", "read_text_bounded"]
+def _open_regular_file(path: Path, *, what: str) -> BinaryIO:
+    """Open ``path`` for reading, refusing it unless the descriptor is a regular file.
+
+    Judged on the descriptor rather than the path: a check of the path and an
+    open of the path ask at two moments, and a FIFO put there in between was
+    opened, which blocks until something writes to it. Opened without waiting,
+    so even that FIFO answers at once and is refused here.
+
+    Raises:
+        NotARegularFileError: If the descriptor is anything but a regular file.
+        OSError: If the path cannot be opened, for the caller to classify.
+    """
+    descriptor = os.open(path, _OPEN_WITHOUT_WAITING)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise NotARegularFileError(f"{path} is not a regular file, so it cannot be {what}.")
+        return os.fdopen(descriptor, "rb")
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+__all__ = ["MAX_INPUT_BYTES", "NotARegularFileError", "fits_a_bounded_read", "read_json_bounded", "read_text_bounded"]

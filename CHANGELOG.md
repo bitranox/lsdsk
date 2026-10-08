@@ -22,6 +22,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   code lsdsk does not document, so a monitoring check read a bug in the tool as a mistake in its
   own command line. Only an operating-system error, an interrupt or a stated exit still leaves
   its own code.
+- **A FIFO swapped in for the history store can no longer hang every command.** The store was
+  checked to be a regular file and then opened by name, so a FIFO put at that path in between was
+  opened and the read waited for a writer forever. The check is now made on the opened file
+  itself, which is opened without waiting, so the swap is refused with the same message as a
+  FIFO given outright. `--replay` still reads from a pipe.
 
 ## [1.7.0] 2026-10-08 10:27:22
 
