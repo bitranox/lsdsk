@@ -374,6 +374,16 @@ def cli(
     pytest's scanner does not reach it. The behaviour above is covered for real
     in ``tests/test_cli_core.py``.
     """
+    # Applied before anything else runs, not after the configuration is loaded
+    # and logging is started: a crash inside either of those used to escape with
+    # --traceback given and print the same one-line summary a plain run would,
+    # because lib_cli_exit_tools.config.traceback was not synced from the flag
+    # yet. The two refusals that already print one line on purpose - a damaged
+    # installation, a configuration file this tool cannot parse - raise
+    # RefusedBeforeTheRun, a SystemExit the entry point answers without ever
+    # calling the traceback printer, so moving this earlier does not add a
+    # traceback to either of them.
+    apply_traceback_preferences(traceback)
     # ctx.obj is always the services factory (production or test)
     if not callable(ctx.obj):
         raise RuntimeError("Services factory not provided. This is a bug.")
@@ -404,7 +414,6 @@ def cli(
             tree_density=None if tree_density is None else TreeDensity(tree_density.casefold()),
         ),
     )
-    apply_traceback_preferences(traceback)
     # One run, one telling. The set that keeps `health` from printing the same
     # refused store twice is scoped to an invocation, and this callback is what
     # an invocation begins with - including the second `main([...])` an embedder

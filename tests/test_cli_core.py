@@ -11,6 +11,7 @@ import pytest
 
 from lsdsk import __init__conf__
 from lsdsk.adapters import cli as cli_mod
+from lsdsk.adapters.config.loader import get_config
 from lsdsk.composition import build_production
 
 if TYPE_CHECKING:
@@ -165,6 +166,54 @@ def test_traceback_flag_displays_full_exception_traceback(
     assert exit_code != 0
     assert "Traceback (most recent call last)" in plain_err
     assert "RuntimeError: I should fail" in plain_err
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("traceback_flag", [True, False])
+def test_traceback_requested_before_a_command_runs_covers_a_crash_in_the_root_group_too(
+    managed_traceback_state: None,
+    capsys: pytest.CaptureFixture[str],
+    strip_ansi: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+    traceback_flag: bool,
+) -> None:
+    """--traceback must apply before ``init_logging``, not after.
+
+    ``apply_traceback_preferences`` used to run at the END of the root
+    group's callback, after the configuration was loaded, ``--set`` applied
+    and logging started - so a crash in any of those read whatever
+    ``lib_cli_exit_tools.config.traceback`` already held (``False`` unless an
+    earlier invocation in this process had set it), regardless of what
+    ``--traceback`` on THIS command line asked for.
+
+    ``REFUSALS`` is narrowed here to ``(ValueError,)``, the seam
+    ``lsdsk.adapters.logging.setup`` reads to decide which exceptions its own
+    fallback repairs (see ``refusals.py``'s docstring: it exists precisely so
+    a caller can say which library refusals are trusted). With it narrowed, a
+    ``ring_buffer_size`` past the C ``ssize_t`` range once again raises
+    ``OverflowError`` out of ``init_logging`` - the same crash S15-1 fixed -
+    which is what makes this test independent of that fix: whichever
+    exceptions ``REFUSALS`` forgives, something raised inside ``init_logging``
+    must still honour ``--traceback``.
+    """
+    from lsdsk.adapters.logging import setup as logging_setup
+
+    monkeypatch.setattr(logging_setup, "REFUSALS", (ValueError,))
+    get_config.cache_clear()
+    monkeypatch.setenv("LSDSK___LIB_LOG_RICH__RING_BUFFER_SIZE", "999999999999999999999999999")
+    args = ["disks", "--format", "json"]
+    if traceback_flag:
+        args = ["--traceback", *args]
+
+    exit_code = cli_mod.main(args, services_factory=build_production)
+
+    plain_err = strip_ansi(capsys.readouterr().err)
+    assert exit_code != 0, plain_err
+    if traceback_flag:
+        assert "Traceback (most recent call last)" in plain_err, plain_err
+        assert "OverflowError" in plain_err, plain_err
+    else:
+        assert "Traceback (most recent call last)" not in plain_err, plain_err
     assert "[TRUNCATED" not in plain_err
     assert lib_cli_exit_tools.config.traceback is False
     assert lib_cli_exit_tools.config.traceback_force_color is False
