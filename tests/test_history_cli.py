@@ -1138,3 +1138,40 @@ def test_trend_json_with_no_store_is_still_ok(
 
     assert envelope["ok"] is True
     assert envelope["skipped"] == []
+
+
+def _hours_by_drive(read: Any) -> dict[str, tuple[int, ...]]:
+    return {one.identity: tuple(s.power_on_hours for s in one.samples) for one in read.history.series}
+
+
+@pytest.mark.os_agnostic
+def test_a_live_trend_is_judged_against_the_history_the_table_sees(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    """The envelope and the table are one view of the counters, so one history.
+
+    The human run folds this run's reading in before drawing; the JSON run
+    writes nothing, and used to judge against the store as it stood, one reading
+    behind. The live reading comes through `analyse`'s `read_machine` seam, the
+    store is a real file, and the human run works on a copy of it.
+    """
+    from lsdsk.adapters.cli.commands.history import analyse
+    from lsdsk.adapters.config.history import HistorySettings
+    from lsdsk.adapters.hw.snapshot import load
+    from lsdsk.domain.enums import OutputFormat
+
+    store = tmp_path / "history.json"
+    run(cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(SNAPSHOT))
+    copy = tmp_path / "copy.json"
+    copy.write_bytes(store.read_bytes())
+    before = store.read_bytes()
+
+    def live() -> Any:
+        return load(LATER)
+
+    as_json = analyse(None, OutputFormat.JSON, HistorySettings(path=store), read_machine=live).history
+    as_table = analyse(None, OutputFormat.HUMAN, HistorySettings(path=copy), read_machine=live).history
+
+    assert store.read_bytes() == before, "the JSON run wrote to the store"
+    assert copy.read_bytes() != before, "the control: the human run records, so the copy must have grown"
+    assert _hours_by_drive(as_json) == _hours_by_drive(as_table)

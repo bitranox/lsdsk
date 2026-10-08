@@ -50,6 +50,8 @@ from .scan import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from lsdsk.adapters.config.history import HistorySettings
     from lsdsk.domain.models import Inventory
     from lsdsk.domain.thresholds import Thresholds
@@ -393,6 +395,8 @@ def analyse(
     output_format: OutputFormat,
     settings: HistorySettings,
     thresholds: Thresholds = DEFAULT_THRESHOLDS,
+    *,
+    read_machine: Callable[[], Inventory] | None = None,
 ) -> Analysis:
     """Read the machine, judge it against its past, and record this reading.
 
@@ -405,13 +409,21 @@ def analyse(
         output_format: What the caller asked for.
         settings: How counter history behaves for this run.
         thresholds: The judgement values the rules weigh against.
+        read_machine: How a live run reads the hardware, or ``None`` for the
+            platform reader. The seam a test drives a live run through.
 
     Returns:
         The machine, its findings, and the counter store as it stands after
         this run: the copy judged against, or the one this run wrote. A caller
         that draws the counters draws from it rather than reading the file again.
+        A live JSON run writes nothing, but the store it returns already holds
+        this run's reading, so the envelope's trend is judged against the same
+        history the table is.
     """
-    inventory = load_inventory(replay, output_format=output_format)
+    if replay is None and read_machine is not None:
+        inventory = read_machine()
+    else:
+        inventory = load_inventory(replay, output_format=output_format)
     read = read_history(inventory, settings)
     findings = diagnose(inventory, history=read.history, thresholds=thresholds)
     if replay is None and output_format is OutputFormat.HUMAN:
@@ -419,6 +431,10 @@ def analyse(
         warn_if_the_store_was_not_written(attempt, settings.path)
         if attempt.history is not None:
             read = HistoryRead(attempt.history, writable=True)
+    elif replay is None and _why_not_to_record(inventory, read, settings) is None:
+        stamp = datetime.now(UTC).isoformat()
+        folded = record(read.history, inventory.disks, stamp, cap=settings.max_samples_per_drive)
+        read = HistoryRead(folded, writable=True)
     return Analysis(inventory, findings, read)
 
 
