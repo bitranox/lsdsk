@@ -18,6 +18,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   sits on, that disk showed `not mounted` and no boot mark. Such a failure now leaves every disk
   with nothing found as `-`. A letterless volume that is not an EFI system partition is still
   ignored, so a hidden recovery volume does not blank the column.
+- **A damaged installation now refuses as a configuration error.** When lsdsk's own shipped
+  configuration was missing, every command left `2` - the code for a wrong command line - and
+  when it was unreadable, `13`; a monitoring check read the tool's broken files as its own
+  mistake. Missing, unreadable or corrupt, it now leaves `78` with one sentence saying the
+  installation is damaged.
 - **A failed volume enumeration no longer reads as "not mounted" on Windows.** When Windows
   refused to list the volumes, or stopped part-way through with an error rather than at the end
   of the list, the volumes it did return were taken as all of them, so every disk on a volume it

@@ -21,6 +21,18 @@ from lib_layered_config import (
 )
 
 from lsdsk import __init__conf__
+from lsdsk.domain.errors import ConfigurationError
+
+
+class DamagedInstallationError(ConfigurationError):
+    """A configuration file this package SHIPS could not be read.
+
+    Its own type, so the one place that refuses it can catch exactly this and
+    no other configuration error: the installation is damaged, which is a
+    configuration fault of the machine and not a mistake in the command line,
+    the code an ``OSError`` reaching the last-resort handler would otherwise
+    leave.
+    """
 
 
 class ConfigLoaderProtocol(Protocol):
@@ -246,6 +258,10 @@ def _shipped_tables() -> Mapping[str, object]:
 
     Returns:
         A read-only view of the merged shipped tables.
+
+    Raises:
+        DamagedInstallationError: When a shipped file is missing, cannot be
+            read, or does not parse.
     """
     base = get_default_config_path()
     # The library's own rule for a default file: the file itself, then its
@@ -253,8 +269,34 @@ def _shipped_tables() -> Mapping[str, object]:
     paths = [base, *sorted((base.parent / f"{base.stem}.d").glob("*.toml"))]
     merged: dict[str, object] = {}
     for path in paths:
-        _deep_merge(merged, tomllib.loads(path.read_text(encoding="utf-8")))
+        try:
+            table = tomllib.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+            message = f"lsdsk's own shipped configuration could not be read, so the installation is damaged: {error}"
+            raise DamagedInstallationError(message) from error
+        _deep_merge(merged, table)
     return MappingProxyType(merged)
+
+
+def require_an_intact_installation() -> None:
+    """Refuse a damaged installation before anything reads its shipped files.
+
+    The layered library reads the same files first and answers each kind of
+    damage its own way - a missing default is passed over, an unreadable one
+    escapes as a bare ``PermissionError``, a corrupt one is its own refusal - so
+    three ways for one file to be damaged gave three different exit codes, two
+    of them blaming the command line. Reading them here first gives every kind
+    one answer. The result is cached, so the logging runtime's later read of
+    the same tables costs nothing.
+
+    Raises:
+        DamagedInstallationError: When a shipped file is missing, cannot be
+            read, or does not parse.
+
+    Example:
+        >>> require_an_intact_installation()
+    """
+    _shipped_tables()
 
 
 def shipped_section(section: str) -> dict[str, object]:
@@ -283,8 +325,10 @@ def shipped_section(section: str) -> dict[str, object]:
 
 
 __all__ = [
+    "DamagedInstallationError",
     "get_config",
     "get_default_config_path",
+    "require_an_intact_installation",
     "shipped_section",
     "validate_profile",
 ]

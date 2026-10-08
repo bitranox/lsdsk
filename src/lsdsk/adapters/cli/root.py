@@ -22,7 +22,7 @@ from lib_layered_config import ConfigError
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.history import read_history_settings
 from lsdsk.adapters.config.known_keys import nearest_known_key, unknown_owned_keys
-from lsdsk.adapters.config.loader import validate_profile
+from lsdsk.adapters.config.loader import DamagedInstallationError, require_an_intact_installation, validate_profile
 from lsdsk.adapters.config.overrides import apply_overrides
 from lsdsk.adapters.config.profiles import contributed_layers, existing_profiles, nearest_profile
 from lsdsk.adapters.config.tunables import read_display_settings, read_thresholds
@@ -135,13 +135,17 @@ def _load_or_refuse(ctx: click.Context, services: AppServices, *, profile: str |
     Raises:
         RefusedBeforeTheRun: With ``INVALID_ARGUMENT`` for a profile name the
             library refuses, and ``CONFIG_ERROR`` when the configuration cannot
-            load.
+            load or the package's own shipped configuration is damaged.
     """
     if profile is not None:
         try:
             validate_profile(profile)
         except ValueError as error:
             _refuse_before_the_run(ctx, str(error), ExitCode.INVALID_ARGUMENT)
+    try:
+        require_an_intact_installation()
+    except DamagedInstallationError as error:
+        _refuse_before_the_run(ctx, str(error), ExitCode.CONFIG_ERROR)
     try:
         return services.get_config(profile=profile, dotenv_path=env_file)
     except ConfigError as error:
