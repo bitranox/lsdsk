@@ -282,8 +282,8 @@ pythonVersion = "3.11"
 # each over the whole of src (Windows less adapters/hw/linux), held by
 # tests/test_windows_typecheck.py. Pyright cross-checks a platform from any host,
 # so neither needs that machine. The Windows arm matters most for reader.py and
-# winapi.py, the transports: omitted from coverage by design and reached by no
-# replayed capture, so a type check is the only thing that reads them at all.
+# winapi.py, the transport: reached by no replayed capture, and on another
+# platform only partly by the fakes, so a type check is all that reads the rest.
 pythonPlatform = "Linux"
 extraPaths = [
   "src",
@@ -314,21 +314,13 @@ markers = [
 [tool.coverage.run]
 branch = true
 omit = [
-    # The Windows transport binds Windows DLLs and issues DeviceIoControl, so most
-    # of it cannot execute on a Linux or macOS runner. Counting it as uncovered
-    # measures which platform the suite ran on, not how well the code is tested.
-    # Its output is covered instead by a capture taken from a real Windows
-    # machine, which tests/test_hw_builder.py replays through the pure Windows
-    # builder; that builder is measured normally. windows/volumes.py is NOT here:
-    # every call it makes goes through the kernel32 facade it is handed, so the
-    # fake in tests/test_windows_volume_reader.py runs it on every runner.
-    "*/adapters/hw/windows/reader.py",
+    # winapi.py is declarations - structures, constants and the DLL bindings - with
+    # nothing a test on another platform can call. The two readers are NOT here:
+    # their functions take the platform handle (a kernel32 facade, a sysfs root)
+    # as a parameter, so fakes drive a large part of them on every runner (measured:
+    # 41% of windows/reader.py and 66% of linux/reader.py off their platform), and
+    # excluding them hid those paths' failures from the coverage report.
     "*/adapters/hw/windows/winapi.py",
-    # The Linux transport is the same case: it needs a real /sys and real block
-    # devices to issue ioctls against, neither of which a Windows or macOS runner
-    # has. Both transports are covered by captures taken from real machines and
-    # replayed through the pure builders, which are measured normally.
-    "*/adapters/hw/linux/reader.py",
 ]
 parallel = false
 # The coverage database lives outside the checkout, because SQLite needs file
