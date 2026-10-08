@@ -79,10 +79,13 @@ _BOM_CODECS: Final[tuple[tuple[bytes, str], ...]] = (
 # bound is still refused in this tool's own words.
 MAX_INPUT_BYTES = 64 * 1024 * 1024
 
-#: Open flags for a read that must not wait on a pipe. Non-blocking makes a FIFO
-#: open at once, writer or not, so it can be refused rather than waited on; a
-#: regular file ignores the flag. ``O_BINARY`` keeps Windows' C runtime from
-#: translating line endings under a descriptor ``os.fdopen`` reads as bytes.
+#: Open flags for a read that must not wait on a pipe. On POSIX, non-blocking makes
+#: a FIFO open at once, writer or not, so it can be refused rather than waited on;
+#: a regular file ignores the flag. Windows has no ``O_NONBLOCK`` and no FIFO to
+#: put at a path, so the flag falls away there; anything that opens and is not a
+#: regular file is still refused by the descriptor check. ``O_BINARY`` keeps Windows' C
+#: runtime from translating line endings under a descriptor ``os.fdopen`` reads
+#: as bytes.
 _OPEN_WITHOUT_WAITING = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
 
 
