@@ -1310,6 +1310,28 @@ def read_disks(tree: _DeviceTree) -> dict[str, dict[str, Any]]:
     return disks
 
 
+def devices_accessible(disks: Mapping[str, Mapping[str, Any]]) -> bool:
+    """Whether any disk could be opened, which is what the capture's flag means.
+
+    A disk that was listed but refused to open is a record carrying ``error``,
+    so counting records would call a machine whose every disk refused
+    "accessible" and hide the one cause that explains an empty report.
+
+    Args:
+        disks: The readings :func:`read_disks` returned.
+
+    Returns:
+        ``True`` when at least one record is a disk that was opened.
+
+    Example:
+        >>> devices_accessible({"a": {"error": "could not open the device"}})
+        False
+        >>> devices_accessible({"a": {"error": "x"}, "b": {"path": "b"}})
+        True
+    """
+    return any("error" not in record for record in disks.values())
+
+
 def read_system() -> dict[str, Any]:
     """Read the whole storage subsystem from this Windows machine.
 
@@ -1333,7 +1355,7 @@ def read_system() -> dict[str, Any]:
         "euid": 0 if is_elevated() else 1,
         "elevated": is_elevated(),
         "environment": read_environment(),
-        "devices_accessible": bool(disks),
+        "devices_accessible": devices_accessible(disks),
         "pci": pci,
         # Resolved HERE and not in the builder: the builder is pure, so a name
         # it looked up itself would come from whichever machine replays the
@@ -1352,6 +1374,7 @@ __all__ = [
     "UsbDeviceFacts",
     "UsbReading",
     "ata_passthrough",
+    "devices_accessible",
     "is_elevated",
     "nvme_protocol_data",
     "query_property",

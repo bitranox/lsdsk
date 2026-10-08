@@ -128,3 +128,21 @@ def test_an_unreadable_interface_reaches_the_inventory_as_a_refused_device_readi
 def test_every_interface_readable_adds_no_placeholder_record() -> None:
     tree = _tree(_Setupapi(paths=["\\\\?\\disk0"], unreadable_at=set()), _RefusingKernel())
     assert list(reader.read_disks(tree)) == ["\\\\?\\disk0"]
+
+
+@pytest.mark.os_agnostic
+def test_devices_are_inaccessible_when_every_disk_failed_to_open() -> None:
+    tree = _tree(_Setupapi(paths=["\\\\?\\disk0", "\\\\?\\disk1"], unreadable_at=set()), _RefusingKernel())
+    disks = reader.read_disks(tree)
+    assert len(disks) == 2
+    assert reader.devices_accessible(disks) is False
+
+
+@pytest.mark.os_agnostic
+def test_devices_are_accessible_when_any_disk_opened() -> None:
+    assert reader.devices_accessible({"a": {"error": "could not open the device"}, "b": {"path": "b"}}) is True
+
+
+@pytest.mark.os_agnostic
+def test_a_machine_with_no_disks_has_no_accessible_devices() -> None:
+    assert reader.devices_accessible({}) is False
