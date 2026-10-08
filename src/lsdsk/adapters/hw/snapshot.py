@@ -230,7 +230,9 @@ def save(capture: dict[str, Any], path: Path) -> None:
     and where each disk is used: its mountpoints or drive letters and the names
     of the pools, volume groups and arrays it belongs to. A Linux capture leaves
     out network shares, FUSE mounts and LVM or LUKS UUIDs; a Windows capture
-    keys each volume by its volume GUID path. The run that produces the most
+    keys each volume by an opaque per-capture ordinal ("0", "1", ... in
+    enumeration order) and carries no volume GUID path, though it does record
+    each volume's drive letters and mount-point paths. The run that produces the most
     complete one is a privileged run. Left at the ambient umask it lands group-
     and world-readable, so it is narrowed to the same mode this project already
     uses for a user-scoped file. Widening it to share the capture is then a
