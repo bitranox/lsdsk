@@ -139,9 +139,33 @@ def is_elevated() -> bool:
 class _DeviceTree:
     """Reads the Windows device tree through SetupAPI and cfgmgr32."""
 
-    def __init__(self) -> None:
-        """Bind the DLL entry points this class uses."""
-        self.setupapi, self.cfgmgr32, self.kernel32 = api.load_libraries()
+    def __init__(
+        self,
+        *,
+        setupapi: api.WinLibrary | None = None,
+        cfgmgr32: api.WinLibrary | None = None,
+        kernel32: api.WinLibrary | None = None,
+    ) -> None:
+        """Bind the DLL entry points this class uses.
+
+        Each library defaults to the real DLL, loaded through
+        :func:`api.load_libraries`. A caller that is not on Windows - a test -
+        supplies its own fakes here instead, which is the seam
+        ``tests/test_windows_device_tree.py`` drives the class through.
+
+        Args:
+            setupapi: The device-enumeration library, or ``None`` to load it.
+            cfgmgr32: The configuration-manager library, or ``None`` to load it.
+            kernel32: The core library, or ``None`` to load it.
+        """
+        if setupapi is None or cfgmgr32 is None or kernel32 is None:
+            loaded = api.load_libraries()
+            setupapi = loaded.setupapi if setupapi is None else setupapi
+            cfgmgr32 = loaded.cfgmgr32 if cfgmgr32 is None else cfgmgr32
+            kernel32 = loaded.kernel32 if kernel32 is None else kernel32
+        self.setupapi = setupapi
+        self.cfgmgr32 = cfgmgr32
+        self.kernel32 = kernel32
 
     def enumerate_pci(self) -> dict[str, dict[str, Any]]:
         """Read every present PCI device with its properties."""
