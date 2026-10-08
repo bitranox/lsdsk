@@ -5,6 +5,14 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A mount path that is not valid UTF-8 no longer stops the scan on Linux.** Linux allows any
+  bytes in a path, so a share or a removable disk mounted under a folder named in a legacy
+  encoding put invalid UTF-8 into `/proc/self/mountinfo`, and every command that reads the disks
+  failed with exit 22 and no report for any disk. Such a byte now shows as a replacement character
+  in that one mount path; `/proc/swaps` is read the same way.
+
 ## [1.7.0] 2026-10-08 10:27:22
 
 ### Added

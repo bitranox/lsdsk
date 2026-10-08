@@ -130,6 +130,37 @@ def test_a_swap_list_over_the_limit_is_refused_like_an_unreadable_one(tmp_path: 
 
 
 @pytest.mark.os_agnostic
+def test_a_mount_path_that_is_not_utf8_keeps_every_row(tmp_path: Path) -> None:
+    # Linux allows any bytes in a path, so a share or a removable disk mounted
+    # under a folder named in a legacy encoding puts invalid UTF-8 into
+    # mountinfo. That one row must not cost the reading of every other mount.
+    path = tmp_path / "mountinfo"
+    path.write_bytes(
+        b"22 1 0:28 / / rw,relatime shared:1 - zfs rpool/ROOT/pve-1 rw,xattr\n"
+        b"43 22 8:1 / /mnt/caf\xe9 rw - ext4 " + ABSENT_NODE.encode() + b"1 rw\n"
+    )
+    rows = mounts.read_mounts(path)
+    assert rows is not None
+    assert rows[0] == {"dev": "0:28", "mountpoint": "/", "fstype": "zfs", "source": "rpool"}
+    assert rows[1] == {"dev": "8:1", "mountpoint": "/mnt/caf�", "fstype": "ext4"}
+
+
+@pytest.mark.os_agnostic
+def test_a_swap_path_that_is_not_utf8_keeps_every_row(tmp_path: Path) -> None:
+    path = tmp_path / "swaps"
+    path.write_bytes(
+        b"Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n"
+        b"/home/caf\xe9/swapfile\tfile\t\t4194300\t\t0\t\t-2\n"
+        + ABSENT_NODE.encode()
+        + b"2   partition\t8388604\t\t0\t\t-3\n"
+    )
+    # Two rows, neither naming a device node: what matters is that the list
+    # was read, because an unread swap list makes every otherwise empty disk
+    # read as not decided.
+    assert mounts.read_swaps(path) == [{}, {}]
+
+
+@pytest.mark.os_agnostic
 def test_read_partitions_on_an_absent_disk_directory_is_empty(tmp_path: Path) -> None:
     assert mounts.read_partitions(tmp_path / "absent") == {}
 

@@ -60,6 +60,15 @@ MAX_MOUNTINFO_BYTES = 8 * 1024 * 1024
 #: attribute holding non-ASCII text.
 MAX_ATTRIBUTE_CHARS = 1024 * 1024
 
+# mountinfo and the swap list carry paths, and a Linux path is any bytes, so a
+# folder named in a legacy encoding puts invalid UTF-8 into either file. A strict
+# decode would fail the whole scan over one row; replacing the bad bytes keeps
+# every reading. Nothing joins or decides on the path text itself (device numbers
+# and filesystem types are ASCII, and the boot paths compared against are ASCII
+# too), so a replaced character changes only what is displayed. The size bound is
+# then measured on the replaced text, a little larger than the file, which only
+# makes it refuse sooner.
+_PATH_DECODE_ERRORS = "replace"
 # The kernel writes a space, tab, newline or backslash in a mount path as a
 # three-digit octal escape, so "/boot efi" arrives as "/boot\040efi".
 _OCTAL_ESCAPE = re.compile(r"\\([0-7]{3})")
@@ -138,7 +147,7 @@ def read_mounts(
         mountinfo never reports.
     """
     try:
-        text = read_text_bounded(path, what="mountinfo")
+        text = read_text_bounded(path, what="mountinfo", errors=_PATH_DECODE_ERRORS)
     except (MissingFileError, ConfigurationError):
         return None
     if len(text.encode("utf-8")) > limit:
@@ -207,7 +216,7 @@ def read_swaps(
         say a disk carries no swap.
     """
     try:
-        text = read_text_bounded(path, what="the swap list")
+        text = read_text_bounded(path, what="the swap list", errors=_PATH_DECODE_ERRORS)
     except (MissingFileError, ConfigurationError):
         return None
     if len(text.encode("utf-8")) > limit:
