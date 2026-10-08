@@ -44,6 +44,7 @@ from ..config.values import RejectedValue, rendered
 from .refusals import (
     REFUSALS,
     changed_keys,
+    check_timeouts,
     ignored_sentence,
     offending_keys,
     offending_variables,
@@ -264,6 +265,7 @@ def _refused_by(section: Mapping[str, object]) -> BaseException | None:
         ``None`` once the runtime is running, or what the library raised.
     """
     try:
+        check_timeouts(section, os.environ)
         lib_log_rich.runtime.init(_build_runtime_config(section))
     except REFUSALS as refused:
         return refused

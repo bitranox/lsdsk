@@ -225,11 +225,37 @@ def _answer_an_unhandled_exception(exc: BaseException) -> int:
     return code
 
 
+def _shut_logging_down(shutdown: Callable[[], None] | None) -> int | None:
+    """Drain and stop the logging runtime, answering a failure as a crash instead of letting it escape.
+
+    The drain is where a queue setting finally fails (a wait the platform cannot
+    perform raises here, long after the runtime accepted the value), and this runs
+    in ``main``'s ``finally``: an escaping exception skipped the flush and the
+    stream restore that follow it and left the interpreter's own traceback and
+    exit code 1, this tool's answer for a machine that needs attention.
+
+    Args:
+        shutdown: The shutdown to run, or ``None`` for the logging library's own.
+
+    Returns:
+        ``None`` once the runtime is down or was never up, otherwise the exit code
+        the failure leaves, after it has been reported.
+    """
+    if not lib_log_rich.runtime.is_initialised():
+        return None
+    try:
+        (shutdown or lib_log_rich.runtime.shutdown)()
+    except Exception as exc:
+        return _answer_an_unhandled_exception(exc)
+    return None
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     restore_traceback: bool = True,
     services_factory: Callable[[], AppServices] | None = None,
+    shutdown_logging: Callable[[], None] | None = None,
 ) -> int:
     """Execute the CLI with error handling and return the exit code.
 
@@ -254,6 +280,8 @@ def main(
         restore_traceback: Whether to restore prior traceback configuration after execution.
         services_factory: Factory function returning AppServices. Required.
             Callers outside the adapters layer should pass ``build_production``.
+        shutdown_logging: The logging shutdown to run on the way out; ``None`` uses
+            the logging library's own. A seam for a test to make it fail.
 
     Returns:
         Exit code reported by the CLI run.
@@ -279,8 +307,9 @@ def main(
     finally:
         if restore_traceback:
             restore_traceback_state(previous_state)
-        if lib_log_rich.runtime.is_initialised():
-            lib_log_rich.runtime.shutdown()
+        shutdown_failure = _shut_logging_down(shutdown_logging)
+    if shutdown_failure is not None:
+        code = shutdown_failure
 
     # AFTER the logging shutdown, not around it: lib_log_rich is queue-based, so a
     # line logged during the run reaches stderr only when that drain runs. Flushing

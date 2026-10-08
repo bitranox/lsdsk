@@ -16,10 +16,13 @@ Contents:
     * :func:`ignored_sentence` - the warning for one setting that fell back.
     * :func:`offending_variables` - the ``LOG_*`` variables a refusal is about.
     * :func:`variable_sentence` - the warning for one such variable set aside.
+    * :func:`check_timeouts` - refuse a queue timeout the platform cannot wait for.
 """
 
 from __future__ import annotations
 
+import math
+import threading
 from typing import TYPE_CHECKING, Final
 
 from pydantic import ValidationError
@@ -51,6 +54,55 @@ _LIBRARY_DEFAULT: Final = "lib_log_rich's own default"
 
 #: The prefix of every environment variable lib_log_rich reads by itself.
 _LIBRARY_VARIABLE_PREFIX: Final = "LOG_"
+
+
+#: The queue timeouts, as a ``[lib_log_rich]`` key and as the ``LOG_*`` variable the library reads ahead of it.
+#:
+#: The library accepts any number for these when the runtime starts and fails only
+#: when a wait runs - the drain wait is in ``main()``'s shutdown - so a value the
+#: platform cannot wait for is refused here, where the run can still fall back.
+_TIMEOUTS: Final = (
+    ("queue_put_timeout", "LOG_QUEUE_PUT_TIMEOUT"),
+    ("queue_stop_timeout", "LOG_QUEUE_STOP_TIMEOUT"),
+)
+
+
+def _unwaitable(value: object) -> bool:
+    """Whether `value` is a number no wait can be asked for: negative, NaN, infinite or past the platform's limit.
+
+    Zero is allowed, it means no timeout, and so is anything that is not a number
+    at all: the library's own validation answers that.
+
+    Example:
+        >>> [_unwaitable(v) for v in (0, 5.0, "30", 1e18, float("nan"), -1, "abc", None)]
+        [False, False, False, True, True, True, False, False]
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return False
+    try:
+        number = float(value)
+    except ValueError:
+        return False
+    return math.isnan(number) or not 0 <= number <= threading.TIMEOUT_MAX
+
+
+def check_timeouts(section: Mapping[str, object], environ: Mapping[str, str]) -> None:
+    """Refuse a queue timeout that would fail only when the run shuts down.
+
+    Args:
+        section: The ``[lib_log_rich]`` table about to start the runtime.
+        environ: The process environment, whose ``LOG_*`` timeouts the library reads first.
+
+    Raises:
+        ValueError: Naming the first setting or variable that holds such a value, so
+            the usual fallback attributes it.
+    """
+    limit = f"must be from 0 to {threading.TIMEOUT_MAX:g} seconds"
+    for key, variable in _TIMEOUTS:
+        if variable in environ and _unwaitable(environ[variable]):
+            raise ValueError(f"{variable} {limit}")
+        if key in section and _unwaitable(section[key]):
+            raise ValueError(f"{key} {limit}")
 
 
 def changed_keys(configured: Mapping[str, object], shipped: Mapping[str, object]) -> list[str]:
@@ -256,6 +308,7 @@ def variable_sentence(name: str, *, refused: BaseException, environ: Mapping[str
 __all__ = [
     "REFUSALS",
     "changed_keys",
+    "check_timeouts",
     "ignored_sentence",
     "offending_keys",
     "offending_variables",
