@@ -479,6 +479,7 @@ def build_envelope(
     findings: Sequence[Finding],
     command: CliCommand,
     trend: Sequence[TrendEntry] | None = None,
+    extra_skipped: Sequence[str] = (),
 ) -> ScanEnvelope:
     """Build the machine-readable envelope another program consumes.
 
@@ -490,11 +491,13 @@ def build_envelope(
         trend: One entry per counter worth a row, passed only by the `trend`
             command. Every other caller leaves it ``None``, which the envelope
             carries through unchanged.
+        extra_skipped: Reasons beyond the inventory's own readings, such as a
+            counter store that could not be read. Each makes ``ok`` false.
 
     Returns:
         The envelope: ``ok``, ``command``, ``data`` and ``skipped``.
     """
-    skipped = _skipped_readings(inventory)
+    skipped = [*_skipped_readings(inventory), *extra_skipped]
     return ScanEnvelope(
         ok=not skipped,
         skipped=skipped,
@@ -587,6 +590,7 @@ def emit_json(
     findings: Sequence[Finding],
     command: CliCommand,
     trend: Sequence[TrendEntry] | None = None,
+    extra_skipped: Sequence[str] = (),
 ) -> None:
     """Write the machine-readable envelope.
 
@@ -596,8 +600,10 @@ def emit_json(
         command: Which command is emitting this, which the envelope names.
         trend: One entry per counter worth a row, passed only by the `trend`
             command.
+        extra_skipped: Reasons beyond the inventory's own readings; see
+            :func:`build_envelope`.
     """
-    envelope = build_envelope(inventory, findings, command, trend)
+    envelope = build_envelope(inventory, findings, command, trend, extra_skipped)
     safe_console.echo(envelope.model_dump_json(indent=2))
 
 

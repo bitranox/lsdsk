@@ -544,6 +544,11 @@ def cli_record(ctx: click.Context, replay: Path | None, output_format: OutputFor
         raise SystemExit(code)
 
 
+def _trend_without_history(path: Path, refusal: str) -> str:
+    """The sentence ``trend --format json`` reports for a store it could not read."""
+    return f"counter history at {path} could not be read, so no trend is shown: {refusal}"
+
+
 @click.command("trend", context_settings=CLICK_CONTEXT_SETTINGS)
 @option(
     "--replay",
@@ -571,7 +576,8 @@ def cli_trend(ctx: click.Context, replay: Path | None, output_format: OutputForm
 
             rows = trend_rows(inventory, read.history, display.wear_row_floor_percent)
             trend = [TrendEntry(device=row.disk.path, counter=row.kind, trend=row.trend) for row in rows]
-            emit_json(inventory, findings, CliCommand.TREND, trend)
+            refused = [] if read.refusal is None else [_trend_without_history(settings.path, read.refusal)]
+            emit_json(inventory, findings, CliCommand.TREND, trend, refused)
         else:
             from lsdsk.adapters.render.trend import render_trend  # noqa: PLC0415 - keeps the import graph flat
 

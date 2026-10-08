@@ -1098,3 +1098,43 @@ def test_every_record_outcome_has_its_own_sentence() -> None:
     # A brace in the filesystem's own words stays a brace rather than a template.
     could_not_write = sentences[RecordOutcome.COULD_NOT_WRITE]
     assert could_not_write is not None and "{detail}" in could_not_write, could_not_write
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("corrupt", [None, "{"], ids=["another-machines-store", "truncated-store"])
+def test_trend_json_reports_a_store_it_could_not_read(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+    corrupt: str | None,
+) -> None:
+    """The table says the store could not be read; the envelope must say it too.
+
+    An empty ``trend`` with ``ok`` true reads, to a program, as a machine with
+    nothing worth a row. ``record --format json`` reports the same store as
+    not ok, so one store gets one answer in both commands.
+    """
+    store = tmp_path / "history.json"
+    if corrupt is None:
+        _seed_foreign_store(store)
+    else:
+        store.write_text(corrupt, encoding="utf-8")
+    args = ("--history-file", str(store), "trend", "--replay", str(SNAPSHOT), "--format", "json")
+
+    envelope = json.loads(run(cli_runner, production_factory, *args).stdout)
+
+    assert envelope["ok"] is False, "a store that could not be read cannot report ok"
+    assert any(str(store) in reason for reason in envelope["skipped"]), envelope["skipped"]
+
+
+@pytest.mark.os_agnostic
+def test_trend_json_with_no_store_is_still_ok(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    """The control: a store that does not exist yet is a first run, not a refusal."""
+    args = ("--history-file", str(tmp_path / "none.json"), "trend", "--replay", str(SNAPSHOT), "--format", "json")
+
+    envelope = json.loads(run(cli_runner, production_factory, *args).stdout)
+
+    assert envelope["ok"] is True
+    assert envelope["skipped"] == []
