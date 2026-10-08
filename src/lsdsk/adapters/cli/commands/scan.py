@@ -45,6 +45,7 @@ from lsdsk.adapters.render.tables import counter_legend
 from lsdsk.domain.diagnostics import count_by_severity
 from lsdsk.domain.enums import ActionCommand, CliCommand, Environment, OutputFormat, Severity, TreeDensity
 from lsdsk.domain.errors import ConfigurationError
+from lsdsk.domain.history import CounterKind, Trend
 from lsdsk.domain.models import Controller, Disk, Finding, Inventory, PcieSlot, PciNode, RefusedReading
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 
@@ -376,6 +377,28 @@ def note_the_findings_this_page_left_out(
     console.print(note(f"{named} on this machine are not on this page: run `lsdsk findings` to read them."))
 
 
+class TrendEntry(BaseModel):
+    """One counter of one tracked drive, as the trend command judged it.
+
+    Carries the same domain objects the printed trend table draws from
+    (:func:`lsdsk.adapters.render.trend.trend_rows`), never a re-parse of that
+    table's rendered text: `trend` is the verdict the domain rules produced,
+    with whatever delta, span and rate the evidence supports, serialised
+    straight from :class:`~lsdsk.domain.history.Trend`. A fact the table
+    draws as a dash (no span measured, no rate, nothing deltaed) is ``null``
+    here on the matching field, for the same reason.
+
+    Attributes:
+        device: The drive's path, matching the printed table's device column.
+        counter: Which counter this entry is about.
+        trend: The verdict, and whatever rate or span the evidence supports.
+    """
+
+    device: str
+    counter: CounterKind
+    trend: Trend
+
+
 class ScanData(BaseModel):
     """The payload half of the machine-readable envelope.
 
@@ -384,6 +407,10 @@ class ScanData(BaseModel):
     once and a renamed field is a type error here instead of a silently changed
     output contract. It also removes the dump-to-dict step entirely: one
     conversion at this boundary and none before it.
+
+    Attributes:
+        trend: One entry per counter worth a row, for the `trend` command
+            only. ``None`` for every other command, which never computed it.
     """
 
     pci_tree: tuple[PciNode, ...]
@@ -398,6 +425,7 @@ class ScanData(BaseModel):
     virtual_disks: tuple[Disk, ...]
     slots: tuple[PcieSlot, ...]
     findings: tuple[Finding, ...]
+    trend: tuple[TrendEntry, ...] | None = None
 
 
 class SnapshotResult(ActionResult):
@@ -450,6 +478,7 @@ def build_envelope(
     inventory: Inventory,
     findings: Sequence[Finding],
     command: CliCommand,
+    trend: Sequence[TrendEntry] | None = None,
 ) -> ScanEnvelope:
     """Build the machine-readable envelope another program consumes.
 
@@ -458,6 +487,9 @@ def build_envelope(
         findings: What the diagnosis produced.
         command: Which command is emitting this. Required, with no default: a
             default here is what once made every command claim to be ``scan``.
+        trend: One entry per counter worth a row, passed only by the `trend`
+            command. Every other caller leaves it ``None``, which the envelope
+            carries through unchanged.
 
     Returns:
         The envelope: ``ok``, ``command``, ``data`` and ``skipped``.
@@ -484,6 +516,7 @@ def build_envelope(
             virtual_disks=inventory.virtual_disks,
             slots=inventory.slots,
             findings=tuple(findings),
+            trend=None if trend is None else tuple(trend),
         ),
     )
 
@@ -549,15 +582,22 @@ def _refusals_named(inventory: Inventory) -> list[str]:
     ]
 
 
-def emit_json(inventory: Inventory, findings: Sequence[Finding], command: CliCommand) -> None:
+def emit_json(
+    inventory: Inventory,
+    findings: Sequence[Finding],
+    command: CliCommand,
+    trend: Sequence[TrendEntry] | None = None,
+) -> None:
     """Write the machine-readable envelope.
 
     Args:
         inventory: The machine that was scanned.
         findings: What the diagnosis produced.
         command: Which command is emitting this, which the envelope names.
+        trend: One entry per counter worth a row, passed only by the `trend`
+            command.
     """
-    envelope = build_envelope(inventory, findings, command)
+    envelope = build_envelope(inventory, findings, command, trend)
     safe_console.echo(envelope.model_dump_json(indent=2))
 
 
@@ -1500,6 +1540,7 @@ __all__ = [
     "OpensTheInteractiveView",
     "PrintsThePage",
     "ReadsTheMachine",
+    "TrendEntry",
     "build_envelope",
     "cli_controllers",
     "cli_disks",

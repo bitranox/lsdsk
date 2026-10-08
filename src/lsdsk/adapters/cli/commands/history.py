@@ -38,6 +38,7 @@ from ..exit_codes import ExitCode
 from ..typed_click import option
 from .scan import (
     Analysis,
+    TrendEntry,
     console_for_output,
     effective_replay,
     emit_json,
@@ -566,7 +567,11 @@ def cli_trend(ctx: click.Context, replay: Path | None, output_format: OutputForm
         target = effective_replay(ctx, replay)
         inventory, findings, read = analyse(target, output_format, settings, thresholds)
         if output_format is OutputFormat.JSON:
-            emit_json(inventory, findings, CliCommand.TREND)
+            from lsdsk.adapters.render.trend import trend_rows  # noqa: PLC0415 - keeps the import graph flat
+
+            rows = trend_rows(inventory, read.history, display.wear_row_floor_percent)
+            trend = [TrendEntry(device=row.disk.path, counter=row.kind, trend=row.trend) for row in rows]
+            emit_json(inventory, findings, CliCommand.TREND, trend)
         else:
             from lsdsk.adapters.render.trend import render_trend  # noqa: PLC0415 - keeps the import graph flat
 

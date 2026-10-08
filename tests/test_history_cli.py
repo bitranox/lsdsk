@@ -175,6 +175,100 @@ def test_trend_names_itself_in_the_envelope(cli_runner: CliRunner, production_fa
     assert payload["command"] == CliCommand.TREND.value
 
 
+def _trend_entry(payload: dict[str, Any], device: str, counter: str) -> dict[str, Any]:
+    """Find one `data.trend` entry by device and counter, failing loudly if it is missing."""
+    for entry in payload["data"]["trend"]:
+        if entry["device"] == device and entry["counter"] == counter:
+            return entry
+    raise AssertionError(f"no trend entry for {device}/{counter} in {payload['data']['trend']!r}")
+
+
+@pytest.mark.os_agnostic
+def test_trend_json_carries_the_same_verdict_and_rate_the_human_table_prints(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path, strip_ansi: Callable[[str], str]
+) -> None:
+    """The JSON envelope is a second reader of the same domain objects, not a second computation.
+
+    /dev/sdc's interface CRC errors rise from 99345 to 99361 across 16 power-on
+    hours between the two fixtures, which `test_trend_reports_the_live_fault_and_the_dead_one_differently`
+    already pins as "rising" in the printed table. The JSON envelope must say
+    the same thing with the same numbers.
+    """
+    store = tmp_path / "history.json"
+    run(cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(SNAPSHOT))
+    run(cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(LATER))
+
+    human = strip_ansi(
+        run(cli_runner, production_factory, "--history-file", str(store), "trend", "--replay", str(LATER)).output
+    )
+    assert "rising" in human
+
+    result = run(
+        cli_runner,
+        production_factory,
+        "--history-file",
+        str(store),
+        "trend",
+        "--replay",
+        str(LATER),
+        "--format",
+        "json",
+    )
+    payload = json.loads(result.stdout)
+
+    rising = _trend_entry(payload, "/dev/sdc", "crc_errors")["trend"]
+    assert rising["verdict"] == TrendVerdict.RISING.value
+    assert rising["latest"] == 99361
+    assert rising["delta"] == 16
+    assert rising["span_hours"] == 16
+    assert rising["per_hour"] == 1.0
+
+    quiet = _trend_entry(payload, "/dev/sdj", "crc_errors")["trend"]
+    assert quiet["verdict"] == TrendVerdict.QUIET.value
+    assert quiet["delta"] == 0
+    assert quiet["per_hour"] is None
+    assert quiet["expected_from_lifetime"] is not None
+    assert quiet["expected_from_lifetime"] > 200
+
+
+@pytest.mark.os_agnostic
+def test_trend_json_reports_first_sample_for_a_drive_with_only_one_reading(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    """A single recorded reading cannot produce a rate, so the envelope says so too."""
+    store = tmp_path / "history.json"
+    run(cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(SNAPSHOT))
+
+    result = run(
+        cli_runner,
+        production_factory,
+        "--history-file",
+        str(store),
+        "trend",
+        "--replay",
+        str(SNAPSHOT),
+        "--format",
+        "json",
+    )
+    payload = json.loads(result.stdout)
+
+    entry = _trend_entry(payload, "/dev/sdc", "crc_errors")["trend"]
+    assert entry["verdict"] == TrendVerdict.FIRST_SAMPLE.value
+    assert entry["latest"] == 99345
+    assert entry["delta"] is None
+    assert entry["span_hours"] is None
+
+
+@pytest.mark.os_agnostic
+def test_other_commands_envelopes_carry_no_trend_entries(
+    cli_runner: CliRunner, production_factory: Callable[[], Any]
+) -> None:
+    """Adding `trend` to the shared envelope must not put anything new into another command's answer."""
+    result = run(cli_runner, production_factory, "disks", "--replay", str(SNAPSHOT), "--format", "json")
+    payload = json.loads(result.stdout)
+    assert payload["data"].get("trend") is None
+
+
 @pytest.mark.os_agnostic
 def test_no_record_suppresses_a_write_that_would_otherwise_happen(
     cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
