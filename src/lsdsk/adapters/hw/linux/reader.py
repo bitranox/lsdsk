@@ -486,10 +486,6 @@ def _read_config(device: Path) -> bytes:
         return b""
 
 
-# PCI class triple for a SATA controller in AHCI mode.
-_AHCI_CLASS = 0x0106
-
-
 class AhciReading(NamedTuple):
     """The outcome of trying to read an AHCI controller's registers.
 
@@ -605,7 +601,7 @@ def read_pci(root: Path = Path("/sys/bus/pci/devices")) -> dict[str, dict[str, A
         )
         if children:
             entry["children"] = children
-        if _to_class(entry.get("class")) == _AHCI_CLASS:
+        if ahci.holds_ahci_registers(_to_class(entry.get("class")), entry.get("driver")):
             reading = read_ahci_capabilities(device)
             if reading.registers is not None:
                 entry["ahci"] = reading.registers

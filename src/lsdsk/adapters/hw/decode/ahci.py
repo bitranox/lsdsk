@@ -36,6 +36,38 @@ INTERFACE_SPEEDS: dict[int, float] = {1: 1.5, 2: 3.0, 3: 6.0}
 # Bits 4:0 hold the number of ports, counted from zero.
 _PORT_COUNT_MASK = 0x1F
 
+#: The PCI base and sub class of a SATA controller in AHCI mode, ``0x0106``.
+AHCI_CLASS = 0x0106
+#: The Linux driver that owns an AHCI register file. Firmware set to RAID mode
+#: gives the same silicon class ``0x0104``, and ``ahci`` still drives it.
+AHCI_DRIVER = "ahci"
+
+
+def holds_ahci_registers(class_and_subclass: int | None, driver: str | None) -> bool:
+    """Whether a PCI function is an AHCI controller, so its port count is the bitmap's.
+
+    Either the bound driver or the class says so. The class alone missed every
+    controller the firmware's RAID setting re-classes, and those were then
+    counted from the ports ``libata`` declares; the driver alone would miss a
+    controller whose driver was not read.
+
+    Args:
+        class_and_subclass: The PCI base and sub class, ``class >> 8``.
+        driver: The name of the bound driver, or ``None`` when none was read.
+
+    Returns:
+        ``True`` when the function's ports are counted from its own bitmap.
+
+    Example:
+        >>> holds_ahci_registers(0x0104, "ahci")
+        True
+        >>> holds_ahci_registers(0x0106, None)
+        True
+        >>> holds_ahci_registers(0x0104, "megaraid_sas")
+        False
+    """
+    return driver == AHCI_DRIVER or class_and_subclass == AHCI_CLASS
+
 
 @dataclass(frozen=True, slots=True)
 class AhciCapabilities:
@@ -95,10 +127,13 @@ def decode_capabilities(capability: int, ports_implemented: int) -> AhciCapabili
 
 
 __all__ = [
+    "AHCI_CLASS",
+    "AHCI_DRIVER",
     "CAPABILITY_OFFSET",
     "INTERFACE_SPEEDS",
     "PORTS_IMPLEMENTED_OFFSET",
     "REGISTER_SPAN",
     "AhciCapabilities",
     "decode_capabilities",
+    "holds_ahci_registers",
 ]

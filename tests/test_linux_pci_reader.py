@@ -230,14 +230,39 @@ class TestAhciDispatch:
         assert "ahci_error" not in entry
 
     def test_a_non_ahci_class_device_is_never_sent_through_the_ahci_read(self, tmp_path: Path) -> None:
+        """Neither the class nor the bound driver says AHCI, so nothing is mapped.
+
+        The read is keyed on the bound driver first and the class second, so the
+        negative names a driver that is NOT ``ahci``: a device with no driver at
+        all would only exercise the class half of the rule.
+        """
         device = _device(tmp_path, "0000:00:00.0", **{"class": "0x060000"})
-        # If the class filter were missing, this would be read as registers.
+        driver_dir = tmp_path / "drivers" / "pcieport"
+        driver_dir.mkdir(parents=True)
+        (device / "driver").symlink_to(driver_dir)
+        # If either filter were missing, this would be read as registers.
         (device / "resource5").write_bytes(_ahci_registers(capability=1, ports_implemented=1))
 
         entry = read_pci(tmp_path)["0000:00:00.0"]
 
         assert "ahci" not in entry
         assert "ahci_error" not in entry
+
+    def test_a_raid_class_device_the_ahci_driver_owns_has_its_registers_read(self, tmp_path: Path) -> None:
+        """Firmware RAID mode gives the function class 0x0104, and it is still AHCI to the kernel.
+
+        Read by class alone, its port count came from the ports libata DECLARES,
+        which is the figure rule 4 exists to refuse.
+        """
+        device = _device(tmp_path, "0000:00:17.0", **{"class": "0x010400"})
+        driver_dir = tmp_path / "drivers" / "ahci"
+        driver_dir.mkdir(parents=True)
+        (device / "driver").symlink_to(driver_dir)
+        (device / "resource5").write_bytes(_ahci_registers(capability=0xE7234F05, ports_implemented=0x3))
+
+        entry = read_pci(tmp_path)["0000:00:17.0"]
+
+        assert entry["ahci"] == {"capability": 0xE7234F05, "ports_implemented": 0x3}
 
     def test_the_ahci_keys_are_real(self, fixture_pci_keys: set[str]) -> None:
         """RED control: `ahci` is a key the real reader really writes."""

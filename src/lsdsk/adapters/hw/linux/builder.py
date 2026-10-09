@@ -43,7 +43,7 @@ from ....domain.models import (
 from ....domain.pci_address import pci_address_order
 from ....domain.text import device_text, first_reported
 from ..decode import pciids
-from ..decode.ahci import decode_capabilities
+from ..decode.ahci import decode_capabilities, holds_ahci_registers
 from ..decode.ata_identify import AtaIdentity, decode_identify, decode_vpd_ata_information
 from ..decode.ata_smart import decode_health
 from ..decode.captured import decode_base64, parse_int, plausible_celsius
@@ -56,7 +56,7 @@ from .capture import AtaBlobs, NvmeBlobs, NvmeClassEntry
 from .usage import resolve_usage
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
     from ..decode.ahci import AhciCapabilities
     from .capture import (
@@ -341,46 +341,65 @@ def _ahci_capabilities(entry: PciEntry) -> AhciCapabilities | None:
 
 
 def _port_counts(capture: LinuxCapture) -> dict[str, int]:
-    """Count physical ports or phys per controller.
+    """Count physical ports or phys per controller, each from exactly one source.
 
-    An AHCI controller is counted from its own ports-implemented bitmap and from
-    nothing else. ``libata`` creates one ``ata_port`` per *declared* port, so
-    counting those reports the capability register's port-count field rather
-    than the sockets the board wired: a chipset commonly declares six and
-    implements two. Where the bitmap cannot be read, or firmware leaves it at
-    zero, the count is dropped rather than guessed, because advertising free
-    ports that are not physically there sends somebody looking for connectors
-    that do not exist.
+    An AHCI controller - one the ``ahci`` driver owns or whose class says AHCI,
+    which differ when firmware RAID mode re-classes the function - is counted
+    from its own ports-implemented bitmap and from nothing else. ``libata``
+    creates one ``ata_port`` per *declared* port, so counting those reports the
+    capability register's port-count field rather than the sockets the board
+    wired: a chipset commonly declares six and implements two. Where the bitmap
+    cannot be read, or firmware leaves it at zero, the count is dropped rather
+    than guessed, because advertising free ports that are not physically there
+    sends somebody looking for connectors that do not exist.
 
     A SAS controller is counted from its own host phys that publish a hardware
     link rate. Not every ``sas_phy`` entry is one: an expander's phys are the
     expander's ports (``phy-6:0:5``), and mpt3sas adds virtual phys that publish
     no hardware rate at all - counting either reported an HBA 9500-16i as 21
     ports where it has 16.
-    """
-    counts: dict[str, int] = {}
-    for name, phy in capture.classes.sas_phy.items():
-        if _HOST_PHY.fullmatch(name) and parse_link_rate(phy.maximum_linkrate_hw) is not None:
-            _count_under(phy.path, counts)
-    for entry in capture.classes.ata_port.values():
-        _count_under(entry.path, counts)
 
+    The ``ata_port`` entries count only a controller with neither. They are
+    never added to the phys: a libsas HBA gives each SATA drive behind a phy an
+    ``ata_port`` of its own, so the sum counted every such socket twice.
+    """
+    phys = _tally(phy.path for name, phy in capture.classes.sas_phy.items() if _is_host_phy(name, phy))
+    ata_ports = _tally(entry.path for entry in capture.classes.ata_port.values())
+    counts: dict[str, int] = {}
     for address, entry in capture.pci.items():
-        if controller_kind_of(_class_code(entry)) is not ControllerKind.AHCI:
-            continue
-        capabilities = _ahci_capabilities(entry)
-        if capabilities is not None and capabilities.ports_implemented:
-            counts[address] = capabilities.ports_implemented
-        else:
-            counts.pop(address, None)
+        count = _port_count_of(entry, phys.get(address), ata_ports.get(address))
+        if count is not None:
+            counts[address] = count
     return counts
 
 
-def _count_under(path: str, counts: dict[str, int]) -> None:
-    """Add one port to the controller a sysfs path hangs off, if it names one."""
-    address = controller_address_of(path)
-    if address is not None:
-        counts[address] = counts.get(address, 0) + 1
+def _port_count_of(entry: PciEntry, phys: int | None, ata_ports: int | None) -> int | None:
+    """The one source a controller's port count is read from, in order of authority."""
+    if holds_ahci_registers(_class_and_subclass(entry), entry.driver):
+        capabilities = _ahci_capabilities(entry)
+        return capabilities.ports_implemented if capabilities is not None and capabilities.ports_implemented else None
+    return phys if phys is not None else ata_ports
+
+
+def _is_host_phy(name: str, phy: SasPhyEntry) -> bool:
+    """Whether a ``sas_phy`` entry is one of the controller's own phys with real hardware behind it."""
+    return _HOST_PHY.fullmatch(name) is not None and parse_link_rate(phy.maximum_linkrate_hw) is not None
+
+
+def _tally(paths: Iterable[str]) -> dict[str, int]:
+    """Count sysfs paths by the controller each hangs off, skipping one that names none."""
+    counts: dict[str, int] = {}
+    for path in paths:
+        address = controller_address_of(path)
+        if address is not None:
+            counts[address] = counts.get(address, 0) + 1
+    return counts
+
+
+def _class_and_subclass(entry: PciEntry) -> int | None:
+    """The PCI base and sub class, without the programming interface."""
+    code = _class_code(entry)
+    return None if code is None else code >> 8
 
 
 def _ahci_port_speed(capture: LinuxCapture, address: str | None) -> float | None:
