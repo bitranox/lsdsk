@@ -159,10 +159,16 @@ class SasPhyEntry(ClassEntry, frozen=True):
     Attributes:
         negotiated_linkrate: The rate the phy negotiated, such as ``6.0 Gbit``.
         maximum_linkrate_hw: The fastest rate the phy hardware supports.
+        port: The SAS port the phy belongs to, such as ``port-6:0``, from the
+            phy's own ``port`` link. This is what proves which phy a disk is
+            attached through; ``None`` for a phy in no port and for every
+            capture taken before the field existed, and then no disk is
+            given this phy's rates.
     """
 
     negotiated_linkrate: DeviceText | None = None
     maximum_linkrate_hw: DeviceText | None = None
+    port: DeviceText | None = None
 
 
 class AtaLinkEntry(ClassEntry, frozen=True):

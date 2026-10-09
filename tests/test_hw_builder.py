@@ -66,8 +66,11 @@ def test_when_a_drive_sits_behind_a_sas_hba_its_sata_speed_is_still_known() -> N
     """Verify the speed the ata_link class cannot report is recovered anyway.
 
     Every disk on this machine is behind a SAS HBA, where ``sata_spd`` reads
-    ``<unknown>``. The speeds below come from the IDENTIFY page and the SAS phy
-    instead, which is the whole reason those sources are consulted.
+    ``<unknown>``. The speeds below come from the IDENTIFY page instead, which
+    is the whole reason it is consulted. The port end stays unread: this
+    capture records no phy-to-port link, so nothing proves which phy a drive is
+    attached through, and the phy with the port's number is not it (see
+    ``tests/test_sas_topology.py``).
     """
     inventory = build_from(load("linux-sas-hba"))
     by_node = {disk.node: disk for disk in inventory.disks}
@@ -75,13 +78,14 @@ def test_when_a_drive_sits_behind_a_sas_hba_its_sata_speed_is_still_known() -> N
     ssd = by_node["sda"]
     assert ssd.link.negotiated_gbps == 6.0
     assert ssd.link.drive_max_gbps == 6.0
-    assert ssd.link.port_max_gbps == 12.0
+    assert ssd.link.port_max_gbps is None
     assert not ssd.link.is_underperforming
 
-    # A SATA-II drive on the same 12 Gb/s backplane: slower, but not a fault,
-    # because 3 Gb/s is all the drive itself can do.
+    # A SATA-II drive whose IDENTIFY does not report the negotiated rate. That
+    # rate was once borrowed from the phy sharing its port's number; with no
+    # proof of its phy it is unread, and an unread rate is never a fault.
     old = by_node["sdr"]
-    assert old.link.negotiated_gbps == 3.0
+    assert old.link.negotiated_gbps is None
     assert old.link.drive_max_gbps == 3.0
     assert not old.link.is_underperforming
 

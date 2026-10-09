@@ -76,7 +76,14 @@ if TYPE_CHECKING:
 # address in no capture, which detached every drive behind the VMD into a
 # phantom root complex of its own.
 _PCI_ADDRESS = re.compile(r"(?<![0-9a-f])[0-9a-f]{4,}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]")
-_SAS_PORT = re.compile(r"/port-(\d+:\d+)/")
+# The SAS port directly above a disk's end device: ``port-6:0`` for a drive on
+# the HBA itself, ``port-6:0:5`` for one behind an expander. Anchored on the end
+# device, because an expander-attached drive's path also passes through the
+# HBA's own wide port to the expander, and that port is not the drive's.
+_END_DEVICE_PORT = re.compile(r"/(port-\d+(?::\d+)+)/end_device-")
+# A phy of the HBA itself, ``phy-6:3``: an expander's phys carry a third
+# component (``phy-6:0:5``) and are the expander's ports, not the controller's.
+_HOST_PHY = re.compile(r"phy-\d+:\d+")
 _ATA_PORT = re.compile(r"/ata(\d+)/")
 # The same token as a zero-width lookahead, so EVERY occurrence in one path
 # is found. A consuming pattern eats the separator its neighbour needs, so
@@ -345,13 +352,18 @@ def _port_counts(capture: LinuxCapture) -> dict[str, int]:
     ports that are not physically there sends somebody looking for connectors
     that do not exist.
 
-    SAS phys are counted directly, as each ``sas_phy`` entry is a real phy.
+    A SAS controller is counted from its own host phys that publish a hardware
+    link rate. Not every ``sas_phy`` entry is one: an expander's phys are the
+    expander's ports (``phy-6:0:5``), and mpt3sas adds virtual phys that publish
+    no hardware rate at all - counting either reported an HBA 9500-16i as 21
+    ports where it has 16.
     """
     counts: dict[str, int] = {}
-    for entry in (*capture.classes.sas_phy.values(), *capture.classes.ata_port.values()):
-        address = controller_address_of(entry.path)
-        if address is not None:
-            counts[address] = counts.get(address, 0) + 1
+    for name, phy in capture.classes.sas_phy.items():
+        if _HOST_PHY.fullmatch(name) and parse_link_rate(phy.maximum_linkrate_hw) is not None:
+            _count_under(phy.path, counts)
+    for entry in capture.classes.ata_port.values():
+        _count_under(entry.path, counts)
 
     for address, entry in capture.pci.items():
         if controller_kind_of(_class_code(entry)) is not ControllerKind.AHCI:
@@ -362,6 +374,13 @@ def _port_counts(capture: LinuxCapture) -> dict[str, int]:
         else:
             counts.pop(address, None)
     return counts
+
+
+def _count_under(path: str, counts: dict[str, int]) -> None:
+    """Add one port to the controller a sysfs path hangs off, if it names one."""
+    address = controller_address_of(path)
+    if address is not None:
+        counts[address] = counts.get(address, 0) + 1
 
 
 def _ahci_port_speed(capture: LinuxCapture, address: str | None) -> float | None:
@@ -505,12 +524,14 @@ class _IndexedCapture(NamedTuple):
         ata_links: libata links, keyed by the ``ataN`` tokens in their paths.
         nvme_classes: NVMe controllers, keyed by their own sysfs paths.
         hwmon_readings: Temperatures, keyed by the monitor's sysfs path.
+        sas_phys: SAS phys, keyed by the port each one's own link names.
     """
 
     capture: LinuxCapture
     ata_links: Mapping[str, AtaLinkEntry]
     nvme_classes: Mapping[str, NvmeClassEntry]
     hwmon_readings: Mapping[str, _HwmonReading]
+    sas_phys: Mapping[str, tuple[SasPhyEntry, ...]]
 
 
 def _index_capture(capture: LinuxCapture) -> _IndexedCapture:
@@ -520,7 +541,21 @@ def _index_capture(capture: LinuxCapture) -> _IndexedCapture:
         ata_links=_ata_links_by_port(capture),
         nvme_classes=_nvme_classes_by_path(capture),
         hwmon_readings=_hwmon_readings_by_path(capture),
+        sas_phys=_sas_phys_by_port(capture),
     )
+
+
+def _sas_phys_by_port(capture: LinuxCapture) -> dict[str, tuple[SasPhyEntry, ...]]:
+    """Group the SAS phys by the port their own ``port`` link names.
+
+    A phy recorded with no port - in none, or taken before the reader kept the
+    link - is in no group, so it can never be handed to a disk.
+    """
+    groups: dict[str, list[SasPhyEntry]] = {}
+    for entry in capture.classes.sas_phy.values():
+        if entry.port:
+            groups.setdefault(entry.port, []).append(entry)
+    return {port: tuple(entries) for port, entries in groups.items()}
 
 
 def _ata_links_by_port(capture: LinuxCapture) -> dict[str, AtaLinkEntry]:
@@ -569,12 +604,25 @@ def _self_and_ancestors(path: str) -> Iterator[str]:
         path = path.rpartition("/")[0]
 
 
-def _phy_for(device_path: str, capture: LinuxCapture) -> SasPhyEntry | None:
-    """Find the SAS phy a disk is attached through."""
-    match = _SAS_PORT.search(device_path + "/")
-    if match is None:
-        return None
-    return capture.classes.sas_phy.get(f"phy-{match.group(1)}")
+def _sas_port_of(device_path: str) -> str | None:
+    """The SAS port directly above a disk's end device, or ``None`` off SAS."""
+    match = _END_DEVICE_PORT.search(device_path)
+    return None if match is None else match.group(1)
+
+
+def _phy_for(device_path: str, indexed: _IndexedCapture) -> SasPhyEntry | None:
+    """Find the SAS phy a disk is attached through, where the capture proves it.
+
+    The port above the disk is joined to the one phy whose own link names that
+    port. Never by number: mpt3sas numbers its ports in the order it discovers
+    them, so ``port-6:0`` can hold ``phy-6:5`` while ``phy-6:0`` trained no link
+    at all, and borrowing it gave the drive a neighbour's rates. A port nothing
+    links a phy to, or a wide one holding several, names no single phy, and the
+    link is then left unread at that end rather than filled from a guess.
+    """
+    port = _sas_port_of(device_path)
+    phys = () if port is None else indexed.sas_phys.get(port, ())
+    return phys[0] if len(phys) == 1 else None
 
 
 def _ata_link_for(device_path: str, indexed: _IndexedCapture) -> AtaLinkEntry | None:
@@ -654,14 +702,17 @@ def _hwmon_temperature(paths: Sequence[str], indexed: _IndexedCapture) -> int | 
     return min(readings, key=lambda reading: reading.position).temperature_c
 
 
-def _bus_of(identity: AtaIdentity | None, phy: SasPhyEntry | None) -> BusType:
+def _bus_of(identity: AtaIdentity | None, *, on_sas: bool) -> BusType:
     """Tell SATA from SAS for a disk that is already known not to be NVMe.
 
     `build_disks` routes a node by its name, so an nvme one goes to
     `_build_nvme_disk` and never arrives here. What is left is decided by
     whether the drive answered ATA IDENTIFY, which the node name cannot say.
+    Whether it hangs off a SAS end device is the path's to say, not the phy's:
+    a capture that cannot prove which phy a drive uses still shows the drive
+    is on SAS.
     """
-    if identity is not None or phy is not None:
+    if identity is not None or on_sas:
         # A drive that answers ATA IDENTIFY is SATA even when it is tunnelled
         # through a SAS expander; a drive that does not is native SAS.
         return BusType.SATA if identity is not None else BusType.SAS
@@ -852,7 +903,7 @@ def _build_ata_disk(node: str, block: BlockEntry, indexed: _IndexedCapture) -> D
     device_path = block.device_path
     address = controller_address_of(device_path)
     identity = _ata_identity(block, ata)
-    phy = _phy_for(device_path, capture)
+    phy = _phy_for(device_path, indexed)
     ata_link = _ata_link_for(device_path, indexed)
     usb_chain = _usb_chain(device_path, capture)
     usb = _usb_link(usb_chain, capture)
@@ -882,7 +933,7 @@ def _build_ata_disk(node: str, block: BlockEntry, indexed: _IndexedCapture) -> D
         wwn=_stable_identifier(block),
         size_bytes=_size_bytes(block, identity),
         kind=kind,
-        bus=BusType.USB if usb is not None else _bus_of(identity, phy),
+        bus=BusType.USB if usb is not None else _bus_of(identity, on_sas=_sas_port_of(device_path) is not None),
         controller_address=address,
         link=_sata_link(identity, phy, ata_link, _ahci_port_speed(capture, address)),
         usb=usb,
@@ -952,8 +1003,8 @@ def build_virtual_disks(capture: LinuxCapture) -> tuple[Disk, ...]:
     Two values are set here rather than inferred, because the general mapping
     reads them as measurements and for these devices they are not.
 
-    The transport: left to `_bus_of`, a device with no ATA identity and no phy
-    comes out ``unknown``, which claims it could not be read. Nothing failed to
+    The transport: left to `_bus_of`, a device with no ATA identity and no SAS
+    end device above it comes out ``unknown``, which claims it could not be read. Nothing failed to
     be read; the kernel already said there is no transport at all.
 
     The media: ``queue/rotational`` is 0 for loop, zd and zram alike, which the

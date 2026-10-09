@@ -371,6 +371,13 @@ CLASS_ATTRS: dict[str, tuple[str, ...]] = {
     "hwmon": ("name", "temp1_input", "temp1_label", "temp1_max", "temp1_crit", "temp1_alarm"),
 }
 
+#: Links a class member's device carries to another device, recorded by the
+#: name they resolve to. A SAS phy's ``port`` link is the only proof of which
+#: port it belongs to: the kernel creates it, and the port's own link to the
+#: phy, in the same call. The port's NUMBER names no phy, because mpt3sas
+#: numbers its ports in the order it discovers them.
+CLASS_LINKS: dict[str, dict[str, str]] = {"sas_phy": {"port": "device/port"}}
+
 BLOCK_QUEUE_ATTRS = ("rotational", "logical_block_size", "physical_block_size", "discard_granularity")
 BLOCK_DEVICE_ATTRS = ("vendor", "model", "rev", "wwid", "sas_address", "state", "queue_depth", "type")
 VPD_BLOBS = ("vpd_pg89", "vpd_pg80", "vpd_pg83", "vpd_pgb1", "inquiry")
@@ -633,9 +640,30 @@ def read_classes(root: Path = Path("/sys/class")) -> dict[str, dict[str, dict[st
         for node in _entries(base):
             entry = _read_attrs(node, attrs)
             entry["path"] = os.path.realpath(node)
+            for key, relative in CLASS_LINKS.get(class_name, {}).items():
+                target = _link_name(node / relative)
+                if target is not None:
+                    entry[key] = target
             entries[node.name] = entry
         classes[class_name] = entries
     return classes
+
+
+def _link_name(link: Path) -> str | None:
+    """The name of the device a sysfs link resolves to, or ``None`` with no such link.
+
+    Args:
+        link: The link to resolve.
+
+    Returns:
+        The last component of where it leads, or ``None`` when it is absent.
+    """
+    try:
+        if not link.is_symlink():
+            return None
+    except OSError:
+        return None
+    return Path(os.path.realpath(link)).name
 
 
 def _is_kernel_virtual(node: Path, root: Path) -> bool:
