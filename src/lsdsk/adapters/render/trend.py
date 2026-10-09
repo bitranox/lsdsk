@@ -162,7 +162,7 @@ def worth_showing(kind: CounterKind, trend: Trend, wear_floor: int = WEAR_WORTH_
     Args:
         kind: Which counter this is.
         trend: What the samples support saying about it.
-        wear_floor: The wear percentage above which a drive earns a row on its own.
+        wear_floor: The wear percentage at or above which a drive earns a row on its own.
 
     Returns:
         Whether to render the row.
@@ -294,7 +294,7 @@ def render_trend(
         inventory: The machine.
         history: What has been recorded on earlier runs.
         width: Terminal width, which decides how many columns fit.
-        wear_floor: The wear percentage above which a drive earns a row on its own.
+        wear_floor: The wear percentage at or above which a drive earns a row on its own.
         store_refusal: Why the counter store could not be read, when it could
             not. An unreadable store yields an empty history, which is
             indistinguishable from a machine nobody has recorded yet, so

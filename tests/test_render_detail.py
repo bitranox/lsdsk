@@ -607,3 +607,28 @@ def test_a_drive_sold_as_500gb_is_labelled_on_both_scales_decimal_first() -> Non
     identity = _values_of(detail.disk_detail(drive, machine, thresholds=DEFAULT_THRESHOLDS), detail.IDENTITY)
     assert identity["size"] == "500GB/466GiB", f"a 500GB drive's size was drawn as {identity['size']!r}"
     assert "size 500GB/466GiB" in _disk_panel(machine, drive)
+
+
+@pytest.mark.os_agnostic
+def test_an_nvme_drive_that_does_publish_attributes_keeps_its_attribute_summary() -> None:
+    """``smart`` is ``n/a`` on NVMe only while no attribute was decoded as well.
+
+    The bus alone says an NVMe drive normally has no ATA attribute table, but a
+    drive that somehow answers one has a real summary, and drawing ``n/a`` over
+    it would hide attributes past their threshold behind a claim about the
+    protocol. The control is the same drive without attributes, which stays
+    ``n/a``.
+    """
+    from lsdsk.domain.models import SmartAttribute
+
+    machine = _machine("linux-nvme-board")
+    drive = _nvme_drive_with_nothing_ata(machine)
+    assert drive.health is not None
+    attribute = SmartAttribute(id=5, name="Reallocated_Sector_Ct", value=100, worst=100, threshold=10, raw=0)
+    answering = drive.with_changes(health=drive.health.with_changes(attributes=(attribute,)))
+
+    summary = _values_of(detail.disk_detail(answering, machine, thresholds=DEFAULT_THRESHOLDS), detail.HEALTH)["smart"]
+    control = _values_of(detail.disk_detail(drive, machine, thresholds=DEFAULT_THRESHOLDS), detail.HEALTH)["smart"]
+
+    assert summary == "1 attributes, 0 failing", f"an NVMe drive with a decoded attribute was drawn as {summary!r}"
+    assert control == theme.NOT_APPLICABLE
