@@ -36,8 +36,8 @@ linux-sas-hba   2 root complexes (0000:00, 0000:ff)   root ports to PCIe Gen3x8 
      ├─┬── 0000:00:03.0  Gen3x8 (7.88 GB/s)     Gen3x8 (7.88 GB/s)     Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 PCI Express Ro>
 ~    │ └── 0000:03:00.0  Gen4x8 (15.75 GB/s)    Gen3x8 (7.88 GB/s)     Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS38xx
      │     device        model                         size  kind  bus   port    disk    link    temp  worn
-~    │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  12G     6G      6G       36C    1%
-~    │     /dev/sdb      Samsung SSD 870 EVO 500GB   466GiB  SSD   SATA  12G     6G      6G       30C    2%
+~    │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  -       6G      6G       36C    1%
+~    │     /dev/sdb      Samsung SSD 870 EVO 500GB   466GiB  SSD   SATA  -       6G      6G       30C    2%
      │     ...
 
 Controllers on linux-sas-hba        ...

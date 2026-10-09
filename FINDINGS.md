@@ -37,8 +37,9 @@ fault, and what it refuses to guess. Back to the [README](README.md).
 - Temperature against the limits the drive itself publishes, not a guess.
 - Identical models running mismatched firmware.
 - Where there is room for another drive, and whether that controller has the
-  bandwidth to feed it. A SAS HBA answers this exactly, because each phy is a
-  real port the kernel publishes. An AHCI controller answers it only when its
+  bandwidth to feed it. A SAS HBA answers this exactly, because it counts only
+  its own host phys that report a hardware link rate, and never an expander's.
+  An AHCI controller answers it only when its
   firmware publishes a ports-implemented bitmap, and otherwise reports no count
   at all rather than the inflated one the kernel's port list would give. An NVMe
   controller has no spare port to report: it is the drive's own interface. Where

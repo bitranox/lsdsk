@@ -5,6 +5,97 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **`lsdsk.get_config` raises `ValueError` for a profile that is not text**, not `TypeError`. The
+  global `--profile`, `config` and `config-deploy` now judge a profile name through one function.
+  `help(lsdsk.get_config)` documents what it raises: `ValueError`, `LayerLoadError`,
+  `PermissionError` and `OSError`.
+
+### Fixed
+
+- **Every JSON command judged against the counter history says when that history could not be
+  read.** `findings`, `health`, `smart`, `disks`, `controllers`, `slots` and `topology` now answer
+  `ok: false` with a `skipped` entry naming the store when it is corrupt, belongs to another
+  machine, or is over the size bound. Before, only `trend` did, so the others reported a
+  complete-looking answer judged without the history.
+- **A stray backward reading no longer starts a quiet run.** Power-on hours 1000, 5, 1001 with an
+  unchanged counter were reported as silent for 996 hours instead of one. The rising and quiet
+  verdicts now share one rule for which readings may anchor a span.
+- **A recording run removes the temporary files a killed history write left behind**, so they no
+  longer pile up beside the counter store. Only that store's own temporary files older than five
+  minutes are removed.
+- **`lsdsk config --profile <invalid name>` exits 22 with an error envelope**, not 70 with an empty
+  stdout.
+- **`lsdsk logdemo` no longer exits 70 on a refused `LOG_*` variable** such as
+  `LOG_CONSOLE_LEVEL=bogus`. It starts its logging through the same fallback as every other
+  command, setting the variable aside and naming it.
+- **A `default_permissions.enabled` that is not a boolean falls back to true with a warning**,
+  rather than making `config-deploy` exit 70 with an empty stdout.
+- **`lsdsk config` says when a section it shows is a single value the tool ignores**
+  (`history = false`): the human view prints an "Ignored:" line, and the JSON envelope lists it
+  under `skipped`, so `ok` is false.
+- **A `scrub_patterns` piece cut off by the comma split is reported.** The environment and `.env`
+  form of `lib_log_rich.scrub_patterns` splits on every comma, so `token=\d{1,3}` loses `3}`; that
+  piece used to be dropped silently. The shipped `90-logging.toml` now says so.
+- **A refused configuration value is quoted with its control characters escaped**, so an ESC or
+  OSC sequence in it can no longer act on the terminal.
+- **A `--set` integer longer than 64 bits is quoted back as typed**, not as `1e+23`.
+- **`config-deploy` and `config-generate-examples` refuse a directory standing where a file
+  belongs** (exit 78, naming the path). Before, `config-deploy` reported success with the file
+  missing, and the examples were skipped as "already exist".
+- **`config-deploy` logs a refused deployment as "Deployment refused" with its real cause**, not
+  as "Rejected profile name" for every `ValueError`.
+- **The Windows temperature fallback asks for the property the SDK defines** (52, not the
+  undefined 24) and reads the full 16-byte `STORAGE_TEMPERATURE_INFO`, so it can produce a
+  reading. This is unverified on real hardware: the only Windows disk available here is a QEMU one,
+  which refuses the query.
+- **An ATA IDENTIFY page that carries no identity is refused.** A page of all zeros or all ones,
+  or one with no model, serial or firmware and no LBA count, used to turn a SAS, SCSI or RAID disk
+  whose passthrough returned it into a SATA disk of unknown kind; such a disk now keeps the bus
+  Windows names and its seek-penalty kind.
+- **The SMART page blames privilege only on an unprivileged run.** A privileged user was told a
+  missing attribute table needs root or Administrator; a refused read now names the recorded
+  refusal.
+- **A Windows disk interface whose path could not be read is no longer counted as a disk.** The
+  header says how many interfaces were not read and why, and the JSON envelope lists them under
+  `skipped`.
+- **A Windows PCI slot number outside the 13-bit range reads as unknown**, as on Linux.
+- **A Windows capture no longer records the working directory.**
+- **A SAS controller counts only its own host phys that report a hardware link rate.** The HBA
+  9500-16i in the sample capture showed 21 ports and 11 free; it now shows 16 and 6. Expander phys
+  are never counted as the controller's ports. A SAS disk's link is read only from the phy proven
+  to carry it, through the kernel's phy-to-port link, which new captures record, so a native SAS
+  drive no longer shows a neighbouring phy's speed. On captures that do not record that link, the
+  port end shows `-` instead of a borrowed figure.
+- **A SATA controller the `ahci` driver runs in firmware RAID mode is counted from its
+  ports-implemented register**, like any AHCI controller, not from the ports `libata` declares. A
+  libsas HBA with SATA drives no longer counts each port twice.
+- **A native SAS drive is no longer sent ATA IDENTIFY and SMART on a privileged Linux run.** It
+  cannot answer them, and the refusals marked every run on a SAS machine incomplete (`ok: false`).
+- **Linux readings that answered wrong now answer "not read".** A looping symlink under
+  `/sys/block` no longer stops the scan on Python 3.11 and 3.12. A mount or swap whose source is a
+  character device such as `/dev/null` is no longer recorded as a block device. A PCI vendor or
+  device ID wider than 16 bits in a capture is treated as unread. A container marker in a mount
+  table larger than 1 MiB is found, and a virtual machine whose `/proc/cpuinfo` is larger than
+  1 MiB is no longer reported as bare metal.
+- **A Surface laptop, a Chromebook or a ThinkPad Xenon is no longer reported as a virtual
+  machine**, which skipped every link, port and fabric rule. DMI strings must now name the
+  hypervisor as a whole word.
+- **A mount or swap path holding a form feed, carriage return, vertical tab, U+0085, U+2028 or a
+  similar character is no longer dropped**, which left its disk reading "not mounted".
+  Kernel-published text is now split on the newline only.
+- **A replayed capture names a device `pci.ids` knows only by vendor the way the live run did**
+  ("Intel Corporation device 7abb"), instead of drawing "Device 8086:7abb".
+- **Tens of thousands of bind mounts of one device no longer slow `lsdsk disks` to seconds.**
+  Mountpoint deduplication is linear.
+- **A temperature outside -60..200 C is shown as not measured**, rather than as a figure: a corrupt
+  hwmon attribute, or an NVMe log page of all ones that decodes to 65262 C. A hwmon attribute
+  longer than the float range no longer raises `OverflowError`.
+- **`COMMANDS.md` lists the error types a failure envelope really carries**: `CONFIG_ERROR`,
+  `INVALID_ARGUMENT`, `IO_ERROR`, `PERMISSION_DENIED` and `USAGE_ERROR`. It named
+  `SOFTWARE_ERROR` and `GENERAL_ERROR`, which no envelope carries, and left out `IO_ERROR`.
+
 ## [1.7.2] 2026-10-09 08:31:46
 
 ### Changed

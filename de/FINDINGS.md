@@ -45,9 +45,9 @@ Fehler nennt, und was es zu raten ablehnt. Zurück zur [README](README.md).
   gegen eine Schätzung.
 - Gleiche Modelle mit unterschiedlicher Firmware.
 - Wo Platz für ein weiteres Laufwerk ist, und ob dieser Controller die
-  Bandbreite hat, es zu speisen. Ein SAS-HBA beantwortet das genau, weil jeder
-  Phy ein echter Anschluss ist, den der Kernel veröffentlicht. Ein
-  AHCI-Controller beantwortet es nur, wenn seine Firmware eine Bitmaske der
+  Bandbreite hat, es zu speisen. Ein SAS-HBA beantwortet das genau, weil er
+  nur seine eigenen Host-Phys zählt, die eine Hardware-Linkrate melden, und nie
+  die eines Expanders. Ein AHCI-Controller beantwortet es nur, wenn seine Firmware eine Bitmaske der
   bestückten Anschlüsse veröffentlicht, und meldet sonst gar keine Zahl statt
   der aufgeblähten, die die Anschlussliste des Kernels ergäbe. Ein
   NVMe-Controller hat keinen freien Anschluss zu melden: er ist die Schnittstelle
