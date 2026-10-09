@@ -500,12 +500,12 @@ def _execute_deploy(
             output_format=output_format,
             hint="Hint: System-wide deployment (--target app/host) may require sudo.",
         )
-    # A rejected --profile is ordinary user input, not a fault in the
-    # deployment: the configuration library validates the name and raises
-    # ValueError before it writes anything. It earns the invalid-argument code
-    # that a bad --section already uses, rather than the generic failure one.
+    # A ValueError is the library refusing the request itself - a mode out of
+    # range, a name it will not take - which is ordinary user input rather than a
+    # fault in the deployment. A bad --profile is refused before this is reached,
+    # so what arrives here is logged for what it says, not named after one cause.
     except ValueError as exc:
-        logger.error("Rejected profile name", extra={"error": str(exc)})
+        logger.error("Deployment refused", extra={"error": str(exc), "error_type": type(exc).__name__})
         _fail_after_output(str(exc), ExitCode.INVALID_ARGUMENT, output_format=output_format)
     # OSError is what deployment legitimately fails with - a full disk, a
     # read-only target - and ConfigurationError is what the port may report for
