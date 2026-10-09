@@ -19,10 +19,13 @@ from lib_layered_config import Config, redact_mapping
 from rich.console import Console
 
 from lsdsk import __init__conf__
+from lsdsk.adapters.config.history import read_history_settings
 from lsdsk.adapters.config.loader import invalid_profile_message
 from lsdsk.adapters.config.overrides import apply_overrides
 from lsdsk.adapters.config.permissions import read_permission_defaults
 from lsdsk.adapters.config.secrets import redact_secrets
+from lsdsk.adapters.config.tunables import read_display_settings, read_thresholds
+from lsdsk.adapters.config.values import REASON_SECTION, RejectedValue
 from lsdsk.domain.deployment import DeployRequest
 from lsdsk.domain.enums import ActionCommand, DeployTarget, OutputFormat, WriteOutcome
 from lsdsk.domain.errors import ConfigurationError
@@ -107,6 +110,7 @@ def cli_config(ctx: click.Context, output_format: OutputFormat, section: str | N
     cli_ctx = get_cli_context(ctx)
     _refuse_an_invalid_profile(profile, output_format=output_format)
     effective_config, effective_profile = _resolve_config(cli_ctx, profile)
+    ignored_sections = _ignored_sections(effective_config)
 
     extra = {"command": ActionCommand.CONFIG.value, "format": output_format.value, "profile": effective_profile}
     with lib_log_rich.runtime.bind(job_id="cli-config", extra=extra):
@@ -125,7 +129,11 @@ def cli_config(ctx: click.Context, output_format: OutputFormat, section: str | N
         if output_format is OutputFormat.JSON:
             data = _redacted_config_data(effective_config, section)
             try:
-                emit_action(ActionCommand.CONFIG, MappingResult.model_validate(data))
+                emit_action(
+                    ActionCommand.CONFIG,
+                    MappingResult.model_validate(data),
+                    skipped=[_ignored_sentence(ignored) for ignored in ignored_sections],
+                )
             except PayloadTooDeepError:
                 # The library accepts 100 levels and the JSON writer stops at 98
                 # on Windows, so a file both layers accepted reached this.
@@ -154,12 +162,48 @@ def cli_config(ctx: click.Context, output_format: OutputFormat, section: str | N
                 profile=effective_profile,
                 console=Console(file=safe_console.safe_stream()),
             )
+            for ignored in ignored_sections:
+                safe_console.echo(_ignored_sentence(ignored))
         except ValueError as exc:
             # A backstop, not the guard: the lookup above is what a missing
             # section now meets. The library decides for itself what it can
             # render, and a disagreement between the two must still leave 22
             # rather than reading as a crash in this tool.
             _fail_after_output(str(exc), ExitCode.INVALID_ARGUMENT, output_format=output_format)
+
+
+def _ignored_sections(config: Config) -> list[RejectedValue]:
+    """The sections given as a single value, which the tool reads none of.
+
+    The page shows such a section as the layer it came from, so without this a
+    reader takes it for a setting in force. Only a whole section is judged here:
+    a refused VALUE inside a real table is already named on stderr by the root
+    group, and the table it sits in is still read.
+
+    Args:
+        config: The merged configuration the command is about to show.
+
+    Returns:
+        One refusal per section that is not a table, in the order read.
+    """
+    refused = (
+        *read_thresholds(config).rejected,
+        *read_display_settings(config).rejected,
+        *read_history_settings(config, path_override=None).rejected,
+    )
+    return [value for value in refused if value.reason == REASON_SECTION]
+
+
+def _ignored_sentence(ignored: RejectedValue) -> str:
+    """One ignored section as the line the page and the envelope share.
+
+    Args:
+        ignored: The refusal of a section that is not a table.
+
+    Returns:
+        The sentence, without the ``Warning:`` prefix stderr already carried.
+    """
+    return f"Ignored: {ignored.dotted}={ignored.raw}: {ignored.reason}. Using {ignored.used}."
 
 
 def _fail_after_output(
