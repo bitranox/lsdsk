@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import pytest
 
 from lsdsk.adapters.render.report import render_smart
 from lsdsk.domain.enums import BusType
 from lsdsk.domain.models import Disk, Inventory, RefusedReading
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _NEEDS_ROOT = "needs root or Administrator"
 

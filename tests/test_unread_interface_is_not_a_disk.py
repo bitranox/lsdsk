@@ -9,16 +9,21 @@ page said "No problems found".
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
-from lsdsk.adapters.cli.commands.scan import _skipped_readings  # pyright: ignore[reportPrivateUsage] - the seam under test
+from lsdsk.adapters.cli.commands.scan import (
+    _skipped_readings,  # pyright: ignore[reportPrivateUsage] - the seam under test
+)
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render.report import render_header
-from lsdsk.domain.models import Inventory
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from lsdsk.domain.models import Inventory
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "windows-ahci.json"
 

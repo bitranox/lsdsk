@@ -212,7 +212,7 @@ def _refuse_an_unusable_page(page: bytes) -> None:
     Raises:
         ValueError: For an all-zero or all-ones page.
     """
-    if not any(page) or all(byte == 0xFF for byte in page):
+    if not any(page) or page == b"\xff" * len(page):
         message = "IDENTIFY response is all zeros or all ones: it carries no identity"
         raise ValueError(message)
 
