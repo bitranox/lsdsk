@@ -1175,3 +1175,36 @@ def test_a_live_trend_is_judged_against_the_history_the_table_sees(
     assert store.read_bytes() == before, "the JSON run wrote to the store"
     assert copy.read_bytes() != before, "the control: the human run records, so the copy must have grown"
     assert _hours_by_drive(as_json) == _hours_by_drive(as_table)
+
+
+@pytest.mark.os_agnostic
+def test_trend_does_not_call_a_counter_quiet_across_a_stray_backward_row(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    """End to end on a crafted store: one stray row must not stretch the silence to thousands of hours.
+
+    A replay folds nothing into the store, so the store carries the newest row
+    itself: hour 10512 and hour 10513 at the same value, with one misread row at
+    hour 5 between them. The counter has been seen silent for ONE hour, and `quiet` over 31481 hours is
+    the stray row speaking.
+    """
+    from lsdsk.adapters.history.store import save_history
+    from lsdsk.domain.history import DiskSeries, History, Sample
+
+    identity = "naa.0bec2a24ffed9ce0"
+    rows = tuple(
+        Sample(power_on_hours=hours, captured_at=f"2026-01-0{day}T00:00:00Z", crc_errors=430)
+        for day, hours in ((1, 10512), (2, 5), (3, 10513))
+    )
+    store = tmp_path / "history.json"
+    series = DiskSeries(identity=identity, model="X", samples=rows)
+    save_history(History(hostname="linux-sas-hba", series=(series,)), store)
+    args = ("--history-file", str(store), "--no-record", "trend", "--replay", str(LATER), "--format", "json")
+
+    envelope = json.loads(run(cli_runner, production_factory, *args).stdout)
+
+    entries = [e for e in envelope["data"]["trend"] if e["counter"] == "crc_errors"]
+    judged = [e for e in entries if e["trend"]["span_hours"] is not None]
+    assert judged, f"no CRC trend was judged, so the run proved nothing: {entries}"
+    assert {e["trend"]["span_hours"] for e in judged} == {1}, judged
+    assert all(e["trend"]["verdict"] == "too-close" for e in judged), judged

@@ -374,12 +374,15 @@ def _quiet_run_start(samples: list[Sample], kind: CounterKind) -> Sample:
     """
     latest = samples[-1]
     start = latest
-    for candidate in reversed(samples[:-1]):
+    anchors = _anchors(samples)
+    for index in range(len(samples) - 2, -1, -1):
+        candidate = samples[index]
         if candidate.counter(kind) != latest.counter(kind):
             break
         if candidate.power_on_hours > start.power_on_hours:
             break  # the drive's clock went backwards; the run does not span it
-        start = candidate
+        if anchors[index]:
+            start = candidate
     return start
 
 
@@ -735,9 +738,10 @@ def _previous_reading(usable: list[Sample]) -> Sample:
         1004
     """
     latest = usable[-1]
+    anchors = _anchors(usable)
     for index in range(len(usable) - 2, -1, -1):
         candidate = usable[index]
-        if candidate.power_on_hours != latest.power_on_hours and _can_be_a_base(usable, index, latest):
+        if candidate.power_on_hours != latest.power_on_hours and anchors[index]:
             return candidate
     for candidate in reversed(usable[:-1]):
         if candidate.power_on_hours != latest.power_on_hours:
@@ -745,18 +749,38 @@ def _previous_reading(usable: list[Sample]) -> Sample:
     return usable[-2]
 
 
-def _can_be_a_base(usable: list[Sample], index: int, latest: Sample) -> bool:
-    """Whether the row at ``index`` may anchor a rate ending at ``latest``.
+def _anchors(series: list[Sample]) -> list[bool]:
+    """Which rows may anchor a span ending at the newest row.
 
-    A row whose clock stepped backwards from the row before it is a stray (or
-    the first row of a swapped drive's new run), and a later reading must not
-    be rated across the gap it opens. A base also has to sit at or before the
-    latest reading's own hour, or the span would run backwards.
+    The one answer both verdict paths use. A row is a stray when the drive's clock
+    stood HIGHER earlier and the newest reading has come back up to that earlier
+    hour: the clock carried on from the old run, so the low row was a misread and
+    no span may start there. A row after a swap or reset is not: the newest reading
+    never regained the old hours, so the new run's first row is a real anchor.
+    A row past the newest reading's own hour cannot anchor a span ending before it.
+
+    Args:
+        series: The usable samples, oldest first.
+
+    Returns:
+        One flag per sample, the newest included (which anchors nothing).
+
+    Example:
+        >>> rows = [Sample(power_on_hours=h, captured_at="t") for h in (1000, 5, 1001)]
+        >>> _anchors(rows)
+        [True, False, True]
+        >>> _anchors([Sample(power_on_hours=h, captured_at="t") for h in (1000, 5, 15)])
+        [False, True, True]
     """
-    candidate = usable[index]
-    if candidate.power_on_hours > latest.power_on_hours:
-        return False
-    return index == 0 or candidate.power_on_hours >= usable[index - 1].power_on_hours
+    newest = series[-1].power_on_hours
+    highest_reached = -1  # the highest hour at or below the newest that an earlier row recorded
+    flags: list[bool] = []
+    for sample in series:
+        hours = sample.power_on_hours
+        flags.append(hours <= newest and hours >= highest_reached)
+        if hours <= newest:
+            highest_reached = max(highest_reached, hours)
+    return flags
 
 
 def _rising(kind: CounterKind, previous: Sample, latest: Sample, delta: int, thresholds: Thresholds) -> Trend:

@@ -143,6 +143,40 @@ def test_a_stray_backward_row_is_never_the_base_of_a_later_rate() -> None:
     assert (trend.delta, trend.span_hours, trend.per_hour) == (500, 1, 500)
 
 
+def test_a_stray_backward_row_never_starts_a_quiet_run() -> None:
+    """The quiet path asks the same question the rising path does: which rows may anchor a span.
+
+    Hours 1000, 5, 1001 with an unchanged counter is one real hour of silence
+    and one stray row, never 996 hours of it.
+    """
+    samples = series_of(crc_sample(1000, 400), crc_sample(5, 400), crc_sample(1001, 400))
+    trend = trend_for(samples, CounterKind.CRC_ERRORS)
+    assert trend.span_hours == 1, f"the stray row anchored the quiet run: {trend.span_hours}"
+    assert trend.verdict is TrendVerdict.TOO_CLOSE
+
+
+def test_two_stray_backward_rows_never_start_a_quiet_run() -> None:
+    """Two strays in a row are both skipped, so the run reaches back to the row they interrupted."""
+    samples = series_of(crc_sample(1000, 400), crc_sample(5, 400), crc_sample(6, 400), crc_sample(1001, 400))
+    trend = trend_for(samples, CounterKind.CRC_ERRORS)
+    assert trend.span_hours == 1, f"a stray row anchored the quiet run: {trend.span_hours}"
+    assert trend.verdict is TrendVerdict.TOO_CLOSE
+
+
+def test_a_stray_row_does_not_shorten_a_quiet_run_it_interrupts() -> None:
+    """The run is measured through the stray to the real anchor, not stopped at it."""
+    samples = series_of(crc_sample(1000, 400), crc_sample(1010, 400), crc_sample(5, 400), crc_sample(1020, 400))
+    trend = trend_for(samples, CounterKind.CRC_ERRORS)
+    assert trend.span_hours == 20
+
+
+def test_a_swapped_drive_keeps_its_quiet_run_from_its_own_new_clock() -> None:
+    """The control: the clock never came back to the old run, so the new run's first row is the anchor."""
+    samples = series_of(crc_sample(1000, 500), crc_sample(5, 500), crc_sample(15, 500))
+    trend = trend_for(samples, CounterKind.CRC_ERRORS)
+    assert (trend.verdict, trend.span_hours) == (TrendVerdict.QUIET, 10)
+
+
 def test_a_swapped_drive_is_rated_from_its_own_new_clock_once_it_has_two_rows() -> None:
     """The control: after a real reset the new run is the base, never the old clock."""
     samples = series_of(crc_sample(1000, 10), crc_sample(5, 0), crc_sample(15, 100))
