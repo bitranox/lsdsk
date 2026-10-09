@@ -154,8 +154,8 @@ def read_mounts(
         return None
 
     rows: list[dict[str, str]] = []
-    for line in text.splitlines():
-        if not line.strip():
+    for line in text.split("\n"):
+        if not line:
             continue
         row = _parse_mountinfo_line(line)
         if row is not None:
@@ -174,8 +174,10 @@ def _parse_mountinfo_line(line: str) -> dict[str, str] | None:
     left, separator, right = line.partition(" - ")
     if not separator:
         return None
-    left_fields = left.split()
-    right_fields = right.split(maxsplit=2)
+    # Single spaces separate the fields and a path never holds one (the kernel
+    # escapes it), whereas a bare split() would also cut at form feed, U+2028...
+    left_fields = left.split(" ")
+    right_fields = right.split(" ", 2)
     if len(left_fields) < _MIN_LEFT_FIELDS or len(right_fields) < _MIN_RIGHT_FIELDS:
         return None
 
@@ -223,8 +225,8 @@ def read_swaps(
         return None
 
     rows: list[dict[str, str]] = []
-    for line in text.splitlines()[1:]:
-        fields = line.split()
+    for line in text.split("\n")[1:]:
+        fields = [field for field in re.split(r"[ \t]+", line) if field]
         if not fields:
             continue
         # The kernel escapes space, tab, newline and backslash the same way in
@@ -411,7 +413,7 @@ def _udev_signature(path: Path) -> dict[str, str]:
     if text is None:
         return {}
     found: dict[str, str] = {}
-    for line in text.splitlines():
+    for line in text.split("\n"):
         if not line.startswith("E:"):
             continue
         key, _, value = line[2:].partition("=")
@@ -439,7 +441,9 @@ def _read_short_text(path: Path, *, limit: int = MAX_ATTRIBUTE_CHARS) -> str | N
             :data:`MAX_ATTRIBUTE_CHARS`.
     """
     try:
-        with path.open("r", errors="replace") as handle:
+        # newline="" keeps a carriage return the file holds: universal newlines would
+        # turn it into the row break the caller now splits on, cutting a udev value short.
+        with path.open("r", errors="replace", newline="") as handle:
             raw = handle.read(limit + 1)
     except OSError:
         return None

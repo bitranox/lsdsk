@@ -109,16 +109,19 @@ def container_markers_in_mounts(mountinfo: str) -> str:
         ''
     """
     found: set[str] = set()
-    for line in mountinfo.splitlines():
+    # The kernel prints a mount path unescaped except for space, tab, newline
+    # and backslash, so only "\n" ends a row and only " " separates its fields:
+    # splitlines() and a bare split() also break on form feed, U+2028 and kin.
+    for line in mountinfo.split("\n"):
         fields = line.split(" - ", 1)
         if len(fields) != 2:  # noqa: PLR2004 - a mountinfo line has exactly one separator
             continue
         before, after = fields
-        columns = before.split()
+        columns = before.split(" ")
         if len(columns) < 5:  # noqa: PLR2004 - id, parent, device, root, mount point
             continue
         mount_point = columns[4]
-        filesystem = after.split()[0] if after.split() else ""
+        filesystem = after.split(" ", 1)[0]
         runtime = _CONTAINER_FILESYSTEMS.get(filesystem)
         if runtime and mount_point.startswith(_CONTAINED_MOUNT_POINTS):
             found.add(runtime)
