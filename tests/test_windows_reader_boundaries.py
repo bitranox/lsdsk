@@ -214,14 +214,14 @@ def _temperature_of(answer: bytes) -> dict[str, int]:
 
 
 @pytest.mark.os_agnostic
-@pytest.mark.parametrize("size", [34, 36])
-def test_a_one_sensor_temperature_answer_is_read_at_the_exact_and_the_padded_size(size: int) -> None:
+@pytest.mark.parametrize("size", [40])
+def test_a_one_sensor_temperature_answer_is_read_at_the_size_the_sdk_declares(size: int) -> None:
     assert _temperature_of(_temperature_answer(size)) == {"temperature_c": 45, "warning_c": 70, "critical_c": 80}
 
 
 @pytest.mark.os_agnostic
 def test_a_temperature_answer_too_short_for_its_first_sensor_is_no_reading() -> None:
-    assert _temperature_of(_temperature_answer(33)) == {}
+    assert _temperature_of(_temperature_answer(39)) == {}
 
 
 @pytest.mark.os_agnostic

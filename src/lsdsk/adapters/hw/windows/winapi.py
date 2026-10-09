@@ -111,7 +111,7 @@ SCSI_IOCTL_DATA_IN = 1
 STORAGE_DEVICE_PROPERTY = 0
 STORAGE_ADAPTER_PROPERTY = 1
 STORAGE_DEVICE_SEEK_PENALTY_PROPERTY = 7
-STORAGE_DEVICE_TEMPERATURE_PROPERTY = 24
+STORAGE_DEVICE_TEMPERATURE_PROPERTY = 52
 STORAGE_ADAPTER_PROTOCOL_SPECIFIC_PROPERTY = 49
 STORAGE_DEVICE_PROTOCOL_SPECIFIC_PROPERTY = 50
 
@@ -260,8 +260,11 @@ class STORAGE_TEMPERATURE_INFO(ctypes.Structure):
         ("Temperature", ctypes.c_short),
         ("OverThreshold", ctypes.c_short),
         ("UnderThreshold", ctypes.c_short),
-        ("OverThresholdChanged", BOOLEAN),
-        ("UnderThresholdChanged", BOOLEAN),
+        ("OverThresholdChangable", BOOLEAN),
+        ("UnderThresholdChangable", BOOLEAN),
+        ("EventGenerated", BOOLEAN),
+        ("Reserved0", ctypes.c_ubyte),
+        ("Reserved1", DWORD),
     )
 
 

@@ -58,8 +58,8 @@ FIXED_SIZES = {
     "STORAGE_DEVICE_NUMBER": 12,
     "STORAGE_PROPERTY_QUERY": 12,
     "STORAGE_PROTOCOL_SPECIFIC_DATA": 40,
-    "STORAGE_TEMPERATURE_DATA_DESCRIPTOR": 36,
-    "STORAGE_TEMPERATURE_INFO": 10,
+    "STORAGE_TEMPERATURE_DATA_DESCRIPTOR": 40,
+    "STORAGE_TEMPERATURE_INFO": 16,
 }
 
 #: The two that carry a ``Reserved`` pointer, which genuinely follows the
@@ -487,3 +487,14 @@ def test_the_sat_request_buffers_sit_where_the_sdk_sample_puts_them() -> None:
     assert offset("data") == request + 4 + 32
     if ctypes.sizeof(ctypes.c_void_p) == 8:
         assert (offset("sense"), offset("data")) == (60, 92)
+
+
+@pytest.mark.os_agnostic
+def test_the_temperature_property_is_the_id_the_sdk_assigns() -> None:
+    """STORAGE_PROPERTY_ID runs 0..17 then 48..; StorageDeviceTemperatureProperty is 52, and 24 is undefined."""
+    assert api.STORAGE_DEVICE_TEMPERATURE_PROPERTY == 52
+
+
+@pytest.mark.os_agnostic
+def test_a_temperature_sensor_starts_after_the_24_byte_header_the_sdk_declares() -> None:
+    assert api.STORAGE_TEMPERATURE_DATA_DESCRIPTOR.TemperatureInfo.offset == 24
