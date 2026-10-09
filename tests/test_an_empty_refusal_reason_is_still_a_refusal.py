@@ -48,7 +48,9 @@ def test_a_capture_whose_refusal_text_is_empty_still_reports_the_run_incomplete(
     capture = tmp_path / "capture.json"
     capture.write_text(json.dumps(data), encoding="utf-8")
 
-    output = cli_runner.invoke(cli, ["health", "--replay", str(capture), "--format", "json"], obj=production_factory).output
+    output = cli_runner.invoke(
+        cli, ["health", "--replay", str(capture), "--format", "json"], obj=production_factory
+    ).output
     envelope = cast("dict[str, Any]", json.JSONDecoder().raw_decode(output[output.index("{") :])[0])
 
     assert envelope["ok"] is False, envelope["skipped"]

@@ -51,4 +51,6 @@ def refusals_of(reported: Mapping[str, str | None]) -> tuple[RefusedReading, ...
         >>> refusals_of({"smart-data": None})
         ()
     """
-    return tuple(RefusedReading(reading=reading, reason=reason) for reading, reason in reported.items() if reason is not None)
+    return tuple(
+        RefusedReading(reading=reading, reason=reason) for reading, reason in reported.items() if reason is not None
+    )

@@ -33,7 +33,9 @@ def spy_on_fsync(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     return synced
 
 
-def test_a_synced_write_forces_the_written_files_descriptor_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_synced_write_forces_the_written_files_descriptor_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     target = tmp_path / "out.txt"
     descriptor = os.open(target, os.O_WRONLY | os.O_CREAT)
     synced = spy_on_fsync(monkeypatch)

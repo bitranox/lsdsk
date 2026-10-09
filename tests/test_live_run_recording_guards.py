@@ -92,5 +92,3 @@ def test_a_live_human_run_with_recording_on_does_write(tmp_path: Path) -> None:
     analyse(None, OutputFormat.HUMAN, HistorySettings(path=store), read_machine=live)
 
     assert store.read_bytes() != original, "the control did not record, so the test above proved nothing"
-
-
