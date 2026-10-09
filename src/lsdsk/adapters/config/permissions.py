@@ -17,6 +17,7 @@ from lib_layered_config import (
 from pydantic import BaseModel, ConfigDict
 
 from ...domain.enums import DeployTarget
+from .values import RejectedValue, SectionValues
 
 if TYPE_CHECKING:
     from lib_layered_config import Config
@@ -117,7 +118,39 @@ def _mode_or_default(raw: object, default: int) -> int:
     return parse_mode(raw, default)
 
 
+#: The table the permission defaults are read from.
+PERMISSIONS_SECTION = "lib_layered_config.default_permissions"
+
+
+class PermissionReading(NamedTuple):
+    """The permission defaults, and every configured value refused.
+
+    Returned as a pair for the reason :class:`~.tunables.ThresholdsReading` is:
+    the value and the record of falling back come from one decision.
+    """
+
+    defaults: PermissionDefaults
+    rejected: tuple[RejectedValue, ...]
+
+
 def get_permission_defaults(config: Config) -> PermissionDefaults:
+    """Load permission defaults from [lib_layered_config.default_permissions].
+
+    Args:
+        config: Configuration object with merged settings.
+
+    Returns:
+        The defaults alone; :func:`read_permission_defaults` also keeps what was refused.
+
+    Example:
+        >>> from lib_layered_config import Config
+        >>> get_permission_defaults(Config({}, {})).enabled
+        True
+    """
+    return read_permission_defaults(config).defaults
+
+
+def read_permission_defaults(config: Config) -> PermissionReading:
     """Load permission defaults from [lib_layered_config.default_permissions].
 
     Reads configurable permission defaults for each deployment layer.
@@ -128,14 +161,18 @@ def get_permission_defaults(config: Config) -> PermissionDefaults:
 
     Returns:
         PermissionDefaults model with typed fields for each layer's
-        directory and file modes, plus an enabled flag.
+        directory and file modes, plus an enabled flag, with the values that
+        could not be used. ``enabled`` is a switch, so anything but a real
+        boolean falls back to true and is recorded.
 
     Example:
         >>> from lib_layered_config import Config
         >>> config = Config({}, {})  # Empty config
-        >>> defaults = get_permission_defaults(config)
-        >>> defaults.user_directory == 0o700
+        >>> reading = read_permission_defaults(config)
+        >>> reading.defaults.user_directory == 0o700
         True
+        >>> read_permission_defaults(Config({"lib_layered_config": {"default_permissions": "x"}}, {})).rejected[0].raw
+        'x'
     """
     # Read where the section becomes a model, and each field named at its own
     # call rather than through a helper parameterised by a key, which is field
@@ -145,15 +182,17 @@ def get_permission_defaults(config: Config) -> PermissionDefaults:
     # NOTE: lib_layered_config does not define separate HOST_* constants.
     # Host layer shares defaults with app layer (both world-readable: 755/644).
     # This is intentional per CLAUDE.md "Deployment Permissions" documentation.
-    return PermissionDefaults(
+    values = SectionValues(PERMISSIONS_SECTION, config)
+    defaults = PermissionDefaults(
         app_directory=_mode_or_default(section.get("app_directory"), DEFAULT_APP_DIR_MODE),
         app_file=_mode_or_default(section.get("app_file"), DEFAULT_APP_FILE_MODE),
         host_directory=_mode_or_default(section.get("host_directory"), DEFAULT_APP_DIR_MODE),
         host_file=_mode_or_default(section.get("host_file"), DEFAULT_APP_FILE_MODE),
         user_directory=_mode_or_default(section.get("user_directory"), DEFAULT_USER_DIR_MODE),
         user_file=_mode_or_default(section.get("user_file"), DEFAULT_USER_FILE_MODE),
-        enabled=section.get("enabled", True),
+        enabled=values.flag("enabled", default=True),
     )
+    return PermissionReading(defaults, values.rejected)
 
 
 class DeployModes(NamedTuple):
@@ -217,9 +256,12 @@ def get_modes_for_target(
 
 
 __all__ = [
+    "PERMISSIONS_SECTION",
     "DeployModes",
     "PermissionDefaults",
+    "PermissionReading",
     "get_modes_for_target",
     "get_permission_defaults",
     "parse_mode",
+    "read_permission_defaults",
 ]

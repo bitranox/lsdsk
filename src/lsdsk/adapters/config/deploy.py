@@ -89,6 +89,11 @@ def deploy_configuration(request: DeployRequest) -> list[Path]:
         # preference, which is the CLI passing neither --permissions nor
         # --no-permissions, and the answer to that is the documented default.
         set_permissions=request.set_permissions is not False,
+        # The library reads ``enabled`` from the configuration itself and refuses
+        # a value that is not a boolean, even though this call has already decided
+        # it (see above) and the caller coerced the configured one with a warning.
+        # Handing it the settled answer replaces the key it would validate.
+        permission_overrides={"enabled": request.set_permissions is not False},
         dir_mode=request.dir_mode,
         file_mode=request.file_mode,
     )

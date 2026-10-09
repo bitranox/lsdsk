@@ -21,7 +21,7 @@ from rich.console import Console
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.loader import invalid_profile_message
 from lsdsk.adapters.config.overrides import apply_overrides
-from lsdsk.adapters.config.permissions import get_permission_defaults
+from lsdsk.adapters.config.permissions import read_permission_defaults
 from lsdsk.adapters.config.secrets import redact_secrets
 from lsdsk.domain.deployment import DeployRequest
 from lsdsk.domain.enums import ActionCommand, DeployTarget, OutputFormat, WriteOutcome
@@ -435,7 +435,10 @@ def _execute_deploy(
         SystemExit: On permission or other errors.
     """
     # Get permission defaults from config
-    perm_defaults = get_permission_defaults(cli_ctx.config)
+    reading = read_permission_defaults(cli_ctx.config)
+    perm_defaults = reading.defaults
+    for rejected in reading.rejected:
+        safe_console.echo(rejected.as_sentence(), err=True)
 
     # CLI --permissions/--no-permissions overrides config enabled setting
     settled = request.with_changes(
