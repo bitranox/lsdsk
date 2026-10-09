@@ -89,6 +89,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   Kernel-published text is now split on the newline only.
 - **A replayed capture names a device `pci.ids` knows only by vendor the way the live run did**
   ("Intel Corporation device 7abb"), instead of drawing "Device 8086:7abb".
+- **sysfs and udev text is read as UTF-8 whatever the locale.** Under a non-UTF-8 locale a
+  filesystem label holding a character outside ASCII came back garbled.
 - **Tens of thousands of bind mounts of one device no longer slow `lsdsk disks` to seconds.**
   Mountpoint deduplication is linear.
 - **A temperature outside -60..200 C is shown as not measured**, rather than as a figure: a corrupt
