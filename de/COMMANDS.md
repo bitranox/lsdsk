@@ -172,9 +172,10 @@ keine hat, wurde von der Platte nicht veröffentlicht.
 Ein Lauf, der in `--format json` FEHLSCHLÄGT, antwortet ebenfalls in diesem
 Format, statt zu verstummen: ein Objekt auf stdout mit `ok: false`, dem
 `command`, das fehlgeschlagen ist, und einem `error` aus `{type, message}`. Der
-`type` ist der Name des Exit-Codes selbst - `CONFIG_ERROR`, `INVALID_ARGUMENT`,
-`PERMISSION_DENIED`, `USAGE_ERROR`, `SOFTWARE_ERROR`, `GENERAL_ERROR` -, er kann
-dem Code, den der Prozess hinterlässt, also nicht widersprechen. Derselbe Satz geht weiterhin an stderr,
+`type` ist der Name des Exit-Codes selbst - `CONFIG_ERROR`, `INVALID_ARGUMENT`, `IO_ERROR`,
+`PERMISSION_DENIED` oder `USAGE_ERROR` -, er kann dem Code, den der Prozess
+hinterlässt, also nicht widersprechen. Ein Absturz (70) schreibt keinen Umschlag,
+und 1 ist ein Urteil über die Platten, kein Fehler. Derselbe Satz geht weiterhin an stderr,
 für jemanden, der mitliest, und ein Fehlschlag im menschenlesbaren Modus legt
 nach wie vor nichts auf stdout. Zuvor schrieb ein fehlgeschlagener JSON-Lauf
 überhaupt nichts: eine `jq`-Pipeline konnte ihn nicht von einem Befehl

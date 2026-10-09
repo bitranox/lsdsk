@@ -160,10 +160,10 @@ and a counter that is absent with none was not published by the drive.
 A run that FAILS in `--format json` answers in that format too, rather than
 falling silent: one object on stdout carrying `ok: false`, the `command` that
 failed, and an `error` of `{type, message}`. The `type` is the exit code's own
-name - `CONFIG_ERROR`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `USAGE_ERROR`,
-`SOFTWARE_ERROR`, `GENERAL_ERROR` - so it cannot disagree with the code the
-process leaves. The
-same sentence still goes to stderr for a person reading along, and a failure in
+name - `CONFIG_ERROR`, `INVALID_ARGUMENT`, `IO_ERROR`, `PERMISSION_DENIED` or
+`USAGE_ERROR` - so it cannot disagree with the code the process leaves. A crash
+(70) writes no envelope, and 1 is a verdict about the drives rather than an
+error. The same sentence still goes to stderr for a person reading along, and a failure in
 human mode still puts nothing on stdout. Before this, a failing JSON run wrote
 nothing at all: a `jq` pipeline could not tell it from a command that produced
 no data, and the message explaining why was on the stream it was not reading.
