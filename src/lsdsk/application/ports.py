@@ -78,6 +78,10 @@ class GenerateExamples(Protocol):
     The signature is the library's, ``platform`` excepted: nothing here passes
     it, and a port states what the caller needs rather than everything the
     implementation offers.
+
+    Raises ``ConfigurationError`` for a directory standing where an example file
+    belongs, ``PermissionError`` for a destination it may not write and
+    ``OSError`` for any other failed write.
     """
 
     def __call__(

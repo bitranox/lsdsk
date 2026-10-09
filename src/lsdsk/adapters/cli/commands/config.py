@@ -637,6 +637,10 @@ def cli_config_generate_examples(
         except OSError as exc:
             logger.error("Failed to generate examples", extra={"error": str(exc)})
             _fail_after_output(str(exc), ExitCode.IO_ERROR, output_format=output_format)
+        # What the writer refused before writing: a directory where a file belongs.
+        except ConfigurationError as exc:
+            logger.error("Refused to generate examples", extra={"error": str(exc)})
+            _fail_after_output(str(exc), ExitCode.CONFIG_ERROR, output_format=output_format)
 
 
 __all__ = ["cli_config", "cli_config_deploy", "cli_config_generate_examples"]

@@ -5,10 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from lib_layered_config import generate_examples
-
 from .. import __init__conf__
-from ..adapters.config.deploy import deploy_configuration
+from ..adapters.config.deploy import deploy_configuration, generate_examples_refusing_directories
 from ..adapters.config.display import display_config
 
 # Configuration services
@@ -31,7 +29,7 @@ if TYPE_CHECKING:
 
     _assert_print_info: PrintInfo = __init__conf__.print_info
     _assert_get_config: GetConfig = get_config
-    _assert_generate_examples: GenerateExamples = generate_examples
+    _assert_generate_examples: GenerateExamples = generate_examples_refusing_directories
     _assert_deploy_configuration: DeployConfiguration = deploy_configuration
     _assert_display_config: DisplayConfig = display_config
     _assert_init_logging: InitLogging = init_logging
@@ -57,7 +55,7 @@ def build_production() -> AppServices:
     """
     return AppServices(
         get_config=get_config,
-        generate_examples=generate_examples,
+        generate_examples=generate_examples_refusing_directories,
         deploy_configuration=deploy_configuration,
         display_config=display_config,
         init_logging=init_logging,
@@ -96,7 +94,7 @@ __all__ = [
     "build_testing",
     "deploy_configuration",
     "display_config",
-    "generate_examples",
+    "generate_examples_refusing_directories",
     "get_config",
     "init_logging",
 ]

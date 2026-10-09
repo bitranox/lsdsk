@@ -1,21 +1,43 @@
-"""Deploy default configuration to app/host/user target directories."""
+"""Deploy default configuration to app/host/user target directories, and write example files."""
 
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from lib_layered_config import deploy_config
+from lib_layered_config import deploy_config, generate_examples
 from lib_layered_config.examples.deploy import DeployAction
 
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.loader import get_default_config_path, validate_profile
+from lsdsk.domain.errors import ConfigurationError
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Iterable
 
     from lsdsk.domain.deployment import DeployRequest
 
 _DEPLOYED_ACTIONS = frozenset({DeployAction.CREATED, DeployAction.OVERWRITTEN})
+
+
+def _refuse_a_directory_at_a_target(destinations: Iterable[Path]) -> None:
+    """Refuse a target path that is a directory, which the library passes over as skipped.
+
+    The library skips whatever it finds at a target, so a directory standing where
+    ``config.toml`` belongs read as "already there" while the ``config.d`` files
+    beside it were written and the run reported success with the file missing.
+
+    Args:
+        destinations: Where the library deployed, or passed over, each target.
+
+    Raises:
+        ConfigurationError: Naming the first destination that is a directory.
+    """
+    for destination in destinations:
+        if destination.is_dir():
+            message = f"{destination} is a directory, not a configuration file; move it away to deploy there"
+            raise ConfigurationError(message)
 
 
 def deploy_configuration(request: DeployRequest) -> list[Path]:
@@ -46,6 +68,7 @@ def deploy_configuration(request: DeployRequest) -> list[Path]:
     Raises:
         PermissionError: When deploying to app/host without sufficient privileges.
         ValueError: When invalid target names are provided.
+        ConfigurationError: A directory stands where a configuration file belongs.
 
     Side Effects:
         Creates configuration files in platform-specific directories:
@@ -98,6 +121,7 @@ def deploy_configuration(request: DeployRequest) -> list[Path]:
         file_mode=request.file_mode,
     )
 
+    _refuse_a_directory_at_a_target(result.destination for result in results)
     # Extract paths where files were actually created or overwritten
     paths: list[Path] = []
     for result in results:
@@ -111,6 +135,62 @@ def deploy_configuration(request: DeployRequest) -> list[Path]:
     return paths
 
 
+def _layout(*, slug: str, vendor: str, app: str) -> list[Path]:
+    """The paths, relative to a destination, that this platform's examples occupy.
+
+    Learned by writing them into a scratch directory with the library itself,
+    because the layout is the library's to decide and differs per platform: a
+    copy of it here would drift, and the library offers no way to ask for it
+    without writing.
+
+    Args:
+        slug: The configuration slug the examples are named for.
+        vendor: The vendor directory name.
+        app: The application name.
+
+    Returns:
+        Each file's path relative to the destination.
+    """
+    with tempfile.TemporaryDirectory(prefix="lsdsk-layout-") as scratch:
+        root = Path(scratch)
+        written = generate_examples(root, slug=slug, vendor=vendor, app=app, force=True)
+        return [path.relative_to(root) for path in written]
+
+
+def generate_examples_refusing_directories(
+    destination: str | Path, *, slug: str, vendor: str, app: str, force: bool = False
+) -> list[Path]:
+    """Write the example files, after refusing any directory that stands where one belongs.
+
+    The library reads "something is there" as "already present": without
+    ``force`` the example was left out under "all already exist", and with it
+    the write failed late on ``IsADirectoryError``. A directory is neither - it
+    needs moving - so it is refused before anything is written.
+
+    Args:
+        destination: The directory the examples go under.
+        slug: The configuration slug the examples are named for.
+        vendor: The vendor directory name.
+        app: The application name.
+        force: Overwrite files already there.
+
+    Returns:
+        The files written.
+
+    Raises:
+        ConfigurationError: A directory stands at a path an example would occupy.
+        PermissionError: The destination may not be written.
+        OSError: The files could not be written.
+    """
+    base = Path(destination)
+    for relative in _layout(slug=slug, vendor=vendor, app=app):
+        if (base / relative).is_dir():
+            message = f"{base / relative} is a directory, not an example file; move it away to generate there"
+            raise ConfigurationError(message)
+    return generate_examples(destination, slug=slug, vendor=vendor, app=app, force=force)
+
+
 __all__ = [
     "deploy_configuration",
+    "generate_examples_refusing_directories",
 ]
