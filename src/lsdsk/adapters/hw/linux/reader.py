@@ -869,12 +869,55 @@ def _read_usb_bos(device: Path) -> dict[str, Any]:
     return {"bos": base64.b64encode(payload).decode("ascii")}
 
 
+# A SAS transport's end device sits directly above every drive it carries.
+_SAS_END_DEVICE = "/end_device-"
+# What a SCSI translation layer puts in a SATA drive's INQUIRY vendor field:
+# libata's own SATL, and every SAS HBA's, all report the drive as `ATA`.
+_SATL_VENDOR = "ATA"
+
+
+def ata_passthrough_nodes(block: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """The block devices worth asking ATA IDENTIFY and SMART.
+
+    Every SCSI disk is asked except a native SAS drive, which is not an ATA
+    device: it refuses all three commands, and recording those refusals made a
+    privileged run on a SAS machine report itself incomplete forever. A native
+    SAS drive is one that hangs off a SAS end device AND whose own vendor is
+    not ``ATA``. The vendor alone would skip a USB disk, whose bridge reports
+    its own vendor and still answers ATA passthrough; the end device alone
+    would skip a SATA drive behind a SAS HBA, which the HBA reports as ``ATA``
+    and which answers IDENTIFY. A drive whose vendor could not be read is
+    asked, since only a refusal can then say what it is.
+
+    Args:
+        block: What :func:`read_block` returned.
+
+    Returns:
+        Their kernel names.
+    """
+    return [node for node, entry in block.items() if node.startswith("sd") and not _is_native_sas(entry)]
+
+
+def _is_native_sas(entry: Mapping[str, Any]) -> bool:
+    """Whether a block device is a SAS drive rather than a SATA one carried over SAS."""
+    device: Mapping[str, Any] = entry.get("device") or {}
+    vendor = device.get("vendor")
+    return _SAS_END_DEVICE in str(entry.get("device_path", "")) and vendor is not None and vendor != _SATL_VENDOR
+
+
 def read_ata_blobs(nodes: list[str]) -> dict[str, dict[str, str]]:
     """Read IDENTIFY and SMART structures from every ATA disk.
 
     A device that refuses passthrough, which happens behind some RAID drivers
     and always without root, records the reason instead of the data so the
     renderer can say why a column is empty rather than silently showing nothing.
+
+    Args:
+        nodes: The kernel names of the disks to ask, as
+            :func:`ata_passthrough_nodes` chooses them.
+
+    Returns:
+        Per disk, each structure as base64, or the reason it was refused.
     """
     commands = (
         ("identify", ATA_IDENTIFY_DEVICE, 0, 0),
@@ -1017,7 +1060,8 @@ def read_system() -> dict[str, Any]:
         :func:`~lsdsk.adapters.hw.linux.builder.build_inventory` consumes.
     """
     block = read_block()
-    ata_nodes = [node for node in block if node.startswith("sd")]
+    scsi_nodes = [node for node in block if node.startswith("sd")]
+    ata_nodes = ata_passthrough_nodes(block)
     nvme_nodes = [node for node in block if node.startswith("nvme")]
     pci = read_pci()
 
@@ -1039,7 +1083,7 @@ def read_system() -> dict[str, Any]:
         "captured_at": datetime.now(UTC).isoformat(),
         "platform": Platform.LINUX.value,
         "environment": read_environment(),
-        "devices_accessible": _devices_accessible([*ata_nodes, *nvme_nodes]),
+        "devices_accessible": _devices_accessible([*scsi_nodes, *nvme_nodes]),
         "hostname": os.uname().nodename,
         "kernel": os.uname().release,
         "euid": os.geteuid(),
@@ -1065,9 +1109,11 @@ __all__ = [
     "NvmePassthruCommand",
     "SgIoHeader",
     "ata_passthrough",
+    "ata_passthrough_nodes",
     "nvme_admin",
     "parse_pcie_capability",
     "read_ahci_capabilities",
+    "read_ata_blobs",
     "read_block",
     "read_classes",
     "read_environment",
