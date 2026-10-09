@@ -66,14 +66,13 @@ def _mounts_by_dev(capture: LinuxCapture) -> dict[str, tuple[str, ...]]:
         Mountpoints keyed by both a mount's own ``dev`` and its resolved
         ``source_dev``, when it has one.
     """
-    ordered: dict[str, list[str]] = {}
+    # A dict per device is the ordered set: membership is a hash lookup, where
+    # `not in` on a list made thousands of bind mounts of one device quadratic.
+    ordered: dict[str, dict[str, None]] = {}
     for mount in capture.mounts or ():
         for dev in (mount.dev, mount.source_dev):
-            if not dev:
-                continue
-            bucket = ordered.setdefault(dev, [])
-            if mount.mountpoint not in bucket:
-                bucket.append(mount.mountpoint)
+            if dev:
+                ordered.setdefault(dev, {})[mount.mountpoint] = None
     return {dev: tuple(mountpoints) for dev, mountpoints in ordered.items()}
 
 
@@ -223,16 +222,14 @@ def _stack_use(name: str, stacked: Mapping[str, StackedEntry], sources: _Sources
     kind, group = _stack_kind(name, dm_uuid, dm_name)
 
     members = [name, *_closure(name, stacked)]
-    mounts: list[str] = []
+    mounts: dict[str, None] = {}
     is_swap = False
     devs = [dev for member in members for dev in _devs_of(stacked.get(member, StackedEntry()))]
     for dev in devs:
-        for mountpoint in sources.mounts_by_dev.get(dev, ()):
-            if mountpoint not in mounts:
-                mounts.append(mountpoint)
+        mounts.update(dict.fromkeys(sources.mounts_by_dev.get(dev, ())))
         is_swap = is_swap or dev in sources.swap_devs
-    if is_swap and "swap" not in mounts:
-        mounts.append("swap")
+    if is_swap:
+        mounts.setdefault("swap")
     return DiskUse(kind=kind, name=group, mounts=tuple(mounts))
 
 
@@ -285,15 +282,13 @@ def _merge(uses: list[DiskUse]) -> tuple[DiskUse, ...]:
         carrying every mount any contributing use carried.
     """
     order: list[tuple[UseKind, str]] = []
-    mounts_by_key: dict[tuple[UseKind, str], list[str]] = {}
+    mounts_by_key: dict[tuple[UseKind, str], dict[str, None]] = {}
     for use in uses:
         key = (use.kind, use.name)
         if key not in mounts_by_key:
             order.append(key)
-            mounts_by_key[key] = []
-        for mountpoint in use.mounts:
-            if mountpoint not in mounts_by_key[key]:
-                mounts_by_key[key].append(mountpoint)
+            mounts_by_key[key] = {}
+        mounts_by_key[key].update(dict.fromkeys(use.mounts))
     return tuple(DiskUse(kind=kind, name=name, mounts=tuple(mounts_by_key[(kind, name)])) for kind, name in order)
 
 
