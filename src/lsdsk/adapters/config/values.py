@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Final, cast
 
 from ...domain.base import DomainModel
 from ...domain.enums import TreeDensity
+from ...domain.text import visible_text
 
 if TYPE_CHECKING:
     from lib_layered_config import Config
@@ -79,8 +80,14 @@ class RejectedValue(DomainModel, frozen=True):
     used: str
 
     def as_sentence(self) -> str:
-        """The warning, worded once for every surface that reports it."""
-        return f"Warning: ignoring {self.dotted}={self.raw}: {self.reason}. Using {self.used}."
+        """The warning, worded once for every surface that reports it.
+
+        The refused value is quoted through :func:`~lsdsk.domain.text.visible_text`,
+        so a control character in it reaches the terminal as its escape rather
+        than as a sequence the terminal would act on. Every value a reader types
+        or a file carries is untrusted text at this point.
+        """
+        return f"Warning: ignoring {self.dotted}={visible_text(self.raw)}: {self.reason}. Using {self.used}."
 
 
 #: What a section given as a single value is told: the shipped table judges the run instead.
