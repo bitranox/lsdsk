@@ -16,8 +16,23 @@ FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 # The reader stats a /dev source on the machine running the test, so a fixture
 # naming a real node (/dev/sda1) reads differently on a host that has one: a
 # GitHub runner does, a dev container does not. Every source here names a node
-# no machine has; the one test that needs a real node uses /dev/null.
+# no machine has. A test that needs a source to RESOLVE hands the reader its
+# own resolver instead: only a block device resolves, and a dev container has
+# none at all, so no node every machine carries could stand in.
 ABSENT_NODE = "/dev/lsdsk-test-absent"
+
+
+class _Resolver:
+    """A block-device resolver that answers from a table and records what it was asked."""
+
+    def __init__(self, answers: dict[str, str]) -> None:
+        self.answers = answers
+        self.asked: list[str] = []
+
+    def __call__(self, path: str) -> str | None:
+        self.asked.append(path)
+        return self.answers.get(path)
+
 
 MOUNTINFO = (
     "22 1 0:28 / / rw,relatime shared:1 - zfs rpool/ROOT/pve-1 rw,xattr\n"
@@ -87,20 +102,19 @@ def test_a_swap_file_path_is_not_recorded_when_it_resolves_to_no_device_node(tmp
     assert "swapfile" not in json.dumps(rows)
 
 
-@pytest.mark.os_linux
+@pytest.mark.os_agnostic
 def test_a_device_backed_swap_row_keeps_its_path_and_dev(tmp_path: Path) -> None:
     path = tmp_path / "swaps"
     path.write_text(
-        "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n/dev/null\t\tpartition\t8388604\t\t0\t\t-2\n",
+        f"Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n{ABSENT_NODE}1\t\tpartition\t8388604\t\t0\t\t-2\n",
         encoding="utf-8",
     )
-    rows = mounts.read_swaps(path)
+    rows = mounts.read_swaps(path, device_number=_Resolver({f"{ABSENT_NODE}1": "8:1"}))
     assert rows is not None
-    rdev = Path("/dev/null").stat().st_rdev
-    assert rows[0] == {"path": "/dev/null", "dev": f"{os.major(rdev)}:{os.minor(rdev)}"}
+    assert rows[0] == {"path": f"{ABSENT_NODE}1", "dev": "8:1"}
 
 
-@pytest.mark.os_linux
+@pytest.mark.os_agnostic
 def test_a_swap_path_with_an_escaped_space_still_resolves_to_its_device(tmp_path: Path) -> None:
     """A swap path with an escaped space must still resolve to its device.
 
@@ -110,18 +124,18 @@ def test_a_swap_path_with_an_escaped_space_still_resolves_to_its_device(tmp_path
     which passed the raw, still-escaped text straight to ``Path(...).stat()``
     and so could never find a device with such a byte in its name.
     """
-    link = tmp_path / "swap file"
-    link.symlink_to("/dev/null")
+    link = f"{ABSENT_NODE} swap"
     path = tmp_path / "swaps"
     path.write_text(
         f"Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n{link}".replace(" ", "\\040")
         + "\t\tpartition\t8388604\t\t0\t\t-2\n",
         encoding="utf-8",
     )
-    rows = mounts.read_swaps(path)
+    resolver = _Resolver({link: "8:1"})
+    rows = mounts.read_swaps(path, device_number=resolver)
     assert rows is not None
-    rdev = Path("/dev/null").stat().st_rdev
-    assert rows[0] == {"path": str(link), "dev": f"{os.major(rdev)}:{os.minor(rdev)}"}
+    assert resolver.asked == [link]
+    assert rows[0] == {"path": link, "dev": "8:1"}
 
 
 @pytest.mark.os_agnostic
@@ -259,14 +273,13 @@ def test_an_absent_udev_database_is_not_read_rather_than_empty(tmp_path: Path) -
     assert mounts.read_signatures(["8:1"], tmp_path / "absent") is None
 
 
-@pytest.mark.os_linux
+@pytest.mark.os_agnostic
 def test_a_dev_source_is_resolved_to_its_device_number(tmp_path: Path) -> None:
     path = tmp_path / "mountinfo"
-    path.write_text("31 22 0:40 / /x rw - tmpfs /dev/null rw\n", encoding="utf-8")
-    rows = mounts.read_mounts(path)
+    path.write_text(f"31 22 0:40 / /x rw - tmpfs {ABSENT_NODE}1 rw\n", encoding="utf-8")
+    rows = mounts.read_mounts(path, device_number=_Resolver({f"{ABSENT_NODE}1": "8:1"}))
     assert rows is not None
-    rdev = Path("/dev/null").stat().st_rdev
-    assert rows[0]["source_dev"] == f"{os.major(rdev)}:{os.minor(rdev)}"
+    assert rows[0]["source_dev"] == "8:1"
 
 
 @pytest.mark.os_agnostic

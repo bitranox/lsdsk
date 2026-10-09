@@ -685,9 +685,10 @@ def _is_kernel_virtual(node: Path, root: Path) -> bool:
     """
     try:
         return node.resolve().is_relative_to((root.parent / "devices" / "virtual").resolve())
-    except OSError:
+    except (OSError, RuntimeError):
         # An unresolvable link says nothing either way, and calling it virtual
-        # on that basis would hide a real disk.
+        # on that basis would hide a real disk. A link that loops raises
+        # RuntimeError rather than OSError on Python 3.11 and 3.12.
         return False
 
 
@@ -979,11 +980,15 @@ _CONTAINER_MARKER_FILES: dict[str, str] = {
 }
 
 
-def read_environment() -> dict[str, Any]:
+def read_environment(*, proc: Path = Path("/proc")) -> dict[str, Any]:
     """Gather the evidence that says whether this is metal, a guest or a container.
 
     Read rather than shelled out to, so it works where ``systemd-detect-virt``
     is absent, and it costs nothing.
+
+    Args:
+        proc: The procfs root the process and CPU evidence is read from,
+            overridable for a test.
 
     Returns:
         The raw strings, for the pure classifier to interpret.
@@ -992,7 +997,7 @@ def read_environment() -> dict[str, Any]:
 
     # PID 1's environment carries container=lxc for LXC and systemd-nspawn.
     try:
-        entries = Path("/proc/1/environ").read_bytes().split(b"\0")
+        entries = (proc / "1" / "environ").read_bytes().split(b"\0")
     except OSError:
         entries = []
     for entry in entries:
@@ -1015,14 +1020,18 @@ def read_environment() -> dict[str, Any]:
     if runtime and "container_marker" not in evidence:
         evidence["container_marker"] = runtime
 
-    cgroup = _read_attribute(Path("/proc/1/cgroup"))
+    cgroup = _read_attribute(proc / "1" / "cgroup")
     if cgroup:
         evidence["cgroup"] = cgroup
 
     # The raw mount table is not itself stored - only the short marker names
-    # `container_markers_in_mounts` extracts from it - so it keeps the wider
-    # sysfs-attribute bound rather than the capture's own.
-    markers = container_markers_in_mounts(_read_text(Path("/proc/self/mountinfo")) or "")
+    # `container_markers_in_mounts` extracts from it - so it is read at the
+    # bound `mounts.read_mounts` accepts the same file at. Read at the sysfs
+    # attribute's megabyte instead, a container host's table that the mount
+    # reader takes whole came back empty here and lost its marker.
+    markers = container_markers_in_mounts(
+        _read_text(proc / "self" / "mountinfo", limit=mounts.MAX_MOUNTINFO_BYTES) or ""
+    )
     if markers:
         evidence["mount_markers"] = markers
 
@@ -1037,9 +1046,34 @@ def read_environment() -> dict[str, Any]:
         if value:
             evidence[key] = value
 
-    cpuinfo = _read_text(Path("/proc/cpuinfo")) or ""
+    cpuinfo = _read_prefix(proc / "cpuinfo", _CPUINFO_PREFIX_CHARS)
     evidence["hypervisor_flag"] = " hypervisor" in cpuinfo or cpuinfo.startswith("hypervisor")
     return evidence
+
+
+#: How much of ``/proc/cpuinfo`` is read. The hypervisor flag is a CPU feature
+#: every logical CPU repeats in its own stanza, so the first stanza answers it.
+#: Read whole at the sysfs attribute's megabyte, a guest with enough vCPUs to
+#: pass that size - several hundred - was refused the read, its flag came back
+#: False, and that evidence then said bare metal.
+_CPUINFO_PREFIX_CHARS = 64 * 1024
+
+
+def _read_prefix(path: Path, chars: int) -> str:
+    """The first ``chars`` characters of a file, or nothing where it cannot be read.
+
+    Args:
+        path: The file to read.
+        chars: How many characters to read at most.
+
+    Returns:
+        The text read, empty when the file could not be opened.
+    """
+    try:
+        with path.open("r", errors="replace") as handle:
+            return handle.read(chars)
+    except OSError:
+        return ""
 
 
 def _devices_accessible(nodes: list[str]) -> bool:

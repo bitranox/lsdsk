@@ -38,6 +38,7 @@ from lsdsk.adapters.hw.capture import (
     DeviceText,
 )
 from lsdsk.adapters.hw.linux import capture as linux_capture
+from lsdsk.adapters.hw.linux.mounts import MAX_MOUNTINFO_BYTES
 from lsdsk.adapters.hw.snapshot import build_from, load
 from lsdsk.adapters.hw.windows import capture as windows_capture
 from lsdsk.adapters.render.tree import FabricView, render_fabric
@@ -2257,11 +2258,13 @@ def test_the_virtualization_reads_stop_at_the_capture_bound_not_the_megabyte(mon
     the reader - read at the wider `MAX_SYSFS_BYTES` limit and only refused
     later, it would end the whole scan over one file, which is what happened
     to `block.*.device.model` before sweep 6 fixed it there.
-    `/proc/self/mountinfo` and `/proc/cpuinfo` are the two reads that are NOT
-    stored whole (only a short derived marker is kept), so they keep the
-    wider bound and are asserted to stay on it. The seam under test is the
-    `limit` `_read_text` is actually called with, read straight from the
-    real function's own call rather than re-implemented here.
+    `/proc/self/mountinfo` is NOT stored whole (only a short derived marker
+    is kept), so it is read at the bound `mounts.read_mounts` accepts the same
+    file at, and is asserted to stay on it. `/proc/cpuinfo` is not read
+    through `_read_text` at all: only its first stanza is needed, so a fixed
+    prefix is read (`test_linux_reader_edges.py` holds that). The seam under
+    test is the `limit` `_read_text` is actually called with, read straight
+    from the real function's own call rather than re-implemented here.
     """
     from lsdsk.adapters.hw.linux import reader as linux_reader
 
@@ -2286,15 +2289,15 @@ def test_the_virtualization_reads_stop_at_the_capture_bound_not_the_megabyte(mon
         Path("/sys/class/dmi/id/board_name"),
         Path("/sys/hypervisor/type"),
     }
-    wide_paths = {Path("/proc/self/mountinfo"), Path("/proc/cpuinfo")}
+    wide_paths = {Path("/proc/self/mountinfo")}
 
     assert bounded_paths <= seen.keys(), f"a stored path was never read at all: {bounded_paths - seen.keys()}"
     assert all(seen[path] == MAX_DEVICE_TEXT for path in bounded_paths), (
         f"a value stored in the capture was read at the wider sysfs bound: {seen}"
     )
     assert wide_paths <= seen.keys(), f"an unstored path was never read at all: {wide_paths - seen.keys()}"
-    assert all(seen[path] == linux_reader.MAX_SYSFS_BYTES for path in wide_paths), (
-        f"a value that is never stored moved onto the narrower bound: {seen}"
+    assert all(seen[path] == MAX_MOUNTINFO_BYTES for path in wide_paths), (
+        f"the mount table is read at a bound other than the one read_mounts accepts it at: {seen}"
     )
 
 

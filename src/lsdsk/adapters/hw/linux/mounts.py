@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -31,7 +32,7 @@ from ....domain.errors import ConfigurationError, MissingFileError
 from ...textfile import read_text_bounded
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
 # mountinfo on a container host with a ZFS root runs to tens of thousands of
 # characters for a few dozen mounts; a docker host with thousands of bind
@@ -112,19 +113,25 @@ def _device_number_of(path: str) -> str | None:
 
     Returns:
         ``"<major>:<minor>"``, or ``None`` when the path cannot be stat'd or
-        names something other than a device.
+        names something other than a block device. A character device such as
+        ``/dev/null`` or ``/dev/fuse`` has a device number too, from a separate
+        numbering, so taking it would name a block device it has nothing to do
+        with.
     """
     try:
-        rdev = Path(path).stat().st_rdev
+        status = Path(path).stat()
     except (OSError, ValueError):
         return None
-    return f"{os.major(rdev)}:{os.minor(rdev)}" if rdev else None
+    if not stat.S_ISBLK(status.st_mode) or not status.st_rdev:
+        return None
+    return f"{os.major(status.st_rdev)}:{os.minor(status.st_rdev)}"
 
 
 def read_mounts(
     path: Path = Path("/proc/self/mountinfo"),
     *,
     limit: int = MAX_MOUNTINFO_BYTES,
+    device_number: Callable[[str], str | None] = _device_number_of,
 ) -> list[dict[str, str]] | None:
     """Read every mounted filesystem from mountinfo.
 
@@ -133,6 +140,9 @@ def read_mounts(
         limit: The most UTF-8 bytes this file is accepted as, overridable for
             a test. See :data:`MAX_MOUNTINFO_BYTES` for the shipped figure and
             why a file past it is refused the same way an unreadable one is.
+        device_number: Resolves a ``/dev`` source to its block device number,
+            overridable for a test, since a machine running the suite need
+            not have a block device node at all.
 
     Returns:
         One row per mount a disk can sit behind, each carrying ``dev`` (the
@@ -157,13 +167,13 @@ def read_mounts(
     for line in text.split("\n"):
         if not line:
             continue
-        row = _parse_mountinfo_line(line)
+        row = _parse_mountinfo_line(line, device_number)
         if row is not None:
             rows.append(row)
     return rows
 
 
-def _parse_mountinfo_line(line: str) -> dict[str, str] | None:
+def _parse_mountinfo_line(line: str, device_number: Callable[[str], str | None]) -> dict[str, str] | None:
     """Parse one mountinfo row, or ``None`` for a malformed or unwanted one.
 
     The optional fields between field 6 and the separator vary in count, so
@@ -183,7 +193,7 @@ def _parse_mountinfo_line(line: str) -> dict[str, str] | None:
 
     row = {"dev": left_fields[2], "mountpoint": _unescape(left_fields[4]), "fstype": right_fields[0]}
     source = _unescape(right_fields[1])
-    source_dev = _device_number_of(source) if source.startswith("/dev/") else None
+    source_dev = device_number(source) if source.startswith("/dev/") else None
     if source_dev is not None:
         row["source_dev"] = source_dev
     if row["fstype"] == _ZFS:
@@ -198,6 +208,7 @@ def read_swaps(
     path: Path = Path("/proc/swaps"),
     *,
     limit: int = MAX_MOUNTINFO_BYTES,
+    device_number: Callable[[str], str | None] = _device_number_of,
 ) -> list[dict[str, str]] | None:
     """Read every active swap from ``/proc/swaps``.
 
@@ -207,6 +218,8 @@ def read_swaps(
             a test. See :data:`MAX_MOUNTINFO_BYTES` for the shipped figure;
             the swap list shares it with mountinfo rather than having its own,
             since both are the same order of magnitude of sysfs-adjacent text.
+        device_number: Resolves a swap entry to its block device number,
+            overridable for a test, as in :func:`read_mounts`.
 
     Returns:
         One row per swap. A row whose entry resolves to a device node carries
@@ -235,7 +248,7 @@ def read_swaps(
         # mountinfo - otherwise a swap on a path carrying one of those bytes
         # never resolves to its device node.
         swap_path = _unescape(fields[0])
-        dev = _device_number_of(swap_path)
+        dev = device_number(swap_path)
         rows.append({"path": swap_path, "dev": dev} if dev is not None else {})
     return rows
 

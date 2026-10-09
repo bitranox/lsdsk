@@ -46,7 +46,7 @@ from ..decode import pciids
 from ..decode.ahci import decode_capabilities, holds_ahci_registers
 from ..decode.ata_identify import AtaIdentity, decode_identify, decode_vpd_ata_information
 from ..decode.ata_smart import decode_health
-from ..decode.captured import decode_base64, parse_int, plausible_celsius
+from ..decode.captured import decode_base64, parse_int, parse_pci_id, plausible_celsius
 from ..decode.nvme import decode_identify_controller, decode_smart_log
 from ..decode.usb import decode_bos, fastest, speed_from_sysfs
 from ..decode.virtualization import board_name, classify
@@ -442,7 +442,7 @@ def build_controllers(capture: LinuxCapture) -> tuple[Controller, ...]:
                 upstream=None if upstream is None else _pcie_link(upstream),
                 upstream_name=None if upstream is None else _pci_name(upstream, database),
                 upstream_address=parent,
-                vendor=parse_int(entry.vendor, 16),
+                vendor=parse_pci_id(entry.vendor),
                 port_count=ports.get(address),
                 ports_used=None,
                 readings_refused=refusals_of({"ahci-port-count": entry.ahci_error}),
@@ -462,8 +462,8 @@ def _pci_database(capture: LinuxCapture) -> pciids.Database | None:
 
 def _pci_name(entry: PciEntry, database: pciids.Database | None) -> str:
     """Return a readable name for one PCI device."""
-    vendor = parse_int(entry.vendor, 16)
-    device = parse_int(entry.device, 16)
+    vendor = parse_pci_id(entry.vendor)
+    device = parse_pci_id(entry.device)
     if vendor is None or device is None:
         return "Unknown controller"
     return pciids.describe(vendor, device, database)
@@ -504,8 +504,8 @@ def build_slots(capture: LinuxCapture) -> tuple[PcieSlot, ...]:
                 occupant_name=None if occupant is None else _pci_name(occupant, database),
                 occupant_link=None if occupant is None else _pcie_link(occupant),
                 physical_slot_number=entry.slot_number,
-                vendor=parse_int(entry.vendor, 16),
-                occupant_vendor=None if occupant is None else parse_int(occupant.vendor, 16),
+                vendor=parse_pci_id(entry.vendor),
+                occupant_vendor=None if occupant is None else parse_pci_id(occupant.vendor),
                 occupant_count=len(present),
             )
         )
@@ -1068,7 +1068,7 @@ def build_tree(capture: LinuxCapture) -> tuple[PciNode, ...]:
                 address=address,
                 name=_pci_name(entry, database),
                 class_code=_class_code(entry),
-                vendor=parse_int(entry.vendor, 16),
+                vendor=parse_pci_id(entry.vendor),
                 driver=entry.driver,
                 link=_pcie_link(entry),
                 pcie_capability_present=_pcie_capability_present(entry),

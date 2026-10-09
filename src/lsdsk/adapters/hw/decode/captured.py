@@ -42,6 +42,32 @@ def parse_int(text: str | None, base: int = 10) -> int | None:
         return None
 
 
+#: A PCI vendor or device identifier is a 16-bit configuration register, so a
+#: wider or negative value in a capture was never read from hardware.
+_PCI_ID_MAX = 0xFFFF
+
+
+def parse_pci_id(text: str | None) -> int | None:
+    """Parse a PCI vendor or device identifier a capture holds as hex text.
+
+    Args:
+        text: The recorded value, or ``None`` when nothing was recorded.
+
+    Returns:
+        The identifier, or ``None`` for anything unparsable or outside 16 bits.
+
+    Example:
+        >>> parse_pci_id("0x8086")
+        32902
+        >>> parse_pci_id("0x123456") is None
+        True
+        >>> parse_pci_id("-0x1") is None
+        True
+    """
+    value = parse_int(text, 16)
+    return value if value is not None and 0 <= value <= _PCI_ID_MAX else None
+
+
 def decode_base64(value: str | None) -> bytes | None:
     r"""Decode a binary structure a capture holds as base64.
 
@@ -101,4 +127,11 @@ def plausible_celsius(reading: int, *, per_degree: int = 1) -> int | None:
     return round(reading / per_degree)
 
 
-__all__ = ["MAX_PLAUSIBLE_CELSIUS", "MIN_PLAUSIBLE_CELSIUS", "decode_base64", "parse_int", "plausible_celsius"]
+__all__ = [
+    "MAX_PLAUSIBLE_CELSIUS",
+    "MIN_PLAUSIBLE_CELSIUS",
+    "decode_base64",
+    "parse_int",
+    "parse_pci_id",
+    "plausible_celsius",
+]
