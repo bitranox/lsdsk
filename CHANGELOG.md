@@ -5,6 +5,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A reading refused with an empty reason is reported as refused.** An OS error carrying an
+  errno but no text used to be dropped, so `skipped` stayed empty and `ok` stayed true on an
+  incomplete scan.
+
 ## [1.7.3] 2026-10-09 12:47:51
 
 ### Changed
