@@ -436,6 +436,31 @@ _DEMO_LINES: Final[tuple[tuple[LogLevel, str], ...]] = (
 )
 
 
+def _demo_settings(key: str) -> dict[str, object]:
+    """The ``[lib_log_rich]`` table the preview runs with, the library's own demo settings.
+
+    Args:
+        key: The theme's key as the library spells it.
+
+    Returns:
+        The settings as a table, so :func:`start_runtime` can fall back over them
+        like over any other.
+    """
+    return {
+        "service": "logdemo",
+        "environment": f"demo-{key}",
+        "console_level": LogLevel.DEBUG,
+        "backend_level": LogLevel.CRITICAL,
+        "enable_ring_buffer": False,
+        # On the calling thread, as the library's demo runs it: the preview
+        # is over when this returns, with nothing left in a queue.
+        "queue_enabled": False,
+        "force_color": True,
+        "console_styles": dict(CONSOLE_STYLE_THEMES[key]),
+        "console_theme": key,
+    }
+
+
 def run_log_demo(theme: str) -> str:
     """Log one line per severity in `theme`, through the console every run logs through.
 
@@ -447,7 +472,9 @@ def run_log_demo(theme: str) -> str:
     of stdout, where every other command's log line costs that line alone. So
     the runtime is built here, with the settings the library's demo uses and
     :func:`_guarded_console` as its console. ``LOG_CONSOLE_STREAM`` still
-    applies, as it does to the library's demo.
+    applies, as it does to the library's demo. The runtime is started through
+    :func:`start_runtime`, so a ``LOG_*`` variable the library refuses is set
+    aside with a warning, exactly as for every other command.
 
     The caller must have shut the run's own runtime down: one runtime at a time
     is the library's rule.
@@ -467,23 +494,11 @@ def run_log_demo(theme: str) -> str:
         shuts the runtime down again.
     """
     key = theme.strip().lower()
-    styles = dict(CONSOLE_STYLE_THEMES[key])
-    lib_log_rich.runtime.init(
-        lib_log_rich.runtime.RuntimeConfig(
-            service="logdemo",
-            environment=f"demo-{key}",
-            console_level=LogLevel.DEBUG,
-            backend_level=LogLevel.CRITICAL,
-            enable_ring_buffer=False,
-            # On the calling thread, as the library's demo runs it: the preview
-            # is over when this returns, with nothing left in a queue.
-            queue_enabled=False,
-            force_color=True,
-            console_styles=styles,
-            console_theme=key,
-            console_adapter_factory=_guarded_console,
-        )
-    )
+    settings = _demo_settings(key)
+    # The shipped table is the demo's own: what the demo asks for is valid, so a
+    # refusal can only come from a LOG_* variable, and those are set aside.
+    for note in start_runtime(settings, settings):
+        safe_console.echo(note, err=True)
     try:
         with lib_log_rich.runtime.bind(job_id=f"logdemo-{key}", request_id="demo"):
             logger = lib_log_rich.runtime.getLogger("logdemo")
