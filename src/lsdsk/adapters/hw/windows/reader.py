@@ -761,9 +761,21 @@ def sat_passthrough(
     return bytes(request.data), None
 
 
+class NvmeRefusal(NamedTuple):
+    """Why an NVMe structure was not read: the one value a refused query returns.
+
+    Attributes:
+        reason: The Win32 error when the storage stack refused the query, or the
+            byte count when it accepted the query without moving the whole
+            structure.
+    """
+
+    reason: str
+
+
 def nvme_protocol_data(
     kernel32: api.WinLibrary, handle: int, *, data_type: int, request_value: int, length: int
-) -> tuple[bytes, str | None]:
+) -> bytes | NvmeRefusal:
     """Fetch an NVMe identify structure or log page through the storage stack.
 
     Args:
@@ -774,10 +786,10 @@ def nvme_protocol_data(
         length: How many bytes the structure occupies.
 
     Returns:
-        The raw structure for the shared NVMe decoder and ``None``, or empty
-        bytes and why it is not a reading: the Win32 error when the storage
-        stack refused the query, the byte count when it accepted the query
-        without moving the whole structure.
+        The raw structure for the shared NVMe decoder, or an :class:`NvmeRefusal`
+        saying why it is not a reading: the Win32 error when the storage stack
+        refused the query, the byte count when it accepted the query without
+        moving the whole structure.
     """
     header = ctypes.sizeof(api.STORAGE_PROPERTY_QUERY) + ctypes.sizeof(api.STORAGE_PROTOCOL_SPECIFIC_DATA)
     total = header + length
@@ -815,7 +827,7 @@ def nvme_protocol_data(
         None,
     )
     if not ok:
-        return b"", f"Win32 error {api.last_error()}"
+        return NvmeRefusal(f"Win32 error {api.last_error()}")
     start = offset + protocol.ProtocolDataOffset
     # A success that moved nothing leaves the zeros the buffer was allocated
     # with, which decode as a healthy drive. The driver rewrites the length
@@ -823,8 +835,8 @@ def nvme_protocol_data(
     # wrote; the smaller of the two is what can be believed.
     moved = min(protocol.ProtocolDataLength, max(returned.value - start, 0), length)
     if moved < length:
-        return b"", f"{moved} of {length} bytes returned"
-    return buffer.raw[start : start + length], None
+        return NvmeRefusal(f"{moved} of {length} bytes returned")
+    return buffer.raw[start : start + length]
 
 
 def _disk_length(kernel32: api.WinLibrary, handle: int) -> int | None:
@@ -955,17 +967,17 @@ def _read_nvme(kernel32: api.WinLibrary, handle: int, *, passthrough: bool) -> d
         ("identify_controller", "identify_controller_error", api.NVME_DATA_TYPE_IDENTIFY, 1, _NVME_IDENTIFY_LENGTH),
         ("smart_log", "smart_log_error", api.NVME_DATA_TYPE_LOG_PAGE, _NVME_SMART_LOG_ID, _NVME_SMART_LOG_LENGTH),
     ):
-        payload, refusal = nvme_protocol_data(
+        answer = nvme_protocol_data(
             kernel32, handle, data_type=data_type, request_value=request_value, length=length
         )
-        if payload:
-            record[label] = base64.b64encode(payload).decode("ascii")
+        if isinstance(answer, NvmeRefusal):
+            record[error_label] = _refusal_text(answer, passthrough=passthrough)
         else:
-            record[error_label] = _refusal_text(refusal, passthrough=passthrough)
+            record[label] = base64.b64encode(answer).decode("ascii")
     return record
 
 
-def _refusal_text(refusal: str | None, *, passthrough: bool) -> str:
+def _refusal_text(refusal: NvmeRefusal, *, passthrough: bool) -> str:
     """Say why an NVMe page was not read.
 
     A Win32 error from a handle opened without write access is most likely the
@@ -973,17 +985,15 @@ def _refusal_text(refusal: str | None, *, passthrough: bool) -> str:
     answer is a different fact and keeps its own count.
 
     Args:
-        refusal: What the query reported, if anything.
+        refusal: What the query reported.
         passthrough: Whether the handle carries write access.
 
     Returns:
         The text recorded under the page's ``_error`` key.
     """
-    if refusal is None:
-        return "no data returned"
-    if not passthrough and refusal.startswith("Win32 error"):
+    if not passthrough and refusal.reason.startswith("Win32 error"):
         return _NEEDS_ADMINISTRATOR
-    return refusal
+    return refusal.reason
 
 
 def read_ata(kernel32: api.WinLibrary, handle: int) -> dict[str, str]:
@@ -1388,6 +1398,7 @@ def read_system() -> dict[str, Any]:
 
 
 __all__ = [
+    "NvmeRefusal",
     "UsbDeviceFacts",
     "UsbReading",
     "ata_passthrough",
