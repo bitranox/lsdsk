@@ -343,6 +343,8 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
     disks: list[Disk] = []
 
     for path, entry in sorted(capture.disks.items()):
+        if entry.interface_unreadable:
+            continue
         device = entry.device
         bus = device.bus_type
         is_nvme = bus is BusType.NVME
@@ -645,6 +647,23 @@ def build_tree(capture: WindowsCapture) -> tuple[PciNode, ...]:
     )
 
 
+def build_unread_interfaces(capture: WindowsCapture) -> tuple[RefusedReading, ...]:
+    """Name each disk interface the reader listed but could not read a path for.
+
+    Args:
+        capture: The typed reading, live or replayed.
+
+    Returns:
+        One refused ``device`` reading per such interface, in capture order.
+    """
+    return tuple(
+        reading
+        for _, entry in sorted(capture.disks.items())
+        if entry.interface_unreadable
+        for reading in refusals_of({"device": entry.error})
+    )
+
+
 def build_inventory(capture: WindowsCapture) -> Inventory:
     """Turn a whole Windows reading into an inventory.
 
@@ -680,6 +699,7 @@ def build_inventory(capture: WindowsCapture) -> Inventory:
             controller.with_changes(ports_used=used.get(controller.address, 0)) for controller in controllers
         ),
         disks=disks,
+        unread_interfaces=build_unread_interfaces(capture),
         slots=build_slots(capture),
         pci_tree=build_tree(capture),
         privileged=capture.elevated,
@@ -690,4 +710,11 @@ def build_inventory(capture: WindowsCapture) -> Inventory:
     )
 
 
-__all__ = ["build_controllers", "build_disks", "build_inventory", "build_slots", "controller_of"]
+__all__ = [
+    "build_controllers",
+    "build_disks",
+    "build_inventory",
+    "build_slots",
+    "build_unread_interfaces",
+    "controller_of",
+]

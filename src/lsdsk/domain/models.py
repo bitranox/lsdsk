@@ -1840,6 +1840,10 @@ class Inventory(DomainModel, frozen=True):
             inventory does not silently omit part of itself, and kept out of
             ``disks`` because a device with no link and no SMART cannot answer
             any question asked of a drive.
+        unread_interfaces: Disk interfaces the operating system listed whose
+            path could not be read. They are not drives and are kept out of
+            ``disks``; each carries the reason, so a scan that missed one is
+            not mistaken for a complete one.
         slots: Every PCIe bridge and root port, for placement advice.
         pci_tree: Every PCI device as one root-down tree, for the topology
             view. Its roots are the machine's root buses, one synthetic node
@@ -1862,6 +1866,7 @@ class Inventory(DomainModel, frozen=True):
     controllers: tuple[Controller, ...] = ()
     disks: tuple[Disk, ...] = ()
     virtual_disks: tuple[Disk, ...] = ()
+    unread_interfaces: tuple[RefusedReading, ...] = ()
     slots: tuple[PcieSlot, ...] = ()
     pci_tree: tuple[PciNode, ...] = ()
     privileged: bool = False

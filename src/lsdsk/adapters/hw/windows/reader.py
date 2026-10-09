@@ -1322,6 +1322,7 @@ def read_disks(tree: _DeviceTree) -> dict[str, dict[str, Any]]:
             "parent": None,
             "ancestors": [],
             "error": f"could not read the device interface path, {reason}",
+            "interface_unreadable": True,
         }
     return disks
 

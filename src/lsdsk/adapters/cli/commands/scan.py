@@ -580,6 +580,7 @@ def _refusals_named(inventory: Inventory) -> list[str]:
         (disk.path or disk.node, disk.readings_refused) for disk in (*inventory.disks, *inventory.virtual_disks)
     ]
     subjects += [(controller.address, controller.readings_refused) for controller in inventory.controllers]
+    subjects.append(("disk interface", inventory.unread_interfaces))
     return [
         f"{refused.reading}: {subject} - {refused.reason}" for subject, refusals in subjects for refused in refusals
     ]

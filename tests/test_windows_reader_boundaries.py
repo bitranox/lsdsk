@@ -121,8 +121,9 @@ def test_an_unreadable_interface_reaches_the_inventory_as_a_refused_device_readi
     tree = _tree(_Setupapi(paths=[], unreadable_at={0}), _RefusingKernel())
     payload = cast("dict[str, Any]", json.loads(_FIXTURE.read_text(encoding="utf-8")))
     payload["disks"] = reader.read_disks(tree)
-    disk = build_from(payload).disks[0]
-    assert [reading.reading for reading in disk.readings_refused] == ["device"]
+    inventory = build_from(payload)
+    assert [reading.reading for reading in inventory.unread_interfaces] == ["device"]
+    assert inventory.unread_interfaces[0].reason.startswith("could not read the device interface path")
 
 
 @pytest.mark.os_agnostic

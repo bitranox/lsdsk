@@ -188,10 +188,13 @@ def render_header(inventory: Inventory) -> RenderableType:
 
     caveat = environment_caveat(inventory)
     limitation = privilege_note(inventory)
-    if not caveat and not limitation:
+    unread = unread_interfaces_note(inventory)
+    if not caveat and not limitation and not unread:
         return line
 
     lines: list[RenderableType] = [line]
+    if unread:
+        lines.append(Text(unread, style=theme.STYLE_CEILING))
     if caveat:
         lines.append(Text(caveat, style=theme.STYLE_CAVEAT))
     if limitation:
@@ -254,6 +257,27 @@ def privilege_note(inventory: Inventory) -> str:
             "so elevating would not change that."
         )
     return f"Not read: {missing}. Run as root or Administrator to include them."
+
+
+def unread_interfaces_note(inventory: Inventory) -> str:
+    """Say that a listed disk interface was not read, with the reason Windows gave.
+
+    Such an interface is not counted as a disk, so without this line the human
+    report and its "No problems found" would be silent about a drive the machine
+    has and nobody read.
+
+    Args:
+        inventory: The machine that was scanned.
+
+    Returns:
+        The note, or an empty string when every listed interface was read.
+    """
+    unread = inventory.unread_interfaces
+    if not unread:
+        return ""
+    reasons = "; ".join(item.reason for item in unread)
+    noun = "disk interface" if len(unread) == 1 else "disk interfaces"
+    return f"{len(unread)} {noun} not read: {reasons}."
 
 
 def slot_privilege_note(inventory: Inventory) -> str:
