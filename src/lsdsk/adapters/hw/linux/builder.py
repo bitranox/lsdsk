@@ -46,9 +46,8 @@ from ..decode import pciids
 from ..decode.ahci import decode_capabilities
 from ..decode.ata_identify import AtaIdentity, decode_identify, decode_vpd_ata_information
 from ..decode.ata_smart import decode_health
-from ..decode.captured import decode_base64, parse_int
+from ..decode.captured import decode_base64, parse_int, plausible_celsius
 from ..decode.nvme import decode_identify_controller, decode_smart_log
-from ..decode.temperature import plausible_celsius
 from ..decode.usb import decode_bos, fastest, speed_from_sysfs
 from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble, port_kind_of

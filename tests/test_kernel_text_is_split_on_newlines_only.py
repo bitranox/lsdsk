@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 ABSENT_NODE = "/dev/lsdsk-test-absent"
-ODD_BYTES = ["\x0c", "\r", "\x0b", "\x1c", "\x85", " ", " "]
+ODD_BYTES = ["\x0c", "\r", "\x0b", "\x1c", "\x85", chr(0x2028), chr(0x2029)]
 
 
 @pytest.mark.os_agnostic
@@ -29,7 +29,9 @@ ODD_BYTES = ["\x0c", "\r", "\x0b", "\x1c", "\x85", " ", " "]
 def test_a_mount_path_holding_a_line_break_character_keeps_its_row(tmp_path: Path, odd: str) -> None:
     path = tmp_path / "mountinfo"
     path.write_bytes(
-        (f"30 22 8:2 / /mnt/a{odd}b rw - ext4 {ABSENT_NODE}2 rw\n31 22 8:3 / /srv rw - ext4 {ABSENT_NODE}3 rw\n").encode()
+        (
+            f"30 22 8:2 / /mnt/a{odd}b rw - ext4 {ABSENT_NODE}2 rw\n31 22 8:3 / /srv rw - ext4 {ABSENT_NODE}3 rw\n"
+        ).encode()
     )
     rows = mounts.read_mounts(path)
     assert rows is not None

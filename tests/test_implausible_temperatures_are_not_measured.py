@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
+from lsdsk.adapters.hw.decode.captured import MAX_PLAUSIBLE_CELSIUS, MIN_PLAUSIBLE_CELSIUS
 from lsdsk.adapters.hw.decode.nvme import decode_smart_log
-from lsdsk.adapters.hw.decode.temperature import MAX_PLAUSIBLE_CELSIUS, MIN_PLAUSIBLE_CELSIUS
 from lsdsk.adapters.hw.linux.builder import build_disks
 from lsdsk.adapters.hw.linux.capture import BlockEntry, HwmonEntry, LinuxCapture, SysfsClasses
 from lsdsk.domain.enums import Platform
@@ -38,8 +38,11 @@ def _disks_with(*monitors: HwmonEntry):
     return disk
 
 
+IMPLAUSIBLE_MILLIDEGREES = ["99999999999999999", "9" * 400, "-99999999", str((MAX_PLAUSIBLE_CELSIUS + 1) * 1000)]
+
+
 @pytest.mark.os_agnostic
-@pytest.mark.parametrize("millidegrees", ["99999999999999999", "9" * 400, "-99999999", str((MAX_PLAUSIBLE_CELSIUS + 1) * 1000)])
+@pytest.mark.parametrize("millidegrees", IMPLAUSIBLE_MILLIDEGREES)
 def test_an_implausible_hwmon_temperature_is_not_a_reading(millidegrees: str) -> None:
     disk = _disks_with(HwmonEntry(path=f"{BASE}/hwmon0", temp1_input=millidegrees))
     assert disk.health is None or disk.health.temperature_c is None

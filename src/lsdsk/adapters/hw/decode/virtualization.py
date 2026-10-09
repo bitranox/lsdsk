@@ -186,10 +186,10 @@ def _match_hypervisor(haystack: str) -> str | None:
     ``VMware7,1`` is still VMware.
     """
     lowered = haystack.lower()
-    return next(
-        (name for key, name in _HYPERVISOR_MARKERS.items() if re.search(rf"(?<![a-z]){re.escape(key)}(?![a-z])", lowered)),
-        None,
-    )
+    for key, name in _HYPERVISOR_MARKERS.items():
+        if re.search(rf"(?<![a-z]){re.escape(key)}(?![a-z])", lowered):
+            return name
+    return None
 
 
 class Classification(NamedTuple):

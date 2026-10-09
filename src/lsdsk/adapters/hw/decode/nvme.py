@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from ....domain.models import Health
 from ....domain.text import device_text
-from .temperature import plausible_celsius
+from .captured import plausible_celsius
 
 IDENTIFY_CONTROLLER_LENGTH = 4096
 SMART_LOG_LENGTH = 512

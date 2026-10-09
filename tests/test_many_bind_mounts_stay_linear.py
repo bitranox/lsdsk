@@ -26,9 +26,7 @@ def _binds(count: int) -> LinuxCapture:
         "kernel": "6.1",
         "pci": {},
         "block": {"sdc": {"dev": "8:32", "holders": [], "partitions": {}}},
-        "mounts": [
-            {"dev": "8:32", "mountpoint": f"/bind/{n}", "fstype": "ext4", "source": ""} for n in range(count)
-        ],
+        "mounts": [{"dev": "8:32", "mountpoint": f"/bind/{n}", "fstype": "ext4", "source": ""} for n in range(count)],
         "swaps": [],
         "stacked": {},
         "signatures": {},
