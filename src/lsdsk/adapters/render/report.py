@@ -1065,20 +1065,20 @@ def render_smart(inventory: Inventory, width: int = DEFAULT_WIDTH) -> Renderable
     lines: list[RenderableType] = [Text(f"SMART attributes on {inventory.hostname}", style="bold")]
     for disk in inventory.disks:
         lines.append(Text(""))
-        lines.extend(_disk_attributes(disk, width))
+        lines.extend(_disk_attributes(disk, width, privileged=inventory.privileged))
     if len(lines) == 1:
         lines.append(Text("No disk reported a SMART attribute table.", style=theme.STYLE_UNKNOWN))
     return Group(*lines)
 
 
-def _disk_attributes(disk: Disk, width: int) -> list[RenderableType]:
+def _disk_attributes(disk: Disk, width: int, *, privileged: bool) -> list[RenderableType]:
     """Render one disk's heading and its attribute table."""
     attributes = () if disk.health is None else disk.health.attributes
     heading = Text()
     heading.append(disk.path, style="bold")
     heading.append(f"  {disk.model}", style="")
     if not attributes:
-        heading.append(f"  {_no_attributes_reason(disk)}", style=theme.STYLE_UNKNOWN)
+        heading.append(f"  {_no_attributes_reason(disk, privileged=privileged)}", style=theme.STYLE_UNKNOWN)
         return [heading]
     heading.append(f"  {len(attributes)} attributes")
 
@@ -1109,19 +1109,33 @@ def _disk_attributes(disk: Disk, width: int) -> list[RenderableType]:
     return lines
 
 
-def _no_attributes_reason(disk: Disk) -> str:
+def _no_attributes_reason(disk: Disk, *, privileged: bool) -> str:
     """Say why a disk shows no attribute table, rather than showing nothing.
 
     An NVMe drive has no ATA attribute table at all; it publishes a fixed health
     log instead, which the health view already shows. That is a different thing
     from an ATA drive whose table could not be read, and a reader who cannot
     tell them apart will go looking for a fault that is not there.
+
+    A missing table is blamed on privilege only when the run had none: a refused
+    read on a privileged run is named with its recorded reason instead, because
+    telling someone already root to elevate sends them to do what cannot work.
     """
     if disk.bus is BusType.NVME:
         return "NVMe publishes a fixed health log, not an attribute table. See the health page."
     if disk.health is None:
-        return "no SMART data was read; this needs root or Administrator."
+        return _why_no_smart_was_read(disk, privileged=privileged)
     return "reported no attribute table."
+
+
+def _why_no_smart_was_read(disk: Disk, *, privileged: bool) -> str:
+    """Name the recorded refusal, else the missing privilege, else just the fact."""
+    if disk.readings_refused:
+        refused = "; ".join(f"{item.reading}: {item.reason}" for item in disk.readings_refused)
+        return f"no SMART data was read; refused ({refused})."
+    if not privileged:
+        return "no SMART data was read; this needs root or Administrator."
+    return "no SMART data was read."
 
 
 def render_findings(findings: Sequence[Finding]) -> RenderableType:
