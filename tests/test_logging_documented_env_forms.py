@@ -29,6 +29,32 @@ ENVIRONMENT_EXAMPLES = re.findall(r"^# Environment Variable: (LSDSK___\S+?)=(.*)
 DOTENV_EXAMPLES = re.findall(r"^# \.env: (LIB_LOG_RICH__\S+?)=(.*)$", SHIPPED, re.MULTILINE)
 ARGV = ["--replay", "tests/fixtures/hw/linux-minimal.json", "--no-record", "findings"]
 
+#: Each setting a shipped comment says another one must accompany ("Note: Requires
+#: graylog_endpoint to be set"), mapped to that companion. Read from the comments, so
+#: a new note of that shape is a new requirement without anybody listing it here.
+REQUIREMENTS: dict[str, str] = {
+    setting: required
+    for required, setting in re.findall(
+        r"^# Note: Requires (\w+) to be set\n(?:#.*\n)*?(\w+) = ", SHIPPED, re.MULTILINE
+    )
+}
+
+#: What a test sets to satisfy each required companion. NOT the documented example:
+#: the Graylog adapter connects on the first record it sends, and the documented
+#: endpoint is a real host name, so the test would resolve and dial it. A loopback
+#: UDP endpoint satisfies the requirement and sends nothing off the machine.
+COMPANIONS: dict[str, dict[str, str]] = {
+    "graylog_endpoint": {"GRAYLOG_ENDPOINT": "127.0.0.1:9", "GRAYLOG_PROTOCOL": "udp"},
+}
+
+
+def _companions_of(name: str) -> dict[str, str]:
+    """The settings, without prefix, a documented example needs beside it to be valid."""
+    setting = name.rsplit("LIB_LOG_RICH__", 1)[1].lower()
+    required = REQUIREMENTS.get(setting)
+    return {} if required is None else COMPANIONS[required]
+
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -52,12 +78,26 @@ def test_the_comments_hold_enough_examples_to_mean_something() -> None:
 
 
 @pytest.mark.os_agnostic
+def test_every_documented_requirement_has_a_companion_the_examples_are_run_with() -> None:
+    """A setting valid only beside another cannot be judged alone.
+
+    lib_log_rich 6.5.1 began refusing ``enable_graylog=true`` with no endpoint, which
+    its comment had always said it needed, and the example run alone read as a
+    documented value being ignored.
+    """
+    assert REQUIREMENTS == {"enable_graylog": "graylog_endpoint"}, REQUIREMENTS
+    assert set(REQUIREMENTS.values()) <= set(COMPANIONS)
+
+
+@pytest.mark.os_agnostic
 @pytest.mark.parametrize(("name", "value"), ENVIRONMENT_EXAMPLES, ids=[name for name, _ in ENVIRONMENT_EXAMPLES])
 def test_a_documented_environment_variable_is_used_not_ignored(
     capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, name: str, value: str
 ) -> None:
     """The documented value for the variable is accepted by the real loader and the real logging start."""
     monkeypatch.setenv(name, value)
+    for companion, companion_value in _companions_of(name).items():
+        monkeypatch.setenv(f"LSDSK___LIB_LOG_RICH__{companion}", companion_value)
     main(ARGV, services_factory=build_production)
     assert _warnings_about_logging(capfd) == []
 
@@ -69,7 +109,8 @@ def test_a_documented_dotenv_line_is_used_not_ignored(
 ) -> None:
     """The ``.env`` form is read with no prefix, and its documented value is accepted the same way."""
     env_file = tmp_path / ".env"
-    env_file.write_text(f"{name}={value}\n", encoding="utf-8")
+    companions = "".join(f"LIB_LOG_RICH__{key}={each}\n" for key, each in _companions_of(name).items())
+    env_file.write_text(f"{name}={value}\n{companions}", encoding="utf-8")
     main(["--env-file", str(env_file), *ARGV], services_factory=build_production)
     assert _warnings_about_logging(capfd) == []
 
