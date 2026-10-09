@@ -967,9 +967,7 @@ def _read_nvme(kernel32: api.WinLibrary, handle: int, *, passthrough: bool) -> d
         ("identify_controller", "identify_controller_error", api.NVME_DATA_TYPE_IDENTIFY, 1, _NVME_IDENTIFY_LENGTH),
         ("smart_log", "smart_log_error", api.NVME_DATA_TYPE_LOG_PAGE, _NVME_SMART_LOG_ID, _NVME_SMART_LOG_LENGTH),
     ):
-        answer = nvme_protocol_data(
-            kernel32, handle, data_type=data_type, request_value=request_value, length=length
-        )
+        answer = nvme_protocol_data(kernel32, handle, data_type=data_type, request_value=request_value, length=length)
         if isinstance(answer, NvmeRefusal):
             record[error_label] = _refusal_text(answer, passthrough=passthrough)
         else:
@@ -1393,7 +1391,6 @@ def read_system() -> dict[str, Any]:
         "usb_hubs": usb_reading.hubs,
         "volumes": volume_entries,
         "windows_volume": windows_volume,
-        "cwd": os.getcwd(),  # noqa: PTH109 - recorded as context for a bug report, not used as a path
     }
 
 

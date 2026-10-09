@@ -104,7 +104,9 @@ def _tree(setupapi: object, kernel32: object) -> reader._DeviceTree:  # pyright:
 def test_a_fill_call_that_fails_after_a_good_sizing_call_is_named_not_dropped() -> None:
     disks = reader.read_disks(_tree(_Setupapi(), _ReadOnlySataKernel()))
     assert list(disks) == ["unreadable disk interface 1"]
-    assert disks["unreadable disk interface 1"]["error"].startswith("could not read the device interface path, Win32 error")
+    assert disks["unreadable disk interface 1"]["error"].startswith(
+        "could not read the device interface path, Win32 error"
+    )
 
 
 @pytest.mark.os_agnostic
