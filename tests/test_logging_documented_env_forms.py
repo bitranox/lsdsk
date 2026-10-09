@@ -167,3 +167,18 @@ def test_a_malformed_endpoint_is_still_refused_with_the_usual_warning(
     warnings = _warnings_about_logging(capfd)
     assert len(warnings) == 1, warnings
     assert "lib_log_rich.graylog_endpoint=" in warnings[0], warnings
+
+
+@pytest.mark.os_agnostic
+def test_a_scrub_pattern_cut_by_the_comma_split_is_named_not_dropped_silently(
+    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r"""``token=\d{1,3}`` is cut at its comma and the tail was discarded without a word."""
+    monkeypatch.setenv("LSDSK___LIB_LOG_RICH__SCRUB_PATTERNS", r"token=\d{1,3},api_key=.+")
+
+    main(ARGV, services_factory=build_production)
+
+    said = " ".join(capfd.readouterr().err.split())
+    assert "ignoring lib_log_rich.scrub_patterns=3}" in said, said
+    assert "split on every comma" in said, said
+    assert "api_key" not in said, "the entry that parsed was named as dropped"

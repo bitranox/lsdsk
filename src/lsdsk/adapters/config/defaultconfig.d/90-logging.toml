@@ -322,6 +322,9 @@ dump_format_template = ""
 # Environment Variable: LSDSK___LIB_LOG_RICH__SCRUB_PATTERNS=password=.+,secret=.+,token=.+,api_key=.+
 # .env: LIB_LOG_RICH__SCRUB_PATTERNS=password=.+,secret=.+,token=.+,api_key=.+
 # Note: Patterns are merged with built-in defaults
+# Note: The environment-variable and .env text form splits on EVERY comma, so a regex that
+#       contains one (for example token=\d{1,3}) is cut in two and the tail is dropped with
+#       a warning. Give such a regex in this table form, in a file.
 scrub_patterns = { password = ".+", secret = ".+", token = ".+" }
 
 # ------------------------------------------------------------------------------

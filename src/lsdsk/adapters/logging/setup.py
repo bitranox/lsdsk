@@ -295,6 +295,52 @@ _FORMS: Final[Mapping[str, Callable[[str], object | None]]] = {
 }
 
 
+def _dropped_scrub_entries(section: Mapping[str, object]) -> list[str]:
+    """The pieces of a text-form ``scrub_patterns`` that the library discards for lacking ``=``.
+
+    The text form is ``field=regex`` pairs split on every comma, so a regex that
+    holds one (``token=a{1,3}``) is cut in two and its tail, which has no ``=``,
+    is dropped without a word. Telling that apart from a deliberate list is the
+    point: a file's table form is not affected, so only text is looked at.
+
+    Args:
+        section: The ``[lib_log_rich]`` table as the layers merged it.
+
+    Returns:
+        Each non-blank piece without an ``=``, in order.
+
+    Example:
+        >>> _dropped_scrub_entries({"scrub_patterns": "token=a{1,3}, key=.+"})
+        ['3}']
+        >>> _dropped_scrub_entries({"scrub_patterns": {"token": "a{1,3}"}})
+        []
+    """
+    text = section.get("scrub_patterns")
+    if not isinstance(text, str):
+        return []
+    return [piece.strip() for piece in text.split(",") if piece.strip() and "=" not in piece]
+
+
+def _scrub_pattern_notes(section: Mapping[str, object]) -> list[str]:
+    """One warning per piece of the text form that was dropped, so the cut is visible.
+
+    Args:
+        section: The ``[lib_log_rich]`` table as the layers merged it.
+
+    Returns:
+        The warnings to print, empty when nothing was dropped.
+    """
+    return [
+        RejectedValue(
+            dotted=f"{_SECTION}.scrub_patterns",
+            raw=visible_text(piece),
+            reason="the text form is field=regex pairs split on every comma, and this piece has no '='",
+            used="the other entries; give a regex containing a comma as a table in a file",
+        ).as_sentence()
+        for piece in _dropped_scrub_entries(section)
+    ]
+
+
 def with_documented_forms(section: Mapping[str, object]) -> dict[str, object]:
     """`section` with each documented text form turned into the shape the library validates.
 
@@ -333,7 +379,8 @@ def _configured_section(config: Config) -> tuple[dict[str, object], list[str]]:
     """
     raw: object = config.get(_SECTION, default={})
     if isinstance(raw, Mapping):
-        return with_documented_forms(cast("Mapping[str, object]", raw)), []
+        table = cast("Mapping[str, object]", raw)
+        return with_documented_forms(table), _scrub_pattern_notes(table)
     note = RejectedValue(
         dotted=_SECTION, raw=visible_text(rendered(raw)), reason="not a table", used="the shipped logging settings"
     )
