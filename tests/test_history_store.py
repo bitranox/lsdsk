@@ -10,12 +10,13 @@ grow without bound.
 from __future__ import annotations
 
 import gc
+import inspect
 import itertools
 import json
 import os
 import stat
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from workcount import work_to_run
@@ -32,6 +33,10 @@ from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.history import CounterKind, DiskSeries, History, Sample, record, thin, trend_for
 from lsdsk.domain.models import Disk, Health
 from lsdsk.domain.text import MAX_DEVICE_TEXT
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from types import CodeType
 
 T0 = "2026-08-05T01:23:00+00:00"
 
@@ -690,20 +695,37 @@ def test_a_store_naming_one_drive_twice_is_read_as_one_series_and_written_back_a
     assert [sample["power_on_hours"] for sample in stored[0]["samples"]] == [1, 2, 5], stored[0]
 
 
-def _collections_during(action: Any) -> int:
-    """Count the cyclic collections that start while `action` runs."""
-    started: list[str] = []
+def _collections_inside(scope: Callable[[CodeType], bool], action: Any) -> int:
+    """Count the cyclic collections that start while a frame `scope` matches is on the stack.
+
+    Scoped by frame rather than by the whole `action`, because a collection the
+    interpreter scheduled earlier runs at the next point it checks, which can be
+    the very line that enters the pause: on Python 3.11 to 3.13 one did, at
+    ``with _collector_paused():``, with the collector still enabled.
+    """
+    started = 0
 
     def note(phase: str, info: dict[str, int]) -> None:
-        if phase == "start":
-            started.append(phase)
+        nonlocal started
+        current = inspect.currentframe() if phase == "start" else None
+        frame = None if current is None else current.f_back
+        while frame is not None:
+            if scope(frame.f_code):
+                started += 1
+                return
+            frame = frame.f_back
 
     gc.callbacks.append(note)
     try:
         action()
     finally:
         gc.callbacks.remove(note)
-    return len(started)
+    return started
+
+
+def _is_the_parse(code: CodeType) -> bool:
+    """Whether `code` is the store read that runs with the collector paused."""
+    return code.co_name == "_read_store" and code.co_filename == load_history.__code__.co_filename
 
 
 def _big_store(tmp_path: Path) -> Path:
@@ -725,13 +747,18 @@ def test_parsing_a_store_runs_no_cyclic_collection(tmp_path: Path) -> None:
     """The parse allocates thousands of acyclic objects; collecting among them is pure cost."""
     store = _big_store(tmp_path)
 
-    during_load = _collections_during(lambda: load_history(store, hostname="box"))
-    # The control: the same process, collector enabled, allocating comparably,
-    # does collect, so a zero above is the pause and not a quiet interpreter.
-    during_allocation = _collections_during(lambda: [[index] for index in range(50_000)])
+    during_parse = _collections_inside(_is_the_parse, lambda: load_history(store, hostname="box"))
+
+    # The control: the same instrument, scoped to a frame that allocates
+    # comparably with the collector enabled, does see a collection, so a zero
+    # above is the pause and not a frame walk that never matches.
+    def allocate() -> list[list[int]]:
+        return [[index] for index in range(50_000)]
+
+    during_allocation = _collections_inside(lambda code: code is allocate.__code__, allocate)
 
     assert during_allocation > 0, "the instrument saw no collection at all, so zero proved nothing"
-    assert during_load == 0
+    assert during_parse == 0
 
 
 def _set_collector(*, enabled: bool) -> None:
