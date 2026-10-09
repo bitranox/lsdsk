@@ -1244,3 +1244,82 @@ def test_every_json_command_judged_against_history_reports_a_refused_store(
     assert any(str(store) in reason and "could not be read" in reason for reason in envelope["skipped"]), envelope[
         "skipped"
     ]
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("command", _JUDGED_AGAINST_HISTORY)
+def test_every_json_command_with_no_store_yet_still_reports_ok(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path, command: str
+) -> None:
+    """The control: a store that does not exist yet is a first run, not a refusal."""
+    args = (
+        "--history-file",
+        str(tmp_path / "none.json"),
+        "--no-record",
+        command,
+        "--replay",
+        str(LATER),
+        "--format",
+        "json",
+    )
+
+    envelope = json.loads(run(cli_runner, production_factory, *args).stdout)
+
+    assert envelope["command"] == command
+    assert envelope["skipped"] == [], envelope["skipped"]
+    assert envelope["ok"] is True
+
+
+def _leave_behind(directory: Path, name: str, *, age_seconds: float) -> Path:
+    """A file as a killed write leaves it: some bytes, last touched `age_seconds` ago."""
+    import os
+    import time
+
+    leftover = directory / name
+    leftover.write_text("{", encoding="utf-8")
+    then = time.time() - age_seconds
+    os.utime(leftover, (then, then))
+    return leftover
+
+
+@pytest.mark.os_agnostic
+def test_a_recording_run_removes_the_temporary_file_a_killed_write_left_behind(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    """A SIGKILLed atomic write leaves `.<name>.<random>.tmp` beside the store, store-sized, for ever.
+
+    Only the run that holds the store's lock may reap it, and only a file of
+    that exact pattern: a temporary file of the write in progress is younger
+    than any real write takes, and anything else in the directory is not ours.
+    """
+    store = tmp_path / "history.json"
+    abandoned = _leave_behind(tmp_path, ".history.json.k3j9x2ab.tmp", age_seconds=3600)
+    fresh = _leave_behind(tmp_path, ".history.json.q8w7e6rt.tmp", age_seconds=5)
+    not_ours = [
+        _leave_behind(tmp_path, ".other.json.k3j9x2ab.tmp", age_seconds=3600),
+        _leave_behind(tmp_path, ".history.json.lock.tmp", age_seconds=3600),
+        _leave_behind(tmp_path, "history.json.k3j9x2ab.tmp", age_seconds=3600),
+        _leave_behind(tmp_path, ".history.json.k3j9x2ab.bak", age_seconds=3600),
+    ]
+
+    result = run(cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(SNAPSHOT))
+
+    assert result.exit_code == 0, result.output
+    assert store.exists(), "the run recorded nothing, so it proved nothing about reaping"
+    assert not abandoned.exists(), "the abandoned temporary file is still there"
+    assert fresh.exists(), "a file young enough to be a write in progress was removed"
+    assert all(path.exists() for path in not_ours), [p.name for p in not_ours if not p.exists()]
+
+
+@pytest.mark.os_agnostic
+def test_a_run_that_cannot_read_the_store_leaves_its_directory_alone(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    """A store the run stood down from is not written, so nothing beside it is touched either."""
+    store = tmp_path / "history.json"
+    store.write_text("{", encoding="utf-8")
+    abandoned = _leave_behind(tmp_path, ".history.json.k3j9x2ab.tmp", age_seconds=3600)
+
+    run(cli_runner, production_factory, "--history-file", str(store), "record", "--replay", str(SNAPSHOT))
+
+    assert abandoned.exists()

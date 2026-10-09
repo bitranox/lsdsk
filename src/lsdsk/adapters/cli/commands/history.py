@@ -22,7 +22,13 @@ from typing import TYPE_CHECKING, Final, NamedTuple
 import lib_log_rich.runtime
 import rich_click as click
 
-from lsdsk.adapters.history.store import HistoryRead, history_lock, load_history, save_history
+from lsdsk.adapters.history.store import (
+    HistoryRead,
+    history_lock,
+    load_history,
+    remove_abandoned_temporaries,
+    save_history,
+)
 from lsdsk.adapters.hw.capture import CaptureEnvelope
 from lsdsk.adapters.textfile import read_json_bounded
 from lsdsk.domain.diagnostics import diagnose
@@ -386,6 +392,8 @@ def _record_into_the_current_store(
     declined = _why_not_to_record(inventory, current, settings)
     if declined is not None:
         return declined
+    # Under the lock the caller holds, so no run of ours is mid-write.
+    remove_abandoned_temporaries(settings.path)
     stamp = captured_at or datetime.now(UTC).isoformat()
     updated = record(current.history, inventory.disks, stamp, cap=settings.max_samples_per_drive)
     save_history(updated, settings.path)

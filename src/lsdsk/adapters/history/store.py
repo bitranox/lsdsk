@@ -38,6 +38,7 @@ import errno
 import gc
 import json
 import os
+import re
 import stat
 import sys
 import time
@@ -438,6 +439,61 @@ def save_history(history: History, path: Path) -> None:
     replace_atomically(path, body, mode=HISTORY_FILE_MODE)
 
 
+#: How old a store's temporary file must be before it is taken for the leftover of a
+#: killed write. A write takes milliseconds, so a file this old has no writer.
+ABANDONED_TEMPORARY_SECONDS = 300.0
+
+#: The random middle ``tempfile.mkstemp`` puts in a temporary file's name.
+_TEMPORARY_RANDOM = re.compile(r"[A-Za-z0-9_]{8}")
+
+
+def remove_abandoned_temporaries(store: Path, *, now: float | None = None) -> None:
+    """Remove the temporary files a killed write left beside `store`.
+
+    A write that is killed between creating its temporary file and renaming it
+    leaves ``.<name>.<random>.tmp`` for good: nothing else ever names it, and
+    each is as large as the store. Call this only while holding
+    :func:`history_lock`, which every writer of the store holds, so no writer of
+    this store is mid-write; the age test is the second guard, for a writer that
+    did not take the lock.
+
+    Only this store's own pattern, only regular files (never a link), and only
+    past :data:`ABANDONED_TEMPORARY_SECONDS`. A file that cannot be removed is
+    left: this is housekeeping, and a failure to tidy must not fail a recording.
+
+    Args:
+        store: The store file whose directory is tidied.
+        now: The current time as ``time.time()`` reads it, or ``None`` for the
+            clock. The seam a test sets the age through.
+
+    Example:
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as directory:
+        ...     remove_abandoned_temporaries(Path(directory) / "h.json")
+    """
+    current = time.time() if now is None else now
+    prefix, suffix = f".{store.name}.", ".tmp"
+    try:
+        names = [entry.name for entry in store.parent.iterdir()]
+    except OSError:
+        return
+    for name in names:
+        middle = name[len(prefix) : -len(suffix)]
+        if not (name.startswith(prefix) and name.endswith(suffix) and _TEMPORARY_RANDOM.fullmatch(middle)):
+            continue
+        _remove_if_abandoned(store.parent / name, current)
+
+
+def _remove_if_abandoned(candidate: Path, now: float) -> None:
+    """Remove `candidate` when it is a regular file untouched for long enough."""
+    try:
+        status = candidate.lstat()
+        if stat.S_ISREG(status.st_mode) and now - status.st_mtime > ABANDONED_TEMPORARY_SECONDS:
+            candidate.unlink()
+    except OSError:
+        return
+
+
 def _refuse_what_the_reader_would_refuse(body: str, path: Path) -> None:
     """Refuse a store the reader would refuse, before anything is written.
 
@@ -613,6 +669,7 @@ def history_lock(path: Path, *, wait: float | None = None) -> Generator[None]:
 
 
 __all__ = [
+    "ABANDONED_TEMPORARY_SECONDS",
     "HISTORY_FILE_MODE",
     "HISTORY_SCHEMA_VERSION",
     "LOCK_WAIT_SECONDS",
@@ -623,6 +680,7 @@ __all__ = [
     "default_history_path",
     "history_lock",
     "load_history",
+    "remove_abandoned_temporaries",
     "running_as_root",
     "save_history",
 ]
