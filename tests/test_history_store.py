@@ -15,6 +15,7 @@ import itertools
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -759,6 +760,41 @@ def test_parsing_a_store_runs_no_cyclic_collection(tmp_path: Path) -> None:
 
     assert during_allocation > 0, "the instrument saw no collection at all, so zero proved nothing"
     assert during_parse == 0
+
+
+def _code_objects_run_during(action: Any) -> list[CodeType]:
+    """Every code object that is called while `action` runs, found by a profile hook."""
+    seen: list[CodeType] = []
+
+    def profile(frame: Any, event: str, arg: object) -> None:
+        if event == "call":
+            seen.append(frame.f_code)
+
+    sys.setprofile(profile)
+    try:
+        action()
+    finally:
+        sys.setprofile(None)
+    return seen
+
+
+@pytest.mark.os_agnostic
+def test_the_frame_filter_of_the_collection_test_matches_the_parse_a_load_runs(tmp_path: Path) -> None:
+    """The zero above proves the pause only if the filter can match the parse at all.
+
+    `_is_the_parse` names the store read by function name. Rename that function
+    and the filter matches nothing, the collection count is zero whatever the
+    pause does, and the test above stays green over a deleted pause. A load of a
+    real store must run a frame the filter accepts, and exactly the one that
+    `load_history` calls inside the pause.
+    """
+    store = _big_store(tmp_path)
+
+    ran = _code_objects_run_during(lambda: load_history(store, hostname="box"))
+
+    matched = [code for code in ran if _is_the_parse(code)]
+    assert matched, "no frame run by load_history satisfies the filter, so the collection test is vacuous"
+    assert {code.co_name for code in matched} == {"_read_store"}
 
 
 def _set_collector(*, enabled: bool) -> None:
