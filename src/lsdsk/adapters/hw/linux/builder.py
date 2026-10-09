@@ -48,6 +48,7 @@ from ..decode.ata_identify import AtaIdentity, decode_identify, decode_vpd_ata_i
 from ..decode.ata_smart import decode_health
 from ..decode.captured import decode_base64, parse_int
 from ..decode.nvme import decode_identify_controller, decode_smart_log
+from ..decode.temperature import plausible_celsius
 from ..decode.usb import decode_bos, fastest, speed_from_sysfs
 from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble, port_kind_of
@@ -548,15 +549,17 @@ def _nvme_classes_by_path(capture: LinuxCapture) -> dict[str, NvmeClassEntry]:
 def _hwmon_readings_by_path(capture: LinuxCapture) -> dict[str, _HwmonReading]:
     """Key every monitor that published a readable temperature by its path.
 
-    A monitor whose reading does not parse is left out rather than stored as
+    A monitor whose reading does not parse, or is no temperature a drive can
+    report, is left out rather than stored as
     absent, because the scan this replaces walked past such an entry and kept
     looking rather than giving up on the disk.
     """
     readings: dict[str, _HwmonReading] = {}
     for position, entry in enumerate(capture.classes.hwmon.values()):
         raw = parse_int(entry.temp1_input)
-        if raw is not None:
-            readings.setdefault(entry.path, _HwmonReading(position, round(raw / _MILLIDEGREE)))
+        celsius = None if raw is None else plausible_celsius(raw, per_degree=_MILLIDEGREE)
+        if celsius is not None:
+            readings.setdefault(entry.path, _HwmonReading(position, celsius))
     return readings
 
 

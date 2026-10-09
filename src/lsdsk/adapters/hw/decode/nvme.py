@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from ....domain.models import Health
 from ....domain.text import device_text
+from .temperature import plausible_celsius
 
 IDENTIFY_CONTROLLER_LENGTH = 4096
 SMART_LOG_LENGTH = 512
@@ -56,8 +57,8 @@ def _ascii_field(blob: bytes, start: int, length: int) -> str:
 
 
 def _kelvin_to_celsius(kelvin: int) -> int | None:
-    """Convert a Kelvin reading to Celsius, treating zero as not reported."""
-    return None if kelvin == 0 else kelvin - _KELVIN_OFFSET
+    """Convert a Kelvin reading to Celsius, treating zero or an implausible figure as not reported."""
+    return None if kelvin == 0 else plausible_celsius(kelvin - _KELVIN_OFFSET)
 
 
 def decode_identify_controller(blob: bytes) -> NvmeIdentity:
