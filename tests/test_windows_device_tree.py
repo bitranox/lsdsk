@@ -786,3 +786,33 @@ def test_an_unknown_link_speed_code_leaves_the_speed_key_absent() -> None:
     entry = _entry_of(properties)
     assert "current_link_speed" not in entry
     assert "max_link_speed" not in entry
+
+
+@pytest.mark.os_agnostic
+def test_a_slot_number_of_zero_is_a_reading_not_a_missing_one() -> None:
+    properties = _pci_properties()
+    _uint(properties, _DEV_FMTID, api.DEVICE_PROP_UINUMBER, 0)
+    assert _entry_of(properties)["slot_number"] == 0
+
+
+@pytest.mark.os_agnostic
+def test_a_device_publishing_no_slot_number_carries_no_slot_number_key() -> None:
+    properties = _pci_properties()
+    properties.pop((_PCI_DEVINST, _DEV_FMTID, api.DEVICE_PROP_UINUMBER), None)
+    assert "slot_number" not in _entry_of(properties)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(("published", "kept"), [(0, 0), (0x1FFF, 0x1FFF), (0x2000, None), (0xFFFFFFFF, None)])
+def test_a_windows_slot_number_is_bounded_like_the_linux_one(published: int, kept: int | None) -> None:
+    """The domain's slot number is the 13-bit field Linux reads; a wider UINumber is not one."""
+    payload = load_windows_capture()
+    bridge = "PCI\\VEN_1B36&DEV_000C&SUBSYS_00001B36&REV_00\\3&11583659&0&E0"
+    payload["pci"][bridge] = {
+        "instance_id": bridge,
+        "class": "0x060400",
+        "address": "0000:00:1c.0",
+        "slot_number": published,
+    }
+    slots = {slot.address: slot for slot in build_from(payload).slots}
+    assert slots["0000:00:1c.0"].physical_slot_number == kept

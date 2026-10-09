@@ -73,10 +73,36 @@ def bus_type_of(value: object) -> object:
 # did not print oddly, it pushed four columns off the disks table, so the
 # drive's serial and firmware disappeared rather than the number looking wrong.
 _UINT32_MAX = 0xFFFFFFFF  # DEVPKEY UINumber, read as a UINT32
+_PCIE_SLOT_NUMBER_MAX = 0x1FFF  # the 13-bit Physical Slot Number the domain's slot number means
 _LARGE_INTEGER_MAX = 2**63 - 1  # IOCTL_DISK_GET_LENGTH_INFO answers in one
 _SHORT_MIN = -(2**15)  # the temperature fields are each a ctypes.c_short
 _SHORT_MAX = 2**15 - 1
 _MAX_HUB_PORT = 255  # USB_NODE_CONNECTION_INFORMATION_EX.ConnectionIndex addresses a hub's ports in one byte
+
+
+def slot_number_of(value: object) -> object:
+    """Keep a UI number only when it fits the PCIe Physical Slot Number field.
+
+    The domain's slot number is the 13-bit field Linux reads from Slot
+    Capabilities. Windows publishes a firmware UI number of up to 32 bits, and
+    a wider one is not that number, so it reads as unknown rather than as a
+    slot that does not exist.
+
+    Args:
+        value: The recorded UI number, or anything else the capture held.
+
+    Returns:
+        The value when it is an integer in range, else ``None`` for an
+        out-of-range integer, and the value untouched for anything the model
+        should reject by its own type.
+
+    Example:
+        >>> slot_number_of(3), slot_number_of(0x2000), slot_number_of(None)
+        (3, None, None)
+    """
+    if isinstance(value, int) and not isinstance(value, bool) and not 0 <= value <= _PCIE_SLOT_NUMBER_MAX:
+        return None
+    return value
 
 
 class PciEntry(CaptureModel, frozen=True):
@@ -108,7 +134,7 @@ class PciEntry(CaptureModel, frozen=True):
     current_link_width: DeviceText | None = None
     max_link_speed: DeviceText | None = None
     max_link_width: DeviceText | None = None
-    slot_number: int | None = Field(default=None, ge=0, le=_UINT32_MAX)
+    slot_number: Annotated[int | None, BeforeValidator(slot_number_of)] = Field(default=None, ge=0, le=_UINT32_MAX)
     address: DeviceText | None = None
     parent: DeviceText | None = None
     children: Entries[DeviceText] = ()
