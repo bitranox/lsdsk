@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.7.2] 2026-10-09 08:31:46
+
 ### Changed
 
 - **`config-deploy` and `config-generate-examples` run twice answer `ok: true`.** With every
