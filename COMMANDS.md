@@ -108,7 +108,8 @@ none of them is passed through untouched, because it belongs to a library or to
 another consumer of the same files, so `--set bogus.key=1` changes nothing and
 leaves the exit code the run would have left; `13` when
 something needs privilege this run lacks - a `config-deploy`
-target that needs root, a diagnostic run whose hardware read the kernel refuses
+target that needs root, a configuration file this run is not allowed to read, a
+diagnostic run whose hardware read the kernel refuses
 outright, a `snapshot` whose destination refuses to be written, and a
 `config-generate-examples` whose destination does; `22` for an
 argument the tool cannot act on, which is a section
@@ -126,7 +127,8 @@ configuration this tool cannot load, a configuration `config --format json`
 cannot write because it nests deeper than that platform's JSON writer carries
 (98 levels on Windows; `--format human` prints it), a file that is not a
 snapshot this version reads, a counter-history store `record` cannot read, or a
-platform with no hardware reader. Treat anything above `1` as "did not answer the question".
+platform with no hardware reader; and `130` for a run interrupted with Ctrl-C.
+Treat anything above `1` as "did not answer the question".
 
 `70` exists so that a monitoring check can tell a failing drive from a broken
 tool. Both left `1` before it, and the only way to tell which you had was to read
@@ -190,6 +192,22 @@ refused permission and `74` for any other reason, the same split `snapshot`
 makes - because the human form of `record` is silent by design, so a timer that
 is not parsing JSON has nothing else to go on.
 
+`lsdsk trend --format json` carries the machine's inventory like every other
+section, plus `data.trend`: one entry per drive and counter that the printed
+table gives a row, each `{device, counter, trend}`. `trend` holds the verdict
+that row draws - `kind` (equal to `counter`), `verdict` (`first-sample`,
+`too-close`, `rising`, `quiet` or `reset`), `latest`, `delta`, `span_hours`,
+`per_hour` and `expected_from_lifetime`, each `null` where the table draws a
+dash. The counters watched are `crc_errors`, `reallocated_sectors`,
+`pending_sectors`, `uncorrectable_sectors`, `media_errors`, `error_log_entries`
+and `percent_used`. A counter that has never fired gets no entry, and wear gets
+one only once it is rising or past `display.wear_row_floor_percent`, so an empty
+list means nothing worth a line, or nothing recorded for these drives yet. When the
+counter-history store cannot be read the list is empty for a different reason,
+and the run says so: `ok` is `false` and `skipped` carries the sentence naming
+the store and why, so an unreadable history is never mistaken for a quiet one.
+The exit code is still the machine's verdict.
+
 `lsdsk --no-record record` is refused at `22` rather than obeyed. On every other
 command the flag means "judge the counters against the store without adding this
 reading to it", which is sensible; on `record`, whose only job is to add this
@@ -239,13 +257,13 @@ overlap the ones above and mean something else here. `74` stands even when the
 reader has also gone, because it is about the destination rather than about what
 a reader was shown.
 
-`config-deploy` and `config-generate-examples` have one `ok: false` that leaves
-`0`: when every target file already exists, nothing is written, and `skipped`
-says `every target file already exists; --force overwrites` (`every example
-file` for the examples). Finding the files already in place is the expected
-outcome of running either command twice, not a failed write, which leaves `13`
-or `74` instead. So a caller that reads only the exit code sees success, and one
-that reads `ok` learns that this run changed nothing.
+`config-deploy` and `config-generate-examples` say what they did in
+`data.outcome`: `written`, or `already present` when every target file already
+existed and nothing was written. Both are `ok: true` with nothing in `skipped`
+and exit `0`, because finding the files in place is the expected result of
+running either command twice, not a failed write, which leaves `13` or `74`
+instead. A caller that needs to know whether this run changed anything reads
+`outcome`; `--force` overwrites.
 
 `2` is Click's usage error and means the command line was wrong, not that a file
 was missing: an unknown option, an unknown command, a missing argument and a bad

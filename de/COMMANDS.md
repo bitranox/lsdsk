@@ -115,7 +115,8 @@ oder einem anderen Nutzer derselben Dateien gehört; `--set bogus.key=1` ändert
 also nichts und lässt den Exit-Code, den der Lauf ohnehin gehabt hätte; `13`,
 wenn etwas ein Recht
 braucht, das dieser Lauf nicht hat - ein `config-deploy`-Ziel, das root
-verlangt, ein diagnostischer Lauf, dessen Hardwarelesung der Kernel rundweg
+verlangt, eine Konfigurationsdatei, die dieser Lauf nicht lesen darf, ein
+diagnostischer Lauf, dessen Hardwarelesung der Kernel rundweg
 verweigert, ein `snapshot`, dessen Ziel sich nicht schreiben lässt, und ein
 `config-generate-examples`, dessen Ziel das ebenso tut; `22` für
 ein Argument, mit dem das Werkzeug nichts anfangen
@@ -134,7 +135,8 @@ die `config --format json` nicht schreiben kann, weil sie tiefer verschachtelt
 ist, als der JSON-Schreiber dieser Plattform trägt (98 Ebenen unter Windows;
 `--format human` gibt sie aus), für eine Datei, die keine
 von dieser Fassung lesbare Aufnahme ist, für einen Zählerverlauf, den `record`
-nicht lesen kann, oder für eine Plattform ohne Hardwareleser. Behandeln Sie alles über `1` als "hat die Frage
+nicht lesen kann, oder für eine Plattform ohne Hardwareleser; und `130` für einen
+mit Strg-C abgebrochenen Lauf. Behandeln Sie alles über `1` als "hat die Frage
 nicht beantwortet".
 
 `70` gibt es, damit eine Überwachungsprüfung eine ausfallende Platte von einem
@@ -207,6 +209,24 @@ Aufteilung wie bei `snapshot` -, denn die menschenlesbare Form von `record`
 schweigt absichtlich, ein Timer ohne JSON-Auswertung hat also sonst keinen
 Anhaltspunkt.
 
+`lsdsk trend --format json` trägt wie jeder andere Abschnitt das Inventar der
+Maschine und dazu `data.trend`: einen Eintrag je Laufwerk und Zähler, dem die
+gedruckte Tabelle eine Zeile gibt, jeweils `{device, counter, trend}`. `trend`
+enthält das Urteil, das diese Zeile zeichnet - `kind` (gleich `counter`),
+`verdict` (`first-sample`, `too-close`, `rising`, `quiet` oder `reset`),
+`latest`, `delta`, `span_hours`, `per_hour` und `expected_from_lifetime`, jeweils
+`null`, wo die Tabelle einen Strich zeichnet. Beobachtet werden `crc_errors`,
+`reallocated_sectors`, `pending_sectors`, `uncorrectable_sectors`,
+`media_errors`, `error_log_entries` und `percent_used`. Ein Zähler, der nie
+angeschlagen hat, bekommt keinen Eintrag, und der Verschleiss erst, wenn er
+steigt oder `display.wear_row_floor_percent` überschritten hat; eine leere Liste
+heisst also, dass nichts eine Zeile wert ist oder für diese Laufwerke noch nichts
+aufgezeichnet wurde. Lässt sich der Zählerverlauf nicht lesen, ist die Liste aus
+einem anderen Grund leer, und der Lauf sagt das: `ok` ist `false`, und `skipped`
+trägt den Satz, der den Speicher und den Grund nennt, damit ein unlesbarer
+Verlauf nie für einen ruhigen gehalten wird. Der Exit-Code bleibt das Urteil
+über die Maschine.
+
 `lsdsk --no-record record` wird mit `22` abgelehnt statt befolgt. Bei jedem
 anderen Befehl bedeutet die Option „die Zähler gegen den Speicher beurteilen,
 ohne diese Messung aufzunehmen“, und das ergibt Sinn; bei `record`, dessen
@@ -262,14 +282,13 @@ hier etwas anderes. `74` bleibt stehen, auch wenn der Leser ebenfalls gegangen
 ist, denn es sagt etwas über das Ziel, nicht über das, was ein Leser zu sehen
 bekam.
 
-`config-deploy` und `config-generate-examples` kennen ein `ok: false`, das `0`
-hinterlässt: Existiert jede Zieldatei bereits, wird nichts geschrieben, und
-`skipped` sagt `every target file already exists; --force overwrites` (bei den
-Beispielen `every example file`). Die Dateien schon vorzufinden ist das
-erwartete Ergebnis, wenn einer der beiden Befehle zweimal läuft, und kein
-gescheiterter Schreibvorgang; der hinterlässt `13` oder `74`. Ein Aufrufer, der
-nur den Exit-Code liest, sieht also Erfolg, und einer, der `ok` liest, erfährt,
-dass dieser Lauf nichts geändert hat.
+`config-deploy` und `config-generate-examples` sagen in `data.outcome`, was sie
+getan haben: `written`, oder `already present`, wenn jede Zieldatei schon
+existierte und nichts geschrieben wurde. Beides ist `ok: true` mit leerem
+`skipped` und Exit `0`, denn die Dateien schon vorzufinden ist das erwartete
+Ergebnis, wenn einer der beiden Befehle zweimal läuft, und kein gescheiterter
+Schreibvorgang; der hinterlässt `13` oder `74`. Wer wissen muss, ob dieser Lauf
+etwas geändert hat, liest `outcome`; `--force` überschreibt.
 
 `2` ist der Verwendungsfehler von Click und heisst, dass die Befehlszeile falsch
 war, nicht dass eine Datei fehlte: eine unbekannte Option, ein unbekannter
