@@ -179,3 +179,73 @@ def test_the_skill_names_every_refusal_a_caller_can_distinguish() -> None:
     text = SKILL.read_text(encoding="utf-8")
     unnamed = [name for name in subclasses if f"`{name}`" not in text]
     assert not unnamed, f"the skill's exception guidance never names: {unnamed}"
+
+
+@pytest.mark.os_agnostic
+def test_the_skill_names_every_rule_diagnostics_exports() -> None:
+    """The paragraph saying every rule is callable on its own has to list every rule.
+
+    It reads as the whole set, so a rule it leaves out is one a reader never
+    learns they can run alone.
+    """
+    from lsdsk.domain import diagnostics
+
+    rules = sorted(name for name in diagnostics.__all__ if name.startswith("diagnose_"))
+    assert len(rules) > 1, "diagnostics exported no rules, so this test asserted nothing"
+
+    text = SKILL.read_text(encoding="utf-8")
+    unnamed = [name for name in rules if f"`{name}(" not in text]
+    assert not unnamed, f"the skill's list of callable rules never names: {unnamed}"
+
+
+@pytest.mark.os_agnostic
+def test_the_skill_names_every_option_the_cli_offers() -> None:
+    """The skill is read on its own, so an option only COMMANDS.md names is one its reader never meets."""
+    from test_documented_surface import cli_surface, names_an_option
+
+    _, options = cli_surface()
+    assert options, "the control: the click tree yielded no options, so this asserted nothing"
+
+    text = SKILL.read_text(encoding="utf-8")
+    unnamed = sorted(option for option in options if not names_an_option(text, option))
+    assert not unnamed, f"accepted by the CLI and never named in the skill: {unnamed}"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("command", ["TREND", "DISKS"])
+def test_the_skill_quotes_the_refused_history_sentence_each_command_gives(command: str) -> None:
+    """Every command judged against the history says when it could not be read, not only trend.
+
+    The consequence clause is taken from the function that writes the sentence,
+    so the skill is held to what the envelope really says for that command.
+    """
+    from lsdsk.adapters.cli.commands.scan import history_refusals
+    from lsdsk.adapters.history.store import HistoryRead
+    from lsdsk.domain.enums import CliCommand
+    from lsdsk.domain.history import History
+
+    refused = HistoryRead(History(hostname="h"), writable=False, refusal="malformed")
+    (sentence,) = history_refusals(refused, CliCommand[command])
+    consequence = sentence.split("could not be read, ", 1)[1].rsplit(": malformed", 1)[0]
+    assert consequence.startswith("so "), f"the sentence changed shape: {sentence!r}"
+
+    text = " ".join(SKILL.read_text(encoding="utf-8").split())
+    quoted = f"could not be read, {consequence}:"
+    assert quoted in text, f"the skill never quotes the {command} sentence: {consequence!r}"
+
+
+@pytest.mark.os_agnostic
+def test_the_skill_states_the_sas_port_count_the_sample_capture_gives() -> None:
+    """The SAS port-count advice quotes the 9500-16i's figure, so it must be the one the tool prints."""
+    from lsdsk.adapters.hw import snapshot
+
+    inventory = snapshot.load(FIXTURES / "linux-sas-hba.json")
+    (hba,) = [controller for controller in inventory.controllers if "9500-16i" in controller.name]
+    assert hba.port_count is not None, "the capture gave the HBA no port count, so this asserted nothing"
+
+    text = " ".join(SKILL.read_text(encoding="utf-8").split())
+    paragraph = re.search(r"\*\*A SAS port count is[^*]+\*\*.*?(?=\*\*)", text)
+    assert paragraph is not None, "the SAS port-count paragraph is gone"
+    assert re.search(rf"\b{hba.port_count} host phys\b", paragraph.group(0)), (
+        f"the paragraph does not state the {hba.port_count} host phys the capture gives: {paragraph.group(0)[:300]}"
+    )

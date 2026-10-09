@@ -101,10 +101,14 @@ command, so `lsdsk --history-file /var/lib/lsdsk/history.json record` is right a
 path in full: a bare filename writes the store into whatever directory you
 happened to be in. When in
 doubt, `lsdsk <command> --help` (or `-h`) lists what that command takes.
+`config-deploy` sets file permissions by default (755/644 for `app` and `host`,
+700/600 for `user`); `--dir-mode 750 --file-mode 640` override them in octal, and
+`--no-permissions` leaves the modes to your umask (`--permissions` is the default).
 
 `fail` and `logdemo` also exist. They are not diagnostic commands: they are the
 vehicles the traceback and logging tests drive through the real entry point.
-Never reach for them to answer a question about hardware.
+Never reach for them to answer a question about hardware. `logdemo --theme`
+picks which logging theme it previews.
 
 ## Reading `lsdsk topology`
 
@@ -122,7 +126,7 @@ linux-sas-hba   2 root complexes (0000:00, 0000:ff)   root ports to PCIe Gen3x8 
      ├─┬── 0000:00:03.0  Gen3x8 (7.88 GB/s)     Gen3x8 (7.88 GB/s)     Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 >
 ~    │ └── 0000:03:00.0  Gen4x8 (15.75 GB/s)    Gen3x8 (7.88 GB/s)     Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS>
      │     device        model                         size  kind  bus   port    disk    link    temp  worn
-~    │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  12G     6G      6G       36C    1%
+~    │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  -       6G      6G       36C    1%
 ```
 
 **The first line is the BOARD, not a bus.** It names the board where DMI gave a
@@ -258,7 +262,11 @@ so a run made as root can still be incomplete: a drive behind some RAID drivers
 refuses SMART passthrough, and an AHCI port count is read by mapping the
 controller's own registers, which some hosts deny outright. Those entries name
 the drive or the PCI address, so a check does not have to interrogate the machine
-again to find out which one said no.
+again to find out which one said no. On Windows, a disk interface whose device
+path could not be read appears as `device: disk interface - <reason>`. It is NOT
+counted as a disk anywhere in `data`, and the human header says
+`N disk interface(s) not read: <reason>.`, so a drive the machine has is never
+silently missing from a report that says nothing is wrong.
 `command` names the command that produced the payload. `data` is that command's
 own result.
 
@@ -395,10 +403,12 @@ callable on its own, which is how you run one without the rest:
 `diagnose_disk_link(disk, inventory)`,
 `diagnose_controller_link(controller, inventory)`,
 `diagnose_controller_oversubscription(controller, inventory)`,
-`diagnose_port_allocation(inventory)`, `diagnose_health(disk, series, thresholds)`
-and `diagnose_firmware_consistency(inventory, thresholds)`. `DEFAULT_THRESHOLDS` is
-what those rules fall back to when no `Thresholds` is passed, and its fields carry
-the shipped figures: `wear_warning_percent` 80, `wear_critical_percent` 95,
+`diagnose_port_allocation(inventory)`, `diagnose_health(disk, series, thresholds)`,
+`diagnose_firmware_consistency(inventory, thresholds)` and `diagnose_usb_link(disk)`,
+which grades a USB disk's link to the machine the way the others grade theirs.
+Each returns a `list[Finding]`, empty when the rule has nothing to say.
+`DEFAULT_THRESHOLDS` is what those rules fall back to when no `Thresholds` is
+passed, and its fields carry the shipped figures: `wear_warning_percent` 80, `wear_critical_percent` 95,
 `crc_errors_significant` 100. Build your own with `Thresholds(...)` and pass it,
 rather than reading a field off the default and comparing yourself.
 
@@ -421,8 +431,8 @@ for hardware. Reading a machine needs privileges exactly as the CLI does, and
 `lsdsk <command> --help` for current options rather than trusting a list here.
 
 The global options are `--replay`, `--profile`, `--history-file`,
-`--no-record`, `--expand-virtual`, `--tree-density`, `--traceback`, `--env-file`,
-`--version` and `--set SECTION.KEY=VALUE`, the last being how you move a
+`--no-record`, `--expand-virtual`, `--tree-density`, `--traceback` (or
+`--no-traceback`), `--env-file`, `--version` and `--set SECTION.KEY=VALUE`, the last being how you move a
 judgement for one run. Four also work after the subcommand: `--replay` on any
 command that reads a machine, `--profile` on the `config` commands,
 `--expand-virtual` on `topology`, `disks` and `tui`, and `--tree-density` on
@@ -615,7 +625,11 @@ nothing either and are safe to include; of the three `config` commands, `config-
 and `config-generate-examples` are the two that create files. Run again with every
 file already in place, either one writes nothing and answers `ok` true, exit `0`,
 `data.outcome` `already present` (`written` when it did write), so a provisioning
-script reads `outcome` to tell the two apart; `--force` overwrites.
+script reads `outcome` to tell the two apart; `--force` overwrites. Plain `config`
+answers `ok` false at exit `0` when a section it shows was given as a single value
+the tool ignores: `history = false` in a config file is listed in `skipped` as
+`Ignored: history=false: not a table. Using the shipped [history] section.`, and
+the human view prints the same line. Nothing failed; the setting was not applied.
 
 **A run that cannot READ the history will not WRITE it either, and says so.**
 On stderr you get `Warning: ignoring counter history: <why>` followed by
@@ -750,6 +764,13 @@ store could not be read, `ok` is `false` and `skipped` holds `counter history at
 <path> could not be read, so no trend is shown: <why>`. With `ok` true, an empty
 list means nothing worth a line, or nothing recorded for these drives yet. The
 exit code is the findings' verdict either way.
+
+The other commands judged against that history - `findings`, `health`, `smart`,
+`disks`, `controllers`, `slots` and `topology` - say the same in their own
+envelope: `ok` is `false` and `skipped` holds `counter history at <path> could not
+be read, so its verdicts were judged without it: <why>`. The drives are still
+diagnosed; only the verdicts that weigh a counter against its past lacked that
+past. Branch on `ok` and `skipped`, never on the exit code, to notice it.
 
 `trend` says what is moving; `lsdsk findings` says how bad it is and what to do,
 already graded by the same history. Pair them: pick the drive from `trend`,
@@ -1214,11 +1235,11 @@ findings: a port reporting fewer lanes than the slot is rated for, or SATA ports
 that are simply absent. lsdsk sees the result and cannot see the cause.
 
 **A SAS port count is phys, not connectors, so check it against the card.** The
-count is the number of phy objects the driver publishes, which is right on many
-cards and too high on some: a 9500-16i, a sixteen-lane card, publishes twenty-one
-with no expander attached, so a free count derived from it overstates what you
-can physically plug in. The model name usually carries the real number, and the
-datasheet always does. Look it up before promising somebody free ports, and say
+count is the controller's own host phys that report a hardware link rate, never an
+expander's: a 9500-16i, a sixteen-lane card, shows 16 host phys. That is lanes, not
+sockets - one connector carries four or eight of them - so a free count says how
+many lanes are idle, not how many cables you can plug in. The model name usually
+carries the real number, and the datasheet always does. Look it up before promising somebody free ports, and say
 the count came from the card's specification rather than from the machine.
 
 **Expect some vendor sites to refuse an automated fetch.** Supermicro and several

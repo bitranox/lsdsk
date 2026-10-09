@@ -47,7 +47,7 @@ DOCUMENTS = (
 )
 
 
-def _surface() -> tuple[set[str], set[str]]:
+def cli_surface() -> tuple[set[str], set[str]]:
     """Every subcommand name and every option spelling the CLI really offers.
 
     Read from the live click tree, including the options click adds itself, so
@@ -89,14 +89,14 @@ def _names_a_command(text: str, command: str) -> bool:
     return re.search(pattern, text) is not None
 
 
-def _names_an_option(text: str, option: str) -> bool:
+def names_an_option(text: str, option: str) -> bool:
     """Whether `text` names `option`, as a whole word rather than as a prefix."""
     return re.search(rf"(?<![\w-]){re.escape(option)}(?![\w-])", text) is not None
 
 
 def test_every_command_the_cli_offers_is_named_where_a_caller_reads() -> None:
     """A command only `--help` knows about is one nobody is told they have."""
-    commands, _ = _surface()
+    commands, _ = cli_surface()
     assert commands, "the control: the click tree yielded no commands, so this asserted nothing"
 
     text = _prose()
@@ -108,14 +108,14 @@ def test_every_command_the_cli_offers_is_named_where_a_caller_reads() -> None:
 
 def test_every_option_the_cli_offers_is_named_where_a_caller_reads() -> None:
     """Both spellings, because a reader meets whichever one they were shown."""
-    _, options = _surface()
+    _, options = cli_surface()
     assert options, "the control: the click tree yielded no options, so this asserted nothing"
 
     text = _prose()
-    undocumented = sorted(option for option in options if not _names_an_option(text, option))
+    undocumented = sorted(option for option in options if not names_an_option(text, option))
     assert not undocumented, f"accepted by the CLI and documented nowhere: {undocumented}"
 
-    assert not _names_an_option(text, "--nosuchoption"), "the control: this check cannot report an option as absent"
+    assert not names_an_option(text, "--nosuchoption"), "the control: this check cannot report an option as absent"
 
 
 @pytest.mark.parametrize("document", DOCUMENTS)
