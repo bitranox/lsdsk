@@ -456,7 +456,8 @@ def _read_short_text(path: Path, *, limit: int = MAX_ATTRIBUTE_CHARS) -> str | N
     try:
         # newline="" keeps a carriage return the file holds: universal newlines would
         # turn it into the row break the caller now splits on, cutting a udev value short.
-        with path.open("r", errors="replace", newline="") as handle:
+        # The kernel and udev write UTF-8 whatever the reading process's locale is.
+        with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
             raw = handle.read(limit + 1)
     except OSError:
         return None

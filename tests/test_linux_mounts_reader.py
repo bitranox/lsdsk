@@ -262,8 +262,10 @@ def test_a_stacked_device_names_its_mapping_and_what_sits_on_it(tmp_path: Path) 
 
 @pytest.mark.os_agnostic
 def test_udev_signatures_keep_only_the_filesystem_type_and_label(tmp_path: Path) -> None:
-    (tmp_path / "b8:67").write_text(
-        "S:disk/by-id/x\nE:ID_FS_TYPE=zfs_member\nE:ID_FS_LABEL=rpool\nE:ID_SERIAL=SECRET\n", encoding="utf-8"
+    # Bytes, as udev writes them: text mode on Windows would turn every \n into \r\n,
+    # and the reader keeps a carriage return as part of the value it belongs to.
+    (tmp_path / "b8:67").write_bytes(
+        b"S:disk/by-id/x\nE:ID_FS_TYPE=zfs_member\nE:ID_FS_LABEL=rpool\nE:ID_SERIAL=SECRET\n"
     )
     assert mounts.read_signatures(["8:67", "8:1"], tmp_path) == {"8:67": {"fs_type": "zfs_member", "fs_label": "rpool"}}
 

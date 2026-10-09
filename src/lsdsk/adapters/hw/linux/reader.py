@@ -276,7 +276,8 @@ def _read_text(path: Path, *, limit: int = MAX_SYSFS_BYTES) -> str | None:
         Its stripped text, or ``None`` where it could not be read or is too big.
     """
     try:
-        with path.open("r", errors="replace") as handle:
+        # sysfs writes UTF-8 whatever the reading process's locale is.
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
             raw = handle.read(limit + 1)
     except OSError:
         return None
@@ -1070,7 +1071,7 @@ def _read_prefix(path: Path, chars: int) -> str:
         The text read, empty when the file could not be opened.
     """
     try:
-        with path.open("r", errors="replace") as handle:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
             return handle.read(chars)
     except OSError:
         return ""
