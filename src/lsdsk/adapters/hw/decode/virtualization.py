@@ -20,6 +20,7 @@ System Role:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -44,8 +45,12 @@ _CONTAINER_MARKERS: dict[str, str] = {
     "kubepods": "Kubernetes",
 }
 
-# Hypervisors, matched against DMI vendor and product strings. The values a
-# hypervisor writes into DMI are the most reliable signal a guest has.
+# Hypervisors, matched against DMI vendor and product strings as whole words
+# (see :func:`_match_hypervisor`). The values a hypervisor writes into DMI are
+# the most reliable signal a guest has, but only when the string SAYS so: bare
+# "microsoft corporation" and "google" are the vendors of laptops and
+# Chromebooks, so Hyper-V is recognised by its product ("Virtual Machine") and
+# Google's cloud by its product ("Google Compute Engine").
 _HYPERVISOR_MARKERS: dict[str, str] = {
     "qemu": "QEMU",
     "kvm": "KVM",
@@ -56,10 +61,9 @@ _HYPERVISOR_MARKERS: dict[str, str] = {
     "bochs": "QEMU",
     "parallels": "Parallels",
     "hyper-v": "Hyper-V",
-    "microsoft corporation": "Hyper-V",
     "virtual machine": "Hyper-V",
     "amazon ec2": "Amazon EC2",
-    "google": "Google Compute Engine",
+    "google compute engine": "Google Compute Engine",
     "openstack": "OpenStack",
     "apple virtualization": "Apple Virtualization",
 }
@@ -171,6 +175,20 @@ def _match(haystack: str, markers: dict[str, str]) -> str | None:
     return next((name for key, name in markers.items() if key in lowered), None)
 
 
+def _match_hypervisor(haystack: str) -> str | None:
+    """Return the hypervisor whose marker appears in the text as a whole word.
+
+    A marker bounded by letters on either side is part of another word
+    ("Xenon" is not Xen); digits and punctuation do not bound it, so
+    ``VMware7,1`` is still VMware.
+    """
+    lowered = haystack.lower()
+    return next(
+        (name for key, name in _HYPERVISOR_MARKERS.items() if re.search(rf"(?<![a-z]){re.escape(key)}(?![a-z])", lowered)),
+        None,
+    )
+
+
 class Classification(NamedTuple):
     """What kind of machine this is, and the evidence for saying so.
 
@@ -226,9 +244,9 @@ def classify(evidence: VirtualizationEvidence) -> Classification:
         return Classification(Environment.CONTAINER, container)
 
     hypervisor = (
-        _match(evidence.hypervisor_type, _HYPERVISOR_MARKERS)
-        or _match(evidence.dmi_vendor, _HYPERVISOR_MARKERS)
-        or _match(evidence.dmi_product, _HYPERVISOR_MARKERS)
+        _match_hypervisor(evidence.hypervisor_type)
+        or _match_hypervisor(evidence.dmi_vendor)
+        or _match_hypervisor(evidence.dmi_product)
     )
     if hypervisor is not None:
         return Classification(Environment.VIRTUAL_MACHINE, hypervisor)
