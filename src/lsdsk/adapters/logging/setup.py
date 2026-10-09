@@ -35,14 +35,12 @@ from pydantic import BaseModel, ConfigDict
 
 from lsdsk import __init__conf__
 
-from ...domain.text import visible_text
-
 # A sibling adapter, not a layer breach: safe_console owns this project's answer to
 # a stream whose reader has gone, and that answer has to be the same one wherever
 # the writing happens.
 from ..cli import safe_console
 from ..config.loader import shipped_section
-from ..config.values import RejectedValue, rendered
+from ..config.values import REASON_SECTION, RejectedValue, rendered
 from .refusals import (
     REFUSALS,
     changed_keys,
@@ -333,7 +331,7 @@ def _scrub_pattern_notes(section: Mapping[str, object]) -> list[str]:
     return [
         RejectedValue(
             dotted=f"{_SECTION}.scrub_patterns",
-            raw=visible_text(piece),
+            raw=piece,
             reason="the text form is field=regex pairs split on every comma, and this piece has no '='",
             used="the other entries; give a regex containing a comma as a table in a file",
         ).as_sentence()
@@ -381,9 +379,7 @@ def _configured_section(config: Config) -> tuple[dict[str, object], list[str]]:
     if isinstance(raw, Mapping):
         table = cast("Mapping[str, object]", raw)
         return with_documented_forms(table), _scrub_pattern_notes(table)
-    note = RejectedValue(
-        dotted=_SECTION, raw=visible_text(rendered(raw)), reason="not a table", used="the shipped logging settings"
-    )
+    note = RejectedValue(dotted=_SECTION, raw=rendered(raw), reason=REASON_SECTION, used="the shipped logging settings")
     return shipped_section(_SECTION), [note.as_sentence()]
 
 
