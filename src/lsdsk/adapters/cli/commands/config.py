@@ -19,6 +19,7 @@ from lib_layered_config import Config, redact_mapping
 from rich.console import Console
 
 from lsdsk import __init__conf__
+from lsdsk.adapters.config.loader import invalid_profile_message
 from lsdsk.adapters.config.overrides import apply_overrides
 from lsdsk.adapters.config.permissions import get_permission_defaults
 from lsdsk.adapters.config.secrets import redact_secrets
@@ -104,6 +105,7 @@ def cli_config(ctx: click.Context, output_format: OutputFormat, section: str | N
 
     """
     cli_ctx = get_cli_context(ctx)
+    _refuse_an_invalid_profile(profile, output_format=output_format)
     effective_config, effective_profile = _resolve_config(cli_ctx, profile)
 
     extra = {"command": ActionCommand.CONFIG.value, "format": output_format.value, "profile": effective_profile}
@@ -246,6 +248,24 @@ def _redacted_config_data(config: Config, section: str | None) -> dict[str, Any]
     return redact_secrets(redact_mapping({section: selected}))
 
 
+def _refuse_an_invalid_profile(profile: str | None, *, output_format: OutputFormat) -> None:
+    """Refuse a subcommand's ``--profile`` the library would refuse, as ``22``.
+
+    The global ``--profile`` is judged in the root group; this is the same
+    judgement for the option a subcommand repeats, through the same function, so
+    the two cannot disagree about a name. Done before the profile is loaded
+    because the loader signals a bad name with a bare ``ValueError``, which
+    nothing downstream turns into a refusal.
+
+    Args:
+        profile: The subcommand's own ``--profile``, or ``None``.
+        output_format: What the caller asked for, which decides how it answers.
+    """
+    refusal = invalid_profile_message(profile)
+    if refusal is not None:
+        fail(refusal, ExitCode.INVALID_ARGUMENT, output_format=output_format)
+
+
 def _get_effective_profile(cli_ctx: CLIContext, profile_override: str | None) -> str | None:
     """Get effective profile: override takes precedence over context."""
     return profile_override if profile_override else cli_ctx.profile
@@ -366,6 +386,7 @@ def cli_config_deploy(
 
     """
     cli_ctx = get_cli_context(ctx)
+    _refuse_an_invalid_profile(profile, output_format=output_format)
     effective_profile = _get_effective_profile(cli_ctx, profile)
     target_values = tuple(t.value for t in targets)
 

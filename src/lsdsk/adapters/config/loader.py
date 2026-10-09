@@ -44,7 +44,7 @@ class ConfigLoaderProtocol(Protocol):
     def cache_clear(self) -> None: ...
 
 
-def validate_profile(profile: str, max_length: int | None = None) -> None:
+def validate_profile(profile: object, max_length: int | None = None) -> None:
     """Validate profile name using lib_layered_config.
 
     Delegates to lib_layered_config.validate_profile_name() which provides
@@ -52,12 +52,14 @@ def validate_profile(profile: str, max_length: int | None = None) -> None:
     Windows reserved name checks, and path traversal prevention.
 
     Args:
-        profile: The profile name to validate.
+        profile: The profile name to validate. Typed ``object`` because a caller
+            of the public API can hand over anything, and a value that is not
+            text is refused like any other bad name.
         max_length: Optional maximum length. Defaults to DEFAULT_MAX_PROFILE_LENGTH (64).
 
     Raises:
-        ValueError: If profile name is invalid (empty, too long, invalid chars,
-            Windows reserved name, path traversal attempt, etc.).
+        ValueError: If profile name is invalid (not text, empty, too long, invalid
+            chars, Windows reserved name, path traversal attempt, etc.).
 
     Examples:
         >>> validate_profile("production")  # valid, no exception
@@ -74,6 +76,10 @@ def validate_profile(profile: str, max_length: int | None = None) -> None:
         ...
         ValueError: profile exceeds maximum length...
     """
+    if not isinstance(profile, str):
+        # The library's check is a regex over the name, so a non-str reached it as
+        # a TypeError, which the public get_config documents as a ValueError.
+        raise ValueError(f"profile must be text, not {type(profile).__name__}")
     length = max_length if max_length is not None else DEFAULT_MAX_PROFILE_LENGTH
     try:
         validate_profile_name(profile, max_length=length)
@@ -81,6 +87,33 @@ def validate_profile(profile: str, max_length: int | None = None) -> None:
         # Normalise the dependency's exception to the documented ValueError contract so callers'
         # `except ValueError` guards catch every invalid profile uniformly.
         raise ValueError(str(exc)) from exc
+
+
+def invalid_profile_message(profile: object) -> str | None:
+    """The sentence refusing a profile name, or ``None`` when it is acceptable.
+
+    The one place a command line's ``--profile`` is judged, so the root group,
+    ``config`` and ``config-deploy`` refuse the same name the same way.
+
+    Args:
+        profile: The name asked for. ``None`` means no profile and is acceptable.
+
+    Returns:
+        The library's reason for refusing it, or ``None``.
+
+    Example:
+        >>> invalid_profile_message("staging-v2") is None
+        True
+        >>> invalid_profile_message("../x")  # doctest: +ELLIPSIS
+        'profile contains invalid characters...'
+    """
+    if profile is None:
+        return None
+    try:
+        validate_profile(profile)
+    except ValueError as error:
+        return str(error)
+    return None
 
 
 @lru_cache(maxsize=1)
@@ -365,6 +398,7 @@ __all__ = [
     "DamagedInstallationError",
     "get_config",
     "get_default_config_path",
+    "invalid_profile_message",
     "require_an_intact_installation",
     "shipped_section",
     "validate_profile",
