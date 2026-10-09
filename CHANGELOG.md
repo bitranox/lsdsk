@@ -5,6 +5,55 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **`config-deploy` and `config-generate-examples` run twice answer `ok: true`.** With every
+  target file already in place they wrote nothing and answered `ok: false` with a `skipped` line
+  at exit 0, so `ok` and the exit code disagreed. They now answer `ok: true` with `data.outcome`
+  saying `written` or `already present`; a script that needs to know whether anything changed
+  reads `outcome`.
+
+### Fixed
+
+- **Ctrl-C leaves exit 130, not 70.** An interrupted run was reported as a bug in the tool.
+- **An unreadable configuration file is refused with an envelope.** A user `config.toml` the run
+  may not read left exit 13 with an empty stdout under `--format json` and a bare
+  `PermissionError` on stderr; it now answers with a `PERMISSION_DENIED` envelope.
+- **`trend --format json` says when the counter history could not be read.** It answered
+  `ok: true` with an empty `data.trend`, indistinguishable from a quiet machine; it now answers
+  `ok: false` with a `skipped` sentence naming the store and why.
+- **`trend --format json` judges against the same history as the table.** The table counted this
+  run's reading and the JSON did not, so one machine could show a different verdict or rate in
+  each.
+- **A stray earlier reading no longer dilutes a rising counter's rate.** A sample whose power-on
+  hours went backwards, followed by normal ones, could become the base of a later rate, spreading
+  a fast rise over hundreds of hours.
+- **Loading a large counter history is faster**, by parsing it with Python's cyclic garbage
+  collector paused.
+- **A section given as a single value is reported.** `history = false` or `thresholds = "x"` was
+  silently ignored and shown by `lsdsk config` as if applied; it now warns and the shipped section
+  is used.
+- **A missing file in the shipped configuration is a damaged installation (exit 78)**, like a
+  missing or corrupt one already was, rather than silently dropping its keys.
+- **An impossibly large logging queue timeout falls back with a warning.** A value such as `1e18`
+  ended the run with exit 1 and a raw `OverflowError`.
+- **The documented one-line text forms of four logging settings work.** `graylog_endpoint` as
+  `host:port`, `rate_limit`, `console_styles` and `scrub_patterns` were refused by the logging
+  library, so the shipped examples were inert.
+- **A swap or mount path holding an escaped NUL no longer aborts the Linux reading.**
+- **Windows: a SATA drive behind a SAS or RAID adapter keeps its identity and bus.** Its identify
+  data was decoded only for drives Windows reported as SATA or USB, so such a drive lost its
+  link, kind and bus.
+- **Windows: a refused NVMe reading is recorded like an ATA one**, so the run's `ok` is false and
+  `skipped` names it instead of reporting a complete answer.
+- **Windows: an NVMe query that moved no data is a refusal, not a healthy all-zero reading.**
+- **Windows: a disk whose device path cannot be read is reported, not silently dropped.**
+- **Windows: one oversized registry string no longer refuses the whole capture.**
+- **Windows: a drive reporting one temperature sensor shows its temperature.** The answer was
+  required at a padded size the driver does not send.
+- **Windows: the explanation for an empty privileged report appears when every disk refused to
+  open**, rather than only when no disk was listed.
+
 ## [1.7.1] 2026-10-08 18:20:37
 
 ### Added
