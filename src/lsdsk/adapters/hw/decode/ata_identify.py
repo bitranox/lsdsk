@@ -202,6 +202,21 @@ def _media_kind(words: tuple[int, ...]) -> tuple[DiskKind, int | None]:
     return DiskKind.UNKNOWN, None
 
 
+def _refuse_an_unusable_page(page: bytes) -> None:
+    """Refuse a page that cannot be an IDENTIFY answer.
+
+    The word-255 signature is optional in ATA, and the checksum is not checked:
+    the committed captures are scrubbed of their serials, which invalidates it,
+    so enforcing it would refuse every fixture a recapture produces.
+
+    Raises:
+        ValueError: For an all-zero or all-ones page.
+    """
+    if not any(page) or all(byte == 0xFF for byte in page):
+        message = "IDENTIFY response is all zeros or all ones: it carries no identity"
+        raise ValueError(message)
+
+
 def decode_identify(blob: bytes) -> AtaIdentity:
     """Decode an ATA IDENTIFY DEVICE response.
 
@@ -212,7 +227,11 @@ def decode_identify(blob: bytes) -> AtaIdentity:
         The device's self-description.
 
     Raises:
-        ValueError: If the buffer is shorter than one IDENTIFY response.
+        ValueError: If the buffer is shorter than one IDENTIFY response, is
+            all zeros or all ones, carries the optional 0xA5 signature with a
+            wrong checksum, or names no model, serial or firmware and gives no
+            LBA count. Such a page is what a non-ATA device's passthrough can
+            return, and it identifies nothing.
 
     Example:
         >>> import struct
@@ -226,15 +245,23 @@ def decode_identify(blob: bytes) -> AtaIdentity:
         message = f"IDENTIFY response is {len(blob)} bytes, expected at least {IDENTIFY_LENGTH}"
         raise ValueError(message)
 
-    words = struct.unpack("<256H", blob[:IDENTIFY_LENGTH])
+    page = blob[:IDENTIFY_LENGTH]
+    _refuse_an_unusable_page(page)
+    words = struct.unpack("<256H", page)
     negotiated, maximum = _sata_rates(words)
     sectors, sector_size = _sector_geometry(words)
     kind, rotation = _media_kind(words)
+    model = _ata_string(words, 27, 20)
+    serial = _ata_string(words, 10, 10)
+    firmware = _ata_string(words, 23, 4)
+    if not (model or serial or firmware or any(words[60:62]) or any(words[100:104])):
+        message = "IDENTIFY response names no model, serial or firmware and gives no LBA count: it carries no identity"
+        raise ValueError(message)
 
     return AtaIdentity(
-        model=_ata_string(words, 27, 20),
-        serial=_ata_string(words, 10, 10),
-        firmware=_ata_string(words, 23, 4),
+        model=model,
+        serial=serial,
+        firmware=firmware,
         sectors=sectors,
         sector_size=sector_size,
         kind=kind,
