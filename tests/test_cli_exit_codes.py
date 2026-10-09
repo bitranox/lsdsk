@@ -378,7 +378,7 @@ def _run_and_take_the_output_away(
     import sys
     from pathlib import Path
 
-    process = subprocess.Popen(  # noqa: S603 - argv is built here, no shell
+    popen = subprocess.Popen(  # noqa: S603 - argv is built here, no shell
         [
             sys.executable,
             "-m",
@@ -395,23 +395,27 @@ def _run_and_take_the_output_away(
         cwd=str(Path(__file__).parent.parent),
         env={**os.environ, "TERM": "dumb"},
     )
-    assert process.stdout is not None, "the pipe this test is about was not created"
-    assert process.stderr is not None, "the stderr pipe this test is about was not created"
-    try:
-        # Both readers are settled BEFORE either stream is drained: closing one
-        # pipe after blocking on a read of the other deadlocks whenever the
-        # writer fills the pipe nobody is reading.
-        if leaves:
-            process.stdout.close()
-        if stderr_leaves:
-            process.stderr.close()
-        out = 0 if leaves else len(process.stdout.read())
-        err = 0 if stderr_leaves else len(process.stderr.read())
-        return _PipeRun(process.wait(timeout=120), out, err)
-    finally:
-        if process.poll() is None:  # pragma: no cover - only on a hang
-            process.kill()
-            process.wait(timeout=30)
+    # The context manager closes BOTH pipes and reaps the child on every exit, which the
+    # reader that leaves only did for the stream it walked away from: the other was left
+    # open and reported as a ResourceWarning.
+    with popen as process:
+        assert process.stdout is not None, "the pipe this test is about was not created"
+        assert process.stderr is not None, "the stderr pipe this test is about was not created"
+        try:
+            # Both readers are settled BEFORE either stream is drained: closing one
+            # pipe after blocking on a read of the other deadlocks whenever the
+            # writer fills the pipe nobody is reading.
+            if leaves:
+                process.stdout.close()
+            if stderr_leaves:
+                process.stderr.close()
+            out = 0 if leaves else len(process.stdout.read())
+            err = 0 if stderr_leaves else len(process.stderr.read())
+            return _PipeRun(process.wait(timeout=120), out, err)
+        finally:
+            if process.poll() is None:  # pragma: no cover - only on a hang
+                process.kill()
+                process.wait(timeout=30)
 
 
 @pytest.mark.os_agnostic
