@@ -152,3 +152,21 @@ def test_the_expected_companion_files_are_exactly_the_ones_the_package_ships() -
     """
     shipped = sorted(path.name for path in (_PACKAGE / _SHIPPED.parent / "defaultconfig.d").glob("*.toml"))
     assert list(SHIPPED_COMPANION_FILES) == shipped
+
+
+@pytest.mark.os_agnostic
+def test_a_shipped_file_that_is_not_utf_8_refuses_as_damage_to_the_installation(tmp_path: Path) -> None:
+    """Bytes the shipped tables cannot be decoded from are damage, not a crash.
+
+    The loader reads each shipped file as UTF-8 and names a failure to decode as
+    the damaged installation it is. Without that arm a stray Latin-1 byte left
+    the command as a raw ``UnicodeDecodeError`` traceback.
+    """
+    root = _copy_of_the_package(tmp_path)
+    companion = sorted((root / "lsdsk" / _SHIPPED.parent / "defaultconfig.d").glob("*.toml"))[0]
+    with companion.open("ab") as handle:
+        handle.write(b"\n# \xe4\xf6\xfc is Latin-1, not UTF-8\n")
+    run = _launch(root, ["info"])
+    assert run.code == ExitCode.CONFIG_ERROR, run.stderr
+    assert "shipped configuration" in run.stderr
+    assert "UnicodeDecodeError" not in run.stderr
