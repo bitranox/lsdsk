@@ -239,6 +239,16 @@ class _ConfigLoader:
     members satisfies :class:`ConfigLoaderProtocol` structurally, so neither the
     cast nor the suppression is needed and the shape is checked rather than
     asserted.
+
+    This is the public ``lsdsk.get_config``: calling it loads the merged
+    configuration, and it raises what a caller has to handle.
+
+    Raises:
+        ValueError: `profile` is not a valid profile name (not text, empty, too
+            long, invalid characters, a reserved name, a path-traversal attempt).
+        LayerLoadError: A configuration file is not valid TOML.
+        PermissionError: A configuration file exists and this process may not read it.
+        OSError: A configuration file could not be read for any other reason.
     """
 
     def __call__(
@@ -253,6 +263,13 @@ class _ConfigLoader:
 
         Returns:
             The merged configuration.
+
+        Raises:
+            ValueError: `profile` is not a valid profile name (not text, empty, too
+                long, invalid characters, a reserved name, a path-traversal attempt).
+            LayerLoadError: A configuration file is not valid TOML.
+            PermissionError: A configuration file exists and this process may not read it.
+            OSError: A configuration file could not be read for any other reason.
         """
         return _get_config(profile=profile, start_dir=start_dir, dotenv_path=dotenv_path)
 
