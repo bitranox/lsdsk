@@ -52,6 +52,8 @@ class FakeNvmeKernel32:
         rewrites_length: Whether the driver writes the bytes it moved into ``ProtocolDataLength``,
             as the storage stack does; ``False`` leaves the length the request asked for.
         reports_moved: The byte count ``DeviceIoControl`` reports, or ``None`` for header plus payload.
+        length_field: What the driver writes into ``ProtocolDataLength``, or ``None`` for the payload's
+            own length. Set it to model a driver whose length field disagrees with the byte count.
     """
 
     def __init__(
@@ -61,12 +63,14 @@ class FakeNvmeKernel32:
         opens_for_passthrough: bool = True,
         rewrites_length: bool = True,
         reports_moved: int | None = None,
+        length_field: int | None = None,
     ) -> None:
         """Answer protocol queries through ``answer``."""
         self.answer = answer
         self.opens_for_passthrough = opens_for_passthrough
         self.rewrites_length = rewrites_length
         self.reports_moved = reports_moved
+        self.length_field = length_field
 
     def CreateFileW(self, path: str, access: int, *_rest: object) -> int:  # noqa: N802 - the Win32 name
         del path
@@ -124,7 +128,7 @@ class FakeNvmeKernel32:
             return 0
         ctypes.memmove(ctypes.addressof(buffer) + _DATA_AT, payload, len(payload))
         if self.rewrites_length:
-            protocol.ProtocolDataLength = len(payload)
+            protocol.ProtocolDataLength = len(payload) if self.length_field is None else self.length_field
         _referent(returned).value = _DATA_AT + len(payload) if self.reports_moved is None else self.reports_moved
         return 1
 
@@ -222,3 +226,18 @@ def test_a_query_that_moved_nothing_reaches_the_disk_as_a_refusal_not_a_healthy_
 def test_an_unprivileged_short_answer_keeps_its_own_reason() -> None:
     fake = FakeNvmeKernel32(answer=lambda _type: b"", opens_for_passthrough=False)
     assert _read(fake)["nvme"]["smart_log_error"] == "0 of 512 bytes returned"
+
+
+@pytest.mark.os_agnostic
+def test_a_length_field_shorter_than_the_payload_is_a_refusal_even_when_the_byte_count_is_full() -> None:
+    """The driver's own ``ProtocolDataLength`` is believed beside the call's byte count.
+
+    The bytes the call reports and the length the driver writes back are two
+    witnesses, and the smaller is what can be trusted. Every other arm here moves
+    them together, so the length leg could be dropped with the suite green.
+    """
+    fake = FakeNvmeKernel32(answer=_full, length_field=100)
+    record = _read(fake)["nvme"]
+    assert record["smart_log_error"] == "100 of 512 bytes returned"
+    assert record["identify_controller_error"] == "100 of 4096 bytes returned"
+    assert "smart_log" not in record
