@@ -40,8 +40,10 @@ def refusals_of(reported: Mapping[str, str | None]) -> tuple[RefusedReading, ...
 
     Returns:
         One :class:`~lsdsk.domain.models.RefusedReading` per reading that carries
-        a reason, in the order given. Empty when nothing was refused, which is
-        what keeps a complete scan reporting complete.
+        a reason, in the order given. An EMPTY reason counts: ``str(OSError())``
+        is ``''`` for an errno with no text, and the reading was still refused.
+        Empty when nothing was refused, which is what keeps a complete scan
+        reporting complete.
 
     Example:
         >>> refusals_of({"smart-data": None, "identify": "[Errno 1] Operation not permitted"})
@@ -49,4 +51,4 @@ def refusals_of(reported: Mapping[str, str | None]) -> tuple[RefusedReading, ...
         >>> refusals_of({"smart-data": None})
         ()
     """
-    return tuple(RefusedReading(reading=reading, reason=reason) for reading, reason in reported.items() if reason)
+    return tuple(RefusedReading(reading=reading, reason=reason) for reading, reason in reported.items() if reason is not None)
