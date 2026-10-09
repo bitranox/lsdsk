@@ -331,8 +331,10 @@ def resolve_names(devices: Mapping[str, Mapping[str, object]], database: Databas
             the runner has.
 
     Returns:
-        Resolved names keyed ``vendor:device`` in lowercase hexadecimal, holding
-        only the devices that resolved to something.
+        The name :func:`describe` gives each device, keyed ``vendor:device`` in
+        lowercase hexadecimal. A device the database knows by vendor alone is
+        recorded with that vendor-only name, because a replay has no database
+        of its own to rebuild it from.
 
     Example:
         >>> known = Database({0x1000: "Broadcom"}, {(0x1000, 0x0097): "SAS3008"})
@@ -348,10 +350,7 @@ def resolve_names(devices: Mapping[str, Mapping[str, object]], database: Databas
             vendor, device = int(vendor_text, 16), int(device_text, 16)
         except ValueError:
             continue
-        resolved = lookup_device(vendor, device, database)
-        if resolved:
-            vendor_name = lookup_vendor(vendor, database)
-            names[f"{vendor:04x}:{device:04x}"] = f"{vendor_name} {resolved}" if vendor_name else resolved
+        names[f"{vendor:04x}:{device:04x}"] = describe(vendor, device, database)
     return names
 
 

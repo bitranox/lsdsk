@@ -147,4 +147,5 @@ def test_the_one_resolver_is_what_both_readers_record_with() -> None:
         for node in ast.walk(resolver)
         if isinstance(node, ast.Call)
     }
-    assert {"lookup_device", "lookup_vendor"} <= called, called
+    # resolve_names delegates to describe, which owns the lookups and the vendor-only fallback.
+    assert "describe" in called, called
