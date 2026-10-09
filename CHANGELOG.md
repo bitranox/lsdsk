@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.7.3] 2026-10-09 12:47:51
+
 ### Changed
 
 - **`lsdsk.get_config` raises `ValueError` for a profile that is not text**, not `TypeError`. The
