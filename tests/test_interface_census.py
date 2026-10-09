@@ -276,3 +276,44 @@ def test_two_shapes_stay_two_keys_in_the_json(
     emitted: dict[str, Any] = json.loads(_printed(tmp_path, monkeypatch, capsys, "--json"))
     assert emitted["same_typed_return_shapes"] == {"tuple[str, str]": 2, "tuple[int, int]": 1}
     assert emitted["largest_return_shape"] == ["tuple[str, str]", 2]
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        "list[tuple[int, int]]",
+        "List[tuple[int, int]]",
+        "Iterator[tuple[int, int]]",
+        "Iterable[tuple[int, int]]",
+        "Sequence[tuple[int, int]]",
+        "Generator[tuple[int, int], None, None]",
+        "typing.Iterator[tuple[int, int]] | None",
+    ],
+)
+def test_a_pair_handed_out_inside_a_collection_is_seen(tmp_path: Path, annotation: str) -> None:
+    """Every element a caller unpacks from a list or an iterator is the same swap waiting to happen.
+
+    The census read only a bare ``tuple[...]`` return, so eight such sites were
+    never counted and a same-typed one among them would have been invisible.
+    """
+    source = (
+        "import typing\nfrom typing import Generator, Iterable, Iterator, List, Sequence\n"
+        f"def pairs() -> {annotation}: ...\n"
+    )
+    figures = _census_of(tmp_path, {"domain/planted.py": source})
+    assert figures.anonymous_multi_value_returns == 1, annotation
+    assert len(figures.same_typed_return_shapes) == 1, (annotation, figures.same_typed_return_shapes)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    "annotation",
+    ["list[int]", "Iterator[str]", "Sequence[tuple[int]]", "Generator[int, None, None]", "list[tuple[int, str]]"],
+)
+def test_a_collection_that_hands_out_no_same_typed_pair_is_not_called_one(tmp_path: Path, annotation: str) -> None:
+    """The control: a collection of single values is no pair, and a mixed pair is counted but not same-typed."""
+    source = f"from typing import Generator, Iterator, Sequence\ndef pairs() -> {annotation}: ...\n"
+    figures = _census_of(tmp_path, {"domain/planted.py": source})
+    assert figures.same_typed_return_shapes == {}, annotation
+    assert figures.anonymous_multi_value_returns == (1 if annotation == "list[tuple[int, str]]" else 0), annotation

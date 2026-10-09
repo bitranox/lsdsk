@@ -73,6 +73,10 @@ WIN32_HANDLES = frozenset({"handle", "kernel32", "setupapi"})
 #: The annotation roots an anonymous tuple is written with.
 TUPLE_ROOTS = frozenset({"tuple", "Tuple"})
 
+#: The containers and iterators whose ELEMENT is what a caller unpacks, so a pair
+#: inside one is the same shape as a bare pair.
+ELEMENT_ROOTS = frozenset({"list", "List", "Iterator", "Iterable", "Sequence", "Generator"})
+
 
 @dataclass
 class Signature:
@@ -170,13 +174,14 @@ def return_shape(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
     """The annotated shape of a multi-value return, or ``None`` for anything else.
 
     A NAMED tuple type is not anonymous, so only a subscripted ``tuple[...]``
-    or ``Tuple[...]`` with two or more elements counts - which is exactly the
+    or ``Tuple[...]`` with two or more elements counts - bare, or as the element
+    of a ``list`` or an iterator, since a caller unpacks it either way - which is exactly the
     construct a swap of two same-typed members passes through unnoticed. One
     that may be ``None`` counts too, because when it is not it is that tuple.
     """
     if node.returns is None:
         return None
-    members = _tuple_members(_without_none(node.returns))
+    members = _tuple_members(_element_of(_without_none(node.returns)))
     if members is None:
         return None
     if len(members) == len(VARIADIC) and _is_ellipsis(members[1]):
@@ -189,6 +194,20 @@ def return_shape(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
     if len(members) < SMALLEST_MULTI_VALUE or any(_is_ellipsis(member) for member in members):
         return None
     return f"tuple[{', '.join(ast.unparse(member) for member in members)}]"
+
+
+def _element_of(annotation: ast.expr) -> ast.expr:
+    """``X`` for ``list[X]``, ``Iterator[X]`` and the other containers handing out ``X``; else the annotation.
+
+    A ``Generator`` yields its FIRST type argument, the others being what it is
+    sent and what it returns.
+    """
+    if not isinstance(annotation, ast.Subscript) or _root_name(annotation.value) not in ELEMENT_ROOTS:
+        return annotation
+    inner = annotation.slice
+    if isinstance(inner, ast.Tuple) and _root_name(annotation.value) == "Generator":
+        return inner.elts[0]
+    return inner
 
 
 #: How many members ``tuple[X, ...]`` has as written: the element and the ellipsis.
