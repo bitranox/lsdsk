@@ -1208,3 +1208,39 @@ def test_trend_does_not_call_a_counter_quiet_across_a_stray_backward_row(
     assert judged, f"no CRC trend was judged, so the run proved nothing: {entries}"
     assert {e["trend"]["span_hours"] for e in judged} == {1}, judged
     assert all(e["trend"]["verdict"] == "too-close" for e in judged), judged
+
+
+#: Every command whose JSON verdicts are judged against the counter history.
+_JUDGED_AGAINST_HISTORY = ("findings", "health", "smart", "disks", "controllers", "slots", "topology", "trend")
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("command", _JUDGED_AGAINST_HISTORY)
+@pytest.mark.parametrize("corrupt", [None, "{"], ids=["another-machines-store", "truncated-store"])
+def test_every_json_command_judged_against_history_reports_a_refused_store(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+    command: str,
+    corrupt: str | None,
+) -> None:
+    """A verdict judged without the history it asked for is not a complete answer.
+
+    The rising and quiet rules grade severity, so on a refused store the same
+    drive reads one step milder. `ok` true with an empty `skipped` told a
+    program the answer was whole, and only `trend` said otherwise.
+    """
+    store = tmp_path / "history.json"
+    if corrupt is None:
+        _seed_foreign_store(store)
+    else:
+        store.write_text(corrupt, encoding="utf-8")
+    args = ("--history-file", str(store), "--no-record", command, "--replay", str(LATER), "--format", "json")
+
+    envelope = json.loads(run(cli_runner, production_factory, *args).stdout)
+
+    assert envelope["command"] == command
+    assert envelope["ok"] is False, f"{command} judged against a refused store and still reported ok"
+    assert any(str(store) in reason and "could not be read" in reason for reason in envelope["skipped"]), envelope[
+        "skipped"
+    ]

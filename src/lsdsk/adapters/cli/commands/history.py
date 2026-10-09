@@ -97,7 +97,7 @@ def read_history(inventory: Inventory, settings: HistorySettings) -> HistoryRead
     """
     try:
         loaded = load_history(settings.path, hostname=inventory.hostname, cap=settings.max_samples_per_drive)
-        return HistoryRead(loaded, writable=True)
+        return HistoryRead(loaded, writable=True, store=settings.path)
     except ConfigurationError as error:
         # Said once per run. `health` reads the store twice, once through
         # `analyse` and once for the table, and printed the whole refusal twice.
@@ -109,7 +109,9 @@ def read_history(inventory: Inventory, settings: HistorySettings) -> HistoryRead
                 "Move it aside or point --history-file elsewhere to start a new record.",
                 err=True,
             )
-        return HistoryRead(History(hostname=inventory.hostname), writable=False, refusal=str(error))
+        return HistoryRead(
+            History(hostname=inventory.hostname), writable=False, refusal=str(error), store=settings.path
+        )
 
 
 class RecordOutcome(StrEnum):
@@ -430,11 +432,11 @@ def analyse(
         attempt = record_reading(inventory, read, settings)
         warn_if_the_store_was_not_written(attempt, settings.path)
         if attempt.history is not None:
-            read = HistoryRead(attempt.history, writable=True)
+            read = HistoryRead(attempt.history, writable=True, store=settings.path)
     elif replay is None and _why_not_to_record(inventory, read, settings) is None:
         stamp = datetime.now(UTC).isoformat()
         folded = record(read.history, inventory.disks, stamp, cap=settings.max_samples_per_drive)
-        read = HistoryRead(folded, writable=True)
+        read = HistoryRead(folded, writable=True, store=settings.path)
     return Analysis(inventory, findings, read)
 
 
@@ -560,11 +562,6 @@ def cli_record(ctx: click.Context, replay: Path | None, output_format: OutputFor
         raise SystemExit(code)
 
 
-def _trend_without_history(path: Path, refusal: str) -> str:
-    """The sentence ``trend --format json`` reports for a store it could not read."""
-    return f"counter history at {path} could not be read, so no trend is shown: {refusal}"
-
-
 @click.command("trend", context_settings=CLICK_CONTEXT_SETTINGS)
 @option(
     "--replay",
@@ -592,8 +589,7 @@ def cli_trend(ctx: click.Context, replay: Path | None, output_format: OutputForm
 
             rows = trend_rows(inventory, read.history, display.wear_row_floor_percent)
             trend = [TrendEntry(device=row.disk.path, counter=row.kind, trend=row.trend) for row in rows]
-            refused = [] if read.refusal is None else [_trend_without_history(settings.path, read.refusal)]
-            emit_json(inventory, findings, CliCommand.TREND, trend, refused)
+            emit_json(inventory, findings, CliCommand.TREND, history=read, trend=trend)
         else:
             from lsdsk.adapters.render.trend import render_trend  # noqa: PLC0415 - keeps the import graph flat
 

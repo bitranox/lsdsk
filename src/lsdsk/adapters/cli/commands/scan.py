@@ -585,25 +585,62 @@ def _refusals_named(inventory: Inventory) -> list[str]:
     ]
 
 
+def history_refusals(history: HistoryRead, command: CliCommand) -> list[str]:
+    """The `skipped` entry for a counter store that was refused, or none.
+
+    A refused store means every verdict that weighs a counter against its past
+    was judged without it, so the envelope has to say so: a consumer reading
+    ``ok`` true would otherwise take an answer judged on less for a complete one.
+    Worded the way ``trend`` always worded it, with the consequence naming what
+    this command shows.
+
+    Args:
+        history: What the run read of the store.
+        command: Which command is emitting, which decides the consequence.
+
+    Returns:
+        One sentence naming the store and why it was refused, or an empty list.
+
+    Example:
+        >>> from lsdsk.adapters.history.store import HistoryRead
+        >>> from lsdsk.domain.history import History
+        >>> history_refusals(HistoryRead(History(hostname="h"), writable=True), CliCommand.DISKS)
+        []
+        >>> refused = HistoryRead(History(hostname="h"), writable=False, refusal="malformed")
+        >>> history_refusals(refused, CliCommand.TREND)[0]
+        'counter history could not be read, so no trend is shown: malformed'
+    """
+    if history.refusal is None:
+        return []
+    where = "counter history" if history.store is None else f"counter history at {history.store}"
+    consequence = "no trend is shown" if command is CliCommand.TREND else "its verdicts were judged without it"
+    return [f"{where} could not be read, so {consequence}: {history.refusal}"]
+
+
 def emit_json(
     inventory: Inventory,
     findings: Sequence[Finding],
     command: CliCommand,
+    *,
+    history: HistoryRead,
     trend: Sequence[TrendEntry] | None = None,
-    extra_skipped: Sequence[str] = (),
 ) -> None:
     """Write the machine-readable envelope.
+
+    The counter store the findings were judged against is REQUIRED, and the
+    refusal is derived from it here rather than passed by the caller: every
+    command that judges against history emits through this, so none can leave
+    a refused store out of its ``skipped``.
 
     Args:
         inventory: The machine that was scanned.
         findings: What the diagnosis produced.
         command: Which command is emitting this, which the envelope names.
+        history: The store the findings were judged against.
         trend: One entry per counter worth a row, passed only by the `trend`
             command.
-        extra_skipped: Reasons beyond the inventory's own readings; see
-            :func:`build_envelope`.
     """
-    envelope = build_envelope(inventory, findings, command, trend, extra_skipped)
+    envelope = build_envelope(inventory, findings, command, trend, history_refusals(history, command))
     safe_console.echo(envelope.model_dump_json(indent=2))
 
 
@@ -1005,12 +1042,12 @@ def cli_topology(
     This is one section of the page a bare `lsdsk` renders, not that whole page.
     """
     with lib_log_rich.runtime.bind(job_id="cli-topology", extra={"command": CliCommand.TOPOLOGY.value}):
-        inventory, findings, _ = analyse_run(ctx, effective_replay(ctx, replay), output_format)
+        inventory, findings, read = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         thresholds, display = resolve_tunables(ctx)
         logger.debug("Scanned %d disks on %d controllers", len(inventory.disks), len(inventory.controllers))
 
         if output_format is OutputFormat.JSON:
-            emit_json(inventory, findings, CliCommand.TOPOLOGY)
+            emit_json(inventory, findings, CliCommand.TOPOLOGY, history=read)
         else:
             from lsdsk.adapters.render import tree  # noqa: PLC0415 - same flat-graph reason as its neighbours
 
@@ -1064,10 +1101,10 @@ def effective_tree_density(ctx: click.Context, tree_density: str | None) -> Tree
 def cli_smart(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Show every disk's SMART attributes against its own thresholds."""
     with lib_log_rich.runtime.bind(job_id="cli-smart", extra={"command": CliCommand.SMART.value}):
-        inventory, findings, _ = analyse_run(ctx, effective_replay(ctx, replay), output_format)
+        inventory, findings, read = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
         if output_format is OutputFormat.JSON:
-            emit_json(inventory, findings, CliCommand.SMART)
+            emit_json(inventory, findings, CliCommand.SMART, history=read)
         else:
             from lsdsk.adapters.render.report import render_smart  # noqa: PLC0415 - keeps the import graph flat
 
@@ -1084,10 +1121,10 @@ def cli_smart(ctx: click.Context, replay: Path | None, output_format: OutputForm
 def cli_findings(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Explain every problem and improvement in full."""
     with lib_log_rich.runtime.bind(job_id="cli-findings", extra={"command": CliCommand.FINDINGS.value}):
-        inventory, findings, _ = analyse_run(ctx, effective_replay(ctx, replay), output_format)
+        inventory, findings, read = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
         if output_format is OutputFormat.JSON:
-            emit_json(inventory, findings, CliCommand.FINDINGS)
+            emit_json(inventory, findings, CliCommand.FINDINGS, history=read)
         else:
             console = console_for_output(display.piped_width)
             console.print(report.render_header(inventory))
@@ -1103,10 +1140,10 @@ def cli_findings(ctx: click.Context, replay: Path | None, output_format: OutputF
 def cli_controllers(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """List storage controllers, their PCIe placement and their free ports."""
     with lib_log_rich.runtime.bind(job_id="cli-controllers", extra={"command": CliCommand.CONTROLLERS.value}):
-        inventory, findings, _ = analyse_run(ctx, effective_replay(ctx, replay), output_format)
+        inventory, findings, read = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
         if output_format is OutputFormat.JSON:
-            emit_json(inventory, findings, CliCommand.CONTROLLERS)
+            emit_json(inventory, findings, CliCommand.CONTROLLERS, history=read)
         else:
             from lsdsk.adapters.render.tables import render_controllers  # noqa: PLC0415 - keeps the import graph flat
 
@@ -1125,10 +1162,10 @@ def cli_controllers(ctx: click.Context, replay: Path | None, output_format: Outp
 def cli_slots(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
     """Show the mainboard's PCIe ports, what occupies them and what is free."""
     with lib_log_rich.runtime.bind(job_id="cli-slots", extra={"command": CliCommand.SLOTS.value}):
-        inventory, findings, _ = analyse_run(ctx, effective_replay(ctx, replay), output_format)
+        inventory, findings, read = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
         if output_format is OutputFormat.JSON:
-            emit_json(inventory, findings, CliCommand.SLOTS)
+            emit_json(inventory, findings, CliCommand.SLOTS, history=read)
         else:
             from lsdsk.adapters.render.report import render_slots  # noqa: PLC0415 - keeps the import graph flat
 
@@ -1149,10 +1186,10 @@ def cli_disks(
 ) -> None:
     """List every disk with its identity and its interface speed."""
     with lib_log_rich.runtime.bind(job_id="cli-disks", extra={"command": CliCommand.DISKS.value}):
-        inventory, findings, _ = analyse_run(ctx, effective_replay(ctx, replay), output_format)
+        inventory, findings, read = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         display = resolve_tunables(ctx).display
         if output_format is OutputFormat.JSON:
-            emit_json(inventory, findings, CliCommand.DISKS)
+            emit_json(inventory, findings, CliCommand.DISKS, history=read)
         else:
             from lsdsk.adapters.render.tables import (  # noqa: PLC0415 - keeps the import graph flat
                 OVERFLOW_WIDTH,
@@ -1189,7 +1226,7 @@ def cli_health(ctx: click.Context, replay: Path | None, output_format: OutputFor
         inventory, findings, read = analyse_run(ctx, effective_replay(ctx, replay), output_format)
         thresholds, display = resolve_tunables(ctx)
         if output_format is OutputFormat.JSON:
-            emit_json(inventory, findings, CliCommand.HEALTH)
+            emit_json(inventory, findings, CliCommand.HEALTH, history=read)
         else:
             from lsdsk.adapters.render.tables import render_health  # noqa: PLC0415 - keeps the import graph flat
 
@@ -1562,6 +1599,7 @@ __all__ = [
     "effective_replay",
     "emit_json",
     "exit_code_for",
+    "history_refusals",
     "load_inventory",
     "names_of_the_streams_the_view_needs",
     "note",

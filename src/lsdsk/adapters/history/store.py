@@ -479,11 +479,15 @@ class HistoryRead(NamedTuple):
             ``None`` when nothing refused. Carried rather than left on stderr
             because ``record --format json`` reports this cause apart from the
             others, and a caller parsing stdout cannot see a warning.
+        store: The file that was read, so a sentence about a refusal can name it
+            without its caller threading the settings alongside. ``None`` for a
+            history that did not come from a file.
     """
 
     history: History
     writable: bool
     refusal: str | None = None
+    store: Path | None = None
 
 
 #: How long a run waits for another to finish writing the store before giving
