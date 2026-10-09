@@ -129,6 +129,31 @@ def test_the_skill_explains_every_marker_a_view_can_draw() -> None:
     assert not unexplained, f"the skill draws no explanation for these markers: {unexplained}"
 
 
+TREND_PARAGRAPH = re.compile(r"`(?:lsdsk )?trend --format json` carries.*?(?:\n\n)", re.DOTALL)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("document", [SKILL, SKILL.parents[2] / "COMMANDS.md"], ids=["skill", "commands"])
+def test_the_trend_json_paragraph_names_every_counter_the_trend_watches(document: Path) -> None:
+    """A reader filtering `data.trend` by counter must find every value it can carry.
+
+    The list is read from `WATCHED`, the tuple the trend rows are built from,
+    rather than kept here: a counter added there and missed in the prose is
+    exactly the drift this exists to catch, and `error_log_entries` was that
+    counter - every NVMe drive with history emits it while the paragraph named
+    six.
+    """
+    from lsdsk.adapters.render.trend import WATCHED
+
+    match = TREND_PARAGRAPH.search(document.read_text(encoding="utf-8"))
+    assert match, f"{document.name} has no paragraph describing trend --format json"
+    paragraph = match.group(0)
+    assert "`crc_errors`" in paragraph, "the paragraph matched but names no counter at all"
+
+    unnamed = [str(kind) for kind in WATCHED if f"`{kind}`" not in paragraph]
+    assert not unnamed, f"{document.name}'s trend JSON paragraph never names: {unnamed}"
+
+
 @pytest.mark.os_agnostic
 def test_the_skill_names_every_refusal_a_caller_can_distinguish() -> None:
     """Every ConfigurationError subclass is named where callers are told what to catch.

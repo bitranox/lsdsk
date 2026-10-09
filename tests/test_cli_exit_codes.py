@@ -28,12 +28,14 @@ REPO = Path(__file__).parent.parent
 
 #: The codes lsdsk never raises, exempt from both guards below.
 #:
-#: ``lib_cli_exit_tools`` translates a signal into these; no code here does. The
+#: ``lib_cli_exit_tools`` translates SIGTERM into 143; no code here does. 130 is
+#: NOT exempt: ``code_for_an_unhandled_exception`` answers an interrupt with it,
+#: so it is a code this tool produces and a caller must find documented. The
 #: exemption is defined once because two tests read it: one asks that every other
 #: member is reachable, the other that every other member is documented. Written
 #: twice they would drift, and the drift would silently widen whichever guard
 #: gained the extra member.
-INFORMATIONAL_CODES = frozenset({ExitCode.SIGNAL_INT, ExitCode.SIGNAL_TERM})
+INFORMATIONAL_CODES = frozenset({ExitCode.SIGNAL_TERM})
 
 #: A caller-facing document and the row shape its exit codes are published in.
 _EXIT_CODE_ROW = re.compile(r"^\|\s*`(\d+)`\s*\|")
@@ -127,8 +129,9 @@ def test_every_declared_exit_code_is_one_the_tool_can_actually_produce() -> None
     it among the outcomes a caller should expect. lsdsk issues no subprocesses
     and makes no network requests, so it had no way to produce it.
 
-    The signal codes are exempt and say so in the enum's own docstring: they are
-    produced by lib_cli_exit_tools translating a signal, never raised here.
+    SIGTERM's 143 is exempt: lib_cli_exit_tools produces it by translating the
+    signal, never anything here. An interrupt's 130 is checked like any other,
+    because this tool maps an interrupt to it itself.
 
     ``BROKEN_PIPE`` used to sit in that exemption and did not belong there. The
     stated reason was false - nothing translates a broken pipe, click turns it
@@ -164,8 +167,8 @@ def test_every_code_the_tool_can_raise_is_documented_where_a_caller_reads() -> N
 
     So this is keyed on the enum's members rather than on a list: a new code is
     required to be documented the day it is declared, and the requirement arrives
-    with it rather than being remembered. The signal codes are the one exemption
-    and they share it with the reachability guard above.
+    with it rather than being remembered. SIGTERM's 143 is the one exemption
+    and it shares it with the reachability guard above.
 
     The skill publishes a table, so the table is required to be EXACTLY the set -
     a row for a code no member holds is as wrong as a missing row. The command

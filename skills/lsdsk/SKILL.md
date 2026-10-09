@@ -8,7 +8,8 @@ description: Use when inspecting or diagnosing storage hardware - which disk han
 Groups disks by the controller they hang off, compares every link against what
 both ends of it could do, and reports what is worth acting on. It also names the
 mainboard, from DMI, which is what makes its placement advice actionable. Linux
-and Windows, no subprocesses, no network. It runs anywhere `--replay` is all you
+and Windows, no subprocesses, and no network unless you enable the optional
+Graylog log sink (`lib_log_rich.enable_graylog`), which is off by default. It runs anywhere `--replay` is all you
 need, macOS included; only reading real hardware is the two.
 
 **Bare `lsdsk` gives a PERSON the interactive view and a PROGRAM the printed
@@ -466,11 +467,12 @@ nothing, or a truncated report if the crash landed mid-write.
 | `0`   | A reporting command found nothing actionable. `record`, `snapshot` and `config-*` exit `0` on success regardless                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `1`   | A reporting command found a warning or a critical. NOT a crash - that is `70` - and NOT a write that failed - that is `74`. From `record`, which reports no findings, it means no drive's power-on hours could be read, so nothing was stored                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `2`   | The command line was wrong. `USAGE_ERROR` in the envelope. See below, this one is misread constantly                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `13`  | Something needed privilege this run lacks: `config-deploy --target app` or `host` without root, a diagnostic run whose hardware read the kernel refused outright, or a `snapshot`, `record` or `config-generate-examples` whose destination refuses to be written. A field that merely could not be read is different - it degrades to `-` and names itself in `skipped`                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `13`  | Something needed privilege this run lacks: `config-deploy --target app` or `host` without root, a configuration file this run is not allowed to read (`PERMISSION_DENIED`; a malformed one is `78`), a diagnostic run whose hardware read the kernel refused outright, or a `snapshot`, `record` or `config-generate-examples` whose destination refuses to be written. A field that merely could not be read is different - it degrades to `-` and names itself in `skipped`                                                                                                                                                                                                                                                                                                                                                     |
 | `22`  | `lsdsk config --section` named a section that does not exist, a `--profile` was rejected, `snapshot` was given a global `--replay`, or `-o -` together with `--format json` (the capture and the envelope would both be stdout) or while the logging console writes to stdout too, or `--format` was given to `report` or `tui`, which draw a page for a person - `findings --format json` is their machine-readable form - or `tui` was run where stdin, stdout or (on Linux and macOS) stderr is not a terminal. `--set SECTION.KEY=VALUE` is a different option and is not what produces this                                                                                                                                                                                                                                  |
 | `70`  | An error inside `lsdsk` itself: an exception no command handled. A bug to report and never a statement about the machine, so route it to whoever owns the tool rather than to storage. An unhandled `OSError` keeps its own code instead, because its errno means something - EPERM is itself `1`; a write that fails is `74`, not its errno                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `74`  | A write this tool was asked to make failed for a reason other than permission - a full disk, a path that cannot exist: a `snapshot` destination, the counter-history file `record` writes, the files `config-deploy` or `config-generate-examples` writes, or - for a command whose output IS standard output - standard output refusing it or closed (`lsdsk findings > /full/disk/report.txt`, `lsdsk findings >&-`). `snapshot -o <file>` needs no standard output and succeeds without one; when standard output refuses the line reporting the capture, the run leaves `74` although the capture landed, and that line says so: `wrote the capture to <file>, but standard output refused the line saying so`. Never a verdict about the machine - some output did not arrive. One stderr line names the destination and why |
 | `78`  | A configuration file this tool cannot load, such as malformed TOML in `config.d`; a configuration `config --format json` cannot write because it nests deeper than this platform's JSON writer carries (98 levels on Windows; `--format human` prints it); a file that is not a snapshot this version reads; a counter-history store `record` cannot read, which it keeps untouched and adds nothing to; a damaged installation, whose own shipped configuration is missing, unreadable or corrupt - reinstall the tool; or a platform with no hardware reader                                                                                                                                                                                                                                                                    |
+| `130` | The run was interrupted (Ctrl-C). Neither a verdict nor a bug: nothing about the machine was concluded, so re-run it rather than paging anybody                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `141` | The process reading the output closed the pipe before the command finished. Neither a verdict nor a refusal; see the ranking below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 **`2` does not mean the file was missing.** It is the CLI framework's usage
@@ -610,7 +612,10 @@ it runs on, so there is no snapshot of somebody else's capture to take. Copy the
 file instead. It refuses `-o -` with `--format json` at `22` as well, because the
 capture and the envelope would both be stdout. `info` and plain `config` write
 nothing either and are safe to include; of the three `config` commands, `config-deploy`
-and `config-generate-examples` are the two that create files.
+and `config-generate-examples` are the two that create files. Run again with every
+file already in place, either one writes nothing and answers `ok` true, exit `0`,
+`data.outcome` `already present` (`written` when it did write), so a provisioning
+script reads `outcome` to tell the two apart; `--force` overwrites.
 
 **A run that cannot READ the history will not WRITE it either, and says so.**
 On stderr you get `Warning: ignoring counter history: <why>` followed by
@@ -715,9 +720,10 @@ hold on a machine that is mostly switched off.
 **`trend --format json` carries the trend in `data.trend`**, one entry per
 row of the table. Each names the `device` and the `counter` - `crc_errors`
 (the table's `interface CRC`), `reallocated_sectors`, `pending_sectors`,
-`uncorrectable_sectors`, `media_errors` or `percent_used` - and its `trend`
-holds the `verdict` (`rising`, `quiet`, `too-close`, `first-sample` or `reset`),
-`latest` (the total), `delta`, `span_hours`, `per_hour` (the rate) and
+`uncorrectable_sectors`, `media_errors`, `error_log_entries` (the table's
+`nvme error log`, NVMe drives only) or `percent_used` (`wear`) - and its `trend`, whose `kind`
+always equals `counter`, holds the `verdict` (`rising`, `quiet`, `too-close`,
+`first-sample` or `reset`), `latest` (the total), `delta`, `span_hours`, `per_hour` (the rate) and
 `expected_from_lifetime` (the `were due` figure), each `null` where the table
 shows a dash:
 
@@ -737,6 +743,13 @@ shows a dash:
 
 Every other command carries `"trend": null`. Never scrape the table for a rate:
 drive a rate threshold from `data.trend`.
+
+A counter that has never fired gets no row and so no entry, which makes an
+empty `data.trend` ambiguous on its own. Read `ok` beside it: when the history
+store could not be read, `ok` is `false` and `skipped` holds `counter history at
+<path> could not be read, so no trend is shown: <why>`. With `ok` true, an empty
+list means nothing worth a line, or nothing recorded for these drives yet. The
+exit code is the findings' verdict either way.
 
 `trend` says what is moving; `lsdsk findings` says how bad it is and what to do,
 already graded by the same history. Pair them: pick the drive from `trend`,
@@ -1166,8 +1179,9 @@ soldered-down device is empty in exactly the same way as a real socket.
 
 ## lsdsk does not go online. You can
 
-Every limit below is the TOOL's, not yours. It reads hardware and makes no
-network request by design, so it never reports a figure it did not measure. You
+Every limit below is the TOOL's, not yours. It reads hardware and looks nothing
+up on the network by design - the opt-in Graylog log sink sends log records and
+fetches nothing - so it never reports a figure it did not measure. You
 have a browser and `curl`, and the things it cannot know are published. Look them
 up rather than reporting a dash back to somebody who asked a real question.
 
@@ -1250,7 +1264,7 @@ it.
 It reads hardware, not configuration or physical layout. It does not know the
 RAID or ZFS layout, which pool a disk belongs to, whether a drive is a boot
 device or a cache, which physical bay holds it, how old a SATA drive is unless
-it reports power-on hours, or whether newer firmware exists. It has no network
-access, so it never knows a drive's rated endurance in terabytes written or an
+it reports power-on hours, or whether newer firmware exists. It looks nothing
+up on the network, so it never knows a drive's rated endurance in terabytes written or an
 OEM rebrand name. When a recommendation depends on any of those, ask rather
 than infer, and map the device name to a bay before issuing a work order.
