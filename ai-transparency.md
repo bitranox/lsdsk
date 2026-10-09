@@ -32,8 +32,8 @@ call, and own the result.
 - The calls to keep the tool honest are theirs: report no value that was not measured, and say
   plainly which values could not be read.
 - Shipping an AI-agent skill was the human's call, including that it should teach an agent to
-  fetch a mainboard or controller manual when the tool itself stops, since lsdsk makes no
-  network request by design.
+  fetch a mainboard or controller manual when the tool itself stops, since lsdsk reads
+  nothing from the network by design.
 
 ## Where the AI was used
 

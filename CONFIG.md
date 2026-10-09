@@ -688,4 +688,4 @@ Instead, create your own override files in the appropriate layer directory using
 
 [lib_log_rich]
 console_level = "DEBUG"
-
+```

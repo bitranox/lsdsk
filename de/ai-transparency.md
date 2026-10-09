@@ -42,7 +42,7 @@ Problem gestellt, jede Entscheidung getroffen und trägt das Ergebnis.
 - Dass ein Skill für KI-Agenten mitgeliefert wird, war seine Entscheidung,
   einschliesslich der, dass er einem Agenten beibringen soll, ein Mainboard- oder
   Controller-Handbuch zu holen, wo das Werkzeug selbst aufhört, da lsdsk
-  grundsätzlich keine Netzwerkanfrage stellt.
+  grundsätzlich nichts aus dem Netz liest.
 
 ## Wo die KI eingesetzt wurde
 
