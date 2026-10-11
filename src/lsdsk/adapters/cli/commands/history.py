@@ -51,6 +51,7 @@ from .scan import (
     exit_code_for,
     load_inventory,
     note_the_findings_this_page_left_out,
+    note_unread_interfaces,
     resolve_history,
     resolve_tunables,
 )
@@ -602,6 +603,7 @@ def cli_trend(ctx: click.Context, replay: Path | None, output_format: OutputForm
             from lsdsk.adapters.render.trend import render_trend  # noqa: PLC0415 - keeps the import graph flat
 
             console = console_for_output(display.piped_width)
+            note_unread_interfaces(inventory, console)
             console.print(
                 render_trend(
                     inventory,

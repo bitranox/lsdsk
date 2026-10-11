@@ -330,6 +330,26 @@ def exit_code_for(findings: Sequence[Finding]) -> ExitCode:
     return ExitCode.GENERAL_ERROR if actionable else ExitCode.SUCCESS
 
 
+def note_unread_interfaces(inventory: Inventory, console: Console) -> None:
+    """Say at the top of a page that lists disks when a disk interface could not be read.
+
+    Such an interface is not counted as a disk, so a page of disks that stays
+    silent about it reads as a machine with one drive fewer. The sentence is the
+    header's own (:func:`report.unread_interfaces_note`), so every page says it in
+    the same words.
+
+    Args:
+        inventory: The machine this page is about.
+        console: Where the page is going.
+
+    Side Effects:
+        Prints one line, or nothing when every listed interface was read.
+    """
+    unread = report.unread_interfaces_note(inventory)
+    if unread:
+        console.print(Text(unread, style=theme.STYLE_CEILING))
+
+
 def note_the_findings_this_page_left_out(
     findings: Sequence[Finding], drawn_subjects: Sequence[str], console: Console
 ) -> None:
@@ -1110,6 +1130,7 @@ def cli_smart(ctx: click.Context, replay: Path | None, output_format: OutputForm
             from lsdsk.adapters.render.report import render_smart  # noqa: PLC0415 - keeps the import graph flat
 
             console = console_for_output(display.piped_width)
+            note_unread_interfaces(inventory, console)
             console.print(render_smart(inventory, width=console.width))
             note_the_findings_this_page_left_out(findings, (), console)
         raise SystemExit(exit_code_for(findings))
@@ -1149,6 +1170,7 @@ def cli_controllers(ctx: click.Context, replay: Path | None, output_format: Outp
             from lsdsk.adapters.render.tables import render_controllers  # noqa: PLC0415 - keeps the import graph flat
 
             console = console_for_output(display.piped_width)
+            note_unread_interfaces(inventory, console)
             console.print(render_controllers(inventory, findings, width=console.width))
             note_the_findings_this_page_left_out(
                 findings, [controller.address for controller in inventory.controllers], console
@@ -1171,6 +1193,7 @@ def cli_slots(ctx: click.Context, replay: Path | None, output_format: OutputForm
             from lsdsk.adapters.render.report import render_slots  # noqa: PLC0415 - keeps the import graph flat
 
             console = console_for_output(display.piped_width)
+            note_unread_interfaces(inventory, console)
             console.print(render_slots(inventory, width=console.width))
             note_the_findings_this_page_left_out(findings, (), console)
         raise SystemExit(exit_code_for(findings))
@@ -1204,6 +1227,7 @@ def cli_disks(
             # wider than any terminal, the row simply runs off the side, which
             # is what a pager is for.
             console = console_for_output(OVERFLOW_WIDTH if full_wwn else display.piped_width)
+            note_unread_interfaces(inventory, console)
             console.print(
                 render_disks(
                     inventory,
@@ -1232,6 +1256,7 @@ def cli_health(ctx: click.Context, replay: Path | None, output_format: OutputFor
             from lsdsk.adapters.render.tables import render_health  # noqa: PLC0415 - keeps the import graph flat
 
             console = console_for_output(display.piped_width)
+            note_unread_interfaces(inventory, console)
             console.print(
                 render_health(inventory, findings, width=console.width, history=read.history, thresholds=thresholds)
             )
@@ -1605,6 +1630,7 @@ __all__ = [
     "names_of_the_streams_the_view_needs",
     "note",
     "note_the_findings_this_page_left_out",
+    "note_unread_interfaces",
     "resolve_history",
     "resolve_tunables",
     "run_default_report",
