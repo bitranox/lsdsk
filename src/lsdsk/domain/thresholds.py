@@ -28,8 +28,8 @@ class Thresholds(DomainModel, frozen=True):
     Attributes:
         wear_warning_percent: Wear at which a replacement is worth planning.
         wear_critical_percent: Wear at which the drive is at its rated endurance.
-        crc_errors_significant: Interface CRC count above which a count is a
-            fault rather than a note. A handful can come from one hotplug.
+        crc_errors_significant: Interface CRC count at or above which a count is
+            a fault rather than a note. A handful can come from one hotplug.
         mixed_firmware_threshold: How many distinct firmware revisions across
             copies of one model count as a mismatch.
         wear_projection_min_points: Percentage points of measured wear movement

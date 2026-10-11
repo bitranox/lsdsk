@@ -38,7 +38,7 @@
 wear_warning_percent = 80
 wear_critical_percent = 95
 
-# Interface CRC count above which a count is a fault rather than a note.
+# Interface CRC count at or above which a count is a fault rather than a note.
 #
 # Default: 100. Below this, and with the link not downshifted, the finding is a
 # hint: a handful of corrupted frames can come from a single hotplug or a reboot
