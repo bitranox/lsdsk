@@ -757,7 +757,9 @@ def _anchors(series: list[Sample]) -> list[bool]:
     hour: the clock carried on from the old run, so the low row was a misread and
     no span may start there. A row after a swap or reset is not: the newest reading
     never regained the old hours, so the new run's first row is a real anchor.
-    A row past the newest reading's own hour cannot anchor a span ending before it.
+    A row past the newest reading's own hour cannot anchor a span ending before it,
+    and it ends the older run: the clock must have restarted after it for the newest
+    reading to sit below it, so nothing before it can make a later row a stray.
 
     Args:
         series: The usable samples, oldest first.
@@ -771,6 +773,8 @@ def _anchors(series: list[Sample]) -> list[bool]:
         [True, False, True]
         >>> _anchors([Sample(power_on_hours=h, captured_at="t") for h in (1000, 5, 15)])
         [False, True, True]
+        >>> _anchors([Sample(power_on_hours=h, captured_at="t") for h in (1000, 5, 50, 3, 13)])
+        [False, True, False, True, True]
     """
     newest = series[-1].power_on_hours
     highest_reached = -1  # the highest hour at or below the newest that an earlier row recorded
@@ -778,8 +782,7 @@ def _anchors(series: list[Sample]) -> list[bool]:
     for sample in series:
         hours = sample.power_on_hours
         flags.append(hours <= newest and hours >= highest_reached)
-        if hours <= newest:
-            highest_reached = max(highest_reached, hours)
+        highest_reached = max(highest_reached, hours) if hours <= newest else -1
     return flags
 
 
