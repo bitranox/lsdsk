@@ -1399,6 +1399,59 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
     return twin if passes_real_links else None
 
 
+def link_is_register_default(controller: Controller, inventory: Inventory) -> bool:
+    """Whether a controller's published link is a register default rather than a link.
+
+    The one answer every view reads before it draws this controller's link as
+    a figure worth something: the same evidence the oversubscription rule
+    weighs before it turns its warning into a hint, so a view cannot mark a
+    floor link the hint would not excuse, nor draw one it would. Two things
+    differ from the rule, and both are deliberate. It does not wait for drives
+    that could outrun the figure, because a marker says what the register IS,
+    and a chipset function with no drive on it publishes the same default.
+    And it answers no where the readings are not physical, because there the
+    link rules do not run and no hint can excuse anything.
+
+    Args:
+        controller: The controller whose link is in question.
+        inventory: The machine, whose port records place it on a switch.
+
+    Returns:
+        True where the link is the PCIe floor published by a function built
+        into switch silicon, by the three readings the hint rests on.
+
+    Example:
+        >>> from lsdsk.domain.models import Controller, PcieLink
+        >>> floor = PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=2.5, max_width=1)
+        >>> lone = Controller(address="0000:05:00.0", name="sata", link=floor)
+        >>> link_is_register_default(lone, Inventory(hostname="h", controllers=(lone,)))
+        False
+    """
+    return inventory.readings_are_physical and _floor_twin(controller, inventory) is not None
+
+
+def register_default_links(inventory: Inventory) -> frozenset[str]:
+    """Name every controller whose published link is a register default, by address.
+
+    For a view that draws devices rather than controllers - a port and the
+    occupant it names, a node of the PCI fabric - and so needs the answer for
+    the whole machine at once rather than a lookup per row.
+
+    Args:
+        inventory: The machine.
+
+    Returns:
+        The addresses :func:`link_is_register_default` answers yes for.
+
+    Example:
+        >>> register_default_links(Inventory(hostname="empty"))
+        frozenset()
+    """
+    return frozenset(
+        controller.address for controller in inventory.controllers if link_is_register_default(controller, inventory)
+    )
+
+
 def _demand_clause(count: int, demand: float) -> str:
     """Open a sentence with what the attached drives can pull, in the number they come in.
 
@@ -1576,6 +1629,8 @@ __all__ = [
     "diagnose_usb_link",
     "format_pcie_sentence",
     "interface_demand_gbytes",
+    "link_is_register_default",
     "one_step_in_severity",
     "refine",
+    "register_default_links",
 ]

@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from rich.console import Group
 from rich.text import Text
 
+from ...domain.diagnostics import register_default_links
 from ...domain.enums import PciPortKind, TreeDensity
 from ...domain.pci_address import pci_address_order
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_TREE_DENSITY
@@ -65,7 +66,7 @@ from .report import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
     from typing import TypeAlias
 
     from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
@@ -156,7 +157,7 @@ def density_note(density: TreeDensity, how_to_change: str = OPTION_HINT) -> str:
     return f"showing {_DENSITY_DRAWN[density]}; {how_to_change} to change the detail level"
 
 
-def hop_cells(node: PciNode, *, bandwidth: bool = False) -> theme.HopPair:
+def hop_cells(node: PciNode, *, bandwidth: bool = False, register_default: bool = False) -> theme.HopPair:
     """(capable, running) for one device's own hop, as a figure or a symbol.
 
     Asked of the NODE rather than of its link, because the difference between
@@ -172,6 +173,10 @@ def hop_cells(node: PciNode, *, bandwidth: bool = False) -> theme.HopPair:
             (:attr:`Fabric.hop_bandwidth`), never per row: a cell wider than
             its column is clipped, and half a link figure is a different figure
             rather than a shorter one.
+        register_default: Whether the domain found this device's link to be a
+            register default rather than a link. The section knows from
+            :attr:`Fabric.register_defaults`; both cells then carry the mark
+            and no worth, in either tier.
 
     Returns:
         The capable and running cells, named.
@@ -200,7 +205,12 @@ def hop_cells(node: PciNode, *, bandwidth: bool = False) -> theme.HopPair:
         >>> hop_cells(PciNode(address="a", name="b")).capable[0]
         '-'
     """
-    return theme.hop_link_cells(node.link, capability_present=node.pcie_capability_present, bandwidth=bandwidth)
+    return theme.hop_link_cells(
+        node.link,
+        capability_present=node.pcie_capability_present,
+        bandwidth=bandwidth,
+        register_default=register_default,
+    )
 
 
 class Field(NamedTuple):
@@ -349,6 +359,44 @@ def root_heading(root: PciNode) -> str:
     return "no bus address" if root.address == UNPLACED_ROOT else f"root complex {root.address}"
 
 
+class DeviceFacts(NamedTuple):
+    """What the machine says about particular devices that the fabric alone cannot.
+
+    One value rather than two parameters, because both are read off the same
+    machine for the same reason - a device the tree cannot classify by its own
+    class code - and both are required: a fabric built without either draws a
+    plausible tree with something wrong in it.
+
+    Attributes:
+        drives_on: The addresses a drive hangs off. A storage class is not the
+            only thing a drive can sit under: a USB disk's controller is a host
+            controller, class 0C03, which no storage rule covers.
+        register_defaults: The addresses whose published link the domain found
+            to be a register default rather than a link
+            (:func:`~lsdsk.domain.diagnostics.register_default_links`), so
+            their hop cells carry the mark rather than a worth.
+    """
+
+    drives_on: frozenset[str]
+    register_defaults: frozenset[str]
+
+    @classmethod
+    def of(cls, inventory: Inventory) -> DeviceFacts:
+        """Read both off one machine.
+
+        Args:
+            inventory: The machine.
+
+        Returns:
+            The machine's facts about its devices.
+        """
+        hosts = (disk.controller_address for disk in inventory.disks)
+        return cls(
+            drives_on=frozenset(address for address in hosts if address is not None),
+            register_defaults=register_default_links(inventory),
+        )
+
+
 class Fabric:
     """One render call's shared state: the tree, the density, the geometry.
 
@@ -364,7 +412,7 @@ class Fabric:
         width: int,
         view: FabricView | None = None,
         *,
-        drives_on: Collection[str],
+        devices: DeviceFacts,
         thresholds: Thresholds,
     ) -> None:
         """Settle one render call's shared state.
@@ -374,17 +422,19 @@ class Fabric:
         is what the type exists to say, and unpacking them here made this the
         one place they could be passed out of step.
 
-        `drives_on` is REQUIRED rather than defaulting to empty: a fabric built
-        without it keeps no USB host controller in the reduced densities, and
-        that omission draws a plausible tree with a drive missing from it.
-        :meth:`of` derives it from the machine; a hand-built tree says so.
+        `devices` is REQUIRED rather than defaulting to empty: a fabric built
+        without the drives keeps no USB host controller in the reduced
+        densities, and one built without the register defaults draws a chipset
+        function's default as its link's worth, and either omission draws a
+        plausible tree. :meth:`of` derives them from the machine; a hand-built
+        tree says so.
         """
         settled = FabricView() if view is None else view
         self.nodes = nodes
-        #: The addresses a drive hangs off. A storage class is not the only
-        #: thing a drive can sit under: a USB disk's controller is a host
-        #: controller, class 0C03, which no storage rule covers.
-        self.drives_on = frozenset(drives_on)
+        #: The addresses a drive hangs off, as :class:`DeviceFacts` says.
+        self.drives_on = devices.drives_on
+        #: The devices whose link is a register default, as :class:`DeviceFacts` says.
+        self.register_defaults = devices.register_defaults
         self.width = width
         self.view = settled
         self.density = settled.density
@@ -436,16 +486,10 @@ class Fabric:
             thresholds: What this run judges wear by, for the disk rows.
 
         Returns:
-            The fabric, keeping every device a drive hangs off at every density.
+            The fabric, keeping every device a drive hangs off at every density
+            and marking every link the domain found to be a register default.
         """
-        hosts = (disk.controller_address for disk in inventory.disks)
-        return cls(
-            inventory.pci_tree,
-            width,
-            view,
-            drives_on={address for address in hosts if address is not None},
-            thresholds=thresholds,
-        )
+        return cls(inventory.pci_tree, width, view, devices=DeviceFacts.of(inventory), thresholds=thresholds)
 
     def holds_drives(self, node: PciNode) -> bool:
         """Whether a device is where drives hang: a storage class, or one a drive names.
@@ -672,10 +716,22 @@ class Fabric:
         so a machine whose every hop was read is not told what a dash means and
         a section that drew one always is.
         """
-        drawn = {
-            text for node, _level in self.devices() for text, _style in hop_cells(node, bandwidth=self.hop_bandwidth)
-        }
+        drawn = {text for node, _level in self.devices() for text, _style in self.hop_cells(node)}
         return theme.hop_legend(drawn)
+
+    def hop_cells(self, node: PciNode) -> theme.HopPair:
+        """One device's hop cells as THIS section draws them: its tier, and its mark.
+
+        The one place a row and the legend ask, so the legend cannot explain a
+        cell the row did not draw or miss one it did.
+
+        Args:
+            node: A device on this fabric.
+
+        Returns:
+            The capable and running cells, named.
+        """
+        return hop_cells(node, bandwidth=self.hop_bandwidth, register_default=node.address in self.register_defaults)
 
     def row(self, node: PciNode, severities: Mapping[str, Severity]) -> Text:
         """One structure row: marker, spine, then the fields this width holds.
@@ -730,7 +786,7 @@ class Fabric:
 
     def _cells(self, node: PciNode) -> dict[str, theme.Cell]:
         """What this device puts in each field, styled."""
-        capable, running = hop_cells(node, bandwidth=self.hop_bandwidth)
+        capable, running = self.hop_cells(node)
         tag = theme.pci_tag(node.port_kind)
         return {
             "address": (node.address, theme.STYLE_IDENTIFIER),
@@ -1196,6 +1252,7 @@ __all__ = [
     "HOP_WIDTH",
     "KEY_HINT",
     "OPTION_HINT",
+    "DeviceFacts",
     "Fabric",
     "FabricLine",
     "FabricSection",

@@ -23,6 +23,7 @@ from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import theme
 from lsdsk.adapters.render.tree import (
     DEFAULT_WIDTH,
+    DeviceFacts,
     Fabric,
     FabricSection,
     FabricView,
@@ -99,7 +100,13 @@ def test_a_deep_fabric_still_takes_one_line_per_row_at_a_narrow_width(width: int
     captures are too shallow to reach it, so the input is built here.
     """
     nodes = deep_chain(9)
-    fabric = Fabric(nodes, width, FabricView(density=TreeDensity.FULL), drives_on=(), thresholds=DEFAULT_THRESHOLDS)
+    fabric = Fabric(
+        nodes,
+        width,
+        FabricView(density=TreeDensity.FULL),
+        devices=DeviceFacts(drives_on=frozenset(), register_defaults=frozenset()),
+        thresholds=DEFAULT_THRESHOLDS,
+    )
     console = Console(file=io.StringIO(), width=width, no_color=True)
 
     # Row by row, not the finished section: a wrapped row and two devices are

@@ -17,7 +17,7 @@ import pytest
 
 from lsdsk.adapters.render import detail, report, tables, theme
 from lsdsk.adapters.render.layout import Column, Layout
-from lsdsk.domain.diagnostics import diagnose
+from lsdsk.domain.diagnostics import diagnose, link_is_register_default, register_default_links
 from lsdsk.domain.models import PcieLink
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
@@ -120,8 +120,18 @@ def _surfaces(machine: Inventory) -> list[tuple[str, tuple[Column, ...], list[di
         (
             "the slots table",
             report.SLOT_COLUMNS,
-            _texts([report.slot_table_row(slot, bandwidth=True) for slot in machine.slots]),
-            _texts([report.slot_table_row(slot) for slot in machine.slots]),
+            _texts(
+                [
+                    report.slot_table_row(slot, bandwidth=True, register_defaults=register_default_links(machine))
+                    for slot in machine.slots
+                ]
+            ),
+            _texts(
+                [
+                    report.slot_table_row(slot, register_defaults=register_default_links(machine))
+                    for slot in machine.slots
+                ]
+            ),
         ),
     ]
 
@@ -253,6 +263,11 @@ def test_a_bandwidth_sits_beside_the_figure_it_belongs_to(host: str) -> None:
     for controller in machine.controllers:
         link = controller.link
         if link.current_bandwidth_gbps is None or link.max_bandwidth_gbps is None:
+            continue
+        # A register default carries no worth by the user's decision: what the
+        # register is worth is not what the link is. That arm, and its control,
+        # are held in test_register_default_marker.py.
+        if link_is_register_default(controller, machine):
             continue
         values = _group(detail.controller_detail(controller, machine), detail.LINK)
         seen += 1

@@ -24,6 +24,7 @@ from lsdsk.adapters.render import theme
 from lsdsk.adapters.render.report import severity_index
 from lsdsk.adapters.render.tree import (
     HOP_WIDE_WIDTH,
+    DeviceFacts,
     Fabric,
     FabricView,
     device_header_line,
@@ -897,7 +898,13 @@ def test_the_header_names_exactly_the_columns_the_rows_draw() -> None:
     )
     seen = {True: 0, False: 0}
     for width in range(20, 201):
-        fabric = Fabric(tree, width, FabricView(density=TreeDensity.FULL), drives_on=(), thresholds=DEFAULT_THRESHOLDS)
+        fabric = Fabric(
+            tree,
+            width,
+            FabricView(density=TreeDensity.FULL),
+            devices=DeviceFacts(drives_on=frozenset(), register_defaults=frozenset()),
+            thresholds=DEFAULT_THRESHOLDS,
+        )
         header = device_header_line(fabric)
         node, _level = fabric.devices()[0]
         # Matches BOTH hop tiers: the narrow figure is a prefix of the wide
@@ -1168,8 +1175,9 @@ def _hop_cells_off_their_tier(fabric: Fabric, findings: Sequence[Finding]) -> tu
     discriminating = 0
     for node, _level in fabric.devices():
         row = fabric.row(node, severity_index(findings)).plain
-        expected = hop_cells(node, bandwidth=wide)
-        other = hop_cells(node, bandwidth=not wide)
+        marked = node.address in fabric.register_defaults
+        expected = hop_cells(node, bandwidth=wide, register_default=marked)
+        other = hop_cells(node, bandwidth=not wide, register_default=marked)
         for field, (text, _style), (other_text, _other_style) in zip(hops, expected, other, strict=True):
             discriminating += text != other_text
             start = header.index(field.key)
@@ -1243,7 +1251,14 @@ def test_a_deep_fabric_draws_the_hop_tier_its_field_plan_chose() -> None:
     discriminating = 0
     for width in range(20, 201):
         found, differing = _hop_cells_off_their_tier(
-            Fabric(nodes, width, FabricView(density=TreeDensity.FULL), drives_on=(), thresholds=DEFAULT_THRESHOLDS), ()
+            Fabric(
+                nodes,
+                width,
+                FabricView(density=TreeDensity.FULL),
+                devices=DeviceFacts(drives_on=frozenset(), register_defaults=frozenset()),
+                thresholds=DEFAULT_THRESHOLDS,
+            ),
+            (),
         )
         wrong.extend(found)
         discriminating += differing
@@ -1272,7 +1287,11 @@ def test_the_capable_column_draws_the_maximum_and_the_running_one_the_negotiated
     assert hop_cells(link_only, bandwidth=width == 200) == ((capable, ""), (running, ""))
 
     fabric = Fabric(
-        _deep_linked_chain(1), width, FabricView(density=TreeDensity.FULL), drives_on=(), thresholds=DEFAULT_THRESHOLDS
+        _deep_linked_chain(1),
+        width,
+        FabricView(density=TreeDensity.FULL),
+        devices=DeviceFacts(drives_on=frozenset(), register_defaults=frozenset()),
+        thresholds=DEFAULT_THRESHOLDS,
     )
     header = device_header_line(fabric).plain
     widths = {field.key: field.width for field in fabric.fields}

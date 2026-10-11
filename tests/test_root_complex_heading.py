@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from lsdsk.adapters.hw.fabric import UNPLACED_ROOT
-from lsdsk.adapters.render.tree import Fabric, FabricView, fabric_lines
+from lsdsk.adapters.render.tree import DeviceFacts, Fabric, FabricView, fabric_lines
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import TreeDensity
 from lsdsk.domain.models import PcieLink, PciNode
@@ -135,7 +135,13 @@ def test_devices_with_no_bus_address_are_headed_as_unplaced_rather_than_as_a_roo
         PciNode(address=UNPLACED_ROOT, name="unplaced"),
         PciNode(address=r"PCI\VEN_1AF4&DEV_1000\3&13c0b0c5&0&50", name="virtio", parent_address=UNPLACED_ROOT),
     )
-    fabric = Fabric(nodes, WIDTH, FabricView(density=TreeDensity.FULL), drives_on=(), thresholds=DEFAULT_THRESHOLDS)
+    fabric = Fabric(
+        nodes,
+        WIDTH,
+        FabricView(density=TreeDensity.FULL),
+        devices=DeviceFacts(drives_on=frozenset(), register_defaults=frozenset()),
+        thresholds=DEFAULT_THRESHOLDS,
+    )
     plain = [fabric.row(node, {}).plain.rstrip() for node, _level in fabric.drawn()]
 
     assert not any(HEADING.search(line) for line in plain)
@@ -157,6 +163,12 @@ def test_a_root_complex_heading_adds_no_symbol_to_the_hop_legend() -> None:
             pcie_capability_present=True,
         ),
     )
-    fabric = Fabric(nodes, WIDTH, FabricView(density=TreeDensity.FULL), drives_on=(), thresholds=DEFAULT_THRESHOLDS)
+    fabric = Fabric(
+        nodes,
+        WIDTH,
+        FabricView(density=TreeDensity.FULL),
+        devices=DeviceFacts(drives_on=frozenset(), register_defaults=frozenset()),
+        thresholds=DEFAULT_THRESHOLDS,
+    )
 
     assert fabric.hop_legend() == ""

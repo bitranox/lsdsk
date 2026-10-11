@@ -22,7 +22,7 @@ from rich.table import Table
 from rich.text import Text
 
 from ... import __init__conf__
-from ...domain.diagnostics import count_by_severity
+from ...domain.diagnostics import count_by_severity, link_is_register_default, register_default_links
 from ...domain.enums import Align, BusType, Environment, Severity
 from ...domain.models import pcie_bandwidth_gbps, pcie_generation, serial_bandwidth_gbps
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_SUMMARY_LIMIT
@@ -30,7 +30,7 @@ from . import theme
 from .layout import GAP, GUTTER, TREE_BRANCH, TREE_LAST, Column, Layout, fit, natural_widths, pad
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Collection, Iterable, Mapping, Sequence
 
     from rich.console import RenderableType
 
@@ -602,8 +602,14 @@ def disk_row(
     return {key: (text, styles.get(key, "")) for key, text in cells.items()}
 
 
-def _controller_line(controller: Controller, severity: Severity | None) -> Text:
-    """Render the full-width line that introduces one controller."""
+def _controller_line(controller: Controller, severity: Severity | None, *, register_default: bool) -> Text:
+    """Render the full-width line that introduces one controller.
+
+    ``register_default`` is the domain's answer to whether the link this line
+    would print is a register default rather than a link. This tree speaks in
+    prose rather than columns, so it says so in the same words the columns'
+    legend uses instead of drawing their mark.
+    """
     line = Text()
     # Leading, for the same reason the disk rows lead with it: this line has no
     # width budget at all, so a trailing marker wrapped to its own line on a
@@ -619,7 +625,10 @@ def _controller_line(controller: Controller, severity: Severity | None) -> Text:
 
     link = controller.link
     running_generation = pcie_generation(link.current_speed_gtps)
-    if running_generation is not None and link.current_width is not None:
+    if register_default:
+        figure = theme.format_pcie_generation(link.current_speed_gtps, link.current_width)
+        line.append(f"  PCIe {figure}, {theme.REGISTER_DEFAULT_MEANING}", style=theme.STYLE_UNKNOWN)
+    elif running_generation is not None and link.current_width is not None:
         # The same three colours the marker above already took from this table;
         # spelled out as a chain here, they were a second place for the mapping
         # to drift from.
@@ -817,7 +826,8 @@ def render_controller_disks(
         attached.update(disk.node for disk in disks)
         if index:
             lines.append(Text(""))
-        lines.append(_controller_line(controller, severities.get(controller.address)))
+        default = link_is_register_default(controller, inventory)
+        lines.append(_controller_line(controller, severities.get(controller.address), register_default=default))
         # The header is repeated above each group rather than printed once at the
         # top. On a machine with five controllers the single top header ends up
         # twenty lines away from the rows it labels, which is the same as having
@@ -886,7 +896,7 @@ SLOT_COLUMNS: tuple[Column, ...] = (
 )
 
 
-def slot_verdict(slot: PcieSlot) -> theme.Cell:
+def slot_verdict(slot: PcieSlot, *, register_default: bool = False) -> theme.Cell:
     """Say what can be done with one port, and style it.
 
     This is the column the view exists for, and every branch is a statement
@@ -897,6 +907,10 @@ def slot_verdict(slot: PcieSlot) -> theme.Cell:
 
     Args:
         slot: The port to judge.
+        register_default: Whether what its occupant publishes is a register
+            default rather than a link, as the domain decided. Its need is then
+            no figure to weigh the port against, so the port is in use and
+            nothing more is claimed about it.
 
     Returns:
         The text and the style to render it in.
@@ -922,7 +936,7 @@ def slot_verdict(slot: PcieSlot) -> theme.Cell:
     if slot.occupant_is_display:
         return "in use (graphics)", theme.STYLE_UNKNOWN
     capability = slot.capability_gbps
-    need = slot.occupant_need_gbps
+    need = None if register_default else slot.occupant_need_gbps
     if capability is None or need is None:
         return "in use", theme.STYLE_UNKNOWN
     if need > capability:
@@ -957,7 +971,7 @@ def _row_texts(rows: Sequence[Row]) -> list[dict[str, str]]:
     return [{key: value[0] for key, value in row.items()} for row in rows]
 
 
-def slot_table_row(slot: PcieSlot, *, bandwidth: bool = False) -> Row:
+def slot_table_row(slot: PcieSlot, *, bandwidth: bool = False, register_defaults: Collection[str]) -> Row:
     """One port's cells for every key in :data:`SLOT_COLUMNS`, already styled.
 
     Public and named like :func:`tables.disk_table_row` because the interactive
@@ -969,13 +983,20 @@ def slot_table_row(slot: PcieSlot, *, bandwidth: bool = False) -> Row:
     Args:
         slot: The port to draw.
         bandwidth: Whether each link figure carries what it is worth.
+        register_defaults: The controllers whose link is a register default,
+            from :func:`~lsdsk.domain.diagnostics.register_default_links`. What
+            the occupant ``needs`` is its own capable link, so where the
+            occupant is one of them that figure carries the mark and no worth.
+            Required rather than defaulting to none, so a view that forgets it
+            is a type error instead of a row pricing the register.
 
     Returns:
         One cell per key in :data:`SLOT_COLUMNS`, in that order.
     """
     number = "-" if slot.physical_slot_number is None else f"#{slot.physical_slot_number}"
     occupant = slot.occupant_description
-    needs = "-" if slot.occupant_link is None else pcie_capability(slot.occupant_link, bandwidth=bandwidth)
+    default = slot.occupant_address is not None and slot.occupant_address in register_defaults
+    needs = _occupant_need(slot, bandwidth=bandwidth, register_default=default)
     return {
         "port": (slot.address, theme.STYLE_IDENTIFIER),
         "slot": (number, "" if number != "-" else theme.STYLE_UNKNOWN),
@@ -984,9 +1005,19 @@ def slot_table_row(slot: PcieSlot, *, bandwidth: bool = False) -> Row:
         # like a fault rather than an absence.
         "running": (_pcie_text(slot.link, bandwidth=bandwidth) if slot.occupied else "-", ""),
         "occupant": (occupant, "" if slot.occupied else theme.STYLE_UNKNOWN),
-        "needs": (needs, ""),
-        "verdict": slot_verdict(slot),
+        "needs": needs,
+        "verdict": slot_verdict(slot, register_default=default),
     }
+
+
+def _occupant_need(slot: PcieSlot, *, bandwidth: bool, register_default: bool) -> theme.Cell:
+    """What the occupant of a port could use, marked where the register says nothing about it."""
+    if slot.occupant_link is None:
+        return "-", ""
+    if register_default:
+        figure = theme.format_pcie_generation(slot.occupant_link.max_speed_gtps, slot.occupant_link.max_width)
+        return theme.register_default_figure(figure), theme.STYLE_UNKNOWN
+    return pcie_capability(slot.occupant_link, bandwidth=bandwidth), ""
 
 
 def render_slots(inventory: Inventory, width: int = DEFAULT_WIDTH) -> RenderableType:
@@ -1002,8 +1033,9 @@ def render_slots(inventory: Inventory, width: int = DEFAULT_WIDTH) -> Renderable
     Returns:
         The board header, the port table and any caveat below it.
     """
-    rows = [slot_table_row(slot, bandwidth=True) for slot in inventory.slots]
-    bare = [slot_table_row(slot) for slot in inventory.slots]
+    defaults = register_default_links(inventory)
+    rows = [slot_table_row(slot, bandwidth=True, register_defaults=defaults) for slot in inventory.slots]
+    bare = [slot_table_row(slot, register_defaults=defaults) for slot in inventory.slots]
     layout = Layout.preferring(SLOT_COLUMNS, _row_texts(rows), _row_texts(bare), width)
     rows = rows if layout.bandwidth else bare
     widths = layout.widths
@@ -1020,6 +1052,10 @@ def render_slots(inventory: Inventory, width: int = DEFAULT_WIDTH) -> Renderable
                 line.append(GAP)
         lines.append(line)
 
+    # Explained only where the column holding the mark survived the width.
+    legend = theme.register_default_legend(row[column.key][0] for row in rows for column in chosen)
+    if legend:
+        lines.append(Text(legend, style=theme.STYLE_UNKNOWN))
     lines.append(Text(""))
     lines.append(Text(form_factor_note(), style=theme.STYLE_CEILING))
     note = slot_privilege_note(inventory)

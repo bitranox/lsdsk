@@ -24,7 +24,7 @@ from textual.widgets import DataTable, Footer, Header, OptionList, Static, Tabbe
 from textual.widgets.option_list import Option
 
 from ... import __init__conf__
-from ...domain.diagnostics import count_by_severity, diagnose
+from ...domain.diagnostics import count_by_severity, diagnose, register_default_links
 from ...domain.enums import CliCommand, Severity, TreeDensity
 from ...domain.history import History
 
@@ -516,8 +516,9 @@ class LsdskApp(App[None]):
         # name: it drew the decimal generation where the table drew the
         # marketing one for the identical port. A page and the command of one
         # name are one view, which is the rule the disk page already follows.
+        defaults = register_default_links(self.inventory)
         for slot in self.inventory.slots:
-            cells = report.slot_table_row(slot, bandwidth=True)
+            cells = report.slot_table_row(slot, bandwidth=True, register_defaults=defaults)
             table.add_row(
                 *(_cell(*cells[column.key]) for column in report.SLOT_COLUMNS),
                 key=slot.address,

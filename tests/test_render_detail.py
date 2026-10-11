@@ -252,7 +252,7 @@ def test_an_empty_socket_shows_no_link_running_in_it_just_as_the_table_does() ->
                 # so what is compared is the figure they cannot disagree about:
                 # each must carry the throughput of the link it was handed.
                 carried = theme.format_bandwidth(slot.link.current_bandwidth_gbps)
-                table_running = report.slot_table_row(slot, bandwidth=True)["running"][0]
+                table_running = report.slot_table_row(slot, bandwidth=True, register_defaults=())["running"][0]
                 assert carried in running, f"{host} {slot.address}: the panel drew {running!r}"
                 assert carried in table_running, f"{host} {slot.address}: the table drew {table_running!r}"
             else:

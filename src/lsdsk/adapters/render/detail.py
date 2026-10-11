@@ -40,7 +40,7 @@ from rich.console import Group
 from rich.table import Table
 from rich.text import Text
 
-from ...domain.diagnostics import attached_demand_gbytes
+from ...domain.diagnostics import attached_demand_gbytes, link_is_register_default, register_default_links
 from ...domain.enums import BusType, UsbTransport
 from ...domain.history import CounterKind
 from . import tables, theme
@@ -122,6 +122,7 @@ UNREAD_LEGEND: Final = "- not read"
 NOT_APPLICABLE_LEGEND: Final = "n/a does not apply"
 AT_MOST_LEGEND: Final = "<= at most: one end was not read"
 NO_LINK_LEGEND: Final = f"{theme.NO_LINK} no link trained"
+REGISTER_DEFAULT_LEGEND: Final = f"{theme.REGISTER_DEFAULT} {theme.REGISTER_DEFAULT_MEANING}"
 
 #: What each marker means, keyed by the token a panel actually prints, so the
 #: legend cannot explain a symbol the view does not use. The order is the order
@@ -131,6 +132,7 @@ _MARKER_MEANINGS: Final[dict[str, str]] = {
     theme.NOT_APPLICABLE: NOT_APPLICABLE_LEGEND,
     theme.AT_MOST: AT_MOST_LEGEND,
     theme.NO_LINK: NO_LINK_LEGEND,
+    theme.REGISTER_DEFAULT: REGISTER_DEFAULT_LEGEND,
 }
 
 #: The markers that QUALIFY a value rather than replace it, so they are found at
@@ -264,11 +266,12 @@ def controller_detail(controller: Controller, inventory: Inventory) -> Detail:
     """
     heading = ((controller.address, theme.STYLE_IDENTIFIER), (controller.name, ""), (str(controller.kind), ""))
     attached = inventory.disks_on(controller.address)
+    default = link_is_register_default(controller, inventory)
     groups = (
         DetailGroup(DEVICE, (("driver", _said(controller.driver)), ("firmware", _said(controller.firmware)))),
-        DetailGroup(LINK, _pcie_values(controller.link)),
+        DetailGroup(LINK, _pcie_values(controller.link, register_default=default)),
         DetailGroup(UPSTREAM, _upstream_values(controller)),
-        DetailGroup(PORTS, _port_values(controller, attached, inventory)),
+        DetailGroup(PORTS, _port_values(controller, attached, inventory, register_default=default)),
     )
     return Detail(heading, groups, (FindingScope(controller.address),))
 
@@ -307,18 +310,19 @@ def slot_detail(slot: PcieSlot, inventory: Inventory) -> Detail:
 
     Args:
         slot: The port to describe.
-        inventory: The machine it sits in, for whatever occupies it.
+        inventory: The machine it sits in, which decides whether what the
+            occupant publishes is a register default rather than a link.
 
     Returns:
         The record, with the occupant fields marked not-applicable when empty.
     """
-    del inventory
-    verdict, verdict_style = slot_verdict(slot)
+    default = slot.occupant_address is not None and slot.occupant_address in register_default_links(inventory)
+    verdict, verdict_style = slot_verdict(slot, register_default=default)
     heading = ((slot.address, theme.STYLE_IDENTIFIER), (slot.occupant_description, ""), (verdict, verdict_style))
     groups = (
         DetailGroup(SLOT, _slot_values(slot)),
         DetailGroup(LINK, _slot_link_values(slot)),
-        DetailGroup(OCCUPANT, _occupant_values(slot)),
+        DetailGroup(OCCUPANT, _occupant_values(slot, register_default=default)),
     )
     return Detail(heading, groups, (FindingScope(slot.address),))
 
@@ -482,14 +486,21 @@ def _markers_drawn(groups: Iterable[DetailGroup]) -> list[str]:
     A qualifier is matched at the FRONT of a cell rather than against the whole
     of it, because it stands in front of a value instead of replacing one. An
     equality test would find it never, and its legend would be the one thing
-    the panel drew and did not explain.
+    the panel drew and did not explain. The register-default mark FOLLOWS a
+    figure, so it is matched as the whole marked figure instead, which a
+    string a platform published cannot pass for.
     """
     drawn = {text for group in groups for _name, (text, _style) in group.values}
-    return [
-        marker
-        for marker in _MARKER_MEANINGS
-        if marker in drawn or (marker in _PREFIX_MARKERS and any(text.startswith(f"{marker} ") for text in drawn))
-    ]
+    return [marker for marker in _MARKER_MEANINGS if _draws(marker, drawn)]
+
+
+def _draws(marker: str, drawn: set[str]) -> bool:
+    """Whether one marker is among the cells a panel drew, in the place it stands."""
+    if marker == theme.REGISTER_DEFAULT:
+        return any(theme.marks_register_default(text) for text in drawn)
+    if marker in _PREFIX_MARKERS:
+        return marker in drawn or any(text.startswith(f"{marker} ") for text in drawn)
+    return marker in drawn
 
 
 def _absent() -> Cell:
@@ -697,7 +708,7 @@ def _of(health: Health | None, accessor: Callable[[Health], int | None]) -> int 
     return accessor(health)
 
 
-def _pcie_values(link: PcieLink) -> tuple[tuple[str, Cell], ...]:
+def _pcie_values(link: PcieLink, *, register_default: bool = False) -> tuple[tuple[str, Cell], ...]:
     """A PCIe link's two figures, each carrying what IT is worth.
 
     The panel has no width contest - it wraps rather than dropping columns - so
@@ -708,9 +719,10 @@ def _pcie_values(link: PcieLink) -> tuple[tuple[str, Cell], ...]:
     link, so a reader comparing a downgraded card against its own capability
     took the number nearest what they were looking at and read the wrong one.
     Each figure now carries its own, which is the same fact in the seat that
-    says whose it is.
+    says whose it is - except where the domain found the link to be a register
+    default, where neither carries any, and both carry the mark instead.
     """
-    pair = theme.link_pair_cells(link, bandwidth=True)
+    pair = theme.link_pair_cells(link, bandwidth=True, register_default=register_default)
     return (("running", pair.running), ("capable", pair.capable))
 
 
@@ -726,7 +738,7 @@ def _upstream_values(controller: Controller) -> tuple[tuple[str, Cell], ...]:
 
 
 def _port_values(
-    controller: Controller, attached: Sequence[Disk], inventory: Inventory
+    controller: Controller, attached: Sequence[Disk], inventory: Inventory, *, register_default: bool
 ) -> tuple[tuple[str, Cell], ...]:
     """How many sockets this controller has, how many are taken, and what they pull."""
     total = controller.port_count
@@ -738,7 +750,7 @@ def _port_values(
         ("free", (tables.counter_text(controller.ports_free), "")),
         ("drives", (str(len(attached)), "")),
         ("peak demand", _gbytes(demand)),
-        ("uplink carries", _uplink(controller)),
+        ("uplink carries", _uplink(controller, register_default=register_default)),
     )
 
 
@@ -797,7 +809,7 @@ def _slot_link_values(slot: PcieSlot) -> tuple[tuple[str, Cell], ...]:
     return tuple((name, _absent() if name == "running" else cell) for name, cell in values)
 
 
-def _occupant_values(slot: PcieSlot) -> tuple[tuple[str, Cell], ...]:
+def _occupant_values(slot: PcieSlot, *, register_default: bool) -> tuple[tuple[str, Cell], ...]:
     """What sits in the socket, and what it could use if the socket allowed it.
 
     With nothing in the socket every one of these is marked absent rather than
@@ -813,21 +825,23 @@ def _occupant_values(slot: PcieSlot) -> tuple[tuple[str, Cell], ...]:
             ("devices", (str(slot.occupant_count), "")),
             ("vendor", _absent()),
         )
-    needs = (
-        theme.NOT_READ
-        if slot.occupant_link is None
-        else theme.with_bandwidth(
-            theme.format_pcie_generation(slot.occupant_link.max_speed_gtps, slot.occupant_link.max_width),
-            slot.occupant_link.max_bandwidth_gbps,
-        )
-    )
     return (
         ("address", _said(slot.occupant_address)),
         ("name", _said(slot.occupant_name)),
-        ("needs", (needs, theme.STYLE_UNKNOWN if slot.occupant_link is None else "")),
+        ("needs", _occupant_need(slot.occupant_link, register_default=register_default)),
         ("devices", (str(slot.occupant_count), "")),
         ("vendor", _hex(slot.occupant_vendor, 4)),
     )
+
+
+def _occupant_need(link: PcieLink | None, *, register_default: bool) -> Cell:
+    """What the occupant could use: its capable link with its worth, or the mark that says it is no link."""
+    if link is None:
+        return theme.NOT_READ, theme.STYLE_UNKNOWN
+    figure = theme.format_pcie_generation(link.max_speed_gtps, link.max_width)
+    if register_default:
+        return theme.register_default_figure(figure), theme.STYLE_UNKNOWN
+    return theme.with_bandwidth(figure, link.max_bandwidth_gbps), ""
 
 
 def _gbytes(value: float | None) -> Cell:
@@ -842,7 +856,7 @@ def _gbytes(value: float | None) -> Cell:
     return ("-", theme.STYLE_UNKNOWN) if value is None else (theme.format_bandwidth(value), "")
 
 
-def _uplink(controller: Controller) -> Cell:
+def _uplink(controller: Controller, *, register_default: bool) -> Cell:
     """What this controller's uplink carries, marked when it is a ceiling.
 
     The figure is the lower of what the card supports and what its bridge does,
@@ -856,12 +870,23 @@ def _uplink(controller: Controller) -> Cell:
     reader loses it. Marked instead, with :data:`theme.AT_MOST` and the legend
     entry the panel prints under whichever markers it drew.
 
+    Where the controller's own link is a register default, no ceiling is
+    drawn at all. The figure would rest on that default, and a port in front
+    of it that was read can only have read the floor too - one reading more
+    would rule the switch function out - so a ceiling built from either is the
+    claim the hint below it exists to withdraw. The real uplink was not read,
+    so it is dashed as unread.
+
     Args:
         controller: The controller the panel is describing.
+        register_default: Whether the domain found its own link to be a
+            register default rather than a link.
 
     Returns:
         The cell, qualified when only one end was read.
     """
+    if register_default:
+        return _gbytes(None)
     value = controller.achievable_bandwidth_gbps
     if value is None:
         return _gbytes(None)
@@ -890,6 +915,7 @@ __all__ = [
     "OCCUPANT",
     "PLACE",
     "PORTS",
+    "REGISTER_DEFAULT_LEGEND",
     "SEAT",
     "SLOT",
     "UNREAD_LEGEND",

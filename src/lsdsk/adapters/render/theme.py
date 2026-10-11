@@ -18,6 +18,7 @@ System Role:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING, Final, NamedTuple
 
@@ -701,7 +702,9 @@ class HopPair(NamedTuple):
     running: Cell
 
 
-def hop_link_cells(link: PcieLink, *, capability_present: bool | None = None, bandwidth: bool = False) -> HopPair:
+def hop_link_cells(
+    link: PcieLink, *, capability_present: bool | None = None, bandwidth: bool = False, register_default: bool = False
+) -> HopPair:
     """The capable and running columns for one hop of the fabric.
 
     Two columns, in the order the slot view uses, and three different facts in
@@ -729,6 +732,12 @@ def hop_link_cells(link: PcieLink, *, capability_present: bool | None = None, ba
             for, and a cell that carries more than its column was sized for
             would be CLIPPED - and half a link figure is a different figure
             rather than a shorter one.
+        register_default: Whether the domain found this link to be a
+            register default rather than a link
+            (:func:`~lsdsk.domain.diagnostics.link_is_register_default`). Both
+            figures then carry :data:`REGISTER_DEFAULT` and never a bandwidth,
+            in either tier, because what the register is worth is not what
+            the link is.
 
     Returns:
         The capable and running styled cells, named. A column whose figure was not
@@ -754,9 +763,14 @@ def hop_link_cells(link: PcieLink, *, capability_present: bool | None = None, ba
         ('Gen4x2', '')
         >>> hop_link_cells(PcieLink(current_speed_gtps=16.0, current_width=2))[0] == (NOT_READ, STYLE_UNKNOWN)
         True
+        >>> floor = PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=2.5, max_width=1)
+        >>> hop_link_cells(floor, bandwidth=True, register_default=True).capable[0]
+        'Gen1x1*'
     """
     capable = format_pcie_generation(link.max_speed_gtps, link.max_width)
     running = format_pcie_generation(link.current_speed_gtps, link.current_width)
+    if register_default:
+        return HopPair(_register_default_cell(capable), _register_default_cell(running))
     if bandwidth:
         # Each figure with ITS OWN throughput: the capable link's from the
         # maximum, the running link's from what was negotiated. Crossing them
@@ -786,7 +800,7 @@ class LinkPair(NamedTuple):
     capable: Cell
 
 
-def link_pair_cells(link: PcieLink, *, bandwidth: bool = False) -> LinkPair:
+def link_pair_cells(link: PcieLink, *, bandwidth: bool = False, register_default: bool = False) -> LinkPair:
     """The running and capable cells for one link, decided from the MODEL.
 
     Both homes of this pair used to choose the style by comparing the two
@@ -809,6 +823,11 @@ def link_pair_cells(link: PcieLink, *, bandwidth: bool = False) -> LinkPair:
     Args:
         link: The link to describe.
         bandwidth: Whether each figure carries what it is worth.
+        register_default: Whether the domain found this link to be a register
+            default rather than a link. Both figures then carry
+            :data:`REGISTER_DEFAULT` and no bandwidth, and neither is judged
+            against the other: two readings of one default are not a link
+            running at its capability.
 
     Returns:
         The running and capable cells. An unread figure is
@@ -826,7 +845,14 @@ def link_pair_cells(link: PcieLink, *, bandwidth: bool = False) -> LinkPair:
         ...     PcieLink(current_speed_gtps=2.5, current_width=8, max_speed_gtps=8.0, max_width=8)
         ... ).running
         ('Gen1x8', '#A5660D')
+        >>> floor = PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=2.5, max_width=1)
+        >>> link_pair_cells(floor, bandwidth=True, register_default=True).running
+        ('Gen1x1*', '#6E7687')
     """
+    if register_default:
+        running_figure = format_pcie_generation(link.current_speed_gtps, link.current_width)
+        capable_figure = format_pcie_generation(link.max_speed_gtps, link.max_width)
+        return LinkPair(_register_default_cell(running_figure), _register_default_cell(capable_figure))
     untrained = link.current_width == 0
     running_read = link.current_speed_gtps is not None and link.current_width is not None and not untrained
     capable_read = link.max_speed_gtps is not None and link.max_width is not None
@@ -894,6 +920,26 @@ NOT_APPLICABLE = "n/a"
 #: needs a fallback for it. Whichever markers a panel drew are named under it.
 AT_MOST = "<="
 
+#: What a link figure carries when the register behind it holds a DEFAULT
+#: rather than describing a link: the PCIe floor, published by a function built
+#: into a chipset used as a PCIe switch whatever its real uplink is. A FOURTH
+#: symbol, because the figure was read and is still not a measurement of
+#: anything - drawn flat, ``Gen1x1 (0.25 GB/s)`` tells the owner of a drive
+#: delivering 500 MB/s that the link carries half of it. It FOLLOWS the figure,
+#: as a footnote mark does, because it qualifies what the register says rather
+#: than replacing it, and it is one character because the narrow hop column is
+#: exactly as wide as its widest figure. ASCII, so no console needs a fallback
+#: for it. Whichever view draws it names it underneath.
+REGISTER_DEFAULT = "*"
+
+#: What :data:`REGISTER_DEFAULT` means, in the words every legend uses for it.
+REGISTER_DEFAULT_MEANING: Final = "register default, not the real link"
+
+#: A figure carrying :data:`REGISTER_DEFAULT`: the closed marketing form and the
+#: mark, nothing else. Matched whole, so a device name or a firmware string that
+#: happens to end in an asterisk is never read as one.
+_REGISTER_DEFAULT_FIGURE: Final = re.compile(rf"Gen\d+x\d+{re.escape(REGISTER_DEFAULT)}")
+
 #: What each symbol means, keyed by the token the column actually prints, so
 #: the legend cannot explain a word the view does not use.
 _HOP_MEANINGS: Final[dict[str, str]] = {
@@ -908,6 +954,74 @@ _HOP_MEANINGS: Final[dict[str, str]] = {
 #: and forgetting it here is one edit rather than a silent decoration of a value
 #: nobody read - or of one that could not exist to be read.
 _NO_BANDWIDTH: Final[frozenset[str]] = frozenset({NOT_READ, LEGACY, NOT_APPLICABLE, NO_LINK})
+
+
+def register_default_figure(figure: str) -> str:
+    """Mark a link figure as the register default it is.
+
+    Args:
+        figure: The link shape, already formatted.
+
+    Returns:
+        The figure with :data:`REGISTER_DEFAULT` after it, or a placeholder
+        unchanged: a dash says nobody read the register, and a mark after it
+        would claim somebody had.
+
+    Example:
+        >>> register_default_figure("Gen1x1")
+        'Gen1x1*'
+        >>> register_default_figure(NOT_READ)
+        '-'
+    """
+    return figure if figure in _NO_BANDWIDTH else f"{figure}{REGISTER_DEFAULT}"
+
+
+def marks_register_default(text: str) -> bool:
+    """Whether a drawn cell is a figure carrying :data:`REGISTER_DEFAULT`.
+
+    How a legend finds the mark among what a section drew. Matched against the
+    whole marked figure rather than a trailing character, so text a platform
+    published cannot summon a legend for a mark nobody drew.
+
+    Args:
+        text: One drawn cell's text.
+
+    Returns:
+        True for a marked figure.
+
+    Example:
+        >>> marks_register_default("Gen1x1*")
+        True
+        >>> marks_register_default("Gen1x1 (0.25 GB/s)")
+        False
+        >>> marks_register_default("firmware 1.0*")
+        False
+    """
+    return _REGISTER_DEFAULT_FIGURE.fullmatch(text) is not None
+
+
+def register_default_legend(drawn: Iterable[str]) -> str:
+    """Spell out :data:`REGISTER_DEFAULT` where a view drew it, and say nothing otherwise.
+
+    Args:
+        drawn: Every text the view put in a link column.
+
+    Returns:
+        The legend in the form :func:`hop_legend` writes, or an empty string.
+
+    Example:
+        >>> register_default_legend(["Gen1x1*", "Gen3x4"])
+        '* = register default, not the real link'
+        >>> register_default_legend(["Gen1x1"])
+        ''
+    """
+    marked = any(marks_register_default(text) for text in drawn)
+    return f"{REGISTER_DEFAULT} = {REGISTER_DEFAULT_MEANING}" if marked else ""
+
+
+def _register_default_cell(figure: str) -> Cell:
+    """One link cell for a register default: the marked figure, styled as no measurement."""
+    return register_default_figure(figure), STYLE_UNKNOWN
 
 
 def format_bandwidth(gbps: float | None) -> str:
@@ -948,8 +1062,8 @@ def with_bandwidth(figure: str, gbps: float | None) -> str:
     throughput while the first value on it was the RUNNING link, and a reader
     takes the number next to what they were looking at.
 
-    The figure comes back unchanged when it is a placeholder or the bandwidth is
-    unknown. A dash cannot carry a throughput, and a number after a figure
+    The figure comes back unchanged when it is a placeholder, a register
+    default, or the bandwidth is unknown. A dash cannot carry a throughput, and a number after a figure
     nobody read would be an invention - the blank-implies-fine the link rules
     refuse.
 
@@ -971,8 +1085,10 @@ def with_bandwidth(figure: str, gbps: float | None) -> str:
         'legacy'
         >>> with_bandwidth("6G", None)
         '6G'
+        >>> with_bandwidth("Gen1x1*", 0.25)
+        'Gen1x1*'
     """
-    if gbps is None or figure in _NO_BANDWIDTH:
+    if gbps is None or figure in _NO_BANDWIDTH or marks_register_default(figure):
         return figure
     return f"{figure} ({format_bandwidth(gbps)})"
 
@@ -994,9 +1110,13 @@ def hop_legend(drawn: Iterable[str]) -> str:
         '- = not read, legacy = no PCIe capability'
         >>> hop_legend(["Gen3x4", "Gen1x1"])
         ''
+        >>> hop_legend([NOT_READ, "Gen1x1*"])
+        '- = not read, * = register default, not the real link'
     """
     seen = set(drawn)
-    return ", ".join(f"{symbol} = {meaning}" for symbol, meaning in _HOP_MEANINGS.items() if symbol in seen)
+    named = [f"{symbol} = {meaning}" for symbol, meaning in _HOP_MEANINGS.items() if symbol in seen]
+    marked = register_default_legend(seen)
+    return ", ".join([*named, marked] if marked else named)
 
 
 def style_for(severity: Severity | None) -> str:
@@ -1025,6 +1145,8 @@ __all__ = [
     "NOT_READ",
     "NO_LINK",
     "PRINTED",
+    "REGISTER_DEFAULT",
+    "REGISTER_DEFAULT_MEANING",
     "SEVERITY_LABELS",
     "SEVERITY_MARKERS",
     "SEVERITY_STYLES",
@@ -1060,8 +1182,11 @@ __all__ = [
     "link_pair_cells",
     "link_style",
     "marker_for",
+    "marks_register_default",
     "pci_tag",
     "port_style",
+    "register_default_figure",
+    "register_default_legend",
     "style_for",
     "with_bandwidth",
 ]

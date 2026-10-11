@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from rich.table import Table
 from rich.text import Text
 
-from ...domain.diagnostics import attached_demand_gbytes
+from ...domain.diagnostics import attached_demand_gbytes, link_is_register_default
 from ...domain.enums import Align
 from ...domain.history import CounterKind, identity_of, trend_for
 from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
@@ -150,7 +150,9 @@ def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, 
         columns: Every column this view could show.
         rows: The rows, in one or both forms.
         width: Terminal width.
-        caption: A note under the table.
+        caption: A note under the table. The legend for a register-default
+            mark is added to it here, where the columns that survived the
+            width are known.
     """
     if rows.plain is None:
         layout = Layout.for_rows(columns, rows.texts(bandwidth=True), width)
@@ -160,6 +162,14 @@ def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, 
         drawn = rows.rich if layout.bandwidth else rows.plain
     widths = layout.widths
     chosen = layout.columns
+    # A register-default mark is explained under the table that drew it, and
+    # only when a column holding one survived the width: a legend for a mark
+    # nobody has on screen is noise. Nothing else is added, so the dash these
+    # tables have always drawn does not grow a legend on every machine's page.
+    marked = theme.register_default_legend(
+        row.cells[column.key][0] for row in drawn for column in chosen if column.key in row.cells
+    )
+    caption = "\n".join(part for part in (caption, marked) if part)
 
     # The title names the machine and the caption can name its devices, both
     # chosen by whoever produced the capture. A string handed to Rich here is
@@ -255,7 +265,9 @@ def controller_table_row(
     """
     demand = attached_demand_gbytes(controller, inventory)
     severity = severities.get(controller.address)
-    link = theme.link_pair_cells(controller.link, bandwidth=bandwidth)
+    link = theme.link_pair_cells(
+        controller.link, bandwidth=bandwidth, register_default=link_is_register_default(controller, inventory)
+    )
     return MarkedRow(
         marker=(theme.marker_for(severity), theme.style_for(severity)),
         cells={
