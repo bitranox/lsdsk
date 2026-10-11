@@ -60,7 +60,7 @@ from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble
 from ..linux.builder import controller_kind_of, parse_pcie_running_width, parse_pcie_speed, parse_pcie_width
 from ..refusals import refusals_of
-from .capture import HealthBlobs
+from .capture import HealthBlobs, is_unread_interface
 from .usage import resolve_usage
 
 if TYPE_CHECKING:
@@ -370,7 +370,7 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
     disks: list[Disk] = []
 
     for path, entry in sorted(capture.disks.items()):
-        if entry.interface_unreadable:
+        if is_unread_interface(path, entry):
             continue
         device = entry.device
         bus = device.bus_type
@@ -684,10 +684,24 @@ def build_unread_interfaces(capture: WindowsCapture) -> tuple[RefusedReading, ..
     """
     return tuple(
         reading
-        for _, entry in sorted(capture.disks.items())
-        if entry.interface_unreadable
+        for path, entry in sorted(capture.disks.items())
+        if is_unread_interface(path, entry)
         for reading in refusals_of({"device": entry.error})
     )
+
+
+def _devices_accessible(capture: WindowsCapture) -> bool:
+    """Whether the capture says disks could be opened, discounting a run that never tried.
+
+    The reader records no accessible disk when every record is the stand-in for
+    an interface it could not read, and "no device nodes are exposed here" would
+    then blame the environment for a failure that happened before any disk was
+    opened, on a run that may be elevated.
+    """
+    only_stand_ins = bool(capture.disks) and all(
+        is_unread_interface(path, entry) for path, entry in capture.disks.items()
+    )
+    return capture.devices_accessible or only_stand_ins
 
 
 def build_inventory(capture: WindowsCapture) -> Inventory:
@@ -732,7 +746,7 @@ def build_inventory(capture: WindowsCapture) -> Inventory:
         environment=environment,
         environment_detail=detail,
         board=board_name(capture.environment),
-        devices_accessible=capture.devices_accessible,
+        devices_accessible=_devices_accessible(capture),
     )
 
 

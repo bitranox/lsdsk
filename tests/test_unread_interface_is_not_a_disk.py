@@ -18,7 +18,7 @@ from lsdsk.adapters.cli.commands.scan import (
     _skipped_readings,  # pyright: ignore[reportPrivateUsage] - the seam under test
 )
 from lsdsk.adapters.hw.snapshot import build_from
-from lsdsk.adapters.render.report import render_header
+from lsdsk.adapters.render.report import privilege_note, render_header
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -68,3 +68,64 @@ def test_a_fully_read_machine_says_nothing_about_unread_interfaces(rendered: Cal
     payload = cast("dict[str, Any]", json.loads(_FIXTURE.read_text(encoding="utf-8")))
     output = rendered(render_header(build_from(payload)))
     assert "not read" not in output.replace("Not read", "")
+
+
+def _stand_in_without_the_flag() -> dict[str, Any]:
+    """The stand-in as the 1.7.2 reader wrote it, before ``interface_unreadable`` existed."""
+    return {
+        "path": "unreadable disk interface 1",
+        "parent": None,
+        "ancestors": [],
+        "error": "could not read the device interface path, Win32 error 5",
+    }
+
+
+@pytest.mark.os_agnostic
+def test_a_stand_in_written_before_the_flag_existed_is_still_not_a_disk() -> None:
+    payload = cast("dict[str, Any]", json.loads(_FIXTURE.read_text(encoding="utf-8")))
+    payload["disks"] = {"unreadable disk interface 1": _stand_in_without_the_flag()}
+
+    inventory = build_from(payload)
+
+    assert inventory.disks == ()
+    assert len(inventory.unread_interfaces) == 1
+
+
+@pytest.mark.os_agnostic
+def test_a_real_disk_whose_open_failed_is_still_a_refused_device_not_a_stand_in() -> None:
+    """Control: an erroring record with a real interface path keeps the old reading."""
+    payload = cast("dict[str, Any]", json.loads(_FIXTURE.read_text(encoding="utf-8")))
+    payload["disks"] = {r"\\?\scsi#disk&ven_x#1": {**_stand_in_without_the_flag(), "path": r"\\?\scsi#disk&ven_x#1"}}
+
+    inventory = build_from(payload)
+
+    assert len(inventory.disks) == 1
+    assert inventory.unread_interfaces == ()
+
+
+@pytest.mark.os_agnostic
+def test_an_elevated_run_that_listed_only_unreadable_interfaces_does_not_blame_missing_device_nodes() -> None:
+    payload = cast("dict[str, Any]", json.loads(_FIXTURE.read_text(encoding="utf-8")))
+    payload["devices_accessible"] = False  # what the reader records when no record is an opened disk
+    payload["disks"] = {"unreadable disk interface 1": {**_stand_in_without_the_flag(), "interface_unreadable": True}}
+
+    inventory = build_from(payload)
+    skipped = _skipped_readings(inventory)
+
+    assert "no device nodes" not in privilege_note(inventory)
+    assert not any("no device nodes" in line for line in skipped), skipped
+    assert any("Win32 error 5" in line for line in skipped), skipped
+
+
+@pytest.mark.os_agnostic
+def test_a_run_where_every_open_failed_still_says_no_device_nodes() -> None:
+    """Control: with a real disk refused and none opened, the old explanation stands."""
+    payload = cast("dict[str, Any]", json.loads(_FIXTURE.read_text(encoding="utf-8")))
+    payload["elevated"] = False
+    payload["devices_accessible"] = False
+    payload["disks"] = {r"\\?\scsi#disk&ven_x#1": {**_stand_in_without_the_flag(), "path": r"\\?\scsi#disk&ven_x#1"}}
+
+    inventory = build_from(payload)
+
+    assert "no device nodes" in privilege_note(inventory)
+    assert any("no device nodes" in line for line in _skipped_readings(inventory))

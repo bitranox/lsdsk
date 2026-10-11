@@ -243,6 +243,36 @@ class DiskEntry(CaptureModel, frozen=True):
     interface_unreadable: bool = False
 
 
+# What the reader names the stand-in for a disk interface whose path it could not
+# read, followed by the interface's position. The 1.7.2 reader wrote the stand-in
+# under this label without the ``interface_unreadable`` mark, so the label is the
+# only evidence a capture from then carries.
+UNREADABLE_INTERFACE_LABEL = "unreadable disk interface"
+
+
+def is_unread_interface(path: str, entry: DiskEntry) -> bool:
+    """Whether a disk record is the stand-in for an interface that could not be read.
+
+    Args:
+        path: The key the record sits under in the capture.
+        entry: The record.
+
+    Returns:
+        ``True`` for a record the reader marked, and for one a reader that
+        predates the mark wrote: its label as the key and an ``error`` with no
+        device node, which a real disk's record never has.
+
+    Example:
+        >>> is_unread_interface("unreadable disk interface 1", DiskEntry(error="Win32 error 5"))
+        True
+        >>> is_unread_interface("PhysicalDrive0", DiskEntry(error="Win32 error 5"))
+        False
+    """
+    if entry.interface_unreadable:
+        return True
+    return path.startswith(UNREADABLE_INTERFACE_LABEL) and entry.error is not None and entry.node is None
+
+
 class UsbPortEntry(CaptureModel, frozen=True):
     """What one hub said about one of its ports and the device plugged into it.
 
@@ -364,6 +394,7 @@ class WindowsCapture(CaptureHeader, frozen=True):
 
 
 __all__ = [
+    "UNREADABLE_INTERFACE_LABEL",
     "DiskEntry",
     "DiskTemperature",
     "HealthBlobs",
@@ -374,4 +405,5 @@ __all__ = [
     "VolumeEntry",
     "WindowsCapture",
     "bus_type_of",
+    "is_unread_interface",
 ]

@@ -48,7 +48,7 @@ from ..decode import pciids, usb
 from ..snapshot import SCHEMA_VERSION
 from . import volumes
 from . import winapi as api
-from .capture import bus_type_of
+from .capture import UNREADABLE_INTERFACE_LABEL, bus_type_of
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -1324,7 +1324,7 @@ def read_disks(tree: _DeviceTree) -> dict[str, dict[str, Any]]:
     for path, ancestors in tree.disk_interfaces():
         disks[path] = read_disk(tree.kernel32, path, ancestors)
     for position, reason in enumerate(tree.unreadable_interfaces, start=1):
-        label = f"unreadable disk interface {position}"
+        label = f"{UNREADABLE_INTERFACE_LABEL} {position}"
         disks[label] = {
             "path": label,
             "parent": None,
