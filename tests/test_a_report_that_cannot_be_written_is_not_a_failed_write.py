@@ -34,7 +34,10 @@ raise SystemExit(main(sys.argv[1:], services_factory=build_production))
 """
 
 
-def _run_into_a_full_disk(argv: list[str], environment: dict[str, str]) -> subprocess.CompletedProcess[str]:
+_Case = tuple[list[str], "Callable[[], bool]"]
+
+
+def _run_into_a_full_disk(argv: list[str]) -> subprocess.CompletedProcess[str]:
     with Path("/dev/full").open("wb") as full:
         return subprocess.run(  # noqa: S603 - argv is built here, no shell
             [sys.executable, "-c", _LAUNCHER, *argv],
@@ -44,35 +47,34 @@ def _run_into_a_full_disk(argv: list[str], environment: dict[str, str]) -> subpr
             encoding="utf-8",
             errors="replace",
             cwd=str(ROOT),
-            env={**os.environ, "TERM": "dumb", **environment},
+            env={**os.environ, "TERM": "dumb"},
             check=False,
             timeout=180,
         )
 
 
-def _deploy(tmp_path: Path) -> tuple[list[str], dict[str, str], Callable[[], bool]]:
-    home = tmp_path / "xdg"
-    return (
-        ["config-deploy", "--target", "user"],
-        {"XDG_CONFIG_HOME": str(home), "HOME": str(tmp_path)},
-        lambda: any(home.rglob("*.toml")),
-    )
+def _deploy(tmp_path: Path, user_config_dir_under: Callable[[str], Path]) -> _Case:
+    home = user_config_dir_under("deployed")
+    return ["config-deploy", "--target", "user"], lambda: any(home.rglob("*.toml"))
 
 
-def _generate(tmp_path: Path) -> tuple[list[str], dict[str, str], Callable[[], bool]]:
+def _generate(tmp_path: Path, user_config_dir_under: Callable[[str], Path]) -> _Case:
+    del user_config_dir_under
     target = tmp_path / "examples"
-    return ["config-generate-examples", "--destination", str(target)], {}, lambda: any(target.rglob("*.toml"))
+    return ["config-generate-examples", "--destination", str(target)], lambda: any(target.rglob("*.toml"))
 
 
 @pytest.mark.os_linux
 @pytest.mark.parametrize("case", [_deploy, _generate], ids=["config-deploy", "config-generate-examples"])
 def test_a_full_standard_output_after_the_files_landed_is_not_a_failed_write(
-    case: Callable[[Path], tuple[list[str], dict[str, str], Callable[[], bool]]], tmp_path: Path
+    case: Callable[[Path, Callable[[str], Path]], _Case],
+    tmp_path: Path,
+    user_config_dir_under: Callable[[str], Path],
 ) -> None:
     """The files exist, so stderr must say standard output refused, and never that the write failed."""
-    argv, environment, files_landed = case(tmp_path)
+    argv, files_landed = case(tmp_path, user_config_dir_under)
 
-    run = _run_into_a_full_disk(argv, environment)
+    run = _run_into_a_full_disk(argv)
 
     assert files_landed(), f"the control failed: nothing was written; stderr: {run.stderr!r}"
     assert "Failed to" not in run.stderr, run.stderr

@@ -23,7 +23,7 @@ import os
 from collections.abc import Mapping
 from contextlib import contextmanager
 from functools import partial
-from typing import TYPE_CHECKING, Final, cast
+from typing import TYPE_CHECKING, Final, NamedTuple, cast
 
 import lib_log_rich.config
 import lib_log_rich.runtime
@@ -373,23 +373,30 @@ def _dropped_scrub_entries(text: str) -> list[str]:
     return tails
 
 
-def _scrub_texts(section: Mapping[str, object]) -> list[tuple[str, str]]:
+class _ScrubText(NamedTuple):
+    """One text form of ``scrub_patterns`` and where a reader would look for it."""
+
+    origin: str
+    text: str
+
+
+def _scrub_texts(section: Mapping[str, object]) -> list[_ScrubText]:
     """Each text form in play, with where a reader would look for it.
 
     Args:
         section: The ``[lib_log_rich]`` table as the layers merged it.
 
     Returns:
-        ``(origin, text)`` for the section's value and for the environment's,
+        The section's value and for the environment's,
         each only when it is text.
     """
-    found: list[tuple[str, str]] = []
+    found: list[_ScrubText] = []
     configured = section.get("scrub_patterns")
     if isinstance(configured, str):
-        found.append((f"{_SECTION}.scrub_patterns", configured))
+        found.append(_ScrubText(f"{_SECTION}.scrub_patterns", configured))
     from_environment = os.environ.get(_SCRUB_PATTERNS_VARIABLE)
     if from_environment:
-        found.append((f"environment variable {_SCRUB_PATTERNS_VARIABLE}", from_environment))
+        found.append(_ScrubText(f"environment variable {_SCRUB_PATTERNS_VARIABLE}", from_environment))
     return found
 
 

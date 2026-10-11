@@ -54,5 +54,5 @@ def test_a_refused_log_variable_is_set_aside_by_logdemo_too(
     said = " ".join((result.stderr or "").split())
     assert result.exit_code == 0, f"left {result.exit_code}: {result.exception!r} {said[-300:]}"
     assert "Log demo completed" in result.stdout
-    assert f"ignoring {variable}={value}" in said, said
+    assert f"ignoring environment variable {variable}={value}" in said, said
     assert os.environ.get(variable) == value, "the variable was not put back"

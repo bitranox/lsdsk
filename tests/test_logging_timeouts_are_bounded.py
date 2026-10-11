@@ -75,7 +75,7 @@ def test_a_timeout_the_platform_cannot_wait_for_falls_back_through_the_library_v
     code, said = _run(capfd)
 
     assert code == control, f"left {code}: {said[-400:]}"
-    assert f"Warning: ignoring {variable}=1e18" in said, said
+    assert f"Warning: ignoring environment variable {variable}=1e18" in said, said
     assert "Traceback" not in said, said
 
 
