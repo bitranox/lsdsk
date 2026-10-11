@@ -112,3 +112,85 @@ def test_an_ordinary_plural_is_still_ordinary(name: str) -> None:
 def test_names_that_only_mean_a_secret_in_company(name: str) -> None:
     """A bare word is ordinary configuration vocabulary, not a secret."""
     assert not is_sensitive_name(name)
+
+
+#: The words that mean a secret wherever they stand, written out here rather than read from the
+#: module so that a word dropped from its vocabulary is a test failure and not a silent shrink.
+ALWAYS_SENSITIVE_WORDS = [
+    "authorization",
+    "credential",
+    "credentials",
+    "passphrase",
+    "passwd",
+    "password",
+    "private",
+    "pwd",
+    "secret",
+    "token",
+]
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("word", ALWAYS_SENSITIVE_WORDS)
+def test_each_always_sensitive_word_hides_its_value_alone_and_in_any_spelling(word: str) -> None:
+    """Every word of the vocabulary, on its own, snake-cased and camel-cased, upper-cased and plural."""
+    assert is_sensitive_name(word)
+    assert is_sensitive_name(word.upper())
+    assert is_sensitive_name(f"db_{word}")
+    assert is_sensitive_name(f"db{word.capitalize()}")
+    assert is_sensitive_name(f"{word}s")
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("word", ["auth", "key", "pass"])
+def test_each_in_company_word_hides_its_value_beside_another_word_only(word: str) -> None:
+    """The three words that need company: sensitive in a longer name, in either order, plural too; never alone."""
+    assert not is_sensitive_name(word)
+    assert is_sensitive_name(f"db_{word}")
+    assert is_sensitive_name(f"{word}_db")
+    assert is_sensitive_name(f"db{word.capitalize()}")
+    assert is_sensitive_name(f"db_{word}s")
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("name", ["author", "author_name", "authority_url", "oauth", "web_author", "compass_pass_id"])
+def test_auth_inside_a_longer_word_is_not_auth(name: str) -> None:
+    """Words are compared whole: `auth` at the front of `author` or `authority` names no credential.
+
+    The last case is the control for the rule: `pass` stands as a whole word there and the name is
+    in company, so it IS sensitive, which keeps this test from passing on a matcher that hides nothing.
+    """
+    assert is_sensitive_name(name) is (name == "compass_pass_id")
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("APIKey", True),
+        ("DBPass", True),
+        ("HTTPPassword", True),
+        ("XMLToken", True),
+        ("APIHost", False),
+        ("HTTPServer", False),
+    ],
+)
+def test_an_acronym_followed_by_a_word_splits_between_them(name: str, expected: bool) -> None:
+    """`APIKey` is `API` and `Key`, so the in-company word is found; unsplit it is the one word `apikey`."""
+    assert is_sensitive_name(name) is expected
+
+
+@pytest.mark.os_agnostic
+def test_a_sensitive_key_inside_nested_tables_is_hidden_at_every_depth() -> None:
+    """The descent into a mapping, two and three levels down, beside readable siblings."""
+    given = {"outer": {"user": "u", "inner": {"password": "p", "host": "h", "deeper": {"token": "t", "port": 25}}}}
+    assert redact_secrets(given) == {
+        "outer": {"user": "u", "inner": {"password": REDACTED, "host": "h", "deeper": {"token": REDACTED, "port": 25}}}
+    }
+
+
+@pytest.mark.os_agnostic
+def test_tables_inside_lists_inside_tables_are_walked_too() -> None:
+    """Mapping to sequence to mapping to sequence, with the readable value kept at each step."""
+    given = {"a": {"b": [{"c": [{"secret": "s", "name": "n"}]}]}}
+    assert redact_secrets(given) == {"a": {"b": [{"c": [{"secret": REDACTED, "name": "n"}]}]}}
