@@ -348,7 +348,7 @@ def _bus_of(bus: BusType, *, identity: AtaIdentity | None, usb: UsbLink | None) 
     return bus
 
 
-def _kind_without_identify(rotating: bool | None, *, is_nvme: bool) -> DiskKind:
+def _kind_without_identify(*, rotating: bool | None, is_nvme: bool) -> DiskKind:
     """The media kind from what the operating system said, when IDENTIFY did not decide it."""
     if is_nvme:
         return DiskKind.SSD
@@ -409,7 +409,7 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
         # reading Windows gave.
         kind = identity.kind if identity is not None else DiskKind.UNKNOWN
         if kind is DiskKind.UNKNOWN:
-            kind = _kind_without_identify(rotating, is_nvme=is_nvme)
+            kind = _kind_without_identify(rotating=rotating, is_nvme=is_nvme)
 
         model = first_reported(
             nvme_identity.model if nvme_identity else None,

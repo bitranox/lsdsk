@@ -34,7 +34,11 @@ def _with_rotation_word(identify: str, value: int) -> str:
 
 
 def _kinds(
-    fixture: str, plant: Callable[[dict[str, Any]], None], tmp_path: Path, runner: CliRunner, factory: Callable[[], object]
+    fixture: str,
+    plant: Callable[[dict[str, Any]], None],
+    tmp_path: Path,
+    runner: CliRunner,
+    factory: Callable[[], object],
 ) -> dict[str, str]:
     from lsdsk.adapters.cli import cli
 

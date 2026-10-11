@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from ....domain.enums import DiskKind
 from ....domain.text import device_text
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 # Offset of the embedded IDENTIFY payload inside a SCSI ATA Information VPD page
 # (page 0x89). The page header and the SAT fields occupy the first 60 bytes.
@@ -30,10 +33,23 @@ IDENTIFY_LENGTH = 512
 _SATA_GEN_GBPS: dict[int, float] = {1: 1.5, 2: 3.0, 3: 6.0}
 
 # A nominal media rotation rate of 1 means the device declares itself solid
-# state. Real rotation rates start at 0x0401.
+# state. Real rotation rates start at 0x0401. The field could name up to 0xFFFE,
+# but no drive spins past the 15,000 rpm of the fastest enterprise parts, so the
+# ceiling leaves room above that and refuses what only noise produces.
 _ROTATION_RATE_SSD = 1
 _ROTATION_RATE_MIN_RPM = 0x0401
-_ROTATION_RATE_MAX_RPM = 0xFFFE
+_ROTATION_RATE_MAX_RPM = 20_000
+
+# The three text fields are ASCII (NUL or printable), so any other byte means
+# the page is not an IDENTIFY answer. Words 10-19 are the serial, 23-26 the
+# firmware revision and 27-46 the model.
+_TEXT_WORD_RANGES = (range(10, 20), range(23, 27), range(27, 47))
+_ASCII_PRINTABLE = range(0x20, 0x7F)
+
+# Word 61's high bits are outside the 28-bit LBA count, and word 103 holds the
+# bits of the 48-bit count above bit 47 (reserved): a count wider than its field
+# was never published by a drive.
+_LBA28_HIGH_WORD_MAX = 0x0FFF
 
 # Word 106 bit 12 says the logical sector is LARGER than 256 words (512
 # bytes), so a count of 256 or less in words 117-118 contradicts the bit that
@@ -217,6 +233,36 @@ def _refuse_an_unusable_page(page: bytes) -> None:
         raise ValueError(message)
 
 
+def _text_word_indexes() -> Iterator[int]:
+    """Every word index that belongs to a text field."""
+    return (index for word_range in _TEXT_WORD_RANGES for index in word_range)
+
+
+def _is_ascii_word(word: int) -> bool:
+    """Whether both bytes of a text word are NUL padding or printable ASCII."""
+    return all(byte == 0 or byte in _ASCII_PRINTABLE for byte in (word >> 8, word & 0xFF))
+
+
+def _refuse_implausible_fields(words: tuple[int, ...]) -> None:
+    """Refuse a page whose fields could not have come from a drive.
+
+    Only what the ATA command set fixes is judged: the text fields hold ASCII,
+    and the sector count fits the field it is published in. A page that fails
+    either is noise with a few words changed, which the all-zeros and all-ones
+    check cannot see.
+
+    Raises:
+        ValueError: For a non-ASCII text field or an oversized sector count.
+    """
+    bad_word = next((index for index in _text_word_indexes() if not _is_ascii_word(words[index])), None)
+    if bad_word is not None:
+        message = f"IDENTIFY response text field at word {bad_word} is not ASCII: it is not an IDENTIFY answer"
+        raise ValueError(message)
+    if words[103] or words[61] > _LBA28_HIGH_WORD_MAX:
+        message = "IDENTIFY response sector count is wider than its field: it is not an IDENTIFY answer"
+        raise ValueError(message)
+
+
 def decode_identify(blob: bytes) -> AtaIdentity:
     """Decode an ATA IDENTIFY DEVICE response.
 
@@ -228,10 +274,12 @@ def decode_identify(blob: bytes) -> AtaIdentity:
 
     Raises:
         ValueError: If the buffer is shorter than one IDENTIFY response, is
-            all zeros or all ones, carries the optional 0xA5 signature with a
-            wrong checksum, or names no model, serial or firmware and gives no
-            LBA count. Such a page is what a non-ATA device's passthrough can
-            return, and it identifies nothing.
+            all zeros or all ones, holds a non-ASCII byte in its model, serial or
+            firmware text, carries a sector count wider than its field, or
+            names no model, serial or firmware and gives no LBA count. Such a
+            page is what a non-ATA device's passthrough or a floating bus can
+            return, and it identifies nothing. The optional 0xA5 signature and
+            its checksum are not checked.
 
     Example:
         >>> import struct
@@ -248,6 +296,7 @@ def decode_identify(blob: bytes) -> AtaIdentity:
     page = blob[:IDENTIFY_LENGTH]
     _refuse_an_unusable_page(page)
     words = struct.unpack("<256H", page)
+    _refuse_implausible_fields(words)
     negotiated, maximum = _sata_rates(words)
     sectors, sector_size = _sector_geometry(words)
     kind, rotation = _media_kind(words)

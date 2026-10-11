@@ -92,7 +92,7 @@ def decode_base64(value: str | None) -> bytes | None:
 
 
 def refuse_a_floating_page(page: bytes, *, what: str) -> None:
-    """Refuse a page made only of 0xFF bytes: what an unterminated bus answers.
+    r"""Refuse a page made only of 0xFF bytes: what an unterminated bus answers.
 
     A device that is gone, or a bus whose lines float, returns all ones for
     every read. No structure the decoders read is legitimately all ones, and
@@ -108,7 +108,7 @@ def refuse_a_floating_page(page: bytes, *, what: str) -> None:
 
     Example:
         >>> refuse_a_floating_page(bytes(4), what="page")
-        >>> refuse_a_floating_page(b"\\xff" * 4, what="page")
+        >>> refuse_a_floating_page(b"\xff" * 4, what="page")
         Traceback (most recent call last):
         ...
         ValueError: page is all ones: a floating bus, not a reading

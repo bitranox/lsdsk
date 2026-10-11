@@ -53,7 +53,9 @@ def test_a_plausible_storage_stack_temperature_is_a_reading(
     tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
 ) -> None:
     """Liveness: the harness reports a sound reading, so a missing one below means it was refused."""
-    data = _data_with({"temperature_c": 41, "warning_c": 70, "critical_c": 80}, tmp_path, cli_runner, production_factory)
+    data = _data_with(
+        {"temperature_c": 41, "warning_c": 70, "critical_c": 80}, tmp_path, cli_runner, production_factory
+    )
 
     assert _temperature_figures(data) == {
         "temperature_c": 41,
@@ -76,7 +78,11 @@ def test_an_implausible_value_in_any_field_is_unread(
     data = _data_with({**sound, field: implausible}, tmp_path, cli_runner, production_factory)
 
     figures = _temperature_figures(data)
-    key = {"temperature_c": "temperature_c", "warning_c": "temperature_warning_c", "critical_c": "temperature_critical_c"}
+    key = {
+        "temperature_c": "temperature_c",
+        "warning_c": "temperature_warning_c",
+        "critical_c": "temperature_critical_c",
+    }
     assert figures[key[field]] is None, f"{implausible} was shown as a {field} reading"
 
 
