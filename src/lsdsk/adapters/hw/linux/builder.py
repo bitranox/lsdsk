@@ -80,16 +80,20 @@ _PCI_ADDRESS = re.compile(r"(?<![0-9a-f])[0-9a-f]{4,}:[0-9a-f]{2}:[0-9a-f]{2}\.[
 # the HBA itself, ``port-6:0:5`` for one behind an expander. Anchored on the end
 # device, because an expander-attached drive's path also passes through the
 # HBA's own wide port to the expander, and that port is not the drive's.
-_END_DEVICE_PORT = re.compile(r"/(port-\d+(?::\d+)+)/end_device-")
+_END_DEVICE_PORT = re.compile(r"/(port-\d+(?::\d+)+)/end_device-", re.ASCII)
 # A phy of the HBA itself, ``phy-6:3``: an expander's phys carry a third
 # component (``phy-6:0:5``) and are the expander's ports, not the controller's.
-_HOST_PHY = re.compile(r"phy-\d+:\d+")
-_ATA_PORT = re.compile(r"/ata(\d+)/")
+_HOST_PHY = re.compile(r"phy-\d+:\d+", re.ASCII)
+# The SAS port a disk's path passes through first, directly below the host:
+# ``port-6:0`` for a drive on it or on an expander behind it. The trailing slash
+# keeps an expander's own ``port-6:0:5`` from matching.
+_TOP_SAS_PORT = re.compile(r"/(port-[0-9]+:[0-9]+)/", re.ASCII)
+_ATA_PORT = re.compile(r"/ata(\d+)/", re.ASCII)
 # The same token as a zero-width lookahead, so EVERY occurrence in one path
 # is found. A consuming pattern eats the separator its neighbour needs, so
 # `/ata1/ata2/` would index only the first and a disk asking for the second
 # would get no link where the substring test this replaces found one.
-_ATA_PORT_ANYWHERE = re.compile(r"(?=/ata(\d+)/)")
+_ATA_PORT_ANYWHERE = re.compile(r"(?=/ata(\d+)/)", re.ASCII)
 
 # PCI base and sub class codes for storage, from the class triple 0xBBSSPP.
 _CONTROLLER_KINDS: dict[int, ControllerKind] = {
@@ -117,8 +121,8 @@ _MAX_SYSFS_SECTORS = 2**64 - 1
 # A rate is a decimal number with at most one point, anchored at both ends of
 # the number: ``[0-9.]+`` took ``.``, ``1.2.3`` and ``6..0`` as numbers and
 # ``float`` then raised, ending every command with a bare ValueError.
-_PCIE_SPEED = re.compile(r"(\d+(?:\.\d+)?)\s*GT/s")
-_LINK_RATE = re.compile(r"(\d+(?:\.\d+)?)\s*Gb")
+_PCIE_SPEED = re.compile(r"(\d+(?:\.\d+)?)\s*GT/s", re.ASCII)
+_LINK_RATE = re.compile(r"(\d+(?:\.\d+)?)\s*Gb", re.ASCII)
 
 
 def parse_pcie_speed(text: str | None) -> float | None:
@@ -197,7 +201,7 @@ def parse_pcie_running_width(text: str | None) -> int | None:
 
 
 def _leading_rate(text: str | None, pattern: re.Pattern[str]) -> float | None:
-    """The number a rate string starts with, or ``None`` when it is absent or not finite.
+    """The number a rate string starts with, or ``None`` when it is absent, not finite or not above zero.
 
     The pattern admits one decimal point at most, so ``float`` cannot refuse
     what it matched; a run of digits can still overflow to infinity, which is
@@ -209,7 +213,8 @@ def _leading_rate(text: str | None, pattern: re.Pattern[str]) -> float | None:
     if match is None:
         return None
     rate = float(match.group(1))
-    return rate if math.isfinite(rate) else None
+    # Zero is the idle or virtual link, which no rate describes.
+    return rate if math.isfinite(rate) and rate > 0 else None
 
 
 def parse_link_rate(text: str | None) -> float | None:
@@ -359,15 +364,18 @@ def _port_counts(capture: LinuxCapture) -> dict[str, int]:
     no hardware rate at all - counting either reported an HBA 9500-16i as 21
     ports where it has 16.
 
-    The ``ata_port`` entries count only a controller with neither. They are
+    The ``ata_port`` entries count only a controller with neither - one that shows
+    no host phy at all, rated or not. They are
     never added to the phys: a libsas HBA gives each SATA drive behind a phy an
     ``ata_port`` of its own, so the sum counted every such socket twice.
     """
-    phys = _tally(phy.path for name, phy in capture.classes.sas_phy.items() if _is_host_phy(name, phy))
+    host_phys = _tally(phy.path for name, phy in capture.classes.sas_phy.items() if _HOST_PHY.fullmatch(name))
+    rated_phys = _tally(phy.path for name, phy in capture.classes.sas_phy.items() if _is_host_phy(name, phy))
     ata_ports = _tally(entry.path for entry in capture.classes.ata_port.values())
     counts: dict[str, int] = {}
     for address, entry in capture.pci.items():
-        count = _port_count_of(entry, phys.get(address), ata_ports.get(address))
+        phys = rated_phys.get(address, 0) if address in host_phys else None
+        count = _port_count_of(entry, phys, ata_ports.get(address))
         if count is not None:
             counts[address] = count
     return counts
@@ -378,7 +386,12 @@ def _port_count_of(entry: PciEntry, phys: int | None, ata_ports: int | None) -> 
     if holds_ahci_registers(_class_and_subclass(entry), entry.driver):
         capabilities = _ahci_capabilities(entry)
         return capabilities.ports_implemented if capabilities is not None and capabilities.ports_implemented else None
-    return phys if phys is not None else ata_ports
+    if phys is not None:
+        # Once a controller shows any host phy the phys decide, even when none
+        # published a rate: falling back would count libata's ata_ports, which
+        # a libsas HBA creates once per SATA drive rather than per socket.
+        return phys or None
+    return ata_ports
 
 
 def _is_host_phy(name: str, phy: SasPhyEntry) -> bool:
@@ -642,6 +655,42 @@ def _phy_for(device_path: str, indexed: _IndexedCapture) -> SasPhyEntry | None:
     port = _sas_port_of(device_path)
     phys = () if port is None else indexed.sas_phys.get(port, ())
     return phys[0] if len(phys) == 1 else None
+
+
+def _top_sas_port_of(device_path: str) -> str | None:
+    """The SAS port a disk's whole path leaves the controller through, or ``None`` off SAS."""
+    match = _TOP_SAS_PORT.search(device_path)
+    return None if match is None else match.group(1)
+
+
+def _link_units_of(disk: Disk, capture: LinuxCapture, phys_by_port: Mapping[str, tuple[SasPhyEntry, ...]]) -> set[str]:
+    """What of the controller one disk occupies: the host phys of its port, else the port, else itself.
+
+    A SAS drive occupies the host phys of the port it hangs below - every phy
+    of a wide port - however many drives share that port behind an expander.
+    Where the capture does not record which phys form the port, the port is the
+    one unit known to be taken, a lower bound rather than a guess. A drive on
+    no SAS port (AHCI, NVMe) occupies one port of its own.
+    """
+    port = _top_sas_port_of(capture.block[disk.node].device_path)
+    if port is None:
+        return {disk.node}
+    members = phys_by_port.get(port, ())
+    return {entry.path for entry in members} or {port}
+
+
+def _ports_used(capture: LinuxCapture, disks: Iterable[Disk]) -> dict[str, int]:
+    """Count the ports or host phys with something attached, per controller.
+
+    Counting the disks instead reported an HBA with eight phys and twenty drives
+    behind one expander as full, and a wide port to an expander as one port.
+    """
+    phys_by_port = _sas_phys_by_port(capture)
+    taken: dict[str, set[str]] = {}
+    for disk in disks:
+        if disk.controller_address is not None:
+            taken.setdefault(disk.controller_address, set()).update(_link_units_of(disk, capture, phys_by_port))
+    return {address: len(units) for address, units in taken.items()}
 
 
 def _ata_link_for(device_path: str, indexed: _IndexedCapture) -> AtaLinkEntry | None:
@@ -1110,10 +1159,7 @@ def build_inventory(capture: LinuxCapture) -> Inventory:
     usage = resolve_usage(capture, environment)
     disks = tuple(disk.with_changes(usage=usage.get(disk.node)) for disk in build_disks(capture))
 
-    used: dict[str, int] = {}
-    for disk in disks:
-        if disk.controller_address is not None:
-            used[disk.controller_address] = used.get(disk.controller_address, 0) + 1
+    used = _ports_used(capture, disks)
 
     return Inventory(
         hostname=device_text(capture.hostname) or "unknown",

@@ -967,13 +967,13 @@ def test_only_one_module_turns_a_file_from_outside_into_json() -> None:
 _MAX_SECTORS = 2**64 - 1
 
 
-def _capture_with(*, size: str = "1024", ports_implemented: int = 0x3) -> str:
+def _capture_with(*, size: str = "1024", ports_implemented: int = 0x3, capability: int = 3878747973) -> str:
     """A Linux capture of one AHCI controller and one drive behind it."""
     return (
         '{"schema": 2, "platform": "linux", "hostname": "crafted", "kernel": "6.1.0", '
         '"pci": {"0000:00:17.0": {"class": "0x010601", "device": "0x1d02", "vendor": "0x8086", '
         '"driver": "ahci", "path": "/sys/devices/pci0000:00/0000:00:17.0", '
-        f'"ahci": {{"capability": 3878747973, "ports_implemented": {ports_implemented}}}}}}}, '
+        f'"ahci": {{"capability": {capability}, "ports_implemented": {ports_implemented}}}}}}}, '
         f'"block": {{"sda": {{"size": "{size}", "device_path": '
         '"/sys/devices/pci0000:00/0000:00:17.0/ata1/host0/target0:0:0/0:0:0:0"}}}'
     )
@@ -1002,10 +1002,12 @@ def test_a_bitmap_filling_the_register_is_still_read(tmp_path: Path) -> None:
     """The control the arm above needs, at the largest value the register holds.
 
     A bound one too tight would refuse a controller declaring all 32 ports and
-    nothing would say so, because the arm above passes either way.
+    nothing would say so, because the arm above passes either way. The
+    capability register declares the 32 (its port field, counted from zero,
+    reads 31): a bitmap larger than the declaration is a different refusal.
     """
     crafted = tmp_path / "full-bitmap.json"
-    crafted.write_text(_capture_with(ports_implemented=0xFFFFFFFF), encoding="utf-8")
+    crafted.write_text(_capture_with(ports_implemented=0xFFFFFFFF, capability=0xE730FF1F), encoding="utf-8")
 
     inventory = load(crafted)
 

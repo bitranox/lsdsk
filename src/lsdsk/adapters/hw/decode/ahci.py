@@ -33,6 +33,9 @@ _SPEED_SHIFT = 20
 _SPEED_MASK = 0xF
 INTERFACE_SPEEDS: dict[int, float] = {1: 1.5, 2: 3.0, 3: 6.0}
 
+# What a memory read returns when the bus aborts it.
+_ALL_ONES = 0xFFFFFFFF
+
 # Bits 4:0 hold the number of ports, counted from zero.
 _PORT_COUNT_MASK = 0x1F
 
@@ -98,7 +101,9 @@ def decode_capabilities(capability: int, ports_implemented: int) -> AhciCapabili
 
     Some firmware leaves the bitmap at zero, which the kernel treats as "assume
     they all exist". That case is reported as unknown rather than as zero, so
-    the caller falls back instead of claiming a controller has no ports.
+    the caller falls back instead of claiming a controller has no ports. A
+    reading that cannot be real - an all-ones capability register, or more ports implemented than the
+    capability register declares - is reported as unknown the same way.
 
     Args:
         capability: The HBA capability register.
@@ -116,14 +121,36 @@ def decode_capabilities(capability: int, ports_implemented: int) -> AhciCapabili
         1.5
         >>> decode_capabilities(0x00000000, 0x1).interface_speed_gbps is None
         True
+        >>> decode_capabilities(0xFFFFFFFF, 0xFFFFFFFF).ports_implemented is None
+        True
+        >>> decode_capabilities(0xE730FF1F, 0xFFFFFFFF).ports_implemented
+        32
+        >>> decode_capabilities(0xE730FF45, 0xFF).ports_implemented is None
+        True
     """
     speed = INTERFACE_SPEEDS.get((capability >> _SPEED_SHIFT) & _SPEED_MASK)
-    implemented = bin(ports_implemented).count("1") or None
+    declared = (capability & _PORT_COUNT_MASK) + 1
     return AhciCapabilities(
         interface_speed_gbps=speed,
-        ports_implemented=implemented,
-        ports_declared=(capability & _PORT_COUNT_MASK) + 1,
+        ports_implemented=_implemented_ports(capability, ports_implemented, declared),
+        ports_declared=declared,
     )
+
+
+def _implemented_ports(capability: int, ports_implemented: int, declared: int) -> int | None:
+    """How many ports the bitmap names, or ``None`` when it cannot be believed.
+
+    A register read that master-aborts returns all ones for both registers,
+    which would count thirty-two wired ports; the capability register is the
+    witness, since a real controller can declare thirty-two. A bitmap naming
+    more ports than the capability register declares contradicts it, so one of
+    the two was not read from this controller. Per the port-count rule the count is then dropped rather than
+    guessed.
+    """
+    if capability == _ALL_ONES:
+        return None
+    count = bin(ports_implemented).count("1")
+    return count if 0 < count <= declared else None
 
 
 __all__ = [

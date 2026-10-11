@@ -26,7 +26,8 @@ def parse_int(text: str | None, base: int = 10) -> int | None:
         base: The base the value is written in.
 
     Returns:
-        The integer, or ``None`` for anything unparsable.
+        The integer, or ``None`` for anything unparsable, including text with a
+        non-ASCII character: ``int`` reads other scripts' digits as numbers.
 
     Example:
         >>> parse_int("0x1022", 16)
@@ -34,7 +35,7 @@ def parse_int(text: str | None, base: int = 10) -> int | None:
         >>> parse_int("Unknown") is None
         True
     """
-    if text is None:
+    if text is None or not text.isascii():
         return None
     try:
         return int(text, base)
