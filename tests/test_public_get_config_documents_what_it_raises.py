@@ -57,10 +57,15 @@ def test_a_malformed_config_file_raises_the_documented_layer_load_error(
 
 
 @pytest.mark.os_posix
-def test_an_unreadable_config_file_raises_the_documented_permission_error(
+def test_an_unreadable_config_file_raises_a_load_error_caused_by_the_refusal(
     user_config_dir_under: Callable[[str], Path],
 ) -> None:
-    """The permission case of the same contract."""
+    """The permission case of the same contract.
+
+    The layered library reports an unreadable file as its own ``LayerLoadError``
+    and keeps the ``PermissionError`` as the cause, so a caller can still tell a
+    refused read from a file that is not TOML.
+    """
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         pytest.skip("root reads a mode-000 file, so there is no refusal to raise")
     home = user_config_dir_under("unreadable")
@@ -70,8 +75,14 @@ def test_an_unreadable_config_file_raises_the_documented_permission_error(
     config.chmod(0)
     loader_get_config.cache_clear()
     try:
-        with pytest.raises(PermissionError, match=r"config\.toml"):
+        with pytest.raises(LayerLoadError, match=r"config\.toml.*cannot be read") as refused:
             lsdsk.get_config()
+        causes: list[BaseException] = []
+        seen: BaseException | None = refused.value
+        while seen is not None:
+            causes.append(seen)
+            seen = seen.__cause__
+        assert any(isinstance(cause, PermissionError) for cause in causes), causes
     finally:
         config.chmod(stat.S_IRUSR | stat.S_IWUSR)
         loader_get_config.cache_clear()

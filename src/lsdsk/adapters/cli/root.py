@@ -154,11 +154,46 @@ def _load_or_refuse(ctx: click.Context, services: AppServices, *, profile: str |
     try:
         return services.get_config(profile=profile, dotenv_path=env_file)
     except ConfigError as error:
-        _refuse_before_the_run(ctx, str(error), ExitCode.CONFIG_ERROR)
+        code = ExitCode.PERMISSION_DENIED if _refused_for_permission(error) else ExitCode.CONFIG_ERROR
+        _refuse_before_the_run(ctx, str(error), code)
     except PermissionError as error:
         _refuse_before_the_run(ctx, str(error), ExitCode.PERMISSION_DENIED)
     except OSError as error:
         _refuse_before_the_run(ctx, str(error), ExitCode.CONFIG_ERROR)
+
+
+def _refused_for_permission(error: BaseException) -> bool:
+    """Whether a configuration error was, underneath, a read the system refused.
+
+    The layered library reports an unreadable configuration file as its own
+    ``LayerLoadError`` and keeps the ``PermissionError`` as the cause, so the
+    refusal is a permission problem the reader fixes with ``chmod``, not a file
+    they wrote wrong, and it keeps the exit code that says so.
+
+    Args:
+        error: The error the loader raised.
+
+    Returns:
+        ``True`` when a ``PermissionError`` stands anywhere in its cause chain.
+
+    Example:
+        >>> try:
+        ...     try:
+        ...         raise PermissionError(13, "denied")
+        ...     except PermissionError as inner:
+        ...         raise ValueError("cannot be read") from inner
+        ... except ValueError as outer:
+        ...     _refused_for_permission(outer)
+        True
+        >>> _refused_for_permission(ValueError("not valid TOML"))
+        False
+    """
+    seen: BaseException | None = error
+    while seen is not None:
+        if isinstance(seen, PermissionError):
+            return True
+        seen = seen.__cause__
+    return False
 
 
 def _refuse_before_the_run(ctx: click.Context, message: str, code: ExitCode) -> NoReturn:

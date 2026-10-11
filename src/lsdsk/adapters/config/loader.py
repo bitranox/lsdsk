@@ -246,8 +246,9 @@ class _ConfigLoader:
     Raises:
         ValueError: `profile` is not a valid profile name (not text, empty, too
             long, invalid characters, a reserved name, a path-traversal attempt).
-        LayerLoadError: A configuration file is not valid TOML.
-        PermissionError: A configuration file exists and this process may not read it.
+        LayerLoadError: A configuration file is not valid TOML, or exists and this
+            process may not read it; then its ``__cause__`` chain holds the
+            ``PermissionError``.
         OSError: A configuration file could not be read for any other reason.
     """
 
@@ -267,8 +268,9 @@ class _ConfigLoader:
         Raises:
             ValueError: `profile` is not a valid profile name (not text, empty, too
                 long, invalid characters, a reserved name, a path-traversal attempt).
-            LayerLoadError: A configuration file is not valid TOML.
-            PermissionError: A configuration file exists and this process may not read it.
+            LayerLoadError: A configuration file is not valid TOML, or exists and this
+                process may not read it; then its ``__cause__`` chain holds the
+                ``PermissionError``.
             OSError: A configuration file could not be read for any other reason.
         """
         return _get_config(profile=profile, start_dir=start_dir, dotenv_path=dotenv_path)
@@ -368,10 +370,10 @@ def require_an_intact_installation() -> None:
     """Refuse a damaged installation before anything reads its shipped files.
 
     The layered library reads the same files first and answers each kind of
-    damage its own way - a missing default is passed over, an unreadable one
-    escapes as a bare ``PermissionError``, a corrupt one is its own refusal - so
-    three ways for one file to be damaged gave three different exit codes, two
-    of them blaming the command line. Reading them here first gives every kind
+    damage its own way - a missing default is passed over, an unreadable or a
+    corrupt one is refused as a problem with the reader's configuration - so the
+    kinds of damage to one shipped file got different answers, none of them
+    saying the installation is broken. Reading them here first gives every kind
     one answer. The result is cached, so the logging runtime's later read of
     the same tables costs nothing.
 

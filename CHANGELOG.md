@@ -5,6 +5,13 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **`lsdsk.get_config` raises `LayerLoadError` for a configuration file it may not read**, with the
+  `PermissionError` as its cause, no longer the bare `PermissionError`. This follows
+  lib_layered_config 7.1.1, which reports every unreadable configuration path that way on every
+  Python version; the minimum is now 7.1.2. The CLI still refuses such a file with exit 13.
+
 ### Fixed
 
 - **A reading refused with an empty reason is reported as refused.** An OS error carrying an
