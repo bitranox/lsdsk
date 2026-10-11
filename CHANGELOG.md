@@ -10,6 +10,69 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 - **A reading refused with an empty reason is reported as refused.** An OS error carrying an
   errno but no text used to be dropped, so `skipped` stayed empty and `ok` stayed true on an
   incomplete scan.
+- **A chipset's built-in SATA or USB function is no longer called oversubscribed on a board with two
+  chipset chips daisy-chained**, such as the AMD X870E's two Promontory 21. The function publishes
+  the PCIe floor (2.5 GT/s x1) as its link, and the warning claimed the uplink could carry 0.25
+  GB/s while the drive behind it delivered about 0.5 GB/s. The real links the switch passes on are
+  now also found behind its port to the second chip, which Windows reports no link for, so the
+  finding is the register-default hint.
+- **A dead bus no longer shows up as a failing drive.** An all-ones NVMe SMART log, NVMe Identify
+  Controller page or ATA SMART page (a bus answering with floating lines) is refused like an
+  unusable IDENTIFY page, where it used to read as "reports itself as failing" at 255% of its rated
+  endurance. Linux also falls back to the hwmon temperature when the health reading carries none.
+- **A SAS controller's used ports are the host phys carrying a link, not the drives behind it.**
+  Twenty drives behind one expander on one phy use one of eight ports, not all eight, and a wide
+  port to an expander uses each of its phys.
+- **A Windows drive temperature and its limits are held to the same plausible range as on Linux.**
+  A value such as -32768 from the storage stack is unread, rather than a reading or a critical
+  finding. The ATA temperature attribute uses the same range.
+- **A command-line value that is not valid UTF-8 no longer ends a `--format json` run with exit 70
+  and an empty stdout.** `--history-file`, `--profile` and `--section` are carried into the
+  envelope with the undecodable bytes escaped.
+- **`lsdsk config` reports every table the package ships when a config file gives it as a single
+  value**, such as `lib_log_rich = "x"`, not only `thresholds`, `display` and `history`. It lists it
+  in `skipped` and answers `ok: false`.
+- **A mounted disk-image file on Windows (VHD, VHDX or ISO) no longer makes a complete scan report
+  `ok: false`.** It has no SMART to give, so its unanswered requests are not refused readings. A
+  hypervisor's virtual disk and a real drive whose controller blocks passthrough are still
+  reported.
+- **A drive whose IDENTIFY page names no rotation rate keeps the operating system's media kind**
+  rather than turning to unknown, on Linux and Windows.
+- **IDENTIFY pages that are noise are refused**: non-ASCII text, a sector count wider than its
+  field, or a spin speed above 20,000 rpm. They no longer produce a named drive with an absurd
+  capacity or turn a SAS disk into SATA.
+- **An AHCI capability register that reads all ones, or a ports-implemented bitmap naming more
+  ports than the controller declares, no longer yields a port count.** A SAS controller whose host
+  phys publish no link rate is no longer counted from libata's ATA ports either.
+- **The Linux environment reading takes every file from the tree it was pointed at**: the systemd
+  container file, the container marker files and the DMI strings followed the host before. A
+  carriage return in a mount point no longer hides the container marker.
+- **Digits in sysfs text are read as ASCII only, and a link rate of zero counts as unread.**
+- **A Windows capture taken by lsdsk 1.7.2 no longer draws its unread disk interface as a disk**,
+  and an elevated run whose only disk records are unread interfaces no longer says the environment
+  exposes no device nodes.
+- **An NVMe response whose data offset lies inside its own header is refused** instead of decoding
+  the header as a SMART log.
+- **`config-deploy` and `config-generate-examples` no longer say "Failed to ..." when the files were
+  written** and only the report to a full standard output failed. They say standard output could
+  not be written, still exit 74.
+- **`--history-file ""` is treated as not given**, as an empty `history.path` already was.
+- **`--set key= 99999999999999999999999` with blanks around a wide integer keeps its digits.**
+- **A refused `LOG_*` variable is reported once per run**, `logdemo` included, and the warning names
+  it as an environment variable. A `scrub_patterns` regex cut at a comma is named when it comes from
+  `LOG_SCRUB_PATTERNS` as well as from a config file, and when the cut tail holds `=`.
+- **`IOCTL_STORAGE_PROTOCOL_COMMAND` in the Windows API declarations holds the SDK's value**
+  (0x002DD3C0, not 0x002DD480). lsdsk never issued it, and every storage, disk, SCSI and volume
+  control code is now checked against the SDK's own definition.
+- **Every page that lists disks says when a disk interface could not be read.** `controllers`,
+  `disks`, `health`, `smart`, `slots` and `trend` now print the "N disk interface(s) not read"
+  line that `topology`, `findings` and the full page already did; before, the missing interface
+  went unmentioned there.
+- **A drive whose power-on clock was reset more than once is judged from its newest run.** With
+  hours 1000, 5, 50, 3, 13 a quiet span of 10 hours was reported as too soon to say.
+- **Only the temporary names `tempfile.mkstemp` makes are reaped** as leftovers of a killed
+  history write.
+- **A Windows disk with thousands of folder mounts resolves in linear time.**
 
 ## [1.7.3] 2026-10-09 12:47:51
 
