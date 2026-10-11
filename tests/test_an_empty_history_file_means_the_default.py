@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
 from lsdsk.adapters.cli import cli
@@ -17,7 +16,6 @@ from lsdsk.composition import build_production
 CAPTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
 
 
-@pytest.mark.os_agnostic
 def test_an_empty_history_file_is_the_default_not_a_usage_error(clear_config_cache: None) -> None:
     """The run proceeds exactly as it does with no ``--history-file`` at all."""
     runner = CliRunner()
@@ -31,7 +29,6 @@ def test_an_empty_history_file_is_the_default_not_a_usage_error(clear_config_cac
     assert given.stderr == absent.stderr
 
 
-@pytest.mark.os_agnostic
 def test_a_history_file_that_is_a_directory_is_still_refused(clear_config_cache: None, tmp_path: Path) -> None:
     """The control: only the empty string changed meaning; a real directory is still refused."""
     result = CliRunner().invoke(

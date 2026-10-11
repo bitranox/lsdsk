@@ -52,7 +52,6 @@ def test_hypervisor_dmi_stays_detected(vendor: str, product: str, detail: str) -
     assert (verdict.environment, verdict.detail) == (Environment.VIRTUAL_MACHINE, detail)
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("vendor", "product"),
     [
@@ -69,7 +68,6 @@ def test_a_marker_preceded_by_a_letter_is_not_a_hypervisor(vendor: str, product:
     assert verdict.environment is Environment.BARE_METAL, verdict
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("product", "detail"),
     [("7xen", "Xen"), ("xen7", "Xen"), ("(KVM)", "KVM"), ("-qemu-", "QEMU"), ("VMware7,1", "VMware")],

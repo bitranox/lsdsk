@@ -48,7 +48,6 @@ def _temperature_figures(data: Any) -> dict[str, int | None]:
     return {key: None if health is None else health[key] for key in keys}
 
 
-@pytest.mark.os_agnostic
 def test_a_plausible_storage_stack_temperature_is_a_reading(
     tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
 ) -> None:
@@ -64,7 +63,6 @@ def test_a_plausible_storage_stack_temperature_is_a_reading(
     }
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("implausible", [-(2**15), MIN_PLAUSIBLE_CELSIUS - 1, MAX_PLAUSIBLE_CELSIUS + 1, 2**15 - 1])
 @pytest.mark.parametrize("field", ["temperature_c", "warning_c", "critical_c"])
 def test_an_implausible_value_in_any_field_is_unread(
@@ -94,7 +92,6 @@ def _limit_findings(data: Any) -> list[str]:
     ]
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("limit", ["warning_c", "critical_c"])
 def test_an_absurd_threshold_raises_no_finding_against_a_sound_temperature(
     limit: str, tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
@@ -104,7 +101,6 @@ def test_an_absurd_threshold_raises_no_finding_against_a_sound_temperature(
     assert _limit_findings(data) == []
 
 
-@pytest.mark.os_agnostic
 def test_a_real_threshold_below_the_temperature_still_raises_a_finding(
     tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
 ) -> None:

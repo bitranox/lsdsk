@@ -52,7 +52,6 @@ def _kinds(
     return {disk["node"]: disk["kind"] for disk in cast("dict[str, Any]", decoded)["data"]["disks"]}
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(("rotational", "expected"), [("1", "hdd"), ("0", "ssd")])
 @pytest.mark.parametrize("silent_word", [0, 0xFFFF])
 def test_linux_keeps_the_rotational_reading_when_identify_is_silent(
@@ -72,7 +71,6 @@ def test_linux_keeps_the_rotational_reading_when_identify_is_silent(
     assert kinds["sda"] == expected
 
 
-@pytest.mark.os_agnostic
 def test_linux_identify_still_wins_when_it_does_speak(
     tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
 ) -> None:
@@ -87,7 +85,6 @@ def test_linux_identify_still_wins_when_it_does_speak(
     assert kinds["sda"] == "hdd"
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(("rotating", "expected"), [(True, "hdd"), (False, "ssd")])
 def test_windows_keeps_the_seek_penalty_reading_when_identify_is_silent(
     rotating: bool,

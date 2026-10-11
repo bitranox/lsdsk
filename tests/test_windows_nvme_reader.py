@@ -249,7 +249,6 @@ def test_a_length_field_shorter_than_the_payload_is_a_refusal_even_when_the_byte
     assert "smart_log" not in record
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("offset", [0, 8, ctypes.sizeof(api.STORAGE_PROTOCOL_SPECIFIC_DATA) - 1])
 def test_a_data_offset_inside_the_header_is_a_refusal_not_the_header_decoded_as_data(offset: int) -> None:
     """The offset is the driver's word, and an offset into the structure itself is not a page."""
@@ -261,7 +260,6 @@ def test_a_data_offset_inside_the_header_is_a_refusal_not_the_header_decoded_as_
     assert "identify_controller" not in record
 
 
-@pytest.mark.os_agnostic
 def test_a_data_offset_at_the_end_of_the_header_is_read() -> None:
     """Liveness: the offset a real driver writes is accepted by the same harness."""
     size = ctypes.sizeof(api.STORAGE_PROTOCOL_SPECIFIC_DATA)

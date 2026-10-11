@@ -480,7 +480,6 @@ def test_lsdsk_config_credits_a_value_nobody_overrode_to_the_file_it_came_from(
     assert _layer_reported_for(result.output, "piped_width") == "defaults", result.output
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("digits", [25, 308])
 def test_an_integer_longer_than_64_bits_is_kept_exact_up_to_the_json_readers_limit(digits: int) -> None:
     """Up to 308 digits orjson reads a float, and the typed digits are what is kept."""
@@ -490,7 +489,6 @@ def test_an_integer_longer_than_64_bits_is_kept_exact_up_to_the_json_readers_lim
     assert coerce_value("-" + raw) == -int(raw)
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("digits", [309, 4301, 5000])
 def test_an_integer_past_the_json_readers_limit_stays_the_text_typed(digits: int) -> None:
     """The reader refuses it, so ``int()`` never meets a 4300-digit input and no branch is needed for it."""

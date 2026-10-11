@@ -158,7 +158,6 @@ def test_a_committed_fixture_reads_not_read_never_not_mounted() -> None:
         assert "not mounted" not in printed, f"{host}: a pre-usage fixture claimed a reading it never took"
 
 
-@pytest.mark.os_agnostic
 def test_a_capture_that_read_its_volumes_draws_what_each_disk_is_used_for() -> None:
     """The other side: a capture that took the reading draws it, not the unread dash.
 

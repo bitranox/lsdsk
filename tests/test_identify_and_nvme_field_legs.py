@@ -60,7 +60,6 @@ def _bare(**fields: int | str) -> bytes:
     return struct.pack("<256H", *words)
 
 
-@pytest.mark.os_agnostic
 def test_full_width_text_fields_lose_no_character() -> None:
     model, serial, firmware = "M" * 39 + "Z", "S" * 19 + "Y", "F" * 7 + "X"
 
@@ -69,31 +68,26 @@ def test_full_width_text_fields_lose_no_character() -> None:
     assert (identity.model, identity.serial, identity.firmware) == (model, serial, firmware)
 
 
-@pytest.mark.os_agnostic
 def test_each_text_field_is_read_from_its_own_words() -> None:
     identity = decode_identify(_page(model="the model", serial="the serial", firmware="rev"))
 
     assert (identity.model, identity.serial, identity.firmware) == ("the model", "the serial", "rev")
 
 
-@pytest.mark.os_agnostic
 def test_the_28_bit_count_is_two_words_low_first() -> None:
     assert decode_identify(_page(w60=0x2222, w61=0x0011)).sectors == 0x0011_2222
 
 
-@pytest.mark.os_agnostic
 def test_the_48_bit_count_is_three_words_low_first_and_wins_over_the_28_bit_one() -> None:
     identity = decode_identify(_page(w60=5, w100=0x1111, w101=0x2222, w102=0x3333))
 
     assert identity.sectors == 0x3333_2222_1111
 
 
-@pytest.mark.os_agnostic
 def test_a_page_with_no_count_at_all_has_none() -> None:
     assert decode_identify(_page(w60=0)).sectors is None
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("geometry", "expected_size"),
     [
@@ -110,7 +104,6 @@ def test_the_geometry_word_is_believed_only_when_it_is_valid_and_says_larger(geo
     assert identity.sectors == 0x0100
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(("words", "size"), [(257, 514), (2048, 4096), (1024, 2048)])
 def test_a_logical_sector_word_count_inside_the_real_range_sets_the_size(words: int, size: int) -> None:
     identity = decode_identify(_page(w106=0x5000, w117=words & 0xFFFF, w118=words >> 16))
@@ -118,7 +111,6 @@ def test_a_logical_sector_word_count_inside_the_real_range_sets_the_size(words: 
     assert identity.sector_size == size
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("words", [0, 256, 2049, 0x1_0000, 0x1_0400, 0xFFFF_FFFF])
 def test_a_logical_sector_word_count_outside_it_withholds_the_capacity(words: int) -> None:
     identity = decode_identify(_page(w106=0x5000, w117=words & 0xFFFF, w118=words >> 16))
@@ -128,7 +120,6 @@ def test_a_logical_sector_word_count_outside_it_withholds_the_capacity(words: in
     assert identity.sector_size == 512
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("rate", "kind", "rpm"),
     [
@@ -149,7 +140,6 @@ def test_the_nominal_rotation_rate_decides_the_media_kind(rate: int, kind: DiskK
     assert (identity.kind, identity.rotation_rpm) == (kind, rpm)
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("capability", "maximum"),
     [
@@ -169,7 +159,6 @@ def test_the_supported_rates_bitmap_gives_the_highest_generation(capability: int
     assert decode_identify(_page(w76=capability)).max_gbps == maximum
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("current", "negotiated"),
     [
@@ -189,7 +178,6 @@ def test_the_negotiated_rate_is_the_three_bits_above_bit_zero(current: int, nego
     assert decode_identify(_page(w77=current)).negotiated_gbps == negotiated
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("word82", "supported"), [(0x0001, True), (0x0003, True), (0x0002, False), (0x0000, False), (0xFFFF, False)]
 )
@@ -197,7 +185,6 @@ def test_smart_support_is_bit_zero_of_word_82_unless_the_word_is_unimplemented(w
     assert decode_identify(_page(w82=word82)).smart_supported is supported
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     "page",
     [
@@ -216,20 +203,17 @@ def test_any_one_piece_of_identity_is_enough(page: bytes) -> None:
     assert decode_identify(page) is not None
 
 
-@pytest.mark.os_agnostic
 def test_a_page_naming_nothing_and_counting_nothing_is_refused_even_with_other_words_set() -> None:
     with pytest.raises(ValueError, match="no identity"):
         decode_identify(_bare(w76=0x0008, w82=0x0001, w217=7200))
 
 
-@pytest.mark.os_agnostic
 def test_the_identify_page_is_read_from_its_first_512_bytes_only() -> None:
     identity = decode_identify(_page(model="head") + b"\xff" * 64)
 
     assert identity.model == "head"
 
 
-@pytest.mark.os_agnostic
 def test_a_page_one_byte_short_is_refused_and_exactly_512_is_read() -> None:
     page = _page()
     assert len(page) == IDENTIFY_LENGTH
@@ -238,14 +222,12 @@ def test_a_page_one_byte_short_is_refused_and_exactly_512_is_read() -> None:
         decode_identify(page[:-1])
 
 
-@pytest.mark.os_agnostic
 def test_the_vpd_wrapper_reads_the_identify_payload_after_its_60_byte_header() -> None:
     header = b"\xaa" * VPD_ATA_INFORMATION_IDENTIFY_OFFSET
 
     assert decode_vpd_ata_information(header + _page(model="inside")).model == "inside"
 
 
-@pytest.mark.os_agnostic
 def test_a_vpd_page_one_byte_short_of_header_plus_payload_is_refused() -> None:
     page = bytes(VPD_ATA_INFORMATION_IDENTIFY_OFFSET) + _page()
 
@@ -265,21 +247,18 @@ def _controller(**spans: bytes) -> bytes:
     return bytes(page)
 
 
-@pytest.mark.os_agnostic
 def test_nvme_text_fields_are_full_width_and_each_in_its_own_place() -> None:
     identity = decode_identify_controller(_controller())
 
     assert identity == NvmeIdentity("M" * 39 + "Z", "S" * 19 + "Y", "F" * 7 + "X")
 
 
-@pytest.mark.os_agnostic
 def test_nvme_thresholds_are_two_kelvin_words_after_byte_266() -> None:
     identity = decode_identify_controller(_controller(at266=struct.pack("<HH", 70 + KELVIN, 80 + KELVIN)))
 
     assert (identity.warning_temperature_c, identity.critical_temperature_c) == (70, 80)
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("kelvin", [0, 10, 2000, 0xFFFF])
 def test_an_unset_or_implausible_nvme_threshold_is_not_reported(kelvin: int) -> None:
     identity = decode_identify_controller(_controller(at266=struct.pack("<HH", kelvin, kelvin)))
@@ -287,7 +266,6 @@ def test_an_unset_or_implausible_nvme_threshold_is_not_reported(kelvin: int) -> 
     assert (identity.warning_temperature_c, identity.critical_temperature_c) == (None, None)
 
 
-@pytest.mark.os_agnostic
 def test_an_identify_controller_page_one_byte_short_is_refused() -> None:
     decode_identify_controller(_controller())
     with pytest.raises(ValueError, match="4095 bytes"):
@@ -306,7 +284,6 @@ def _u128(value: int) -> bytes:
     return value.to_bytes(16, "little")
 
 
-@pytest.mark.os_agnostic
 def test_every_smart_log_counter_is_read_from_its_own_offset_at_full_width() -> None:
     page = _log(
         at0=bytes([0x04]),
@@ -336,14 +313,12 @@ def test_every_smart_log_counter_is_read_from_its_own_offset_at_full_width() -> 
     assert health.error_log_entries == 19 + 2**75
 
 
-@pytest.mark.os_agnostic
 def test_a_counter_wider_than_64_bits_is_kept() -> None:
     page = _log(at3=bytes([100]), at128=_u128(2**100))
 
     assert decode_smart_log(page).power_on_hours == 2**100
 
 
-@pytest.mark.os_agnostic
 def test_a_clear_critical_warning_is_ok_and_the_vendor_thresholds_come_from_the_identity() -> None:
     identity = NvmeIdentity("m", "s", "f", warning_temperature_c=70, critical_temperature_c=80)
     page = _log(at3=bytes([100]))
@@ -356,7 +331,6 @@ def test_a_clear_critical_warning_is_ok_and_the_vendor_thresholds_come_from_the_
     assert (without.temperature_warning_c, without.temperature_critical_c) == (None, None)
 
 
-@pytest.mark.os_agnostic
 def test_a_smart_log_one_byte_short_is_refused_and_a_full_page_with_only_the_last_byte_set_is_a_reading() -> None:
     with pytest.raises(ValueError, match="511 bytes"):
         decode_smart_log(bytes(SMART_LOG_LENGTH - 1))
@@ -366,6 +340,5 @@ def test_a_smart_log_one_byte_short_is_refused_and_a_full_page_with_only_the_las
     assert decode_smart_log(bytes(page)).ok is True
 
 
-@pytest.mark.os_agnostic
 def test_only_the_first_512_bytes_of_a_longer_log_decide_whether_it_is_empty() -> None:
     assert decode_smart_log(bytes(SMART_LOG_LENGTH) + b"\x01" * 16).ok is None

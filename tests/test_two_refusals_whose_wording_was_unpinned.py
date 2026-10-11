@@ -12,17 +12,18 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 from lsdsk.adapters import cli as cli_mod
 from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.composition import build_production
 
+if TYPE_CHECKING:
+    import pytest
+
 CAPTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
 
 
-@pytest.mark.os_agnostic
 def test_a_refused_counter_store_is_named_in_skipped_with_its_path(
     tmp_path: Path, clear_config_cache: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -41,7 +42,6 @@ def test_a_refused_counter_store_is_named_in_skipped_with_its_path(
     assert refusals[0].startswith(f"counter history at {store} could not be read"), refusals
 
 
-@pytest.mark.os_agnostic
 def test_a_deploy_with_an_invalid_profile_is_refused_before_it_logs_a_start(
     managed_traceback_state: None, clear_config_cache: None, capfd: pytest.CaptureFixture[str]
 ) -> None:

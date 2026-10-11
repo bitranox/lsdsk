@@ -60,7 +60,6 @@ def _image_in(envelope: dict[str, Any]) -> dict[str, Any]:
     return found[0]
 
 
-@pytest.mark.os_agnostic
 def test_the_base_capture_is_complete_so_ok_can_tell_the_arms_apart(
     tmp_path: Path,
     cli_runner: CliRunner,
@@ -72,7 +71,6 @@ def test_the_base_capture_is_complete_so_ok_can_tell_the_arms_apart(
     assert envelope["ok"] is True, envelope["skipped"]
 
 
-@pytest.mark.os_agnostic
 def test_a_mounted_image_file_refusing_ata_is_not_an_incomplete_scan(
     tmp_path: Path,
     cli_runner: CliRunner,
@@ -87,7 +85,6 @@ def test_a_mounted_image_file_refusing_ata_is_not_an_incomplete_scan(
     assert envelope["ok"] is True, envelope["skipped"]
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     "bus_type",
     [

@@ -47,7 +47,6 @@ def _fill(word: int, *, except_word: int | None = None) -> bytes:
     return struct.pack("<256H", *words)
 
 
-@pytest.mark.os_agnostic
 def test_the_plausible_page_the_other_cases_start_from_decodes() -> None:
     """Liveness: every refusal below is the planted defect, not the base page."""
     identity = decode_identify(_page())
@@ -55,7 +54,6 @@ def test_the_plausible_page_the_other_cases_start_from_decodes() -> None:
     assert (identity.model, identity.serial, identity.firmware) == ("ABCDEF", "1234", "FW1")
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     "page",
     [_fill(0xFFFF, except_word=0), _fill(0xFFFF, except_word=255), _fill(0x2020)],
@@ -66,33 +64,28 @@ def test_a_page_that_is_nearly_noise_is_refused(page: bytes) -> None:
         decode_identify(page)
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("field", ["w27", "w10", "w23"])
 def test_a_string_field_of_non_ascii_bytes_is_refused(field: str) -> None:
     with pytest.raises(ValueError, match="not ASCII"):
         decode_identify(_page(**{field: 0xE9E9}))
 
 
-@pytest.mark.os_agnostic
 def test_a_sector_count_beyond_48_bits_is_refused() -> None:
     with pytest.raises(ValueError, match="sector count"):
         decode_identify(_page(w103=0x0001))
 
 
-@pytest.mark.os_agnostic
 def test_a_28_bit_sector_count_beyond_28_bits_is_refused() -> None:
     with pytest.raises(ValueError, match="sector count"):
         decode_identify(_page(w61=0x1000))
 
 
-@pytest.mark.os_agnostic
 def test_the_largest_real_sector_counts_are_kept() -> None:
     identity = decode_identify(_page(w60=0xFFFF, w61=0x0FFF, w100=0xFFFF, w101=0xFFFF, w102=0xFFFF))
 
     assert identity.sectors == 2**48 - 1
 
 
-@pytest.mark.os_agnostic
 def test_a_rotation_rate_no_drive_spins_at_is_not_a_rotation_rate() -> None:
     identity = decode_identify(_page(w217=0xFFF0))
 
@@ -100,7 +93,6 @@ def test_a_rotation_rate_no_drive_spins_at_is_not_a_rotation_rate() -> None:
     assert identity.rotation_rpm is None
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("rpm", [5400, 7200, 10_000, 15_000])
 def test_a_real_rotation_rate_is_kept(rpm: int) -> None:
     identity = decode_identify(_page(w217=rpm))
@@ -108,7 +100,6 @@ def test_a_real_rotation_rate_is_kept(rpm: int) -> None:
     assert (identity.kind, identity.rotation_rpm) == (DiskKind.HDD, rpm)
 
 
-@pytest.mark.os_agnostic
 def test_the_vpd_wrapper_refuses_the_same_noise() -> None:
     page = bytes(60) + _fill(0xFFFF, except_word=0)
 
@@ -139,7 +130,6 @@ def _committed_identify_blobs() -> list[tuple[str, bytes]]:
     return blobs
 
 
-@pytest.mark.os_agnostic
 def test_every_identify_page_in_every_committed_capture_still_decodes() -> None:
     blobs = _committed_identify_blobs()
     assert len(blobs) > 50, f"only {len(blobs)} pages were examined: the walk reached too little"

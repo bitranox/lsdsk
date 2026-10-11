@@ -52,7 +52,6 @@ def _page(runner: CliRunner, factory: Callable[[], Any], page: str, replay: Path
 
 
 @pytest.mark.parametrize("page", PAGES)
-@pytest.mark.os_agnostic
 def test_a_page_that_lists_disks_says_an_interface_was_not_read(
     cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path, page: str
 ) -> None:
@@ -62,7 +61,6 @@ def test_a_page_that_lists_disks_says_an_interface_was_not_read(
 
 
 @pytest.mark.parametrize("page", PAGES)
-@pytest.mark.os_agnostic
 def test_a_page_is_silent_about_interfaces_when_every_one_was_read(
     cli_runner: CliRunner, production_factory: Callable[[], Any], page: str
 ) -> None:

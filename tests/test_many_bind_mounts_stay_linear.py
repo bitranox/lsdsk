@@ -108,7 +108,6 @@ def _merged_work(uses: list[DiskUse]) -> int:
     return work
 
 
-@pytest.mark.os_agnostic
 def test_merging_the_mounts_of_many_partitions_of_one_disk_grows_linearly() -> None:
     """`resolve_usage` cannot reach this arm: its `DiskUse` constructor validates the counted text away."""
     ratio = _merged_work(_uses_of_many_partitions(LARGE)) / _merged_work(_uses_of_many_partitions(SMALL))
@@ -144,7 +143,6 @@ def _letter_work(capture: WindowsCapture) -> int:
     return work
 
 
-@pytest.mark.os_agnostic
 def test_resolving_the_letters_of_many_volumes_on_one_disk_grows_linearly() -> None:
     ratio = _letter_work(_volumes_on_one_disk(LARGE)) / _letter_work(_volumes_on_one_disk(SMALL))
 

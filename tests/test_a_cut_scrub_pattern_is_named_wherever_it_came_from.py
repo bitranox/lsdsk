@@ -28,7 +28,6 @@ def _said_about_scrubbing(capfd: pytest.CaptureFixture[str]) -> list[str]:
     return [line for line in capfd.readouterr().err.splitlines() if "scrub_patterns" in line or "SCRUB" in line]
 
 
-@pytest.mark.os_agnostic
 def test_a_cut_pattern_in_the_environment_variable_is_named(
     capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -43,7 +42,6 @@ def test_a_cut_pattern_in_the_environment_variable_is_named(
     assert "3}" in said[0]
 
 
-@pytest.mark.os_agnostic
 def test_a_cut_tail_that_contains_an_equals_sign_is_named(
     capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -58,7 +56,6 @@ def test_a_cut_tail_that_contains_an_equals_sign_is_named(
     assert "key" not in said[0].split("3=x}")[0].split("=")[-1], "the entry that parsed was named as dropped"
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("text", ["token=a{2}, key=.+,", "token=[0-9]{2},key=(a|b),", "key=.+"])
 def test_a_list_that_was_not_cut_says_nothing(
     text: str, capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch

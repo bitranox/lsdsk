@@ -62,7 +62,6 @@ def test_a_container_mount_whose_path_holds_a_line_break_character_is_still_seen
     assert container_markers_in_mounts(line) == "lxc"
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("odd", ODD_BYTES, ids=repr)
 def test_a_character_in_the_root_field_does_not_shift_the_mount_point_column(tmp_path: Path, odd: str) -> None:
     """Fields split on the space alone, so the root field's odd byte stays inside it.
@@ -80,7 +79,6 @@ def test_a_character_in_the_root_field_does_not_shift_the_mount_point_column(tmp
     assert [(row["dev"], row["mountpoint"], row["fstype"]) for row in rows] == [("8:2", "/mnt", "ext4")]
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("odd", ODD_BYTES, ids=repr)
 def test_a_character_in_the_root_field_does_not_hide_a_container_mount(odd: str) -> None:
     line = f"6226 6210 0:99 /a{odd}b /proc/cpuinfo rw - fuse.lxcfs lxcfs rw"
@@ -88,7 +86,6 @@ def test_a_character_in_the_root_field_does_not_hide_a_container_mount(odd: str)
     assert container_markers_in_mounts(line) == "lxc"
 
 
-@pytest.mark.os_agnostic
 def test_a_mountinfo_row_too_short_to_hold_a_mount_point_is_skipped_not_misread(tmp_path: Path) -> None:
     """Four left fields have no fifth column, and one right field has no source."""
     path = tmp_path / "mountinfo"
@@ -100,6 +97,5 @@ def test_a_mountinfo_row_too_short_to_hold_a_mount_point_is_skipped_not_misread(
     assert [row["dev"] for row in rows] == ["8:4"]
 
 
-@pytest.mark.os_agnostic
 def test_a_container_row_too_short_to_hold_a_mount_point_is_skipped() -> None:
     assert container_markers_in_mounts("1 2 3 /proc/cpuinfo - fuse.lxcfs lxcfs rw") == ""

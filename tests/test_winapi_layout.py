@@ -186,7 +186,6 @@ def _ctl_code(device_type: int, function: int, method: int, access: int) -> int:
     return (device_type << 16) | (access << 14) | (function << 2) | method
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(("name", "parts"), sorted(STORAGE_IOCTL_PARTS.items()))
 def test_a_storage_ioctl_code_is_built_from_the_sdk_parts(name: str, parts: tuple[int, int, int]) -> None:
     """Each storage, disk, SCSI and volume code is held against CTL_CODE of its SDK definition."""
@@ -194,7 +193,6 @@ def test_a_storage_ioctl_code_is_built_from_the_sdk_parts(name: str, parts: tupl
     assert getattr(api, name) == _ctl_code(device_type, function, 0, access)
 
 
-@pytest.mark.os_agnostic
 def test_every_ioctl_the_module_exports_is_pinned_by_a_table() -> None:
     """A new IOCTL_* name must join one of the two tables, or its value is unchecked."""
     exported = {name for name in api.__all__ if name.startswith("IOCTL_")}

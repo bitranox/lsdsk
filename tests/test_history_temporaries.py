@@ -32,7 +32,6 @@ def _leftover(directory: Path, name: str) -> Path:
     return path
 
 
-@pytest.mark.os_agnostic
 def test_a_name_mkstemp_could_not_have_made_is_not_taken_for_a_leftover(tmp_path: Path) -> None:
     """A real ``tempfile.mkstemp`` name is reaped; one with a capital, which mkstemp never draws, is not."""
     store = tmp_path / "history.json"
@@ -68,7 +67,6 @@ def test_an_old_link_named_like_a_leftover_is_not_removed(tmp_path: Path) -> Non
     assert link.is_symlink(), "an old link named like a leftover was removed"
 
 
-@pytest.mark.os_agnostic
 def test_a_directory_that_cannot_be_listed_is_left_without_an_error(tmp_path: Path) -> None:
     """Housekeeping never fails a recording: a missing or non-directory parent is simply skipped."""
     remove_abandoned_temporaries(tmp_path / "absent" / "history.json")

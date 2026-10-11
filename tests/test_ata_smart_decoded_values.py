@@ -38,7 +38,6 @@ def _thresholds(*entries: tuple[int, int]) -> bytes:
     return bytes(page)
 
 
-@pytest.mark.os_agnostic
 def test_the_first_and_the_thirtieth_slot_are_read_and_a_thirty_first_is_not() -> None:
     page = bytearray(_page((5, 100, 99, 7)))
     page[FIRST + 29 * ENTRY] = 9
@@ -49,7 +48,6 @@ def test_the_first_and_the_thirtieth_slot_are_read_and_a_thirty_first_is_not() -
     assert ids == [5, 9]
 
 
-@pytest.mark.os_agnostic
 def test_an_entry_is_decoded_from_its_own_bytes() -> None:
     (attribute,) = decode_attributes(_page((5, 101, 102, 0x0000_AABB_CCDD_EEFF)))
 
@@ -58,7 +56,6 @@ def test_an_entry_is_decoded_from_its_own_bytes() -> None:
     assert attribute.name == "Reallocated_Sector_Ct"
 
 
-@pytest.mark.os_agnostic
 def test_the_raw_field_is_48_bits_wide_and_stops_before_the_next_byte() -> None:
     page = bytearray(_page((5, 100, 100, 2**48 - 1)))
     page[FIRST + 11] = 0xFF  # the entry's last byte is not part of the raw value
@@ -68,7 +65,6 @@ def test_the_raw_field_is_48_bits_wide_and_stops_before_the_next_byte() -> None:
     assert attribute.raw == 2**48 - 1
 
 
-@pytest.mark.os_agnostic
 def test_an_identifier_zero_slot_is_empty_whatever_else_it_holds() -> None:
     page = bytearray(_page((5, 100, 100, 1)))
     page[FIRST + ENTRY + 3] = 77
@@ -76,34 +72,29 @@ def test_an_identifier_zero_slot_is_empty_whatever_else_it_holds() -> None:
     assert [attribute.id for attribute in decode_attributes(bytes(page))] == [5]
 
 
-@pytest.mark.os_agnostic
 def test_a_threshold_is_matched_to_its_attribute_by_identifier() -> None:
     attributes = decode_attributes(_page((5, 100, 100, 0), (9, 90, 90, 0)), _thresholds((9, 40), (5, 10)))
 
     assert {attribute.id: attribute.threshold for attribute in attributes} == {5: 10, 9: 40}
 
 
-@pytest.mark.os_agnostic
 def test_a_threshold_page_that_is_too_short_supplies_none() -> None:
     (attribute,) = decode_attributes(_page((5, 100, 100, 0)), _thresholds((5, 10))[: SMART_DATA_LENGTH - 1])
 
     assert attribute.threshold is None
 
 
-@pytest.mark.os_agnostic
 def test_a_page_shorter_than_512_bytes_is_refused() -> None:
     with pytest.raises(ValueError, match="511 bytes"):
         decode_attributes(bytes(SMART_DATA_LENGTH - 1))
 
 
-@pytest.mark.os_agnostic
 def test_a_threshold_of_zero_is_advisory_and_never_fails_the_drive() -> None:
     attributes = decode_attributes(_page((1, 0, 0, 0)), _thresholds((1, 0)))
 
     assert overall_health(attributes) is True
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(("value", "failing"), [(11, False), (10, True), (9, True)])
 def test_an_attribute_fails_exactly_when_its_value_falls_to_its_threshold(value: int, failing: bool) -> None:
     attributes = decode_attributes(_page((5, value, value, 0)), _thresholds((5, 10)))
@@ -111,7 +102,6 @@ def test_an_attribute_fails_exactly_when_its_value_falls_to_its_threshold(value:
     assert overall_health(attributes) is not failing
 
 
-@pytest.mark.os_agnostic
 def test_one_failing_attribute_among_healthy_ones_fails_the_drive() -> None:
     attributes = decode_attributes(
         _page((5, 100, 100, 0), (9, 5, 5, 0), (12, 100, 100, 0)), _thresholds((5, 10), (9, 10), (12, 10))
@@ -120,12 +110,10 @@ def test_one_failing_attribute_among_healthy_ones_fails_the_drive() -> None:
     assert overall_health(attributes) is False
 
 
-@pytest.mark.os_agnostic
 def test_a_page_with_no_thresholds_gives_no_verdict() -> None:
     assert decode_health(_page((5, 100, 100, 0))).ok is None
 
 
-@pytest.mark.os_agnostic
 def test_a_verdict_read_from_the_drive_wins_over_the_one_computed() -> None:
     page, limits = _page((5, 1, 1, 0)), _thresholds((5, 10))
 
@@ -134,7 +122,6 @@ def test_a_verdict_read_from_the_drive_wins_over_the_one_computed() -> None:
     assert decode_health(_page((5, 100, 100, 0)), _thresholds((5, 10)), self_assessment_ok=False).ok is False
 
 
-@pytest.mark.os_agnostic
 def test_host_totals_are_counted_in_512_byte_sectors() -> None:
     health = decode_health(_page((241, 100, 100, 1000), (242, 100, 100, 3)))
 
@@ -142,7 +129,6 @@ def test_host_totals_are_counted_in_512_byte_sectors() -> None:
     assert health.bytes_read == 3 * 512
 
 
-@pytest.mark.os_agnostic
 def test_each_counter_comes_from_its_own_attribute() -> None:
     health = decode_health(
         _page((9, 100, 100, 1111), (5, 100, 100, 2), (197, 100, 100, 3), (199, 100, 100, 4)),
@@ -156,7 +142,6 @@ def test_each_counter_comes_from_its_own_attribute() -> None:
     )
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("entries", "expected"),
     [
@@ -173,18 +158,15 @@ def test_unrecoverable_errors_are_the_larger_of_the_two_counters(
     assert decode_health(_page(*entries)).uncorrectable_sectors == expected
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(("value", "used"), [(100, 0), (1, 99), (0, 100)])
 def test_wear_is_the_complement_of_the_normalised_value_across_its_range(value: int, used: int) -> None:
     assert decode_health(_page((177, value, value, 0))).percent_used == used
 
 
-@pytest.mark.os_agnostic
 def test_a_normalised_value_above_100_is_not_a_wear_figure() -> None:
     assert decode_health(_page((177, 101, 101, 0))).percent_used is None
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("pair", [(177, 233), (233, 202), (202, 231), (231, 173)])
 def test_the_wear_attributes_are_tried_in_the_order_vendors_agree_on(pair: tuple[int, int]) -> None:
     first, second = pair
@@ -193,22 +175,18 @@ def test_the_wear_attributes_are_tried_in_the_order_vendors_agree_on(pair: tuple
     assert health.percent_used == 10, f"{first} must be preferred to {second}"
 
 
-@pytest.mark.os_agnostic
 def test_a_wear_attribute_outside_its_range_falls_through_to_the_next() -> None:
     assert decode_health(_page((177, 200, 200, 0), (233, 80, 80, 0))).percent_used == 20
 
 
-@pytest.mark.os_agnostic
 def test_only_the_low_byte_of_a_temperature_is_the_temperature() -> None:
     assert decode_health(_page((194, 100, 100, 0x0050_0040_012A))).temperature_c == 42
 
 
-@pytest.mark.os_agnostic
 def test_the_temperature_attribute_is_preferred_to_the_airflow_one() -> None:
     assert decode_health(_page((190, 100, 100, 50), (194, 100, 100, 30))).temperature_c == 30
     assert decode_health(_page((190, 100, 100, 50))).temperature_c == 50
 
 
-@pytest.mark.os_agnostic
 def test_an_implausible_temperature_attribute_falls_through_to_the_airflow_one() -> None:
     assert decode_health(_page((194, 100, 100, 0xFF), (190, 100, 100, 35))).temperature_c == 35

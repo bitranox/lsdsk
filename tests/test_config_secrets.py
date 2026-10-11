@@ -130,7 +130,6 @@ ALWAYS_SENSITIVE_WORDS = [
 ]
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("word", ALWAYS_SENSITIVE_WORDS)
 def test_each_always_sensitive_word_hides_its_value_alone_and_in_any_spelling(word: str) -> None:
     """Every word of the vocabulary, on its own, snake-cased and camel-cased, upper-cased and plural."""
@@ -141,7 +140,6 @@ def test_each_always_sensitive_word_hides_its_value_alone_and_in_any_spelling(wo
     assert is_sensitive_name(f"{word}s")
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("word", ["auth", "key", "pass"])
 def test_each_in_company_word_hides_its_value_beside_another_word_only(word: str) -> None:
     """The three words that need company: sensitive in a longer name, in either order, plural too; never alone."""
@@ -152,7 +150,6 @@ def test_each_in_company_word_hides_its_value_beside_another_word_only(word: str
     assert is_sensitive_name(f"db_{word}s")
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("name", ["author", "author_name", "authority_url", "oauth", "web_author", "compass_pass_id"])
 def test_auth_inside_a_longer_word_is_not_auth(name: str) -> None:
     """Words are compared whole: `auth` at the front of `author` or `authority` names no credential.
@@ -163,7 +160,6 @@ def test_auth_inside_a_longer_word_is_not_auth(name: str) -> None:
     assert is_sensitive_name(name) is (name == "compass_pass_id")
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("name", "expected"),
     [
@@ -180,7 +176,6 @@ def test_an_acronym_followed_by_a_word_splits_between_them(name: str, expected: 
     assert is_sensitive_name(name) is expected
 
 
-@pytest.mark.os_agnostic
 def test_a_sensitive_key_inside_nested_tables_is_hidden_at_every_depth() -> None:
     """The descent into a mapping, two and three levels down, beside readable siblings."""
     given = {"outer": {"user": "u", "inner": {"password": "p", "host": "h", "deeper": {"token": "t", "port": 25}}}}
@@ -189,7 +184,6 @@ def test_a_sensitive_key_inside_nested_tables_is_hidden_at_every_depth() -> None
     }
 
 
-@pytest.mark.os_agnostic
 def test_tables_inside_lists_inside_tables_are_walked_too() -> None:
     """Mapping to sequence to mapping to sequence, with the readable value kept at each step."""
     given = {"a": {"b": [{"c": [{"secret": "s", "name": "n"}]}]}}

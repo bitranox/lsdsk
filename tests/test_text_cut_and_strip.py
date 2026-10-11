@@ -16,25 +16,21 @@ from pydantic import TypeAdapter, ValidationError
 from lsdsk.domain.text import MAX_DEVICE_TEXT, BoundedDeviceText, device_text, visible_text
 
 
-@pytest.mark.os_agnostic
 def test_a_value_longer_than_the_limit_is_cut_and_the_cut_is_marked() -> None:
     assert visible_text("abcdefghij", limit=4) == "abcd..."
 
 
-@pytest.mark.os_agnostic
 def test_a_value_exactly_the_limit_long_is_shown_whole_and_unmarked() -> None:
     assert visible_text("abcd", limit=4) == "abcd"
     assert visible_text("abcde", limit=4) == "abcd..."
 
 
-@pytest.mark.os_agnostic
 def test_an_escape_that_does_not_fit_is_dropped_whole_and_the_cut_is_marked() -> None:
     """An escape is written in four characters, so at a limit of five it is dropped whole, never halved."""
     assert visible_text("ab\x1bcd", limit=5) == "ab..."
     assert visible_text("a\x1b", limit=5) == "a\\x1b"
 
 
-@pytest.mark.os_agnostic
 def test_every_format_and_separator_character_is_stripped() -> None:
     """The category sweep: every ``Cf``, ``Zl`` and ``Zp`` code point this interpreter knows is removed.
 
@@ -50,7 +46,6 @@ def test_every_format_and_separator_character_is_stripped() -> None:
     assert survivors == []
 
 
-@pytest.mark.os_agnostic
 def test_the_bound_on_one_piece_of_device_text_is_4096_characters() -> None:
     bounded = TypeAdapter(BoundedDeviceText)
 

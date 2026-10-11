@@ -90,13 +90,11 @@ def _ata_page_with_temperature_raw(raw_low_byte: int) -> bytes:
     return bytes(page)
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("celsius", [0, 30, MAX_PLAUSIBLE_CELSIUS])
 def test_an_ata_temperature_attribute_uses_the_same_bound_as_every_other_path(celsius: int) -> None:
     assert decode_health(_ata_page_with_temperature_raw(celsius)).temperature_c == celsius
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("raw", [MAX_PLAUSIBLE_CELSIUS + 1, 0xFF])
 def test_an_ata_temperature_attribute_above_the_bound_is_not_a_reading(raw: int) -> None:
     assert decode_health(_ata_page_with_temperature_raw(raw)).temperature_c is None

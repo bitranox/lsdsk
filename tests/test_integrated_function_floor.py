@@ -657,7 +657,6 @@ def _about_the_daisy_sata(machine: Inventory) -> list[Finding]:
     return [finding for finding in diagnose(machine) if finding.subject == _DAISY_SATA_ADDRESS]
 
 
-@pytest.mark.os_agnostic
 def test_the_first_of_two_chained_chips_is_shown_to_pass_real_links_by_what_lies_beneath_it() -> None:
     """A real link one chip further down shows the first chip passes real links on.
 
@@ -678,7 +677,6 @@ def test_the_first_of_two_chained_chips_is_shown_to_pass_real_links_by_what_lies
     assert "0000:0f:00.0" in about_it[0].detail
 
 
-@pytest.mark.os_agnostic
 def test_a_chain_whose_every_device_beneath_reads_the_floor_cannot_be_told_apart() -> None:
     """Every device on and below the switch at the floor is what a narrow switch shows, so the warning stands."""
     about_it = _about_the_daisy_sata(_daisy_chain(beneath=_FLOOR))
@@ -688,7 +686,6 @@ def test_a_chain_whose_every_device_beneath_reads_the_floor_cannot_be_told_apart
     assert "oversubscribed" in about_it[0].title
 
 
-@pytest.mark.os_agnostic
 def test_real_links_beneath_the_switch_excuse_nothing_without_a_twin_at_the_floor() -> None:
     """A floor controller with no same-maker twin is taken at its word, however fast the chain below."""
     about_it = _about_the_daisy_sata(_daisy_chain(beneath=_REAL_LINK, twin_vendor=_CARD_READER_MAKER))
@@ -698,7 +695,6 @@ def test_real_links_beneath_the_switch_excuse_nothing_without_a_twin_at_the_floo
     assert "oversubscribed" in about_it[0].title
 
 
-@pytest.mark.os_agnostic
 def test_without_the_pci_tree_nothing_beneath_a_port_is_known() -> None:
     """The ports alone cannot say what hangs below the bridge, so the warning stands as before."""
     about_it = _about_the_daisy_sata(_daisy_chain(beneath=_REAL_LINK, with_tree=False))
@@ -707,7 +703,6 @@ def test_without_the_pci_tree_nothing_beneath_a_port_is_known() -> None:
     assert about_it[0].severity is Severity.WARNING
 
 
-@pytest.mark.os_agnostic
 def test_the_sata_function_of_the_first_chained_chip_on_a_real_board_is_a_register_default() -> None:
     """The committed capture this was reported on: ASUS ProArt X870E, two Promontory 21 chained.
 

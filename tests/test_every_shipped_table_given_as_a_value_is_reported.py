@@ -47,13 +47,11 @@ def _skipped_by_config(
     return envelope["ok"], envelope["skipped"]
 
 
-@pytest.mark.os_agnostic
 def test_the_registry_names_the_tables_the_report_used_to_miss() -> None:
     """Liveness: the walk below is only meaningful if the tables that were missed are in it."""
     assert {"history", "lib_log_rich", "lib_layered_config", "lib_layered_config.default_permissions"} <= set(TABLES)
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize("path", TABLES)
 def test_each_shipped_table_given_as_a_value_is_listed_as_skipped(
     path: str,
@@ -68,7 +66,6 @@ def test_each_shipped_table_given_as_a_value_is_listed_as_skipped(
     assert [entry for entry in skipped if entry.startswith(f"Ignored: {path}=")], skipped
 
 
-@pytest.mark.os_agnostic
 def test_a_file_that_gives_every_table_as_a_table_skips_nothing(
     managed_traceback_state: None,
     user_config_dir_under: Callable[[str], Path],

@@ -74,7 +74,6 @@ def _health_of(data: dict[str, Any], node: str) -> dict[str, Any] | None:
     return cast("dict[str, Any] | None", disk["health"])
 
 
-@pytest.mark.os_agnostic
 def test_an_all_ones_nvme_smart_log_reports_no_alarm_and_no_figure(
     tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
 ) -> None:
@@ -88,7 +87,6 @@ def test_an_all_ones_nvme_smart_log_reports_no_alarm_and_no_figure(
     assert health is None or (health["ok"] is None and health["percent_used"] is None)
 
 
-@pytest.mark.os_agnostic
 def test_the_alarm_check_can_see_a_real_failing_nvme_drive(
     tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
 ) -> None:
@@ -104,7 +102,6 @@ def test_the_alarm_check_can_see_a_real_failing_nvme_drive(
     assert _alarms_about(data, "nvme0n1")
 
 
-@pytest.mark.os_agnostic
 def test_an_all_ones_smart_log_leaves_the_monitors_temperature_in_place(
     tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
 ) -> None:
@@ -118,7 +115,6 @@ def test_an_all_ones_smart_log_leaves_the_monitors_temperature_in_place(
     assert health["temperature_c"] is not None
 
 
-@pytest.mark.os_agnostic
 def test_an_all_ones_ata_smart_page_reports_no_alarm_and_no_attributes(
     tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
 ) -> None:
@@ -132,7 +128,6 @@ def test_an_all_ones_ata_smart_page_reports_no_alarm_and_no_attributes(
     assert health is None or health["attributes"] == []
 
 
-@pytest.mark.os_agnostic
 def test_an_all_ones_identify_controller_names_no_controller(
     tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
 ) -> None:
@@ -146,7 +141,6 @@ def test_an_all_ones_identify_controller_names_no_controller(
     assert "�" not in (disk["serial"] or "")
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     "refuse",
     [

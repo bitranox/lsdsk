@@ -252,7 +252,6 @@ def _cut_by_one_byte(record: bytes) -> bytes:
     return bytes([record[0] - 1]) + record[1:-1]
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("record", "reason"),
     [
@@ -271,14 +270,12 @@ def test_a_short_superspeedplus_record_is_a_typed_refusal_not_a_struct_error(rec
         usb.decode_bos(_bos(record))
 
 
-@pytest.mark.os_agnostic
 def test_a_superspeedplus_record_holding_exactly_its_attributes_decodes() -> None:
     """The control for the refusals above: the same builder, complete, is accepted."""
     decoded = usb.decode_bos(_bos(_superspeedplus(GEN1_LANE, GEN2_LANE)))
     assert decoded.fastest == GEN2
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("blob", "reason"),
     [
@@ -302,7 +299,6 @@ def test_each_bos_refusal_leg_is_a_value_error_naming_its_reason(blob: bytes, re
         usb.decode_bos(blob)
 
 
-@pytest.mark.os_agnostic
 def test_a_container_id_record_too_short_to_hold_one_is_not_read() -> None:
     """A 19-byte Container ID record is skipped; a 20-byte one is taken."""
     short = struct.pack("<BBBB", 19, 0x10, 0x04, 0) + bytes(15)
@@ -310,7 +306,6 @@ def test_a_container_id_record_too_short_to_hold_one_is_not_read() -> None:
     assert usb.decode_bos(_bos(short)).container_id is None
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("rx", "tx"),
     [("2", "1"), ("1", "2"), ("2", None), (None, "2"), ("2", ""), ("two", "2")],
@@ -320,7 +315,6 @@ def test_one_direction_with_a_single_lane_keeps_ten_gigabits_one_gen2_lane(rx: s
     assert usb.speed_from_sysfs("10000", rx, tx) == UsbSpeed(lane_rate=UsbLaneRate.GEN2, lanes=1)
 
 
-@pytest.mark.os_agnostic
 def test_both_directions_at_two_lanes_make_ten_gigabits_two_gen1_lanes() -> None:
     """The control for the asymmetric cases above."""
     assert usb.speed_from_sysfs("10000", " 2\n", "2") == UsbSpeed(lane_rate=UsbLaneRate.GEN1, lanes=2)

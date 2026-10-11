@@ -80,7 +80,6 @@ def _stand_in_without_the_flag() -> dict[str, Any]:
     }
 
 
-@pytest.mark.os_agnostic
 def test_a_stand_in_written_before_the_flag_existed_is_still_not_a_disk() -> None:
     payload = cast("dict[str, Any]", json.loads(_FIXTURE.read_text(encoding="utf-8")))
     payload["disks"] = {"unreadable disk interface 1": _stand_in_without_the_flag()}
@@ -91,7 +90,6 @@ def test_a_stand_in_written_before_the_flag_existed_is_still_not_a_disk() -> Non
     assert len(inventory.unread_interfaces) == 1
 
 
-@pytest.mark.os_agnostic
 def test_a_real_disk_whose_open_failed_is_still_a_refused_device_not_a_stand_in() -> None:
     """Control: an erroring record with a real interface path keeps the old reading."""
     payload = cast("dict[str, Any]", json.loads(_FIXTURE.read_text(encoding="utf-8")))
@@ -103,7 +101,6 @@ def test_a_real_disk_whose_open_failed_is_still_a_refused_device_not_a_stand_in(
     assert inventory.unread_interfaces == ()
 
 
-@pytest.mark.os_agnostic
 def test_an_elevated_run_that_listed_only_unreadable_interfaces_does_not_blame_missing_device_nodes() -> None:
     payload = cast("dict[str, Any]", json.loads(_FIXTURE.read_text(encoding="utf-8")))
     payload["devices_accessible"] = False  # what the reader records when no record is an opened disk
@@ -117,7 +114,6 @@ def test_an_elevated_run_that_listed_only_unreadable_interfaces_does_not_blame_m
     assert any("Win32 error 5" in line for line in skipped), skipped
 
 
-@pytest.mark.os_agnostic
 def test_a_run_where_every_open_failed_still_says_no_device_nodes() -> None:
     """Control: with a real disk refused and none opened, the old explanation stands."""
     payload = cast("dict[str, Any]", json.loads(_FIXTURE.read_text(encoding="utf-8")))
@@ -142,7 +138,6 @@ def _a_caveat_free_inventory(*reasons: str) -> Inventory:
     )
 
 
-@pytest.mark.os_agnostic
 def test_the_unread_line_is_the_only_extra_line_on_a_run_with_no_other_caveat(rendered: Callable[..., str]) -> None:
     """The QEMU capture carries a hypervisor caveat that keeps the header a group anyway, so it cannot show this."""
     lines = rendered(render_header(_a_caveat_free_inventory("Win32 error 5"))).splitlines()
@@ -151,14 +146,12 @@ def test_the_unread_line_is_the_only_extra_line_on_a_run_with_no_other_caveat(re
     assert lines[1].strip() == "1 disk interface not read: Win32 error 5."
 
 
-@pytest.mark.os_agnostic
 def test_the_unread_line_names_every_reason_and_pluralises_the_noun(rendered: Callable[..., str]) -> None:
     output = rendered(render_header(_a_caveat_free_inventory("Win32 error 5", "Win32 error 32")))
 
     assert "2 disk interfaces not read: Win32 error 5; Win32 error 32." in output
 
 
-@pytest.mark.os_agnostic
 def test_a_caveat_free_run_with_every_interface_read_prints_the_banner_alone(rendered: Callable[..., str]) -> None:
     """The control: with nothing unread the same inventory is one line, so the test above is about the note."""
     assert len(rendered(render_header(_a_caveat_free_inventory())).splitlines()) == 1

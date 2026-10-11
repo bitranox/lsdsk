@@ -213,7 +213,6 @@ def test_the_reader_records_the_port_each_phy_belongs_to(tmp_path: Path) -> None
     assert phys["phy-6:7"]["path"] == os.path.realpath(classes / "phy-6:7")
 
 
-@pytest.mark.os_agnostic
 def test_a_drive_directly_on_a_wide_port_borrows_no_single_lanes_rates() -> None:
     """Four host phys form ``port-6:0``: a drive on it is carried by all of them, so no one phy's rate is its own."""
     reading = _expander_capture(with_ports=True)

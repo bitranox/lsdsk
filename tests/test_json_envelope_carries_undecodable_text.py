@@ -60,7 +60,6 @@ def test_a_history_file_with_undecodable_bytes_in_its_name_still_yields_json(
     assert "\\udcff" in " ".join(envelope["skipped"])
 
 
-@pytest.mark.os_agnostic
 def test_a_profile_with_undecodable_bytes_still_yields_a_json_refusal(capsys: pytest.CaptureFixture[str]) -> None:
     """``--profile`` is refused with its own text quoted, and the envelope carries it."""
     exit_code, out = _run(["config", "--profile", "\udcff\udcfe", "--format", "json"], capsys)
@@ -71,7 +70,6 @@ def test_a_profile_with_undecodable_bytes_still_yields_a_json_refusal(capsys: py
     assert envelope["error"]["type"]
 
 
-@pytest.mark.os_agnostic
 def test_a_section_with_undecodable_bytes_still_yields_a_json_refusal(capsys: pytest.CaptureFixture[str]) -> None:
     """``--section`` names nothing, the refusal quotes it, and the envelope still parses."""
     exit_code, out = _run(["config", "--section", "\udcff", "--format", "json"], capsys)
@@ -82,7 +80,6 @@ def test_a_section_with_undecodable_bytes_still_yields_a_json_refusal(capsys: py
     assert "\\udcff" in envelope["error"]["message"]
 
 
-@pytest.mark.os_agnostic
 def test_ordinary_text_is_carried_unchanged(capsys: pytest.CaptureFixture[str]) -> None:
     """The control: an accented section name survives, so the sanitiser touches only what cannot be encoded."""
     exit_code, out = _run(["config", "--section", "grüße", "--format", "json"], capsys)

@@ -87,7 +87,6 @@ def test_a_controller_with_neither_registers_nor_phys_is_counted_from_its_ata_po
     assert _port_count({"class": "0x01018a", "driver": "ata_piix"}, {"ata_port": _ata_ports(2)}) == 2
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(
     ("capability", "bitmap"),
     [
@@ -104,7 +103,6 @@ def test_an_impossible_ahci_register_reading_drops_the_port_count(capability: in
     assert _port_count(pci, {"ata_port": _ata_ports(6)}) is None
 
 
-@pytest.mark.os_agnostic
 def test_a_bitmap_naming_exactly_the_declared_ports_is_still_counted() -> None:
     """The control: six declared, six implemented is a real controller."""
     pci = {"class": "0x010601", "driver": "ahci", "ahci": {"capability": 0xE7234F05, "ports_implemented": 0b111111}}
@@ -112,7 +110,6 @@ def test_a_bitmap_naming_exactly_the_declared_ports_is_still_counted() -> None:
     assert _port_count(pci, {}) == 6
 
 
-@pytest.mark.os_agnostic
 def test_an_ahci_class_controller_with_no_driver_is_counted_from_its_bitmap() -> None:
     """The class alone says AHCI: the declared ata_ports must not be the answer."""
     pci = {"class": "0x010601", "ahci": {"capability": 0xE7234F05, "ports_implemented": 0b11}}
@@ -120,7 +117,6 @@ def test_an_ahci_class_controller_with_no_driver_is_counted_from_its_bitmap() ->
     assert _port_count(pci, {"ata_port": _ata_ports(6)}) == 2
 
 
-@pytest.mark.os_agnostic
 def test_a_sas_controller_whose_host_phys_publish_no_rate_never_falls_back_to_ata_ports() -> None:
     """Rule 4's second source is for controllers with no phys at all."""
     host = f"{_PATH}/host0"

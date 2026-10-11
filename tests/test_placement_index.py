@@ -467,7 +467,6 @@ def _beneath(address: str, ancestor: str, parents: dict[str, str | None]) -> boo
     return False
 
 
-@pytest.mark.os_agnostic
 @given(drawn=_ports_in_a_tree(), address=_ADDRESS)
 @settings(max_examples=300, deadline=None)
 def test_a_real_link_beneath_a_port_is_found_where_a_walk_up_from_every_port_finds_it(
