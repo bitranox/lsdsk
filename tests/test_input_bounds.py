@@ -1556,6 +1556,21 @@ _MARKUP_DRAWS_NOTHING = frozenset(
 )
 
 
+def _agreed_length(first: str, second: str) -> int:
+    """Count the leading characters two strings share.
+
+    Example:
+        >>> _agreed_length("[bold]x", "[bold]")
+        6
+        >>> _agreed_length("[bo", "[bold]")
+        3
+    """
+    for index, (left, right) in enumerate(zip(first, second, strict=False)):
+        if left != right:
+            return index
+    return min(len(first), len(second))
+
+
 def _markup_read_as_markup(text: str) -> tuple[list[str], int]:
     """Where the payload was drawn as something other than itself.
 
@@ -1569,7 +1584,7 @@ def _markup_read_as_markup(text: str) -> tuple[list[str], int]:
     whole = 0
     for found in re.finditer(_MARKUP_MARK, text):
         rest = text[found.end() :]
-        agreed = len(os.path.commonprefix([rest, _MARKUP]))
+        agreed = _agreed_length(rest, _MARKUP)
         if agreed == len(_MARKUP):
             whole += 1
         elif rest[agreed : agreed + 1] not in _CUT_MARKS:
