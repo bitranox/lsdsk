@@ -16,7 +16,7 @@ from lsdsk.adapters.hw.decode.captured import parse_int
 from lsdsk.adapters.hw.linux.builder import parse_link_rate
 from lsdsk.adapters.hw.snapshot import build_from
 
-_ARABIC_THREE = "٣"
+_ARABIC_THREE = chr(0x663)
 _ADDRESS = "0000:03:00.0"
 _HBA = f"/sys/devices/pci0000:00/0000:00:03.0/{_ADDRESS}"
 

@@ -113,3 +113,16 @@ def test_a_privileged_run_names_no_refusal_for_a_native_sas_drive(
     # say so - which is what proves the replay reached the skipped list at all.
     assert [entry for entry in skipped if "/dev/sdzzb" in entry], skipped
     assert [entry for entry in skipped if "/dev/sdzzc" in entry], skipped
+
+
+def test_only_scsi_disk_nodes_are_sent_ata_passthrough() -> None:
+    """An optical drive (``sr0``), a virtio disk, an NVMe namespace and a loop device are not asked.
+
+    ``sr0`` starts with the same letter as ``sdz``, which is why the prefix is
+    ``sd`` and not ``s``.
+    """
+    block: dict[str, dict[str, Any]] = {
+        node: {"device": {"vendor": "ATA"}} for node in ("sdz", "sr0", "vda", "nvme0n1", "loop0", "sda1")
+    }
+
+    assert ata_passthrough_nodes(block) == ["sdz", "sda1"]

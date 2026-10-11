@@ -211,3 +211,18 @@ def test_the_reader_records_the_port_each_phy_belongs_to(tmp_path: Path) -> None
     assert phys["phy-6:7"]["port"] == "port-6:1"
     assert "port" not in phys["phy-6:1"]
     assert phys["phy-6:7"]["path"] == os.path.realpath(classes / "phy-6:7")
+
+
+@pytest.mark.os_agnostic
+def test_a_drive_directly_on_a_wide_port_borrows_no_single_lanes_rates() -> None:
+    """Four host phys form ``port-6:0``: a drive on it is carried by all of them, so no one phy's rate is its own."""
+    reading = _expander_capture(with_ports=True)
+    reading["block"] = {
+        "sdzy": _native_sas_disk(f"{_HBA}/host6/port-6:0/end_device-6:0/target6:0:0/6:0:0:0"),
+    }
+
+    (disk,) = build_from(reading).disks
+
+    assert disk.bus is BusType.SAS
+    assert disk.link.negotiated_gbps is None
+    assert disk.link.port_max_gbps is None

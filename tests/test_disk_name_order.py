@@ -39,3 +39,9 @@ def test_a_virtio_or_xen_disk_letter_counts_on_past_z_too() -> None:
 def test_distinct_names_never_share_a_key() -> None:
     names = ["sda", "sda1", "sdaa", "nvme0n1", "nvme0n1p1", "nvme00n1", r"\\.\PhysicalDrive0", "", "zram0"]
     assert len({disk_name_order(name) for name in names}) == len(names)
+
+
+def test_two_spellings_of_one_partition_number_are_ordered_the_same_way_whatever_the_input_order() -> None:
+    """``sda1`` and ``sda01`` read as the same numbers, so only the name itself can tell them apart."""
+    assert disk_name_order("sda1") != disk_name_order("sda01")
+    assert _ordered("sda1", "sda01") == _ordered("sda01", "sda1")

@@ -50,3 +50,31 @@ def test_bare_metal_dmi_stays_bare_metal(vendor: str, product: str) -> None:
 def test_hypervisor_dmi_stays_detected(vendor: str, product: str, detail: str) -> None:
     verdict = classify(VirtualizationEvidence(dmi_vendor=vendor, dmi_product=product))
     assert (verdict.environment, verdict.detail) == (Environment.VIRTUAL_MACHINE, detail)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("vendor", "product"),
+    [
+        ("ACME", "Oxen Blade"),
+        ("ACME", "Bkvm Chassis"),
+        ("ACME", "Superqemu"),
+        ("ACME", "Jvmware Appliance"),
+        ("ACME", "Openstackish Rack"),
+    ],
+)
+def test_a_marker_preceded_by_a_letter_is_not_a_hypervisor(vendor: str, product: str) -> None:
+    """The left edge of the word: ``Oxen`` contains ``xen`` but is not Xen, as ``Xenon`` is not on the right."""
+    verdict = classify(VirtualizationEvidence(dmi_vendor=vendor, dmi_product=product))
+    assert verdict.environment is Environment.BARE_METAL, verdict
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("product", "detail"),
+    [("7xen", "Xen"), ("xen7", "Xen"), ("(KVM)", "KVM"), ("-qemu-", "QEMU"), ("VMware7,1", "VMware")],
+)
+def test_a_marker_bounded_by_digits_or_punctuation_is_still_a_hypervisor(product: str, detail: str) -> None:
+    """The control for the left edge: only a LETTER bounds a word."""
+    verdict = classify(VirtualizationEvidence(dmi_vendor="ACME", dmi_product=product))
+    assert (verdict.environment, verdict.detail) == (Environment.VIRTUAL_MACHINE, detail)
