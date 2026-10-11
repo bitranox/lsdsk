@@ -756,6 +756,29 @@ def ascii_fallback(text: str, encoding: str) -> str:
     return mapped.encode(encoding, errors="replace").decode(encoding)
 
 
+def escape_lone_surrogates(text: str) -> str:
+    r"""Show each lone surrogate as its escape, leaving every other character alone.
+
+    A path or an argument reaches this tool as the bytes the operating system
+    holds, which Python decodes to a lone surrogate where they are not valid
+    UTF-8. No UTF encoding can carry one, so writing it raised
+    ``UnicodeEncodeError`` on a strict stream and ended the run.
+
+    Args:
+        text: Text that may quote a path or an argument.
+
+    Returns:
+        `text` with each lone surrogate written as ``\udcXX``.
+
+    Example:
+        >>> escape_lone_surrogates("bad\udcffname")
+        'bad\\udcffname'
+        >>> escape_lone_surrogates("gr\u00fc\u00dfe")
+        'gr\xfc\xdfe'
+    """
+    return text.encode("utf-8", errors="backslashreplace").decode("utf-8")
+
+
 def encode_safe(text: str, encoding: str | None) -> str:
     """Return `text` if `encoding` accepts it, else its ASCII fallback.
 
@@ -770,8 +793,10 @@ def encode_safe(text: str, encoding: str | None) -> str:
     Returns:
         The text unchanged, or its ASCII fallback.
     """
-    if encoding is None or encoding.lower() in _UNIVERSAL_ENCODINGS:
+    if encoding is None:
         return text
+    if encoding.lower() in _UNIVERSAL_ENCODINGS:
+        return escape_lone_surrogates(text)
     try:
         text.encode(encoding)
     except UnicodeEncodeError:
@@ -1047,6 +1072,7 @@ __all__ = [
     "deliver_pending_log_lines",
     "echo",
     "encode_safe",
+    "escape_lone_surrogates",
     "flush_streams_or_leave",
     "is_broken_pipe",
     "restore_original_streams",

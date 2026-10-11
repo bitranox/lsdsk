@@ -22,10 +22,10 @@ System Role:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
 import rich_click as click
-from pydantic import BaseModel, SerializeAsAny
+from pydantic import AfterValidator, BaseModel, SerializeAsAny
 from pydantic_core import PydanticSerializationError
 
 from lsdsk.domain.enums import ActionCommand, OutputFormat
@@ -40,6 +40,12 @@ if TYPE_CHECKING:
 
 class PayloadTooDeepError(ValueError):
     """A result nests deeper than the JSON writer can carry on this platform."""
+
+
+#: A string an envelope carries. Every free-text field of every envelope is typed
+#: with this, so a command cannot add one that skips the sanitiser: the omission
+#: is unrepresentable rather than something each caller remembers.
+WireText = Annotated[str, AfterValidator(safe_console.escape_lone_surrogates)]
 
 
 class ActionResult(BaseModel, extra="forbid"):
@@ -110,7 +116,7 @@ class ActionEnvelope(BaseModel):
     ok: bool
     command: ActionCommand
     data: SerializeAsAny[ActionResult] | MappingResult
-    skipped: list[str] = []
+    skipped: list[WireText] = []
 
 
 #: The start of every message pydantic-core's recursion guard raises.
@@ -168,7 +174,7 @@ class ErrorDetail(BaseModel, frozen=True, extra="forbid"):
     """
 
     type: str
-    message: str
+    message: WireText
 
 
 class ErrorEnvelope(BaseModel, frozen=True, extra="forbid"):
@@ -382,6 +388,7 @@ __all__ = [
     "MappingResult",
     "PayloadTooDeepError",
     "RefusedBeforeTheRun",
+    "WireText",
     "asked_for_json",
     "emit_action",
     "emit_error",

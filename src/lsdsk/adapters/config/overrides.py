@@ -229,9 +229,12 @@ def _exact_integer(raw: str, parsed: CoercedValue) -> CoercedValue:
         >>> _exact_integer("2.5", 2.5)
         2.5
     """
-    if not isinstance(parsed, float) or not raw.lstrip("-").isascii() or not raw.lstrip("-").isdigit():
+    # Stripped because the JSON reader skips blanks around a number, so a padded
+    # literal became the same distorted float the unpadded one does.
+    digits = raw.strip()
+    if not isinstance(parsed, float) or not digits.lstrip("-").isascii() or not digits.lstrip("-").isdigit():
         return parsed
-    return int(raw)
+    return int(digits)
 
 
 def _nest_override(target: dict[str, dict[str, object]], override: ConfigOverride) -> None:

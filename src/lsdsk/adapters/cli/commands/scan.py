@@ -52,7 +52,7 @@ from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from .. import safe_console
 from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION, TREE_DENSITY_TOKENS
 from ..context import get_cli_context
-from ..envelope import ActionResult, emit_action, fail
+from ..envelope import ActionResult, WireText, emit_action, fail
 from ..exit_codes import ExitCode
 from ..typed_click import option
 
@@ -471,7 +471,7 @@ class ScanEnvelope(BaseModel):
     ok: bool
     command: CliCommand
     data: ScanData
-    skipped: list[str]
+    skipped: list[WireText]
 
 
 def build_envelope(
