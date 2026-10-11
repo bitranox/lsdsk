@@ -30,7 +30,7 @@ tree = Path(sys.argv[1])
 evidence = read_environment(proc=tree / "proc")
 signatures = mounts.read_signatures(["8:2"], tree / "udev")
 print(json.dumps({
-    "encoding": locale.getencoding(),
+    "encoding": locale.getpreferredencoding(False),
     "dmi_vendor": evidence.get("dmi_vendor"),
     "mount_markers": evidence.get("mount_markers"),
     "hypervisor_flag": evidence["hypervisor_flag"],

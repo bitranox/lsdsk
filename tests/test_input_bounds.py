@@ -2261,8 +2261,10 @@ def test_a_live_attribute_past_the_capture_bound_is_not_read_rather_than_ending_
     for node, model in (("sda", "A" * (MAX_DEVICE_TEXT + 1)), ("sdb", "B" * (MAX_DEVICE_TEXT - 1))):
         device = tmp_path / node / "device"
         device.mkdir(parents=True)
-        (tmp_path / node / "size").write_text("100\n", encoding="utf-8")
-        (device / "model").write_text(f"{model}\n", encoding="utf-8")
+        # Bytes, not text: sysfs ends a value with a bare LF, and a text-mode write on
+        # Windows would end it with CRLF, one character past the bound the reader keeps.
+        (tmp_path / node / "size").write_bytes(b"100\n")
+        (device / "model").write_bytes(f"{model}\n".encode())
 
     block = read_block(tmp_path)
     parsed = LinuxCapture.model_validate(

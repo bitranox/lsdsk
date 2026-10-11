@@ -21,7 +21,10 @@ OLD = ABANDONED_TEMPORARY_SECONDS * 12
 def _age(path: Path, seconds: float) -> None:
     """Set `path`'s own modification time (a link's, not its target's) `seconds` into the past."""
     then = path.lstat().st_mtime - seconds
-    os.utime(path, (then, then), follow_symlinks=False)
+    # Windows cannot set a link's own time (NotImplementedError); there it ages only regular
+    # files, for which following a link changes nothing, and the link tests are os_posix.
+    own = os.utime in os.supports_follow_symlinks
+    os.utime(path, (then, then), follow_symlinks=not own)
 
 
 def _leftover(directory: Path, name: str) -> Path:
