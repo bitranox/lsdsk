@@ -207,7 +207,7 @@ def test_a_variable_the_logging_library_reads_itself_is_set_aside_rather_than_en
     said = _said(result)
     assert result.exit_code == control.exit_code, f"left {result.exit_code}: {said[-400:]}"
     json.loads(result.stdout)
-    assert "Warning: ignoring LOG_CONSOLE_LEVEL=NOPE" in said, said
+    assert "Warning: ignoring environment variable LOG_CONSOLE_LEVEL=NOPE" in said, said
     assert "LOG_UNRELATED_SETTING" not in said, f"named a variable the refusal is not about: {said}"
     assert os.environ.get("LOG_CONSOLE_LEVEL") == "NOPE", "the variable was not put back"
     assert lib_log_rich.runtime.is_initialised()

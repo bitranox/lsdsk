@@ -188,6 +188,27 @@ def _guarded_console(appearance: ConsoleAppearance) -> RichConsoleAdapter:
     )
 
 
+#: The warnings this run has already printed.
+#:
+#: ``logdemo`` starts the runtime a second time with its own settings, and both
+#: starts read the same refused ``LOG_*`` variable, so the one fact was said
+#: twice. Process-global because the two starts share nothing else, and cleared
+#: when a run begins so a second invocation in one process says it again.
+_REPORTED: Final[set[str]] = set()
+
+
+def _report_once(notes: Sequence[str]) -> None:
+    """Print each warning on standard error unless this run has printed it already.
+
+    Args:
+        notes: The warnings to print, in order.
+    """
+    for note in notes:
+        if note not in _REPORTED:
+            _REPORTED.add(note)
+            safe_console.echo(note, err=True)
+
+
 def init_logging(config: Config) -> None:
     """Initialize lib_log_rich runtime with the provided configuration.
 
@@ -223,11 +244,11 @@ def init_logging(config: Config) -> None:
     """
     if lib_log_rich.runtime.is_initialised():
         return
+    _REPORTED.clear()
     lib_log_rich.config.enable_dotenv()
     configured, notes = _configured_section(config)
     notes.extend(start_runtime(configured, shipped_section(_SECTION)))
-    for note in notes:
-        safe_console.echo(note, err=True)
+    _report_once(notes)
     if lib_log_rich.runtime.is_initialised():
         lib_log_rich.runtime.attach_std_logging()
 
@@ -540,8 +561,7 @@ def run_log_demo(theme: str) -> str:
     settings = _demo_settings(key)
     # The shipped table is the demo's own: what the demo asks for is valid, so a
     # refusal can only come from a LOG_* variable, and those are set aside.
-    for note in start_runtime(settings, settings):
-        safe_console.echo(note, err=True)
+    _report_once(start_runtime(settings, settings))
     try:
         with lib_log_rich.runtime.bind(job_id=f"logdemo-{key}", request_id="demo"):
             logger = lib_log_rich.runtime.getLogger("logdemo")

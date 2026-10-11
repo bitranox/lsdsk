@@ -293,12 +293,12 @@ def variable_sentence(name: str, *, refused: BaseException, environ: Mapping[str
         One ``Warning: ignoring ...`` sentence.
 
     Example:
-        >>> variable_sentence("LOG_CONSOLE_LEVEL", refused=ValueError("Unknown log level: 'NOPE'"),
-        ...     environ={"LOG_CONSOLE_LEVEL": "NOPE"})
-        "Warning: ignoring LOG_CONSOLE_LEVEL=NOPE: Unknown log level: 'NOPE'. Using the [lib_log_rich] settings."
+        >>> variable_sentence("LOG_CONSOLE_LEVEL", refused=ValueError("Unknown level"),
+        ...     environ={"LOG_CONSOLE_LEVEL": "x"})
+        'Warning: ignoring environment variable LOG_CONSOLE_LEVEL=x: Unknown level. Using the [lib_log_rich] settings.'
     """
     return RejectedValue(
-        dotted=visible_text(name),
+        dotted=f"environment variable {visible_text(name)}",
         raw=visible_text(environ.get(name, "")),
         reason=visible_text(_message(refused).rstrip(".")),
         used="the [lib_log_rich] settings",
