@@ -58,7 +58,9 @@ def _letter_mounts(volumes: dict[str, VolumeEntry], disk_numbers: dict[int, str]
     Returns:
         Mount paths, keyed by the node of the disk they reach.
     """
-    mounts: dict[str, list[str]] = {}
+    # A dict keeps first-seen order and looks a path up in constant time, where a
+    # `not in` scan of a list made a disk with thousands of folder mounts quadratic.
+    mounts: dict[str, dict[str, None]] = {}
     for entry in volumes.values():
         if not entry.paths:
             continue
@@ -66,11 +68,8 @@ def _letter_mounts(volumes: dict[str, VolumeEntry], disk_numbers: dict[int, str]
             node = disk_numbers.get(disk_number)
             if node is None:
                 continue
-            bucket = mounts.setdefault(node, [])
-            for path in entry.paths:
-                if path not in bucket:
-                    bucket.append(path)
-    return mounts
+            mounts.setdefault(node, {}).update(dict.fromkeys(entry.paths))
+    return {node: list(bucket) for node, bucket in mounts.items()}
 
 
 def _boot_nodes(
