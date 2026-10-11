@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.7.4] 2026-10-12 00:25:12
+
 ### Changed
 
 - **`lsdsk.get_config` raises `LayerLoadError` for a configuration file it may not read**, with the
