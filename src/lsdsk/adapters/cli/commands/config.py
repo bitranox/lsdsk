@@ -19,13 +19,11 @@ from lib_layered_config import Config, redact_mapping
 from rich.console import Console
 
 from lsdsk import __init__conf__
-from lsdsk.adapters.config.history import read_history_settings
-from lsdsk.adapters.config.loader import invalid_profile_message
+from lsdsk.adapters.config.loader import invalid_profile_message, shipped_table_paths
 from lsdsk.adapters.config.overrides import apply_overrides
 from lsdsk.adapters.config.permissions import read_permission_defaults
 from lsdsk.adapters.config.secrets import redact_secrets
-from lsdsk.adapters.config.tunables import read_display_settings, read_thresholds
-from lsdsk.adapters.config.values import REASON_SECTION, RejectedValue
+from lsdsk.adapters.config.values import REASON_SECTION, RejectedValue, rendered
 from lsdsk.domain.deployment import DeployRequest
 from lsdsk.domain.enums import ActionCommand, DeployTarget, OutputFormat, WriteOutcome
 from lsdsk.domain.errors import ConfigurationError
@@ -186,12 +184,37 @@ def _ignored_sections(config: Config) -> list[RejectedValue]:
     Returns:
         One refusal per section that is not a table, in the order read.
     """
-    refused = (
-        *read_thresholds(config).rejected,
-        *read_display_settings(config).rejected,
-        *read_history_settings(config, path_override=None).rejected,
+    return [_not_a_table(config, path) for path in shipped_table_paths() if _is_given_as_a_value(config, path)]
+
+
+def _is_given_as_a_value(config: Config, path: str) -> bool:
+    """Whether the user's configuration gives `path` as something other than a table.
+
+    Args:
+        config: The merged configuration.
+        path: A table the package ships, as a dotted path.
+
+    Returns:
+        ``True`` for a value that is present and not a table.
+    """
+    sentinel = object()
+    found: object = config.get(path, default=sentinel)
+    return found is not sentinel and not isinstance(found, dict)
+
+
+def _not_a_table(config: Config, path: str) -> RejectedValue:
+    """The refusal for a shipped table given as a single value.
+
+    Args:
+        config: The merged configuration.
+        path: A table the package ships, as a dotted path.
+
+    Returns:
+        What was given and what is in force instead.
+    """
+    return RejectedValue(
+        dotted=path, raw=rendered(config.get(path)), reason=REASON_SECTION, used=f"the shipped [{path}] section"
     )
-    return [value for value in refused if value.reason == REASON_SECTION]
 
 
 def _ignored_sentence(ignored: RejectedValue) -> str:

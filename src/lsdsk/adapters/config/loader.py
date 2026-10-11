@@ -410,6 +410,34 @@ def shipped_section(section: str) -> dict[str, object]:
     return copy.deepcopy(dict(cast("Mapping[str, object]", table)))
 
 
+def shipped_table_paths() -> tuple[str, ...]:
+    """The dotted path of every table the package ships, nested ones included.
+
+    The one registry of what is a table in this tool's configuration: a section
+    the package ships as a table is read as one, so a user file giving it as a
+    single value is ignored, and anything that must say so asks here instead of
+    keeping a list of its own.
+
+    Returns:
+        ``history``, ``lib_log_rich`` and ``lib_layered_config.default_permissions``
+        among them, parents before their children.
+
+    Example:
+        >>> {"thresholds", "lib_layered_config.default_permissions"} <= set(shipped_table_paths())
+        True
+    """
+    found: list[str] = []
+    pending: list[tuple[str, Mapping[str, object]]] = [("", _shipped_tables())]
+    while pending:
+        prefix, table = pending.pop(0)
+        for key, value in table.items():
+            if isinstance(value, Mapping):
+                dotted = f"{prefix}{key}"
+                found.append(dotted)
+                pending.append((f"{dotted}.", cast("Mapping[str, object]", value)))
+    return tuple(found)
+
+
 __all__ = [
     "SHIPPED_COMPANION_FILES",
     "DamagedInstallationError",
@@ -418,5 +446,6 @@ __all__ = [
     "invalid_profile_message",
     "require_an_intact_installation",
     "shipped_section",
+    "shipped_table_paths",
     "validate_profile",
 ]
