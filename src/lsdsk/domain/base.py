@@ -24,11 +24,11 @@ Example:
     ...     value: int = 0
     >>> Reading(value=3).model_dump()
     {'value': 3}
-    >>> Reading(vlaue=3)
+    >>> Reading(vlaue=3)  # doctest: +ELLIPSIS
     Traceback (most recent call last):
         ...
     pydantic_core._pydantic_core.ValidationError: ...
-    >>> Reading(value=3).value = 4
+    >>> Reading(value=3).value = 4  # doctest: +ELLIPSIS
     Traceback (most recent call last):
         ...
     pydantic_core._pydantic_core.ValidationError: ...
@@ -98,7 +98,7 @@ class DomainModel(BaseModel, frozen=True, extra="forbid"):
             ...     note: str = ""
             >>> Reading(value=3).with_changes(note="rising")
             Reading(value=3, note='rising')
-            >>> Reading(value=3).with_changes(vlaue=4)
+            >>> Reading(value=3).with_changes(vlaue=4)  # doctest: +ELLIPSIS
             Traceback (most recent call last):
                 ...
             pydantic_core._pydantic_core.ValidationError: ...

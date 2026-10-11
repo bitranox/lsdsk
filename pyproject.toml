@@ -297,7 +297,7 @@ exclude = [
 
 [tool.pytest.ini_options]
 addopts = ["--doctest-modules"]
-doctest_optionflags = ["ELLIPSIS", "NORMALIZE_WHITESPACE"]
+doctest_optionflags = ["NORMALIZE_WHITESPACE"]
 # Textual's Pilot driver is async, so its tests are coroutines.
 asyncio_mode = "strict"
 pythonpath = ["src"]

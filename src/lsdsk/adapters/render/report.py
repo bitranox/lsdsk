@@ -1222,6 +1222,7 @@ __all__ = [
     "slot_privilege_note",
     "slot_table_row",
     "slot_verdict",
+    "unread_interfaces_note",
     "usb_speed_text",
     "virtual_note",
 ]

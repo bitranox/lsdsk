@@ -163,7 +163,7 @@ def read_text_bounded(path: Path, *, what: str, errors: str = "strict") -> str:
         >>> import tempfile
         >>> from pathlib import Path
         >>> with tempfile.TemporaryDirectory() as directory:
-        ...     read_text_bounded(Path(directory) / "absent.json", what="a snapshot")
+        ...     read_text_bounded(Path(directory) / "absent.json", what="a snapshot")  # doctest: +ELLIPSIS
         Traceback (most recent call last):
         ...
         lsdsk.domain.errors.MissingFileError: Could not read a snapshot at ...

@@ -98,7 +98,7 @@ def at_most_entries(value: object) -> object:
     Example:
         >>> at_most_entries({"a": 1})
         {'a': 1}
-        >>> at_most_entries([0] * (MAX_ENTRIES + 1))
+        >>> at_most_entries([0] * (MAX_ENTRIES + 1))  # doctest: +ELLIPSIS
         Traceback (most recent call last):
             ...
         pydantic_core._pydantic_core.PydanticCustomError: holds 65537 entries, more than ...
