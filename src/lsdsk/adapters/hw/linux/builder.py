@@ -944,10 +944,10 @@ def _build_ata_disk(node: str, block: BlockEntry, indexed: _IndexedCapture) -> D
 
     device = block.device
     rotating = block.queue.rotational
-    kind = DiskKind.UNKNOWN
-    if identity is not None:
-        kind = identity.kind
-    elif rotating is not None:
+    # An IDENTIFY page that names no nominal rotation rate decodes to UNKNOWN,
+    # which says nothing and so must not replace the kernel's own reading.
+    kind = identity.kind if identity is not None else DiskKind.UNKNOWN
+    if kind is DiskKind.UNKNOWN and rotating is not None:
         kind = DiskKind.HDD if rotating else DiskKind.SSD
 
     return Disk(

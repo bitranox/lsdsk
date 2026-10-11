@@ -348,6 +348,15 @@ def _bus_of(bus: BusType, *, identity: AtaIdentity | None, usb: UsbLink | None) 
     return bus
 
 
+def _kind_without_identify(rotating: bool | None, *, is_nvme: bool) -> DiskKind:
+    """The media kind from what the operating system said, when IDENTIFY did not decide it."""
+    if is_nvme:
+        return DiskKind.SSD
+    if rotating is None:
+        return DiskKind.UNKNOWN
+    return DiskKind.HDD if rotating else DiskKind.SSD
+
+
 def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
     """Build every disk found in a Windows capture.
 
@@ -395,13 +404,12 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
         endpoint = pci.get(controller_instance) if controller_instance else None
         controller = controller_instance if endpoint is None else endpoint.address or controller_instance
         rotating = entry.rotating
-        kind = DiskKind.UNKNOWN
-        if identity is not None:
-            kind = identity.kind
-        elif is_nvme:
-            kind = DiskKind.SSD
-        elif rotating is not None:
-            kind = DiskKind.HDD if rotating else DiskKind.SSD
+        # An IDENTIFY page that names no nominal rotation rate decodes to
+        # UNKNOWN, which says nothing and so must not replace the seek-penalty
+        # reading Windows gave.
+        kind = identity.kind if identity is not None else DiskKind.UNKNOWN
+        if kind is DiskKind.UNKNOWN:
+            kind = _kind_without_identify(rotating, is_nvme=is_nvme)
 
         model = first_reported(
             nvme_identity.model if nvme_identity else None,
