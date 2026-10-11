@@ -32,6 +32,7 @@ CAPTURES = (
     "linux-usb-ehci",
     "windows-ahci",
     "windows-usb-uas",
+    "windows-chipset-switch",
 )
 
 # Fields a scan reads and NO column of any table draws. Each is paired with the

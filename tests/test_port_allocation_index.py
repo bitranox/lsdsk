@@ -37,6 +37,7 @@ CAPTURES = (
     "linux-usb-ehci",
     "windows-ahci",
     "windows-usb-uas",
+    "windows-chipset-switch",
 )
 
 #: Drives in the smaller arm of the doubling. Large enough that a quadratic's

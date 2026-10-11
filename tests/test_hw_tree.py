@@ -31,6 +31,7 @@ ALL_HOSTS = (
     "linux-usb-ehci",
     "windows-ahci",
     "windows-usb-uas",
+    "windows-chipset-switch",
 )
 LINUX_HOSTS = [host for host in ALL_HOSTS if host.startswith("linux-")]
 

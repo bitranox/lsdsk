@@ -131,16 +131,44 @@ def test_the_detail_panel_carries_the_whole_usage_and_names_the_unread_marker() 
     assert "lvm:vg0->/var,/srv" in _stripped(panel_resolved)
 
 
+#: The capture sections the usage reader writes, one per platform. A capture
+#: holding neither predates that reader, so its disks' usage is undecidable.
+_USAGE_SECTIONS = ("volumes", "mounts")
+
+
+def _took_a_usage_reading(host: str) -> bool:
+    payload: dict[str, Any] = json.loads((FIXTURES / f"{host}.json").read_text(encoding="utf-8"))
+    return any(payload.get(section) is not None for section in _USAGE_SECTIONS)
+
+
 @pytest.mark.os_agnostic
 def test_a_committed_fixture_reads_not_read_never_not_mounted() -> None:
-    """Every committed capture predates the usage reader, so its disks carry ``None``.
+    """A capture taken before the usage reader carries ``None`` for every disk's usage.
 
     A capture without the new fields must render the unread dash, never the
     real-reading word - ``not mounted`` would claim a reading these fixtures
-    never took.
+    never took. Held over the captures that carry no usage section, and at
+    least one must remain, or the check inspects nothing.
     """
-    for path in sorted(FIXTURES.glob("*.json")):
-        machine = _machine(path.stem)
-        table = tables.render_disks(machine, (), width=250)
+    pre_usage = [path.stem for path in sorted(FIXTURES.glob("*.json")) if not _took_a_usage_reading(path.stem)]
+    assert pre_usage, "no committed capture predates the usage reader, so this check reads nothing"
+    for host in pre_usage:
+        table = tables.render_disks(_machine(host), (), width=250)
         printed = _drawn(table, 250)
-        assert "not mounted" not in printed, f"{path.stem}: a pre-usage fixture claimed a reading it never took"
+        assert "not mounted" not in printed, f"{host}: a pre-usage fixture claimed a reading it never took"
+
+
+@pytest.mark.os_agnostic
+def test_a_capture_that_read_its_volumes_draws_what_each_disk_is_used_for() -> None:
+    """The other side: a capture that took the reading draws it, not the unread dash.
+
+    windows-chipset-switch read its volumes: the system drive holds C: and is
+    the boot disk, the SATA drive holds D: and X:, and a mounted image file
+    holds no volume at all, which is the real reading ``not mounted``.
+    """
+    host = "windows-chipset-switch"
+    assert _took_a_usage_reading(host)
+    machine = _machine(host)
+    usage = {disk.node: theme.format_usage(disk.usage)[0] for disk in (*machine.disks, *machine.virtual_disks)}
+
+    assert usage == {"PhysicalDrive0": "D:, X:", "PhysicalDrive1": "boot C:", "PhysicalDrive2": "not mounted"}, usage

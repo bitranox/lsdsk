@@ -32,6 +32,7 @@ CAPTURES = (
     "linux-usb-ehci",
     "windows-ahci",
     "windows-usb-uas",
+    "windows-chipset-switch",
 )
 
 #: Widths to sweep. Spans the tool's own piped default (120) and the width its

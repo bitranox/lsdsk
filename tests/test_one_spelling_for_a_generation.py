@@ -45,6 +45,7 @@ CAPTURES = (
     "linux-usb-ehci",
     "windows-ahci",
     "windows-usb-uas",
+    "windows-chipset-switch",
 )
 
 #: The spelling this tool does NOT write, with or without the blank that used to
