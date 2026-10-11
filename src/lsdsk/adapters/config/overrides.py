@@ -219,7 +219,9 @@ def _exact_integer(raw: str, parsed: CoercedValue) -> CoercedValue:
 
     Returns:
         The exact integer when `raw` is an integer literal that became a float,
-        otherwise `parsed`.
+        otherwise `parsed`. ``orjson`` refuses an integer past 308 digits before this
+        is reached, far under the 4300 digits at which ``int`` would refuse, so
+        ``int(raw)`` cannot fail here.
 
     Example:
         >>> _exact_integer("99999999999999999999999", 1e23)
@@ -229,11 +231,7 @@ def _exact_integer(raw: str, parsed: CoercedValue) -> CoercedValue:
     """
     if not isinstance(parsed, float) or not raw.lstrip("-").isascii() or not raw.lstrip("-").isdigit():
         return parsed
-    try:
-        return int(raw)
-    except ValueError:
-        # Python refuses an integer of thousands of digits; the float is then all there is.
-        return parsed
+    return int(raw)
 
 
 def _nest_override(target: dict[str, dict[str, object]], override: ConfigOverride) -> None:

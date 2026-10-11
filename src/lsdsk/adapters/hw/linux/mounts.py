@@ -26,7 +26,7 @@ import os
 import re
 import stat
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from ....domain.errors import ConfigurationError, MissingFileError
 from ...textfile import read_text_bounded
@@ -105,11 +105,27 @@ def _unescape(text: str) -> str:
     return _OCTAL_ESCAPE.sub(lambda match: chr(int(match.group(1), 8)), text)
 
 
-def _device_number_of(path: str) -> str | None:
+class _NodeStatus(Protocol):
+    """The two fields of a ``stat`` result that name a device node."""
+
+    @property
+    def st_mode(self) -> int:
+        """The file type and permission bits."""
+        ...
+
+    @property
+    def st_rdev(self) -> int:
+        """The device number a device node stands for."""
+        ...
+
+
+def device_number_of(path: str, *, stat_of: Callable[[str], _NodeStatus] = os.stat) -> str | None:
     """The ``maj:min`` of a device node, or None when it is not one.
 
     Args:
         path: A path that may name a device node, such as ``/dev/sda2``.
+        stat_of: Reads the node's status, overridable because no unprivileged
+            test can create a block device node.
 
     Returns:
         ``"<major>:<minor>"``, or ``None`` when the path cannot be stat'd or
@@ -119,7 +135,7 @@ def _device_number_of(path: str) -> str | None:
         with.
     """
     try:
-        status = Path(path).stat()
+        status = stat_of(path)
     except (OSError, ValueError):
         return None
     if not stat.S_ISBLK(status.st_mode) or not status.st_rdev:
@@ -131,7 +147,7 @@ def read_mounts(
     path: Path = Path("/proc/self/mountinfo"),
     *,
     limit: int = MAX_MOUNTINFO_BYTES,
-    device_number: Callable[[str], str | None] = _device_number_of,
+    device_number: Callable[[str], str | None] = device_number_of,
 ) -> list[dict[str, str]] | None:
     """Read every mounted filesystem from mountinfo.
 
@@ -208,7 +224,7 @@ def read_swaps(
     path: Path = Path("/proc/swaps"),
     *,
     limit: int = MAX_MOUNTINFO_BYTES,
-    device_number: Callable[[str], str | None] = _device_number_of,
+    device_number: Callable[[str], str | None] = device_number_of,
 ) -> list[dict[str, str]] | None:
     """Read every active swap from ``/proc/swaps``.
 
@@ -469,6 +485,7 @@ def _read_short_text(path: Path, *, limit: int = MAX_ATTRIBUTE_CHARS) -> str | N
 __all__ = [
     "MAX_ATTRIBUTE_CHARS",
     "MAX_MOUNTINFO_BYTES",
+    "device_number_of",
     "read_mounts",
     "read_partitions",
     "read_signatures",

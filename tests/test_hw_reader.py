@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pytest
 
+from lsdsk.adapters.hw.linux import reader as linux_reader
 from lsdsk.adapters.hw.linux.reader import read_block
 from lsdsk.adapters.hw.windows.capture import bus_type_of
 from lsdsk.domain.enums import BusType
@@ -228,3 +229,55 @@ def test_every_device_tree_walk_in_the_windows_reader_is_bounded() -> None:
     assert unbounded_loops(cycle) == {"_child_instances"}
     enumeration = "class T:\n    def walk(self):\n        i = 0\n        while self.next(i):\n            i += 1\n"
     assert unbounded_loops(enumeration) == set()
+
+
+def _sas_phy_with_port_link(root: Path) -> Path:
+    """A ``sas_phy`` class member whose ``device/port`` link leads to ``port-0:0``; returns its ``device`` dir."""
+    (root / "ports" / "port-0:0").mkdir(parents=True)
+    device = root / "sas_phy" / "phy-0:0" / "device"
+    device.mkdir(parents=True)
+    (device / "port").symlink_to(root / "ports" / "port-0:0")
+    return device
+
+
+@pytest.mark.os_posix
+def test_a_phys_port_link_is_read_as_the_name_of_the_port_it_leads_to(tmp_path: Path) -> None:
+    """The control for the unreadable case below: the same tree, readable, names its port."""
+    _sas_phy_with_port_link(tmp_path)
+
+    assert linux_reader.read_classes(tmp_path)["sas_phy"]["phy-0:0"]["port"] == "port-0:0"
+
+
+@pytest.mark.os_posix
+def test_a_phys_port_link_behind_an_unreadable_directory_is_no_port_rather_than_an_error(tmp_path: Path) -> None:
+    """EACCES is re-raised by ``Path.is_symlink`` before Python 3.14; the reader reads it as no link."""
+    device = _sas_phy_with_port_link(tmp_path)
+    device.chmod(0o000)
+    try:
+        try:
+            (device / "port").lstat()
+        except PermissionError:
+            pass
+        else:
+            pytest.skip("this user can look inside a mode-000 directory (root)")
+        classes = linux_reader.read_classes(tmp_path)
+    finally:
+        device.chmod(0o755)
+
+    assert "port" not in classes["sas_phy"]["phy-0:0"]
+
+
+@pytest.mark.os_posix
+def test_a_cpuinfo_that_cannot_be_opened_gives_no_hypervisor_flag_rather_than_an_error(tmp_path: Path) -> None:
+    """A directory where ``cpuinfo`` should be opens to EISDIR, and the evidence says the flag is absent."""
+    (tmp_path / "cpuinfo").mkdir()
+
+    assert linux_reader.read_environment(proc=tmp_path)["hypervisor_flag"] is False
+
+
+@pytest.mark.os_posix
+def test_a_cpuinfo_naming_the_hypervisor_flag_is_read(tmp_path: Path) -> None:
+    """The control for the case above: the same reader, given a file, sees the flag."""
+    (tmp_path / "cpuinfo").write_text("flags\t\t: fpu hypervisor lm\n", encoding="utf-8")
+
+    assert linux_reader.read_environment(proc=tmp_path)["hypervisor_flag"] is True

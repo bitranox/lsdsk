@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -467,3 +468,40 @@ def test_a_swap_path_carrying_a_nul_byte_is_an_empty_row_not_a_crash(tmp_path: P
         encoding="utf-8",
     )
     assert mounts.read_swaps(path) == [{}]
+
+
+class _Node:
+    """A device node's status as ``stat`` would report it."""
+
+    def __init__(self, mode: int, rdev: int) -> None:
+        self.st_mode = mode
+        self.st_rdev = rdev
+
+
+def test_a_block_device_node_is_named_major_then_minor() -> None:
+    """Major 8, minor 17 is ``8:17``; a swapped pair would read ``17:8``, another disk's number."""
+    node = _Node(stat.S_IFBLK | 0o660, os.makedev(8, 17))
+
+    assert mounts.device_number_of("/dev/sdb1", stat_of=lambda _path: node) == "8:17"
+
+
+@pytest.mark.parametrize(
+    ("mode", "rdev"),
+    [
+        pytest.param(stat.S_IFCHR | 0o666, os.makedev(1, 3), id="character-device"),
+        pytest.param(stat.S_IFREG | 0o644, 0, id="regular-file"),
+        pytest.param(stat.S_IFBLK | 0o660, 0, id="block-node-without-a-device-number"),
+    ],
+)
+def test_a_path_that_is_not_a_numbered_block_device_has_no_device_number(mode: int, rdev: int) -> None:
+    """A character device has a number too, from a separate numbering, and is not taken."""
+    assert mounts.device_number_of("/dev/x", stat_of=lambda _path: _Node(mode, rdev)) is None
+
+
+def test_a_path_that_cannot_be_statted_has_no_device_number() -> None:
+    """A vanished node is no device rather than an error."""
+
+    def vanished(_path: str) -> _Node:
+        raise FileNotFoundError
+
+    assert mounts.device_number_of("/dev/gone", stat_of=vanished) is None
