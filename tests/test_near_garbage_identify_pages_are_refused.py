@@ -116,22 +116,26 @@ def test_the_vpd_wrapper_refuses_the_same_noise() -> None:
         decode_vpd_ata_information(page)
 
 
+def _section(value: object) -> dict[str, Any]:
+    """A JSON object from a capture, or an empty one when the capture holds none."""
+    return cast("dict[str, Any]", value) if isinstance(value, dict) else {}
+
+
 def _committed_identify_blobs() -> list[tuple[str, bytes]]:
     blobs: list[tuple[str, bytes]] = []
     for capture in sorted(FIXTURES.glob("*.json")):
-        data = cast("dict[str, Any]", json.loads(capture.read_text(encoding="utf-8")))
-        for node, ata in data.get("ata", {}).items():
-            if ata.get("identify"):
+        data = _section(json.loads(capture.read_text(encoding="utf-8")))
+        for node, ata in _section(data.get("ata")).items():
+            if _section(ata).get("identify"):
                 blobs.append((f"{capture.name}:{node}:identify", base64.b64decode(ata["identify"])))
-        for node, block in data.get("block", {}).items():
-            page = (block.get("vpd") or {}).get("vpd_pg89")
+        for node, block in _section(data.get("block")).items():
+            page = _section(_section(block).get("vpd")).get("vpd_pg89")
             if page:
                 blobs.append((f"{capture.name}:{node}:vpd", base64.b64decode(page)[60:]))
-        windows = [entry for entry in data.get("disks", {}).values() if (entry.get("ata") or {}).get("identify")]
-        blobs.extend(
-            (f"{capture.name}:{entry['node']}:identify", base64.b64decode(entry["ata"]["identify"]))
-            for entry in windows
-        )
+        for entry in _section(data.get("disks")).values():
+            identify = _section(_section(entry).get("ata")).get("identify")
+            if identify:
+                blobs.append((f"{capture.name}:{entry['node']}:identify", base64.b64decode(identify)))
     return blobs
 
 
