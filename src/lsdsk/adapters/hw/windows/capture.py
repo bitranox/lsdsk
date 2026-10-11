@@ -29,6 +29,8 @@ from ..decode.virtualization import VirtualizationEvidence
 # mapped onto the buses lsdsk grades. Windows has more transports than lsdsk
 # has rules for; the rest read as unknown rather than being refused, because
 # they are real readings of a machine this tool simply has nothing to say about.
+# STORAGE_BUS_TYPE 0x0F: a mounted VHD, VHDX or ISO file rather than a drive.
+_IMAGE_FILE_TRANSPORT = "file-backed virtual"
 _BUS_TYPES: dict[str, BusType] = {
     "sata": BusType.SATA,
     "ata": BusType.SATA,
@@ -38,7 +40,7 @@ _BUS_TYPES: dict[str, BusType] = {
     "nvme": BusType.NVME,
     "usb": BusType.USB,
     "virtual": BusType.VIRTUAL,
-    "file-backed virtual": BusType.VIRTUAL,
+    _IMAGE_FILE_TRANSPORT: BusType.VIRTUAL,
     "spaces": BusType.VIRTUAL,
 }
 
@@ -145,15 +147,35 @@ class StorageDescriptor(CaptureModel, frozen=True):
 
     Attributes:
         bus_type: The transport, parsed here from the name the reader recorded.
+        transport: That same name as the reader recorded it. Several names map
+            onto one bus, and :attr:`is_image_file` needs the one that does not.
         model: The model string.
         serial: The serial number.
         rev: The firmware revision.
     """
 
     bus_type: Annotated[BusType, BeforeValidator(bus_type_of)] = BusType.UNKNOWN
+    transport: DeviceText | None = Field(default=None, validation_alias="bus_type")
     model: DeviceText | None = None
     serial: DeviceText | None = None
     rev: DeviceText | None = None
+
+    @property
+    def is_image_file(self) -> bool:
+        """Whether Windows names this disk a mounted image file: STORAGE_BUS_TYPE 0x0F.
+
+        A mounted VHD, VHDX or ISO file has no ATA identity and no SMART, so
+        what passthrough could not read from it is nothing a drive withheld.
+        Held to 0x0F alone: 0x0E, plain ``virtual``, is a hypervisor's disk and
+        the guest's real storage, though both map onto one bus.
+
+        Example:
+            >>> StorageDescriptor.model_validate({"bus_type": "file-backed virtual"}).is_image_file
+            True
+            >>> StorageDescriptor.model_validate({"bus_type": "virtual"}).is_image_file
+            False
+        """
+        return self.transport == _IMAGE_FILE_TRANSPORT
 
 
 class DiskTemperature(CaptureModel, frozen=True):

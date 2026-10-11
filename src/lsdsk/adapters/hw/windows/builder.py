@@ -596,6 +596,13 @@ def _refusals_for(entry: DiskEntry, record: HealthBlobs) -> tuple[RefusedReading
     reports nothing else at all, and ``ata``/``nvme`` are then absent rather than
     carrying a reason of their own.
 
+    A mounted image file is asked for its health like any disk, and the capture
+    keeps what it answered, but it has no identity or SMART to withhold: like an
+    AHCI controller with no register region, the scan is not incomplete for it,
+    so its health refusals are not named. Keyed on the transport Windows named
+    rather than on the error text, which a real drive behind a controller that
+    blocks passthrough also gives.
+
     Args:
         entry: The disk as the capture holds it.
         record: Its health blobs, ATA or NVMe.
@@ -603,15 +610,18 @@ def _refusals_for(entry: DiskEntry, record: HealthBlobs) -> tuple[RefusedReading
     Returns:
         One value per refused reading, empty when the disk answered everything.
     """
+    health: dict[str, str | None] = {
+        "identify": record.identify_error,
+        "identify-controller": record.identify_controller_error,
+        "smart-data": record.smart_data_error,
+        "smart-thresholds": record.smart_thresholds_error,
+        "smart-log": record.smart_log_error,
+    }
     return refusals_of(
         {
             "device": entry.error,
             "usb-link": entry.usb_link_error,
-            "identify": record.identify_error,
-            "identify-controller": record.identify_controller_error,
-            "smart-data": record.smart_data_error,
-            "smart-thresholds": record.smart_thresholds_error,
-            "smart-log": record.smart_log_error,
+            **({} if entry.device.is_image_file else health),
         }
     )
 
