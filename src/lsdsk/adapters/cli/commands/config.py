@@ -514,7 +514,6 @@ def _execute_deploy(
 
     try:
         deployed_paths = cli_ctx.services.deploy_configuration(settled)
-        _report_deployment_result(deployed_paths, settled.profile, bool(settled.set_permissions), output_format)
     except PermissionError as exc:
         logger.error("Permission denied when deploying configuration", extra={"error": str(exc)})
         _fail_after_output(
@@ -546,6 +545,10 @@ def _execute_deploy(
     except ConfigurationError as exc:
         logger.error("Failed to deploy configuration", extra={"error": str(exc), "error_type": type(exc).__name__})
         _fail_after_output(f"Failed to deploy configuration: {exc}", ExitCode.CONFIG_ERROR, output_format=output_format)
+    # Outside the try on purpose: the files are written by now, and a report that
+    # cannot reach a full standard output is a failure to REPORT, which is not the
+    # "Failed to deploy configuration" the arms above would have called it.
+    _report_deployment_result(deployed_paths, settled.profile, bool(settled.set_permissions), output_format)
 
 
 def _report_deployment_result(
@@ -591,6 +594,29 @@ def _report_deployment_result(
         safe_console.echo("Use --force to overwrite existing configuration files.")
 
 
+def _report_generated_examples(paths: list[Path], destination: str, output_format: OutputFormat) -> None:
+    """Say which example files were written, in the format the caller asked for.
+
+    Args:
+        paths: The files the run wrote.
+        destination: The directory they were written to.
+        output_format: What the caller asked for.
+    """
+    if output_format is OutputFormat.JSON:
+        emit_action(
+            ActionCommand.CONFIG_GENERATE_EXAMPLES,
+            GenerateExamplesResult(
+                outcome=_outcome_of(paths), generated=[str(p) for p in paths], destination=str(destination)
+            ),
+        )
+    elif paths:
+        safe_console.echo(f"\nGenerated {len(paths)} example file(s):")
+        for p in paths:
+            safe_console.echo(f"  {p}")
+    else:
+        safe_console.echo("\nNo files generated (all already exist). Use --force to overwrite.")
+
+
 @click.command("config-generate-examples", context_settings=CLICK_CONTEXT_SETTINGS)
 @FORMAT_OPTION
 @option("--destination", type=click.Path(file_okay=False), required=True, help="Directory to write example files")
@@ -625,21 +651,6 @@ def cli_config_generate_examples(
                 app=__init__conf__.LAYEREDCONF_APP,
                 force=force,
             )
-            if output_format is OutputFormat.JSON:
-                emit_action(
-                    ActionCommand.CONFIG_GENERATE_EXAMPLES,
-                    GenerateExamplesResult(
-                        outcome=_outcome_of(paths),
-                        generated=[str(p) for p in paths],
-                        destination=str(destination),
-                    ),
-                )
-            elif paths:
-                safe_console.echo(f"\nGenerated {len(paths)} example file(s):")
-                for p in paths:
-                    safe_console.echo(f"  {p}")
-            else:
-                safe_console.echo("\nNo files generated (all already exist). Use --force to overwrite.")
         # Before the OSError arm, because PermissionError IS one: caught
         # wholesale below, a refused directory left 1 where _execute_deploy and
         # snapshot both leave 13 with a sudo hint for the identical errno on the
@@ -664,6 +675,8 @@ def cli_config_generate_examples(
         except ConfigurationError as exc:
             logger.error("Refused to generate examples", extra={"error": str(exc)})
             _fail_after_output(str(exc), ExitCode.CONFIG_ERROR, output_format=output_format)
+        # Outside the try on purpose: the files are written by now, see _execute_deploy.
+        _report_generated_examples(paths, destination, output_format)
 
 
 __all__ = ["cli_config", "cli_config_deploy", "cli_config_generate_examples"]
