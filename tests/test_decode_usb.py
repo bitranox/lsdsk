@@ -234,3 +234,93 @@ def test_every_short_hub_answer_is_refused(decode: Callable[[bytes], object]) ->
 def test_fastest_ignores_what_was_not_read() -> None:
     assert usb.fastest(None, GEN1, GEN2, None) == GEN2
     assert usb.fastest(None, None) is None
+
+
+def _superspeedplus(*attributes: int, count_field: int | None = None) -> bytes:
+    """A SuperSpeedPlus capability whose SSAC field names `count_field` attributes (default: the ones given)."""
+    ssac = (len(attributes) - 1) if count_field is None else count_field
+    header = struct.pack("<BBBBIHH", 12 + 4 * len(attributes), 0x10, 0x0A, 0, ssac, 0x1111, 0)
+    return header + b"".join(struct.pack("<I", attribute) for attribute in attributes)
+
+
+GEN2_LANE = (10 << 16) | (3 << 4)  # mantissa 10, exponent 3 (Gb/s)
+GEN1_LANE = (5 << 16) | (3 << 4)
+
+
+def _cut_by_one_byte(record: bytes) -> bytes:
+    """`record` with its last byte gone and its own length byte saying so."""
+    return bytes([record[0] - 1]) + record[1:-1]
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("record", "reason"),
+    [
+        pytest.param(struct.pack("<BBBBI", 8, 0x10, 0x0A, 0, 0), "shorter than its header", id="shorter-than-header"),
+        pytest.param(_superspeedplus(count_field=0)[:12], "lists 1 sublink", id="one-attribute-missing"),
+        pytest.param(_superspeedplus(GEN2_LANE, count_field=1), "lists 2 sublink", id="second-attribute-missing"),
+        pytest.param(_superspeedplus(GEN2_LANE, count_field=0x1F), "lists 32 sublink", id="count-field-at-its-mask"),
+        pytest.param(
+            _cut_by_one_byte(_superspeedplus(GEN2_LANE)), "lists 1 sublink", id="last-attribute-one-byte-short"
+        ),
+    ],
+)
+def test_a_short_superspeedplus_record_is_a_typed_refusal_not_a_struct_error(record: bytes, reason: str) -> None:
+    """A SuperSpeedPlus record shorter than its own count must reach ``ValueError``, never ``struct.error``."""
+    with pytest.raises(ValueError, match=reason):
+        usb.decode_bos(_bos(record))
+
+
+@pytest.mark.os_agnostic
+def test_a_superspeedplus_record_holding_exactly_its_attributes_decodes() -> None:
+    """The control for the refusals above: the same builder, complete, is accepted."""
+    decoded = usb.decode_bos(_bos(_superspeedplus(GEN1_LANE, GEN2_LANE)))
+    assert decoded.fastest == GEN2
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("blob", "reason"),
+    [
+        pytest.param(bytes.fromhex("040f050000"), "not a BOS", id="bos-header-length-below-five"),
+        pytest.param(bytes.fromhex("050f0500"), "too short", id="header-one-byte-short"),
+        pytest.param(struct.pack("<BBHB", 5, 0x0F, 6, 1) + b"\x03", "header runs past", id="capability-header-cut"),
+        pytest.param(
+            struct.pack("<BBHB", 5, 0x0F, 8, 1) + bytes([2, 0x10, 0x03]), "capability length", id="length-below-three"
+        ),
+        pytest.param(
+            struct.pack("<BBHB", 5, 0x0F, 8, 1) + bytes([3, 0x05, 0x03]), "not a device capability", id="wrong-type"
+        ),
+        pytest.param(
+            struct.pack("<BBHB", 5, 0x0F, 8, 1) + bytes([4, 0x10, 0x03]), "capability length", id="length-past-total"
+        ),
+    ],
+)
+def test_each_bos_refusal_leg_is_a_value_error_naming_its_reason(blob: bytes, reason: str) -> None:
+    """Every length and type check in the walk, one at a time, with the message that names it."""
+    with pytest.raises(ValueError, match=reason):
+        usb.decode_bos(blob)
+
+
+@pytest.mark.os_agnostic
+def test_a_container_id_record_too_short_to_hold_one_is_not_read() -> None:
+    """A 19-byte Container ID record is skipped; a 20-byte one is taken."""
+    short = struct.pack("<BBBB", 19, 0x10, 0x04, 0) + bytes(15)
+
+    assert usb.decode_bos(_bos(short)).container_id is None
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("rx", "tx"),
+    [("2", "1"), ("1", "2"), ("2", None), (None, "2"), ("2", ""), ("two", "2")],
+)
+def test_one_direction_with_a_single_lane_keeps_ten_gigabits_one_gen2_lane(rx: str | None, tx: str | None) -> None:
+    """Both directions must report two lanes for the link to be two Gen 1 lanes; the lesser count decides."""
+    assert usb.speed_from_sysfs("10000", rx, tx) == UsbSpeed(lane_rate=UsbLaneRate.GEN2, lanes=1)
+
+
+@pytest.mark.os_agnostic
+def test_both_directions_at_two_lanes_make_ten_gigabits_two_gen1_lanes() -> None:
+    """The control for the asymmetric cases above."""
+    assert usb.speed_from_sysfs("10000", " 2\n", "2") == UsbSpeed(lane_rate=UsbLaneRate.GEN1, lanes=2)
