@@ -45,7 +45,7 @@ from ....domain.text import device_text, first_reported
 from ..decode import pciids
 from ..decode.ata_identify import decode_identify
 from ..decode.ata_smart import decode_health
-from ..decode.captured import decode_base64, parse_int, parse_pci_id
+from ..decode.captured import decode_base64, parse_int, parse_pci_id, plausible_celsius
 from ..decode.nvme import decode_identify_controller, decode_smart_log
 from ..decode.usb import (
     decode_bos,
@@ -293,14 +293,32 @@ def _health_from(
                 return None
 
     # No passthrough, but the storage stack may still have offered a temperature.
+    return _stack_temperature(entry)
+
+
+def _celsius_or_none(reading: int | None) -> int | None:
+    """A signed-16-bit field the driver filled in, or ``None`` when no drive could have reported it."""
+    return None if reading is None else plausible_celsius(reading)
+
+
+def _stack_temperature(entry: DiskEntry) -> Health | None:
+    """The storage stack's temperature and thresholds, each held to the bound every other path uses.
+
+    The driver fills three signed 16-bit fields, and one with nothing to report
+    leaves a value such as -32768 or 32767. Shown as a reading, it was also a
+    critical finding. Each field is judged alone, so a sound temperature keeps
+    its figure when only a threshold is absurd; with no sound figure at all the
+    disk has no health reading rather than an empty one.
+    """
     temperature = entry.temperature
-    if temperature is not None:
-        return Health(
-            temperature_c=temperature.temperature_c,
-            temperature_warning_c=temperature.warning_c,
-            temperature_critical_c=temperature.critical_c,
-        )
-    return None
+    if temperature is None:
+        return None
+    health = Health(
+        temperature_c=_celsius_or_none(temperature.temperature_c),
+        temperature_warning_c=_celsius_or_none(temperature.warning_c),
+        temperature_critical_c=_celsius_or_none(temperature.critical_c),
+    )
+    return None if health.temperature_c is None else health
 
 
 # Transports Windows names for a disk it reaches through an adapter without

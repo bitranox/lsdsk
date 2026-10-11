@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from lsdsk.adapters.hw.decode.ata_smart import decode_health
 from lsdsk.adapters.hw.decode.captured import MAX_PLAUSIBLE_CELSIUS, MIN_PLAUSIBLE_CELSIUS
 from lsdsk.adapters.hw.decode.nvme import decode_smart_log
 from lsdsk.adapters.hw.linux.builder import build_disks
@@ -79,3 +80,23 @@ def test_a_plausible_nvme_composite_temperature_is_kept(celsius: int) -> None:
     page[3] = 100  # a page that is not all zeros
     page[1:3] = (celsius + KELVIN_OFFSET).to_bytes(2, "little")
     assert decode_smart_log(bytes(page)).temperature_c == celsius
+
+
+def _ata_page_with_temperature_raw(raw_low_byte: int) -> bytes:
+    page = bytearray(512)
+    page[2] = 194  # Temperature_Celsius, in the first attribute slot
+    page[2 + 3] = 100  # normalised value
+    page[2 + 5] = raw_low_byte
+    return bytes(page)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("celsius", [0, 30, MAX_PLAUSIBLE_CELSIUS])
+def test_an_ata_temperature_attribute_uses_the_same_bound_as_every_other_path(celsius: int) -> None:
+    assert decode_health(_ata_page_with_temperature_raw(celsius)).temperature_c == celsius
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("raw", [MAX_PLAUSIBLE_CELSIUS + 1, 0xFF])
+def test_an_ata_temperature_attribute_above_the_bound_is_not_a_reading(raw: int) -> None:
+    assert decode_health(_ata_page_with_temperature_raw(raw)).temperature_c is None
