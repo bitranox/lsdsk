@@ -14,7 +14,7 @@ Contents:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import rich_click as click
 from lib_layered_config import ConfigError
@@ -40,6 +40,7 @@ from .exit_codes import ExitCode
 from .typed_click import option
 
 if TYPE_CHECKING:
+    import os
     from typing import NoReturn
 
     from lib_layered_config import Config
@@ -271,6 +272,31 @@ def _apply_cli_overrides(config: Config, set_overrides: tuple[str, ...]) -> Conf
         raise click.UsageError(str(exc)) from exc
 
 
+class _OptionalFile(click.Path):
+    """A file path where the empty string means "not given".
+
+    ``Path("")`` is the current directory, so an empty ``--history-file`` was
+    refused as a directory that cannot be a store. CONFIG.md reads an empty
+    ``history.path`` as "use the default"; the option reads its empty value the
+    same way, so the two spellings of "nothing" agree.
+    """
+
+    def convert(self, value: str | os.PathLike[str], param: click.Parameter | None, ctx: click.Context | None) -> Any:
+        """Answer ``None`` for an empty value and the converted path otherwise.
+
+        Args:
+            value: What the command line carried.
+            param: The option being converted.
+            ctx: The invocation.
+
+        Returns:
+            ``None`` for the empty string, else what :class:`click.Path` makes of `value`.
+        """
+        if value == "":
+            return None
+        return super().convert(value, param, ctx)
+
+
 @click.group(
     help=__init__conf__.title,
     context_settings=CLICK_CONTEXT_SETTINGS,
@@ -314,7 +340,7 @@ def _apply_cli_overrides(config: Config, set_overrides: tuple[str, ...]) -> Conf
 @option(
     "--history-file",
     "history_file",
-    type=click.Path(dir_okay=False, path_type=Path),
+    type=_OptionalFile(dir_okay=False, path_type=Path),
     default=None,
     help="Read and write counter history here instead of the per-user state file.",
 )
