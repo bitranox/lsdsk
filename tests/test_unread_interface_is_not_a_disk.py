@@ -19,11 +19,11 @@ from lsdsk.adapters.cli.commands.scan import (
 )
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render.report import privilege_note, render_header
+from lsdsk.domain.enums import Environment
+from lsdsk.domain.models import Inventory, RefusedReading
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-    from lsdsk.domain.models import Inventory
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "windows-ahci.json"
 
@@ -129,3 +129,36 @@ def test_a_run_where_every_open_failed_still_says_no_device_nodes() -> None:
 
     assert "no device nodes" in privilege_note(inventory)
     assert any("no device nodes" in line for line in _skipped_readings(inventory))
+
+
+def _a_caveat_free_inventory(*reasons: str) -> Inventory:
+    """An elevated bare-metal run that read every drive but the interfaces named, so nothing else prints a line."""
+    return Inventory(
+        hostname="h",
+        environment=Environment.BARE_METAL,
+        privileged=True,
+        devices_accessible=True,
+        unread_interfaces=tuple(RefusedReading(reading="disk interface", reason=reason) for reason in reasons),
+    )
+
+
+@pytest.mark.os_agnostic
+def test_the_unread_line_is_the_only_extra_line_on_a_run_with_no_other_caveat(rendered: Callable[..., str]) -> None:
+    """The QEMU capture carries a hypervisor caveat that keeps the header a group anyway, so it cannot show this."""
+    lines = rendered(render_header(_a_caveat_free_inventory("Win32 error 5"))).splitlines()
+
+    assert len(lines) == 2, lines
+    assert lines[1].strip() == "1 disk interface not read: Win32 error 5."
+
+
+@pytest.mark.os_agnostic
+def test_the_unread_line_names_every_reason_and_pluralises_the_noun(rendered: Callable[..., str]) -> None:
+    output = rendered(render_header(_a_caveat_free_inventory("Win32 error 5", "Win32 error 32")))
+
+    assert "2 disk interfaces not read: Win32 error 5; Win32 error 32." in output
+
+
+@pytest.mark.os_agnostic
+def test_a_caveat_free_run_with_every_interface_read_prints_the_banner_alone(rendered: Callable[..., str]) -> None:
+    """The control: with nothing unread the same inventory is one line, so the test above is about the note."""
+    assert len(rendered(render_header(_a_caveat_free_inventory())).splitlines()) == 1
