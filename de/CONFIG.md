@@ -536,17 +536,18 @@ Profile bieten voneinander getrennte Namensräume für verschiedene Umgebungen (
 
 Profilnamen werden auf Sicherheit und plattformübergreifende Verträglichkeit geprüft:
 
-| Regel                 | Beschreibung                                                                                               |
-|-----------------------|------------------------------------------------------------------------------------------------------------|
-| **Höchstlänge**       | 64 Zeichen                                                                                                 |
-| **Erlaubte Zeichen**  | ASCII-Buchstaben (`a-z`, `A-Z`), Ziffern (`0-9`), Bindestriche (`-`), Unterstriche (`_`)                   |
-| **Erstes Zeichen**    | Muss ein Buchstabe oder eine Ziffer sein, nicht `-` oder `_`                                               |
-| **Reservierte Namen** | Unter Windows reservierte Namen werden abgelehnt: `CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9` |
-| **Pfadsicherheit**    | Keine Pfadtrenner (`/`, `\`) und keine Rückwärtsschritte (`..`)                                            |
+| Regel                 | Beschreibung                                                                                                                                                                                                        |
+|-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Höchstlänge**       | 64 Zeichen                                                                                                                                                                                                          |
+| **Erlaubte Zeichen**  | ASCII-Buchstaben (`a-z`, `A-Z`), Ziffern (`0-9`), Bindestriche (`-`), Unterstriche (`_`), Punkte (`.`)                                                                                                              |
+| **Erstes Zeichen**    | Muss ein Buchstabe oder eine Ziffer sein, nicht `.`, `-` oder `_`                                                                                                                                                   |
+| **Letztes Zeichen**   | Darf kein Punkt sein                                                                                                                                                                                                |
+| **Reservierte Namen** | Unter Windows reservierte Namen werden in jeder Schreibweise und mit jeder Endung abgelehnt: `CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9` (also auch `con` und `COM1.txt`)                              |
+| **Pfadsicherheit**    | Keine Pfadtrenner (`/`, `\`) und keine anderen Zeichen, die ein Pfad nicht aufnehmen kann (`:`, `*`, ein Leerzeichen). Ein Name ist immer genau ein Verzeichnis, `a..b` ist also ein Name und kein Rückwärtsschritt |
 
-**Gültige Beispiele:** `production`, `staging-v2`, `test_env`, `dev01`
+**Gültige Beispiele:** `production`, `staging-v2`, `test_env`, `dev01`, `eu.prod`
 
-**Ungültige Beispiele:** `../etc` (Pfadwechsel), `-invalid` (beginnt mit Bindestrich), `CON` (unter Windows reserviert)
+**Ungültige Beispiele:** `../etc` (Pfadtrenner), `-invalid` (beginnt mit Bindestrich), `.hidden` (beginnt mit einem Punkt), `CON` (unter Windows reserviert)
 
 ### Welche Schichten betrifft ein Profil?
 

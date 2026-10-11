@@ -95,7 +95,8 @@ Firmwarestände und jede Messung sind wie aufgenommen.
 
 Jede ist danach benannt, was sie enthält, und nicht danach, woher sie kommt; ein
 Test, der eine nennt, sagt damit, was er prüft: `linux-sas-hba`,
-`linux-nvme-board`, `linux-minimal`, `windows-ahci`. `linux-sas-hba-later` ist
+`linux-nvme-board`, `linux-minimal`, `linux-usb-ehci`, `windows-ahci`,
+`windows-usb-uas`, `windows-chipset-switch`. `linux-sas-hba-later` ist
 dieselbe Aufnahme zu einem späteren Zeitpunkt, und die beiden teilen sich
 absichtlich einen Hostnamen, weil die Verlaufstests ihn brauchen: der Speicher
 weigert sich, zwei Maschinen zu vermischen.

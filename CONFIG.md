@@ -525,17 +525,18 @@ Profiles provide isolated configuration namespaces for different environments (e
 
 Profile names are validated for security and cross-platform compatibility:
 
-| Rule                   | Description                                                                               |
-|------------------------|-------------------------------------------------------------------------------------------|
-| **Maximum length**     | 64 characters                                                                             |
-| **Allowed characters** | ASCII letters (`a-z`, `A-Z`), digits (`0-9`), hyphens (`-`), underscores (`_`)            |
-| **Start character**    | Must start with a letter or digit (not `-` or `_`)                                        |
-| **Reserved names**     | Windows reserved names rejected: `CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9` |
-| **Path safety**        | No path separators (`/`, `\`) or traversal sequences (`..`)                               |
+| Rule                   | Description                                                                                                                                                       |
+|------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Maximum length**     | 64 characters                                                                                                                                                     |
+| **Allowed characters** | ASCII letters (`a-z`, `A-Z`), digits (`0-9`), hyphens (`-`), underscores (`_`), dots (`.`)                                                                        |
+| **Start character**    | Must start with a letter or digit (not `.`, `-` or `_`)                                                                                                           |
+| **End character**      | Must not end with a dot                                                                                                                                           |
+| **Reserved names**     | Windows reserved names rejected in any case and with any extension: `CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9` (so `con` and `COM1.txt` too)        |
+| **Path safety**        | No path separators (`/`, `\`) or other characters a path cannot hold (`:`, `*`, a blank). A name is always one directory, so `a..b` is a name and not a traversal |
 
-**Valid examples:** `production`, `staging-v2`, `test_env`, `dev01`
+**Valid examples:** `production`, `staging-v2`, `test_env`, `dev01`, `eu.prod`
 
-**Invalid examples:** `../etc` (path traversal), `-invalid` (starts with hyphen), `CON` (Windows reserved)
+**Invalid examples:** `../etc` (path separator), `-invalid` (starts with hyphen), `.hidden` (starts with a dot), `CON` (Windows reserved)
 
 ### Which Layers Are Affected?
 
