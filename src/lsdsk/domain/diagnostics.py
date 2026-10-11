@@ -1338,9 +1338,14 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
 
     The floor value alone cannot settle it, because a dead or downtrained link
     reads the same. Three readings together can, all on one switch: the
-    controller at the floor, a second device at the identical floor, and another
-    running a link above the floor, which shows the switch passes real links on rather
-    than being narrow everywhere. Where every device reads the floor, nothing
+    controller at the floor, a second device at the identical floor, and a link
+    above the floor at or beneath another of the switch's ports, which shows the
+    switch passes real links on rather than being narrow everywhere. Beneath
+    counts because a chipset chained behind another hangs off a port of the
+    first, and Windows publishes no link for that bridge: measured on a board
+    with two such chips, the first chip's own bus read nothing above the floor
+    while the network and wireless parts behind the second read their real
+    links. Where every device on and below the switch reads the floor, nothing
     tells the two cases apart, and ports on a root bus are independent slots
     rather than one switch, so neither case is excused.
 
@@ -1359,7 +1364,8 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
     Returns:
         The port holding the second device at the floor, which is the evidence
         a reader can check, or ``None`` when any of the three readings is
-        missing, when either device at the floor is not the switch maker's own
+        missing (a real link beneath a port is known only from the PCI tree),
+        when either device at the floor is not the switch maker's own
         function, or when the controller's port is not provably behind a
         bridge, including a scan that read no port records at all.
     """
@@ -1389,7 +1395,7 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
     # controller at the floor walking the ports around it: a switch carrying
     # many such functions made that walk cost the square of them.
     twin = next((slot for slot in inventory.floor_functions_on(bus, maker) if beside(slot)), None)
-    passes_real_links = any(beside(slot) for slot in inventory.ports_running_above_floor_on(bus))
+    passes_real_links = any(beside(slot) for slot in inventory.ports_leading_above_floor_on(bus))
     return twin if passes_real_links else None
 
 

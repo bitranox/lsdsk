@@ -12,7 +12,7 @@ System Role:
 
 from __future__ import annotations
 
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from functools import cached_property
 from math import inf, isnan
 from typing import TYPE_CHECKING, NamedTuple, Self
@@ -2208,6 +2208,68 @@ class Inventory(DomainModel, frozen=True):
         grouped: dict[str | None, list[PcieSlot]] = {}
         for slot in self.slots:
             if slot.occupant_link is not None and slot.occupant_link.is_running_above_floor:
+                grouped.setdefault(pci_bus_of(slot.address), []).append(slot)
+        return {bus: tuple(slots) for bus, slots in grouped.items()}
+
+    def ports_leading_above_floor_on(self, bus: str) -> tuple[PcieSlot, ...]:
+        """Return the ports on one bus with a link above the PCIe floor at or anywhere beneath them.
+
+        A port counts when its own occupant negotiated above the floor, as in
+        :meth:`ports_running_above_floor_on`, or when a port anywhere below it
+        in the PCI tree has an occupant that did. The second is how a switch
+        shows it passes real links on when its only such port leads to another
+        bridge: Windows publishes no link for a bridge, so a chipset chained
+        behind another reads as nothing on the first chip's own bus, while the
+        devices behind the second chip read their real links. Below is known
+        only from the PCI tree, so without one this is exactly the ports whose
+        own occupant runs above the floor.
+
+        Args:
+            bus: Domain and bus of the switch's ports.
+
+        Returns:
+            Those ports, in inventory order.
+
+        Example:
+            >>> fast = PcieLink(current_speed_gtps=8.0, current_width=1, max_speed_gtps=8.0, max_width=1)
+            >>> leg = PcieSlot(address="0000:04:08.0", link=PcieLink(), occupied=True, occupant_address="0000:06:00.0")
+            >>> deep = PcieSlot(address="0000:07:00.0", link=PcieLink(), occupant_link=fast)
+            >>> tree = (
+            ...     PciNode(address="0000:04:08.0", name="leg"),
+            ...     PciNode(address="0000:06:00.0", name="upstream", parent_address="0000:04:08.0"),
+            ...     PciNode(address="0000:07:00.0", name="port", parent_address="0000:06:00.0"),
+            ... )
+            >>> chained = Inventory(hostname="h", slots=(leg, deep), pci_tree=tree)
+            >>> [slot.address for slot in chained.ports_leading_above_floor_on("0000:04")]
+            ['0000:04:08.0']
+            >>> chained.with_changes(pci_tree=()).ports_leading_above_floor_on("0000:04")
+            ()
+        """
+        return self._ports_leading_above_floor_by_bus.get(bus, ())
+
+    @cached_property
+    def _ports_leading_above_floor_by_bus(self) -> Mapping[str | None, tuple[PcieSlot, ...]]:
+        """Group the ports with a real link at or beneath them by bus, once per machine.
+
+        Each port's subtree is a span of the one depth-first tour, so whether a
+        real link lies beneath it is a bisection over the sorted entry
+        positions of the ports running above the floor: the machine costs its
+        ports times a logarithm, never a walk of each port's subtree.
+
+        Returns:
+            Each bus against those ports, in inventory order.
+        """
+        spans = self._pci_tour.spans
+        running = [
+            slot for slot in self.slots if slot.occupant_link is not None and slot.occupant_link.is_running_above_floor
+        ]
+        own = {slot.address for slot in running}
+        positions = sorted(spans[slot.address][0] for slot in running if slot.address in spans)
+        grouped: dict[str | None, list[PcieSlot]] = {}
+        for slot in self.slots:
+            span = spans.get(slot.address)
+            beneath = span is not None and bisect_right(positions, span[1]) > bisect_left(positions, span[0])
+            if slot.address in own or beneath:
                 grouped.setdefault(pci_bus_of(slot.address), []).append(slot)
         return {bus: tuple(slots) for bus, slots in grouped.items()}
 

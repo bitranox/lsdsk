@@ -37,6 +37,7 @@ from lsdsk.domain.models import (
     Inventory,
     PcieLink,
     PcieSlot,
+    PciNode,
     pci_bus_of,
     pcie_bandwidth_gbps,
 )
@@ -145,6 +146,88 @@ def _floor_functions_on_one_switch(count: int) -> Inventory:
     return Inventory(hostname="switch", controllers=tuple(controllers), disks=tuple(disks), slots=tuple(slots))
 
 
+def _chained_switches(count: int) -> Inventory:
+    """``count`` chipset switches chained one behind another, the real link only behind the last.
+
+    Each switch carries a SATA function at the PCIe floor with a drive, a USB
+    function at the floor beside it, and a port leading to the next switch,
+    whose link a bridge does not publish. Only the deepest switch has a device
+    with a real link, so every SATA function finds the third reading BENEATH a
+    port of its own switch - at the bottom of a chain as deep as the machine.
+    A walk of each port's subtree per controller costs the square of the depth.
+    """
+    maker = 0x1022
+    bridge = PcieLink()
+    slots: list[PcieSlot] = []
+    tree: list[PciNode] = []
+    controllers: list[Controller] = []
+    disks: list[Disk] = []
+    for index in range(count):
+        upstream, bus = f"{index:04x}:00:00.0", f"{index:04x}:01"
+        onward, twin, sata = f"{bus}:08.0", f"{bus}:0c.0", f"{bus}:0d.0"
+        function, usb = f"{index:04x}:04:00.0", f"{index:04x}:03:00.0"
+        last = index == count - 1
+        below = f"{index:04x}:02:00.0" if last else f"{index + 1:04x}:00:00.0"
+        parent = None if index == 0 else f"{index - 1:04x}:01:08.0"
+        tree += [
+            PciNode(address=upstream, name="upstream", parent_address=parent),
+            *(PciNode(address=port, name="port", parent_address=upstream) for port in (onward, twin, sata)),
+            PciNode(address=usb, name="usb", parent_address=twin),
+            PciNode(address=function, name="sata", parent_address=sata),
+        ]
+        if last:
+            tree.append(PciNode(address=below, name="network", parent_address=onward))
+        slots += [
+            PcieSlot(address=upstream, link=bridge, occupied=True, occupant_address=onward, vendor=maker),
+            PcieSlot(
+                address=onward,
+                link=bridge,
+                occupied=True,
+                occupant_address=below,
+                occupant_link=_GEN3X4 if last else bridge,
+                vendor=maker,
+                occupant_vendor=0x8086 if last else maker,
+            ),
+            PcieSlot(
+                address=twin,
+                link=bridge,
+                occupied=True,
+                occupant_address=usb,
+                occupant_link=_FLOOR,
+                vendor=maker,
+                occupant_vendor=maker,
+            ),
+            PcieSlot(
+                address=sata,
+                link=bridge,
+                occupied=True,
+                occupant_address=function,
+                occupant_link=_FLOOR,
+                vendor=maker,
+                occupant_vendor=maker,
+            ),
+        ]
+        controllers.append(
+            Controller(
+                address=function,
+                name=f"SATA {index}",
+                kind=ControllerKind.AHCI,
+                link=_FLOOR,
+                upstream=bridge,
+                upstream_address=sata,
+                vendor=maker,
+            )
+        )
+        disks.append(_sata(index, function))
+    return Inventory(
+        hostname="chain",
+        controllers=tuple(controllers),
+        disks=tuple(disks),
+        slots=tuple(slots),
+        pci_tree=tuple(tree),
+    )
+
+
 def _drives_capped_by_their_ports(count: int) -> Inventory:
     """``count`` 32-port AHCI controllers, each with one 6 Gb/s drive on a 3 Gb/s port."""
     capped = InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0, port_max_gbps=3.0)
@@ -174,8 +257,9 @@ def _work_to_diagnose(machine: Inventory, *, expected_title: str) -> int:
         (_capped_cards, 100, "is capped by the mainboard, not by itself"),
         (_floor_functions_on_one_switch, 200, "publishes the PCIe floor as its link"),
         (_drives_capped_by_their_ports, 200, "is held back by its controller"),
+        (_chained_switches, 100, "publishes the PCIe floor as its link"),
     ],
-    ids=["port-capped-controllers", "floor-functions-on-one-switch", "port-capped-drives"],
+    ids=["port-capped-controllers", "floor-functions-on-one-switch", "port-capped-drives", "chained-switches"],
 )
 def test_doubling_the_machine_does_not_quadruple_the_placement_search(
     build: Callable[[int], Inventory], size: int, expected_title: str
@@ -351,6 +435,59 @@ def test_every_port_lookup_answers_what_a_walk_of_the_ports_answers(
     speeds = [slot.link.max_speed_gtps for slot in ports if slot.link.max_speed_gtps is not None]
     expected = max(speeds) if speeds else None
     assert repr(machine.fastest_slot_speed_gtps) == repr(expected)
+
+
+@st.composite
+def _ports_in_a_tree(draw: st.DrawFn) -> tuple[tuple[PcieSlot, ...], tuple[PciNode, ...]]:
+    """Ports as above, plus a PCI tree over their addresses whose shape is drawn too.
+
+    Each address may be absent from the tree, a root, or below any earlier one,
+    so a port can sit beneath another on its own bus, another bus, or nothing.
+    """
+    ports = draw(_ports())
+    addresses = list(dict.fromkeys(slot.address for slot in ports))
+    nodes: list[PciNode] = []
+    for index, address in enumerate(addresses):
+        if not draw(st.booleans()) and index:
+            continue
+        above = [node.address for node in nodes]
+        parent = draw(st.one_of(st.none(), st.sampled_from(above))) if above else None
+        nodes.append(PciNode(address=address, name=address, parent_address=parent))
+    return ports, tuple(nodes)
+
+
+def _beneath(address: str, ancestor: str, parents: dict[str, str | None]) -> bool:
+    seen: set[str] = set()
+    current: str | None = address
+    while current is not None and current not in seen:
+        if current == ancestor:
+            return True
+        seen.add(current)
+        current = parents.get(current)
+    return False
+
+
+@pytest.mark.os_agnostic
+@given(drawn=_ports_in_a_tree(), address=_ADDRESS)
+@settings(max_examples=300, deadline=None)
+def test_a_real_link_beneath_a_port_is_found_where_a_walk_up_from_every_port_finds_it(
+    drawn: tuple[tuple[PcieSlot, ...], tuple[PciNode, ...]], address: str
+) -> None:
+    """The ports leading to a link above the floor are those a plain walk up the tree names."""
+    ports, tree = drawn
+    machine = Inventory(hostname="generated", slots=ports, pci_tree=tree)
+    bus = pci_bus_of(address)
+    assert bus is not None
+    parents = {node.address: node.parent_address for node in tree}
+    running = [
+        slot.address for slot in ports if slot.occupant_link is not None and slot.occupant_link.is_running_above_floor
+    ]
+    assert list(machine.ports_leading_above_floor_on(bus)) == [
+        slot
+        for slot in ports
+        if pci_bus_of(slot.address) == bus
+        and any(found == slot.address or _beneath(found, slot.address, parents) for found in running)
+    ]
 
 
 _RATE = st.one_of(st.none(), st.sampled_from([1.5, 3.0, 6.0, 12.0, 22.5, 0.0, math.inf, math.nan]))

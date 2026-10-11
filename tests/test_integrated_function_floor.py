@@ -22,11 +22,15 @@ there is no slot data to read or no warning to replace.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
+from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.domain.diagnostics import diagnose, diagnose_controller_oversubscription
 from lsdsk.domain.enums import BusType, ControllerKind, DiskKind, Severity
-from lsdsk.domain.models import Controller, Disk, InterfaceLink, Inventory, PcieLink, PcieSlot
+from lsdsk.domain.models import Controller, Disk, Finding, InterfaceLink, Inventory, PcieLink, PcieSlot, PciNode
 
 # PCI class triples for what sits in each port. Named, because a reader of a
 # test about USB and NVMe neighbours should not have to decode hex.
@@ -44,6 +48,14 @@ _CHIPSET_MAKER = 0x1022
 _NETWORK_PART_MAKER = 0x10EC
 _SATA_PART_MAKER = 0x1095
 _CARD_READER_MAKER = 0x197B
+
+_FIXTURES = Path(__file__).parent / "fixtures" / "hw"
+
+
+def _fixture_machine(name: str) -> Inventory:
+    """Build a committed capture through the production builders."""
+    return build_from(json.loads((_FIXTURES / f"{name}.json").read_text(encoding="utf-8")))
+
 
 _FLOOR = PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=2.5, max_width=1)
 _SATA_ADDRESS = "0000:11:00.0"
@@ -556,4 +568,160 @@ def test_a_function_sharing_its_port_with_another_device_is_still_a_function_of_
     assert len(about_it) == 1, f"expected one hint in place of the warning, got {about_it}"
     assert about_it[0].severity is Severity.HINT
     assert "PCIe floor" in about_it[0].title
+    assert _REPLACE_THE_CARD not in (about_it[0].action or "")
+
+
+# Two chipset chips daisy-chained, as an AMD Promontory 21 pair is wired: the
+# second chip's upstream port hangs off a downstream port of the first. Windows
+# publishes no link for a bridge, so the first chip's own bus shows its two
+# functions at the floor and a port leading to a bridge, and nothing there reads
+# above the floor. The real links the first chip passes on are one chip further
+# down, behind that port.
+_FIRST_CHIP_BUS = "0000:04"
+_SECOND_CHIP_PORT = "0000:04:08.0"
+_DAISY_SATA_ADDRESS = "0000:10:00.0"
+_DAISY_SATA_PORT = "0000:04:0d.0"
+_REAL_LINK = PcieLink(current_speed_gtps=5.0, current_width=1, max_speed_gtps=5.0, max_width=1)
+
+
+def _daisy_chain(*, beneath: PcieLink, twin_vendor: int = _CHIPSET_MAKER, with_tree: bool = True) -> Inventory:
+    """Two chained chips, with the device behind the second chip linked as given.
+
+    Args:
+        beneath: The link of the network controller behind the second chip.
+        twin_vendor: The vendor of the USB function beside the SATA function on
+            the first chip; anything but the chipset maker removes the twin.
+        with_tree: Whether the machine carries its PCI tree, which is the only
+            record of what lies beneath a port.
+    """
+    sata = Controller(
+        address=_DAISY_SATA_ADDRESS,
+        name="Chipset SATA Controller",
+        kind=ControllerKind.AHCI,
+        link=_FLOOR,
+        upstream=PcieLink(),
+        upstream_address=_DAISY_SATA_PORT,
+        vendor=_CHIPSET_MAKER,
+    )
+    drive = Disk(
+        node="PhysicalDrive0",
+        path="PhysicalDrive0",
+        model="SATA SSD",
+        kind=DiskKind.SSD,
+        bus=BusType.SATA,
+        controller_address=_DAISY_SATA_ADDRESS,
+        link=InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=6.0),
+    )
+    bridge = PcieLink()
+    slots = (
+        _port("0000:00:02.1", occupant="0000:03:00.0", link=bridge, occupant_class=_BRIDGE),
+        _port("0000:03:00.0", occupant=_SECOND_CHIP_PORT, link=bridge, occupant_class=_BRIDGE),
+        _port(_SECOND_CHIP_PORT, occupant="0000:06:00.0", link=bridge, occupant_class=_BRIDGE),
+        _port("0000:04:0c.0", occupant="0000:0f:00.0", link=_FLOOR, occupant_class=_USB, occupant_vendor=twin_vendor),
+        _port(_DAISY_SATA_PORT, occupant=_DAISY_SATA_ADDRESS, link=_FLOOR, occupant_class=_AHCI),
+        _port("0000:06:00.0", occupant="0000:07:05.0", link=bridge, occupant_class=_BRIDGE),
+        _port(
+            "0000:07:05.0",
+            occupant="0000:0a:00.0",
+            link=beneath,
+            occupant_class=_NETWORK,
+            occupant_vendor=0x8086,
+        ),
+    )
+    parents = {
+        "0000:00:02.1": "0000:00",
+        "0000:03:00.0": "0000:00:02.1",
+        _SECOND_CHIP_PORT: "0000:03:00.0",
+        "0000:04:0c.0": "0000:03:00.0",
+        _DAISY_SATA_PORT: "0000:03:00.0",
+        "0000:06:00.0": _SECOND_CHIP_PORT,
+        "0000:07:05.0": "0000:06:00.0",
+        "0000:0a:00.0": "0000:07:05.0",
+        "0000:0f:00.0": "0000:04:0c.0",
+        _DAISY_SATA_ADDRESS: _DAISY_SATA_PORT,
+    }
+    tree = (
+        PciNode(address="0000:00", name="root bus"),
+        *(PciNode(address=address, name=address, parent_address=parent) for address, parent in parents.items()),
+    )
+    return Inventory(
+        hostname="h",
+        controllers=(sata,),
+        disks=(drive,),
+        slots=slots,
+        pci_tree=tree if with_tree else (),
+    )
+
+
+def _about_the_daisy_sata(machine: Inventory) -> list[Finding]:
+    return [finding for finding in diagnose(machine) if finding.subject == _DAISY_SATA_ADDRESS]
+
+
+@pytest.mark.os_agnostic
+def test_the_first_of_two_chained_chips_is_shown_to_pass_real_links_by_what_lies_beneath_it() -> None:
+    """A real link one chip further down shows the first chip passes real links on.
+
+    The first chip's bus holds nothing above the floor of its own: its only other
+    occupied port leads to the second chip, a bridge whose link Windows does not
+    publish. What lies beneath that port does.
+    """
+    machine = _daisy_chain(beneath=_REAL_LINK)
+    assert not machine.ports_running_above_floor_on(_FIRST_CHIP_BUS), (
+        "the first chip's own ports must show nothing above the floor, or this proves nothing new"
+    )
+
+    about_it = _about_the_daisy_sata(machine)
+
+    assert len(about_it) == 1, f"expected one hint in place of the warning, got {about_it}"
+    assert about_it[0].severity is Severity.HINT
+    assert "PCIe floor" in about_it[0].title
+    assert "0000:0f:00.0" in about_it[0].detail
+
+
+@pytest.mark.os_agnostic
+def test_a_chain_whose_every_device_beneath_reads_the_floor_cannot_be_told_apart() -> None:
+    """Every device on and below the switch at the floor is what a narrow switch shows, so the warning stands."""
+    about_it = _about_the_daisy_sata(_daisy_chain(beneath=_FLOOR))
+
+    assert len(about_it) == 1, about_it
+    assert about_it[0].severity is Severity.WARNING
+    assert "oversubscribed" in about_it[0].title
+
+
+@pytest.mark.os_agnostic
+def test_real_links_beneath_the_switch_excuse_nothing_without_a_twin_at_the_floor() -> None:
+    """A floor controller with no same-maker twin is taken at its word, however fast the chain below."""
+    about_it = _about_the_daisy_sata(_daisy_chain(beneath=_REAL_LINK, twin_vendor=_CARD_READER_MAKER))
+
+    assert len(about_it) == 1, about_it
+    assert about_it[0].severity is Severity.WARNING
+    assert "oversubscribed" in about_it[0].title
+
+
+@pytest.mark.os_agnostic
+def test_without_the_pci_tree_nothing_beneath_a_port_is_known() -> None:
+    """The ports alone cannot say what hangs below the bridge, so the warning stands as before."""
+    about_it = _about_the_daisy_sata(_daisy_chain(beneath=_REAL_LINK, with_tree=False))
+
+    assert len(about_it) == 1, about_it
+    assert about_it[0].severity is Severity.WARNING
+
+
+@pytest.mark.os_agnostic
+def test_the_sata_function_of_the_first_chained_chip_on_a_real_board_is_a_register_default() -> None:
+    """The committed capture this was reported on: ASUS ProArt X870E, two Promontory 21 chained.
+
+    The drive on 0000:10:00.0 delivers about 500 MB/s, where the floor reading
+    claimed the uplink could carry 0.25 GB/s and told its owner to replace the
+    board's own chipset.
+    """
+    machine = _fixture_machine("windows-chipset-switch")
+
+    about_it = [finding for finding in diagnose(machine) if finding.subject == _DAISY_SATA_ADDRESS]
+
+    assert not [f for f in about_it if "oversubscribed" in f.title], f"still called oversubscribed: {about_it}"
+    assert len(about_it) == 1, f"expected one hint in place of the warning, got {about_it}"
+    assert about_it[0].severity is Severity.HINT
+    assert "PCIe floor" in about_it[0].title
+    assert "0000:0f:00.0" in about_it[0].detail, "the twin is the evidence, so the reader must be able to find it"
     assert _REPLACE_THE_CARD not in (about_it[0].action or "")
