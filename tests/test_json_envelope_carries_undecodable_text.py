@@ -9,6 +9,7 @@ The envelope sanitises the text it carries, so this holds for every command.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 from pathlib import Path
@@ -48,7 +49,14 @@ def test_a_history_file_with_undecodable_bytes_in_its_name_still_yields_json(
 ) -> None:
     """The refusal quotes the history path, and the path holds a byte no UTF-8 text can."""
     store = Path(os.fsdecode(os.fsencode(tmp_path) + b"/" + os.fsencode(BAD_NAME)))
-    store.write_bytes(b"not a history store")
+    try:
+        store.write_bytes(b"not a history store")
+    except OSError as error:
+        # macOS refuses a file name that is not valid UTF-8 with EILSEQ, so no history file
+        # can carry such a name there and there is nothing for the refusal to quote.
+        if error.errno != errno.EILSEQ:
+            raise
+        pytest.skip("this filesystem refuses a file name that is not valid UTF-8 (EILSEQ)")
 
     exit_code, out = _run(
         ["--history-file", str(store), "--no-record", "--replay", str(CAPTURE), "disks", "--format", "json"], capsys

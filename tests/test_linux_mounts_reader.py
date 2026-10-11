@@ -478,6 +478,7 @@ class _Node:
         self.st_rdev = rdev
 
 
+@pytest.mark.os_posix
 def test_a_block_device_node_is_named_major_then_minor() -> None:
     """Major 8, minor 17 is ``8:17``; a swapped pair would read ``17:8``, another disk's number."""
     node = _Node(stat.S_IFBLK | 0o660, os.makedev(8, 17))
@@ -485,16 +486,23 @@ def test_a_block_device_node_is_named_major_then_minor() -> None:
     assert mounts.device_number_of("/dev/sdb1", stat_of=lambda _path: node) == "8:17"
 
 
+# The device number is built inside the test, not in the parameters: os.makedev exists only
+# on POSIX, and a parameter is evaluated when the module is collected, before a marker can
+# skip anything, so Windows could not even collect this file.
+@pytest.mark.os_posix
 @pytest.mark.parametrize(
-    ("mode", "rdev"),
+    ("mode", "device"),
     [
-        pytest.param(stat.S_IFCHR | 0o666, os.makedev(1, 3), id="character-device"),
-        pytest.param(stat.S_IFREG | 0o644, 0, id="regular-file"),
-        pytest.param(stat.S_IFBLK | 0o660, 0, id="block-node-without-a-device-number"),
+        pytest.param(stat.S_IFCHR | 0o666, (1, 3), id="character-device"),
+        pytest.param(stat.S_IFREG | 0o644, None, id="regular-file"),
+        pytest.param(stat.S_IFBLK | 0o660, None, id="block-node-without-a-device-number"),
     ],
 )
-def test_a_path_that_is_not_a_numbered_block_device_has_no_device_number(mode: int, rdev: int) -> None:
+def test_a_path_that_is_not_a_numbered_block_device_has_no_device_number(
+    mode: int, device: tuple[int, int] | None
+) -> None:
     """A character device has a number too, from a separate numbering, and is not taken."""
+    rdev = os.makedev(*device) if device is not None else 0
     assert mounts.device_number_of("/dev/x", stat_of=lambda _path: _Node(mode, rdev)) is None
 
 
