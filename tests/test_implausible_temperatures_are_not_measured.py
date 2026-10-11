@@ -67,8 +67,9 @@ def test_the_edges_of_the_plausible_range_are_still_readings(celsius: int) -> No
 
 
 @pytest.mark.os_agnostic
-def test_an_all_ones_nvme_log_page_has_no_temperature() -> None:
-    assert decode_smart_log(b"\xff" * 512).temperature_c is None
+def test_an_all_ones_nvme_log_page_is_refused_not_given_a_temperature() -> None:
+    with pytest.raises(ValueError, match="all ones"):
+        decode_smart_log(b"\xff" * 512)
 
 
 @pytest.mark.os_agnostic

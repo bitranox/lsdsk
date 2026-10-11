@@ -754,6 +754,11 @@ def _size_bytes(block: BlockEntry, identity: AtaIdentity | None) -> int | None:
     return identity.size_bytes if identity else None
 
 
+def _with_temperature(health: Health, celsius: int) -> Health:
+    """`health` with the monitor's temperature, unless the drive already gave one."""
+    return health if health.temperature_c is not None else health.with_changes(temperature_c=celsius)
+
+
 def _build_nvme_disk(node: str, block: BlockEntry, indexed: _IndexedCapture) -> Disk:
     """Build one NVMe disk from a capture."""
     capture = indexed.capture
@@ -775,8 +780,10 @@ def _build_nvme_disk(node: str, block: BlockEntry, indexed: _IndexedCapture) -> 
             health = None
 
     temperature = _hwmon_temperature(block.hwmon, indexed)
-    if health is None and temperature is not None:
-        health = Health(temperature_c=temperature)
+    if temperature is not None:
+        # A health reading that carries no temperature (a log page whose
+        # composite field was implausible) still gets the monitor's.
+        health = Health(temperature_c=temperature) if health is None else _with_temperature(health, temperature)
 
     address = controller_address_of(block.device_path)
     endpoint = capture.pci.get(address) if address else None

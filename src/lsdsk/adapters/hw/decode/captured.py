@@ -91,6 +91,33 @@ def decode_base64(value: str | None) -> bytes | None:
         return None
 
 
+def refuse_a_floating_page(page: bytes, *, what: str) -> None:
+    """Refuse a page made only of 0xFF bytes: what an unterminated bus answers.
+
+    A device that is gone, or a bus whose lines float, returns all ones for
+    every read. No structure the decoders read is legitimately all ones, and
+    decoding one yields a drive at 255 percent wear with a failing verdict, a
+    reading no drive gave.
+
+    Args:
+        page: The bytes to judge.
+        what: Names the structure for the message.
+
+    Raises:
+        ValueError: If the page is non-empty and every byte is 0xFF.
+
+    Example:
+        >>> refuse_a_floating_page(bytes(4), what="page")
+        >>> refuse_a_floating_page(b"\\xff" * 4, what="page")
+        Traceback (most recent call last):
+        ...
+        ValueError: page is all ones: a floating bus, not a reading
+    """
+    if page and page == b"\xff" * len(page):
+        message = f"{what} is all ones: a floating bus, not a reading"
+        raise ValueError(message)
+
+
 # Wider than any operating range a drive datasheet lists (industrial parts go to
 # -40 C and 85 C; NAND throttles and shuts down below 125 C), so a real reading
 # is never refused, and narrow enough that every value a floating bus or a
@@ -134,4 +161,5 @@ __all__ = [
     "parse_int",
     "parse_pci_id",
     "plausible_celsius",
+    "refuse_a_floating_page",
 ]

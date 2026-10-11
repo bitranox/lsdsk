@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from ....domain.models import Health
 from ....domain.text import device_text
-from .captured import plausible_celsius
+from .captured import plausible_celsius, refuse_a_floating_page
 
 IDENTIFY_CONTROLLER_LENGTH = 4096
 SMART_LOG_LENGTH = 512
@@ -71,7 +71,8 @@ def decode_identify_controller(blob: bytes) -> NvmeIdentity:
         The controller's self-description.
 
     Raises:
-        ValueError: If the buffer is shorter than one Identify response.
+        ValueError: If the buffer is shorter than one Identify response or is
+            all ones, which is what a bus with nothing on it answers.
 
     Example:
         >>> decode_identify_controller(bytes(4096)).model
@@ -80,6 +81,7 @@ def decode_identify_controller(blob: bytes) -> NvmeIdentity:
     if len(blob) < IDENTIFY_CONTROLLER_LENGTH:
         message = f"Identify Controller is {len(blob)} bytes, expected at least {IDENTIFY_CONTROLLER_LENGTH}"
         raise ValueError(message)
+    refuse_a_floating_page(blob[:IDENTIFY_CONTROLLER_LENGTH], what="Identify Controller")
 
     warning, critical = struct.unpack_from("<HH", blob, 266)
     return NvmeIdentity(
@@ -107,7 +109,9 @@ def decode_smart_log(blob: bytes, identity: NvmeIdentity | None = None) -> Healt
         ATA decoder answers an empty table the same way.
 
     Raises:
-        ValueError: If the buffer is shorter than one log page.
+        ValueError: If the buffer is shorter than one log page or the page is
+            all ones: a floating bus answers that way, and decoding it would
+            report a failing drive at 255 percent wear.
 
     Example:
         >>> health = decode_smart_log(bytes([0, 0, 0, 100]) + bytes(508))
@@ -122,6 +126,7 @@ def decode_smart_log(blob: bytes, identity: NvmeIdentity | None = None) -> Healt
         message = f"SMART log is {len(blob)} bytes, expected at least {SMART_LOG_LENGTH}"
         raise ValueError(message)
 
+    refuse_a_floating_page(blob[:SMART_LOG_LENGTH], what="SMART log")
     if not any(blob[:SMART_LOG_LENGTH]):
         return Health()
     critical_warning = blob[0]

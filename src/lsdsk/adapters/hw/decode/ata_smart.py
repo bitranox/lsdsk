@@ -15,6 +15,7 @@ System Role:
 from __future__ import annotations
 
 from ....domain.models import Health, SmartAttribute
+from .captured import plausible_celsius, refuse_a_floating_page
 
 SMART_DATA_LENGTH = 512
 
@@ -69,11 +70,6 @@ _TEMPERATURE_ATTRIBUTES = (194, 190)
 # Host read and write totals are counted in 512-byte logical sectors.
 _LBA_BYTES = 512
 
-# A drive reporting outside this range is reporting a raw field that is not a
-# temperature at all: some vendors pack a minimum and a maximum into the same
-# raw value. A policy choice, not a figure the ATA specification fixes.
-_PLAUSIBLE_TEMPERATURE_C = range(1, 150)
-
 
 def decode_attributes(data: bytes, thresholds: bytes | None = None) -> tuple[SmartAttribute, ...]:
     """Decode the SMART attribute table.
@@ -86,7 +82,8 @@ def decode_attributes(data: bytes, thresholds: bytes | None = None) -> tuple[Sma
         Attributes in table order, skipping empty slots.
 
     Raises:
-        ValueError: If the data buffer is too short.
+        ValueError: If the data buffer is too short or is all ones, which is
+            what a bus with nothing on it answers.
 
     Example:
         >>> decode_attributes(bytes(512))
@@ -95,6 +92,7 @@ def decode_attributes(data: bytes, thresholds: bytes | None = None) -> tuple[Sma
     if len(data) < SMART_DATA_LENGTH:
         message = f"SMART data is {len(data)} bytes, expected at least {SMART_DATA_LENGTH}"
         raise ValueError(message)
+    refuse_a_floating_page(data[:SMART_DATA_LENGTH], what="SMART data")
 
     limits = _decode_thresholds(thresholds)
     attributes: list[SmartAttribute] = []
@@ -150,8 +148,12 @@ def _temperature(attributes: tuple[SmartAttribute, ...]) -> int | None:
     for identifier in _TEMPERATURE_ATTRIBUTES:
         attribute = _find(attributes, identifier)
         if attribute is not None:
-            celsius = attribute.raw & 0xFF
-            if celsius in _PLAUSIBLE_TEMPERATURE_C:
+            # The low byte is unsigned, so a raw field that is not a
+            # temperature at all (some vendors pack a minimum and a maximum
+            # into it) still has to land inside the bound every other path
+            # applies; that bound is a policy, not an ATA figure.
+            celsius = plausible_celsius(attribute.raw & 0xFF)
+            if celsius is not None:
                 return celsius
     return None
 
