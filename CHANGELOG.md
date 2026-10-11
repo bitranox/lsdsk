@@ -16,6 +16,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   GB/s while the drive behind it delivered about 0.5 GB/s. The real links the switch passes on are
   now also found behind its port to the second chip, which Windows reports no link for, so the
   finding is the register-default hint.
+- **A chipset function's floor link is no longer shown as worth 0.25 GB/s.** Wherever lsdsk has the
+  evidence behind that hint, the controllers and slots tables, the topology tree and the detail
+  panel draw the figure as `Gen1x1*` with no bandwidth, under the legend `* = register default, not
+  the real link`. The panel no longer claims `uplink carries <= 0.25 GB/s`, and the slots table no
+  longer judges such a port `full`. `--format json` keeps the raw register values.
 - **A dead bus no longer shows up as a failing drive.** An all-ones NVMe SMART log, NVMe Identify
   Controller page or ATA SMART page (a bus answering with floating lines) is refused like an
   unusable IDENTIFY page, where it used to read as "reports itself as failing" at 255% of its rated

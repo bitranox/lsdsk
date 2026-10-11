@@ -122,10 +122,15 @@ def test_the_skill_explains_every_marker_a_view_can_draw() -> None:
     """
     from lsdsk.adapters.render import theme
 
-    drawn = {name: getattr(theme, name) for name in ("NOT_READ", "LEGACY", "NOT_APPLICABLE", "AT_MOST")}
+    names = ("NOT_READ", "LEGACY", "NOT_APPLICABLE", "AT_MOST", "REGISTER_DEFAULT")
+    drawn = {name: getattr(theme, name) for name in names}
     text = SKILL.read_text(encoding="utf-8")
 
-    unexplained = sorted(name for name, symbol in drawn.items() if f"`{symbol}" not in text)
+    # The symbol must open a code span and be followed by a blank or the span's close: a
+    # bare "`*" is also the start of every "`**" a bold run after a code span makes.
+    unexplained = sorted(
+        name for name, symbol in drawn.items() if not re.search(re.escape(f"`{symbol}") + "[ `]", text)
+    )
     assert not unexplained, f"the skill draws no explanation for these markers: {unexplained}"
 
 

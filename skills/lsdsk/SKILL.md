@@ -205,6 +205,15 @@ too high. The end that WAS read is a real measurement, which is why the figure
 is marked instead of dashed. On Windows this is every PCIe controller, because
 Windows publishes a link capability for an endpoint and none for a bridge.
 
+A figure written `Gen1x1*` is the PCIe floor a function built into a chipset
+publishes, and the page says so under it: `* = register default, not the real
+link`. It is drawn wherever lsdsk has the evidence for the floor hint below, in
+the controllers and slots tables, the topology tree and the detail panel, and it
+never carries a bandwidth, because the register is not a link with one. The real
+uplink is not in the register at all. `--format json` keeps the raw register
+values, so a script reading a controller's `link` sees `current_speed_gtps` 2.5
+and `current_width` 1, and must not treat that as a ceiling either.
+
 **The marker column on the far left is the finding, not the link.** A `!` or `~`
 sits on the row a finding names, so a drive with a perfectly good link can carry
 one for wear or for CRC errors. Read `lsdsk findings` for what it is about
@@ -264,7 +273,7 @@ controller's own registers, which some hosts deny outright. Those entries name
 the drive or the PCI address, so a check does not have to interrogate the machine
 again to find out which one said no. On Windows, a disk interface whose device
 path could not be read appears as `device: disk interface - <reason>`. It is NOT
-counted as a disk anywhere in `data`, and the human header says
+counted as a disk anywhere in `data`, and every human page that lists disks says
 `N disk interface(s) not read: <reason>.`, so a drive the machine has is never
 silently missing from a report that says nothing is wrong.
 `command` names the command that produced the payload. `data` is that command's
@@ -1035,9 +1044,10 @@ one of them is enough to stop:
   cannot get it in the same exchange, answer on the other two readings, give the
   command that would settle it, and say which answer each result would give.
 - **`running` equals `capable` at the PCIe floor.** `Gen1x1` in both columns is
-  the lowest value the pair can hold. A figure carries what it is worth where
-  the width allows, so the reader may see `Gen1x1 (0.25 GB/s)`; match on the
-  figure, which is there either way. Devices that negotiated a real link report
+  the lowest value the pair can hold. Where lsdsk has already recognised the
+  floor it reads `Gen1x1*` with no bandwidth; otherwise a figure carries what it
+  is worth where the width allows, so the reader may see `Gen1x1 (0.25 GB/s)`.
+  Match on the figure, which is there in every form. Devices that negotiated a real link report
   a `capable` above their `running` wherever the two differ, so a device pinned
   at the floor in both has not negotiated anything.
 - **A second function on the same silicon publishes the identical floor.** Run
@@ -1050,7 +1060,10 @@ one of them is enough to stop:
   network controller, genuinely links at `Gen1x1`. `lsdsk slots --format json`
   carries `vendor` and `occupant_vendor` on every port, and a function built into
   the switch has the same identifier as the port in front of it, where a separate
-  part has its own maker's.
+  part has its own maker's. On a board with two chipset chips daisy-chained, the
+  first chip's ports may show no real link at all: the one that would is its
+  port to the second chip, a bridge, and Windows publishes no link for a bridge.
+  The real links are then on the second chip's ports, behind that one.
 
 **`lsdsk slots` lists PORTS, so its addresses are not the addresses in `lsdsk
 controllers` and you have to join the two yourself.** Each row is a port, named
@@ -1072,7 +1085,8 @@ real uplink is on the card's spec page, not in the register.
 
 **lsdsk recognises the second and third readings itself** when the controller sits behind a switch: its own
 link reads the floor in both columns, another function on that switch reads the identical floor, both carry
-the vendor identifier of the switch ports in front of them, and a third device there has a real link. It
+the vendor identifier of the switch ports in front of them, and a third device there, or anywhere beneath
+one of that switch's ports, has a real link. It
 then reports the controller as publishing the PCIe floor, a hint, instead of calling it oversubscribed.
 Where it cannot tell (no slot data, every link on the switch at the floor, a controller that sits on a root
 port rather than behind a switch, or a device at the floor whose vendor is not the switch's) it still raises
