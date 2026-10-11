@@ -314,34 +314,87 @@ _FORMS: Final[Mapping[str, Callable[[str], object | None]]] = {
 }
 
 
-def _dropped_scrub_entries(section: Mapping[str, object]) -> list[str]:
-    """The pieces of a text-form ``scrub_patterns`` that the library discards for lacking ``=``.
+#: The brackets whose being left open shows a regex was cut in the middle.
+_OPENERS: Final[dict[str, str]] = {"{": "}", "(": ")", "[": "]"}
+
+#: The environment variable lib_log_rich reads the same text form from, ahead of the section.
+_SCRUB_PATTERNS_VARIABLE: Final = "LOG_SCRUB_PATTERNS"
+
+
+def _is_left_open(piece: str) -> bool:
+    """Whether `piece` opens a bracket it never closes, which a regex does not do on purpose.
+
+    Args:
+        piece: One comma-separated piece of the text form.
+
+    Returns:
+        ``True`` when any of ``{``, ``(`` and ``[`` has more openers than closers.
+
+    Example:
+        >>> _is_left_open("token=a{1"), _is_left_open("token=a{1,3}"), _is_left_open("k=[0-9]")
+        (True, False, False)
+    """
+    return any(piece.count(opener) > piece.count(closer) for opener, closer in _OPENERS.items())
+
+
+def _dropped_scrub_entries(text: str) -> list[str]:
+    """The pieces of a text-form ``scrub_patterns`` that are the tail of a regex cut at its comma.
 
     The text form is ``field=regex`` pairs split on every comma, so a regex that
-    holds one (``token=a{1,3}``) is cut in two and its tail, which has no ``=``,
-    is dropped without a word. Telling that apart from a deliberate list is the
-    point: a file's table form is not affected, so only text is looked at.
+    holds one (``token=a{1,3}``) is cut in two. The tail is dropped without a
+    word when it has no ``=``, and is read as a pair of its own when it has one
+    (``token=a{1,3=x}`` yields an entry named ``3``). Either way it follows a
+    piece that opened a bracket and never closed it, which is how a cut is told
+    from a deliberate list.
+
+    Args:
+        text: The text form, from the section or from the environment.
+
+    Returns:
+        Each non-blank piece that is such a tail, in order.
+
+    Example:
+        >>> _dropped_scrub_entries("token=a{1,3}, key=.+")
+        ['3}']
+        >>> _dropped_scrub_entries("token=a{1,3=x}, key=.+")
+        ['3=x}']
+        >>> _dropped_scrub_entries("token=a{2}, key=.+,")
+        []
+    """
+    pieces = [piece.strip() for piece in text.split(",")]
+    tails: list[str] = []
+    previous = ""
+    for piece in pieces:
+        if not piece:
+            continue
+        if "=" not in piece or _is_left_open(previous):
+            tails.append(piece)
+        previous = piece
+    return tails
+
+
+def _scrub_texts(section: Mapping[str, object]) -> list[tuple[str, str]]:
+    """Each text form in play, with where a reader would look for it.
 
     Args:
         section: The ``[lib_log_rich]`` table as the layers merged it.
 
     Returns:
-        Each non-blank piece without an ``=``, in order.
-
-    Example:
-        >>> _dropped_scrub_entries({"scrub_patterns": "token=a{1,3}, key=.+"})
-        ['3}']
-        >>> _dropped_scrub_entries({"scrub_patterns": {"token": "a{1,3}"}})
-        []
+        ``(origin, text)`` for the section's value and for the environment's,
+        each only when it is text.
     """
-    text = section.get("scrub_patterns")
-    if not isinstance(text, str):
-        return []
-    return [piece.strip() for piece in text.split(",") if piece.strip() and "=" not in piece]
+    found: list[tuple[str, str]] = []
+    configured = section.get("scrub_patterns")
+    if isinstance(configured, str):
+        found.append((f"{_SECTION}.scrub_patterns", configured))
+    from_environment = os.environ.get(_SCRUB_PATTERNS_VARIABLE)
+    if from_environment:
+        found.append((f"environment variable {_SCRUB_PATTERNS_VARIABLE}", from_environment))
+    return found
 
 
 def _scrub_pattern_notes(section: Mapping[str, object]) -> list[str]:
-    """One warning per piece of the text form that was dropped, so the cut is visible.
+    """One warning per piece of the text form that was cut off, so the cut is visible.
 
     Args:
         section: The ``[lib_log_rich]`` table as the layers merged it.
@@ -351,12 +404,13 @@ def _scrub_pattern_notes(section: Mapping[str, object]) -> list[str]:
     """
     return [
         RejectedValue(
-            dotted=f"{_SECTION}.scrub_patterns",
+            dotted=origin,
             raw=piece,
-            reason="the text form is field=regex pairs split on every comma, and this piece has no '='",
+            reason="the text form is field=regex pairs split on every comma, and this piece continues a cut regex",
             used="the other entries; give a regex containing a comma as a table in a file",
         ).as_sentence()
-        for piece in _dropped_scrub_entries(section)
+        for origin, text in _scrub_texts(section)
+        for piece in _dropped_scrub_entries(text)
     ]
 
 
