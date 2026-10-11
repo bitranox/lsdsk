@@ -276,8 +276,11 @@ def _read_text(path: Path, *, limit: int = MAX_SYSFS_BYTES) -> str | None:
         Its stripped text, or ``None`` where it could not be read or is too big.
     """
     try:
-        # sysfs writes UTF-8 whatever the reading process's locale is.
-        with path.open("r", encoding="utf-8", errors="replace") as handle:
+        # sysfs writes UTF-8 whatever the reading process's locale is, and a
+        # carriage return in a kernel-printed path (mountinfo) is part of the
+        # path: universal newlines would turn it into a row break, so none is
+        # translated. The strip below still trims the ends.
+        with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
             raw = handle.read(limit + 1)
     except OSError:
         return None
@@ -974,14 +977,29 @@ def read_nvme_blobs(nodes: list[str]) -> dict[str, dict[str, str]]:
     return results
 
 
-# Files whose mere presence names a container runtime.
+# Files whose mere presence names a container runtime, relative to the root.
 _CONTAINER_MARKER_FILES: dict[str, str] = {
-    "/.dockerenv": "docker",
-    "/run/.containerenv": "podman",
+    ".dockerenv": "docker",
+    "run/.containerenv": "podman",
 }
+_HOST_PROC = Path("/proc")
+_HOST_ROOT = Path("/")
 
 
-def read_environment(*, proc: Path = Path("/proc")) -> dict[str, Any]:
+def _tree_root(proc: Path, root: Path | None) -> Path:
+    """The tree the non-procfs evidence is read from.
+
+    An explicit ``root`` wins. Otherwise the live machine's own root, unless
+    ``proc`` was overridden: a procfs taken from somewhere else brings its own
+    tree with it, rooted where its ``proc`` directory sits, so that a reading
+    can never mix another machine's processes with this machine's DMI.
+    """
+    if root is not None:
+        return root
+    return _HOST_ROOT if proc == _HOST_PROC else proc.parent
+
+
+def read_environment(*, proc: Path = _HOST_PROC, root: Path | None = None) -> dict[str, Any]:
     """Gather the evidence that says whether this is metal, a guest or a container.
 
     Read rather than shelled out to, so it works where ``systemd-detect-virt``
@@ -990,11 +1008,15 @@ def read_environment(*, proc: Path = Path("/proc")) -> dict[str, Any]:
     Args:
         proc: The procfs root the process and CPU evidence is read from,
             overridable for a test.
+        root: The tree the marker files, the systemd runtime file and the DMI
+            and hypervisor strings are read from. Defaults to the machine's own
+            root, or to the parent of an overridden ``proc``.
 
     Returns:
         The raw strings, for the pure classifier to interpret.
     """
     evidence: dict[str, Any] = {}
+    tree = _tree_root(proc, root)
 
     # PID 1's environment carries container=lxc for LXC and systemd-nspawn.
     try:
@@ -1007,7 +1029,7 @@ def read_environment(*, proc: Path = Path("/proc")) -> dict[str, Any]:
             evidence["container_marker"] = value
             break
 
-    present = [path for path in _CONTAINER_MARKER_FILES if Path(path).exists()]
+    present = [path for path in _CONTAINER_MARKER_FILES if (tree / path).exists()]
     if present:
         evidence["container_files"] = [_CONTAINER_MARKER_FILES[path] for path in present]
 
@@ -1017,7 +1039,7 @@ def read_environment(*, proc: Path = Path("/proc")) -> dict[str, Any]:
     # text reaches `VirtualizationEvidence`, which now carries the same
     # `DeviceText` bound the rest of a capture does, so an over-limit read
     # must degrade to "not read" here rather than end the scan at the model.
-    runtime = _read_attribute(Path("/run/systemd/container"))
+    runtime = _read_attribute(tree / "run" / "systemd" / "container")
     if runtime and "container_marker" not in evidence:
         evidence["container_marker"] = runtime
 
@@ -1037,13 +1059,13 @@ def read_environment(*, proc: Path = Path("/proc")) -> dict[str, Any]:
         evidence["mount_markers"] = markers
 
     for key, path in (
-        ("dmi_vendor", "/sys/class/dmi/id/sys_vendor"),
-        ("dmi_product", "/sys/class/dmi/id/product_name"),
-        ("dmi_board_vendor", "/sys/class/dmi/id/board_vendor"),
-        ("dmi_board_name", "/sys/class/dmi/id/board_name"),
-        ("hypervisor_type", "/sys/hypervisor/type"),
+        ("dmi_vendor", "sys/class/dmi/id/sys_vendor"),
+        ("dmi_product", "sys/class/dmi/id/product_name"),
+        ("dmi_board_vendor", "sys/class/dmi/id/board_vendor"),
+        ("dmi_board_name", "sys/class/dmi/id/board_name"),
+        ("hypervisor_type", "sys/hypervisor/type"),
     ):
-        value = _read_attribute(Path(path))
+        value = _read_attribute(tree / path)
         if value:
             evidence[key] = value
 
