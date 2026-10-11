@@ -828,6 +828,11 @@ def nvme_protocol_data(
     )
     if not ok:
         return NvmeRefusal(f"Win32 error {api.last_error()}")
+    # The offset is the driver's word, measured from the start of the protocol
+    # structure. One inside that structure puts the "page" over the header the
+    # driver just wrote, which would decode as a drive's health.
+    if protocol.ProtocolDataOffset < ctypes.sizeof(api.STORAGE_PROTOCOL_SPECIFIC_DATA):
+        return NvmeRefusal(f"data offset {protocol.ProtocolDataOffset} lies inside the protocol header")
     start = offset + protocol.ProtocolDataOffset
     # A success that moved nothing leaves the zeros the buffer was allocated
     # with, which decode as a healthy drive. The driver rewrites the length

@@ -54,6 +54,8 @@ class FakeNvmeKernel32:
         reports_moved: The byte count ``DeviceIoControl`` reports, or ``None`` for header plus payload.
         length_field: What the driver writes into ``ProtocolDataLength``, or ``None`` for the payload's
             own length. Set it to model a driver whose length field disagrees with the byte count.
+        data_offset: What the driver writes into ``ProtocolDataOffset``, or ``None`` to leave the offset the
+            request asked for. Set it to model a driver that places the data inside the header.
     """
 
     def __init__(
@@ -64,6 +66,7 @@ class FakeNvmeKernel32:
         rewrites_length: bool = True,
         reports_moved: int | None = None,
         length_field: int | None = None,
+        data_offset: int | None = None,
     ) -> None:
         """Answer protocol queries through ``answer``."""
         self.answer = answer
@@ -71,6 +74,7 @@ class FakeNvmeKernel32:
         self.rewrites_length = rewrites_length
         self.reports_moved = reports_moved
         self.length_field = length_field
+        self.data_offset = data_offset
 
     def CreateFileW(self, path: str, access: int, *_rest: object) -> int:  # noqa: N802 - the Win32 name
         del path
@@ -129,6 +133,8 @@ class FakeNvmeKernel32:
         ctypes.memmove(ctypes.addressof(buffer) + _DATA_AT, payload, len(payload))
         if self.rewrites_length:
             protocol.ProtocolDataLength = len(payload) if self.length_field is None else self.length_field
+        if self.data_offset is not None:
+            protocol.ProtocolDataOffset = self.data_offset
         _referent(returned).value = _DATA_AT + len(payload) if self.reports_moved is None else self.reports_moved
         return 1
 
@@ -241,3 +247,26 @@ def test_a_length_field_shorter_than_the_payload_is_a_refusal_even_when_the_byte
     assert record["smart_log_error"] == "100 of 512 bytes returned"
     assert record["identify_controller_error"] == "100 of 4096 bytes returned"
     assert "smart_log" not in record
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("offset", [0, 8, ctypes.sizeof(api.STORAGE_PROTOCOL_SPECIFIC_DATA) - 1])
+def test_a_data_offset_inside_the_header_is_a_refusal_not_the_header_decoded_as_data(offset: int) -> None:
+    """The offset is the driver's word, and an offset into the structure itself is not a page."""
+    record = _read(FakeNvmeKernel32(answer=_full, data_offset=offset))["nvme"]
+
+    assert record["smart_log_error"] == f"data offset {offset} lies inside the protocol header"
+    assert record["identify_controller_error"] == f"data offset {offset} lies inside the protocol header"
+    assert "smart_log" not in record
+    assert "identify_controller" not in record
+
+
+@pytest.mark.os_agnostic
+def test_a_data_offset_at_the_end_of_the_header_is_read() -> None:
+    """Liveness: the offset a real driver writes is accepted by the same harness."""
+    size = ctypes.sizeof(api.STORAGE_PROTOCOL_SPECIFIC_DATA)
+
+    record = _read(FakeNvmeKernel32(answer=_full, data_offset=size))["nvme"]
+
+    assert base64.b64decode(record["smart_log"]) == _full(api.NVME_DATA_TYPE_LOG_PAGE)
+    assert not [key for key in record if key.endswith("_error")]
