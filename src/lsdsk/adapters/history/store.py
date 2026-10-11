@@ -443,8 +443,9 @@ def save_history(history: History, path: Path) -> None:
 #: killed write. A write takes milliseconds, so a file this old has no writer.
 ABANDONED_TEMPORARY_SECONDS = 300.0
 
-#: The random middle ``tempfile.mkstemp`` puts in a temporary file's name.
-_TEMPORARY_RANDOM = re.compile(r"[A-Za-z0-9_]{8}")
+#: The random middle ``tempfile.mkstemp`` puts in a temporary file's name: eight of
+#: lowercase letters, digits and an underscore, never a capital.
+_TEMPORARY_RANDOM = re.compile(r"[a-z0-9_]{8}")
 
 
 def remove_abandoned_temporaries(store: Path, *, now: float | None = None) -> None:
