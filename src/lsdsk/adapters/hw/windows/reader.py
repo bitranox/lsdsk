@@ -14,7 +14,7 @@ Two privilege tiers, as on Linux:
     * Administrator: ATA SMART through ``IOCTL_ATA_PASS_THROUGH_DIRECT``, or
       wrapped in SAT through ``IOCTL_SCSI_PASS_THROUGH`` for a drive behind a USB
       bridge or SAS adapter, and the NVMe health log through
-      ``IOCTL_STORAGE_PROTOCOL_COMMAND``
+      ``IOCTL_STORAGE_QUERY_PROPERTY`` (a protocol-specific property query)
 
 Every command issued is a read.  Nothing is ever written to a device.
 

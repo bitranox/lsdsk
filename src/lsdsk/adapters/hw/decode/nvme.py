@@ -1,8 +1,8 @@
 """Decode NVMe Identify Controller and the SMART/Health log page.
 
 Linux obtains both through ``NVME_IOCTL_ADMIN_CMD``; Windows obtains the same
-payloads through ``IOCTL_STORAGE_QUERY_PROPERTY`` and
-``IOCTL_STORAGE_PROTOCOL_COMMAND``.  The structures are defined by the NVMe
+payloads through ``IOCTL_STORAGE_QUERY_PROPERTY`` (a protocol-specific property
+query).  The structures are defined by the NVMe
 specification, not by the operating system, so this decoder serves both.
 
 System Role:

@@ -162,6 +162,45 @@ def test_a_usb_hub_ioctl_code_is_built_from_its_function_number(name: str, funct
     assert getattr(api, name) == expected
 
 
+#: The storage, disk, SCSI and volume IOCTLs as the SDK defines them:
+#: (device type, function, access). Every one is METHOD_BUFFERED. Device types are
+#: FILE_DEVICE_MASS_STORAGE 0x2D (winioctl.h IOCTL_STORAGE_BASE), FILE_DEVICE_DISK 7
+#: (IOCTL_DISK_BASE), FILE_DEVICE_CONTROLLER 4 (IOCTL_SCSI_BASE) and 'V' 0x56
+#: (IOCTL_VOLUME_BASE); access is FILE_ANY_ACCESS 0, FILE_READ_ACCESS 1 or read|write 3.
+#: The code is recomputed here from those parts and never copied from winapi.py.
+STORAGE_IOCTL_PARTS = {
+    "IOCTL_STORAGE_QUERY_PROPERTY": (0x2D, 0x500, 0),
+    "IOCTL_STORAGE_PROTOCOL_COMMAND": (0x2D, 0x4F0, 3),
+    "IOCTL_STORAGE_GET_DEVICE_NUMBER": (0x2D, 0x420, 0),
+    "IOCTL_DISK_GET_LENGTH_INFO": (0x07, 0x17, 1),
+    "IOCTL_DISK_GET_PARTITION_INFO_EX": (0x07, 0x12, 0),
+    "IOCTL_SCSI_GET_ADDRESS": (0x04, 0x406, 0),
+    "IOCTL_SCSI_PASS_THROUGH": (0x04, 0x401, 3),
+    "IOCTL_ATA_PASS_THROUGH_DIRECT": (0x04, 0x40C, 3),
+    "IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS": (0x56, 0x000, 0),
+}
+
+
+def _ctl_code(device_type: int, function: int, method: int, access: int) -> int:
+    """The SDK's CTL_CODE macro."""
+    return (device_type << 16) | (access << 14) | (function << 2) | method
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(("name", "parts"), sorted(STORAGE_IOCTL_PARTS.items()))
+def test_a_storage_ioctl_code_is_built_from_the_sdk_parts(name: str, parts: tuple[int, int, int]) -> None:
+    """Each storage, disk, SCSI and volume code is held against CTL_CODE of its SDK definition."""
+    device_type, function, access = parts
+    assert getattr(api, name) == _ctl_code(device_type, function, 0, access)
+
+
+@pytest.mark.os_agnostic
+def test_every_ioctl_the_module_exports_is_pinned_by_a_table() -> None:
+    """A new IOCTL_* name must join one of the two tables, or its value is unchecked."""
+    exported = {name for name in api.__all__ if name.startswith("IOCTL_")}
+    assert exported == set(STORAGE_IOCTL_PARTS) | set(USB_HUB_FUNCTIONS)
+
+
 def _names_fields(target: ast.expr) -> bool:
     """Whether an assignment target is ``_fields_`` - in a class body, or set on the class afterwards."""
     return getattr(target, "id", "") == "_fields_" or (isinstance(target, ast.Attribute) and target.attr == "_fields_")
