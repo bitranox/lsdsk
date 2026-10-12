@@ -139,7 +139,7 @@ def test_a_needed_size_no_larger_than_the_refused_buffer_is_refused_at_once(tmp_
     pools, error = zfs.read_pools(_device(tmp_path), ioctl=Shrinking({}))
     assert pools is None
     assert error is not None
-    assert "asked for only 1000 bytes" in error
+    assert "without asking for more (1000 bytes)" in error
     assert "kept growing" not in error
     # Refused on the first answer rather than retried with a buffer that cannot fit.
     assert Shrinking.answers == 1

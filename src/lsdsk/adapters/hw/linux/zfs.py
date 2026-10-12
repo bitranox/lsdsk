@@ -65,9 +65,11 @@ def _ask(fd: int, request: int, name: str, ioctl: Ioctl) -> bytes:
     """Issue one ioctl, growing the reply buffer while the kernel asks for more.
 
     The kernel refuses a reply too large for the buffer with ``ENOMEM`` and
-    writes the size it needs back. A needed size no larger than the buffer it
-    just refused cannot fit on a retry, so it is refused at once rather than
-    retried with the same buffer until the attempts run out.
+    writes the size it needs back. An ``ENOMEM`` that names no size larger than
+    the buffer it was given - a reply refused without a bigger request, or an
+    allocation that failed for its own reasons - gains nothing from the same
+    buffer again, so it is refused at once, saying what was seen rather than
+    which of the two it was.
     """
     room = _FIRST_REPLY_BYTES
     for _ in range(_ATTEMPTS):
@@ -86,7 +88,7 @@ def _ask(fd: int, request: int, name: str, ioctl: Ioctl) -> bytes:
                 msg = f"the reply is larger than {MAX_REPLY_BYTES} bytes ({needed})"
                 raise ValueError(msg) from error
             if needed <= room:
-                msg = f"the kernel refused a {room}-byte buffer as too small yet asked for only {needed} bytes"
+                msg = f"the ioctl failed with ENOMEM on a {room}-byte buffer without asking for more ({needed} bytes)"
                 raise ValueError(msg) from error
             room = needed
             continue
