@@ -14,7 +14,7 @@ import pytest
 
 from lsdsk.adapters.hw.decode import usb
 from lsdsk.adapters.hw.decode.captured import parse_int
-from lsdsk.adapters.hw.linux.builder import parse_link_rate
+from lsdsk.adapters.hw.linux.builder import parse_link_rate, parse_pcie_speed
 from lsdsk.adapters.hw.linux.reader import read_pci, read_usb
 from lsdsk.adapters.hw.snapshot import build_from
 
@@ -156,3 +156,9 @@ def test_an_ahci_class_written_in_other_digits_is_not_an_ahci_controller(tmp_pat
 
 def test_an_ahci_class_in_ascii_is_read_for_its_registers(tmp_path: Path) -> None:
     assert "ahci" in _pci_device_of_class(tmp_path, "0x010601")
+
+
+def test_a_pcie_speed_in_other_digits_or_with_another_scripts_space_is_unread() -> None:
+    assert parse_pcie_speed(f"{chr(0x668)}.0 GT/s PCIe") is None
+    assert parse_pcie_speed("8.0\u00a0GT/s PCIe") is None
+    assert parse_pcie_speed("8.0 GT/s PCIe") == 8.0
