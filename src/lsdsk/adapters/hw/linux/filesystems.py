@@ -69,7 +69,10 @@ def _figures(space: SpaceEntry | None, fs_type: str) -> _Figures:
 
 def _mount_row(group: list[MountEntry], disks: frozenset[str], space: SpaceEntry | None) -> Filesystem:
     first = group[0]
-    mountpoints = list(dict.fromkeys(mount.mountpoint for mount in group))
+    # A reachable mountpoint names the row: it is where the figures were read,
+    # and a covered one is the very name the mount on top of it carries.
+    reachable_first = [mount for mount in group if not mount.hidden] + [mount for mount in group if mount.hidden]
+    mountpoints = list(dict.fromkeys(mount.mountpoint for mount in reachable_first))
     return Filesystem(
         kind=FilesystemKind.MOUNT,
         name=mountpoints[0],

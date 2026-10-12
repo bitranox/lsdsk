@@ -39,6 +39,20 @@ not filesystems on a disk and are never stat-ed, because only a mount whose devi
 inventoried disk is asked. The disks of a row come from the same resolution as `used by`, so the
 two sections cannot disagree about which disk holds a mount.
 
+**A covered mount is not read.** `statvfs(path)` resolves the path to the TOPMOST mount there, so a
+filesystem mounted over, by a second disk or by a tmpfs or NFS mount the reader drops, would be
+given the size and fill of the one on top, and could raise a finding about the wrong filesystem.
+The reader therefore decides, over EVERY mountinfo row before any is dropped, which mounts no path
+reaches, from mountinfo's own structure: a mount is covered when a child of it is mounted at its
+own mountpoint, and blocked when its parent is blocked or covered by another child. Comparing
+`st_dev` was rejected because a btrfs subvolume reports an anonymous one that differs from
+mountinfo's. Such a row carries `hidden` in the capture and is never asked; a filesystem reachable
+at another mountpoint is read and named there, and one reachable nowhere keeps its row with no
+figures and a `statvfs` refusal saying why, rather than another filesystem's figures. A row with no
+percentage read earns no severity marker, so a covered row never wears the marker of the mount on
+top, which carries the same name. A capture taken before `hidden` existed reads every mount as
+reachable, as it did then.
+
 **Fill is computed the way `df` computes it.** Used percent is used divided by used plus the space
 free to an ordinary user, rounded up in exact integers. Ext4's reserved blocks therefore count as
 unavailable, and lsdsk reads the same figure as `df` on the same mount.

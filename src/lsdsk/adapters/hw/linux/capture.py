@@ -281,6 +281,10 @@ class MountEntry(CaptureModel, frozen=True):
             be resolved.
         read_only: Whether the mount is read-only, from either the per-mount
             or the superblock options. ``None`` when not read.
+        hidden: Whether another mount covers this mountpoint, so no path
+            reaches it and ``statvfs`` there answers for the mount on top.
+            ``False`` for a reachable mount and in a capture taken before this
+            field existed, which is read as reachable, as it was then.
     """
 
     dev: DeviceText
@@ -289,6 +293,7 @@ class MountEntry(CaptureModel, frozen=True):
     source: DeviceText = ""
     source_dev: DeviceText | None = None
     read_only: bool | None = None
+    hidden: bool = False
 
 
 class SpaceEntry(CaptureModel, frozen=True):

@@ -27,7 +27,7 @@ import os
 import re
 import stat
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
 from ....domain.errors import ConfigurationError, MissingFileError
 from ...textfile import read_text_bounded
@@ -95,6 +95,14 @@ _SUPER_OPTIONS_FIELD = 2
 _ZFS = "zfs"
 # The key whose presence marks a device as read: an error entry lacks it.
 _FIGURES_KEY = "frsize"
+# Why a filesystem every one of whose mountpoints is covered was not asked:
+# statvfs resolves a path to the TOPMOST mount there, so it would answer for the
+# filesystem on top rather than this one.
+_HIDDEN_REASON = "another mount covers every mountpoint of it, so statvfs would read that mount instead"
+# mountinfo's field 0 is the mount's own ID and field 1 its parent's.
+_MOUNT_ID_FIELD = 0
+_PARENT_ID_FIELD = 1
+_MOUNTPOINT_FIELD = 4
 # Major 0 is the kernel's anonymous device range: tmpfs, NFS, FUSE, overlay and
 # every other mount with no block device behind it, plus btrfs and ZFS, whose
 # real devices are found another way.
@@ -172,7 +180,10 @@ def read_mounts(
         mounted device's own ``maj:min``, field 3), ``mountpoint`` and
         ``fstype`` and ``read_only`` (a real boolean, lsdsk's own verdict rather
         than text the kernel published), plus ``source_dev`` when the source
-        names a resolvable ``/dev`` node and, for ZFS only, ``source`` narrowed to the pool name.
+        names a resolvable ``/dev`` node and, for ZFS only, ``source`` narrowed to the pool name,
+        and ``hidden`` (``True``, present only then) when no path reaches the mountpoint because
+        another mount covers it - decided over EVERY row, the dropped ones included, since a
+        tmpfs mounted over a disk's mountpoint hides it as surely as a second disk does.
         A row with an anonymous device number and no resolvable source (tmpfs,
         NFS, FUSE, overlay) is left out, and so is every other source text: an
         NFS or sshfs source names a host and a user, and nothing reads it.
@@ -187,14 +198,74 @@ def read_mounts(
     if len(text.encode("utf-8")) > limit:
         return None
 
+    lines = [line for line in text.split("\n") if line]
+    hidden = _hidden_mount_ids(lines)
     rows: list[dict[str, str | bool]] = []
-    for line in text.split("\n"):
-        if not line:
-            continue
+    for line in lines:
         row = _parse_mountinfo_line(line, device_number)
-        if row is not None:
-            rows.append(row)
+        if row is None:
+            continue
+        if line.split(" ", 1)[0] in hidden:
+            row["hidden"] = True
+        rows.append(row)
     return rows
+
+
+class _MountIds(NamedTuple):
+    """Where one mountinfo row sits in the mount tree: three strings a swap would silently confuse."""
+
+    mount: str
+    parent: str
+    mountpoint: str
+
+
+def _mount_ids(line: str) -> _MountIds | None:
+    """A mountinfo row's own mount ID, its parent's ID and its mountpoint, or ``None`` when malformed."""
+    left, separator, _right = line.partition(" - ")
+    fields = left.split(" ")
+    if not separator or len(fields) < _MIN_LEFT_FIELDS:
+        return None
+    return _MountIds(
+        mount=fields[_MOUNT_ID_FIELD],
+        parent=fields[_PARENT_ID_FIELD],
+        mountpoint=_unescape(fields[_MOUNTPOINT_FIELD]),
+    )
+
+
+def _hidden_mount_ids(lines: Iterable[str]) -> set[str]:
+    """The IDs of every mount whose mountpoint no path reaches.
+
+    Decided from mountinfo's own structure, never from ``st_dev`` (a btrfs
+    subvolume reports an anonymous one that differs from mountinfo's). A mount
+    is COVERED when a child of it is mounted at its own mountpoint, which is
+    what mounting over a directory makes; a mount is BLOCKED when its parent is
+    blocked, or covered by some other child, because its path then resolves
+    inside the mount on top. Hidden is covered or blocked. The walk is linear
+    and stops on a cycle, since the file is read rather than trusted.
+    """
+    ids = [entry for entry in map(_mount_ids, lines) if entry is not None]
+    point = {entry.mount: entry.mountpoint for entry in ids}
+    parent = {entry.mount: entry.parent for entry in ids}
+    covered = {
+        entry.parent for entry in ids if entry.parent != entry.mount and point.get(entry.parent) == entry.mountpoint
+    }
+    blocked: dict[str, bool] = {}
+    for start in parent:
+        chain: list[str] = []
+        on_chain: set[str] = set()
+        node = start
+        while node not in blocked:
+            up = parent[node]
+            if up not in parent or up == node or up in on_chain:
+                blocked[node] = False
+                break
+            chain.append(node)
+            on_chain.add(node)
+            node = up
+        for child in reversed(chain):
+            up = parent[child]
+            blocked[child] = blocked[up] or (up in covered and point[child] != point[up])
+    return covered | {mount for mount, is_blocked in blocked.items() if is_blocked}
 
 
 def _parse_mountinfo_line(line: str, device_number: Callable[[str], str | None]) -> dict[str, str | bool] | None:
@@ -295,7 +366,10 @@ def read_space(
 
     A device is asked at its next mountpoint only after a refusal: every
     mountpoint of one device shares its figures, so the first success settles
-    it and a later mountpoint is never asked.
+    it and a later mountpoint is never asked. A ``hidden`` mountpoint is never
+    asked, because ``statvfs`` resolves it to the mount covering it and would
+    answer for that one; a device met only there is recorded as refused, with
+    the reason, rather than given another filesystem's figures.
 
     Args:
         rows: What :func:`read_mounts` returned.
@@ -303,19 +377,26 @@ def read_space(
 
     Returns:
         One reading per filesystem device, keyed by its ``maj:min``. A device
-        whose every mountpoint refused is ``{"error": <first reason>}``.
+        whose every mountpoint refused is ``{"error": <first reason>}``, and
+        one whose every mountpoint is hidden says so the same way.
     """
     readings: dict[str, dict[str, int | str]] = {}
+    hidden_only: list[str] = []
     for row in rows:
         dev, mountpoint = row.get("dev", ""), row.get("mountpoint", "")
         if not isinstance(dev, str) or not isinstance(mountpoint, str):
             continue
         if not dev or row.get("fstype") == _ZFS or _FIGURES_KEY in readings.get(dev, {}):
             continue
+        if row.get("hidden") is True:
+            hidden_only.append(dev)
+            continue
         reading = _ask(mountpoint, statvfs)
         if "error" in reading and dev in readings:
             continue
         readings[dev] = reading
+    for dev in hidden_only:
+        readings.setdefault(dev, {"error": _HIDDEN_REASON})
     return readings
 
 
