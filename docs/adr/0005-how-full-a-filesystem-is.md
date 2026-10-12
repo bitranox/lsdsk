@@ -42,16 +42,24 @@ two sections cannot disagree about which disk holds a mount.
 **A covered mount is not read.** `statvfs(path)` resolves the path to the TOPMOST mount there, so a
 filesystem mounted over, by a second disk or by a tmpfs or NFS mount the reader drops, would be
 given the size and fill of the one on top, and could raise a finding about the wrong filesystem.
-The reader therefore decides, over EVERY mountinfo row before any is dropped, which mounts no path
-reaches, from mountinfo's own structure: a mount is covered when a child of it is mounted at its
-own mountpoint, and blocked when its parent is blocked or covered by another child. Comparing
-`st_dev` was rejected because a btrfs subvolume reports an anonymous one that differs from
-mountinfo's. Such a row carries `hidden` in the capture and is never asked; a filesystem reachable
-at another mountpoint is read and named there, and one reachable nowhere keeps its row with no
-figures and a `statvfs` refusal saying why, rather than another filesystem's figures. A row with no
-percentage read earns no severity marker, so a covered row never wears the marker of the mount on
-top, which carries the same name. A capture taken before `hidden` existed reads every mount as
-reachable, as it did then.
+The reader therefore marks, over EVERY mountinfo row before any is dropped, the mounts path lookup
+cannot reach, from mountinfo's mount IDs, parent IDs and mountpoints alone. Lookup walks a
+mountpoint's directories inside its parent mount and crosses into whatever is mounted on one of
+them. So a mount is cut off when another mount with the same parent sits on a directory strictly
+above its mountpoint, compared component by component (`/x/a` is above `/x/a/b` and not above
+`/x/ab`). That holds whichever was made first, because a deeper mount made AFTER the one above it
+is made inside it and records it as its parent; this was checked against the kernel in a user and
+mount namespace. A mount stacked on its parent's own mountpoint is such a sibling, so the parent's
+other children are cut off too, and the parent itself is covered. A mount is unreachable when it is
+cut off or its parent is unreachable, and hidden when it is unreachable or covered. The process root
+is the exception: lookup starts at it rather than crossing into it, so a mount stacked on `/` is
+the unreachable one and hides nothing beneath the root. Comparing `st_dev` was rejected because a
+btrfs subvolume reports an anonymous one that differs from mountinfo's. Such a hidden row carries
+`hidden` in the capture and is never asked; a filesystem reachable at another mountpoint is read
+and named there, and one reachable nowhere keeps its row with no figures and a `statvfs` refusal
+saying why, rather than another filesystem's figures. A row with no percentage read earns no
+severity marker, so a covered row never wears the marker of the mount on top, which carries the
+same name. A capture taken before `hidden` existed reads every mount as reachable, as it did then.
 
 **Fill is computed the way `df` computes it.** Used percent is used divided by used plus the space
 free to an ordinary user, rounded up in exact integers. Ext4's reserved blocks therefore count as

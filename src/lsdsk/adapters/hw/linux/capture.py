@@ -281,8 +281,8 @@ class MountEntry(CaptureModel, frozen=True):
             be resolved.
         read_only: Whether the mount is read-only, from either the per-mount
             or the superblock options. ``None`` when not read.
-        hidden: Whether another mount covers this mountpoint, so no path
-            reaches it and ``statvfs`` there answers for the mount on top.
+        hidden: Whether another mount hides this mountpoint, so no path
+            reaches it and ``statvfs`` there answers for a different filesystem.
             ``False`` for a reachable mount and in a capture taken before this
             field existed, which is read as reachable, as it was then.
     """

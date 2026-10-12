@@ -95,10 +95,12 @@ _SUPER_OPTIONS_FIELD = 2
 _ZFS = "zfs"
 # The key whose presence marks a device as read: an error entry lacks it.
 _FIGURES_KEY = "frsize"
-# Why a filesystem every one of whose mountpoints is covered was not asked:
-# statvfs resolves a path to the TOPMOST mount there, so it would answer for the
-# filesystem on top rather than this one.
-_HIDDEN_REASON = "another mount covers every mountpoint of it, so statvfs would read that mount instead"
+# Why a filesystem every one of whose mountpoints is hidden was not asked:
+# statvfs resolves a path to whatever mount lookup reaches there, so it would
+# answer for that filesystem rather than this one.
+_HIDDEN_REASON = "another mount hides every mountpoint of it, so statvfs there would read a different filesystem"
+# The mountpoint of the process root, where every path lookup starts.
+_ROOT = "/"
 # mountinfo's field 0 is the mount's own ID and field 1 its parent's.
 _MOUNT_ID_FIELD = 0
 _PARENT_ID_FIELD = 1
@@ -182,8 +184,9 @@ def read_mounts(
         than text the kernel published), plus ``source_dev`` when the source
         names a resolvable ``/dev`` node and, for ZFS only, ``source`` narrowed to the pool name,
         and ``hidden`` (``True``, present only then) when no path reaches the mountpoint because
-        another mount covers it - decided over EVERY row, the dropped ones included, since a
-        tmpfs mounted over a disk's mountpoint hides it as surely as a second disk does.
+        of another mount (see :func:`_hidden_mount_ids`) - decided over EVERY row, the dropped
+        ones included, since a tmpfs mounted over a disk's mountpoint hides it as surely as a
+        second disk does.
         A row with an anonymous device number and no resolvable source (tmpfs,
         NFS, FUSE, overlay) is left out, and so is every other source text: an
         NFS or sshfs source names a host and a user, and nothing reads it.
@@ -232,40 +235,69 @@ def _mount_ids(line: str) -> _MountIds | None:
     )
 
 
+def _strict_prefixes(path: str) -> list[str]:
+    """Every directory above ``path``, component by component: ``/a/b`` gives ``/`` and ``/a``."""
+    if path == _ROOT:
+        return []
+    parts = path.split("/")
+    return [_ROOT, *("/".join(parts[:end]) for end in range(2, len(parts)))]
+
+
 def _hidden_mount_ids(lines: Iterable[str]) -> set[str]:
     """The IDs of every mount whose mountpoint no path reaches.
 
     Decided from mountinfo's own structure, never from ``st_dev`` (a btrfs
-    subvolume reports an anonymous one that differs from mountinfo's). A mount
-    is COVERED when a child of it is mounted at its own mountpoint, which is
-    what mounting over a directory makes; a mount is BLOCKED when its parent is
-    blocked, or covered by some other child, because its path then resolves
-    inside the mount on top. Hidden is covered or blocked. The walk is linear
-    and stops on a cycle, since the file is read rather than trusted.
+    subvolume reports an anonymous one that differs from mountinfo's). Path
+    lookup walks a mountpoint's directories inside its parent mount and crosses
+    into whatever is mounted on one of them, so a mount is CUT OFF when another
+    mount with the same parent sits on a directory strictly above its
+    mountpoint - whichever was mounted first, since lookup crosses the mount on
+    the directory either way. That covers both a mount on an ancestor directory
+    and a mount stacked on the parent's own mountpoint, which is the parent's
+    root directory. A mount is UNREACHABLE when it is cut off or its parent's
+    mountpoint is unreachable, and COVERED when a mount is stacked on its own
+    mountpoint; hidden is either.
+
+    The process root is the exception: lookup starts AT it rather than crossing
+    into it, so a mount stacked on ``/`` is the unreachable one, and it hides
+    nothing beneath the root. The walk is linear and stops on a cycle, since the
+    file is read rather than trusted.
     """
     ids = [entry for entry in map(_mount_ids, lines) if entry is not None]
     point = {entry.mount: entry.mountpoint for entry in ids}
     parent = {entry.mount: entry.parent for entry in ids}
-    covered = {
-        entry.parent for entry in ids if entry.parent != entry.mount and point.get(entry.parent) == entry.mountpoint
+    roots = {
+        entry.mount
+        for entry in ids
+        if entry.mountpoint == _ROOT and (entry.parent not in point or entry.parent == entry.mount)
     }
-    blocked: dict[str, bool] = {}
+    stacked = {
+        entry.mount for entry in ids if entry.parent != entry.mount and point.get(entry.parent) == entry.mountpoint
+    }
+    on_root = {mount for mount in stacked if parent[mount] in roots}
+    covered = {parent[mount] for mount in stacked - on_root}
+    occupied = {(entry.parent, entry.mountpoint) for entry in ids if entry.mount not in on_root}
+    cut_off = on_root | {
+        entry.mount
+        for entry in ids
+        if any((entry.parent, above) in occupied for above in _strict_prefixes(entry.mountpoint))
+    }
+    unreachable: dict[str, bool] = {}
     for start in parent:
         chain: list[str] = []
         on_chain: set[str] = set()
         node = start
-        while node not in blocked:
+        while node not in unreachable:
             up = parent[node]
             if up not in parent or up == node or up in on_chain:
-                blocked[node] = False
+                unreachable[node] = node in cut_off
                 break
             chain.append(node)
             on_chain.add(node)
             node = up
         for child in reversed(chain):
-            up = parent[child]
-            blocked[child] = blocked[up] or (up in covered and point[child] != point[up])
-    return covered | {mount for mount, is_blocked in blocked.items() if is_blocked}
+            unreachable[child] = unreachable[parent[child]] or child in cut_off
+    return covered | {mount for mount, is_unreachable in unreachable.items() if is_unreachable}
 
 
 def _parse_mountinfo_line(line: str, device_number: Callable[[str], str | None]) -> dict[str, str | bool] | None:
