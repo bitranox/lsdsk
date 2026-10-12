@@ -114,3 +114,32 @@ def test_a_windows_capture_taken_before_space_was_read_replays_as_not_read(
     assert envelope["data"]["filesystems"] is None
     assert envelope["skipped"] == []
     assert envelope["ok"] is True
+
+
+def _refused_pool_listing(tmp_path: Path) -> Path:
+    """The ZFS fixture with its pool listing refused: pool members on its disks, no pools."""
+    reading: dict[str, Any] = json.loads((FIXTURES / "linux-zfs-filesystems.json").read_text(encoding="utf-8"))
+    reading["zfs_pools"] = None
+    reading["zfs_pools_error"] = "Permission denied"
+    path = tmp_path / "refused-pools.json"
+    path.write_text(json.dumps(reading), encoding="utf-8")
+    return path
+
+
+def test_a_refused_pool_listing_is_named_in_skipped_and_makes_ok_false(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    # Control: the capture as committed lists its pools, so nothing is skipped
+    # and the line below can only come from the refusal.
+    listed = _envelope(cli_runner, production_factory, FIXTURES / "linux-zfs-filesystems.json")
+    assert listed["skipped"] == []
+    assert listed["ok"] is True
+
+    envelope = _envelope(cli_runner, production_factory, _refused_pool_listing(tmp_path))
+
+    assert envelope["skipped"] == ["zfs-pools: filesystems - Permission denied"]
+    assert envelope["ok"] is False
+    # The pool rows stay, unread, rather than vanishing with the listing.
+    pools = [one for one in envelope["data"]["filesystems"] if one["kind"] == "pool"]
+    assert pools
+    assert all(one["size_bytes"] is None for one in pools)
