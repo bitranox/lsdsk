@@ -140,3 +140,18 @@ def test_every_identify_page_in_every_committed_capture_still_decodes() -> None:
             decode_identify(blob)
         except ValueError as refusal:
             pytest.fail(f"{name} is a real page and was refused: {refusal}")
+
+
+@pytest.mark.parametrize("word", [10, 19, 23, 26, 27, 46])
+def test_noise_in_the_first_and_last_word_of_every_text_range_is_refused(word: int) -> None:
+    """The ends of the serial, firmware and model ranges are text; one off either end is a different field."""
+    with pytest.raises(ValueError, match=f"word {word} is not ASCII"):
+        decode_identify(_page(**{f"w{word}": 0xE9E9}))
+
+
+@pytest.mark.parametrize("word", [9, 20, 22, 47])
+def test_noise_in_the_word_beside_a_text_range_is_not_text_and_is_kept(word: int) -> None:
+    """Words 9, 20, 22 and 47 are not text fields, so a range reaching one would refuse a real page."""
+    identity = decode_identify(_page(**{f"w{word}": 0xE9E9}))
+
+    assert (identity.model, identity.serial, identity.firmware) == ("ABCDEF", "1234", "FW1")
