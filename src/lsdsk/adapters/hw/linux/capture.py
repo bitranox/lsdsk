@@ -47,6 +47,7 @@ _ROTATING_VALUES: dict[str, bool] = {"0": False, "1": True}
 # counted into "14000 ports, 13999 free", and a capacity past what a float
 # holds ended `lsdsk disks` in a bare OverflowError.
 _UINT32_MAX = 0xFFFFFFFF  # an AHCI register, and uid_t
+_UINT64_MAX = 2**64 - 1  # a ZFS pool's size and allocation, as the kernel counts them
 _PCIE_PORT_TYPE_MAX = 0xF  # the PCIe capability's Device/Port Type, 4 bits
 _PCIE_SLOT_NUMBER_MAX = 0x1FFF  # Slot Capabilities' Physical Slot Number, 13 bits
 
@@ -361,6 +362,18 @@ class FilesystemSignature(CaptureModel, frozen=True):
     fs_label: DeviceText | None = None
 
 
+class PoolEntry(CaptureModel, frozen=True):
+    """One imported ZFS pool's size and allocation, as ``zpool list`` prints them.
+
+    Attributes:
+        size: The root vdev's capacity in bytes.
+        alloc: Bytes allocated on it.
+    """
+
+    size: int = Field(ge=0, le=_UINT64_MAX)
+    alloc: int = Field(ge=0, le=_UINT64_MAX)
+
+
 class BlockEntry(CaptureModel, frozen=True):
     """One block device.
 
@@ -514,6 +527,11 @@ class LinuxCapture(CaptureHeader, frozen=True):
             keyed by ``maj:min``. ``None`` when the udev database itself is
             not there, such as in a container with no ``/run/udev/data`` -
             a different fact from no device carrying a signature.
+        zfs_pools: Every imported pool by name. ``None`` when there was no ZFS
+            control device, or in a capture taken before this field existed;
+            an empty map is a reading that found no pool.
+        zfs_pools_error: Why the pools could not be read, or why one of them
+            could not.
     """
 
     platform: Literal[Platform.LINUX]
@@ -531,6 +549,8 @@ class LinuxCapture(CaptureHeader, frozen=True):
     swaps: Entries[SwapEntry] | None = None
     stacked: EntryMap[DeviceText, StackedEntry] = Field(default_factory=dict[DeviceText, StackedEntry])
     signatures: EntryMap[DeviceText, FilesystemSignature] | None = None
+    zfs_pools: EntryMap[DeviceText, PoolEntry] | None = None
+    zfs_pools_error: DeviceText | None = None
 
 
 __all__ = [
@@ -548,6 +568,7 @@ __all__ = [
     "NvmeClassEntry",
     "PartitionEntry",
     "PciEntry",
+    "PoolEntry",
     "QueueAttributes",
     "SasPhyEntry",
     "ScsiHostEntry",

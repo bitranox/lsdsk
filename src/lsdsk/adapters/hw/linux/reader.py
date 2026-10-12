@@ -51,7 +51,7 @@ from ..decode import ahci, pciids
 from ..decode.captured import parse_int
 from ..decode.virtualization import container_markers_in_mounts
 from ..snapshot import SCHEMA_VERSION
-from . import mounts, usbfs
+from . import mounts, usbfs, zfs
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -1156,7 +1156,8 @@ def read_system() -> dict[str, Any]:
         part["dev"] for entry in block.values() for part in entry.get("partitions", {}).values() if part.get("dev")
     ]
 
-    return {
+    pools, pools_error = zfs.read_pools()
+    reading: dict[str, Any] = {
         "schema": SCHEMA_VERSION,
         "captured_at": datetime.now(UTC).isoformat(),
         "platform": Platform.LINUX.value,
@@ -1176,7 +1177,11 @@ def read_system() -> dict[str, Any]:
         "swaps": mounts.read_swaps(),
         "stacked": mounts.read_stacked(sorted(holders)),
         "signatures": mounts.read_signatures(devnums),
+        "zfs_pools": pools,
     }
+    if pools_error is not None:
+        reading["zfs_pools_error"] = pools_error
+    return reading
 
 
 __all__ = [

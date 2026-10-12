@@ -48,6 +48,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/hw/linux/reader.py` - Read storage topology and device blobs from a live Linux system.
 - `src/lsdsk/adapters/hw/linux/usage.py` - Resolve what uses each Linux disk, from what the reader recorded.
 - `src/lsdsk/adapters/hw/linux/usbfs.py` - Fetch a USB device's BOS through usbfs, for kernels that do not publish it in sysfs.
+- `src/lsdsk/adapters/hw/linux/zfs.py` - Read every imported ZFS pool's size and allocation from the control device.
 
 ### Adapters - hardware, Windows
 
