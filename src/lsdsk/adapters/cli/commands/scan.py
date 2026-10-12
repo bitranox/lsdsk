@@ -42,7 +42,7 @@ from lsdsk.adapters.config.tunables import (
 from lsdsk.adapters.hw import snapshot as snapshot_adapter
 from lsdsk.adapters.render import report, theme
 from lsdsk.adapters.render.tables import counter_legend
-from lsdsk.domain.diagnostics import count_by_severity
+from lsdsk.domain.diagnostics import count_by_severity, register_default_links
 from lsdsk.domain.enums import ActionCommand, CliCommand, Environment, OutputFormat, Severity, TreeDensity
 from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.history import CounterKind, Trend
@@ -419,6 +419,57 @@ class TrendEntry(BaseModel):
     trend: Trend
 
 
+class ControllerReading(Controller, frozen=True):
+    """A controller as the envelope carries it: the domain value plus the pages' verdict on its link.
+
+    The raw link values are the domain's own and untouched. ``link_is_register_default``
+    says whether the printed and interactive pages mark that link ``*``, which is a
+    verdict about the whole machine (:func:`~lsdsk.domain.diagnostics.link_is_register_default`)
+    and so cannot be read off the controller alone.
+
+    Attributes:
+        link_is_register_default: Whether ``link`` is a register default rather than
+            a negotiated link.
+    """
+
+    link_is_register_default: bool
+
+
+class SlotReading(PcieSlot, frozen=True):
+    """A slot as the envelope carries it: the domain value plus the pages' verdict on its occupant.
+
+    Attributes:
+        occupant_link_is_register_default: Whether ``occupant_link`` is a register
+            default, which the slots views mark ``*``.
+    """
+
+    occupant_link_is_register_default: bool
+
+
+def _controller_readings(inventory: Inventory) -> tuple[ControllerReading, ...]:
+    """Every controller with the one decider's answer on its link."""
+    defaults = register_default_links(inventory)
+    return tuple(
+        ControllerReading(
+            **{name: getattr(one, name) for name in Controller.model_fields},
+            link_is_register_default=one.address in defaults,
+        )
+        for one in inventory.controllers
+    )
+
+
+def _slot_readings(inventory: Inventory) -> tuple[SlotReading, ...]:
+    """Every slot with the one decider's answer on its occupant's link."""
+    defaults = register_default_links(inventory)
+    return tuple(
+        SlotReading(
+            **{name: getattr(one, name) for name in PcieSlot.model_fields},
+            occupant_link_is_register_default=one.occupant_address is not None and one.occupant_address in defaults,
+        )
+        for one in inventory.slots
+    )
+
+
 class ScanData(BaseModel):
     """The payload half of the machine-readable envelope.
 
@@ -440,10 +491,10 @@ class ScanData(BaseModel):
     environment: Environment
     environment_detail: str
     devices_accessible: bool
-    controllers: tuple[Controller, ...]
+    controllers: tuple[ControllerReading, ...]
     disks: tuple[Disk, ...]
     virtual_disks: tuple[Disk, ...]
-    slots: tuple[PcieSlot, ...]
+    slots: tuple[SlotReading, ...]
     findings: tuple[Finding, ...]
     trend: tuple[TrendEntry, ...] | None = None
 
@@ -532,12 +583,12 @@ def build_envelope(
             environment=inventory.environment,
             environment_detail=inventory.environment_detail,
             devices_accessible=inventory.devices_accessible,
-            controllers=inventory.controllers,
+            controllers=_controller_readings(inventory),
             disks=inventory.disks,
             # Always present and never tallied: the tally is a screen-space
             # decision, and a program parsing this needs the whole machine.
             virtual_disks=inventory.virtual_disks,
-            slots=inventory.slots,
+            slots=_slot_readings(inventory),
             findings=tuple(findings),
             trend=None if trend is None else tuple(trend),
         ),
