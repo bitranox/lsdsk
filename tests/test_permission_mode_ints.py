@@ -1,23 +1,29 @@
 """An int permission mode that could be octal digits is refused; text and 8/9-bearing ints keep working.
 
 lib_layered_config 7.1 reads an unquoted ``.env`` value such as ``755`` as the int 755, which is
-ambiguous: octal digits or a numeric mode (755 decimal is 0o1363)? lsdsk never lets a configured
-value stop a run, so "refused" means the shipped default stays in force and the refusal is recorded
-and reported, naming the text spelling to use instead.
+ambiguous: octal digits or a numeric mode (755 decimal is 0o1363)? lsdsk lets almost no configured
+value stop a run, but this ambiguity is the one exception: it is a startup configuration error
+(exit 78) naming the text spelling to use instead. Every other refused mode keeps warn-and-default.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from lib_layered_config import Config
 
+from lsdsk.adapters.cli import cli
+from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.config.loader import get_config
 from lsdsk.adapters.config.permissions import PermissionReading, parse_mode, read_permission_defaults
+from lsdsk.adapters.config.values import AmbiguousModeError
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
+
+    from click.testing import CliRunner
 
 _HINT = "write it as text: 0755 or 0o755"
 _KEY = "LIB_LAYERED_CONFIG__DEFAULT_PERMISSIONS__APP_DIRECTORY"
@@ -30,14 +36,12 @@ def _reading_of(app_directory: object) -> PermissionReading:
 
 @pytest.mark.os_agnostic
 @pytest.mark.parametrize("ambiguous", [755, 644, 420, 0])
-def test_an_int_of_octal_digits_only_is_refused_with_the_text_spelling(ambiguous: int) -> None:
-    reading = _reading_of(ambiguous)
+def test_an_int_of_octal_digits_only_is_an_error_naming_the_text_spelling(ambiguous: int) -> None:
+    with pytest.raises(AmbiguousModeError) as raised:
+        _reading_of(ambiguous)
 
-    assert reading.defaults.app_directory == 0o755, "the shipped default stays in force"
-    assert [(r.dotted, r.raw) for r in reading.rejected] == [
-        ("lib_layered_config.default_permissions.app_directory", str(ambiguous))
-    ]
-    assert _HINT in reading.rejected[0].reason
+    assert raised.value.dotted == "lib_layered_config.default_permissions.app_directory"
+    assert _HINT in str(raised.value)
 
 
 @pytest.mark.os_agnostic
@@ -82,18 +86,57 @@ def test_the_shipped_default_config_loads_without_a_refusal(clear_config_cache: 
 
 
 @pytest.mark.os_agnostic
-def test_a_dotenv_755_is_refused_and_0755_is_octal(tmp_path: Path, clear_config_cache: None) -> None:
+@pytest.mark.parametrize("ambiguous", ["755", "644", "420", "0"])
+def test_a_dotenv_int_mode_stops_the_real_command_with_the_config_exit_code(
+    ambiguous: str,
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    clear_config_cache: None,
+) -> None:
     dotenv = tmp_path / ".env"
-    dotenv.write_text(f"{_KEY}=755\n", encoding="utf-8")
+    dotenv.write_text(f"{_KEY}={ambiguous}\n", encoding="utf-8")
+
+    result = cli_runner.invoke(cli, ["--env-file", str(dotenv), "config"], obj=production_factory)
+
+    assert result.exit_code == ExitCode.CONFIG_ERROR == 78, result.output[-300:]
+    said = " ".join((result.stderr or "").split())
+    assert said.startswith("Error:") and _HINT in said, said
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("accepted", ["0750", "0o750", "488"])
+def test_a_dotenv_text_or_eight_nine_mode_still_runs(
+    accepted: str,
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    clear_config_cache: None,
+) -> None:
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(f"{_KEY}={accepted}\n", encoding="utf-8")
+
+    result = cli_runner.invoke(cli, ["--env-file", str(dotenv), "config"], obj=production_factory)
+
+    assert result.exit_code == 0, (result.stderr or "")[-300:]
+    assert _HINT not in (result.stderr or "")
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("other", ["true", "-5", "rwx"])
+def test_every_other_rejected_mode_still_warns_and_keeps_the_default(
+    other: str,
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    clear_config_cache: None,
+) -> None:
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(f"{_KEY}={other}\n", encoding="utf-8")
+
     refused = read_permission_defaults(get_config(dotenv_path=str(dotenv)))
-
     assert refused.defaults.app_directory == 0o755
-    assert [r.raw for r in refused.rejected] == ["755"]
-    assert _HINT in refused.rejected[0].reason
+    assert [r.dotted for r in refused.rejected] == ["lib_layered_config.default_permissions.app_directory"]
 
-    get_config.cache_clear()
-    dotenv.write_text(f"{_KEY}=0750\n", encoding="utf-8")
-    accepted = read_permission_defaults(get_config(dotenv_path=str(dotenv)))
-
-    assert accepted.defaults.app_directory == 0o750
-    assert accepted.rejected == ()
+    result = cli_runner.invoke(cli, ["--env-file", str(dotenv), "config"], obj=production_factory)
+    assert result.exit_code == 0, (result.stderr or "")[-300:]

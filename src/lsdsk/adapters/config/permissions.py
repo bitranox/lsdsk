@@ -79,8 +79,9 @@ def parse_mode(value: int | str, default: int) -> int:
 
     Accepts octal text (``"0o755"``, ``"0755"`` or ``"755"``) or a numeric int that cannot
     be octal digits. An int of only the digits 0-7 (``755``) is ambiguous - an unquoted
-    ``.env`` value ``755`` arrives as that int - so it is not guessed at: the default is
-    returned, and :func:`read_permission_defaults` records the refusal.
+    ``.env`` value ``755`` arrives as that int - so it is not guessed at: this function
+    returns the default, while :func:`read_permission_defaults` (the configured section) raises
+    :class:`~.values.AmbiguousModeError`, which the CLI turns into a startup refusal.
 
     Args:
         value: Integer mode or octal string.
@@ -148,6 +149,9 @@ def read_permission_defaults(config: Config) -> PermissionReading:
         directory and file modes, plus an enabled flag, with the values that
         could not be used. ``enabled`` is a switch, so anything but a real
         boolean falls back to true and is recorded.
+
+    Raises:
+        AmbiguousModeError: When a mode is an int of only the digits 0-7 (``755``).
 
     Example:
         >>> from lib_layered_config import Config

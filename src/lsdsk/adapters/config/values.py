@@ -2,7 +2,9 @@
 
 A malformed value must never stop somebody diagnosing a failing drive, so every
 coercer here falls back to the shipped default rather than failing the run. That
-fallback is deliberate; its SILENCE was the defect. ``known_keys.py`` states the
+fallback is deliberate; its SILENCE was the defect. The one exception is an
+ambiguous integer permission mode (``755``): guessing decimal or octal gives a mode
+nobody meant, so :class:`AmbiguousModeError` stops the run at startup instead. ``known_keys.py`` states the
 rule for the key half of the same shape - a value that is inert reads exactly like
 a value that was applied - and a refused value is inert in exactly that way, with
 ``lsdsk config`` afterwards reporting the refused text back as the value in force.
@@ -38,9 +40,10 @@ REASON_POSITIVE_INT = "not a whole number above zero, or too large to use"
 REASON_POSITIVE_FLOAT = "not a number above zero, or too large to use"
 REASON_FLAG = "not true or false"
 REASON_PATH = "not a path, or names a user this machine does not have"
-REASON_MODE = (
-    "not a file mode; write it as text: 0755 or 0o755 "
-    "(a bare integer of only the digits 0-7, such as 755, is ambiguous between octal digits and a numeric mode)"
+REASON_MODE = "not a file mode; write it as text: 0755 or 0o755"
+REASON_AMBIGUOUS_MODE = (
+    "ambiguous: a bare integer of only the digits 0-7 may be octal digits or a numeric mode; "
+    "write it as text: 0755 or 0o755"
 )
 
 #: What a refused location falls back to, said rather than resolved (see ``path``).
@@ -289,6 +292,45 @@ def accepts_mode(raw: object) -> bool:
     return isinstance(raw, str) and _octal_text(raw) is not None
 
 
+def is_ambiguous_mode(raw: object) -> bool:
+    """Whether a configured mode is an int that could be octal digits (``755``, ``644``, ``0``).
+
+    Args:
+        raw: The configured value.
+
+    Returns:
+        Whether it is such an int; a bool is not one.
+
+    Example:
+        >>> is_ambiguous_mode(755), is_ambiguous_mode(493), is_ambiguous_mode("755"), is_ambiguous_mode(True)
+        (True, False, False, False)
+    """
+    return isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0 and set(str(raw)) <= set("01234567")
+
+
+class AmbiguousModeError(ValueError):
+    """A permission mode written as a bare int that could be octal digits; the run must not guess.
+
+    Unlike every other refused value this one stops the run, by explicit decision: guessing
+    decimal gives a mode nobody meant (755 is 0o1363), guessing octal contradicts the int.
+
+    Attributes:
+        dotted: The setting as a reader writes it.
+        raw: The refused value.
+    """
+
+    def __init__(self, dotted: str, raw: object) -> None:
+        """Remember which setting held which value and word the refusal.
+
+        Args:
+            dotted: The setting as a reader writes it.
+            raw: The refused value.
+        """
+        self.dotted = dotted
+        self.raw = raw
+        super().__init__(f"{dotted}={raw!r}: {REASON_AMBIGUOUS_MODE}")
+
+
 def mode_of(raw: object, default: int) -> int:
     """Read a permission mode, falling back rather than failing the run.
 
@@ -484,8 +526,14 @@ class SectionValues:
         return flag(raw, default=default)
 
     def mode(self, key: str, default: int) -> int:
-        """A permission mode, recording the refusal if the configured value is not one."""
+        """A permission mode, recording the refusal if the configured value is not one.
+
+        Raises:
+            AmbiguousModeError: For an int that could be octal digits; the one value that stops the run.
+        """
         raw = self._table.get(key)
+        if is_ambiguous_mode(raw):
+            raise AmbiguousModeError(f"{self._section}.{key}", raw)
         if key in self._table and not accepts_mode(raw):
             self._note(key, reason=REASON_MODE, used=oct(default))
         return mode_of(raw, default)
@@ -529,6 +577,7 @@ class SectionValues:
 
 
 __all__ = [
+    "REASON_AMBIGUOUS_MODE",
     "REASON_FLAG",
     "REASON_MODE",
     "REASON_PATH",
@@ -536,6 +585,7 @@ __all__ = [
     "REASON_POSITIVE_INT",
     "REASON_SECTION",
     "USED_PLATFORM_STATE_FILE",
+    "AmbiguousModeError",
     "RejectedValue",
     "SectionValues",
     "accepts_flag",
@@ -545,6 +595,7 @@ __all__ = [
     "accepts_positive_int",
     "accepts_tree_density",
     "flag",
+    "is_ambiguous_mode",
     "mode_of",
     "path_or_none",
     "positive_float",

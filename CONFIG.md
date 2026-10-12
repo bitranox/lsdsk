@@ -265,8 +265,8 @@ Permission defaults can be customized in `[lib_layered_config.default_permission
 ```toml
 [lib_layered_config.default_permissions]
 # Values: octal strings ("0o755", "0755", "755"), or a decimal integer with an 8 or 9 (493).
-# An integer of only the digits 0-7 (755, 644, 420) is refused with a warning and the default
-# stays in force: write it as text, "0755" or "0o755".
+# An integer of only the digits 0-7 (755, 644, 420) stops the run at startup (exit 78):
+# write it as text, "0755" or "0o755".
 app_directory = "0o755"
 app_file = "0o644"
 host_directory = "0o755"

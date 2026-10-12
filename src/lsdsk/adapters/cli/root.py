@@ -7,6 +7,7 @@ Contents:
     * :func:`cli` - Root command group with global options.
     * :func:`_report_profile_that_named_nothing` - warn about a profile nothing answered to.
     * :func:`_report_keys_nothing_reads` - warn about a file key nothing reads.
+    * :func:`_refuse_an_ambiguous_mode` - refuse an int permission mode that could be octal digits.
     * :func:`_report_values_nothing_uses` - warn about a value nothing can use.
     * :func:`_print_version` - the version line, written through the guarded sink.
 """
@@ -28,8 +29,10 @@ from lsdsk.adapters.config.loader import (
     require_an_intact_installation,
 )
 from lsdsk.adapters.config.overrides import apply_overrides
+from lsdsk.adapters.config.permissions import read_permission_defaults
 from lsdsk.adapters.config.profiles import contributed_layers, existing_profiles, nearest_profile
 from lsdsk.adapters.config.tunables import read_display_settings, read_thresholds
+from lsdsk.adapters.config.values import AmbiguousModeError
 from lsdsk.domain.enums import TreeDensity
 
 from . import safe_console
@@ -251,6 +254,27 @@ def _report_profile_that_named_nothing(config: Config, profile: str | None) -> N
     )
 
 
+def _refuse_an_ambiguous_mode(ctx: click.Context, config: Config) -> None:
+    """Refuse the run when a permission mode is an int that could be octal digits.
+
+    The one configured value that stops a run instead of falling back: ``755`` from an
+    unquoted ``.env`` line is the int 755, which is either octal digits or the decimal
+    mode 0o1363, and guessing either gives a mode nobody can be sure they meant. Every
+    other refused value keeps the warn-and-use-the-default behaviour.
+
+    Args:
+        ctx: The root group's context.
+        config: The configuration with any ``--set`` already merged in.
+
+    Raises:
+        RefusedBeforeTheRun: With ``CONFIG_ERROR`` for such a mode.
+    """
+    try:
+        read_permission_defaults(config)
+    except AmbiguousModeError as error:
+        _refuse_before_the_run(ctx, str(error), ExitCode.CONFIG_ERROR)
+
+
 def _report_values_nothing_uses(config: Config, *, history_file: Path | None) -> None:
     """Say so on stderr when a configured VALUE is not one this tool can use.
 
@@ -466,6 +490,7 @@ def cli(
     # After the overrides, not before: an unknown --set KEY is refused outright and
     # never reaches here, but a --set VALUE falls back exactly as a file's does, so
     # both surfaces have to be read once the two are merged.
+    _refuse_an_ambiguous_mode(ctx, config)
     _report_values_nothing_uses(config, history_file=history_file)
     services.init_logging(config)
     store_cli_context(

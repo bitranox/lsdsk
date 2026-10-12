@@ -5,6 +5,16 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **An ambiguous integer permission mode now stops the run at startup instead of warning.** An
+  integer whose decimal digits are all 0-7 (`755`, `644`, `420`), which is what an unquoted `.env`
+  line such as `...DEFAULT_PERMISSIONS__APP_DIRECTORY=755` delivers, is a configuration error (exit
+  78) saying `write it as text: 0755 or 0o755`; 1.7.6 warned and kept the shipped default. An
+  integer with an 8 or 9 (`493`) stays a numeric mode, and text (`0755`, `755`, `0o755`) is still
+  octal. Every other refused value (a boolean, a negative or non-octal mode, any non-mode setting)
+  still warns and keeps the default.
+
 ## [1.7.6] 2026-10-12 19:02:40
 
 ### Changed

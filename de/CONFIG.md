@@ -264,8 +264,8 @@ Die Vorgaben für die Rechte lassen sich in `[lib_layered_config.default_permiss
 ```toml
 [lib_layered_config.default_permissions]
 # Werte: Oktal-Strings ("0o755", "0755", "755") oder eine Dezimalzahl mit einer 8 oder 9 (493).
-# Eine Zahl nur aus den Ziffern 0-7 (755, 644, 420) ist mehrdeutig, wird mit einer Warnung abgelehnt
-# und der Standard bleibt in Kraft: als Text schreiben, "0755" oder "0o755".
+# Eine Zahl nur aus den Ziffern 0-7 (755, 644, 420) ist mehrdeutig und beendet den Lauf
+# beim Start (Exit 78): als Text schreiben, "0755" oder "0o755".
 app_directory = "0o755"
 app_file = "0o644"
 host_directory = "0o755"

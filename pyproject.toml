@@ -8,7 +8,7 @@ dependencies = [
     "rich-click>=1.9.9",
     "lib_cli_exit_tools>=2.4.0",
     "lib_log_rich>=6.5.1",
-    "lib_layered_config>=7.1.6",
+    "lib_layered_config>=7.1.8",
     "pydantic>=2.14.1",
     "orjson>=3.13.0",
     "rich>=15.0.0",
@@ -418,4 +418,4 @@ ignores = ["E003"]
 
 [tool.uv]
 exclude-newer = "1 day"
-exclude-newer-package = {lib-cli-exit-tools = false, lib-layered-config = false, lib-log-rich = false, pydantic = "2026-10-11T18:37:56Z", pydantic-core = "2026-10-11T18:35:45Z", rtoml = "2026-10-12T00:17:16Z", virtualenv = "2026-10-12T01:27:32Z"}
+exclude-newer-package = {lib-cli-exit-tools = false, lib-layered-config = false, lib-log-rich = false, rtoml = "2026-10-12T00:17:16Z", virtualenv = "2026-10-12T01:27:32Z"}
