@@ -56,8 +56,8 @@ module exists that is not listed here, or a listed path does not exist.
 
 - `src/lsdsk/adapters/hw/windows/builder.py` - Turn a captured Windows reading into the domain inventory.
 - `src/lsdsk/adapters/hw/windows/capture.py` - The typed shape of a Windows reading.
-- `src/lsdsk/adapters/hw/windows/reader.py` - Read storage topology and device blobs from a live Windows system.
 - `src/lsdsk/adapters/hw/windows/filesystems.py` - Turn a Windows reading into the volumes that live on its disks.
+- `src/lsdsk/adapters/hw/windows/reader.py` - Read storage topology and device blobs from a live Windows system.
 - `src/lsdsk/adapters/hw/windows/usage.py` - Resolve what uses each Windows disk, from what the reader recorded.
 - `src/lsdsk/adapters/hw/windows/volume_layout.py` - Pure byte parsers for the Windows volume ioctl responses.
 - `src/lsdsk/adapters/hw/windows/volumes.py` - Issue the Windows volume ioctls and enumerate what each volume is mounted as and which disk it sits on.
@@ -186,8 +186,8 @@ reading on the way in, and `ScanEnvelope` producing the JSON on the way out.
 
 ## CLI commands
 
-Eight of these are sections of the default report, which a bare `lsdsk` prints in full:
-`topology`, `controllers`, `disks`, `health`, `smart`, `slots`, `trend` and `findings`. The rest
+Nine of these are sections of the default report, which a bare `lsdsk` prints in full:
+`topology`, `controllers`, `disks`, `filesystems`, `health`, `smart`, `slots`, `trend` and `findings`. The rest
 stand alone. Every command that produces data takes `--format json` except `report`, whose
 machine-readable form is `lsdsk snapshot`; `tui`, `fail` and `logdemo` have no data to structure.
 

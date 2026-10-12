@@ -5,6 +5,42 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Added
+
+- **How full each filesystem is.** A new `filesystems` section, `lsdsk filesystems` and page 9 of
+  the interactive view list every mounted filesystem, ZFS pool and Windows volume on an
+  inventoried disk the way `df` does: size, used, free, `use%` and, for ext2, ext3 and ext4,
+  `inodes%`. The section follows the disks table on the default page. A ZFS pool is one row
+  whatever its datasets and is read from ZFS itself, since `statvfs` on a dataset answers for that
+  dataset's own data plus the pool's free space; a bind mount or btrfs subvolume of one filesystem
+  is one row showing `+N` further mountpoints. `-` marks a figure nobody read and `n/a` an inode
+  figure for a filesystem that creates inodes on demand. See ADR 0005.
+- **`--format json` carries the filesystems.** Every section's envelope has `data.filesystems`, a
+  list of `{kind, name, other_mounts, fs_type, disks, size_bytes, used_bytes, free_bytes,
+  inodes_total, inodes_free, read_only, readings_refused}`, or `null` where the filesystems were
+  not read (a container, or a capture taken before they were). A refused reading is a `skipped`
+  line naming `statvfs`, `zfs-pools` or `volume-space`, so `ok` is `false` on a scan that missed
+  one.
+- **A nearly full filesystem or inode table is a finding.** At or above 85 percent is a hint and at
+  or above 95 a warning, for space and, on a fixed inode table (ext2, ext3, ext4), for inodes. The
+  percentage is computed the way `df`'s `Use%` is, from the space free to an ordinary user. A
+  read-only filesystem raises none. The limits are the new `[thresholds]` keys
+  `filesystem_full_hint_percent`, `filesystem_full_warning_percent`, `inodes_full_hint_percent` and
+  `inodes_full_warning_percent`; a value outside 1 to 100 falls back to its default with a warning.
+- **A capture of a machine with ZFS pools and stat-ed filesystems**, `linux-zfs-filesystems`, as a
+  committed fixture.
+
+### Changed
+
+- **The interactive view's rescan moved from `f9` to `f10`.** Page 9 takes `f9` like every other
+  page takes its function key, so the rescan is now `r` or `f10`. Quit is `q` or `escape` and no
+  longer `f10`.
+- **The default page and the interactive view have nine sections, not eight**; the documents that
+  counted them say so.
+- **The fixture scrub documents eleven serial locations, not eight.** `tests/test_fixture_serials.py`
+  decodes the platform's own serial field, the two VPD page 0x83 designators separately and the
+  `classes/nvme` serial, and the documents now give that count.
+
 ## [1.7.7] 2026-10-12 21:21:36
 
 ### Changed
