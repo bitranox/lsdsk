@@ -31,7 +31,7 @@ from ...domain.history import History
 # Imported at runtime, not only for typing: the topology page decides which
 # record to build from what KIND of thing a line is about, and an isinstance
 # needs the class rather than its name.
-from ...domain.models import Disk, Inventory, PciNode
+from ...domain.models import Disk, Filesystem, Inventory, PciNode
 from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DisplaySettings
 from ..render import detail, layout, report, tables, theme
@@ -192,6 +192,7 @@ DETAIL_ORDER: Final[dict[CliCommand, tuple[str, ...]]] = {
     CliCommand.HEALTH: (detail.HEALTH, detail.COUNTERS),
     CliCommand.SLOTS: (detail.SLOT, detail.OCCUPANT),
     CliCommand.TREND: (detail.COUNTERS, detail.HEALTH),
+    CliCommand.FILESYSTEMS: (detail.SPACE, detail.INODES),
 }
 
 #: Which table on which page puts what under the cursor. One mapping rather than
@@ -207,6 +208,7 @@ DETAIL_TABLES: Final[dict[str, CliCommand]] = {
     "health-table": CliCommand.HEALTH,
     "slot-table": CliCommand.SLOTS,
     "trend-table": CliCommand.TREND,
+    "filesystem-table": CliCommand.FILESYSTEMS,
 }
 
 
@@ -374,6 +376,10 @@ class LsdskApp(App[None]):
         #: the panel answers for the drive, and looks it up here rather than
         #: taking the key apart again.
         self._disk_of_trend_row: dict[str, Disk] = {}
+        #: The filesystem each row of page 9 is about, by the row's key. Rows are
+        #: keyed by position because two can share a name (a hidden mount and the
+        #: mount over it), so a lookup by name would answer for the wrong one.
+        self._filesystem_of: dict[str, Filesystem] = {}
         #: Where each table's cursor was left. Recorded for EVERY table, not only
         #: the visible one, because switching page moves no cursor and raises no
         #: row event: without this the panel would keep answering for the page
@@ -585,7 +591,9 @@ class LsdskApp(App[None]):
         self.query_one("#filesystem-table", DataTable).display = listed
         severities = report.severity_index(self.findings)
         drawn: list[str] = []
+        self._filesystem_of = {}
         for position, filesystem in enumerate(filesystems or ()):
+            self._filesystem_of[str(position)] = filesystem
             row = tables.filesystem_marked_row(filesystem, severities, both_scales=True)
             drawn.extend(row.cells[column.key][0] for column in tables.FILESYSTEM_COLUMNS)
             table.add_row(*_marked(row, tables.FILESYSTEM_COLUMNS), key=str(position))
@@ -728,6 +736,9 @@ class LsdskApp(App[None]):
         if page is CliCommand.SLOTS:
             slot = next((one for one in self.inventory.slots if one.address == key), None)
             return None if slot is None else detail.slot_detail(slot, self.inventory)
+        if page is CliCommand.FILESYSTEMS:
+            filesystem = self._filesystem_of.get(key)
+            return None if filesystem is None else detail.filesystem_detail(filesystem)
         # A trend row is one COUNTER of one drive; the record is the drive's,
         # because that is what the row is about.
         disk = self._disk_of_trend_row.get(key) if page is CliCommand.TREND else self._disk_of.get(key)

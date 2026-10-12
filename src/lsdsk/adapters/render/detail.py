@@ -41,7 +41,7 @@ from rich.table import Table
 from rich.text import Text
 
 from ...domain.diagnostics import attached_demand_gbytes, link_is_register_default, register_default_links
-from ...domain.enums import BusType, UsbTransport
+from ...domain.enums import BusType, InodeTable, UsbTransport
 from ...domain.history import CounterKind
 from . import tables, theme
 from .report import findings_for, pcie_capability, serial_speed, slot_verdict, usb_speed_text
@@ -52,7 +52,17 @@ if TYPE_CHECKING:
     from rich.console import RenderableType
 
     from ...domain.history import DiskSeries, History, Trend
-    from ...domain.models import Controller, Disk, Finding, Health, Inventory, PcieLink, PcieSlot, PciNode
+    from ...domain.models import (
+        Controller,
+        Disk,
+        Filesystem,
+        Finding,
+        Health,
+        Inventory,
+        PcieLink,
+        PcieSlot,
+        PciNode,
+    )
     from ...domain.thresholds import Thresholds
     from .theme import Cell
 
@@ -84,6 +94,9 @@ class DetailGroupLabel(StrEnum):
     SLOT = "slot"
     OCCUPANT = "occupant"
     MACHINE = "machine"
+    SPACE = "space"
+    INODES = "inodes"
+    REFUSED = "refused"
 
 
 #: The group labels, one module constant per :class:`DetailGroupLabel` member.
@@ -101,6 +114,9 @@ PLACE: Final = DetailGroupLabel.PLACE
 SLOT: Final = DetailGroupLabel.SLOT
 OCCUPANT: Final = DetailGroupLabel.OCCUPANT
 MACHINE: Final = DetailGroupLabel.MACHINE
+SPACE: Final = DetailGroupLabel.SPACE
+INODES: Final = DetailGroupLabel.INODES
+REFUSED: Final = DetailGroupLabel.REFUSED
 
 #: Every label a group may carry, which is simply the enum's own membership.
 #: :func:`order_groups` validates a page's preference against THIS rather than
@@ -325,6 +341,39 @@ def slot_detail(slot: PcieSlot, inventory: Inventory) -> Detail:
         DetailGroup(OCCUPANT, _occupant_values(slot, register_default=default)),
     )
     return Detail(heading, groups, (FindingScope(slot.address),))
+
+
+def filesystem_detail(filesystem: Filesystem) -> Detail:
+    """The whole record of one mount, ZFS pool or Windows volume.
+
+    The table abbreviates the other mountpoints to ``+N`` and cannot name the
+    reason a figure is missing; this is where both are written out. Every
+    figure is read off the model: the percentage is ``used_percent`` as the
+    domain rounds it for this kind of row, never worked out again here.
+
+    Args:
+        filesystem: The filesystem to describe.
+
+    Returns:
+        The record. The refused-readings group is present only when the system
+        refused something, so a panel with nothing to say about refusals does
+        not carry an empty heading.
+    """
+    heading = (
+        (filesystem.name, theme.STYLE_IDENTIFIER),
+        (filesystem.fs_type, ""),
+        (str(filesystem.kind), ""),
+    )
+    groups = [
+        DetailGroup(IDENTITY, _filesystem_identity_values(filesystem)),
+        DetailGroup(SPACE, _filesystem_space_values(filesystem)),
+        DetailGroup(INODES, _filesystem_inode_values(filesystem)),
+    ]
+    if filesystem.readings_refused:
+        groups.append(
+            DetailGroup(REFUSED, tuple((one.reading, (one.reason, "")) for one in filesystem.readings_refused))
+        )
+    return Detail(heading, tuple(groups), (FindingScope(filesystem.name),))
 
 
 def machine_detail(inventory: Inventory) -> Detail:
@@ -895,6 +944,56 @@ def _uplink(controller: Controller, *, register_default: bool) -> Cell:
     return (f"{theme.AT_MOST} {theme.format_bandwidth(value)}", theme.STYLE_UNKNOWN)
 
 
+def _filesystem_identity_values(filesystem: Filesystem) -> tuple[tuple[str, Cell], ...]:
+    """What the filesystem is and where it lives, with every mountpoint named."""
+    others = ", ".join(filesystem.other_mounts)
+    return (
+        ("kind", (str(filesystem.kind), "")),
+        ("name", (filesystem.name, theme.STYLE_IDENTIFIER)),
+        ("type", _said(filesystem.fs_type)),
+        ("other mounts", (others, "") if others else ("none", "")),
+        ("disks", _said(" ".join(filesystem.disks))),
+        ("read-only", _yes_no(value=filesystem.read_only)),
+    )
+
+
+def _filesystem_space_values(filesystem: Filesystem) -> tuple[tuple[str, Cell], ...]:
+    """Size, used, free and fill, each as the table writes it or a dash."""
+    percent = filesystem.used_percent
+    return (
+        ("size", _capacity(filesystem.size_bytes)),
+        ("used", _capacity(filesystem.used_bytes)),
+        ("free", _capacity(filesystem.free_bytes)),
+        ("use%", _counted(percent, "%")),
+    )
+
+
+def _filesystem_inode_values(filesystem: Filesystem) -> tuple[tuple[str, Cell], ...]:
+    """Inode counts where the table is a ceiling, and `n/a` where there is none to fill.
+
+    Decided from the filesystem's own inode-table kind, so a dynamic table is
+    `n/a` however the capture happened to fill its counts, and a fixed one
+    whose counts were not read is a dash.
+    """
+    if filesystem.inode_table is InodeTable.DYNAMIC:
+        return (("total", _absent()), ("free", _absent()), ("use%", _absent()))
+    return (
+        ("total", _counted(filesystem.inodes_total)),
+        ("free", _counted(filesystem.inodes_free)),
+        ("use%", _counted(filesystem.inodes_used_percent, "%")),
+    )
+
+
+def _capacity(size_bytes: int | None) -> Cell:
+    """A capacity on both scales, as the filesystems table writes it, or the unread dash."""
+    return ("-", theme.STYLE_UNKNOWN) if size_bytes is None else (theme.format_size_both(size_bytes), "")
+
+
+def _counted(value: int | None, unit: str = "") -> Cell:
+    """A whole number as it was read, or the unread dash."""
+    return ("-", theme.STYLE_UNKNOWN) if value is None else (f"{value}{unit}", "")
+
+
 def _hex(value: int | None, digits: int) -> Cell:
     """A numeric id as the hex every other tool prints it in."""
     return ("-", theme.STYLE_UNKNOWN) if value is None else (f"0x{value:0{digits}x}", "")
@@ -907,6 +1006,7 @@ __all__ = [
     "GROUP_LABELS",
     "HEALTH",
     "IDENTITY",
+    "INODES",
     "LINK",
     "MACHINE",
     "MODEL_NOTE",
@@ -915,9 +1015,11 @@ __all__ = [
     "OCCUPANT",
     "PLACE",
     "PORTS",
+    "REFUSED",
     "REGISTER_DEFAULT_LEGEND",
     "SEAT",
     "SLOT",
+    "SPACE",
     "UNREAD_LEGEND",
     "UPSTREAM",
     "Detail",
@@ -926,6 +1028,7 @@ __all__ = [
     "FindingScope",
     "controller_detail",
     "disk_detail",
+    "filesystem_detail",
     "machine_detail",
     "node_detail",
     "order_groups",
