@@ -18,6 +18,7 @@ zur [README](README.md).
 | `lsdsk smart`                    | Die SMART-Attribute jeder Platte, gegen ihre eigenen Schwellen                                        |
 | `lsdsk findings`                 | Jeden Befund mit seiner Begründung und seiner Abhilfe                                                 |
 | `lsdsk slots`                    | Jeden PCIe-Anschluss: Fähigkeit, Bestückung, was frei ist                                             |
+| `lsdsk filesystems`              | Wie voll jedes Dateisystem, jeder Pool und jedes Volume ist: Größe, belegt, frei, Inodes              |
 | `lsdsk trend`                    | Was jeder Fehlerzähler über die Zeit tut, nicht nur seinen Stand                                      |
 | `lsdsk record`                   | Eine Messung ablegen und nichts ausgeben, für einen Timer                                             |
 | `lsdsk tui`                      | Eine interaktive Seite je Frage, in der Art der `*top`-Werkzeuge                                      |

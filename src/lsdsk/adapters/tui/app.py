@@ -175,6 +175,7 @@ PAGE_LABELS: Final[dict[CliCommand, str]] = {
     CliCommand.FINDINGS: "Findings",
     CliCommand.SLOTS: "Slots",
     CliCommand.TREND: "Trend",
+    CliCommand.FILESYSTEMS: "Filesystems",
 }
 
 
@@ -305,8 +306,8 @@ class LsdskApp(App[None]):
         Binding("i", "toggle_detail", "Detail", priority=True),
         Binding("shift+down", "detail_down", "Detail v", priority=True),
         Binding("shift+up", "detail_up", "Detail ^", priority=True),
-        Binding("r,f9", "rescan", "Rescan", priority=True, show=False),
-        Binding("q,f10,escape", "quit", "Quit", priority=True),
+        Binding("r,f10", "rescan", "Rescan", priority=True, show=False),
+        Binding("q,escape", "quit", "Quit", priority=True),
     ]
 
     #: Page order, used by the number keys and by cycling with tab. Taken from
@@ -440,6 +441,10 @@ class LsdskApp(App[None]):
                 # The note under it, and the whole section when there is no
                 # history yet: an empty table would say nothing about WHY.
                 yield Static(id="trend-body")
+            # Only so the page the enum names can be reached; its content is
+            # the next change.
+            with TabPane("Filesystems", id=CliCommand.FILESYSTEMS.value):
+                yield Static(id="filesystems-body")
         # Outside the TabbedContent, so it is one widget with one handler rather
         # than a copy per page free to answer differently, and so it survives a
         # page switch with the row the reader left it on.

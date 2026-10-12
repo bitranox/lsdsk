@@ -18,6 +18,7 @@ Back to the [README](README.md).
 | `lsdsk smart`                    | Every disk's SMART attributes against its thresholds                                               |
 | `lsdsk findings`                 | Every finding with its reasoning and its remedy                                                    |
 | `lsdsk slots`                    | Every PCIe port: capability, occupant, what is free                                                |
+| `lsdsk filesystems`              | How full each filesystem, pool or volume on a disk is: size, used, free, inodes                    |
 | `lsdsk trend`                    | What each error counter is doing over time, not just its total                                     |
 | `lsdsk record`                   | Store one reading and print nothing, for a timer                                                   |
 | `lsdsk tui`                      | An interactive page per question, `*top` style                                                     |

@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 _FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "windows-ahci.json"
 _SENTENCE = "1 disk interface not read: could not read the device interface path, Win32 error 5."
 
-PAGES = ("topology", "controllers", "disks", "health", "smart", "slots", "trend", "findings", "report")
+PAGES = ("topology", "controllers", "disks", "health", "smart", "slots", "trend", "findings", "report", "filesystems")
 
 
 def _replay_with_an_unreadable_interface(tmp_path: Path) -> Path:

@@ -28,7 +28,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 LINUX_SNAPSHOT = FIXTURES / "linux-sas-hba.json"
 WINDOWS_SNAPSHOT = FIXTURES / "windows-ahci.json"
 
-LISTING_COMMANDS = ("topology", "findings", "controllers", "disks", "health", "slots", "smart")
+LISTING_COMMANDS = ("topology", "findings", "controllers", "disks", "health", "slots", "smart", "filesystems")
 
 
 @pytest.mark.os_agnostic

@@ -97,7 +97,7 @@ async def test_a_rescan_keeps_the_unread_interface_note_in_step_with_the_invento
         await pilot.pause()
         assert sentence in _screen_text(app.export_screenshot())
         app.inventory = build_from(_capture("windows-ahci"))
-        await pilot.press("f9")
+        await pilot.press("f10")
         await pilot.pause()
         assert sentence not in _screen_text(app.export_screenshot())
 

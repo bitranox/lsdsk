@@ -401,6 +401,7 @@ def test_the_pages_sit_in_the_order_the_number_keys_promise() -> None:
         "findings",
         "slots",
         "trend",
+        "filesystems",
     ]
 
 
@@ -687,9 +688,9 @@ async def test_every_bound_key_reaches_its_own_action() -> None:
         await pilot.pause()
         assert app.query_one(TabbedContent).active == "smart"
         before = app.findings
-        await pilot.press("f9")
+        await pilot.press("f10")
         await pilot.pause()
-        assert app.findings is not before, "f9 did not reach the rescan action"
+        assert app.findings is not before, "f10 did not reach the rescan action"
         assert app.query_one(TabbedContent).active == "smart", "rescan should not move the page"
 
 
@@ -1717,7 +1718,7 @@ async def test_a_rescan_keeps_grading_by_the_configured_thresholds() -> None:
 
     app = LsdskApp(machine, thresholds=severe)
     async with app.run_test(size=(180, 50)) as pilot:
-        await pilot.press("f9")
+        await pilot.press("f10")
         await pilot.pause()
         assert app.findings == expected, "the rescan re-graded against the shipped defaults"
 

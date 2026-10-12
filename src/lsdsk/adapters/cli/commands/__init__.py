@@ -19,6 +19,7 @@ from .logging import cli_logdemo
 from .scan import (
     cli_controllers,
     cli_disks,
+    cli_filesystems,
     cli_findings,
     cli_health,
     cli_report,
@@ -36,6 +37,7 @@ __all__ = [
     "cli_controllers",
     "cli_disks",
     "cli_fail",
+    "cli_filesystems",
     "cli_findings",
     "cli_health",
     "cli_info",

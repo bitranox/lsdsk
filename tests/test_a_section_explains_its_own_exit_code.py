@@ -33,7 +33,7 @@ FIXTURE = "tests/fixtures/hw/linux-sas-hba.json"
 
 #: Every section of the page, by the name the command is invoked under. `findings`
 #: is not here: it lists every one of them, so it explains the code already.
-SECTIONS = ("controllers", "disks", "health", "smart", "slots", "trend")
+SECTIONS = ("controllers", "disks", "health", "smart", "slots", "trend", "filesystems")
 
 #: The three that already account for the code themselves: `topology` and the
 #: whole-machine page both draw the PROBLEMS verdict block, and `findings` is the

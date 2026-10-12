@@ -231,7 +231,7 @@ class ErrorEnvelope(BaseModel, frozen=True, extra="forbid"):
     answers for a partial success.
 
     ``command`` is a plain string rather than
-    :class:`~lsdsk.domain.enums.CliCommand`, because that enum names the eight
+    :class:`~lsdsk.domain.enums.CliCommand`, because that enum names the nine
     section commands alone and a failure can come from ``config``, ``snapshot``
     or ``config-deploy`` as well. On the wire the two agree: the enum serialises
     to exactly this string.

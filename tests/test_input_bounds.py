@@ -1657,6 +1657,44 @@ def test_no_markup_in_a_capture_is_read_as_markup_by_any_view(
     _assert_drawn_as_text(cell, result, draws_nothing=(capture_name, view) in _MARKUP_DRAWS_NOTHING)
 
 
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("view", ["filesystems", "", "report"])
+def test_no_markup_in_a_mountpoint_or_hostname_is_read_as_markup_by_the_filesystems_table(
+    view: str,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], Any],
+    tmp_path: Path,
+) -> None:
+    """The filesystems table draws a mountpoint and the machine's name as text.
+
+    Not a member of the salted matrix above: every committed capture predates the
+    mount readings, so the table is empty there and its title wraps at the width
+    of an empty table, which splits the payload across two lines and leaves the
+    matrix nothing whole to prove the arm could fire. A capture that carries a
+    mount gives the table rows, and with them a width wide enough to draw both
+    whole.
+    """
+    from lsdsk.adapters.cli import cli
+
+    payload = f"{_MARKUP_MARK}{_MARKUP}"
+    reading = json.loads((FIXTURES / "linux-minimal.json").read_text(encoding="utf-8"))
+    reading["hostname"] = f"{reading['hostname']}{payload}"
+    reading["block"]["sda"]["dev"] = "8:0"
+    reading["block"]["sda"]["partitions"] = {"sda1": {"dev": "8:1"}}
+    reading["mounts"] = [{"dev": "8:1", "mountpoint": f"/data{payload}", "fstype": "ext4"}]
+    reading["swaps"] = []
+    reading["stacked"] = {}
+    reading["signatures"] = {}
+    reading["filesystem_space"] = {"8:1": {"frsize": 4096, "blocks": 100, "bfree": 10, "bavail": 5}}
+    capture = tmp_path / "markup-filesystems.json"
+    capture.write_text(json.dumps(reading), encoding="utf-8")
+
+    prefix = ["--no-record", "--history-file", str(tmp_path / "absent.json")]
+    argv = [*prefix, *([view] if view else []), "--replay", str(capture)]
+    result = cli_runner.invoke(cli, argv, obj=production_factory, color=False)
+    _assert_drawn_as_text(f"filesystems/{view or 'bare'}", result)
+
+
 #: The commands whose page draws the disks table, and so its caption.
 _DISKS_CAPTION_VIEWS = ("disks", "report", "")
 

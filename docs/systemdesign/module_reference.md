@@ -190,26 +190,27 @@ Eight of these are sections of the default report, which a bare `lsdsk` prints i
 stand alone. Every command that produces data takes `--format json` except `report`, whose
 machine-readable form is `lsdsk snapshot`; `tui`, `fail` and `logdemo` have no data to structure.
 
-| Command                    | Purpose                                                                   |
-|----------------------------|---------------------------------------------------------------------------|
-| `config`                   | Display the current merged configuration from all sources.                |
-| `config-deploy`            | Deploy default configuration to system or user directories.               |
-| `config-generate-examples` | Generate example configuration files in a target directory.               |
-| `controllers`              | List storage controllers, their PCIe placement and their free ports.      |
-| `disks`                    | List every disk with its identity and its interface speed.                |
-| `fail`                     | Trigger the intentional failure helper to test error handling.            |
-| `findings`                 | Explain every problem and improvement in full.                            |
-| `health`                   | Show wear, temperature, hours and error counters for every disk.          |
-| `info`                     | Print resolved metadata so users can inspect installation details.        |
-| `logdemo`                  | Run a logging demonstration to preview log output.                        |
-| `record`                   | Record this machine's error counters, printing only with `--format json`. |
-| `report`                   | The whole machine on one page, which every section above is part of.      |
-| `slots`                    | Show the mainboard's PCIe ports, what occupies them and what is free.     |
-| `smart`                    | Show every disk's SMART attributes against its own thresholds.            |
-| `snapshot`                 | Capture this machine's raw reading for replay elsewhere.                  |
-| `topology`                 | Show the problem summary and the root-down PCI fabric with its disks.     |
-| `trend`                    | Show what each error counter is doing over time, not just its total.      |
-| `tui`                      | Open the interactive view, with a page per question.                      |
+| Command                    | Purpose                                                                      |
+|----------------------------|------------------------------------------------------------------------------|
+| `config`                   | Display the current merged configuration from all sources.                   |
+| `config-deploy`            | Deploy default configuration to system or user directories.                  |
+| `config-generate-examples` | Generate example configuration files in a target directory.                  |
+| `controllers`              | List storage controllers, their PCIe placement and their free ports.         |
+| `disks`                    | List every disk with its identity and its interface speed.                   |
+| `fail`                     | Trigger the intentional failure helper to test error handling.               |
+| `filesystems`              | List how full each filesystem, pool or volume on a disk is, with its inodes. |
+| `findings`                 | Explain every problem and improvement in full.                               |
+| `health`                   | Show wear, temperature, hours and error counters for every disk.             |
+| `info`                     | Print resolved metadata so users can inspect installation details.           |
+| `logdemo`                  | Run a logging demonstration to preview log output.                           |
+| `record`                   | Record this machine's error counters, printing only with `--format json`.    |
+| `report`                   | The whole machine on one page, which every section above is part of.         |
+| `slots`                    | Show the mainboard's PCIe ports, what occupies them and what is free.        |
+| `smart`                    | Show every disk's SMART attributes against its own thresholds.               |
+| `snapshot`                 | Capture this machine's raw reading for replay elsewhere.                     |
+| `topology`                 | Show the problem summary and the root-down PCI fabric with its disks.        |
+| `trend`                    | Show what each error counter is doing over time, not just its total.         |
+| `tui`                      | Open the interactive view, with a page per question.                         |
 
 ## Exit codes
 

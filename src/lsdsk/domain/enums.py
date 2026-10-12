@@ -404,6 +404,7 @@ class CliCommand(StrEnum):
     FINDINGS = "findings"
     SLOTS = "slots"
     TREND = "trend"
+    FILESYSTEMS = "filesystems"
 
 
 class ActionCommand(StrEnum):

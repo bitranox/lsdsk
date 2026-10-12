@@ -39,7 +39,7 @@ from typing import Any, cast
 DOCUMENTED_EXITS = {0, 1, 2, 13, 22, 70, 74, 78}
 
 #: The commands that report on a machine. Each takes --replay and --format.
-REPORTING = ("topology", "controllers", "disks", "health", "smart", "findings", "slots", "trend")
+REPORTING = ("topology", "controllers", "disks", "health", "smart", "findings", "slots", "trend", "filesystems")
 
 #: Text that means the tool fell over rather than answering.
 CRASH_MARKERS = ("Traceback (most recent call last)", "OverflowError", "ZeroDivisionError", "KeyError")

@@ -6,6 +6,7 @@ Contents:
     * :func:`cli_controllers` - controllers and their PCIe placement
     * :func:`cli_disks` - one row per disk
     * :func:`cli_health` - wear, temperature and error counters
+    * :func:`cli_filesystems` - how full each filesystem on an inventoried disk is
     * :func:`cli_slots` - the mainboard's PCIe ports and what occupies them
     * :func:`cli_smart` - every disk's SMART attributes
     * :func:`cli_findings` - every diagnosis in full
@@ -46,7 +47,7 @@ from lsdsk.domain.diagnostics import count_by_severity, register_default_links
 from lsdsk.domain.enums import ActionCommand, CliCommand, Environment, OutputFormat, Severity, TreeDensity
 from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.history import CounterKind, Trend
-from lsdsk.domain.models import Controller, Disk, Finding, Inventory, PcieSlot, PciNode, RefusedReading
+from lsdsk.domain.models import Controller, Disk, Filesystem, Finding, Inventory, PcieSlot, PciNode, RefusedReading
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 
 from .. import safe_console
@@ -496,6 +497,7 @@ class ScanData(BaseModel):
     disks: tuple[Disk, ...]
     virtual_disks: tuple[Disk, ...]
     slots: tuple[SlotReading, ...]
+    filesystems: tuple[Filesystem, ...] | None
     findings: tuple[Finding, ...]
     trend: tuple[TrendEntry, ...] | None = None
 
@@ -590,6 +592,7 @@ def build_envelope(
             # decision, and a program parsing this needs the whole machine.
             virtual_disks=inventory.virtual_disks,
             slots=_slot_readings(inventory),
+            filesystems=inventory.filesystems,
             findings=tuple(findings),
             trend=None if trend is None else tuple(trend),
         ),
@@ -653,6 +656,8 @@ def _refusals_named(inventory: Inventory) -> list[str]:
     ]
     subjects += [(controller.address, controller.readings_refused) for controller in inventory.controllers]
     subjects.append(("disk interface", inventory.unread_interfaces))
+    subjects += [(one.name, one.readings_refused) for one in inventory.filesystems or ()]
+    subjects.append(("filesystems", inventory.unread_filesystems))
     return [
         f"{refused.reading}: {subject} - {refused.reason}" for subject, refusals in subjects for refused in refusals
     ]
@@ -1251,6 +1256,27 @@ def cli_slots(ctx: click.Context, replay: Path | None, output_format: OutputForm
         raise SystemExit(exit_code_for(findings))
 
 
+@click.command("filesystems", context_settings=CLICK_CONTEXT_SETTINGS)
+@_REPLAY_OPTION
+@FORMAT_OPTION
+@click.pass_context
+def cli_filesystems(ctx: click.Context, replay: Path | None, output_format: OutputFormat) -> None:
+    """Show how full each filesystem on an inventoried disk is."""
+    with lib_log_rich.runtime.bind(job_id="cli-filesystems", extra={"command": CliCommand.FILESYSTEMS.value}):
+        inventory, findings, read = analyse_run(ctx, effective_replay(ctx, replay), output_format)
+        display = resolve_tunables(ctx).display
+        if output_format is OutputFormat.JSON:
+            emit_json(inventory, findings, CliCommand.FILESYSTEMS, history=read)
+        else:
+            from lsdsk.adapters.render.tables import render_filesystems  # noqa: PLC0415 - keeps the import graph flat
+
+            console = console_for_output(display.piped_width)
+            note_unread_interfaces(inventory, console)
+            console.print(render_filesystems(inventory, findings, width=console.width))
+            note_the_findings_this_page_left_out(findings, [one.name for one in inventory.filesystems or ()], console)
+        raise SystemExit(exit_code_for(findings))
+
+
 @click.command("disks", context_settings=CLICK_CONTEXT_SETTINGS)
 @_REPLAY_OPTION
 @FORMAT_OPTION
@@ -1665,6 +1691,7 @@ __all__ = [
     "build_envelope",
     "cli_controllers",
     "cli_disks",
+    "cli_filesystems",
     "cli_findings",
     "cli_health",
     "cli_report",

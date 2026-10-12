@@ -104,6 +104,7 @@ def test_module_entry_cli_exports_all_registered_commands() -> None:
         "cli_disks",
         "cli_health",
         "cli_findings",
+        "cli_filesystems",
         "cli_slots",
         "cli_smart",
         "cli_snapshot",

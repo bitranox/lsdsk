@@ -26,6 +26,7 @@ from lsdsk.adapters.render import tables, theme
 from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui import palette as tui_palette
 from lsdsk.adapters.tui.app import PAGE_LABELS
+from lsdsk.domain.enums import CliCommand
 from lsdsk.domain.history import History, record
 
 if TYPE_CHECKING:
@@ -90,7 +91,7 @@ async def _sweep_before_and_after_a_rescan(app: LsdskApp, pilot: Pilot[None]) ->
     the defect this file's gate exists to catch - a second copy of a fill that
     does not go through the palette layer - lives on whichever of the two nobody
     sweeps. Measured: planting that copy on the rescan path left both palette
-    suites at 94 passed, with the probe showing no printed hue before `f9` and
+    suites at 94 passed, with the probe showing no printed hue before `f10` and
     two after it.
 
     Args:
@@ -103,7 +104,7 @@ async def _sweep_before_and_after_a_rescan(app: LsdskApp, pilot: Pilot[None]) ->
     pictures: list[str] = []
     for pass_number in (1, 2):
         if pass_number == 2:
-            await pilot.press("f9")
+            await pilot.press("f10")
             await pilot.pause()
         for number, _page in enumerate(PAGE_LABELS, start=1):
             await pilot.press(str(number))
@@ -277,9 +278,9 @@ async def _sweep_with_regions(app: LsdskApp, pilot: Pilot[None]) -> _Drawn:
     fallback_shown = False
     for pass_number in (1, 2):
         if pass_number == 2:
-            await pilot.press("f9")
+            await pilot.press("f10")
             await pilot.pause()
-        for number, _page in enumerate(PAGE_LABELS, start=1):
+        for number, page in enumerate(PAGE_LABELS, start=1):
             await pilot.press(str(number))
             await pilot.pause()
             pictures.append(app.export_screenshot().upper())
@@ -288,9 +289,13 @@ async def _sweep_with_regions(app: LsdskApp, pilot: Pilot[None]) -> _Drawn:
                 records += 1
                 detail_hues |= hues
             fallback_shown |= bool(app.query_one("#tree-fallback", VerticalScroll).display)
-        note, hues = _region(app, "#trend-body")
-        trend_note += note
-        trend_hues |= hues
+            if page is CliCommand.TREND:
+                # Read while the trend page is the one showing: a region on a
+                # page that is no longer active is not drawn, and the trend page
+                # is no longer the last one visited.
+                note, hues = _region(app, "#trend-body")
+                trend_note += note
+                trend_hues |= hues
     return _Drawn(" ".join(pictures), detail_hues, records, trend_note, trend_hues, fallback_shown)
 
 
