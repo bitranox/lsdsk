@@ -50,7 +50,7 @@ def test_mountinfo_rows_keep_device_mountpoint_type_and_source(tmp_path: Path) -
     assert rows is not None
     # A ZFS source is narrowed to its pool: the dataset path below it is not
     # something the resolver reads.
-    assert rows[0] == {"dev": "0:28", "mountpoint": "/", "fstype": "zfs", "source": "rpool", "read_only": "false"}
+    assert rows[0] == {"dev": "0:28", "mountpoint": "/", "fstype": "zfs", "source": "rpool", "read_only": False}
     # The kernel octal-escapes a space; the reader hands back the real path.
     assert rows[1]["mountpoint"] == "/boot efi"
 
@@ -180,8 +180,8 @@ def test_a_mount_path_that_is_not_utf8_keeps_every_row(tmp_path: Path) -> None:
     )
     rows = mounts.read_mounts(path)
     assert rows is not None
-    assert rows[0] == {"dev": "0:28", "mountpoint": "/", "fstype": "zfs", "source": "rpool", "read_only": "false"}
-    assert rows[1] == {"dev": "8:1", "mountpoint": "/mnt/caf�", "fstype": "ext4", "read_only": "false"}
+    assert rows[0] == {"dev": "0:28", "mountpoint": "/", "fstype": "zfs", "source": "rpool", "read_only": False}
+    assert rows[1] == {"dev": "8:1", "mountpoint": "/mnt/caf�", "fstype": "ext4", "read_only": False}
 
 
 @pytest.mark.os_agnostic
@@ -354,8 +354,8 @@ def test_mountinfo_keeps_no_identifier_the_resolver_does_not_read(tmp_path: Path
         assert identifier not in recorded, identifier
     # The block-backed rows survive, the ZFS one with its pool only.
     assert rows == [
-        {"dev": "0:28", "mountpoint": "/", "fstype": "zfs", "source": "rpool", "read_only": "false"},
-        {"dev": "8:1", "mountpoint": "/srv/projects", "fstype": "ext4", "read_only": "false"},
+        {"dev": "0:28", "mountpoint": "/", "fstype": "zfs", "source": "rpool", "read_only": False},
+        {"dev": "8:1", "mountpoint": "/srv/projects", "fstype": "ext4", "read_only": False},
     ]
 
 
@@ -542,7 +542,7 @@ def test_a_read_only_mount_is_flagged_from_either_option_field(tmp_path: Path) -
         mountinfo, device_number=_Resolver({"/dev/sda1": "8:1", "/dev/loop0": "7:0", "/dev/sda2": "8:2"})
     )
     assert rows is not None
-    assert [row.get("read_only") for row in rows] == ["false", "true", "true"]
+    assert [row.get("read_only") for row in rows] == [False, True, True]
     typed = [MountEntry.model_validate(row) for row in rows]
     assert [mount.read_only for mount in typed] == [False, True, True]
 
@@ -552,4 +552,15 @@ def test_an_option_merely_containing_ro_is_not_read_only(tmp_path: Path) -> None
     mountinfo.write_text("30 1 8:1 / / rw,errors=ro,nosuid - ext4 /dev/sda1 rw,rootcontext=x\n", encoding="utf-8")
     rows = mounts.read_mounts(mountinfo, device_number=_Resolver({"/dev/sda1": "8:1"}))
     assert rows is not None
-    assert rows[0]["read_only"] == "false"
+    assert rows[0]["read_only"] is False
+
+
+def test_the_read_only_verdict_is_a_boolean_not_text(tmp_path: Path) -> None:
+    mountinfo = tmp_path / "mountinfo"
+    mountinfo.write_text(
+        "30 1 8:1 / / rw - ext4 /dev/sda1 rw\n31 1 8:2 / /ro ro - ext4 /dev/sda2 ro\n", encoding="utf-8"
+    )
+    rows = mounts.read_mounts(mountinfo, device_number=_Resolver({"/dev/sda1": "8:1", "/dev/sda2": "8:2"}))
+    assert rows is not None
+    assert [type(row["read_only"]) for row in rows] == [bool, bool]
+    assert [row["read_only"] for row in rows] == [False, True]

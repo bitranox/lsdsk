@@ -576,49 +576,49 @@
       "dev": "0:28",
       "fstype": "zfs",
       "mountpoint": "/",
-      "read_only": "false",
+      "read_only": false,
       "source": "rpool"
     },
     {
       "dev": "0:40",
       "fstype": "zfs",
       "mountpoint": "/tank",
-      "read_only": "false",
+      "read_only": false,
       "source": "tank"
     },
     {
       "dev": "0:41",
       "fstype": "zfs",
       "mountpoint": "/var/lib/vz",
-      "read_only": "false",
+      "read_only": false,
       "source": "rpool"
     },
     {
       "dev": "0:42",
       "fstype": "zfs",
       "mountpoint": "/rpool",
-      "read_only": "false",
+      "read_only": false,
       "source": "rpool"
     },
     {
       "dev": "0:43",
       "fstype": "zfs",
       "mountpoint": "/tank/subvol-100-disk-0",
-      "read_only": "false",
+      "read_only": false,
       "source": "tank"
     },
     {
       "dev": "0:44",
       "fstype": "zfs",
       "mountpoint": "/rpool/ROOT",
-      "read_only": "false",
+      "read_only": false,
       "source": "rpool"
     },
     {
       "dev": "0:45",
       "fstype": "zfs",
       "mountpoint": "/rpool/data",
-      "read_only": "false",
+      "read_only": false,
       "source": "rpool"
     }
   ],

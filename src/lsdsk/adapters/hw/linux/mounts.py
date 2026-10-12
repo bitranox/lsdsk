@@ -155,7 +155,7 @@ def read_mounts(
     *,
     limit: int = MAX_MOUNTINFO_BYTES,
     device_number: Callable[[str], str | None] = device_number_of,
-) -> list[dict[str, str]] | None:
+) -> list[dict[str, str | bool]] | None:
     """Read every mounted filesystem from mountinfo.
 
     Args:
@@ -170,8 +170,9 @@ def read_mounts(
     Returns:
         One row per mount a disk can sit behind, each carrying ``dev`` (the
         mounted device's own ``maj:min``, field 3), ``mountpoint`` and
-        ``fstype`` and ``read_only`` (``"true"`` or ``"false"``), plus ``source_dev`` when the source names a resolvable
-        ``/dev`` node and, for ZFS only, ``source`` narrowed to the pool name.
+        ``fstype`` and ``read_only`` (a real boolean, lsdsk's own verdict rather
+        than text the kernel published), plus ``source_dev`` when the source
+        names a resolvable ``/dev`` node and, for ZFS only, ``source`` narrowed to the pool name.
         A row with an anonymous device number and no resolvable source (tmpfs,
         NFS, FUSE, overlay) is left out, and so is every other source text: an
         NFS or sshfs source names a host and a user, and nothing reads it.
@@ -186,7 +187,7 @@ def read_mounts(
     if len(text.encode("utf-8")) > limit:
         return None
 
-    rows: list[dict[str, str]] = []
+    rows: list[dict[str, str | bool]] = []
     for line in text.split("\n"):
         if not line:
             continue
@@ -196,7 +197,7 @@ def read_mounts(
     return rows
 
 
-def _parse_mountinfo_line(line: str, device_number: Callable[[str], str | None]) -> dict[str, str] | None:
+def _parse_mountinfo_line(line: str, device_number: Callable[[str], str | None]) -> dict[str, str | bool] | None:
     """Parse one mountinfo row, or ``None`` for a malformed or unwanted one.
 
     The optional fields between field 6 and the separator vary in count, so
@@ -214,21 +215,22 @@ def _parse_mountinfo_line(line: str, device_number: Callable[[str], str | None])
     if len(left_fields) < _MIN_LEFT_FIELDS or len(right_fields) < _MIN_RIGHT_FIELDS:
         return None
 
-    row = {"dev": left_fields[2], "mountpoint": _unescape(left_fields[4]), "fstype": right_fields[0]}
+    dev, mountpoint, fstype = left_fields[2], _unescape(left_fields[4]), right_fields[0]
+    row: dict[str, str | bool] = {"dev": dev, "mountpoint": mountpoint, "fstype": fstype}
     source = _unescape(right_fields[1])
     source_dev = device_number(source) if source.startswith("/dev/") else None
     if source_dev is not None:
         row["source_dev"] = source_dev
-    if row["fstype"] == _ZFS:
+    if fstype == _ZFS:
         # The dataset path below the pool is never read, and can name a user.
         row["source"] = source.split("/", 1)[0]
-    elif row["dev"].split(":", 1)[0] == _ANONYMOUS_MAJOR and source_dev is None:
+    elif dev.split(":", 1)[0] == _ANONYMOUS_MAJOR and source_dev is None:
         return None
     # Field 6 carries the per-mount options and the field after the source the
     # superblock's; either one being read-only makes this mount read-only.
     per_mount = left_fields[_OPTIONS_FIELD] if len(left_fields) > _OPTIONS_FIELD else ""
     super_options = right_fields[_SUPER_OPTIONS_FIELD] if len(right_fields) > _SUPER_OPTIONS_FIELD else ""
-    row["read_only"] = "true" if _starts_read_only(per_mount) or _starts_read_only(super_options) else "false"
+    row["read_only"] = _starts_read_only(per_mount) or _starts_read_only(super_options)
     return row
 
 
@@ -282,7 +284,7 @@ def _system_statvfs(path: str) -> StatvfsResult:
 
 
 def read_space(
-    rows: Sequence[Mapping[str, str]], *, statvfs: Callable[[str], StatvfsResult] = _system_statvfs
+    rows: Sequence[Mapping[str, str | bool]], *, statvfs: Callable[[str], StatvfsResult] = _system_statvfs
 ) -> dict[str, dict[str, int | str]]:
     """Read each mounted filesystem's size, free space and inodes once.
 
@@ -305,10 +307,12 @@ def read_space(
     """
     readings: dict[str, dict[str, int | str]] = {}
     for row in rows:
-        dev = row.get("dev", "")
+        dev, mountpoint = row.get("dev", ""), row.get("mountpoint", "")
+        if not isinstance(dev, str) or not isinstance(mountpoint, str):
+            continue
         if not dev or row.get("fstype") == _ZFS or _FIGURES_KEY in readings.get(dev, {}):
             continue
-        reading = _ask(row["mountpoint"], statvfs)
+        reading = _ask(mountpoint, statvfs)
         if "error" in reading and dev in readings:
             continue
         readings[dev] = reading
