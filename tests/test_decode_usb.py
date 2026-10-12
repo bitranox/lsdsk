@@ -318,3 +318,29 @@ def test_one_direction_with_a_single_lane_keeps_ten_gigabits_one_gen2_lane(rx: s
 def test_both_directions_at_two_lanes_make_ten_gigabits_two_gen1_lanes() -> None:
     """The control for the asymmetric cases above."""
     assert usb.speed_from_sysfs("10000", " 2\n", "2") == UsbSpeed(lane_rate=UsbLaneRate.GEN1, lanes=2)
+
+
+@pytest.mark.os_agnostic
+def test_a_connector_answer_of_exactly_its_fixed_size_decodes() -> None:
+    """The structure's fixed part is 16 bytes, so 16 bytes is an answer and 15 is a short one."""
+    assert usb.decode_connector(bytes(16)) == usb.UsbConnector(companion_port=0, type_c=False)
+    with pytest.raises(ValueError, match="short"):
+        usb.decode_connector(bytes(15))
+
+
+@pytest.mark.os_agnostic
+def test_a_hub_type_answer_of_exactly_its_field_decodes() -> None:
+    """The type is one 32-bit field, so 4 bytes is an answer and 3 is a short one."""
+    assert usb.decode_hub_type(bytes(4)) == 0
+    with pytest.raises(ValueError, match="short"):
+        usb.decode_hub_type(bytes(3))
+
+
+@pytest.mark.os_agnostic
+def test_a_bos_total_one_byte_past_what_was_read_is_refused() -> None:
+    """Off by one: the descriptor declares a byte the read never delivered."""
+    blob = _bos(_superspeed(0x8))
+    overstated = blob[:2] + struct.pack("<H", len(blob) + 1) + blob[4:]
+    with pytest.raises(ValueError, match="runs past the bytes read"):
+        usb.decode_bos(overstated)
+    assert usb.decode_bos(blob).superspeed
