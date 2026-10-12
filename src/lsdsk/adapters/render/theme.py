@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Final, NamedTuple
 from ...domain.enums import BusType, DiskKind, PciPortKind, Severity, UseKind
 from ...domain.models import DiskUsage, DiskUse, PcieLink, pcie_generation
 from ...domain.pcie_text import format_bytes_rate
+from ...domain.size_text import format_capacity, format_capacity_both
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -202,29 +203,6 @@ STYLE_OPPORTUNITY = STYLE_OPPORTUNITY_COLOUR
 TEMPERATURE_WARM = 50
 TEMPERATURE_HOT = 60
 
-# A capacity has two honest answers and they differ by 7 percent per step: a
-# drive is SOLD in powers of ten and REPORTS in powers of two. Written with the
-# scale unnamed, the figure is read as whichever the reader expects, so a drive
-# sold as 500 GB rendered `466G` reads as a different drive from the one on the
-# invoice. Both unit lists therefore name their scale, and `format_size_both`
-# writes the pair where there is room for it.
-_BINARY_UNITS = ("B", "KiB", "MiB", "GiB", "TiB", "PiB")
-_DECIMAL_UNITS = ("B", "KB", "MB", "GB", "TB", "PB")
-_BINARY_STEP = 1024.0
-_DECIMAL_STEP = 1000.0
-
-
-def _scaled(size_bytes: int, step: float, units: tuple[str, ...]) -> str:
-    """One capacity on one scale, to the unit that keeps it under three digits."""
-    value = float(size_bytes)
-    for unit in units:
-        if value < step or unit == units[-1]:
-            if unit == units[0]:
-                return f"{int(value)}{unit}"
-            return f"{value:.1f}{unit}" if value < 10 else f"{value:.0f}{unit}"  # noqa: PLR2004 - one decimal below ten
-        value /= step
-    return "-"
-
 
 def format_size(size_bytes: int | None) -> str:
     """Render a capacity for a column, on the scale the drive reports in.
@@ -250,7 +228,7 @@ def format_size(size_bytes: int | None) -> str:
         >>> format_size(None)
         '-'
     """
-    return "-" if size_bytes is None else _scaled(size_bytes, _BINARY_STEP, _BINARY_UNITS)
+    return "-" if size_bytes is None else format_capacity(size_bytes)
 
 
 def format_size_both(size_bytes: int | None) -> str:
@@ -278,11 +256,7 @@ def format_size_both(size_bytes: int | None) -> str:
         >>> format_size_both(None)
         '-'
     """
-    if size_bytes is None:
-        return "-"
-    binary = _scaled(size_bytes, _BINARY_STEP, _BINARY_UNITS)
-    decimal = _scaled(size_bytes, _DECIMAL_STEP, _DECIMAL_UNITS)
-    return binary if binary == decimal else f"{decimal}/{binary}"
+    return "-" if size_bytes is None else format_capacity_both(size_bytes)
 
 
 def format_speed(gbps: float | None) -> str:

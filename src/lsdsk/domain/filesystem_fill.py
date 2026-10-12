@@ -14,9 +14,8 @@ from __future__ import annotations
 
 from .enums import Severity
 from .models import Filesystem, Finding, Inventory
+from .size_text import format_capacity_both
 from .thresholds import DEFAULT_THRESHOLDS, Thresholds
-
-_BYTES_PER_GB = 1e9
 
 _SPACE_ACTION = (
     "Free space or grow the filesystem before it fills: a full filesystem fails writes, "
@@ -39,21 +38,22 @@ def _severity_at(percent: int | None, hint: int, warning: int) -> tuple[Severity
     return None
 
 
-def _gigabytes(count: int) -> float:
-    return count / _BYTES_PER_GB
-
-
 def _on_disks(fs: Filesystem) -> str:
-    """The ``, on sda`` clause naming the disks, or nothing when none resolved (a ZFS pool, a Windows volume)."""
+    """The ``, on sda`` clause naming the disks, or nothing for a row that carries none.
+
+    Every row the builders make carries its disks - a mount, a pool and a
+    Windows volume alike - so only a hand-built row reaches the empty arm.
+    """
     return f", on {', '.join(fs.disks)}" if fs.disks else ""
 
 
 def _space_detail(fs: Filesystem) -> str:
+    """Used, size and free, each on both scales the table writes, so a small filesystem never reads 0 free."""
     # Only reached when used_percent exists, so both figures were read.
     used = fs.used_bytes or 0
     free = fs.free_bytes or 0
     size = fs.size_bytes if fs.size_bytes is not None else used + free
-    figures = f"{_gigabytes(used):.1f} GB of {_gigabytes(size):.1f} GB used, {_gigabytes(free):.1f} GB free"
+    figures = f"{format_capacity_both(used)} of {format_capacity_both(size)} used, {format_capacity_both(free)} free"
     return f"{figures}{_on_disks(fs)}."
 
 

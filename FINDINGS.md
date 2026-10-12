@@ -262,7 +262,9 @@ mounted read-only is listed and raises no finding, because nothing can fill it.
 The percentage is computed the way the `Use%` column of `df` is: used divided by used plus the
 space free to an ordinary user, rounded up. On ext4 with reserved blocks it can therefore be higher
 than used divided by size, which is what the detail line of the finding prints. The same sum on
-the same mount gives the same figure as `df`.
+the same mount gives the same figure as `df`. The detail line writes used, size and free the way the
+table beside it does, on both scales and in a unit that keeps a small figure readable, so a nearly
+full 486 MB `/boot` reads `420MB/401MiB of 486MB/463MiB used, 36MB/34MiB free` and never `0 GB free`.
 
 A ZFS pool is one row, whatever datasets it holds, and its size and allocation are read from ZFS
 itself, since asking the filesystem about one dataset answers for that dataset's own data plus the

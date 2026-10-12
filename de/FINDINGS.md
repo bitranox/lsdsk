@@ -299,6 +299,9 @@ Der Prozentsatz wird so gerechnet wie die Spalte `Use%` von `df`: belegt, geteil
 den Platz, der einem gewöhnlichen Benutzer frei zur Verfügung steht, aufgerundet. Auf ext4 mit
 reservierten Blöcken kann er daher höher sein als belegt geteilt durch Größe, was die Detailzeile
 des Befunds ausgibt. Dieselbe Rechnung auf demselben Einhängepunkt ergibt dieselbe Zahl wie `df`.
+Die Detailzeile schreibt belegt, Größe und frei so wie die Tabelle daneben, in beiden Skalen und in
+einer Einheit, die auch eine kleine Zahl lesbar hält: ein fast volles `/boot` mit 486 MB liest sich
+`420MB/401MiB of 486MB/463MiB used, 36MB/34MiB free` und nie `0 GB free`.
 
 Ein ZFS-Pool ist eine Zeile, gleich welche Datasets er enthält, und seine Größe und Belegung werden
 von ZFS selbst gelesen, denn wer das Dateisystem nach einem Dataset fragt, erhält die eigenen Daten
