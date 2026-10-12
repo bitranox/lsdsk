@@ -345,3 +345,41 @@ def test_a_monitor_with_an_unreadable_temperature_does_not_shadow_the_next_one()
 
     assert disk.health is not None
     assert disk.health.temperature_c == 42, "an unreadable monitor hid the one that answered"
+
+
+@pytest.mark.os_agnostic
+def test_a_port_token_written_in_non_ascii_digits_names_no_port() -> None:
+    """A regex digit class accepts every Unicode decimal digit, so the port token is matched as ASCII only.
+
+    A capture is untrusted input. An ``ata`` path carrying an Arabic-Indic digit
+    is not a libata port, and indexing it would hand the disk on that path a
+    link keyed by a string no kernel writes. The control beside it, the same
+    shape in ASCII digits, must still find its link, so a lookup that matched
+    nothing at all cannot pass.
+    """
+    arabic_three = "٣"
+    capture = _capture(
+        block={
+            "sda": BlockEntry(device_path=f"/sys/devices/pci0000:00/0000:00:17.0/ata{arabic_three}/host0", size="1024"),
+            "sdb": BlockEntry(device_path="/sys/devices/pci0000:00/0000:00:17.0/ata4/host1", size="1024"),
+        },
+        classes=SysfsClasses(
+            ata_link={
+                "link-odd": AtaLinkEntry(
+                    path=f"/sys/devices/pci0000:00/0000:00:17.0/ata{arabic_three}/link3/ata_link/link3",
+                    sata_spd="6.0 Gbps",
+                    sata_spd_max="6.0 Gbps",
+                ),
+                "link4": AtaLinkEntry(
+                    path="/sys/devices/pci0000:00/0000:00:17.0/ata4/link4/ata_link/link4",
+                    sata_spd="3.0 Gbps",
+                    sata_spd_max="3.0 Gbps",
+                ),
+            }
+        ),
+    )
+
+    non_ascii, ascii_port = build_disks(capture)
+
+    assert non_ascii.link.negotiated_gbps is None, "a non-ASCII digit was read as a libata port number"
+    assert ascii_port.link.negotiated_gbps == 3.0

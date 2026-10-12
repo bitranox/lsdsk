@@ -319,3 +319,23 @@ def test_a_pci_device_whose_directory_cannot_be_searched_costs_only_its_own_read
         locked.chmod(0o700)
     assert devices["0000_04_00.0"]["vendor"] == "0x1000"
     assert "driver" not in devices["0000_03_00.0"]
+
+
+@pytest.mark.os_posix
+def test_the_kernels_placement_decides_even_when_the_names_say_the_opposite(tmp_path: Path) -> None:
+    """A virtual-tree device named like a disk is virtual; a PCI-backed one named like a RAM disk is real.
+
+    ``zram0`` and ``loop0`` are classified right by a prefix list as well, so
+    they cannot show the kernel is being asked. These two are named so that a
+    name list answers both wrongly.
+    """
+    root = tmp_path / "sys"
+    _make_block_device(root, "devices/virtual/block", "sdq", physical=False)
+    _make_block_device(root, _PCI_BLOCK, "loop5", physical=True)
+    _make_block_device(root, _PCI_BLOCK, "md0", physical=True)
+
+    block = read_block(root / "block")
+
+    assert block["sdq"]["virtual"] is True
+    assert block["loop5"].get("virtual") is not True
+    assert block["md0"].get("virtual") is not True

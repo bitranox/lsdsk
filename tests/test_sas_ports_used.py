@@ -94,3 +94,30 @@ def test_expander_phys_linked_to_the_hba_port_are_not_phys_the_controller_uses()
     controller = _controller(host_phys=8, wide_members=2, drives=4, expander_phys=2)
 
     assert (controller.port_count, controller.ports_used, controller.ports_free) == (8, 2, 6)
+
+
+_NON_SAS_CAPTURES = ("linux-minimal.json", "linux-nvme-board.json", "linux-usb-ehci.json")
+
+
+def test_an_ahci_or_nvme_controller_uses_one_port_per_drive_hanging_off_it() -> None:
+    """A drive on no SAS port occupies one port of its own, so the count is the drive count.
+
+    Only the SAS arms were pinned; the unit a drive occupies on any other
+    controller could be emptied and every AHCI and NVMe controller would report
+    all its ports free, with the suite green.
+    """
+    import json
+    from collections import Counter
+    from pathlib import Path
+
+    seen_in_use = 0
+    for name in _NON_SAS_CAPTURES:
+        text = (Path(__file__).parent / "fixtures" / "hw" / name).read_text(encoding="utf-8")
+        inventory = build_from(json.loads(text))
+        drives = Counter(disk.controller_address for disk in inventory.disks)
+        for controller in inventory.controllers:
+            if controller.kind.value == "sas":
+                continue
+            assert controller.ports_used == drives.get(controller.address, 0), (name, controller.address)
+            seen_in_use += controller.ports_used or 0
+    assert seen_in_use >= 6, "no non-SAS controller carried a drive, so the comparison asked nothing"

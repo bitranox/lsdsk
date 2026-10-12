@@ -534,3 +534,40 @@ def test_a_capture_full_of_small_parent_cycles_is_cut_in_one_pass() -> None:
         f"{_CRAFTED_DEVICE_COUNT} devices in {_CRAFTED_DEVICE_COUNT // 2} cycles took {looping} units of work "
         f"against {ordinary} for the same devices in none, a factor of {looping / ordinary:.1f}"
     )
+
+
+@pytest.mark.os_agnostic
+def test_cycles_that_sort_after_a_healthy_device_are_all_broken_and_every_device_reaches_a_root() -> None:
+    """The walk does not stop at, or only look at, the cycle that happens to sort first.
+
+    A healthy device sorts ahead of everything, then a tail leading into a
+    three-member cycle, then a two-member cycle on another bus. Cutting a loop
+    short, or ending the scan after the first start, leaves some member with a
+    parent chain that never arrives at a root.
+    """
+    tree = assemble(
+        [
+            _source("0000:01:00.0", None),
+            _source("0000:02:00.0", "0000:03:00.1"),  # tail, enters the cycle below
+            _source("0000:03:00.0", "0000:03:00.1"),
+            _source("0000:03:00.1", "0000:03:00.2"),
+            _source("0000:03:00.2", "0000:03:00.0"),
+            _source("0000:04:00.0", "0000:04:00.1"),
+            _source("0000:04:00.1", "0000:04:00.0"),
+        ]
+    )
+    by_address = {node.address: node for node in tree}
+
+    for address, node in by_address.items():
+        hops, current = 0, node
+        while current.parent_address is not None:
+            current = by_address[current.parent_address]
+            hops += 1
+            assert hops <= len(by_address), f"{address} never reaches a root"
+    devices = {address for address, node in by_address.items() if not node.is_root}
+    assert devices == {f"0000:0{bus}:00.{fn}" for bus, fn in ((1, 0), (2, 0), (3, 0), (3, 1), (3, 2), (4, 0), (4, 1))}
+    # Each cycle is cut at its highest-address member, which falls to its own bus root.
+    assert by_address["0000:03:00.2"].parent_address == "0000:03"
+    assert by_address["0000:04:00.1"].parent_address == "0000:04"
+    assert by_address["0000:03:00.0"].parent_address == "0000:03:00.1"
+    assert by_address["0000:02:00.0"].parent_address == "0000:03:00.1"
