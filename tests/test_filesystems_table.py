@@ -144,3 +144,25 @@ def test_filesystem_use_and_disks_survive_every_width() -> None:
         present = "inodes%" in rendered
         assert not (dropped and present), f"inodes% came back at width {width}"
         dropped = dropped or not present
+
+
+def test_a_read_but_empty_list_says_none_was_found_and_not_that_it_was_unread() -> None:
+    text = _text()
+    assert tables.FILESYSTEMS_NONE_SENTENCE in text
+    assert tables.FILESYSTEMS_NOT_READ_SENTENCE not in text
+
+
+def test_a_non_empty_list_draws_no_none_sentence() -> None:
+    assert tables.FILESYSTEMS_NONE_SENTENCE not in _text(_EXT4)
+
+
+def test_an_unread_list_does_not_claim_none_was_found() -> None:
+    assert tables.FILESYSTEMS_NONE_SENTENCE not in _text_of(Inventory(hostname="box", filesystems=None))
+
+
+def test_two_filesystems_sharing_a_name_both_draw() -> None:
+    covered = Filesystem(kind=FilesystemKind.MOUNT, name="/mnt", fs_type="ext4", disks=("sda",))
+    covering = Filesystem(kind=FilesystemKind.MOUNT, name="/mnt", fs_type="xfs", disks=("sdb",))
+    text = _text(covered, covering)
+    assert "ext4" in text
+    assert "xfs" in text

@@ -128,6 +128,7 @@ FILESYSTEM_COLUMNS: tuple[Column, ...] = (
 FILESYSTEM_NOT_READ_LEGEND = f"{theme.NOT_READ} = not read"
 FILESYSTEM_NOT_APPLICABLE_LEGEND = f"{theme.NOT_APPLICABLE} = no fixed inode table on this filesystem"
 FILESYSTEMS_NOT_READ_SENTENCE = "Filesystems were not read."
+FILESYSTEMS_NONE_SENTENCE = "No filesystem on the inventoried disks."
 
 
 class TableRows(NamedTuple):
@@ -519,11 +520,13 @@ def render_filesystems(inventory: Inventory, findings: Sequence[Finding], width:
 
     Returns:
         A table of filesystems; with no rows and a sentence saying so when the
-        inventory did not read them.
+        inventory did not read them or read none.
     """
     title = f"Filesystems on {inventory.hostname}"
     if inventory.filesystems is None:
         return _render(title, FILESYSTEM_COLUMNS, TableRows(()), width, FILESYSTEMS_NOT_READ_SENTENCE)
+    if not inventory.filesystems:
+        return _render(title, FILESYSTEM_COLUMNS, TableRows(()), width, FILESYSTEMS_NONE_SENTENCE)
     severities = severity_index(findings)
     rows = TableRows(
         [filesystem_marked_row(one, severities, both_scales=True) for one in inventory.filesystems],
@@ -735,6 +738,7 @@ __all__ = [
     "CONTROLLER_COLUMNS",
     "DEFAULT_WIDTH",
     "DISK_COLUMNS",
+    "FILESYSTEMS_NONE_SENTENCE",
     "FILESYSTEMS_NOT_READ_SENTENCE",
     "FILESYSTEM_COLUMNS",
     "FILESYSTEM_NOT_APPLICABLE_LEGEND",

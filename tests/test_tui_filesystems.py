@@ -64,9 +64,17 @@ def machine(*rows: Filesystem) -> Inventory:
     return build_from(payload).with_changes(filesystems=rows if rows else None)
 
 
+def read_machine(*rows: Filesystem) -> Inventory:
+    """The capture whose filesystems WERE read and hold exactly these (possibly none)."""
+    payload: dict[str, Any] = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    return build_from(payload).with_changes(filesystems=rows)
+
+
 def cells_of(app: LsdskApp, name: str) -> dict[str, str]:
     """One filesystem's page row as heading -> text, so a value is judged under its heading."""
-    row = rows_of(app.query_one("#filesystem-table")).get_row(name)
+    drawn = app.inventory.filesystems or ()
+    position = next(index for index, one in enumerate(drawn) if one.name == name)
+    row = rows_of(app.query_one("#filesystem-table")).get_row(str(position))
     return dict(zip(FILESYSTEM_COLUMNS, (str(cell) for cell in row), strict=True))
 
 
@@ -85,7 +93,6 @@ async def legend_for(*rows: Filesystem) -> str:
         return legend_text(app)
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.asyncio
 async def test_the_page_headings_are_the_printed_tables_own() -> None:
     app = LsdskApp(machine(_EXT4))
@@ -98,7 +105,6 @@ async def test_the_page_headings_are_the_printed_tables_own() -> None:
     assert headings == FILESYSTEM_COLUMNS
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.asyncio
 async def test_every_row_lands_under_its_own_heading() -> None:
     app = LsdskApp(machine(_EXT4, _POOL))
@@ -118,7 +124,6 @@ async def test_every_row_lands_under_its_own_heading() -> None:
     assert tank["disks"] == "sdc"
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.asyncio
 async def test_a_full_filesystem_carries_its_finding_marker() -> None:
     app = LsdskApp(machine(_EXT4, _FULL))
@@ -134,7 +139,6 @@ async def test_a_full_filesystem_carries_its_finding_marker() -> None:
     assert full[""].strip() != "", "a filesystem at 98% did not carry the marker its finding earns"
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.asyncio
 async def test_the_legend_names_only_the_markers_drawn() -> None:
     none_drawn = await legend_for(_EXT4)
@@ -148,7 +152,6 @@ async def test_the_legend_names_only_the_markers_drawn() -> None:
     assert tables.FILESYSTEM_NOT_APPLICABLE_LEGEND in na_only
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.asyncio
 async def test_filesystems_that_were_not_read_are_said_so_not_shown_as_an_empty_table() -> None:
     app = LsdskApp(machine())
@@ -164,7 +167,6 @@ async def test_filesystems_that_were_not_read_are_said_so_not_shown_as_an_empty_
     assert not table_shown, "an empty table beside no sentence reads as 'no filesystems'"
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.asyncio
 async def test_a_read_inventory_draws_no_not_read_sentence() -> None:
     app = LsdskApp(machine(_EXT4))
@@ -178,7 +180,6 @@ async def test_a_read_inventory_draws_no_not_read_sentence() -> None:
     assert table_shown
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.asyncio
 async def test_f9_opens_the_filesystems_page_and_f10_rescans_without_quitting() -> None:
     app = LsdskApp(machine(_EXT4))
@@ -194,7 +195,6 @@ async def test_f9_opens_the_filesystems_page_and_f10_rescans_without_quitting() 
         assert app.query_one(TabbedContent).active == "filesystems", "rescan should not move the page"
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.asyncio
 async def test_a_rescan_does_not_add_the_filesystem_columns_or_rows_twice() -> None:
     app = LsdskApp(machine(_EXT4, _POOL))
@@ -208,7 +208,6 @@ async def test_a_rescan_does_not_add_the_filesystem_columns_or_rows_twice() -> N
         assert (len(table.columns), table.row_count) == shape
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.asyncio
 async def test_no_printed_colour_reaches_the_filesystem_page_on_either_fill() -> None:
     """A row coloured by its finding is drawn in the interactive palette at mount and after a rescan."""
@@ -236,3 +235,51 @@ async def test_no_printed_colour_reaches_the_filesystem_page_on_either_fill() ->
     # colour at all cannot satisfy the loop above.
     assert tui_palette.PALETTE.warning.upper() in pictures[0], "the control: the marker's hue was not drawn"
     assert all(tui_palette.PALETTE.unknown.upper() in picture for picture in pictures), "the control: no legend hue"
+
+
+@pytest.mark.asyncio
+async def test_a_read_but_empty_filesystem_list_says_none_was_found() -> None:
+    app = LsdskApp(read_machine())
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.press("9")
+        await pilot.pause()
+        note = app.query_one("#filesystem-note", Static)
+        shown = (note.display, str(note.content))
+        table_shown = app.query_one("#filesystem-table", DataTable).display
+
+    assert shown[0], "an empty list drew no sentence, which reads as fine"
+    assert tables.FILESYSTEMS_NONE_SENTENCE in shown[1]
+    assert tables.FILESYSTEMS_NOT_READ_SENTENCE not in shown[1]
+    assert not table_shown
+
+
+@pytest.mark.asyncio
+async def test_a_non_empty_list_draws_neither_sentence_and_an_unread_one_only_the_not_read() -> None:
+    app = LsdskApp(machine(_EXT4))
+    unread = LsdskApp(machine())
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.press("9")
+        await pilot.pause()
+        listed_note_shown = app.query_one("#filesystem-note", Static).display
+    async with unread.run_test(size=(160, 45)) as pilot:
+        await pilot.press("9")
+        await pilot.pause()
+        unread_note = str(unread.query_one("#filesystem-note", Static).content)
+
+    assert not listed_note_shown
+    assert tables.FILESYSTEMS_NOT_READ_SENTENCE in unread_note
+    assert tables.FILESYSTEMS_NONE_SENTENCE not in unread_note
+
+
+@pytest.mark.asyncio
+async def test_two_filesystems_sharing_a_name_mount_and_both_rows_show() -> None:
+    covered = Filesystem(kind=FilesystemKind.MOUNT, name="/mnt", fs_type="ext4", disks=("sda",))
+    covering = Filesystem(kind=FilesystemKind.MOUNT, name="/mnt", fs_type="xfs", disks=("sdb",))
+    app = LsdskApp(read_machine(covered, covering))
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.press("9")
+        await pilot.pause()
+        table = rows_of(app.query_one("#filesystem-table"))
+        types = [str(table.get_row_at(index)[FILESYSTEM_COLUMNS.index("type")]) for index in range(table.row_count)]
+
+    assert types == ["ext4", "xfs"]

@@ -443,8 +443,8 @@ class LsdskApp(App[None]):
                 # history yet: an empty table would say nothing about WHY.
                 yield Static(id="trend-body")
             with TabPane("Filesystems", id=CliCommand.FILESYSTEMS.value), Vertical():
-                # An inventory that did not read them says so in the note and
-                # hides the table: an empty table would read as "no filesystems".
+                # An inventory that did not read them, or read none, says so in the
+                # note and hides the table: an empty table would read as "fine".
                 yield Static(id="filesystem-note")
                 yield DataTable[str](id="filesystem-table", zebra_stripes=True, cursor_type="row")
                 yield Static(id="filesystem-legend")
@@ -578,15 +578,17 @@ class LsdskApp(App[None]):
         table.add_columns(*FILESYSTEM_COLUMNS)
         filesystems = self.inventory.filesystems
         note = self.query_one("#filesystem-note", Static)
-        note.update(Text(tables.FILESYSTEMS_NOT_READ_SENTENCE, style=tui_palette.restyle(theme.STYLE_CEILING)))
-        note.display = filesystems is None
-        self.query_one("#filesystem-table", DataTable).display = filesystems is not None
+        sentence = tables.FILESYSTEMS_NOT_READ_SENTENCE if filesystems is None else tables.FILESYSTEMS_NONE_SENTENCE
+        note.update(Text(sentence, style=tui_palette.restyle(theme.STYLE_CEILING)))
+        listed = bool(filesystems)
+        note.display = not listed
+        self.query_one("#filesystem-table", DataTable).display = listed
         severities = report.severity_index(self.findings)
         drawn: list[str] = []
-        for filesystem in filesystems or ():
+        for position, filesystem in enumerate(filesystems or ()):
             row = tables.filesystem_marked_row(filesystem, severities, both_scales=True)
             drawn.extend(row.cells[column.key][0] for column in tables.FILESYSTEM_COLUMNS)
-            table.add_row(*_marked(row, tables.FILESYSTEM_COLUMNS), key=filesystem.name)
+            table.add_row(*_marked(row, tables.FILESYSTEM_COLUMNS), key=str(position))
         self._explain_filesystem_marks(drawn)
 
     def _explain_filesystem_marks(self, drawn: Iterable[str]) -> None:

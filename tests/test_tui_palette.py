@@ -177,7 +177,10 @@ async def test_no_printed_colour_reaches_the_interactive_view() -> None:
     could only confirm the layer ran. The two-sided control is what stops it
     passing vacuously: a page showing no severity at all would satisfy "none of
     the printed six appear" while proving nothing, so the interactive six are
-    required to appear as well.
+    required to appear as well. Its fixtures read no filesystems, so the
+    filesystems page's rows are swept by
+    ``test_no_printed_colour_reaches_the_filesystem_page_on_either_fill`` in
+    ``tests/test_tui_filesystems.py``.
     """
     printed = _printed_hues()
     # The control: the render layer really does emit these, so their absence
