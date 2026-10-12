@@ -60,3 +60,6 @@ Drei Geschwindigkeiten pro Laufwerk, weil sie verschiedene Fragen beantworten.
 heisst, dass das Laufwerk den Anschluss nicht ausnutzen kann, den es belegt: eine
 Frage der Bestückung. Ein rotes `link` heisst, dass beide Enden schneller
 gekonnt hätten und es nicht getan haben: ein Fehler.
+
+Der Abschnitt Filesystems folgt auf die Laufwerke und sagt, wie voll jedes Dateisystem auf diesen
+Laufwerken ist; `lsdsk filesystems` gibt ihn allein aus.
