@@ -30,10 +30,37 @@ this document; ADR 0005 will record the decisions once the feasibility probes ha
 - ZFS inode figures are meaningless: `f_ffree` was identical on every dataset, derived from free
   space, so every dataset reads about 0% of inodes used.
 
-Not yet measured, and the first step of the plan: that an UNPRIVILEGED caller is answered by the
-pool-stats ioctl (only the device's mode was read), the ioctl numbers, the `zfs_cmd_t` layout and
-the nvlist encoding the kernel returns (probably native rather than XDR), and whether
-`GetDiskFreeSpaceExW` and `GetVolumeInformationW` answer an unelevated Windows session.
+## Feasibility probes (run 2026-10-12, both passed)
+
+From the OpenZFS 2.4.4 source (the nodes run kernel modules 2.4.3 and 2.4.4):
+
+- `ZFS_IOC_POOL_CONFIGS` is `0x5a04` with policy `zfs_secpolicy_none`; `ZFS_IOC_POOL_STATS` is
+  `0x5a05` with `zfs_secpolicy_read`, which asks only that the caller is in the global zone or the
+  pool is visible - no capability. Linux passes the request number straight through
+  (`vecnum = cmd - ZFS_IOC_FIRST`) and copies `sizeof (zfs_cmd_t)` in and out.
+- In `zfs_cmd_t` the reader needs only `zc_name` (offset 0, 4096 bytes) and the destination buffer
+  pointer and size (offsets 4112 and 4120). A buffer that is too small fails `ENOMEM` with the
+  needed size written back into `zc_nvlist_dst_size`.
+- The kernel packs with `NV_ENCODE_NATIVE`: a 4-byte stream header (encoding 0, endian 1), the top
+  list's version and flags, then pairs, each a 16-byte header (size, name length, reserved, element
+  count, type), the name, and the value at the next 8-byte boundary. An embedded list or list array
+  carries its `nvlist_t` header(s) inside the pair and its own pairs FOLLOW the pair in the stream,
+  each list ending in four zero bytes.
+- Size and alloc are the root vdev's `vdev_stats` array, elements 4 (`vs_space`) and 3
+  (`vs_alloc`).
+
+A stand-alone probe built on that layout, run on a node as `nobody` (euid 65534) and as root, gave
+byte-identical answers, and both equalled `zpool list -Hp` size and alloc to the byte on all four
+pools. So the unprivileged reading is exact.
+
+One finding for backlog [40], not for this design: the root vdev's `vs_fragmentation` (element 27)
+read 0 on every pool while `zpool list` reported FRAG 35, 2, 27 and 40; the pool's FRAG figure
+comes from somewhere else (its pool properties) and needs its own probe.
+
+Windows, on a virtual Windows 11 machine through a limited-run-level scheduled task
+(`IsUserAnAdmin` false): `GetDiskFreeSpaceExW` and `GetVolumeInformationW` both answered on the
+volume's mount path (NTFS, total, free and free-for-caller). The two volumes with no mount path
+(the EFI system and recovery partitions) have nothing to ask, so they are not rows.
 
 ## 1. Scope and placement
 
