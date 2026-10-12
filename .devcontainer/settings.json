@@ -1,5 +1,5 @@
 {
-  "python.defaultInterpreterPath": "/usr/local/bin/python3.13",
+  "python.defaultInterpreterPath": "/usr/local/bin/python3.14",
   "jupyter.alwaysTrustNotebooks": true,
   "jupyter.kernelPickerType": "OnlyRecommended",
   "jupyter.askForKernelRestart": false

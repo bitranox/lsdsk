@@ -7,9 +7,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Added
 
+- **Python 3.15 is declared and tested.** The classifier puts it into the CI matrix and `make test-all`,
+  and `make test` now builds the development venv on 3.15.
 - **`--format json` says which links the pages mark as a register default.** Each controller
   carries `link_is_register_default` and each slot `occupant_link_is_register_default`, true exactly
   where the printed and interactive pages draw `Gen1x1*`. The raw link values are unchanged.
+
+### Changed
+
+- The devcontainer image and interpreter path move from Python 3.13 to 3.14.
 
 ### Fixed
 
