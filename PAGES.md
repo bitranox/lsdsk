@@ -100,6 +100,8 @@ The rest say `too soon to say`, until enough time has passed between two reading
 
 ## 9 Filesystems
 
+![Filesystems](docs/screenshots/9-filesystems.png)
+
 How full each mounted filesystem, ZFS pool and Windows volume on a disk is, the way `df` reports
 it: size, used and free, then `use%` and, where the filesystem makes its inodes at format time,
 `inodes%`. A ZFS pool is one row whatever datasets it holds. `-` marks a figure nobody read, and

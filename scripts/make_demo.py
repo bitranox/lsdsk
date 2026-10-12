@@ -1,9 +1,12 @@
 """Record the interactive view as the README's animation, and as its stills.
 
-One storyboard produces both, so the moving picture and the eight stills under
-it cannot become two different sittings of the tool.  The app is driven through
-Textual's own pilot - the path its tests use - over a committed capture, so the
-demo needs no hardware and shows exactly what the tests hold.
+One run and one cast produce both, so the moving picture and the nine stills
+under it cannot become two different sittings of the tool.  The cast drives two
+machines: the demo machine for the eight-page tour, then a second one only for
+the filesystems page, because the demo machine predates filesystem readings and
+its page 9 could say nothing but that they were not read.  The apps are driven
+through Textual's own pilot - the path its tests use - over committed captures,
+so the demo needs no hardware and shows exactly what the tests hold.
 
 **Nothing here names a colour.**  Each frame is whatever the app rendered, so a
 palette change lands in the demo without an edit to this file.
@@ -16,7 +19,7 @@ which is the only way to honour a font the pictures are specified in.
 
 Usage::
 
-    python scripts/make_demo.py                  # the GIF and the eight stills
+    python scripts/make_demo.py                  # the GIF and the nine stills
     python scripts/make_demo.py --font-size 14   # a larger grid
 
 ``agg`` is not a dependency of this project and is not installed by it: fetch a
@@ -132,6 +135,7 @@ STILLS: dict[str, int] = {
     "6-findings.png": 13,
     "7-slots.png": 14,
     "8-trend.png": 15,
+    "9-filesystems.png": 17,
 }
 
 
@@ -162,6 +166,11 @@ def storyboard() -> tuple[Step, ...]:
         Step((KEY_OF["trend"],), 3.0, "8 Trend: counters against the drive's own clock", settle=2),
         Step((KEY_OF["topology"],), 1.6, "back to Topology, closing the loop", settle=2),
     )
+
+
+def filesystems_storyboard() -> tuple[Step, ...]:
+    """The second segment: page 9 on a machine that carries filesystem readings."""
+    return (Step((KEY_OF["filesystems"],), 3.2, "9 Filesystems: pool rows from a second machine", settle=3),)
 
 
 def export_ansi(app: LsdskApp) -> str:
@@ -243,24 +252,26 @@ class Cast:
                 handle.write(json.dumps([moment, kind, data]) + "\n")
 
 
-async def record_cast(cast_path: Path) -> list[str]:
-    """Drive the app through the storyboard and write the recording.
+async def drive(app: LsdskApp, steps: Sequence[Step], cast_file: Cast, first_index: int) -> list[str]:
+    """Run one app through its steps, appending each frame to the shared cast.
+
+    The dead-step check compares a frame only with the one before it WITHIN this
+    app, so the switch of machine between two segments can neither hide a dead
+    step nor be mistaken for one.
 
     Returns:
-        The exported frames, in order, so the stills come from the same run.
-    """
-    fixtures = REPO / "tests" / "fixtures" / "hw"
-    machine: Inventory = load(fixtures / "linux-sas-hba.json")
-    later: Inventory = load(fixtures / "linux-sas-hba-later.json")
+        This app's frames, in order.
 
-    cast_file = Cast()
+    Raises:
+        SystemExit: A frame is not the whole grid, or a step changed nothing.
+    """
     frames: list[str] = []
     dead: list[str] = []
     previous = ""
-    app = LsdskApp(machine, history_for(machine.disks, later.disks, machine.hostname))
     async with app.run_test(size=(COLS, ROWS)) as pilot:
         await pilot.pause()
-        for index, step in enumerate(storyboard()):
+        for offset, step in enumerate(steps):
+            index = first_index + offset
             for key in step.keys:
                 await pilot.press(key)
             for _ in range(step.settle):
@@ -277,6 +288,27 @@ async def record_cast(cast_path: Path) -> list[str]:
     if dead:
         message = "steps that pressed a key and changed nothing:\n  " + "\n  ".join(dead)
         raise SystemExit(message)
+    return frames
+
+
+async def record_cast(cast_path: Path) -> list[str]:
+    """Drive both segments through one cast and write the recording.
+
+    Returns:
+        The exported frames, in order, so the stills come from the same run.
+    """
+    fixtures = REPO / "tests" / "fixtures" / "hw"
+    machine: Inventory = load(fixtures / "linux-sas-hba.json")
+    later: Inventory = load(fixtures / "linux-sas-hba-later.json")
+    with_filesystems: Inventory = load(fixtures / "linux-zfs-filesystems.json")
+
+    cast_file = Cast()
+    tour = LsdskApp(machine, history_for(machine.disks, later.disks, machine.hostname))
+    frames = await drive(tour, storyboard(), cast_file, 0)
+    # No history: this capture holds a single reading, and the page shown needs none.
+    pools = LsdskApp(with_filesystems)
+    frames += await drive(pools, filesystems_storyboard(), cast_file, len(frames))
+
     cast_file.write(cast_path)
     SAY.print(f"\n{len(frames)} frames, {cast_file.clock:.1f}s -> {cast_path}")
     return frames

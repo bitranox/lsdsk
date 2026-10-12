@@ -107,6 +107,8 @@ Der Rest sagt `too soon to say`, solange nicht genug Zeit zwischen zwei Messunge
 
 ## 9 Dateisysteme
 
+![Dateisysteme](../docs/screenshots/9-filesystems.png)
+
 Wie voll jedes eingehängte Dateisystem, jeder ZFS-Pool und jedes Windows-Volume auf einer Platte
 ist, so wie `df` es meldet: Größe, belegt und frei, dann `use%` und, wo das Dateisystem seine Inodes
 beim Formatieren anlegt, `inodes%`. Ein ZFS-Pool ist eine Zeile, gleich welche Datasets er enthält.
