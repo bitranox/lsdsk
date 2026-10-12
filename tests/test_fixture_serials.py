@@ -1,11 +1,12 @@
 """A committed capture must carry one serial per drive, in every copy of it.
 
-A capture records the same drive serial in up to eight places, because the
+A capture records the same drive serial in up to nine places, because the
 reader stores the raw structures it read rather than a decoded summary: the ATA
 IDENTIFY serial field, the copy of IDENTIFY embedded in VPD page 0x89, VPD page
 0x80, two designators of VPD page 0x83, the vendor-specific tail of the standard
 INQUIRY response, the NVMe Identify Controller SN field, the subsystem NQN that
-embeds it in a name string, and the sysfs ``wwid`` that embeds it as hex.
+embeds it in a name string, the sysfs ``wwid`` that embeds it as hex, and the
+``serial`` attribute of the drive's controller under ``classes/nvme``.
 
 Fixtures are captures from real machines with the serials replaced, so a scrub
 that reaches some of those and not others leaves the real identifier published
@@ -61,6 +62,9 @@ _INQUIRY_SERIAL_START = 36
 _INQUIRY_SERIAL_END = 56
 _NQN_START = 768
 _NQN_END = 1024
+# A namespace is named <controller>n<number>, and sysfs keys the controller's
+# attributes under classes/nvme by the controller's name alone.
+_NVME_NAMESPACE = re.compile(r"^(?P<controller>nvme\d+)n\d+$")
 # SAT-4: a T10 vendor-id designator for an ATA device is "ATA     " (8 bytes),
 # the 40-byte IDENTIFY model, then the 20-byte IDENTIFY serial. Any other shape
 # has no fixed serial offset, so it is left alone rather than guessed at.
@@ -156,6 +160,16 @@ def _records(
         _device(capture, "nvme", device),
         _device(capture, "block", device),
     )
+
+
+def _nvme_class_serial(capture: Mapping[str, object], device: str) -> str | None:
+    """The serial sysfs publishes for the controller a namespace belongs to."""
+    match = _NVME_NAMESPACE.match(device)
+    if match is None:
+        return None
+    controller = _mapping(_mapping(_mapping(capture.get("classes")).get("nvme")).get(match["controller"]))
+    serial = controller.get("serial")
+    return serial.strip() if isinstance(serial, str) else None
 
 
 def _blob(source: Mapping[str, object], key: str) -> bytes | None:
@@ -294,6 +308,8 @@ def _serial_locations(capture: Mapping[str, object], device: str) -> dict[str, s
         nqn = _text(controller[_NQN_START:_NQN_END])
         if ":" in nqn:
             found["nvme/nqn"] = nqn.rsplit(":", 1)[-1].strip()
+    if class_serial := _nvme_class_serial(capture, device):
+        found["classes/nvme/serial"] = class_serial
     wwid = record.get("wwid")
     if isinstance(wwid, str) and wwid.startswith("nvme."):
         parts = wwid.split("-")
@@ -611,3 +627,21 @@ def test_the_check_names_a_bridge_copy_planted_with_another_serial(page: str, st
     problems = _disagreements(capture)
 
     assert any(f"sdb usb/{page}" in problem for problem in problems), problems
+
+
+@pytest.mark.os_agnostic
+def test_the_check_names_an_nvme_class_serial_planted_with_another_serial() -> None:
+    """The control for the sysfs copy under ``classes/nvme``, beside the Identify one."""
+    capture = _load(FIXTURES / "linux-nvme-board.json")
+    assert "classes/nvme/serial" in _serial_locations(capture, "nvme0n1"), "the copy must be read at all"
+    nvme_classes = _mapping(_mapping(capture.get("classes")).get("nvme"))
+    entry = _mapping(nvme_classes.get("nvme0"))
+    entry["serial"] = _ANOTHER_SERIAL.decode("ascii").strip()
+    nvme_classes["nvme0"] = entry
+    classes = _mapping(capture.get("classes"))
+    classes["nvme"] = nvme_classes
+    capture["classes"] = classes
+
+    problems = _disagreements(capture)
+
+    assert any("nvme0n1 classes/nvme/serial=" in problem for problem in problems), problems
