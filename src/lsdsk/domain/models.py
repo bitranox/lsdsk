@@ -1851,6 +1851,24 @@ def _ceil_percent(part: int, whole: int) -> int | None:
     return -(-100 * part // whole)
 
 
+def _floor_percent(part: int, whole: int) -> int | None:
+    """``part`` of ``whole`` as a whole percent, rounded down, in exact integers.
+
+    This is how ``zpool list`` prints a pool's ``cap``.
+
+    Example:
+        >>> _floor_percent(1, 199)
+        0
+        >>> _floor_percent(199, 200)
+        99
+        >>> _floor_percent(0, 0) is None
+        True
+    """
+    if whole <= 0:
+        return None
+    return 100 * part // whole
+
+
 class Filesystem(DomainModel, frozen=True):
     """How full one mounted filesystem, ZFS pool or Windows volume is.
 
@@ -1899,14 +1917,26 @@ class Filesystem(DomainModel, frozen=True):
 
     @property
     def used_percent(self) -> int | None:
-        """How full it is, rounded UP so it agrees with ``df`` on the same mount.
+        """How full it is, rounded the way the tool that reports this kind of row rounds.
 
-        Free means free to an ordinary user, so ext4's reserved blocks count as
-        unavailable, which is what ``df`` prints too.
+        A mount or volume rounds UP so it agrees with ``df`` on the same mount;
+        free means free to an ordinary user, so ext4's reserved blocks count as
+        unavailable, which is what ``df`` prints too. A pool rounds DOWN so it
+        agrees with ``zpool list``'s ``cap``: ``df`` reports a dataset, never a
+        pool, so its rule does not reach one.
+
+        Example:
+            >>> mount = Filesystem(kind=FilesystemKind.MOUNT, name="/", used_bytes=1, free_bytes=199)
+            >>> pool = Filesystem(kind=FilesystemKind.POOL, name="tank", used_bytes=1, free_bytes=199)
+            >>> (mount.used_percent, pool.used_percent)
+            (1, 0)
         """
         if self.used_bytes is None or self.free_bytes is None:
             return None
-        return _ceil_percent(self.used_bytes, self.used_bytes + self.free_bytes)
+        whole = self.used_bytes + self.free_bytes
+        if self.kind is FilesystemKind.POOL:
+            return _floor_percent(self.used_bytes, whole)
+        return _ceil_percent(self.used_bytes, whole)
 
     @property
     def inodes_used_percent(self) -> int | None:

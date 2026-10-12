@@ -22,6 +22,29 @@ def test_used_percent_rounds_up_the_way_df_does(used: int | None, free: int | No
     assert _fs(used_bytes=used, free_bytes=free).used_percent == expected
 
 
+@pytest.mark.parametrize(
+    ("used", "free", "mount", "pool"),
+    [(1, 199, 1, 0), (0, 100, 0, 0), (50, 50, 50, 50), (951, 49, 96, 95), (199, 1, 100, 99), (100, 0, 100, 100)],
+)
+def test_a_pool_rounds_down_like_zpool_where_a_mount_rounds_up_like_df(
+    used: int, free: int, mount: int, pool: int
+) -> None:
+    same_bytes = {"used_bytes": used, "free_bytes": free}
+    assert _fs(kind=FilesystemKind.MOUNT, **same_bytes).used_percent == mount
+    assert _fs(kind=FilesystemKind.VOLUME, **same_bytes).used_percent == mount
+    assert _fs(kind=FilesystemKind.POOL, **same_bytes).used_percent == pool
+
+
+def test_a_pool_is_floored_in_exact_integers_where_a_float_would_round_it_up() -> None:
+    # 100 * used / total is 50 minus 2**-56 here: float division rounds it to
+    # exactly 50, so a float floor answers 50 where zpool, in integers, says 49.
+    quantum = 2**56
+    total = 100 * quantum + 1
+    used = 50 * quantum
+    assert math.floor(100 * used / total) == 50
+    assert _fs(kind=FilesystemKind.POOL, used_bytes=used, free_bytes=total - used).used_percent == 49
+
+
 def test_used_percent_is_exact_for_byte_counts_a_float_cannot_hold() -> None:
     # 100 * used / total is 50 plus 2**-56 here: float division rounds it to
     # exactly 50, so a float ceiling answers 50 where df, in integers, says 51.

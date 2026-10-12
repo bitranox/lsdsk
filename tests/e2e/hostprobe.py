@@ -308,12 +308,12 @@ def _usage_fact(usage: Any) -> dict[str, Any] | None:
     return {"boot": bool(usage.get("boot")), "uses": [_use_text(u) for u in uses]}
 
 
-#: How far lsdsk's percent may sit from ``zpool list``'s cap. They are computed
-#: from different byte pairs: lsdsk rounds ``used / (used + free)`` UP, zpool
-#: reports ``alloc / size`` as a whole number, and a pool's free space is not
-#: always size minus alloc (slop, reservations). One point is the rounding; more
-#: is a different figure.
-POOL_PERCENT_TOLERANCE = 1
+#: How far lsdsk's percent may sit from ``zpool list``'s cap: not at all. Both
+#: round DOWN a pool's ``used / (used + free)`` in whole numbers (lsdsk's domain
+#: floors a pool row like ``zpool`` does, where a mount rounds up like ``df``), so
+#: a pool read from the same bytes gives the same figure and any gap is a
+#: different figure, not a rounding.
+POOL_PERCENT_TOLERANCE = 0
 
 
 class ZpoolRow(NamedTuple):
@@ -346,11 +346,11 @@ def parse_zpool_list(text: str) -> dict[str, ZpoolRow]:
 
 
 def used_percent(row: dict[str, Any]) -> int | None:
-    """A row's fill as lsdsk's domain states it: ``ceil(100 * used / (used + free))``."""
+    """A pool row's fill as lsdsk's domain states it: ``floor(100 * used / (used + free))``."""
     used, free = row.get("used_bytes"), row.get("free_bytes")
     if used is None or free is None or used + free <= 0:
         return None
-    return -(-100 * used // (used + free))
+    return 100 * used // (used + free)
 
 
 def _pool_verdict(name: str, row: dict[str, Any] | None, pool: ZpoolRow | None) -> tuple[str | None, dict[str, Any]]:
@@ -377,7 +377,7 @@ def _pool_verdict(name: str, row: dict[str, Any] | None, pool: ZpoolRow | None) 
 
 
 def judge_pools(rows: list[dict[str, Any]], zpool_text: str | None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Every pool either side knows must be known by both, within the tolerance.
+    """Every pool either side knows must be known by both, with the same percent.
 
     ``zpool_text`` is None where there is no ``zpool`` binary. A host with no
     pool on either side makes no claim, which the facts record as zero pools
@@ -391,7 +391,7 @@ def judge_pools(rows: list[dict[str, Any]], zpool_text: str | None) -> tuple[lis
     if not names:
         return [], facts
     broken = [why for why, _ in verdicts if why]
-    detail = "; ".join(broken) or f"{len(names)} pool(s) within {POOL_PERCENT_TOLERANCE} point of zpool list"
+    detail = "; ".join(broken) or f"{len(names)} pool(s) match zpool list exactly"
     return [check("filesystems:pools-agree-with-zpool", not broken, detail)], facts
 
 

@@ -329,13 +329,20 @@ def test_a_zpool_line_that_is_not_five_numbers_is_refused_not_guessed() -> None:
         parse_zpool_list("tank\t100\t50\n")
 
 
-def test_a_pool_row_within_one_point_of_the_cap_agrees() -> None:
-    rows = [_root(), _pool("tank", used=50 * _GIB + 1, free=50 * _GIB)]  # ceil gives 51, cap says 50
+def test_a_pool_row_equal_to_the_cap_agrees() -> None:
+    rows = [_root(), _pool("tank", used=50 * _GIB + 1, free=50 * _GIB)]  # floor gives 50, cap says 50
     checks, facts = _judged(rows, _ZPOOL_HALF)
     assert checks["filesystems:pools-agree-with-zpool"]["passed"], checks["filesystems:pools-agree-with-zpool"][
         "detail"
     ]
     assert facts["zfs_pools_checked"] == 1
+
+
+def test_a_pool_row_one_point_above_the_cap_disagrees() -> None:
+    rows = [_root(), _pool("tank", used=51 * _GIB, free=49 * _GIB)]  # 51, cap says 50
+    found = _judged(rows, _ZPOOL_HALF)[0]["filesystems:pools-agree-with-zpool"]
+    assert not found["passed"]
+    assert "lsdsk 51%" in found["detail"]
 
 
 def test_a_pool_row_two_points_from_the_cap_disagrees_and_names_both_figures() -> None:
