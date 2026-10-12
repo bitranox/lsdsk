@@ -66,7 +66,6 @@ def test_a_section_that_exits_non_zero_accounts_for_it_on_the_page(
     assert "are not on this page" in said, f"{section} leaves 1 and never accounts for it:\n{said[-400:]}"
 
 
-@pytest.mark.os_agnostic
 def test_a_single_finding_left_off_the_page_is_counted_in_the_singular(
     cli_runner: CliRunner, production_factory: Callable[[], Any], strip_ansi: Callable[[str], str]
 ) -> None:
