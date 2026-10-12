@@ -93,6 +93,8 @@ _SUPER_OPTIONS_FIELD = 2
 # join it to its pool; every other source is either a device path (already
 # resolved to source_dev) or something no disk sits behind.
 _ZFS = "zfs"
+# The key whose presence marks a device as read: an error entry lacks it.
+_FIGURES_KEY = "frsize"
 # Major 0 is the kernel's anonymous device range: tmpfs, NFS, FUSE, overlay and
 # every other mount with no block device behind it, plus btrfs and ZFS, whose
 # real devices are found another way.
@@ -168,7 +170,7 @@ def read_mounts(
     Returns:
         One row per mount a disk can sit behind, each carrying ``dev`` (the
         mounted device's own ``maj:min``, field 3), ``mountpoint`` and
-        ``fstype``, plus ``source_dev`` when the source names a resolvable
+        ``fstype`` and ``read_only`` (``"true"`` or ``"false"``), plus ``source_dev`` when the source names a resolvable
         ``/dev`` node and, for ZFS only, ``source`` narrowed to the pool name.
         A row with an anonymous device number and no resolvable source (tmpfs,
         NFS, FUSE, overlay) is left out, and so is every other source text: an
@@ -232,6 +234,7 @@ def _parse_mountinfo_line(line: str, device_number: Callable[[str], str | None])
 
 def _starts_read_only(options: str) -> bool:
     """Whether a comma-separated option list says ``ro``."""
+    # The kernel always emits ``ro`` or ``rw`` first, so the first token decides.
     return options.split(",", 1)[0] == "ro"
 
 
@@ -288,33 +291,44 @@ def read_space(
     never stat-ed. ZFS datasets are skipped: a dataset's statvfs reports its own
     data plus the pool's free space, never the pool's fill.
 
+    A device is asked at its next mountpoint only after a refusal: every
+    mountpoint of one device shares its figures, so the first success settles
+    it and a later mountpoint is never asked.
+
     Args:
         rows: What :func:`read_mounts` returned.
         statvfs: The call that reads one mountpoint.
 
     Returns:
-        One reading per filesystem device, keyed by its ``maj:min``. A refused
-        reading is ``{"error": <reason>}``.
+        One reading per filesystem device, keyed by its ``maj:min``. A device
+        whose every mountpoint refused is ``{"error": <first reason>}``.
     """
     readings: dict[str, dict[str, int | str]] = {}
     for row in rows:
         dev = row.get("dev", "")
-        if not dev or dev in readings or row.get("fstype") == _ZFS:
+        if not dev or row.get("fstype") == _ZFS or _FIGURES_KEY in readings.get(dev, {}):
             continue
-        try:
-            result = statvfs(row["mountpoint"])
-        except OSError as error:
-            readings[dev] = {"error": error.strerror or str(error)}
+        reading = _ask(row["mountpoint"], statvfs)
+        if "error" in reading and dev in readings:
             continue
-        readings[dev] = {
-            "frsize": result.f_frsize,
-            "blocks": result.f_blocks,
-            "bfree": result.f_bfree,
-            "bavail": result.f_bavail,
-            "files": result.f_files,
-            "ffree": result.f_ffree,
-        }
+        readings[dev] = reading
     return readings
+
+
+def _ask(mountpoint: str, statvfs: Callable[[str], StatvfsResult]) -> dict[str, int | str]:
+    """One mountpoint's figures, or ``{"error": <reason>}`` when it refused."""
+    try:
+        result = statvfs(mountpoint)
+    except OSError as error:
+        return {"error": error.strerror or str(error)}
+    return {
+        _FIGURES_KEY: result.f_frsize,
+        "blocks": result.f_blocks,
+        "bfree": result.f_bfree,
+        "bavail": result.f_bavail,
+        "files": result.f_files,
+        "ffree": result.f_ffree,
+    }
 
 
 def read_swaps(

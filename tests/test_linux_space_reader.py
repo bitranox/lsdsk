@@ -91,3 +91,59 @@ def test_a_refused_reading_validates_with_its_reason() -> None:
 def test_a_space_figure_outside_unsigned_64_bits_is_refused(value: int, fragment: str) -> None:
     with pytest.raises(ValueError, match=fragment):
         SpaceEntry.model_validate({"blocks": value})
+
+
+def test_a_refused_first_mountpoint_falls_back_to_the_next_one() -> None:
+    asked: list[str] = []
+
+    def statvfs(path: str) -> Stat:
+        asked.append(path)
+        if path == "/root/x":
+            raise PermissionError(13, "Permission denied")
+        return Stat()
+
+    rows = [
+        {"dev": "8:3", "mountpoint": "/root/x", "fstype": "xfs"},
+        {"dev": "8:3", "mountpoint": "/srv/y", "fstype": "xfs"},
+    ]
+    space = read_space(rows, statvfs=statvfs)
+    assert asked == ["/root/x", "/srv/y"]
+    assert space == {"8:3": {"frsize": 4096, "blocks": 1000, "bfree": 400, "bavail": 350, "files": 64, "ffree": 16}}
+
+
+def test_when_every_mountpoint_refuses_the_first_reason_is_recorded() -> None:
+    reasons = iter(["Permission denied", "Stale file handle"])
+
+    def statvfs(_path: str) -> Stat:
+        raise OSError(13, next(reasons))
+
+    rows = [
+        {"dev": "8:3", "mountpoint": "/a", "fstype": "xfs"},
+        {"dev": "8:3", "mountpoint": "/b", "fstype": "xfs"},
+    ]
+    assert read_space(rows, statvfs=statvfs) == {"8:3": {"error": "Permission denied"}}
+
+
+def test_a_success_stops_the_dev_from_being_asked_again() -> None:
+    asked: list[str] = []
+
+    def statvfs(path: str) -> Stat:
+        asked.append(path)
+        return Stat()
+
+    rows = [
+        {"dev": "8:1", "mountpoint": "/", "fstype": "ext4"},
+        {"dev": "8:1", "mountpoint": "/later", "fstype": "ext4"},
+        {"dev": "8:1", "mountpoint": "/latest", "fstype": "ext4"},
+    ]
+    read_space(rows, statvfs=statvfs)
+    assert asked == ["/"]
+
+
+def test_an_error_without_a_reason_is_recorded_by_its_text() -> None:
+    def statvfs(_path: str) -> Stat:
+        raise OSError("boom")
+
+    assert read_space([{"dev": "8:3", "mountpoint": "/a", "fstype": "xfs"}], statvfs=statvfs) == {
+        "8:3": {"error": "boom"}
+    }
