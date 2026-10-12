@@ -212,7 +212,11 @@ the controllers and slots tables, the topology tree and the detail panel, and it
 never carries a bandwidth, because the register is not a link with one. The real
 uplink is not in the register at all. `--format json` keeps the raw register
 values, so a script reading a controller's `link` sees `current_speed_gtps` 2.5
-and `current_width` 1, and must not treat that as a ceiling either.
+and `current_width` 1, and must not treat that as a ceiling either. The envelope
+says which links those are: a controller carries `link_is_register_default` and
+a slot `occupant_link_is_register_default`, true exactly where the pages draw
+`Gen1x1*`, so a script skips on that flag rather than on the figure, which a
+real slow link shares.
 
 **The marker column on the far left is the finding, not the link.** A `!` or `~`
 sits on the row a finding names, so a drive with a perfectly good link can carry
@@ -325,9 +329,9 @@ virtual machine, a Storage Spaces member or an exported ZFS pool shows it too.
 **A controller, inside `data.controllers`, carries `kind`**, which is one of
 `ahci`, `sas`, `nvme`, `raid`, `ide` or `other` - read from the PCI class code,
 so `other` is a mass-storage device of a subclass with no name of its own. It
-carries `address`, `name`, `vendor`, `driver`, `firmware`, `link`, `port_count`,
-`ports_used`, `upstream`, `upstream_address`, `upstream_name` and
-`readings_refused` beside it. **Every entry is already a storage controller**:
+carries `address`, `name`, `vendor`, `driver`, `firmware`, `link`,
+`link_is_register_default`, `port_count`, `ports_used`, `upstream`,
+`upstream_address`, `upstream_name` and `readings_refused` beside it. **Every entry is already a storage controller**:
 both platforms list only PCI mass-storage devices (class `0x01`) there, so no
 filter is needed and none is exported. That is not the same as "every controller
 a disk hangs off": a USB disk's `controller_address` names its USB host

@@ -155,6 +155,47 @@ def test_the_skill_enumerates_the_fields_a_disk_really_carries() -> None:
     )
 
 
+#: The sentence that enumerates a controller's fields beside ``kind``.
+_CONTROLLER_FIELDS_OPENS = "It\ncarries `address`"
+_CONTROLLER_FIELDS_ENDS = " beside it."
+
+
+def _enumerated_controller_fields() -> list[str]:
+    """The field names the skill promises a controller carries: ``kind`` plus the list beside it."""
+    text = SKILL.read_text(encoding="utf-8")
+    start = text.index("**A controller, inside `data.controllers`, carries `kind`**")
+    listed = text.index(_CONTROLLER_FIELDS_OPENS, start)
+    sentence = text[listed : text.index(_CONTROLLER_FIELDS_ENDS, listed)]
+    return ["kind", *re.findall(r"`([a-z_]+)`", sentence)]
+
+
+def test_the_skill_enumerates_the_fields_a_controller_really_carries() -> None:
+    """The controller list is held against the payload the way the disk list is.
+
+    A script reads an enumerated list as the whole payload, so a key the envelope
+    adds and the sentence omits - such as the register-default flag - is a key no
+    reader of the skill knows to read. The capture is the one with register
+    defaults, so the flag's value is not what the comparison rests on: only the
+    key set is compared.
+    """
+    from lsdsk.adapters.cli.commands.scan import build_envelope
+    from lsdsk.adapters.hw import snapshot as snapshot_adapter
+
+    capture = Path(__file__).parent / "fixtures" / "hw" / "windows-chipset-switch.json"
+    inventory = snapshot_adapter.load(capture)
+    envelope = build_envelope(inventory, (), CliCommand.CONTROLLERS)
+    controllers = envelope.model_dump(mode="json")["data"]["controllers"]
+    assert controllers, "the capture carries no controller, so this test checked nothing"
+    emitted = set(controllers[0])
+
+    promised = _enumerated_controller_fields()
+    assert len(promised) > 1, "the enumerating sentence was not found, so this test checked nothing"
+    assert set(promised) == emitted, (
+        f"the skill and the payload disagree: only in the skill {sorted(set(promised) - emitted)}, "
+        f"only in the payload {sorted(emitted - set(promised))}"
+    )
+
+
 def _verdict_of(returned: ast.expr, calls: list[str]) -> str | None:
     """The verdict text one ``return`` hands back, or None when it hands on.
 
