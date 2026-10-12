@@ -20,6 +20,7 @@ has gone then makes ``cli.main()`` catch the ``EPIPE`` and exit 1 before any han
 here is reached. Nothing wraps that decorator now, so nothing here declares it.
 """
 
+import os
 from collections.abc import Callable
 from typing import Any, Protocol, cast
 
@@ -42,6 +43,33 @@ class _RichClickDecorators(Protocol):
 _click = cast("_RichClickDecorators", click)
 
 
+class NonEmptyPath(click.Path):
+    """A path option that refuses the empty string, which names no path.
+
+    ``Path("")`` is the current directory, so an empty value used to be acted on
+    as ``.``: a capture written to ``.`` failed late with an errno, and an
+    example directory of ``""`` wrote into whatever directory the command ran
+    from. This is the one place that says so, for every option that names a path
+    the command acts on. A subclass that gives the empty string a meaning of its
+    own (``--history-file``) overrides :meth:`convert` before this check.
+    """
+
+    def convert(self, value: str | os.PathLike[str], param: click.Parameter | None, ctx: click.Context | None) -> Any:
+        """Refuse an empty value and convert any other as :class:`click.Path` does.
+
+        Args:
+            value: What the command line carried.
+            param: The option being converted.
+            ctx: The invocation.
+
+        Returns:
+            What :class:`click.Path` makes of `value`.
+        """
+        if value == "":
+            self.fail("a path cannot be empty", param, ctx)
+        return super().convert(value, param, ctx)
+
+
 def option(*param_decls: str, **attrs: Any) -> _CommandDecorator:
     """Typed wrapper over :func:`rich_click.option`. See module docstring.
 
@@ -55,4 +83,4 @@ def option(*param_decls: str, **attrs: Any) -> _CommandDecorator:
     return _click.option(*param_decls, **attrs)
 
 
-__all__ = ["option"]
+__all__ = ["NonEmptyPath", "option"]

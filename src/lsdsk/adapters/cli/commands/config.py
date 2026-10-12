@@ -33,7 +33,7 @@ from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION
 from ..context import CLIContext, get_cli_context
 from ..envelope import ActionResult, MappingResult, PayloadTooDeepError, emit_action, fail
 from ..exit_codes import ExitCode
-from ..typed_click import option
+from ..typed_click import NonEmptyPath, option
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -619,7 +619,7 @@ def _report_generated_examples(paths: list[Path], destination: str, output_forma
 
 @click.command("config-generate-examples", context_settings=CLICK_CONTEXT_SETTINGS)
 @FORMAT_OPTION
-@option("--destination", type=click.Path(file_okay=False), required=True, help="Directory to write example files")
+@option("--destination", type=NonEmptyPath(file_okay=False), required=True, help="Directory to write example files")
 @option("--force", is_flag=True, default=False, help="Overwrite existing files")
 @click.pass_context
 def cli_config_generate_examples(

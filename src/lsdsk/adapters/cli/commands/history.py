@@ -41,7 +41,7 @@ from .. import safe_console
 from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION
 from ..envelope import ActionResult, emit_action, fail
 from ..exit_codes import ExitCode
-from ..typed_click import option
+from ..typed_click import NonEmptyPath, option
 from .scan import (
     Analysis,
     TrendEntry,
@@ -498,7 +498,7 @@ class RecordResult(ActionResult):
 @option(
     "--replay",
     "replay",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    type=NonEmptyPath(exists=True, dir_okay=False, path_type=Path),
     default=None,
     help="Fold a snapshot captured earlier into the history instead of reading this machine.",
 )
@@ -575,7 +575,7 @@ def cli_record(ctx: click.Context, replay: Path | None, output_format: OutputFor
 @option(
     "--replay",
     "replay",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    type=NonEmptyPath(exists=True, dir_okay=False, path_type=Path),
     default=None,
     help="Render a snapshot captured earlier instead of reading this machine.",
 )

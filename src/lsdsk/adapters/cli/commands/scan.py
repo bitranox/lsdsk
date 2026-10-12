@@ -54,7 +54,7 @@ from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION, TREE_DENSITY_TOKE
 from ..context import get_cli_context
 from ..envelope import ActionResult, WireText, emit_action, fail
 from ..exit_codes import ExitCode
-from ..typed_click import option
+from ..typed_click import NonEmptyPath, option
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -69,7 +69,7 @@ PIPED_WIDTH = DEFAULT_PIPED_WIDTH
 _REPLAY_OPTION = option(
     "--replay",
     "replay",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    type=NonEmptyPath(exists=True, dir_okay=False, path_type=Path),
     default=None,
     help="Render a snapshot captured earlier instead of reading this machine.",
 )
@@ -1468,7 +1468,7 @@ def _is_this_process_standard_output(path: Path) -> bool:
     "output",
     # Only ever written, so never required to be readable: click's default
     # check refused an existing target this user may write but not read.
-    type=click.Path(dir_okay=False, readable=False, writable=True, allow_dash=True),
+    type=NonEmptyPath(dir_okay=False, readable=False, writable=True, allow_dash=True),
     required=True,
     help="Where to write the snapshot. '-' writes it to standard output; './-' is a file named '-'.",
 )

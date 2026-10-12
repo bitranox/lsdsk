@@ -37,7 +37,7 @@ from .constants import CLICK_CONTEXT_SETTINGS, TREE_DENSITY_TOKENS
 from .context import CLIContext, apply_traceback_preferences, store_cli_context
 from .envelope import RefusedBeforeTheRun
 from .exit_codes import ExitCode
-from .typed_click import option
+from .typed_click import NonEmptyPath, option
 
 if TYPE_CHECKING:
     import os
@@ -307,7 +307,7 @@ def _apply_cli_overrides(config: Config, set_overrides: tuple[str, ...]) -> Conf
         raise click.UsageError(str(exc)) from exc
 
 
-class _OptionalFile(click.Path):
+class _OptionalFile(NonEmptyPath):
     """A file path where the empty string means "not given".
 
     ``Path("")`` is the current directory, so an empty ``--history-file`` was
@@ -368,7 +368,7 @@ class _OptionalFile(click.Path):
 @option(
     "--replay",
     "replay",
-    type=click.Path(exists=True, dir_okay=False, readable=True, path_type=Path),
+    type=NonEmptyPath(exists=True, dir_okay=False, readable=True, path_type=Path),
     default=None,
     help="Render a snapshot captured earlier instead of reading this machine.",
 )
@@ -403,7 +403,7 @@ class _OptionalFile(click.Path):
 @option(
     "--env-file",
     "env_file",
-    type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True),
+    type=NonEmptyPath(exists=True, file_okay=True, dir_okay=False, readable=True),
     default=None,
     help="Explicit .env file path (skips upward directory search).",
 )
