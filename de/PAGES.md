@@ -8,15 +8,15 @@ Jede Seite entspricht einem Unterbefehl, der dieselbe Ansicht als Text ausgibt, 
 [README](README.md).
 
 Die interaktive Ansicht wird bedient wie die `*top`-Familie: `1` bis `9` oder
-die zugehörige Funktionstaste wechseln die Seite, `q` oder `escape` beendet. Die Fusszeile
+die zugehörige Funktionstaste wechseln die Seite, `q` oder `escape` beendet. Die Fußzeile
 führt diese auf, es ist also nichts auswendig zu lernen. `left`, `right`, `tab`
 und `shift+tab` schalten ebenfalls zwischen den Seiten weiter, und `r` oder `f10` liest neu
-ein, ohne in der Fusszeile zu erscheinen. Die Seiten tragen dieselben Namen wie
+ein, ohne in der Fußzeile zu erscheinen. Die Seiten tragen dieselben Namen wie
 die Befehle, in derselben Reihenfolge, `4` und `lsdsk health` sind also dieselbe
 Ansicht mit denselben Spalten. Jede Seite steht für sich und zeigt jede Platte,
 es muss also nichts ausgewählt werden, um eine zu lesen.
 
-Sechs der neun Seiten führen ausserdem einen Cursor - Topologie, Controller,
+Sechs der neun Seiten führen außerdem einen Cursor - Topologie, Controller,
 Platten, Gesundheit, Steckplätze und Verlauf -, den `up` und `down` bewegen. Eine
 Tafel unter der Tabelle antwortet für das, worauf der Cursor steht: jeder Wert,
 für den die Zeile keine Spalte hatte, dann die Befunde, mit
@@ -49,14 +49,14 @@ ziehen würden.
 ![Platten](../docs/screenshots/3-disks.png)
 
 Eine Zeile je Laufwerk, mit der Kennung, die Sie für eine Ersatzbestellung
-brauchen: Modell, WWN, Seriennummer und Firmware, dann Grösse, Bus und die drei
+brauchen: Modell, WWN, Seriennummer und Firmware, dann Größe, Bus und die drei
 Geschwindigkeiten. `port` ist, was der Steckplatz hergibt, `disk`, was das
 Laufwerk kann, `link`, worauf die beiden sich geeinigt haben. 
-`size` zeigt die Grösse in Dezimal und in Zweierpotenzen.
+`size` zeigt die Größe in Dezimal und in Zweierpotenzen.
 Die letzte Spalte, `used by`, zeigt, ob das System von der Platte startet und was sie nutzt: `-`,
 wo das nicht gelesen wurde, `not mounted`, wo gelesen wurde und nichts die Platte nutzt, sonst die
 Startmarkierung und die Einhängepunkte, den Pool oder die Struktur, zu der sie gehört, etwa
-`boot zfs:rpool` oder `lvm:vg0 -> /var`. `not mounted` heisst nicht, dass die Platte gefahrlos
+`boot zfs:rpool` oder `lvm:vg0 -> /var`. `not mounted` heißt nicht, dass die Platte gefahrlos
 gelöscht werden kann: Eine an eine virtuelle Maschine durchgereichte Platte, ein Mitglied von
 Speicherplätzen (Storage Spaces) oder ein exportierter ZFS-Pool kann es ebenso zeigen. Siehe
 [FINDINGS.md](FINDINGS.md#was-eine-platte-nutzt-und-was-not-mounted-bedeutet) für die genauen
@@ -66,7 +66,7 @@ Bedingungen, unter denen `not mounted` gilt und wann stattdessen `-` steht.
 
 ![Gesundheit](../docs/screenshots/4-health.png)
 
-Verschleiss, Temperatur, Betriebsstunden und geschriebene Bytes, daneben die
+Verschleiß, Temperatur, Betriebsstunden und geschriebene Bytes, daneben die
 Zähler, die entscheiden, ob ein Laufwerk stirbt oder nur schlecht verkabelt ist:
 umgelagerte, schwebende und nicht korrigierbare Sektoren, CRC-Fehler der
 Schnittstelle und Medienfehler.
@@ -92,7 +92,7 @@ wurde, was es bedeutet, und was dagegen zu tun ist.
 
 Jeder PCIe-Anschluss: was er leisten kann, was er fährt, was ihn belegt, was
 dieser Belegung fehlt, und ein Urteil. `FREE` ist ein leerer Anschluss, `full`
-heisst, dass die Belegung ausnutzt, was der Anschluss bietet, und eine
+heißt, dass die Belegung ausnutzt, was der Anschluss bietet, und eine
 Restzahl ist die Bandbreite, die derzeit niemand verwendet.
 
 ## 8 Verlauf
@@ -108,7 +108,7 @@ Der Rest sagt `too soon to say`, solange nicht genug Zeit zwischen zwei Messunge
 ## 9 Dateisysteme
 
 Wie voll jedes eingehängte Dateisystem, jeder ZFS-Pool und jedes Windows-Volume auf einer Platte
-ist, so wie `df` es meldet: Grösse, belegt und frei, dann `use%` und, wo das Dateisystem seine Inodes
+ist, so wie `df` es meldet: Größe, belegt und frei, dann `use%` und, wo das Dateisystem seine Inodes
 beim Formatieren anlegt, `inodes%`. Ein ZFS-Pool ist eine Zeile, gleich welche Datasets er enthält.
 `-` kennzeichnet eine Zahl, die niemand gelesen hat, und `n/a` eine Inode-Zahl für ein Dateisystem,
 das Inodes nach Bedarf anlegt, sodass es keine Tabelle zu füllen gibt; eine Zeile unter der Tabelle

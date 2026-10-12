@@ -50,7 +50,7 @@ Der Befehl unten benötigt lediglich `uv`; falls `uv` noch nicht installiert
 ist, dokumentiert [INSTALL.md](INSTALL.md#am-einfachsten-installieren-und-ausführen-mit-uv) den Einzeiler für Linux, macOS und Windows.
 
 Für die vollständige Auskunft führen Sie `lsdsk` am besten als root oder Administrator aus.
-Ohne Admin-Rechte fehlen SMART-Verschleiss, Fehlerzähler, die Erkennung
+Ohne Admin-Rechte fehlen SMART-Verschleiß, Fehlerzähler, die Erkennung
 physischer PCIe-Steckplätze, die Anschlusszahl der SATA-Controller und,
 unter Linux vor Kernel 6.9, was eine USB-Platte selbst kann.
 Die genaue Dokumentation dazu finden Sie unter [INSTALL.md](INSTALL.md#was-root-rechte-braucht).
@@ -67,7 +67,7 @@ uvx lsdsk@latest --help   # weitere Hilfe
 
 `uvx lsdsk@latest` öffnet am Terminal eine interaktive Ansicht mit einer Seite je Thema; 
 in eine Pipe oder eine Datei umgeleitet gibt es dieselben Daten als eine Seite aus: das Mainboard, 
-was defekt ist, den Controllerbaum, die Kennung jeder Platte, wie voll jedes Dateisystem ist, Verschleiss und Fehlerzähler, jedes SMART-Attribut,
+was defekt ist, den Controllerbaum, die Kennung jeder Platte, wie voll jedes Dateisystem ist, Verschleiß und Fehlerzähler, jedes SMART-Attribut,
 die PCIe-Steckplätze, und jeden Befund mit seiner Begründung.
 
 ## Die TUI
@@ -95,7 +95,7 @@ NVMe-Temperatur werden sämtlich ohne erhöhte Rechte gelesen.
 
 Fünf Dinge brauchen jedoch root oder Administrator:
 
-- **SMART-Attribute und Verschleiss.**
+- **SMART-Attribute und Verschleiß.**
 - **Die Fehlerzähler, also `trend` und `record`.**
 - **PCIe-Steckplatznummern und ob ein Anschluss ein echter Steckverbinder ist.**
 - **Das AHCI-Fähigkeitsregister**
@@ -118,13 +118,13 @@ Schlüssen kommt wie ein geübter Administrator.
 ```
 
 Der Skill zeigt und erklärt, was das Werkzeug nicht kann: dass ein CRC-Stand das Kabel ist
-und nie das Laufwerk; dass ein Verschleisswert nichts heisst ohne die Schwelle
+und nie das Laufwerk; dass ein Verschleißwert nichts heißt ohne die Schwelle
 des Laufwerks selbst; dass ein Controller, den das Board begrenzt, zwei
 entgegengesetzte Abhilfen hat, je nachdem, ob ein schnellerer Anschluss
 existiert und nur belegt ist; und dass eine Steckplatznummer gegen das
 Mainboard-Handbuch gehalten wird, weil keine lesbare Quelle die Bauform angibt.
 `lsdsk` kann alle Werte auch als JSON exportieren und der Skill kann diese Daten dann
-auf einer anderen Maschine interpretieren. Niemand möchte schliesslich einen Agenten
+auf einer anderen Maschine interpretieren. Niemand möchte schließlich einen Agenten
 direkt am Server laufen haben.
 
 
@@ -143,7 +143,7 @@ in `pyproject.toml`.
 
 Von der Hardware liest `lsdsk` nur die Zahlencodes eines Controllers, nicht seinen
 Namen. Mitgeliefert wird deshalb die PCI-Namensdatenbank. 
-Darum heisst ein Controller unter Linux und unter Windows gleich, 
+Darum heißt ein Controller unter Linux und unter Windows gleich, 
 lsdsk zitiert die übersetzten Gerätenamen von Windows nicht. Die Lizenz der
 Datenbank steht in `NOTICE`.
 

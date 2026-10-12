@@ -95,7 +95,7 @@ gewinnt: `--expand-virtual` bei `disks`, `topology` und `tui`,
 `--tree-density` stehen dort, weil die Zeile unter der jeweiligen Ansicht sie
 benennt - die Zählung der zusammengefalteten Geräte und der Hinweis über dem
 Baum, wie viel der Struktur gezeichnet wurde - und wer tippt, was ihm gerade
-gesagt wurde, darf nicht auf "no such option" stossen.
+gesagt wurde, darf nicht auf "no such option" stoßen.
 
 **Beispiele:**
 
@@ -317,7 +317,7 @@ Die Verzeichnisse `xdg/` und `home/` spiegeln die Schichten, für die sie stehen
 ### Überschreiben zur Laufzeit
 
 Mit `--set` überschreiben Sie Werte, ohne Dateien zu ändern. Diese Option:
-- hat den **höchsten Vorrang** unter den Schichten, einschliesslich der
+- hat den **höchsten Vorrang** unter den Schichten, einschließlich der
   präfixbehafteten Umgebungsvariablen weiter unten. Die nativen
   `LOG_*`-Variablen liest `lib_log_rich` selbst, statt dass sie zusammengeführt
   würden, sie entscheiden das Logging-Verhalten also weiterhin, gleich was
@@ -357,7 +357,7 @@ lsdsk --profile production --set lib_log_rich.console_level=DEBUG config
 |---------------|-----------------------------------------------------------------|
 | Zeichenkette  | `--set section.key=value`                                       |
 | Ganzzahl      | `--set section.timeout=30`                                      |
-| Fliesskomma   | `--set section.ratio=0.5`                                       |
+| Fließkomma    | `--set section.ratio=0.5`                                       |
 | Wahrheitswert | `--set section.enabled=true` oder `--set section.enabled=false` |
 | JSON-Liste    | `--set section.hosts='["a.com", "b.com"]'`                      |
 | JSON-Objekt   | `--set section.metadata='{"key": "value"}'`                     |
@@ -386,10 +386,10 @@ Diese entscheiden den Schweregrad und damit den Exit-Code.
 | Schlüssel                         | Vorgabe | Wirkung                                                                                                      |
 |-----------------------------------|---------|--------------------------------------------------------------------------------------------------------------|
 | `wear_warning_percent`            | `80`    | Verbrauchte Nennlebensdauer, ab der ein Laufwerk eine Warnung bekommt                                        |
-| `wear_critical_percent`           | `95`    | Und ab der es kritisch heisst                                                                                |
+| `wear_critical_percent`           | `95`    | Und ab der es kritisch heißt                                                                                 |
 | `crc_errors_significant`          | `100`   | Darunter ist ein CRC-Stand der Schnittstelle ein Hinweis statt einer Warnung                                 |
 | `mixed_firmware_threshold`        | `2`     | Verschiedene Firmwarestände eines Modells, ab denen es gemeldet wird                                         |
-| `wear_projection_min_points`      | `2`     | Prozentpunkte gemessener Verschleissbewegung, bevor ein Verschleiss-Enddatum hochgerechnet wird              |
+| `wear_projection_min_points`      | `2`     | Prozentpunkte gemessener Verschleißbewegung, bevor ein Verschleiß-Enddatum hochgerechnet wird                |
 | `quiet_expected_min`              | `10.0`  | Fehler, die die Rate des Laufwerks vorhergesagt haben muss, bevor Schweigen als Beleg zählt                  |
 | `min_span_hours`                  | `1`     | Betriebsstunden zwischen zwei Messungen, bevor überhaupt eine Rate gerechnet wird                            |
 | `filesystem_full_hint_percent`    | `85`    | Wie voll ein Dateisystem, Pool oder Volume ist, ab dieser Zahl, bevor es ein Hinweis wird                    |
@@ -397,7 +397,7 @@ Diese entscheiden den Schweregrad und damit den Exit-Code.
 | `inodes_full_hint_percent`        | `85`    | Wie viel einer festen Inode-Tabelle (ext2, ext3, ext4) belegt ist, ab dieser Zahl, bevor es ein Hinweis wird |
 | `inodes_full_warning_percent`     | `95`    | Und ab dieser Zahl, bevor es eine Warnung wird, die den Exit-Code `1` ergibt                                 |
 
-Die vier Füllschlüssel nehmen eine ganze Prozentzahl von 1 bis 100. Ein Wert ausserhalb dieses Bereichs
+Die vier Füllschlüssel nehmen eine ganze Prozentzahl von 1 bis 100. Ein Wert außerhalb dieses Bereichs
 oder eine Zahl, die nicht ganz ist, fällt mit einer Warnung auf die Vorgabe zurück. Ein schreibgeschütztes
 Dateisystem wird von keinem von ihnen beurteilt.
 
@@ -407,17 +407,17 @@ Diese ändern, wie ein Bericht aussieht. Keiner davon ändert den Schweregrad od
 den Exit-Code: der kommt aus `[thresholds]` und aus den Grenzen, die ein
 Laufwerk über sich selbst veröffentlicht.
 
-| Schlüssel                 | Vorgabe        | Wirkung                                                              |
-|---------------------------|----------------|----------------------------------------------------------------------|
-| `piped_width`             | `120`          | Breite, wenn die Ausgabe kein Terminal ist                           |
-| `summary_limit`           | `6`            | Befunde in der Urteilszeile, bevor "and N more" folgt                |
-| `wear_row_floor_percent`  | `10`           | Verschleiss darunter bekommt in beiden Ansichten keine Verlaufszeile |
-| `expand_virtual`          | `false`        | Kernelvirtuelle Geräte auflisten, statt sie zusammenzuzählen         |
-| `tree_density`            | `storage-only` | Wie viel der PCI-Struktur jede Ansicht zeichnet                      |
-| `wwn_width`               | `24`           | Höchstzahl Zeichen für die Spalte wwn in beiden Ansichten            |
-| `detail_height_percent`   | `33`           | Höchstanteil des interaktiven Fensters für die Detailtafel           |
-| `traceback_summary_limit` | `500`          | Zeichen, die ein kurzer Traceback behält                             |
-| `traceback_verbose_limit` | `10000`        | Und unter `--traceback`                                              |
+| Schlüssel                 | Vorgabe        | Wirkung                                                             |
+|---------------------------|----------------|---------------------------------------------------------------------|
+| `piped_width`             | `120`          | Breite, wenn die Ausgabe kein Terminal ist                          |
+| `summary_limit`           | `6`            | Befunde in der Urteilszeile, bevor "and N more" folgt               |
+| `wear_row_floor_percent`  | `10`           | Verschleiß darunter bekommt in beiden Ansichten keine Verlaufszeile |
+| `expand_virtual`          | `false`        | Kernelvirtuelle Geräte auflisten, statt sie zusammenzuzählen        |
+| `tree_density`            | `storage-only` | Wie viel der PCI-Struktur jede Ansicht zeichnet                     |
+| `wwn_width`               | `24`           | Höchstzahl Zeichen für die Spalte wwn in beiden Ansichten           |
+| `detail_height_percent`   | `33`           | Höchstanteil des interaktiven Fensters für die Detailtafel          |
+| `traceback_summary_limit` | `500`          | Zeichen, die ein kurzer Traceback behält                            |
+| `traceback_verbose_limit` | `10000`        | Und unter `--traceback`                                             |
 
 Ein kernelvirtuelles Gerät ist eines, das der Kernel ohne Hardware dahinter
 bereitstellt: zram, ein Loop-Mount, ein ZFS-zvol, ein Device-Mapper-Knoten. Es
@@ -428,8 +428,8 @@ JSON-Umschlag trägt jedes einzelne unter `virtual_disks`, wie dieser Schlüssel
 auch gesetzt ist.
 
 `tree_density` bestimmt, wie viel der PCI-Struktur jede Ansicht zeichnet, `lsdsk
-topology`, der Bericht auf einer Seite und die interaktive Ansicht gleichermassen.
-Die drei Schreibweisen laufen von der geringsten Genauigkeit zur grössten.
+topology`, der Bericht auf einer Seite und die interaktive Ansicht gleichermaßen.
+Die drei Schreibweisen laufen von der geringsten Genauigkeit zur größten.
 `storage-only`, die mitgelieferte Vorgabe, behält die Speichercontroller, den
 USB-Hostcontroller jedes USB-Laufwerks und die Bridges ÜBER ihnen, also den Weg vom Board hinunter zu jedem Laufwerk und nichts,
 was woandershin führt, denn auf echter Hardware sind vier von fünf Gerätezeilen
@@ -438,7 +438,7 @@ ohne Speicherbezug, die sich eine Bridge mit einem teilen; `full` nennt jedes
 Gerät, mit dem das Board kam, von der Wurzel her. Keine Ansicht hält
 stillschweigend etwas zurück: jede sagt in einer Zeile über dem Baum, was sie
 zeichnet und wie Sie mehr anfordern. Das sind die einzigen angenommenen
-Schreibweisen; das Wort ist der Wert, Gross- und Kleinschreibung egal. Die
+Schreibweisen; das Wort ist der Wert, Groß- und Kleinschreibung egal. Die
 interaktive Ansicht schaltet dieselbe Einstellung mit `d` auf ihrer
 Topologieseite weiter, und der gesamte Baum einer Aufnahme reist im JSON-Umschlag
 unter `pci_tree` mit, gleich was die Anzeige zeigt.
@@ -455,13 +455,13 @@ Tabelle den ganzen Bildschirm. An dem, was ein druckender Befehl zeichnet,
 ändert es nichts.
 
 Farbe ist kein Schlüssel, obwohl dieser Abschnitt nach ihr benannt ist. Die
-gedruckte Palette muss auf einer schwarzen und einer weissen Konsole zugleich
+gedruckte Palette muss auf einer schwarzen und einer weißen Konsole zugleich
 lesbar bleiben, und das ist eine Messung und keine Geschmacksfrage: fährt man
 die Helligkeit eines gesättigten Farbtons durch, liegt seine Decke gegen beide
 nahe 4,2:1, die Prüfung, die jede mitgelieferte Farbe hält, sitzt daher bei 4,0
 über vier echten Hintergründen, zwei dunklen und zwei hellen. Die interaktive
 Ansicht malt ihren eigenen Hintergrund und trägt daher eine zweite Palette, die
-gegen jenen am Fliesstext-Boden von 4,5 gemessen wird. Keine von beiden lässt
+gegen jenen am Fließtext-Boden von 4,5 gemessen wird. Keine von beiden lässt
 sich aus einer Datei überschreiben, denn ein Wert, der diese Prüfungen nicht
 besteht, machte einen Schweregrad unlesbar; und wo Farbe einen Schweregrad
 trägt, ist sie nie das Einzige, was ihn trägt, ein Bericht ohne Farbe sagt also
@@ -657,7 +657,7 @@ LOG_CONSOLE_FORMAT_PRESET=short
 LOG_ENABLE_GRAYLOG=false
 ```
 
-Standardmässig sucht die Anwendung vom aktuellen Verzeichnis aus nach oben nach `.env`-Dateien.
+Standardmäßig sucht die Anwendung vom aktuellen Verzeichnis aus nach oben nach `.env`-Dateien.
 
 Um stattdessen eine bestimmte `.env` zu laden, nehmen Sie `--env-file`:
 

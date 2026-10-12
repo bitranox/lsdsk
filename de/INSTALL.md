@@ -84,7 +84,7 @@ Umgebung dasselbe.
 lsdsk läuft ohne Privilegien und sagt, was das kostet. Topologie,
 Verbindungsgeschwindigkeiten, Kapazität und Firmware werden ohne jedes Recht
 gelesen. Vier Dinge brauchen root oder Administrator: die SMART-Attribute und
-der Verschleiss, die Fehlerzähler, die `trend` und `record` verwenden, die
+der Verschleiß, die Fehlerzähler, die `trend` und `record` verwenden, die
 Erkennung physischer PCIe-Steckplätze, und das AHCI-Fähigkeitsregister, aus dem
 ein SATA-Controller seine Anschlussgeschwindigkeit und die Zahl freier
 Anschlüsse bekommt. Unter Linux vor Kernel 6.9 kommt ein fünftes dazu: was eine

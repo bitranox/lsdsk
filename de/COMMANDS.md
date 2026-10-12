@@ -14,7 +14,7 @@ zur [README](README.md).
 | `lsdsk topology`                 | Die Problemübersicht, dann die gesamte PCI-Struktur von der Wurzel her, mit den Platten je Controller |
 | `lsdsk controllers`              | Controller, PCIe-Platzierung, freie Anschlüsse, Last                                                  |
 | `lsdsk disks`                    | Eine Zeile je Platte                                                                                  |
-| `lsdsk health`                   | Verschleiss, Temperatur, Betriebsstunden und Fehlerzähler                                             |
+| `lsdsk health`                   | Verschleiß, Temperatur, Betriebsstunden und Fehlerzähler                                              |
 | `lsdsk smart`                    | Die SMART-Attribute jeder Platte, gegen ihre eigenen Schwellen                                        |
 | `lsdsk findings`                 | Jeden Befund mit seiner Begründung und seiner Abhilfe                                                 |
 | `lsdsk slots`                    | Jeden PCIe-Anschluss: Fähigkeit, Bestückung, was frei ist                                             |
@@ -37,7 +37,7 @@ Protokollkonfiguration vor, und `fail` gibt es, damit der Fehlerpfad über den
 echten Einstiegspunkt geprüft werden kann; beide stehen hier, weil `lsdsk
 --help` sie anbietet und wer ihnen dort begegnet, sie hier finden soll.
 
-Ein blosses `lsdsk` entscheidet zwischen beiden danach, ob stdin, stdout und der
+Ein bloßes `lsdsk` entscheidet zwischen beiden danach, ob stdin, stdout und der
 Strom, auf den die Ansicht zeichnet, alle Terminals sind: irgendetwas muss `q`
 drücken können, und unter Linux und macOS zeichnet die Ansicht auf stderr, also
 gibt `lsdsk 2>err.log` an einem Terminal die Seite aus, statt eine Ansicht in die
@@ -100,7 +100,7 @@ die Ihre Shell aus `-o -` anlegt, bekommt Ihre umask, setzen Sie also vorher
 welchem der mitgelieferten Protokollthemen die Vorschau dargestellt wird.
 
 `--format json` liefert einen maschinenlesbaren Umschlag, der den erzeugenden
-Befehl nennt, bei jedem Befehl, der Daten erzeugt, ausser `report`, dessen
+Befehl nennt, bei jedem Befehl, der Daten erzeugt, außer `report`, dessen
 maschinenlesbare Form `lsdsk snapshot` ist. Die Exit-Codes sind `0`, wenn nichts
 zu tun ist, und `1`, wenn eine Warnung oder ein kritischer Befund vorliegt, es
 passt also unmittelbar in eine Überwachungsprüfung. Fehler folgen den
@@ -141,8 +141,8 @@ mit Strg-C abgebrochenen Lauf. Behandeln Sie alles über `1` als "hat die Frage
 nicht beantwortet".
 
 `70` gibt es, damit eine Überwachungsprüfung eine ausfallende Platte von einem
-kaputten Werkzeug unterscheiden kann. Vorher hinterliessen beide `1`, und der
-einzige Weg herauszufinden, welches von beiden vorlag, war der Fliesstext auf
+kaputten Werkzeug unterscheiden kann. Vorher hinterließen beide `1`, und der
+einzige Weg herauszufinden, welches von beiden vorlag, war der Fließtext auf
 stderr, den eine Prüfung nicht lesen kann. Entschieden wird nach der Herkunft
 des Codes und nie nach der Zahl: ein `OSError` trägt eine errno, die etwas
 bedeutet, und EPERM ist selbst `1`, eine Verweigerung des Kernels behält also
@@ -220,9 +220,9 @@ enthält das Urteil, das diese Zeile zeichnet - `kind` (gleich `counter`),
 `null`, wo die Tabelle einen Strich zeichnet. Beobachtet werden `crc_errors`,
 `reallocated_sectors`, `pending_sectors`, `uncorrectable_sectors`,
 `media_errors`, `error_log_entries` und `percent_used`. Ein Zähler, der nie
-angeschlagen hat, bekommt keinen Eintrag, und der Verschleiss erst, wenn er
+angeschlagen hat, bekommt keinen Eintrag, und der Verschleiß erst, wenn er
 steigt oder `display.wear_row_floor_percent` überschritten hat; eine leere Liste
-heisst also, dass nichts eine Zeile wert ist oder für diese Laufwerke noch nichts
+heißt also, dass nichts eine Zeile wert ist oder für diese Laufwerke noch nichts
 aufgezeichnet wurde. Lässt sich der Zählerverlauf nicht lesen, ist die Liste aus
 einem anderen Grund leer, und der Lauf sagt das: `ok` ist `false`, und `skipped`
 trägt den Satz, der den Speicher und den Grund nennt, damit ein unlesbarer
@@ -236,7 +236,7 @@ size_bytes, used_bytes, free_bytes, inodes_total, inodes_free, read_only, readin
 ist `mount`, `pool` oder `volume`; die Byte- und Inode-Zahlen sind ganze Zahlen, jeweils `null`, wo sie
 nicht gelesen wurden; `free_bytes` ist der Platz, der einem gewöhnlichen Benutzer frei zur Verfügung
 steht. Die Liste selbst ist `null`, wenn die Dateisysteme gar nicht gelesen wurden, etwa in einem Container oder aus einer
-Aufnahme, die vor ihnen gemacht wurde, und eine leere Liste heisst, dass sie gelesen wurden und keines
+Aufnahme, die vor ihnen gemacht wurde, und eine leere Liste heißt, dass sie gelesen wurden und keines
 auf einer inventarisierten Platte liegt. Eine Messung, die das System verweigert hat, steht in den
 `readings_refused` des Dateisystems (`statvfs` für einen Einhängepunkt, `volume-space` oder `volume-info` für ein
 Windows-Volume) oder, wenn sie zu keinem einzelnen Dateisystem gehört, als `skipped`-Zeile
@@ -306,7 +306,7 @@ Ergebnis, wenn einer der beiden Befehle zweimal läuft, und kein gescheiterter
 Schreibvorgang; der hinterlässt `13` oder `74`. Wer wissen muss, ob dieser Lauf
 etwas geändert hat, liest `outcome`; `--force` überschreibt.
 
-`2` ist der Verwendungsfehler von Click und heisst, dass die Befehlszeile falsch
+`2` ist der Verwendungsfehler von Click und heißt, dass die Befehlszeile falsch
 war, nicht dass eine Datei fehlte: eine unbekannte Option, ein unbekannter
 Befehl, ein fehlendes Argument und eine falsche `--format`-Wahl erzeugen ihn
 alle, ebenso ein `--replay`-Pfad, den es nicht gibt.

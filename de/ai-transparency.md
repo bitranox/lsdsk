@@ -18,7 +18,7 @@ Problem gestellt, jede Entscheidung getroffen und trägt das Ergebnis.
 
 - Das Problem ist seines: ein Vorgängerskript, das `lspci`, `lsblk`, `smartctl`
   und `nvme` aufrief, deren menschenlesbare Ausgabe per Regex abgelesen hat, unter
-  Windows nicht laufen konnte und über Verschleiss nichts berichtete.
+  Windows nicht laufen konnte und über Verschleiß nichts berichtete.
 - Die zentrale Entwurfsregel ist seine, und sie ist es, die dieses Werkzeug von
   einer Faktenhalde unterscheidet: **der Schweregrad wird daran gemessen, was
   die Maschine überhaupt hätte liefern können.** Eine Verbindung unterhalb des
@@ -32,7 +32,7 @@ Problem gestellt, jede Entscheidung getroffen und trägt das Ergebnis.
   Geschwindigkeit; dass die drei Geschwindigkeiten in drei Spalten namens port,
   disk und link gehören statt zu einem Urteil zusammengefasst; welche Farbe
   welche Spalte trägt und warum; dass die ganze Maschine die Standardansicht
-  sein soll, weil jemand, der nicht weiss, was defekt ist, auch nicht wissen
+  sein soll, weil jemand, der nicht weiß, was defekt ist, auch nicht wissen
   kann, wonach er fragen soll; dass die interaktiven Seiten dieselben Namen
   tragen müssen wie die Befehle; und dass die SMART-Seite jedes Laufwerk zeigen
   soll, statt eine Auswahl zu verlangen.
@@ -40,7 +40,7 @@ Problem gestellt, jede Entscheidung getroffen und trägt das Ergebnis.
   melden, der nicht gemessen wurde, und klar sagen, welche Werte nicht gelesen
   werden konnten.
 - Dass ein Skill für KI-Agenten mitgeliefert wird, war seine Entscheidung,
-  einschliesslich der, dass er einem Agenten beibringen soll, ein Mainboard- oder
+  einschließlich der, dass er einem Agenten beibringen soll, ein Mainboard- oder
   Controller-Handbuch zu holen, wo das Werkzeug selbst aufhört, da lsdsk
   grundsätzlich nichts aus dem Netz liest.
 

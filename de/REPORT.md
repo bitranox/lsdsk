@@ -5,7 +5,7 @@
 Über `lsdsk report` kann man diese Seite ausgeben, und der Exit-Code hängt von den Befunden ab.
 
 Nichts muss ausgewählt und kein Unterbefehl erraten werden. Wer noch nicht
-weiss, was defekt ist, muss also auch nicht wissen, wonach er fragen soll. Was
+weiß, was defekt ist, muss also auch nicht wissen, wonach er fragen soll. Was
 defekt ist, steht zuerst, sodass schon der erste Bildschirm alles Handelnswerte
 zeigt; und jeder Befehl in der Tabelle ist ein Abschnitt desselben Berichts, für
 den Fall, dass Sie bereits wissen, welchen Sie brauchen.
@@ -57,8 +57,8 @@ sie erzeugt hat; `<version>` steht für Ihre.
 Drei Geschwindigkeiten pro Laufwerk, weil sie verschiedene Fragen beantworten.
 `port` ist, was der Steckplatz hergibt, `disk`, was das Laufwerk könnte, und
 `link`, worauf die beiden sich tatsächlich geeinigt haben. Ein oranges `disk`
-heisst, dass das Laufwerk den Anschluss nicht ausnutzen kann, den es belegt: eine
-Frage der Bestückung. Ein rotes `link` heisst, dass beide Enden schneller
+heißt, dass das Laufwerk den Anschluss nicht ausnutzen kann, den es belegt: eine
+Frage der Bestückung. Ein rotes `link` heißt, dass beide Enden schneller
 gekonnt hätten und es nicht getan haben: ein Fehler.
 
 Der Abschnitt Filesystems folgt auf die Laufwerke und sagt, wie voll jedes Dateisystem auf diesen

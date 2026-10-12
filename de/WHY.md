@@ -26,8 +26,8 @@ Die naheliegende Antwort darauf ist, all das an einer Stelle einzusammeln und
 ordentlich auszugeben. Nützlich, und die meisten Werkzeuge hören dort auf.
 
 Das Einsammeln ist die leichte Hälfte. Eine Zahl für sich ist träge. `3.0 Gb/s`
-heisst nichts, solange Sie nicht zugleich wissen, wozu genau dieses Laufwerk
-imstande wäre, und das weiss um zwei Uhr nachts niemand für achtzehn Laufwerke.
+heißt nichts, solange Sie nicht zugleich wissen, wozu genau dieses Laufwerk
+imstande wäre, und das weiß um zwei Uhr nachts niemand für achtzehn Laufwerke.
 Stellt man beide nebeneinander, hört das Sichmerken auf, Ihre Aufgabe zu sein:
 
 ```

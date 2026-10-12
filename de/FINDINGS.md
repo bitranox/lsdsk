@@ -53,7 +53,7 @@ Fehler nennt, und was es zu raten ablehnt. Zurück zur [README](README.md).
   ihrer Buchse oder eines Hubs. Ein Hub ist nie ein eigener Befund, und wo die
   Fähigkeit der Buchse nicht gelesen wurde, wird der Rückstand gemeldet, ohne
   einem der beiden Enden die Schuld zu geben.
-- Verschleiss gegen einstellbare Bänder, sowie umgelagerte, schwebende und nicht
+- Verschleiß gegen einstellbare Bänder, sowie umgelagerte, schwebende und nicht
   korrigierbare Sektoren und NVMe-Medienfehler bei jedem Stand über null.
 - Temperatur gegen die Grenzen, die das Laufwerk selbst veröffentlicht, nicht
   gegen eine Schätzung.
@@ -118,7 +118,7 @@ sagt, dass Fehler hätten auftauchen müssen: bei 430 Fehlern über zehntausend
 Stunden beweisen fünfzehn stille Stunden nichts, und das Werkzeug sagt das,
 statt anzudeuten, das Laufwerk sei in Ordnung. Eine feste Regel kann das nicht,
 und eine feste Wochenregel weist auf dieser Maschine jedes Laufwerk ab,
-einschliesslich dessen, dessen Fehler nachweislich vorbei ist.
+einschließlich dessen, dessen Fehler nachweislich vorbei ist.
 
 Der Verlauf speist sich selbst. Jeder gewöhnliche Lauf legt eine Messung ab,
 sobald die Uhren der Laufwerke weitergelaufen sind, es ist also nichts
@@ -135,7 +135,7 @@ wo Sie ihn haben wollen. Beide sind global wie `--profile` und stehen daher vor
 dem Unterbefehl: `lsdsk --history-file /var/lib/lsdsk.json record`. Für eine
 dauerhafte Einstellung gibt es den Abschnitt `[history]` mit `enabled`, `path`
 und `max_samples_per_drive`; `lsdsk config` zeigt die wirksamen Werte und woher
-jeder stammt. Als root unter Linux liegt der Speicher standardmässig unter
+jeder stammt. Als root unter Linux liegt der Speicher standardmäßig unter
 `/var/lib/lsdsk/history.json`, weil das Aufgezeichnete eine Eigenschaft der
 Maschine ist und nicht dessen, der den Befehl getippt hat; ein Lauf ohne
 Root-Rechte behält einen Pfad je Benutzer, da er dort ohnehin nicht schreiben
@@ -144,10 +144,10 @@ könnte. Der erste berichtende Lauf, der etwas ablegt, nennt die Datei, einmal;
 wird.
 
 Jeder Wert, nach dem das Werkzeug urteilt oder ausrichtet, ist ein
-Konfigurationsschlüssel: `[thresholds]` trägt die Verschleissbänder, die
+Konfigurationsschlüssel: `[thresholds]` trägt die Verschleißbänder, die
 Erheblichkeitsschwelle für CRC, die Zahl für nicht zusammenpassende Firmware und
 die Angabe zum Schweige-Beleg, und `[display]` trägt die angenommene Breite bei
-umgeleiteter Ausgabe, die Kappung der Zusammenfassung, den Verschleissboden, den
+umgeleiteter Ausgabe, die Kappung der Zusammenfassung, den Verschleißboden, den
 eine Verlaufszeile überschreiten muss, ob kernelvirtuelle Geräte aufgelistet
 werden, die Obergrenze der Spalte wwn und die Traceback-Grenzen. Bewusst *nicht*
 einstellbar ist alles, was eine Spezifikation festlegt: Registerabstände,
@@ -201,7 +201,7 @@ vorgeschlagen werden kann, denn die Zahl ist in beiden Fällen gemessen.
 
 ## Es sagt Ihnen, wessen Hardware Sie ansehen
 
-Speicherwerkzeuge laufen regelmässig in einem Container oder einem Gast, wo die
+Speicherwerkzeuge laufen regelmäßig in einem Container oder einem Gast, wo die
 Antwort etwas anderes bedeutet. lsdsk erkennt, welches von beidem, und sagt es:
 
 - In einem **Container** sehen Sie die echte Hardware des Wirts durch einen
@@ -215,8 +215,8 @@ Antwort etwas anderes bedeutet. lsdsk erkennt, welches von beidem, und sagt es:
 
 ## Was eine Platte nutzt, und was `not mounted` bedeutet
 
-Die Spalte `used by` auf der Plattenseite kennt drei Zustände, nicht zwei. `-` heisst, niemand
-konnte nachsehen. `not mounted` heisst, es wurde nachgesehen und nichts gefunden. Alles andere
+Die Spalte `used by` auf der Plattenseite kennt drei Zustände, nicht zwei. `-` heißt, niemand
+konnte nachsehen. `not mounted` heißt, es wurde nachgesehen und nichts gefunden. Alles andere
 ist das Ergebnis: zuerst die `boot`-Markierung, falls sie zutrifft, dann die Einhängepunkte, der
 Pool oder die gestapelte Struktur, zu der die Platte gehört - ein Einhängepunkt oder ein
 Windows-Laufwerksbuchstabe, das eine Wort `swap`, `zfs:<pool>` für ein ZFS-Mitglied, oder
@@ -228,13 +228,13 @@ darf sie nur gemacht werden, wenn die udev-Datenbank gelesen wurde, die Swap-Lis
 und die eigene Gerätenummer der Platte sowie die jeder ihrer Partitionen gelesen wurde; fehlt
 eines davon, zeigt eine Platte ohne Fund stattdessen `-`. Unter Windows darf sie nur gemacht
 werden, wenn kein Laufwerk durch einen eigenen Fehler eine Nutzung dieser Platte verdecken
-könnte: Ein Laufwerk, das sich nicht öffnen liess oder dessen Extents-Abfrage fehlschlug,
-blockiert die Aussage weiterhin, ausser es hat gar keinen Pfad oder sein Laufwerkstyp ist ein
+könnte: Ein Laufwerk, das sich nicht öffnen ließ oder dessen Extents-Abfrage fehlschlug,
+blockiert die Aussage weiterhin, außer es hat gar keinen Pfad oder sein Laufwerkstyp ist ein
 CD-ROM- oder ein RAM-Laufwerk - keines von beiden könnte ohnehin hinter dem Buchstaben eines
 Laufwerks sitzen. Ein Laufwerk ohne Pfad, das als EFI-Systempartition gelesen wurde, blockiert
 sie trotzdem: Die ESP hat absichtlich keinen Buchstaben, und eine ESP auf unbekannter Platte
 könnte die Startmarke jeder Platte sein. Ein Laufwerk, dessen eigene Pfadliste sich nicht lesen
-liess, blockiert die Aussage ausnahmslos. Ein Container zeigt immer `-`: Die Nutzung seiner Platten durch den Wirt ist
+ließ, blockiert die Aussage ausnahmslos. Ein Container zeigt immer `-`: Die Nutzung seiner Platten durch den Wirt ist
 eine Tatsache über den Wirt, von innen eines gemeinsamen Kernels nicht sichtbar.
 
 Der Start wird auf jeder Plattform anders entschieden, weil beide unterschiedliche Belege
@@ -260,7 +260,7 @@ die eigene Signatur der Partition ist es, die das aufhebt.
 Zwei ehrliche Lücken. Ein btrfs-Dateisystem, das sich über mehrere Platten spannt, wird in
 mountinfo nur von einer davon genannt, sodass seine übrigen Mitglieder `-` zeigen: Sie
 zusammenzuführen würde bedeuten, die eigene UUID des Dateisystems zu lesen, was dieses
-Werkzeug nicht tut. Eine Platte, deren Partitionen auf einem Holder sich nicht auflisten liessen,
+Werkzeug nicht tut. Eine Platte, deren Partitionen auf einem Holder sich nicht auflisten ließen,
 nennt diesen Holder, aber nicht die Einhängepunkte dahinter, aus demselben Grund - das Gerät
 wird gesehen, was auf seinen ungelesenen Partitionen liegt, nicht.
 
@@ -297,10 +297,10 @@ Befund aus, weil nichts es füllen kann.
 
 Der Prozentsatz wird so gerechnet wie die Spalte `Use%` von `df`: belegt, geteilt durch belegt plus
 den Platz, der einem gewöhnlichen Benutzer frei zur Verfügung steht, aufgerundet. Auf ext4 mit
-reservierten Blöcken kann er daher höher sein als belegt geteilt durch Grösse, was die Detailzeile
+reservierten Blöcken kann er daher höher sein als belegt geteilt durch Größe, was die Detailzeile
 des Befunds ausgibt. Dieselbe Rechnung auf demselben Einhängepunkt ergibt dieselbe Zahl wie `df`.
 
-Ein ZFS-Pool ist eine Zeile, gleich welche Datasets er enthält, und seine Grösse und Belegung werden
+Ein ZFS-Pool ist eine Zeile, gleich welche Datasets er enthält, und seine Größe und Belegung werden
 von ZFS selbst gelesen, denn wer das Dateisystem nach einem Dataset fragt, erhält die eigenen Daten
 dieses Datasets plus den freien Platz des Pools. Ein Windows-Volume wird nach den Zahlen beurteilt,
 die das Volume meldet. Ein Dateisystem, dessen Zahlen nicht gelesen wurden, löst nichts aus.

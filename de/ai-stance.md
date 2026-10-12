@@ -23,7 +23,7 @@ Statt "war KI beteiligt" wäre uns also lieber, Sie fragten:
 - Verstehen die Betreuer wirklich, was sie gebaut haben?
 - Sind die Entwurfsentscheidungen vertretbar?
 - Steht jemand gerade, wenn etwas schiefgeht?
-- Kann ein Aussenstehender die Behauptungen selbst prüfen?
+- Kann ein Außenstehender die Behauptungen selbst prüfen?
 
 Unsere Sicht auf KI ist schlicht. Sie ist ein Werkzeug. Mit Aufmerksamkeit
 eingesetzt, macht sie einen fähigen Entwickler schneller. Achtlos eingesetzt,
@@ -35,7 +35,7 @@ liest. Den Unterschied zu erkennen ist Aufgabe des Menschen.
 Wie die meisten heutigen Entwicklerteams verwenden wir KI-gestützte Werkzeuge
 für Dinge wie Codevervollständigung, Erzeugung von Dokumentation, Automatisierung
 von Reviews und Sicherheitsprüfungen. Entscheidungen zu Architektur, Umsetzung
-und Tests bleiben bei unserem Team. Für das grössere Bild siehe
+und Tests bleiben bei unserem Team. Für das größere Bild siehe
 [IBM](https://www.ibm.com/solutions/ai-coding),
 [IBM-Fallstudien](https://www.ibm.com/case-studies/ibm-software-team) und die
 [MIT Technology Review](https://www.technologyreview.com/2025/12/15/1128352/rise-of-ai-coding-developers-2026/).
@@ -52,7 +52,7 @@ So sieht das in unserer Arbeit aus.
 ### Nachschlagen
 
 Wenn wir auf eine unbekannte Bibliothek, ein unbekanntes Protokoll oder ein
-fremdes Stück Codebasis stossen, ist KI oft der schnellste Weg hinein. Wir lassen
+fremdes Stück Codebasis stoßen, ist KI oft der schnellste Weg hinein. Wir lassen
 uns etwas zusammenfassen, auf die richtige Seite der Dokumentation zeigen oder
 eine vorhandene Umsetzung gemeinsam durchgehen. Es ist ein schnellerer Zugang zu
 Wissen, das ohnehin irgendwo existiert. Was wir mit diesem Wissen tun, bleibt
@@ -65,7 +65,7 @@ Code: herauszufinden, wie die Teile zusammenpassen, wo die Komplexität liegen
 soll, was unter Last zuerst versagt. Dieser Teil ist überwiegend Denken.
 
 Hier ist KI als Sparringspartner nützlich. Wir beschreiben einen Ansatz und
-lassen Löcher hineinschiessen. Manchmal fördert sie einen Randfall zutage, den
+lassen Löcher hineinschießen. Manchmal fördert sie einen Randfall zutage, den
 wir übersehen hatten. Manchmal bietet sie eine Sichtweise, die einen Knoten
 leichter lösbar macht. Manchmal erfindet sie selbstbewusst etwas, das es nicht
 gibt. Der Kniff besteht darin, mit ihr zu streiten und ihr nicht zu glauben.
@@ -81,7 +81,7 @@ wiederholen.
 Vieles von dem, was erzeugt wird, bleibt. Vieles nicht. Modelle erfinden
 bereitwillig eine Funktion, die es in der verwendeten Bibliothek nicht gibt. Sie
 übersehen eine Anforderung, die zwei Absätze vorher stand. Sie schlagen eine
-Form vor, die sich mit dem Rest der Codebasis beisst. Jede Zeile muss weiterhin
+Form vor, die sich mit dem Rest der Codebasis beißt. Jede Zeile muss weiterhin
 von einem Menschen gelesen und verantwortet werden, bevor sie ausgeliefert wird.
 
 ### Texte aufräumen
@@ -156,8 +156,8 @@ wurde.
 Wenn Sie eines unserer Projekte verwenden und wissen wollen, wie KI darin
 vorkommt, ist das eine berechtigte Frage, und Sie sollten eine fundierte
 Antwort bekommen. Umgekehrt sollte sorgfältige Arbeit nicht als Slop
-abgetan werden, bloss weil irgendwo in der Kette ein Modell war.
+abgetan werden, bloß weil irgendwo in der Kette ein Modell war.
 
-Diese Seite ist der Massstab, an dem wir uns zu halten versuchen. Wenn sie
-jemanden dazu anstösst, seine eigene Fassung zu schreiben, ist das ein gutes
+Diese Seite ist der Maßstab, an dem wir uns zu halten versuchen. Wenn sie
+jemanden dazu anstößt, seine eigene Fassung zu schreiben, ist das ein gutes
 Ergebnis.

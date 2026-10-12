@@ -21,7 +21,7 @@ jedes Ziel, das bmk aufruft, schreibt sie neu. Ein verändertes `Makefile` im
 Arbeitsbaum nach einem `make test` ist also zu erwarten und kann bedenkenlos
 committet werden.
 
-**`make help` ist die massgebliche Liste der Ziele.** Es liest die Zielkommentare
+**`make help` ist die maßgebliche Liste der Ziele.** Es liest die Zielkommentare
 des Makefile selbst aus und kann daher nicht im Widerspruch zu dem stehen, was
 tatsächlich läuft. Dieses Dokument wiederholt sie bewusst nicht: eine von Hand
 kopierte Liste veraltet in dem Moment, in dem bmk die Datei neu erzeugt.
@@ -122,7 +122,7 @@ Werkzeug für dieses Laufwerk meldet. Das ist die Prüfung, die vor dem Committe
 einer Aufnahme bestanden sein muss.
 
 Prüfen Sie auf Bereiche statt auf genaue Werte, wo sich etwas von selbst ändert:
-Betriebsstunden und Verschleiss steigen nur, und eine genaue Zusicherung geht
+Betriebsstunden und Verschleiß steigen nur, und eine genaue Zusicherung geht
 beim nächsten Neuaufnehmen einer Fixture kaputt.
 
 ## Codequalität
@@ -167,6 +167,6 @@ fehl, sobald eine der Kopien abweicht.
 
 Es liefert den Skill unter `skills/lsdsk/` mit. Heben Sie `version` in
 `.claude-plugin/plugin.json` bei jeder ausgelieferten Änderung an, sonst holen
-bestehende Installationen nie neu. `skills/lsdsk/SKILL.md` wird ausschliesslich
+bestehende Installationen nie neu. `skills/lsdsk/SKILL.md` wird ausschließlich
 über das Verfahren `bitranox:meta-skill-writer` bearbeitet; eine Absicherung
 erzwingt das.
