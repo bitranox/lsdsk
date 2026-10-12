@@ -42,7 +42,7 @@ from .long_page import LongPage
 from .typed_table import raising_table_id, rows_of
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
     from rich.console import RenderableType
     from textual import events
@@ -244,6 +244,8 @@ class LsdskApp(App[None]):
     CSS = """
     Screen { layout: vertical; }
     #verdict { height: auto; padding: 0 1; }
+    #unread-note { height: auto; padding: 0 1; }
+    #controller-legend, #slot-legend { height: auto; padding: 0 1; }
     TabbedContent { height: 1fr; }
     DataTable { height: 1fr; width: 1fr; }
     #wwn-row { height: 2; padding: 0 1; }
@@ -391,6 +393,7 @@ class LsdskApp(App[None]):
         """Lay out the header, the summary, the pages and the footer."""
         yield Header()
         yield Static(self.verdict_line(), id="verdict")
+        yield Static(self._unread_note(), id="unread-note")
         with TabbedContent(initial=CliCommand.TOPOLOGY.value):
             with TabPane("Topology", id=CliCommand.TOPOLOGY.value):
                 # One option per drawn line, so a reader can put the cursor on a
@@ -401,8 +404,9 @@ class LsdskApp(App[None]):
                 yield FabricList(id="tree-lines")
                 with VerticalScroll(id="tree-fallback"):
                     yield Static(id="tree")
-            with TabPane("Controllers", id=CliCommand.CONTROLLERS.value):
+            with TabPane("Controllers", id=CliCommand.CONTROLLERS.value), Vertical():
                 yield DataTable[str](id="controller-table", zebra_stripes=True, cursor_type="row")
+                yield Static(id="controller-legend")
             with TabPane("Disks", id=CliCommand.DISKS.value), Vertical():
                 yield DataTable[str](id="disk-table", zebra_stripes=True, cursor_type="row")
                 # A clipped cell has to stay reachable, and a DataTable cell
@@ -425,6 +429,7 @@ class LsdskApp(App[None]):
                 yield LongPage(id="findings-body")
             with TabPane("Slots", id=CliCommand.SLOTS.value), Vertical():
                 yield DataTable[str](id="slot-table", zebra_stripes=True, cursor_type="row")
+                yield Static(id="slot-legend")
                 yield Static(tui_palette.Recoloured(report.form_factor_note()), id="slot-note")
             with TabPane("Trend", id=CliCommand.TREND.value), Vertical():
                 # A table rendered as text until now, which is what it
@@ -460,6 +465,7 @@ class LsdskApp(App[None]):
         # Sized here rather than in the stylesheet for the reason the wwn strip
         # is: a literal in the CSS would be a second copy of a configured number.
         self.query_one("#detail", VerticalScroll).styles.max_height = f"{self.display_settings.detail_height_percent}%"
+        self._fill_unread_note()
         self._fill_controllers()
         self._fill_disks()
         self._fill_health()
@@ -498,14 +504,44 @@ class LsdskApp(App[None]):
         ]
         return "PROBLEMS   " + "   ".join(parts)
 
+    def _unread_note(self) -> Text:
+        """The printed header's own sentence about disk interfaces nobody could read.
+
+        Built by :func:`report.unread_interfaces_note`, the function the printed
+        pages call, so the two views cannot word it differently.
+        """
+        note = report.unread_interfaces_note(self.inventory)
+        return Text(note, style=tui_palette.restyle(theme.STYLE_CEILING)) if note else Text("")
+
+    def _fill_unread_note(self) -> None:
+        """Draw the interface note, taking no room at all when there is none."""
+        note = self.query_one("#unread-note", Static)
+        note.update(self._unread_note())
+        note.display = bool(report.unread_interfaces_note(self.inventory))
+
+    def _explain_marks(self, legend_id: str, drawn: Iterable[str]) -> None:
+        """Put the register-default legend under a table, only when a drawn cell carries the mark.
+
+        Decided from the cells the table actually drew rather than from the
+        selected row, so it reads the same with the detail panel hidden or the
+        cursor on an unmarked row.
+        """
+        legend = self.query_one(legend_id, Static)
+        text = theme.register_default_legend(drawn)
+        legend.update(Text(text, style=tui_palette.restyle(theme.STYLE_UNKNOWN)) if text else Text(""))
+        legend.display = bool(text)
+
     def _fill_controllers(self) -> None:
         """Populate the controller page."""
         table = rows_of(self.query_one("#controller-table"))
         table.add_columns(*CONTROLLER_COLUMNS)
         severities = report.severity_index(self.findings)
+        drawn: list[str] = []
         for controller in self.inventory.controllers:
             row = tables.controller_table_row(controller, self.inventory, severities, bandwidth=True)
+            drawn.extend(row.cells[column.key][0] for column in tables.CONTROLLER_COLUMNS)
             table.add_row(*_marked(row, tables.CONTROLLER_COLUMNS), key=controller.address)
+        self._explain_marks("#controller-legend", drawn)
 
     def _fill_slots(self) -> None:
         """Populate the mainboard slot page."""
@@ -517,12 +553,15 @@ class LsdskApp(App[None]):
         # marketing one for the identical port. A page and the command of one
         # name are one view, which is the rule the disk page already follows.
         defaults = register_default_links(self.inventory)
+        drawn: list[str] = []
         for slot in self.inventory.slots:
             cells = report.slot_table_row(slot, bandwidth=True, register_defaults=defaults)
+            drawn.extend(cells[column.key][0] for column in report.SLOT_COLUMNS)
             table.add_row(
                 *(_cell(*cells[column.key]) for column in report.SLOT_COLUMNS),
                 key=slot.address,
             )
+        self._explain_marks("#slot-legend", drawn)
 
     def _fill_disks(self) -> None:
         """Populate the disk page."""
@@ -1062,6 +1101,7 @@ class LsdskApp(App[None]):
         """
         self.findings = diagnose(self.inventory, history=self.history, thresholds=self.thresholds)
         self.query_one("#verdict", Static).update(self.verdict_line())
+        self._fill_unread_note()
         self._fill_findings()
         self._refill_tree()
         self._fill_smart()
