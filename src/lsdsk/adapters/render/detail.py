@@ -357,7 +357,9 @@ def filesystem_detail(filesystem: Filesystem) -> Detail:
     Returns:
         The record. The refused-readings group is present only when the system
         refused something, so a panel with nothing to say about refusals does
-        not carry an empty heading.
+        not carry an empty heading. A row that read no fill figure has no
+        finding scope: fill findings are keyed by name alone, and a hidden
+        mount shares its name with the mount covering it.
     """
     heading = (
         (filesystem.name, theme.STYLE_IDENTIFIER),
@@ -373,7 +375,8 @@ def filesystem_detail(filesystem: Filesystem) -> Detail:
         groups.append(
             DetailGroup(REFUSED, tuple((one.reading, (one.reason, "")) for one in filesystem.readings_refused))
         )
-    return Detail(heading, tuple(groups), (FindingScope(filesystem.name),))
+    scopes = (FindingScope(filesystem.name),) if filesystem.fill_was_read else ()
+    return Detail(heading, tuple(groups), scopes)
 
 
 def machine_detail(inventory: Inventory) -> Detail:

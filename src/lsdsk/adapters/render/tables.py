@@ -486,8 +486,7 @@ def filesystem_marked_row(
         filesystem needs one, so a marker found under its name belongs to
         another row of that name, such as the mount covering a hidden one.
     """
-    judged = filesystem.used_percent is not None or filesystem.inodes_used_percent is not None
-    severity = severities.get(filesystem.name) if judged else None
+    severity = severities.get(filesystem.name) if filesystem.fill_was_read else None
     marker = (theme.marker_for(severity), theme.style_for(severity))
     return MarkedRow(marker=marker, cells=filesystem_table_row(filesystem, both_scales=both_scales))
 

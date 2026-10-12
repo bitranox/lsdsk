@@ -21,6 +21,7 @@ from lsdsk.adapters.render import detail, tables, theme
 from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.enums import FilesystemKind
+from lsdsk.domain.filesystem_fill import diagnose_filesystems
 from lsdsk.domain.models import Filesystem, Inventory, RefusedReading
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
@@ -81,12 +82,9 @@ def test_every_other_mountpoint_is_named_where_the_table_says_plus_n() -> None:
     assert "+2" in tables.filesystem_table_row(one, both_scales=True)["filesystem"][0]
 
 
+@pytest.mark.os_agnostic
 def test_a_mount_with_no_other_mounts_says_so_rather_than_drawing_a_marker() -> None:
     """Nothing to list is a reading, not a missing one, and not the no-link marker either."""
-
-
-def test_a_mount_with_no_other_mounts_says_none_rather_than_a_dash() -> None:
-    """Nothing to list is a reading, not a missing one."""
     assert _values(_mount())["identity.other mounts"] == "(none)"
 
 
@@ -182,16 +180,24 @@ def test_the_legend_names_only_the_markers_the_panel_drew() -> None:
 
 
 @pytest.mark.os_agnostic
-def test_two_rows_sharing_a_name_keep_their_own_records() -> None:
-    """An overmount gives a hidden mount and the mount over it one mountpoint."""
-    assert _values(_hidden("/data"))["space.size"] == "-"
-    assert _values(_mount(name="/data"))["space.size"] != "-"
-
-
-@pytest.mark.os_agnostic
 def test_the_scope_is_the_name_the_fill_findings_use() -> None:
     """Fill findings name the filesystem by ``name``, so that is the scope."""
     assert [scope.subject for scope in detail.filesystem_detail(_mount()).scopes] == ["/srv"]
+
+
+@pytest.mark.os_agnostic
+def test_a_row_that_read_no_fill_figure_claims_no_finding_of_the_mount_covering_it() -> None:
+    """Fill findings are keyed by name; the hidden half of an overmount shares its name."""
+    covering = _mount(name="/data", used_bytes=98 * GIB, free_bytes=2 * GIB)
+    findings = diagnose_filesystems(_zfs_machine().with_changes(filesystems=(covering,)))
+    assert findings, "the control: the covering mount raised no fill finding"
+
+    hidden_panel = _drawn(detail.render_detail(detail.filesystem_detail(_hidden("/data")), findings))
+    covering_panel = _drawn(detail.render_detail(detail.filesystem_detail(covering), findings))
+
+    assert detail.filesystem_detail(_hidden("/data")).scopes == ()
+    assert findings[0].title not in hidden_panel
+    assert findings[0].title in covering_panel
 
 
 def _filesystems(machine: Inventory) -> list[Filesystem]:
@@ -247,3 +253,41 @@ async def test_moving_the_cursor_moves_the_panel_and_a_rescan_keeps_it_filled() 
     assert first.name in before.splitlines()[0]
     assert second.name in moved.splitlines()[0]
     assert cursor.name in rescanned.splitlines()[0], "the rescan left the panel answering for another row"
+
+
+def _overmounted_machine() -> tuple[Inventory, Filesystem, Filesystem]:
+    """Two rows of one name: the mount over it first, the hidden one it covers second."""
+    covering = _mount(name="/data", used_bytes=98 * GIB, free_bytes=2 * GIB)
+    return _zfs_machine().with_changes(filesystems=(covering, _hidden("/data"))), covering, _hidden("/data")
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
+async def test_two_rows_sharing_a_name_each_answer_with_their_own_record() -> None:
+    """Press 9 and walk the cursor over an overmount: the panel flips between the two rows.
+
+    The rows are keyed by position, so a lookup by name would answer for the
+    covering mount twice. The hidden row also must not borrow the covering
+    mount's fill finding, which is keyed by the name they share.
+    """
+    machine, covering, hidden = _overmounted_machine()
+    finding_title = diagnose_filesystems(machine)[0].title
+    app = LsdskApp(machine)
+    async with app.run_test(size=(160, 50)) as pilot:
+        await pilot.press("9")
+        await pilot.pause()
+        first = _panel_text(app)
+        await pilot.press("down")
+        await pilot.pause()
+        second = _panel_text(app)
+        await pilot.press("up")
+        await pilot.pause()
+        back = _panel_text(app)
+
+    assert theme.format_size_both(covering.size_bytes) in first
+    assert finding_title in first
+    assert theme.format_size_both(covering.size_bytes) not in second
+    assert "hidden by a mount over it" in second
+    assert finding_title not in second
+    assert theme.format_size_both(covering.size_bytes) in back
+    assert hidden.readings_refused[0].reason not in back

@@ -1939,6 +1939,22 @@ class Filesystem(DomainModel, frozen=True):
         return _ceil_percent(self.used_bytes, whole)
 
     @property
+    def fill_was_read(self) -> bool:
+        """Whether any fill figure of this row was read, which is what a finding about it needs.
+
+        Fill findings name a filesystem by ``name`` alone, so a row that read
+        neither percentage - the hidden half of an overmount - must not claim
+        the finding of the mount covering it.
+
+        Example:
+            >>> Filesystem(kind=FilesystemKind.MOUNT, name="/").fill_was_read
+            False
+            >>> Filesystem(kind=FilesystemKind.MOUNT, name="/", used_bytes=1, free_bytes=1).fill_was_read
+            True
+        """
+        return self.used_percent is not None or self.inodes_used_percent is not None
+
+    @property
     def inodes_used_percent(self) -> int | None:
         """How many inodes are in use, only where the table is a ceiling."""
         if self.inode_table is not InodeTable.FIXED:
