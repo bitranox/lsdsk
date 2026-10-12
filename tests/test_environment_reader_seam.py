@@ -86,6 +86,17 @@ def test_a_root_named_directly_is_used_with_the_default_proc_left_alone(tmp_path
     assert read_environment(proc=proc, root=tmp_path)["container_marker"] == "oci"
 
 
+def test_a_root_named_directly_wins_over_the_parent_of_proc(tmp_path: Path) -> None:
+    """The tree comes from ``root`` and not from ``proc``'s parent, which here holds a different marker."""
+    _write(tmp_path / "host" / "run" / "systemd" / "container", "oci\n")
+    _write(tmp_path / "other" / "run" / "systemd" / "container", "podman\n")
+    proc = tmp_path / "other" / "proc"
+    proc.mkdir(parents=True)
+
+    assert read_environment(proc=proc, root=tmp_path / "host")["container_marker"] == "oci"
+    assert read_environment(proc=proc)["container_marker"] == "podman"
+
+
 def test_a_carriage_return_inside_a_mount_point_does_not_cut_the_row(tmp_path: Path) -> None:
     """The kernel prints a CR unescaped; universal newlines turned it into a row break."""
     proc = tmp_path / "proc"
