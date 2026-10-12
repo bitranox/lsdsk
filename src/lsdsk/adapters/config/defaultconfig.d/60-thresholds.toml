@@ -106,3 +106,49 @@ quiet_expected_min = 10.0
 #
 # Environment Variable: LSDSK___THRESHOLDS__MIN_SPAN_HOURS="1"
 min_span_hours = 1
+
+# How full a filesystem is before it is worth a hint.
+#
+# Default: 85. Fill is rounded up, so it agrees with df on the same mount, and
+# the finding says "at or above". Free space means free to an ordinary user.
+#
+# Consequence: a filesystem at or above this and below the warning value is a
+# hint, which exits 0. Raise it for volumes that are meant to run nearly full;
+# a read-only mount is never judged.
+#
+# Environment Variable: LSDSK___THRESHOLDS__FILESYSTEM_FULL_HINT_PERCENT="85"
+filesystem_full_hint_percent = 85
+
+# How full a filesystem is before it is a warning.
+#
+# Default: 95. A full filesystem fails writes, and a full ZFS pool also slows
+# down well before it is completely full.
+#
+# Consequence: a filesystem at or above this is a warning, which makes the run
+# exit 1. Lower it to be told sooner. A value from 1 to 100 is taken and
+# anything else falls back to the shipped one.
+#
+# Environment Variable: LSDSK___THRESHOLDS__FILESYSTEM_FULL_WARNING_PERCENT="95"
+filesystem_full_warning_percent = 95
+
+# How much of its inode table a filesystem has used before it is worth a hint.
+#
+# Default: 85. Only a filesystem whose inode table is a fixed ceiling (ext4
+# and similar) is judged: xfs, btrfs and ZFS allocate inodes on demand, so
+# there is no ceiling to approach.
+#
+# Consequence: at or above this and below the warning value is a hint, which
+# exits 0.
+#
+# Environment Variable: LSDSK___THRESHOLDS__INODES_FULL_HINT_PERCENT="85"
+inodes_full_hint_percent = 85
+
+# How much of its inode table a filesystem has used before it is a warning.
+#
+# Default: 95. A filesystem out of inodes refuses new files while it still
+# reports free space, which reads as a bug elsewhere.
+#
+# Consequence: at or above this is a warning, which makes the run exit 1.
+#
+# Environment Variable: LSDSK___THRESHOLDS__INODES_FULL_WARNING_PERCENT="95"
+inodes_full_warning_percent = 95

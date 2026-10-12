@@ -167,6 +167,18 @@ def read_thresholds(config: Config) -> ThresholdsReading:
         ),
         quiet_expected_min=values.positive_float("quiet_expected_min", DEFAULT_THRESHOLDS.quiet_expected_min),
         min_span_hours=values.positive_int("min_span_hours", DEFAULT_THRESHOLDS.min_span_hours),
+        filesystem_full_hint_percent=values.percent(
+            "filesystem_full_hint_percent", DEFAULT_THRESHOLDS.filesystem_full_hint_percent
+        ),
+        filesystem_full_warning_percent=values.percent(
+            "filesystem_full_warning_percent", DEFAULT_THRESHOLDS.filesystem_full_warning_percent
+        ),
+        inodes_full_hint_percent=values.percent(
+            "inodes_full_hint_percent", DEFAULT_THRESHOLDS.inodes_full_hint_percent
+        ),
+        inodes_full_warning_percent=values.percent(
+            "inodes_full_warning_percent", DEFAULT_THRESHOLDS.inodes_full_warning_percent
+        ),
     )
     return ThresholdsReading(thresholds, values.rejected)
 

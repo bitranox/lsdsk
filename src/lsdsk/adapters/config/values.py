@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 #: the value is, because the reader already has the value in front of them.
 REASON_POSITIVE_INT = "not a whole number above zero, or too large to use"
 REASON_POSITIVE_FLOAT = "not a number above zero, or too large to use"
+REASON_PERCENT = "not a whole number from 1 to 100"
 REASON_FLAG = "not true or false"
 REASON_PATH = "not a path, or names a user this machine does not have"
 REASON_MODE = "not a file mode; write it as text: 0755 or 0o755"
@@ -191,6 +192,45 @@ def positive_int(raw: object, default: int) -> int:
         The configured count, or ``default``.
     """
     return cast("int", raw) if accepts_positive_int(raw) else default
+
+
+#: A percentage of a whole cannot exceed it.
+PERCENT_CEILING = 100
+
+
+def accepts_percent(raw: object) -> bool:
+    """Whether a configured value is usable as a percentage of a whole.
+
+    A fill threshold above 100 could never be reached and one at zero would fire
+    on everything, so both ends are refused here rather than left to the model's
+    own bounds, which would stop the run instead of falling back.
+
+    Args:
+        raw: The configured value, of whatever type the file produced.
+
+    Returns:
+        Whether it can be used as it stands.
+
+    Example:
+        >>> accepts_percent(1), accepts_percent(100), accepts_percent(101), accepts_percent(0)
+        (True, True, False, False)
+        >>> accepts_percent(True)
+        False
+    """
+    return not isinstance(raw, bool) and isinstance(raw, int) and 1 <= raw <= PERCENT_CEILING
+
+
+def percent(raw: object, default: int) -> int:
+    """Read a percentage, falling back rather than failing the run.
+
+    Args:
+        raw: The configured value.
+        default: The shipped figure to use when it cannot be.
+
+    Returns:
+        The configured percentage, or ``default``.
+    """
+    return cast("int", raw) if accepts_percent(raw) else default
 
 
 def accepts_positive_float(raw: object) -> bool:
@@ -511,6 +551,13 @@ class SectionValues:
             self._note(key, reason=REASON_POSITIVE_INT, used=default)
         return positive_int(raw, default)
 
+    def percent(self, key: str, default: int) -> int:
+        """A percentage from 1 to 100, recording the refusal if the configured value is not one."""
+        raw = self._table.get(key)
+        if key in self._table and not accepts_percent(raw):
+            self._note(key, reason=REASON_PERCENT, used=default)
+        return percent(raw, default)
+
     def positive_float(self, key: str, default: float) -> float:
         """A rate, recording the refusal if the configured value is not one."""
         raw = self._table.get(key)
@@ -581,6 +628,7 @@ __all__ = [
     "REASON_FLAG",
     "REASON_MODE",
     "REASON_PATH",
+    "REASON_PERCENT",
     "REASON_POSITIVE_FLOAT",
     "REASON_POSITIVE_INT",
     "REASON_SECTION",
@@ -591,6 +639,7 @@ __all__ = [
     "accepts_flag",
     "accepts_mode",
     "accepts_path",
+    "accepts_percent",
     "accepts_positive_float",
     "accepts_positive_int",
     "accepts_tree_density",
@@ -598,6 +647,7 @@ __all__ = [
     "is_ambiguous_mode",
     "mode_of",
     "path_or_none",
+    "percent",
     "positive_float",
     "positive_int",
     "reason_tree_density",

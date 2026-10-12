@@ -36,12 +36,14 @@ from lsdsk.adapters.config.values import (
     accepts_flag,
     accepts_mode,
     accepts_path,
+    accepts_percent,
     accepts_positive_float,
     accepts_positive_int,
     accepts_tree_density,
     flag,
     mode_of,
     path_or_none,
+    percent,
     positive_float,
     positive_int,
     tree_density_of,
@@ -75,6 +77,7 @@ _CAPTURE = "linux-nvme-board.json"
 #: in a parametrize list infers ``dict[Unknown, Unknown]``, and the container a
 #: coercer must refuse is exactly the case worth keeping in the list.
 _INT_RAWS: list[object] = [1, 99, 0, -1, True, False, "1", "abc", 2.5, None, {}, []]
+_PERCENT_RAWS: list[object] = [1, 85, 100, 0, 101, -1, True, False, "85", 85.0, None, {}]
 _FLOAT_RAWS: list[object] = [1, 3.5, 0, 0.0, -0.5, True, "2.5", None, {}]
 _MODE_RAWS: list[object] = [493, 0o750, 755, 420, 0, -1, True, "0755", "0o755", "999", "", None, 1.5]
 _FLAG_RAWS: list[object] = [True, False, 1, 0, "true", "", None, {}]
@@ -284,6 +287,8 @@ def test_a_refused_path_is_reported_even_when_the_command_line_overrides_it(
     [
         pytest.param("display", "piped_width", "abc", 200, id="positive_int"),
         pytest.param("thresholds", "quiet_expected_min", "abc", 2.5, id="positive_float"),
+        pytest.param("thresholds", "filesystem_full_warning_percent", 101, 90, id="percent above a hundred"),
+        pytest.param("thresholds", "inodes_full_hint_percent", 0, 90, id="percent of zero"),
         pytest.param("display", "expand_virtual", "yes", True, id="flag"),
         pytest.param("display", "tree_density", "bogus", "full", id="tree_density"),
         pytest.param("history", "max_samples_per_drive", "abc", 7, id="history positive_int"),
@@ -364,6 +369,13 @@ def test_section_values_positive_int_refuses_by_its_own_predicate_not_the_floats
             (80, 95),
             _INT_RAWS,
             id="positive_int",
+        ),
+        pytest.param(
+            accepts_percent,
+            percent,
+            (85, 95),
+            _PERCENT_RAWS,
+            id="percent",
         ),
         pytest.param(
             accepts_positive_float,

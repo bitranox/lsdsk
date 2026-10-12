@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from .enums import Severity
 from .fabric_links import diagnose_fabric_links
+from .filesystem_fill import diagnose_filesystems
 from .history import CounterKind, History, identity_of, trend_for
 from .models import (
     Controller,
@@ -1592,6 +1593,7 @@ def diagnose(
         findings.extend(diagnose_port_allocation(inventory))
         findings.extend(diagnose_fabric_links(inventory))
     findings.extend(diagnose_firmware_consistency(inventory, thresholds))
+    findings.extend(diagnose_filesystems(inventory, thresholds))
     return tuple(sorted(findings, key=lambda f: (SEVERITY_RANKING.index(f.severity), f.subject)))
 
 
@@ -1623,6 +1625,7 @@ __all__ = [
     "diagnose_controller_link",
     "diagnose_controller_oversubscription",
     "diagnose_disk_link",
+    "diagnose_filesystems",
     "diagnose_firmware_consistency",
     "diagnose_health",
     "diagnose_port_allocation",

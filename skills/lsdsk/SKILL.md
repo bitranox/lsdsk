@@ -79,8 +79,9 @@ uvx lsdsk controllers         # controllers, PCIe placement, free ports
 uvx lsdsk slots               # every PCIe port: what holds it, what is free
 uvx lsdsk disks               # one row per disk
 uvx lsdsk trend               # what each error counter is DOING, not just its total
+uvx lsdsk filesystems         # how full each filesystem, ZFS pool or Windows volume on an inventoried disk is; inodes where the table is fixed
 uvx lsdsk record              # store one reading, print nothing, for a timer
-uvx lsdsk tui                 # the same eight views, interactive (1-8, left/right, q)
+uvx lsdsk tui                 # the same nine views, interactive (1-9 or f1-f9, left/right, r rescans, q quits)
 uvx lsdsk snapshot -o m.json  # capture the raw reading
 uvx lsdsk info                # version, homepage and the shell command name
 uvx lsdsk config              # show effective configuration (--section thresholds for one)
@@ -337,6 +338,16 @@ filter is needed and none is exported. That is not the same as "every controller
 a disk hangs off": a USB disk's `controller_address` names its USB host
 controller, which is not a storage device and is not in `data.controllers`.
 
+**`data.filesystems` is a list of the filesystems, ZFS pools and Windows volumes
+that live on an inventoried disk.** Each entry carries `kind` (`mount`, `pool` or
+`volume`), `name`, `other_mounts`, `fs_type`, `disks`, `size_bytes`, `used_bytes`,
+`free_bytes` (free to an ordinary user, so ext4's reserved blocks count as used,
+as `df` has it), `inodes_total`, `inodes_free`, `read_only` and `readings_refused`.
+It is `null` when the capture did not read filesystems and `[]` when it did and
+none sits on an inventoried disk, so test for `None` before treating it as empty.
+A refused reading (subjects `statvfs`, `zfs-pools`, `volume-space`) appears as a
+`skipped` line, not as a missing row.
+
 **`data.virtual_disks` is a second list of the same shape**, holding the devices
 with no hardware behind them. It is always populated, whatever `--expand-virtual`
 or `display.expand_virtual` says, and `data.disks` never contains one - which is
@@ -417,12 +428,18 @@ callable on its own, which is how you run one without the rest:
 `diagnose_controller_link(controller, inventory)`,
 `diagnose_controller_oversubscription(controller, inventory)`,
 `diagnose_port_allocation(inventory)`, `diagnose_health(disk, series, thresholds)`,
-`diagnose_firmware_consistency(inventory, thresholds)` and `diagnose_usb_link(disk)`,
-which grades a USB disk's link to the machine the way the others grade theirs.
+`diagnose_firmware_consistency(inventory, thresholds)`, `diagnose_usb_link(disk)`,
+which grades a USB disk's link to the machine the way the others grade theirs, and
+`diagnose_filesystems(inventory, thresholds)`, which gives a hint at or above 85
+percent full and a warning at or above 95, for space and, on ext2/ext3/ext4 only
+(the filesystems with a fixed inode table), for inodes. A read-only filesystem is
+never judged.
 Each returns a `list[Finding]`, empty when the rule has nothing to say.
 `DEFAULT_THRESHOLDS` is what those rules fall back to when no `Thresholds` is
 passed, and its fields carry the shipped figures: `wear_warning_percent` 80, `wear_critical_percent` 95,
-`crc_errors_significant` 100. Build your own with `Thresholds(...)` and pass it,
+`crc_errors_significant` 100, `filesystem_full_hint_percent` 85,
+`filesystem_full_warning_percent` 95, `inodes_full_hint_percent` 85 and
+`inodes_full_warning_percent` 95. Build your own with `Thresholds(...)` and pass it,
 rather than reading a field off the default and comparing yourself.
 
 **`lsdsk.adapters.hw.snapshot` holds more than `load` and `collect`.**
@@ -453,21 +470,22 @@ command that reads a machine, `--profile` on the `config` commands,
 including a bare `lsdsk`. Every other global option is refused after the
 subcommand with exit `2`.
 
-The figures the rules turn on are all seven `[thresholds]` keys, so none of them
+The figures the rules turn on are all eleven `[thresholds]` keys, so none of them
 is fixed: `wear_warning_percent` 80, `wear_critical_percent` 95,
 `crc_errors_significant` 100 (below it a CRC count is a hint), `quiet_expected_min`
 10.0 (the line the whole "were due" idea rests on: fewer expected than this and
 the tool refuses to call a counter quiet), `wear_projection_min_points` 2 (wear is
 an integer, so one point is one unit of resolution and a rate from it is noise -
 under this much measured movement no wear-out date is projected), `min_span_hours`
-1 and `mixed_firmware_threshold` 2. Override one for a run with
+1, `mixed_firmware_threshold` 2 and the four filesystem keys above (a value
+outside 1-100 falls back to its default with a warning). Override one for a run with
 `lsdsk --set thresholds.crc_errors_significant=10 findings`, or permanently by
 editing the deployed `config.d/60-thresholds.toml`.
 
 Exit codes: `0` nothing actionable, `1` a warning or critical. Hints never set a
 non-zero code; a hint is a ceiling, not a fault.
 
-**Only the eight section commands, `report` and bare `lsdsk` set `0`/`1` from findings.**
+**Only the nine section commands, `report` and bare `lsdsk` set `0`/`1` from findings.**
 `record`, `snapshot` and the `config-*` commands exit `0` on success whatever the
 hardware says, so never read their code as a verdict about the machine. They are
 not always `0`, though: one that cannot write what it was asked to write leaves

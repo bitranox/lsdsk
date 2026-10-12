@@ -38,7 +38,7 @@ DEFAULTS = Path(__file__).parent.parent / "src" / "lsdsk" / "adapters" / "config
 
 #: Captures chosen for contrast: one machine with findings of several kinds, one
 #: with almost none, and one whose drives carry recorded-counter history.
-CAPTURES = ("linux-sas-hba.json", "linux-minimal.json", "linux-nvme-board.json")
+CAPTURES = ("linux-sas-hba.json", "linux-minimal.json", "linux-nvme-board.json", "linux-zfs-filesystems.json")
 
 #: The views a key could plausibly move. `findings` and the bare report between
 #: them cover severity, the verdict line and every table.
@@ -48,6 +48,7 @@ COMMANDS: tuple[tuple[str, ...], ...] = (
     ("health",),
     ("trend",),
     ("slots",),
+    ("filesystems",),
 )
 
 #: Values far enough apart that any key which is read at all should separate
@@ -69,6 +70,10 @@ PROBES: dict[str, tuple[str, str, dict[str, str]]] = {
     # The projection sentence needs a wear finding AND a measured rate, so it
     # needs both the gate lowered and a seeded history (see SEEDED).
     "wear_projection_min_points": ("1", "100000000", {"thresholds.wear_warning_percent": "1"}),
+    # The fullest filesystem on any committed capture is a ZFS pool at 19 percent,
+    # so the low value sits under it and the high value above it.
+    "filesystem_full_hint_percent": ("1", "100", {}),
+    "filesystem_full_warning_percent": ("1", "100", {}),
     "piped_width": ("60", "400", {}),
     "wwn_width": ("8", "400", {}),
     "summary_limit": ("1", "1000", {}),
@@ -85,6 +90,15 @@ PROBES: dict[str, tuple[str, str, dict[str, str]]] = {
 #: does cover it. Anything here is a deliberate exemption, not an oversight, and
 #: a key may only be added with a reason that says why no run can show it.
 UNOBSERVABLE: dict[str, str] = {
+    "inodes_full_hint_percent": (
+        "judges only a filesystem with a fixed inode table, and no committed capture carries one (the real "
+        "ZFS capture has pools only); covered by test_filesystem_fill, which drives the rule at the limit and "
+        "reads the key through read_thresholds"
+    ),
+    "inodes_full_warning_percent": (
+        "judges only a filesystem with a fixed inode table, and no committed capture carries one; covered by "
+        "test_filesystem_fill, which drives the rule at the limit and reads the key through read_thresholds"
+    ),
     "path": "names WHERE the store goes, not what any run renders; covered by test_history_config",
     "traceback_summary_limit": "only reachable on a raising command, which cli_fail covers in test_cli_core",
     "traceback_verbose_limit": "only reachable on a raising command, which cli_fail covers in test_cli_core",

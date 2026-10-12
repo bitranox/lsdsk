@@ -39,6 +39,14 @@ class Thresholds(DomainModel, frozen=True):
             have predicted across a quiet span before that silence is evidence.
         min_span_hours: Power-on hours a span must cover before a rate is
             computed at all. Below one there is nothing to divide by.
+        filesystem_full_hint_percent: Fill at or above which a filesystem is
+            worth a hint.
+        filesystem_full_warning_percent: Fill at or above which a filesystem
+            is a warning.
+        inodes_full_hint_percent: Inode use at or above which a filesystem
+            with a fixed inode table is worth a hint.
+        inodes_full_warning_percent: Inode use at or above which it is a
+            warning.
 
     Example:
         >>> Thresholds().wear_critical_percent
@@ -59,6 +67,12 @@ class Thresholds(DomainModel, frozen=True):
     # divisor, and removing the adapter's guard survived the whole suite.
     quiet_expected_min: float = Field(default=10.0, gt=0)
     min_span_hours: int = Field(default=1, ge=1)
+    # No hint-below-warning validator: a key is probed by setting it alone, and
+    # a rule that refuses an odd pair would stop the run over a tuning choice.
+    filesystem_full_hint_percent: int = Field(default=85, ge=1, le=100)
+    filesystem_full_warning_percent: int = Field(default=95, ge=1, le=100)
+    inodes_full_hint_percent: int = Field(default=85, ge=1, le=100)
+    inodes_full_warning_percent: int = Field(default=95, ge=1, le=100)
 
 
 #: What the rules use when nobody says otherwise.

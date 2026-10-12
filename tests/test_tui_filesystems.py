@@ -19,8 +19,8 @@ from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui import palette as tui_palette
 from lsdsk.adapters.tui.app import FILESYSTEM_COLUMNS
 from lsdsk.adapters.tui.typed_table import rows_of
-from lsdsk.domain.enums import FilesystemKind, Severity
-from lsdsk.domain.models import Filesystem, Finding, Inventory
+from lsdsk.domain.enums import FilesystemKind
+from lsdsk.domain.models import Filesystem, Inventory
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
 
@@ -127,9 +127,8 @@ async def test_every_row_lands_under_its_own_heading() -> None:
 @pytest.mark.asyncio
 async def test_a_full_filesystem_carries_its_finding_marker() -> None:
     app = LsdskApp(machine(_EXT4, _FULL))
-    # The diagnosis raises nothing about a filesystem yet, so the finding is
-    # supplied on the attribute the page reads its markers from.
-    app.findings = (Finding(severity=Severity.WARNING, subject="/srv", title="/srv is at or above 95% full"),)
+    # The finding comes from the real diagnosis of a 98% full mount, not from an
+    # injected one, so the page proves it reads what the rule raises.
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.press("9")
         await pilot.pause()
@@ -218,7 +217,8 @@ async def test_no_printed_colour_reaches_the_filesystem_page_on_either_fill() ->
     }
     # The coloured row is not first: the cursor row is painted over by the table.
     app = LsdskApp(machine(_UNREAD, _FULL))
-    app.findings = (Finding(severity=Severity.WARNING, subject="/srv", title="/srv is at or above 95% full"),)
+    # Real diagnosis: /srv is 98% full, so the rule raises its warning at mount,
+    # and the rescan below re-diagnoses and must keep the marker.
     pictures: list[str] = []
     async with app.run_test(size=(180, 50)) as pilot:
         await pilot.press("9")
@@ -233,7 +233,9 @@ async def test_no_printed_colour_reaches_the_filesystem_page_on_either_fill() ->
     # The controls: the mount draws the finding's marker and both fills draw the
     # legend for the unread cell, in interactive hues, so a page drawing no
     # colour at all cannot satisfy the loop above.
-    assert tui_palette.PALETTE.warning.upper() in pictures[0], "the control: the marker's hue was not drawn"
+    assert all(tui_palette.PALETTE.warning.upper() in picture for picture in pictures), (
+        "the control: the marker's hue was missing from the mount picture or the rescan picture"
+    )
     assert all(tui_palette.PALETTE.unknown.upper() in picture for picture in pictures), "the control: no legend hue"
 
 
