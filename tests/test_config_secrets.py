@@ -188,3 +188,13 @@ def test_tables_inside_lists_inside_tables_are_walked_too() -> None:
     """Mapping to sequence to mapping to sequence, with the readable value kept at each step."""
     given = {"a": {"b": [{"c": [{"secret": "s", "name": "n"}]}]}}
     assert redact_secrets(given) == {"a": {"b": [{"c": [{"secret": REDACTED, "name": "n"}]}]}}
+
+
+@pytest.mark.parametrize("name", ["oauth2Token", "sha256Secret", "apiV2Password"])
+def test_a_digit_before_a_hump_still_splits_the_name(name: str) -> None:
+    """A camelCase hump after a DIGIT is a word boundary like one after a letter.
+
+    `oauth2Token` is `oauth2` and `Token`; split only after a lowercase letter it
+    is the one word `oauth2token`, which names no secret, and the value printed.
+    """
+    assert redact_secrets({name: "s3cret"}) == {name: REDACTED}
