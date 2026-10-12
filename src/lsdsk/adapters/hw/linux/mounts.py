@@ -14,6 +14,7 @@ System Role:
 
 Contents:
     * :func:`read_mounts` - every mounted filesystem, from mountinfo.
+    * :func:`read_space` - each mounted filesystem's size, free space and inodes.
     * :func:`read_swaps` - every active swap, from ``/proc/swaps``.
     * :func:`read_partitions` - a disk's partitions and what sits on each.
     * :func:`read_stacked` - a device-mapper device's mapping and its holders.
@@ -32,7 +33,7 @@ from ....domain.errors import ConfigurationError, MissingFileError
 from ...textfile import read_text_bounded
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
 # mountinfo on a container host with a ZFS root runs to tens of thousands of
 # characters for a few dozen mounts; a docker host with thousands of bind
@@ -84,6 +85,10 @@ _MIN_LEFT_FIELDS = 5
 # The fields right of " - " are fstype, source[, options]; at least the first
 # two are required to know the filesystem and where it came from.
 _MIN_RIGHT_FIELDS = 2
+# Index of the per-mount options in the left fields, and of the superblock
+# options in the right fields (fstype, source, options).
+_OPTIONS_FIELD = 5
+_SUPER_OPTIONS_FIELD = 2
 # A ZFS dataset has an anonymous device number, so its source is the one way to
 # join it to its pool; every other source is either a device path (already
 # resolved to source_dev) or something no disk sits behind.
@@ -217,7 +222,99 @@ def _parse_mountinfo_line(line: str, device_number: Callable[[str], str | None])
         row["source"] = source.split("/", 1)[0]
     elif row["dev"].split(":", 1)[0] == _ANONYMOUS_MAJOR and source_dev is None:
         return None
+    # Field 6 carries the per-mount options and the field after the source the
+    # superblock's; either one being read-only makes this mount read-only.
+    per_mount = left_fields[_OPTIONS_FIELD] if len(left_fields) > _OPTIONS_FIELD else ""
+    super_options = right_fields[_SUPER_OPTIONS_FIELD] if len(right_fields) > _SUPER_OPTIONS_FIELD else ""
+    row["read_only"] = "true" if _starts_read_only(per_mount) or _starts_read_only(super_options) else "false"
     return row
+
+
+def _starts_read_only(options: str) -> bool:
+    """Whether a comma-separated option list says ``ro``."""
+    return options.split(",", 1)[0] == "ro"
+
+
+class StatvfsResult(Protocol):
+    """The six figures read from ``os.statvfs``."""
+
+    @property
+    def f_frsize(self) -> int:
+        """The fundamental block size, in bytes."""
+        ...
+
+    @property
+    def f_blocks(self) -> int:
+        """The size of the filesystem, in ``f_frsize`` blocks."""
+        ...
+
+    @property
+    def f_bfree(self) -> int:
+        """The free blocks, including those reserved for root."""
+        ...
+
+    @property
+    def f_bavail(self) -> int:
+        """The free blocks an unprivileged user can use."""
+        ...
+
+    @property
+    def f_files(self) -> int:
+        """The total inodes."""
+        ...
+
+    @property
+    def f_ffree(self) -> int:
+        """The free inodes."""
+        ...
+
+
+def _system_statvfs(path: str) -> StatvfsResult:
+    """Ask the system, resolving ``os.statvfs`` at call time.
+
+    ``os.statvfs`` does not exist on Windows, so naming it as a default would
+    break the import of this module there.
+    """
+    return os.statvfs(path)
+
+
+def read_space(
+    rows: Sequence[Mapping[str, str]], *, statvfs: Callable[[str], StatvfsResult] = _system_statvfs
+) -> dict[str, dict[str, int | str]]:
+    """Read each mounted filesystem's size, free space and inodes once.
+
+    Only the rows ``read_mounts`` kept are asked, which already excludes every
+    mount no disk can sit behind (tmpfs, NFS, FUSE), so a hung network mount is
+    never stat-ed. ZFS datasets are skipped: a dataset's statvfs reports its own
+    data plus the pool's free space, never the pool's fill.
+
+    Args:
+        rows: What :func:`read_mounts` returned.
+        statvfs: The call that reads one mountpoint.
+
+    Returns:
+        One reading per filesystem device, keyed by its ``maj:min``. A refused
+        reading is ``{"error": <reason>}``.
+    """
+    readings: dict[str, dict[str, int | str]] = {}
+    for row in rows:
+        dev = row.get("dev", "")
+        if not dev or dev in readings or row.get("fstype") == _ZFS:
+            continue
+        try:
+            result = statvfs(row["mountpoint"])
+        except OSError as error:
+            readings[dev] = {"error": error.strerror or str(error)}
+            continue
+        readings[dev] = {
+            "frsize": result.f_frsize,
+            "blocks": result.f_blocks,
+            "bfree": result.f_bfree,
+            "bavail": result.f_bavail,
+            "files": result.f_files,
+            "ffree": result.f_ffree,
+        }
+    return readings
 
 
 def read_swaps(
@@ -485,10 +582,12 @@ def _read_short_text(path: Path, *, limit: int = MAX_ATTRIBUTE_CHARS) -> str | N
 __all__ = [
     "MAX_ATTRIBUTE_CHARS",
     "MAX_MOUNTINFO_BYTES",
+    "StatvfsResult",
     "device_number_of",
     "read_mounts",
     "read_partitions",
     "read_signatures",
+    "read_space",
     "read_stacked",
     "read_swaps",
 ]

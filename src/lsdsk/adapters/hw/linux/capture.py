@@ -279,6 +279,8 @@ class MountEntry(CaptureModel, frozen=True):
             device node. ``None`` for a source that is not a device path (a
             ZFS dataset, ``tmpfs``, an NFS export) and for one that could not
             be resolved.
+        read_only: Whether the mount is read-only, from either the per-mount
+            or the superblock options. ``None`` when not read.
     """
 
     dev: DeviceText
@@ -286,6 +288,29 @@ class MountEntry(CaptureModel, frozen=True):
     fstype: DeviceText = ""
     source: DeviceText = ""
     source_dev: DeviceText | None = None
+    read_only: bool | None = None
+
+
+class SpaceEntry(CaptureModel, frozen=True):
+    """One filesystem's ``statvfs`` reading, or the reason it was refused.
+
+    Attributes:
+        frsize: The fundamental block size, in bytes.
+        blocks: The size of the filesystem, in ``frsize`` blocks.
+        bfree: The free blocks, including those reserved for root.
+        bavail: The free blocks an unprivileged user can use.
+        files: The total inodes.
+        ffree: The free inodes.
+        error: Why the reading was refused; the figures are then ``None``.
+    """
+
+    frsize: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    blocks: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    bfree: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    bavail: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    files: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    ffree: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    error: DeviceText | None = None
 
 
 class SwapEntry(CaptureModel, frozen=True):
@@ -551,6 +576,7 @@ class LinuxCapture(CaptureHeader, frozen=True):
     signatures: EntryMap[DeviceText, FilesystemSignature] | None = None
     zfs_pools: EntryMap[DeviceText, PoolEntry] | None = None
     zfs_pools_error: DeviceText | None = None
+    filesystem_space: EntryMap[DeviceText, SpaceEntry] | None = None
 
 
 __all__ = [
@@ -572,6 +598,7 @@ __all__ = [
     "QueueAttributes",
     "SasPhyEntry",
     "ScsiHostEntry",
+    "SpaceEntry",
     "StackedEntry",
     "SwapEntry",
     "SysfsClasses",

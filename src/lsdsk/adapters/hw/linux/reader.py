@@ -1157,6 +1157,7 @@ def read_system() -> dict[str, Any]:
     ]
 
     pools, pools_error = zfs.read_pools()
+    mount_rows = mounts.read_mounts()
     reading: dict[str, Any] = {
         "schema": SCHEMA_VERSION,
         "captured_at": datetime.now(UTC).isoformat(),
@@ -1173,11 +1174,12 @@ def read_system() -> dict[str, Any]:
         "ata": read_ata_blobs(ata_nodes),
         "nvme": read_nvme_blobs(nvme_nodes),
         "usb": read_usb(block),
-        "mounts": mounts.read_mounts(),
+        "mounts": mount_rows,
         "swaps": mounts.read_swaps(),
         "stacked": mounts.read_stacked(sorted(holders)),
         "signatures": mounts.read_signatures(devnums),
         **zfs.capture_fields(pools, pools_error),
+        "filesystem_space": None if mount_rows is None else mounts.read_space(mount_rows),
     }
     return reading
 
