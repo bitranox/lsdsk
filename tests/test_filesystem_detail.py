@@ -81,10 +81,13 @@ def test_every_other_mountpoint_is_named_where_the_table_says_plus_n() -> None:
     assert "+2" in tables.filesystem_table_row(one, both_scales=True)["filesystem"][0]
 
 
-@pytest.mark.os_agnostic
+def test_a_mount_with_no_other_mounts_says_so_rather_than_drawing_a_marker() -> None:
+    """Nothing to list is a reading, not a missing one, and not the no-link marker either."""
+
+
 def test_a_mount_with_no_other_mounts_says_none_rather_than_a_dash() -> None:
     """Nothing to list is a reading, not a missing one."""
-    assert _values(_mount())["identity.other mounts"] == "none"
+    assert _values(_mount())["identity.other mounts"] == "(none)"
 
 
 @pytest.mark.os_agnostic
@@ -170,6 +173,8 @@ def test_the_legend_names_only_the_markers_the_panel_drew() -> None:
     unread = _panel(_hidden())
 
     assert "not read" not in clean
+    assert theme.NO_LINK not in _values(_mount()).values()
+    assert "no link trained" not in clean
     assert "does not apply" not in clean
     assert "does not apply" in dynamic
     assert "not read" not in dynamic

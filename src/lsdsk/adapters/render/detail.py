@@ -951,7 +951,9 @@ def _filesystem_identity_values(filesystem: Filesystem) -> tuple[tuple[str, Cell
         ("kind", (str(filesystem.kind), "")),
         ("name", (filesystem.name, theme.STYLE_IDENTIFIER)),
         ("type", _said(filesystem.fs_type)),
-        ("other mounts", (others, "") if others else ("none", "")),
+        # Not "none": that is the marker for a link that never trained, and a cell equal to it would
+        # make the legend explain a symbol this panel did not draw.
+        ("other mounts", (others, "") if others else ("(none)", "")),
         ("disks", _said(" ".join(filesystem.disks))),
         ("read-only", _yes_no(value=filesystem.read_only)),
     )
