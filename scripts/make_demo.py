@@ -268,6 +268,11 @@ async def drive(app: LsdskApp, steps: Sequence[Step], cast_file: Cast, first_ind
     frames: list[str] = []
     dead: list[str] = []
     previous = ""
+    # A frame is exported at one instant, and the tab underline slides to the new
+    # tab over a fraction of a second: exported mid-slide it sits between two
+    # tabs. With animations off the underline is where it ends up at once, so
+    # every frame is settled without guessing how many pauses that takes.
+    app.animation_level = "none"
     async with app.run_test(size=(COLS, ROWS)) as pilot:
         await pilot.pause()
         for offset, step in enumerate(steps):
