@@ -153,7 +153,11 @@ def _temperature(attributes: tuple[SmartAttribute, ...]) -> int | None:
             # into it) still has to land inside the bound every other path
             # applies; that bound is a policy, not an ATA figure.
             celsius = plausible_celsius(attribute.raw & 0xFF)
-            if celsius is not None:
+            # A drive that has not measured yet publishes a zero here; unlike
+            # sysfs or the NVMe log, where 0 C is a reading, an ATA attribute
+            # is a fixed-width field and zero is its empty value, so the next
+            # temperature attribute gets its turn.
+            if celsius:
                 return celsius
     return None
 

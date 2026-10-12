@@ -8,6 +8,11 @@ unmeasured, exactly like a drive that published none.
 
 from __future__ import annotations
 
+import base64
+import json
+from pathlib import Path
+from typing import Any, cast
+
 import pytest
 
 from lsdsk.adapters.hw.decode.ata_smart import decode_health
@@ -15,8 +20,10 @@ from lsdsk.adapters.hw.decode.captured import MAX_PLAUSIBLE_CELSIUS, MIN_PLAUSIB
 from lsdsk.adapters.hw.decode.nvme import decode_smart_log
 from lsdsk.adapters.hw.linux.builder import build_disks
 from lsdsk.adapters.hw.linux.capture import BlockEntry, HwmonEntry, LinuxCapture, SysfsClasses
+from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.domain.enums import Platform
 
+FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 BASE = "/sys/devices/pci0000:00/0000:04:00.0/nvme/nvme0"
 KELVIN_OFFSET = 273
 
@@ -82,19 +89,52 @@ def test_a_plausible_nvme_composite_temperature_is_kept(celsius: int) -> None:
     assert decode_smart_log(bytes(page)).temperature_c == celsius
 
 
-def _ata_page_with_temperature_raw(raw_low_byte: int) -> bytes:
+def _ata_page_with_temperature_raw(*attributes: tuple[int, int]) -> bytes:
+    """A SMART page holding ``(identifier, raw low byte)`` attributes in order."""
     page = bytearray(512)
-    page[2] = 194  # Temperature_Celsius, in the first attribute slot
-    page[2 + 3] = 100  # normalised value
-    page[2 + 5] = raw_low_byte
+    for slot, (identifier, raw_low_byte) in enumerate(attributes):
+        start = 2 + 12 * slot
+        page[start] = identifier
+        page[start + 3] = 100  # normalised value
+        page[start + 5] = raw_low_byte
     return bytes(page)
 
 
-@pytest.mark.parametrize("celsius", [0, 30, MAX_PLAUSIBLE_CELSIUS])
+@pytest.mark.parametrize("celsius", [30, MAX_PLAUSIBLE_CELSIUS])
 def test_an_ata_temperature_attribute_uses_the_same_bound_as_every_other_path(celsius: int) -> None:
-    assert decode_health(_ata_page_with_temperature_raw(celsius)).temperature_c == celsius
+    assert decode_health(_ata_page_with_temperature_raw((194, celsius))).temperature_c == celsius
 
 
 @pytest.mark.parametrize("raw", [MAX_PLAUSIBLE_CELSIUS + 1, 0xFF])
 def test_an_ata_temperature_attribute_above_the_bound_is_not_a_reading(raw: int) -> None:
-    assert decode_health(_ata_page_with_temperature_raw(raw)).temperature_c is None
+    assert decode_health(_ata_page_with_temperature_raw((194, raw))).temperature_c is None
+
+
+def test_an_ata_temperature_attribute_of_raw_zero_is_not_a_reading() -> None:
+    """A zero low byte is a drive that has not measured, not a drive at 0 C."""
+    assert decode_health(_ata_page_with_temperature_raw((194, 0))).temperature_c is None
+
+
+def test_an_ata_temperature_of_raw_zero_does_not_hide_the_next_attribute() -> None:
+    assert decode_health(_ata_page_with_temperature_raw((194, 0), (190, 38))).temperature_c == 38
+
+
+def test_a_real_ata_temperature_still_wins_over_the_next_attribute() -> None:
+    """Liveness: attribute 194 is still read first when it holds a reading."""
+    assert decode_health(_ata_page_with_temperature_raw((194, 41), (190, 38))).temperature_c == 41
+
+
+def _temperature_of_planted_sda(*attributes: tuple[int, int]) -> int | None:
+    reading = cast("dict[str, Any]", json.loads((FIXTURES / "linux-minimal.json").read_text(encoding="utf-8")))
+    page = _ata_page_with_temperature_raw(*attributes)
+    reading["ata"]["sda"]["smart_data"] = base64.b64encode(page).decode("ascii")
+    (disk,) = [disk for disk in build_from(reading).disks if disk.node == "sda"]
+    return None if disk.health is None else disk.health.temperature_c
+
+
+def test_a_planted_zero_attribute_reaches_the_inventory_as_the_next_attribute() -> None:
+    assert _temperature_of_planted_sda((194, 0), (190, 35)) == 35
+
+
+def test_a_planted_lone_zero_attribute_reaches_the_inventory_as_unread() -> None:
+    assert _temperature_of_planted_sda((194, 0)) is None
