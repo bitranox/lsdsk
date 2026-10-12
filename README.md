@@ -76,7 +76,7 @@ Number keys switch between the pages, `Tab` cycles, and every page is also a sub
 
 ![The lsdsk interactive view: nine pages, the tree density cycling, the detail panel, and a table being scrolled](https://raw.githubusercontent.com/bitranox/lsdsk/main/docs/media/lsdsk-demo.gif)
 
-Six of the nine pages carry a cursor, and a panel under the table gives the
+Seven of the nine pages carry a cursor, and a panel under the table gives the
 detail: every value the row had no column for, and the findings that go with it.
 [PAGES.md](https://github.com/bitranox/lsdsk/blob/main/PAGES.md) describes all nine pages in detail.
 

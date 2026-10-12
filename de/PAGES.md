@@ -16,14 +16,14 @@ die Befehle, in derselben Reihenfolge, `4` und `lsdsk health` sind also dieselbe
 Ansicht mit denselben Spalten. Jede Seite steht für sich und zeigt jede Platte,
 es muss also nichts ausgewählt werden, um eine zu lesen.
 
-Sechs der neun Seiten führen außerdem einen Cursor - Topologie, Controller,
-Platten, Gesundheit, Steckplätze und Verlauf -, den `up` und `down` bewegen. Eine
+Sieben der neun Seiten führen außerdem einen Cursor - Topologie, Controller,
+Platten, Gesundheit, Steckplätze, Verlauf und Dateisysteme -, den `up` und `down` bewegen. Eine
 Tafel unter der Tabelle antwortet für das, worauf der Cursor steht: jeder Wert,
 für den die Zeile keine Spalte hatte, dann die Befunde, mit
 Begründung und Abhilfe. `i` blendet die Tafel aus und gibt der Tabelle den ganzen
 Bildschirm; `shift+up` und `shift+down` rollen darin und werden nur angeboten,
 wenn der Eintrag höher ist als die Tafel. SMART und Befunde führen keinen
-Cursor, rollen als ganze Seite, und die Tafel liest dort `Nothing selected.` Auf der Dateisystemseite liest die Tafel ebenfalls `Nothing selected.`
+Cursor, rollen als ganze Seite, und die Tafel liest dort `Nothing selected.`
 
 Auf der Topologieseite schaltet `d` um, wie detailliert die PCI-Struktur dargestellt wird,
 dieselbe Einstellung, die `--tree-density` für jede Ansicht setzt. 
@@ -117,3 +117,10 @@ das Inodes nach Bedarf anlegt, sodass es keine Tabelle zu füllen gibt; eine Zei
 nennt, welches von beiden die Tabelle gezeichnet hat. Eine Zeile, auf die ein Befund zutrifft, trägt
 die Markierung dieses Befunds. Siehe [FINDINGS.md](FINDINGS.md#wie-voll-ein-dateisystem-ist), wann
 ein Füllstand zum Befund wird.
+
+Der Cursor füllt die Tafel mit dem, wofür die Tabelle keine Spalte hat: jeden weiteren Einhängepunkt
+des Dateisystems mit Namen, wo die Zeile `+N` sagt, die Platten, auf denen es liegt, das
+Schreibschutz-Flag, die rohen Inode-Zahlen und jede vom System verweigerte Lesung samt Grund. Eine
+Zeile, deren Zahlen nicht gelesen wurden, etwa ein Einhängepunkt, den ein darüber eingehängter
+verdeckt, zeigt `-` und den Grund, nie eine Zahl. Zwei Zeilen können denselben Namen tragen, daher
+folgt die Tafel der Zeile und nicht dem Namen.

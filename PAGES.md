@@ -15,14 +15,14 @@ The pages carry the same names as the commands, in the same order, so `4` and
 Each page stands alone and shows every disk, so nothing has to be selected to
 read one.
 
-Six of the nine pages also carry a cursor - topology, controllers, disks,
-health, slots and trend - which `up` and `down` move. A panel under the table
+Seven of the nine pages also carry a cursor - topology, controllers, disks,
+health, slots, trend and filesystems - which `up` and `down` move. A panel under the table
 answers for whatever the cursor is on: every value the row had no column for,
 then the findings, with their reasoning and their remedy. `i` hides the
 panel and gives the table the whole screen; `shift+up` and `shift+down` scroll
 inside it, and are offered only when the record is taller than the panel is.
 SMART and findings carry no cursor, scroll as a page, and the panel reads
-`Nothing selected.` there. On the filesystems page the panel reads `Nothing selected.` as well.
+`Nothing selected.` there.
 
 On the topology page, `d` switches how much detail the PCI fabric is drawn in,
 the same setting `--tree-density` sets for every view. `,` and `.` scroll the
@@ -109,3 +109,9 @@ it: size, used and free, then `use%` and, where the filesystem makes its inodes 
 fill; a line under the table names whichever of the two the table drew. A row a finding applies to
 carries that finding's marker. See [FINDINGS.md](FINDINGS.md#how-full-a-filesystem-is) for when a
 fill level becomes a finding.
+
+The cursor fills the panel with what the table has no column for: every other mountpoint of the
+filesystem by name where the row says `+N`, the disks it lives on, the read-only flag, the raw
+inode counts, and each reading the system refused with its reason. A row whose figures were not
+read, such as a mount hidden by another mounted over it, shows `-` and the reason, never a
+figure. Two rows can share a name, so the panel follows the row, not the name.

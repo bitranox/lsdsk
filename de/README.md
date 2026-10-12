@@ -78,7 +78,7 @@ Seite 4 zeigt.
 
 ![Die interaktive Ansicht von lsdsk: neun Seiten, die wechselnde Baumdichte, die Detailtafel und eine Tabelle, die verschoben wird](../docs/media/lsdsk-demo.gif)
 
-Sechs der neun Seiten führen einen Cursor, und eine Tafel unter der Tabelle
+Sieben der neun Seiten führen einen Cursor, und eine Tafel unter der Tabelle
 bietet Detailinformationen: jeder Wert, für den die Zeile keine Spalte
 hatte und die entsprechenden Befunde. [PAGES.md](PAGES.md) beschreibt alle neun Seiten im Detail.
 

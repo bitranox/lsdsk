@@ -15,7 +15,9 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   dataset's own data plus the pool's free space; a bind mount or btrfs subvolume of one filesystem
   is one row showing `+N` further mountpoints. `-` marks a figure nobody read and `n/a` an inode
   figure for a filesystem that creates inodes on demand. A mount or volume rounds `use%` up like
-  `df`; a pool rounds it down like `zpool list`. See ADR 0005.
+  `df`; a pool rounds it down like `zpool list`. See ADR 0005. The page has a cursor and the detail
+  panel under it, like the other cursor pages: it names every other mountpoint the row abbreviates
+  as `+N`, the raw inode counts, the read-only flag and each refused reading with its reason.
 - **`--format json` carries the filesystems.** Every section's envelope has `data.filesystems`, a
   list of `{kind, name, other_mounts, fs_type, disks, size_bytes, used_bytes, free_bytes,
   inodes_total, inodes_free, read_only, readings_refused}`, or `null` where the filesystems were
