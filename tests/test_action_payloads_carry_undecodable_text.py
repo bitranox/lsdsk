@@ -139,24 +139,17 @@ class _Unannotated(ActionResult):
 
     path: str
     paths: list[str]
-    by_name: dict[str, str]
-    nested: tuple[str, ...]
 
 
 def test_a_field_nobody_marked_is_still_escaped(capsys: pytest.CaptureFixture[str]) -> None:
     """The structural half: no field type opts in, so a field added later is covered too."""
     emit_action(
         ActionCommand.SNAPSHOT,
-        _Unannotated(path=BAD_NAME, paths=[BAD_NAME], by_name={"k": BAD_NAME}, nested=(BAD_NAME,)),
+        _Unannotated(path=BAD_NAME, paths=[BAD_NAME]),
     )
 
     data = json.loads(capsys.readouterr().out)["data"]
-    assert data == {
-        "path": ESCAPED,
-        "paths": [ESCAPED],
-        "by_name": {"k": ESCAPED},
-        "nested": [ESCAPED],
-    }
+    assert data == {"path": ESCAPED, "paths": [ESCAPED]}
 
 
 def test_a_mapping_payload_is_escaped_at_every_depth(capsys: pytest.CaptureFixture[str]) -> None:
@@ -164,16 +157,15 @@ def test_a_mapping_payload_is_escaped_at_every_depth(capsys: pytest.CaptureFixtu
 
     A key is not part of this: pydantic refuses a non-UTF-8 extra key at validation, so none reaches the export.
     """
-    emit_action(ActionCommand.CONFIG, MappingResult.model_validate({"outer": {"inner": [BAD_NAME]}}))
+    emit_action(
+        ActionCommand.CONFIG, MappingResult.model_validate({"outer": {"inner": [BAD_NAME], "pair": (BAD_NAME,)}})
+    )
 
-    assert json.loads(capsys.readouterr().out)["data"] == {"outer": {"inner": [ESCAPED]}}
+    assert json.loads(capsys.readouterr().out)["data"] == {"outer": {"inner": [ESCAPED], "pair": [ESCAPED]}}
 
 
 def test_ordinary_text_in_a_payload_is_carried_unchanged(capsys: pytest.CaptureFixture[str]) -> None:
     """The control: only what no JSON can hold is rewritten."""
-    emit_action(
-        ActionCommand.SNAPSHOT,
-        _Unannotated(path="grüße", paths=["a b"], by_name={"k": "v"}, nested=("x",)),
-    )
+    emit_action(ActionCommand.SNAPSHOT, _Unannotated(path="gr\u00fc\u00dfe", paths=["a b"]))
 
     assert json.loads(capsys.readouterr().out)["data"]["path"] == "grüße"
