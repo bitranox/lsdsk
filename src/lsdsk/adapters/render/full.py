@@ -114,6 +114,8 @@ def render_full(
             inventory, findings, width=width, expand_virtual=laid_out.expand_virtual, wwn_width=laid_out.wwn_width
         ),
         blank,
+        tables.render_filesystems(inventory, findings, width=width),
+        blank,
         tables.render_health(inventory, findings, width=width, history=recorded, thresholds=settled.thresholds),
         *_legend(tables.counter_legend(inventory, recorded)),
         blank,

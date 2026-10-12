@@ -21,7 +21,7 @@ from rich.table import Table
 from rich.text import Text
 
 from ...domain.diagnostics import attached_demand_gbytes, link_is_register_default
-from ...domain.enums import Align
+from ...domain.enums import Align, InodeTable
 from ...domain.history import CounterKind, identity_of, trend_for
 from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_WWN_WIDTH
@@ -51,7 +51,7 @@ if TYPE_CHECKING:
 
     from ...domain.enums import Severity
     from ...domain.history import DiskSeries, History, Trend
-    from ...domain.models import Controller, Disk, Finding, Inventory, PcieLink
+    from ...domain.models import Controller, Disk, Filesystem, Finding, Inventory, PcieLink
     from .rows import Row
     from .theme import Cell
 
@@ -110,6 +110,26 @@ HEALTH_COLUMNS: tuple[Column, ...] = (
 )
 
 
+# The approved drop order as the terminal narrows: inodes%, then type, then
+# size, then used. `filesystem`, `use%` and `disks` never drop - how full, and
+# where - because a row without them answers nothing.
+FILESYSTEM_COLUMNS: tuple[Column, ...] = (
+    Column("filesystem", "filesystem", priority=0, flexible=True, min_width=10),
+    Column("type", "type", priority=5),
+    Column("size", "size", align=Align.RIGHT, priority=4),
+    Column("used", "used", align=Align.RIGHT, priority=3),
+    Column("free", "free", align=Align.RIGHT, priority=1),
+    Column("use", "use%", align=Align.RIGHT, priority=0),
+    Column("inodes", "inodes%", align=Align.RIGHT, priority=6),
+    Column("disks", "disks", priority=0, flexible=True, min_width=6),
+)
+
+# Full sentences, so no cell can contain one by accident.
+FILESYSTEM_NOT_READ_LEGEND = f"{theme.NOT_READ} = not read"
+FILESYSTEM_NOT_APPLICABLE_LEGEND = f"{theme.NOT_APPLICABLE} = no fixed inode table on this filesystem"
+FILESYSTEMS_NOT_READ_SENTENCE = "Filesystems were not read."
+
+
 class TableRows(NamedTuple):
     """One table's rows, and optionally the same rows written more plainly.
 
@@ -134,6 +154,19 @@ class TableRows(NamedTuple):
         return [{key: value[0] for key, value in row.cells.items()} for row in rows]
 
 
+def _fitted(columns: Sequence[Column], rows: TableRows, width: int) -> tuple[Layout, Sequence[MarkedRow]]:
+    """The layout a table is drawn with, and the form of the rows it is measured for.
+
+    One function for the printed table and for a caller that must know which
+    columns survived before it writes a legend, so the two cannot be given
+    different answers.
+    """
+    if rows.plain is None:
+        return Layout.for_rows(columns, rows.texts(bandwidth=True), width), rows.rich
+    layout = Layout.preferring(columns, rows.texts(bandwidth=True), rows.texts(bandwidth=False), width)
+    return layout, rows.rich if layout.bandwidth else rows.plain
+
+
 def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, caption: str = "") -> Table:
     """Build a table from styled rows, keeping only the columns that fit.
 
@@ -154,12 +187,7 @@ def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, 
             mark is added to it here, where the columns that survived the
             width are known.
     """
-    if rows.plain is None:
-        layout = Layout.for_rows(columns, rows.texts(bandwidth=True), width)
-        drawn = rows.rich
-    else:
-        layout = Layout.preferring(columns, rows.texts(bandwidth=True), rows.texts(bandwidth=False), width)
-        drawn = rows.rich if layout.bandwidth else rows.plain
+    layout, drawn = _fitted(columns, rows, width)
     widths = layout.widths
     chosen = layout.columns
     # A register-default mark is explained under the table that drew it, and
@@ -396,6 +424,91 @@ def render_disks(
     return _render(f"Disks on {inventory.hostname}", disk_columns(wwn_width), TableRows(rows, plain), width, caption)
 
 
+def _filesystem_cell(text: str | None, *, marker: str = theme.NOT_READ) -> theme.Cell:
+    """A figure, or the marker that says why there is none, grey like every unread value."""
+    return (marker, theme.STYLE_UNKNOWN) if text is None else (text, "")
+
+
+def _percent_text(value: int | None) -> str | None:
+    return None if value is None else f"{value}%"
+
+
+def _inodes_cell(filesystem: Filesystem) -> theme.Cell:
+    """The inode fill, or `n/a` where the filesystem has no fixed table to fill."""
+    if filesystem.inode_table is InodeTable.DYNAMIC:
+        return _filesystem_cell(None, marker=theme.NOT_APPLICABLE)
+    return _filesystem_cell(_percent_text(filesystem.inodes_used_percent))
+
+
+def filesystem_table_row(filesystem: Filesystem, *, both_scales: bool) -> Row:
+    """One filesystem's cells for every key in :data:`FILESYSTEM_COLUMNS`, styled.
+
+    Args:
+        filesystem: The filesystem to describe.
+        both_scales: Whether a capacity names the decimal and the binary scale
+            (`500GB/466GiB`) or only the binary one.
+
+    Returns:
+        Column key to its (text, style) pair.
+    """
+    size = theme.format_size_both if both_scales else theme.format_size
+
+    def capacity(value: int | None) -> theme.Cell:
+        return _filesystem_cell(None if value is None else size(value))
+
+    shown = f"{filesystem.name} +{len(filesystem.other_mounts)}" if filesystem.other_mounts else filesystem.name
+    return {
+        "filesystem": (shown, theme.STYLE_IDENTIFIER),
+        "type": _filesystem_cell(filesystem.fs_type or None),
+        "size": capacity(filesystem.size_bytes),
+        "used": capacity(filesystem.used_bytes),
+        "free": capacity(filesystem.free_bytes),
+        "use": _filesystem_cell(_percent_text(filesystem.used_percent)),
+        "inodes": _inodes_cell(filesystem),
+        "disks": _filesystem_cell(" ".join(filesystem.disks) or None),
+    }
+
+
+def _filesystem_legend(columns: Sequence[Column], rows: Sequence[MarkedRow]) -> str:
+    """Name `-` and `n/a`, each only when a surviving column draws it."""
+    drawn = {row.cells[column.key][0] for row in rows for column in columns}
+    parts = (
+        (theme.NOT_READ, FILESYSTEM_NOT_READ_LEGEND),
+        (theme.NOT_APPLICABLE, FILESYSTEM_NOT_APPLICABLE_LEGEND),
+    )
+    return "; ".join(legend for marker, legend in parts if marker in drawn)
+
+
+def render_filesystems(inventory: Inventory, findings: Sequence[Finding], width: int = DEFAULT_WIDTH) -> Table:
+    """Render one row per filesystem that lives on an inventoried disk.
+
+    Args:
+        inventory: The machine.
+        findings: The findings, used to mark affected rows by filesystem name.
+        width: Terminal width, which decides how many columns fit.
+
+    Returns:
+        A table of filesystems; with no rows and a sentence saying so when the
+        inventory did not read them.
+    """
+    title = f"Filesystems on {inventory.hostname}"
+    if inventory.filesystems is None:
+        return _render(title, FILESYSTEM_COLUMNS, TableRows(()), width, FILESYSTEMS_NOT_READ_SENTENCE)
+    severities = severity_index(findings)
+
+    def marked(filesystem: Filesystem, *, both_scales: bool) -> MarkedRow:
+        severity = severities.get(filesystem.name)
+        marker = (theme.marker_for(severity), theme.style_for(severity))
+        return MarkedRow(marker=marker, cells=filesystem_table_row(filesystem, both_scales=both_scales))
+
+    rows = TableRows(
+        [marked(one, both_scales=True) for one in inventory.filesystems],
+        [marked(one, both_scales=False) for one in inventory.filesystems],
+    )
+    layout, drawn = _fitted(FILESYSTEM_COLUMNS, rows, width)
+    return _render(title, FILESYSTEM_COLUMNS, rows, width, _filesystem_legend(layout.columns, drawn))
+
+
 def render_health(
     inventory: Inventory,
     findings: Sequence[Finding],
@@ -598,6 +711,10 @@ __all__ = [
     "CONTROLLER_COLUMNS",
     "DEFAULT_WIDTH",
     "DISK_COLUMNS",
+    "FILESYSTEMS_NOT_READ_SENTENCE",
+    "FILESYSTEM_COLUMNS",
+    "FILESYSTEM_NOT_APPLICABLE_LEGEND",
+    "FILESYSTEM_NOT_READ_LEGEND",
     "HEALTH_COLUMNS",
     "OVERFLOW_WIDTH",
     "RISING_MARK",
@@ -607,9 +724,11 @@ __all__ = [
     "counter_text",
     "disk_columns",
     "disk_table_row",
+    "filesystem_table_row",
     "health_table_row",
     "render_controllers",
     "render_disks",
+    "render_filesystems",
     "render_health",
     "series_for",
     "trend_of",
