@@ -39,6 +39,7 @@ CAPTURES = (
     "linux-nvme-board",
     "linux-minimal",
     "linux-usb-ehci",
+    "linux-zfs-filesystems",
     "windows-usb-uas",
     "windows-chipset-switch",
 )

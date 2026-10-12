@@ -1386,6 +1386,7 @@ _SALTED_CAPTURES = (
     "linux-sas-hba",
     "linux-nvme-board",
     "linux-usb-ehci",
+    "linux-zfs-filesystems",
     "windows-ahci",
     "windows-usb-uas",
     "windows-chipset-switch",
@@ -1405,7 +1406,11 @@ _MARK = "SALTMARK"
 
 #: Keys whose value is structural rather than device text. ``platform`` selects
 #: the builder, so salting it does not test the sanitiser, it tests the dispatch.
-_STRUCTURAL_KEYS = frozenset({"platform"})
+#: ``read_only`` is the reader's own verdict on a mount, written as the text
+#: ``true`` or ``false`` and typed as a boolean in the capture model, so a salted
+#: one is a malformed file the replay refuses (exit 78) before any view draws -
+#: which tests the model's refusal, not the sanitiser, and no view ever prints it.
+_STRUCTURAL_KEYS = frozenset({"platform", "read_only"})
 
 #: Cells where a salted capture reaches nothing, MEASURED rather than assumed,
 #: and asserted below in the direction that makes the exclusion self-cancelling:
@@ -1557,6 +1562,7 @@ _MARKUP_DRAWS_NOTHING = frozenset(
         ("linux-sas-hba", "trend"),
         ("linux-nvme-board", "trend"),
         ("linux-usb-ehci", "trend"),
+        ("linux-zfs-filesystems", "trend"),
         ("windows-ahci", "trend"),
         ("windows-usb-uas", "trend"),
         ("windows-chipset-switch", "trend"),

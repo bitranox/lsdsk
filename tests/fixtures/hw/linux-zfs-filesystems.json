@@ -1,0 +1,2080 @@
+{
+  "ata": {
+    "sda": {
+      "identify": "QAD/PzfIEAAAAAAAPwAAAAAAAABBRkVLRlowUzAwMDAwMCAxICAgIAAAAAAAAFhEME1CNVEwYVNzbW51IGdTUyBENDggMFJQIE9lU2lyc2UgICAgICAgICAgICAgIBCAAEAALwBAAAIAAgcA/z8QAD8AEPz7ABDx////DwAABwADAHgAeAB4AHgAME8AAAAAAAAAAAAAHwAOhcYAbAFsAPwDOQBrdAF9Y0FpdAG8Y0F/QAEAAQAAAP7/AAAAAAAAAAAAAAAAAACwEp47AAAAAAAACAAAQAAAAlCPUwCgAQAAAAAAAAAAAAAAAAAAAB5AHEAAAAAAAAAAAAAAAAAAACkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABACAgICAgICAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD0AAAAAAABAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAfxAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAApYg=",
+      "smart_data": "AQAFMwBkZAAAAAAAAAAJMgBUVNkqAQAAAAAMMgBjYwUDAAAAAACxEwBcXBsBAAAAAACzEwBkZAAAAAAAAAC1MgBkZAAAAAAAAAC2MgBkZAAAAAAAAAC3EwBkZAAAAAAAAAC7MgBkZAAAAAAAAAC+MgBNNRcAAAAAAADDGgDIyAAAAAAAAADHPgBkZAAAAAAAAADrEgBjY40AAAAAAADxMgBjY+2MfyQgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAMTSAFMDAAEAAiMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHY=",
+      "smart_thresholds": "AQAFCgAAAAAAAAAAAAAJAAAAAAAAAAAAAAAMAAAAAAAAAAAAAACxAAAAAAAAAAAAAACzCgAAAAAAAAAAAAC1CgAAAAAAAAAAAAC2CgAAAAAAAAAAAAC3CgAAAAAAAAAAAAC7AAAAAAAAAAAAAAC+AAAAAAAAAAAAAADDAAAAAAAAAAAAAADHAAAAAAAAAAAAAADrAAAAAAAAAAAAAADxAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAE4="
+    },
+    "sdb": {
+      "identify": "QAD/PzfIEAAAAAAAPwAAAAAAAABBRkVLRlowUzAwMDAwMCAyICAgIAAAAAAAAFhEME1CNVEwYVNzbW51IGdTUyBENDggMFJQIE9lU2lyc2UgICAgICAgICAgICAgIBCAAEAALwBAAAIAAgcA/z8QAD8AEPz7ABDx////DwAABwADAHgAeAB4AHgAME8AAAAAAAAAAAAAHwAOhcYAbAFsAPwDOQBrdAF9Y0FpdAG8Y0F/QAEAAQAAAP7/AAAAAAAAAAAAAAAAAACwEp47AAAAAAAACAAAQAAAAlCPUwCgAgAAAAAAAAAAAAAAAAAAAB5AHEAAAAAAAAAAAAAAAAAAACkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABACAgICAgICAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD0AAAAAAABAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAfxAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAApYY=",
+      "smart_data": "AQAFMwBjYyAAAAAAAAAJMgBOTuyeAQAAAAAMMgBjY6kAAAAAAACxEwAREbwLAAAAAACzEwBjYyAAAAAAAAC1MgBjYyAAAAAAAAC2MgBkZAAAAAAAAAC3EwBjYyAAAAAAAAC7MgBkZAAAAAAAAAC+MgBMLhgAAAAAAADDGgDIyAAAAAAAAADHPgBkZAAAAAAAAADrEgBjY3sAAAAAAADxMgBjY3PSUrNjAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAMTSAFMDAAEAAiMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHU=",
+      "smart_thresholds": "AQAFCgAAAAAAAAAAAAAJAAAAAAAAAAAAAAAMAAAAAAAAAAAAAACxAAAAAAAAAAAAAACzCgAAAAAAAAAAAAC1CgAAAAAAAAAAAAC2CgAAAAAAAAAAAAC3CgAAAAAAAAAAAAC7AAAAAAAAAAAAAAC+AAAAAAAAAAAAAADDAAAAAAAAAAAAAADHAAAAAAAAAAAAAADrAAAAAAAAAAAAAADxAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAE4="
+    }
+  },
+  "block": {
+    "loop0": {
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop1": {
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop2": {
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop3": {
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop4": {
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop5": {
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop6": {
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop7": {
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "nvme0n1": {
+      "dev": "259:0",
+      "device": {
+        "model": "Samsung SSD 990 PRO 4TB",
+        "state": "live"
+      },
+      "device_path": "/sys/devices/pci0000:00/0000:00:03.0/0000:02:00.0/nvme/nvme0",
+      "holders": [],
+      "hwmon": [
+        "/sys/devices/pci0000:00/0000:00:03.0/0000:02:00.0/nvme/nvme0/hwmon0"
+      ],
+      "partitions": {
+        "nvme0n1p1": {
+          "dev": "259:1",
+          "holders": []
+        },
+        "nvme0n1p9": {
+          "dev": "259:2",
+          "holders": []
+        }
+      },
+      "queue": {
+        "discard_granularity": "512",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "7814037168",
+      "vpd": {},
+      "wwid": "eui.002538fa00000003"
+    },
+    "sda": {
+      "dev": "8:0",
+      "device": {
+        "model": "Samsung SSD 840",
+        "queue_depth": "32",
+        "rev": "5B0Q",
+        "state": "running",
+        "type": "0",
+        "vendor": "ATA",
+        "wwid": "naa.5002538fa0000001"
+      },
+      "device_path": "/sys/devices/pci0000:00/0000:00:1f.2/ata1/host0/target0:0:0/0:0:0:0",
+      "holders": [],
+      "partitions": {
+        "sda1": {
+          "dev": "8:1",
+          "holders": []
+        },
+        "sda2": {
+          "dev": "8:2",
+          "holders": []
+        },
+        "sda3": {
+          "dev": "8:3",
+          "holders": []
+        }
+      },
+      "queue": {
+        "discard_granularity": "512",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "1000215216",
+      "vpd": {
+        "inquiry": "AAAFAlsAAAJBVEEgICAgIFNhbXN1bmcgU1NEIDg0MCA1QjBRAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABgAyADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "vpd_pg80": "AIAAFEZBS0VaRlMwMDAwMDAwMSAgICAg",
+        "vpd_pg83": "AIMAbAIAABRGQUtFWkZTMDAwMDAwMDEgICAgIAIBAERBVEEgICAgIFNhbXN1bmcgU1NEIDg0MCBQUk8gU2VyaWVzICAgICAgICAgICAgICBGQUtFWkZTMDAwMDAwMDEgICAgIAEDAAhQAlOPoAAAAQ==",
+        "vpd_pg89": "AIkCOAAAAABsaW51eCAgIGxpYmF0YSAgICAgICAgICAzLjAwNIBAAAEAAAAAAAAAAQAAAAAAAADsAAAAQAD/PzfIEAAAAAAAPwAAAAAAAABBRkVLRlowUzAwMDAwMCAxICAgIAAAAAAAAFhEME1CNVEwYVNzbW51IGdTUyBENDggMFJQIE9lU2lyc2UgICAgICAgICAgICAgIBCAAEAALwBAAAIAAgcA/z8QAD8AEPz7ABDx////DwAABwADAHgAeAB4AHgAME8AAAAAAAAAAAAAHwAOhcYAbAFkAPwDOQBrdAF9Y0FpdAG8Y0F/QAEAAQAAAP7/AAAAAAAAAAAAAAAAAACwEp47AAAAAAAACAAAQAAAAlCPUwCgAQAAAAAAAAAAAAAAAAAAAB5AHEAAAAAAAAAAAAAAAAAAACkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABACAgICAgICAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD0AAAAAAABAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAfxAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAApZA=",
+        "vpd_pgb1": "ALEAPAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "sdb": {
+      "dev": "8:16",
+      "device": {
+        "model": "Samsung SSD 840",
+        "queue_depth": "32",
+        "rev": "5B0Q",
+        "state": "running",
+        "type": "0",
+        "vendor": "ATA",
+        "wwid": "naa.5002538fa0000002"
+      },
+      "device_path": "/sys/devices/pci0000:00/0000:00:1f.2/ata2/host1/target1:0:0/1:0:0:0",
+      "holders": [],
+      "partitions": {
+        "sdb1": {
+          "dev": "8:17",
+          "holders": []
+        },
+        "sdb2": {
+          "dev": "8:18",
+          "holders": []
+        },
+        "sdb3": {
+          "dev": "8:19",
+          "holders": []
+        }
+      },
+      "queue": {
+        "discard_granularity": "512",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "1000215216",
+      "vpd": {
+        "inquiry": "AAAFAlsAAAJBVEEgICAgIFNhbXN1bmcgU1NEIDg0MCA1QjBRAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABgAyADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "vpd_pg80": "AIAAFEZBS0VaRlMwMDAwMDAwMiAgICAg",
+        "vpd_pg83": "AIMAbAIAABRGQUtFWkZTMDAwMDAwMDIgICAgIAIBAERBVEEgICAgIFNhbXN1bmcgU1NEIDg0MCBQUk8gU2VyaWVzICAgICAgICAgICAgICBGQUtFWkZTMDAwMDAwMDIgICAgIAEDAAhQAlOPoAAAAg==",
+        "vpd_pg89": "AIkCOAAAAABsaW51eCAgIGxpYmF0YSAgICAgICAgICAzLjAwNIBAAAEAAAAAAAAAAQAAAAAAAADsAAAAQAD/PzfIEAAAAAAAPwAAAAAAAABBRkVLRlowUzAwMDAwMCAyICAgIAAAAAAAAFhEME1CNVEwYVNzbW51IGdTUyBENDggMFJQIE9lU2lyc2UgICAgICAgICAgICAgIBCAAEAALwBAAAIAAgcA/z8QAD8AEPz7ABDx////DwAABwADAHgAeAB4AHgAME8AAAAAAAAAAAAAHwAOhcYAbAFkAPwDOQBrdAF9Y0FpdAG8Y0F/QAEAAQAAAP7/AAAAAAAAAAAAAAAAAACwEp47AAAAAAAACAAAQAAAAlCPUwCgAgAAAAAAAAAAAAAAAAAAAB5AHEAAAAAAAAAAAAAAAAAAACkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABACAgICAgICAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD0AAAAAAABAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAfxAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAApY4=",
+        "vpd_pgb1": "ALEAPAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "zd0": {
+      "queue": {
+        "discard_granularity": "16384",
+        "logical_block_size": "512",
+        "physical_block_size": "16384",
+        "rotational": "0"
+      },
+      "size": "68132864",
+      "virtual": true
+    },
+    "zd16": {
+      "queue": {
+        "discard_granularity": "16384",
+        "logical_block_size": "512",
+        "physical_block_size": "16384",
+        "rotational": "0"
+      },
+      "size": "102760448",
+      "virtual": true
+    },
+    "zd32": {
+      "queue": {
+        "discard_granularity": "16384",
+        "logical_block_size": "512",
+        "physical_block_size": "16384",
+        "rotational": "0"
+      },
+      "size": "41943040",
+      "virtual": true
+    },
+    "zd48": {
+      "queue": {
+        "discard_granularity": "16384",
+        "logical_block_size": "512",
+        "physical_block_size": "16384",
+        "rotational": "0"
+      },
+      "size": "83886080",
+      "virtual": true
+    },
+    "zd64": {
+      "queue": {
+        "discard_granularity": "16384",
+        "logical_block_size": "512",
+        "physical_block_size": "16384",
+        "rotational": "0"
+      },
+      "size": "17801216",
+      "virtual": true
+    },
+    "zd80": {
+      "queue": {
+        "discard_granularity": "16384",
+        "logical_block_size": "512",
+        "physical_block_size": "16384",
+        "rotational": "0"
+      },
+      "size": "268435456",
+      "virtual": true
+    },
+    "zram0": {
+      "queue": {
+        "discard_granularity": "4096",
+        "logical_block_size": "4096",
+        "physical_block_size": "4096",
+        "rotational": "0"
+      },
+      "size": "33554432",
+      "virtual": true
+    }
+  },
+  "captured_at": "2026-10-12T18:54:50.062560+00:00",
+  "classes": {
+    "ata_link": {
+      "link1": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata1/link1/ata_link/link1",
+        "sata_spd": "6.0 Gbps",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link10": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata10/link10/ata_link/link10",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link11": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata11/link11/ata_link/link11",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link12": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata12/link12/ata_link/link12",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link13": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata13/link13/ata_link/link13",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link14": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata14/link14/ata_link/link14",
+        "sata_spd": "1.5 Gbps",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link2": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata2/link2/ata_link/link2",
+        "sata_spd": "6.0 Gbps",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link3": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata3/link3/ata_link/link3",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link4": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata4/link4/ata_link/link4",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link5": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata5/link5/ata_link/link5",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link6": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata6/link6/ata_link/link6",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link7": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata7/link7/ata_link/link7",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link8": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata8/link8/ata_link/link8",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link9": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata9/link9/ata_link/link9",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      }
+    },
+    "ata_port": {
+      "ata1": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata1/ata_port/ata1",
+        "port_no": "1"
+      },
+      "ata10": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata10/ata_port/ata10",
+        "port_no": "4"
+      },
+      "ata11": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata11/ata_port/ata11",
+        "port_no": "5"
+      },
+      "ata12": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata12/ata_port/ata12",
+        "port_no": "6"
+      },
+      "ata13": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata13/ata_port/ata13",
+        "port_no": "7"
+      },
+      "ata14": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata14/ata_port/ata14",
+        "port_no": "8"
+      },
+      "ata2": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata2/ata_port/ata2",
+        "port_no": "2"
+      },
+      "ata3": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata3/ata_port/ata3",
+        "port_no": "3"
+      },
+      "ata4": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata4/ata_port/ata4",
+        "port_no": "4"
+      },
+      "ata5": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata5/ata_port/ata5",
+        "port_no": "5"
+      },
+      "ata6": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata6/ata_port/ata6",
+        "port_no": "6"
+      },
+      "ata7": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata7/ata_port/ata7",
+        "port_no": "1"
+      },
+      "ata8": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata8/ata_port/ata8",
+        "port_no": "2"
+      },
+      "ata9": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata9/ata_port/ata9",
+        "port_no": "3"
+      }
+    },
+    "hwmon": {
+      "hwmon0": {
+        "name": "nvme",
+        "path": "/sys/devices/pci0000:00/0000:00:03.0/0000:02:00.0/nvme/nvme0/hwmon0",
+        "temp1_alarm": "0",
+        "temp1_crit": "84850",
+        "temp1_input": "30850",
+        "temp1_label": "Composite",
+        "temp1_max": "65261850"
+      },
+      "hwmon1": {
+        "name": "coretemp",
+        "path": "/sys/devices/platform/coretemp.0/hwmon/hwmon1",
+        "temp1_crit": "94000",
+        "temp1_input": "30000",
+        "temp1_label": "Package id 0",
+        "temp1_max": "74000"
+      },
+      "hwmon2": {
+        "name": "nct6776",
+        "path": "/sys/devices/platform/nct6775.656/hwmon/hwmon2",
+        "temp1_alarm": "1",
+        "temp1_input": "29000",
+        "temp1_label": "SYSTIN",
+        "temp1_max": "0"
+      },
+      "hwmon3": {
+        "name": "asus",
+        "path": "/sys/devices/platform/eeepc-wmi/hwmon/hwmon3"
+      },
+      "hwmon4": {
+        "name": "radeon",
+        "path": "/sys/devices/pci0000:00/0000:00:02.0/0000:01:00.0/hwmon/hwmon4",
+        "temp1_crit": "120000",
+        "temp1_input": "32000"
+      }
+    },
+    "nvme": {
+      "nvme0": {
+        "firmware_rev": "7B2QJXD7",
+        "model": "Samsung SSD 990 PRO 4TB",
+        "path": "/sys/devices/pci0000:00/0000:00:03.0/0000:02:00.0/nvme/nvme0",
+        "serial": "FAKEZFS00000003",
+        "state": "live",
+        "transport": "pcie"
+      }
+    },
+    "scsi_host": {
+      "host0": {
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata1/host0/scsi_host/host0",
+        "proc_name": "ahci",
+        "unique_id": "1"
+      },
+      "host1": {
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata2/host1/scsi_host/host1",
+        "proc_name": "ahci",
+        "unique_id": "2"
+      },
+      "host10": {
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata11/host10/scsi_host/host10",
+        "proc_name": "ahci",
+        "unique_id": "11"
+      },
+      "host11": {
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata12/host11/scsi_host/host11",
+        "proc_name": "ahci",
+        "unique_id": "12"
+      },
+      "host12": {
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata13/host12/scsi_host/host12",
+        "proc_name": "ahci",
+        "unique_id": "13"
+      },
+      "host13": {
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata14/host13/scsi_host/host13",
+        "proc_name": "ahci",
+        "unique_id": "14"
+      },
+      "host2": {
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata3/host2/scsi_host/host2",
+        "proc_name": "ahci",
+        "unique_id": "3"
+      },
+      "host3": {
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata4/host3/scsi_host/host3",
+        "proc_name": "ahci",
+        "unique_id": "4"
+      },
+      "host4": {
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata5/host4/scsi_host/host4",
+        "proc_name": "ahci",
+        "unique_id": "5"
+      },
+      "host5": {
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata6/host5/scsi_host/host5",
+        "proc_name": "ahci",
+        "unique_id": "6"
+      },
+      "host6": {
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata7/host6/scsi_host/host6",
+        "proc_name": "ahci",
+        "unique_id": "7"
+      },
+      "host7": {
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata8/host7/scsi_host/host7",
+        "proc_name": "ahci",
+        "unique_id": "8"
+      },
+      "host8": {
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata9/host8/scsi_host/host8",
+        "proc_name": "ahci",
+        "unique_id": "9"
+      },
+      "host9": {
+        "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0/ata10/host9/scsi_host/host9",
+        "proc_name": "ahci",
+        "unique_id": "10"
+      }
+    }
+  },
+  "devices_accessible": true,
+  "environment": {
+    "cgroup": "0::/init.scope",
+    "dmi_board_name": "P9X79 WS",
+    "dmi_board_vendor": "ASUSTeK COMPUTER INC.",
+    "dmi_product": "System Product Name",
+    "dmi_vendor": "System manufacturer",
+    "hypervisor_flag": false
+  },
+  "euid": 0,
+  "filesystem_space": {},
+  "hostname": "linux-zfs-filesystems",
+  "kernel": "7.0.14-20-pve",
+  "mounts": [
+    {
+      "dev": "0:28",
+      "fstype": "zfs",
+      "mountpoint": "/",
+      "read_only": "false",
+      "source": "rpool"
+    },
+    {
+      "dev": "0:40",
+      "fstype": "zfs",
+      "mountpoint": "/tank",
+      "read_only": "false",
+      "source": "tank"
+    },
+    {
+      "dev": "0:41",
+      "fstype": "zfs",
+      "mountpoint": "/var/lib/vz",
+      "read_only": "false",
+      "source": "rpool"
+    },
+    {
+      "dev": "0:42",
+      "fstype": "zfs",
+      "mountpoint": "/rpool",
+      "read_only": "false",
+      "source": "rpool"
+    },
+    {
+      "dev": "0:43",
+      "fstype": "zfs",
+      "mountpoint": "/tank/subvol-100-disk-0",
+      "read_only": "false",
+      "source": "tank"
+    },
+    {
+      "dev": "0:44",
+      "fstype": "zfs",
+      "mountpoint": "/rpool/ROOT",
+      "read_only": "false",
+      "source": "rpool"
+    },
+    {
+      "dev": "0:45",
+      "fstype": "zfs",
+      "mountpoint": "/rpool/data",
+      "read_only": "false",
+      "source": "rpool"
+    }
+  ],
+  "nvme": {
+    "nvme0n1": {
+      "identify_controller": "TRRNFEZBS0VaRlMwMDAwMDAwMyAgICAgU2Ftc3VuZyBTU0QgOTkwIFBSTyA0VEIgICAgICAgICAgICAgICAgIDdCMlFKWEQ3AjglAAAJAQAAAAIAQA0DAICWmAAAAgAAEAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABcABwMWLz8EAQFjAWYBAAAAAAAAAAAAAABgfYGjAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACMAAAAAAAEAPgFkAQMAAGAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmRAABAQAAAFUAAAAHB/8DAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbnFuLjE5OTQtMTEuY29tLnNhbXN1bmc6bnZtZTo5OTBQUk86TS4yOkZBS0VaRlMwMDAwMDAwMyAgICAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACrAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKsDAAAAAAAAAAAAAAEBAQEAAAAAAAAAAAAAAAAAAAAAqwMAAAAAAAAAAAAAAgICAgAAAAAAAAAAAAAAAAAAAACQAQADaBAAAIwKAAADAwMDAAAAAAAAAAAAAAAAAAAAADIAAAP0AQAAKFUAAAQEBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "smart_log": "ADABZAoCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC32VkaAAAAAAAAAAAAAAAAizaWBQAAAAAAAAAAAAAAAJ+3ZRYBAAAAAAAAAAAAAAD0AFxoAAAAAAAAAAAAAAAAxRMAAAAAAAAAAAAAAAAAAGQBAAAAAAAAAAAAAAAAAADyNQAAAAAAAAAAAAAAAAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwATcBAAAAAAAAAAAAAAAAAAAAAAAAAABjAQAA//8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    }
+  },
+  "pci": {
+    "0000:00:00.0": {
+      "class": "0x060000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0e00",
+      "max_link_speed": "2.5 GT/s PCIe",
+      "max_link_width": "4",
+      "path": "/sys/devices/pci0000:00/0000:00:00.0",
+      "pcie_port_type": 4,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:01.0": {
+      "class": "0x060400",
+      "current_link_speed": "2.5 GT/s PCIe",
+      "current_link_width": "0",
+      "device": "0x0e02",
+      "driver": "pcieport",
+      "max_link_speed": "8.0 GT/s PCIe",
+      "max_link_width": "4",
+      "path": "/sys/devices/pci0000:00/0000:00:01.0",
+      "pcie_port_type": 4,
+      "revision": "0x04",
+      "slot_implemented": true,
+      "slot_number": 1,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:01.1": {
+      "class": "0x060400",
+      "current_link_speed": "2.5 GT/s PCIe",
+      "current_link_width": "0",
+      "device": "0x0e03",
+      "driver": "pcieport",
+      "max_link_speed": "8.0 GT/s PCIe",
+      "max_link_width": "4",
+      "path": "/sys/devices/pci0000:00/0000:00:01.1",
+      "pcie_port_type": 4,
+      "revision": "0x04",
+      "slot_implemented": true,
+      "slot_number": 2,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:02.0": {
+      "children": [
+        "0000:01:00.0",
+        "0000:01:00.1"
+      ],
+      "class": "0x060400",
+      "current_link_speed": "8.0 GT/s PCIe",
+      "current_link_width": "16",
+      "device": "0x0e04",
+      "driver": "pcieport",
+      "max_link_speed": "8.0 GT/s PCIe",
+      "max_link_width": "16",
+      "path": "/sys/devices/pci0000:00/0000:00:02.0",
+      "pcie_port_type": 4,
+      "revision": "0x04",
+      "slot_implemented": true,
+      "slot_number": 4,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:03.0": {
+      "children": [
+        "0000:02:00.0"
+      ],
+      "class": "0x060400",
+      "current_link_speed": "8.0 GT/s PCIe",
+      "current_link_width": "4",
+      "device": "0x0e08",
+      "driver": "pcieport",
+      "max_link_speed": "8.0 GT/s PCIe",
+      "max_link_width": "8",
+      "path": "/sys/devices/pci0000:00/0000:00:03.0",
+      "pcie_port_type": 4,
+      "revision": "0x04",
+      "slot_implemented": true,
+      "slot_number": 3,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:03.2": {
+      "children": [
+        "0000:03:00.0",
+        "0000:03:00.1"
+      ],
+      "class": "0x060400",
+      "current_link_speed": "5.0 GT/s PCIe",
+      "current_link_width": "8",
+      "device": "0x0e0a",
+      "driver": "pcieport",
+      "max_link_speed": "8.0 GT/s PCIe",
+      "max_link_width": "8",
+      "path": "/sys/devices/pci0000:00/0000:00:03.2",
+      "pcie_port_type": 4,
+      "revision": "0x04",
+      "slot_implemented": true,
+      "slot_number": 6,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:05.0": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0e28",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:00/0000:00:05.0",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:05.2": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0e2a",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:00/0000:00:05.2",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:05.4": {
+      "class": "0x080020",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0e2c",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:00/0000:00:05.4",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:11.0": {
+      "class": "0x060400",
+      "current_link_speed": "2.5 GT/s PCIe",
+      "current_link_width": "1",
+      "device": "0x1d3e",
+      "driver": "pcieport",
+      "max_link_speed": "2.5 GT/s PCIe",
+      "max_link_width": "1",
+      "path": "/sys/devices/pci0000:00/0000:00:11.0",
+      "pcie_port_type": 4,
+      "revision": "0x06",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:16.0": {
+      "children": [
+        "0000:00:16.0-309dcde8-ccb1-4062-8f78-600115a34327",
+        "0000:00:16.0-3c4852d6-d47b-4f46-b05e-b5edc1aa440e",
+        "0000:00:16.0-55213584-9a29-4916-badf-0fb7ed682aeb",
+        "0000:00:16.0-d2ea63bc-5f04-4997-9454-8cadf4e3ef8a",
+        "0000:00:16.0-f908627d-13bf-4a04-b91f-a64e9245323d"
+      ],
+      "class": "0x078000",
+      "device": "0x1d3a",
+      "driver": "mei_me",
+      "path": "/sys/devices/pci0000:00/0000:00:16.0",
+      "revision": "0x05",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:19.0": {
+      "class": "0x020000",
+      "device": "0x1503",
+      "driver": "e1000e",
+      "path": "/sys/devices/pci0000:00/0000:00:19.0",
+      "revision": "0x06",
+      "slot_implemented": false,
+      "subsystem_device": "0x844e",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:1a.0": {
+      "class": "0x0c0320",
+      "device": "0x1d2d",
+      "driver": "ehci-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:1a.0",
+      "revision": "0x06",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:1b.0": {
+      "class": "0x040300",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x1d20",
+      "driver": "snd_hda_intel",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:00/0000:00:1b.0",
+      "pcie_port_type": 9,
+      "revision": "0x06",
+      "slot_implemented": false,
+      "subsystem_device": "0x84d8",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:1c.0": {
+      "class": "0x060400",
+      "current_link_speed": "2.5 GT/s PCIe",
+      "current_link_width": "0",
+      "device": "0x1d10",
+      "driver": "pcieport",
+      "max_link_speed": "5.0 GT/s PCIe",
+      "max_link_width": "1",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.0",
+      "pcie_port_type": 4,
+      "revision": "0xb6",
+      "slot_implemented": true,
+      "slot_number": 0,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:1c.1": {
+      "children": [
+        "0000:08:00.0"
+      ],
+      "class": "0x060400",
+      "current_link_speed": "2.5 GT/s PCIe",
+      "current_link_width": "1",
+      "device": "0x1d12",
+      "driver": "pcieport",
+      "max_link_speed": "5.0 GT/s PCIe",
+      "max_link_width": "1",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.1",
+      "pcie_port_type": 4,
+      "revision": "0xb6",
+      "slot_implemented": true,
+      "slot_number": 1,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:1c.2": {
+      "children": [
+        "0000:09:00.0"
+      ],
+      "class": "0x060400",
+      "current_link_speed": "5.0 GT/s PCIe",
+      "current_link_width": "1",
+      "device": "0x1d14",
+      "driver": "pcieport",
+      "max_link_speed": "5.0 GT/s PCIe",
+      "max_link_width": "1",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.2",
+      "pcie_port_type": 4,
+      "revision": "0xb6",
+      "slot_implemented": true,
+      "slot_number": 2,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:1c.4": {
+      "children": [
+        "0000:0a:00.0"
+      ],
+      "class": "0x060400",
+      "current_link_speed": "5.0 GT/s PCIe",
+      "current_link_width": "1",
+      "device": "0x1d18",
+      "driver": "pcieport",
+      "max_link_speed": "5.0 GT/s PCIe",
+      "max_link_width": "1",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.4",
+      "pcie_port_type": 4,
+      "revision": "0xb6",
+      "slot_implemented": true,
+      "slot_number": 4,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:1c.5": {
+      "children": [
+        "0000:0b:00.0"
+      ],
+      "class": "0x060400",
+      "current_link_speed": "5.0 GT/s PCIe",
+      "current_link_width": "1",
+      "device": "0x1d1a",
+      "driver": "pcieport",
+      "max_link_speed": "5.0 GT/s PCIe",
+      "max_link_width": "1",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.5",
+      "pcie_port_type": 4,
+      "revision": "0xb6",
+      "slot_implemented": true,
+      "slot_number": 5,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:1c.7": {
+      "children": [
+        "0000:0c:00.0"
+      ],
+      "class": "0x060400",
+      "current_link_speed": "2.5 GT/s PCIe",
+      "current_link_width": "1",
+      "device": "0x1d1e",
+      "driver": "pcieport",
+      "max_link_speed": "5.0 GT/s PCIe",
+      "max_link_width": "1",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.7",
+      "pcie_port_type": 4,
+      "revision": "0xb6",
+      "slot_implemented": true,
+      "slot_number": 7,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:1d.0": {
+      "class": "0x0c0320",
+      "device": "0x1d26",
+      "driver": "ehci-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:1d.0",
+      "revision": "0x06",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:1e.0": {
+      "class": "0x060401",
+      "device": "0x244e",
+      "path": "/sys/devices/pci0000:00/0000:00:1e.0",
+      "revision": "0xa6",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:1f.0": {
+      "class": "0x060100",
+      "device": "0x1d41",
+      "driver": "lpc_ich",
+      "path": "/sys/devices/pci0000:00/0000:00:1f.0",
+      "revision": "0x06",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:1f.2": {
+      "ahci": {
+        "capability": 3878747973,
+        "ports_implemented": 3
+      },
+      "class": "0x010601",
+      "device": "0x1d02",
+      "driver": "ahci",
+      "path": "/sys/devices/pci0000:00/0000:00:1f.2",
+      "revision": "0x06",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:00:1f.3": {
+      "class": "0x0c0500",
+      "device": "0x1d22",
+      "driver": "i801_smbus",
+      "path": "/sys/devices/pci0000:00/0000:00:1f.3",
+      "revision": "0x06",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:01:00.0": {
+      "class": "0x030000",
+      "current_link_speed": "8.0 GT/s PCIe",
+      "current_link_width": "16",
+      "device": "0x6798",
+      "driver": "radeon",
+      "max_link_speed": "8.0 GT/s PCIe",
+      "max_link_width": "16",
+      "path": "/sys/devices/pci0000:00/0000:00:02.0/0000:01:00.0",
+      "pcie_port_type": 1,
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x3000",
+      "subsystem_vendor": "0x1002",
+      "vendor": "0x1002"
+    },
+    "0000:01:00.1": {
+      "class": "0x040300",
+      "current_link_speed": "8.0 GT/s PCIe",
+      "current_link_width": "16",
+      "device": "0xaaa0",
+      "driver": "snd_hda_intel",
+      "max_link_speed": "8.0 GT/s PCIe",
+      "max_link_width": "16",
+      "path": "/sys/devices/pci0000:00/0000:00:02.0/0000:01:00.1",
+      "pcie_port_type": 1,
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0xaaa0",
+      "subsystem_vendor": "0x1002",
+      "vendor": "0x1002"
+    },
+    "0000:02:00.0": {
+      "class": "0x010802",
+      "current_link_speed": "8.0 GT/s PCIe",
+      "current_link_width": "4",
+      "device": "0xa80c",
+      "driver": "nvme",
+      "max_link_speed": "16.0 GT/s PCIe",
+      "max_link_width": "4",
+      "path": "/sys/devices/pci0000:00/0000:00:03.0/0000:02:00.0",
+      "pcie_port_type": 0,
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0xa801",
+      "subsystem_vendor": "0x144d",
+      "vendor": "0x144d"
+    },
+    "0000:03:00.0": {
+      "class": "0x020000",
+      "current_link_speed": "5.0 GT/s PCIe",
+      "current_link_width": "8",
+      "device": "0x10fb",
+      "driver": "ixgbe",
+      "max_link_speed": "5.0 GT/s PCIe",
+      "max_link_width": "8",
+      "path": "/sys/devices/pci0000:00/0000:00:03.2/0000:03:00.0",
+      "pcie_port_type": 0,
+      "revision": "0x01",
+      "slot_implemented": false,
+      "subsystem_device": "0xd111",
+      "subsystem_vendor": "0x19e5",
+      "vendor": "0x8086"
+    },
+    "0000:03:00.1": {
+      "class": "0x020000",
+      "current_link_speed": "5.0 GT/s PCIe",
+      "current_link_width": "8",
+      "device": "0x10fb",
+      "driver": "ixgbe",
+      "max_link_speed": "5.0 GT/s PCIe",
+      "max_link_width": "8",
+      "path": "/sys/devices/pci0000:00/0000:00:03.2/0000:03:00.1",
+      "pcie_port_type": 0,
+      "revision": "0x01",
+      "slot_implemented": false,
+      "subsystem_device": "0xd111",
+      "subsystem_vendor": "0x19e5",
+      "vendor": "0x8086"
+    },
+    "0000:08:00.0": {
+      "class": "0x0c0010",
+      "current_link_speed": "2.5 GT/s PCIe",
+      "current_link_width": "1",
+      "device": "0x3403",
+      "driver": "firewire_ohci",
+      "max_link_speed": "2.5 GT/s PCIe",
+      "max_link_width": "1",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.1/0000:08:00.0",
+      "pcie_port_type": 0,
+      "revision": "0x01",
+      "slot_implemented": false,
+      "subsystem_device": "0x8384",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x1106"
+    },
+    "0000:09:00.0": {
+      "ahci": {
+        "capability": 3224411911,
+        "ports_implemented": 255
+      },
+      "class": "0x010601",
+      "current_link_speed": "5.0 GT/s PCIe",
+      "current_link_width": "1",
+      "device": "0x9130",
+      "driver": "ahci",
+      "max_link_speed": "5.0 GT/s PCIe",
+      "max_link_width": "1",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.2/0000:09:00.0",
+      "pcie_port_type": 1,
+      "revision": "0x11",
+      "slot_implemented": false,
+      "subsystem_device": "0x8438",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x1b4b"
+    },
+    "0000:0a:00.0": {
+      "class": "0x0c0330",
+      "current_link_speed": "5.0 GT/s PCIe",
+      "current_link_width": "1",
+      "device": "0x1142",
+      "driver": "xhci_hcd",
+      "max_link_speed": "5.0 GT/s PCIe",
+      "max_link_width": "1",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.4/0000:0a:00.0",
+      "pcie_port_type": 1,
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x85bf",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x1b21"
+    },
+    "0000:0b:00.0": {
+      "class": "0x0c0330",
+      "current_link_speed": "5.0 GT/s PCIe",
+      "current_link_width": "1",
+      "device": "0x1142",
+      "driver": "xhci_hcd",
+      "max_link_speed": "5.0 GT/s PCIe",
+      "max_link_width": "1",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.5/0000:0b:00.0",
+      "pcie_port_type": 1,
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x85bf",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x1b21"
+    },
+    "0000:0c:00.0": {
+      "class": "0x020000",
+      "current_link_speed": "2.5 GT/s PCIe",
+      "current_link_width": "1",
+      "device": "0x10d3",
+      "driver": "e1000e",
+      "max_link_speed": "2.5 GT/s PCIe",
+      "max_link_width": "1",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.7/0000:0c:00.0",
+      "pcie_port_type": 0,
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x8369",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:08.0": {
+      "class": "0x088000",
+      "device": "0x0e80",
+      "path": "/sys/devices/pci0000:ff/0000:ff:08.0",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:09.0": {
+      "class": "0x088000",
+      "device": "0x0e90",
+      "path": "/sys/devices/pci0000:ff/0000:ff:09.0",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0a.0": {
+      "class": "0x088000",
+      "device": "0x0ec0",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0a.0",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0a.1": {
+      "class": "0x088000",
+      "device": "0x0ec1",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0a.1",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0a.2": {
+      "class": "0x088000",
+      "device": "0x0ec2",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0a.2",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0a.3": {
+      "class": "0x088000",
+      "device": "0x0ec3",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0a.3",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0b.0": {
+      "class": "0x088000",
+      "device": "0x0e1e",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0b.0",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0b.3": {
+      "class": "0x088000",
+      "device": "0x0e1f",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0b.3",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0c.0": {
+      "class": "0x088000",
+      "device": "0x0ee0",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0c.0",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0c.1": {
+      "class": "0x088000",
+      "device": "0x0ee2",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0c.1",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0c.2": {
+      "class": "0x088000",
+      "device": "0x0ee4",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0c.2",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0c.3": {
+      "class": "0x088000",
+      "device": "0x0ee6",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0c.3",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0c.4": {
+      "class": "0x088000",
+      "device": "0x0ee8",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0c.4",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0c.5": {
+      "class": "0x088000",
+      "device": "0x0eea",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0c.5",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0d.0": {
+      "class": "0x088000",
+      "device": "0x0ee1",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0d.0",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0d.1": {
+      "class": "0x088000",
+      "device": "0x0ee3",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0d.1",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0d.2": {
+      "class": "0x088000",
+      "device": "0x0ee5",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0d.2",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0d.3": {
+      "class": "0x088000",
+      "device": "0x0ee7",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0d.3",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0d.4": {
+      "class": "0x088000",
+      "device": "0x0ee9",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0d.4",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0d.5": {
+      "class": "0x088000",
+      "device": "0x0eeb",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0d.5",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0e.0": {
+      "class": "0x088000",
+      "device": "0x0ea0",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0e.0",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0e.1": {
+      "class": "0x110100",
+      "device": "0x0e30",
+      "driver": "ivbep_uncore",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0e.1",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0f.0": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0ea8",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0f.0",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0f.1": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0e71",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0f.1",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0f.2": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0eaa",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0f.2",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0f.3": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0eab",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0f.3",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0f.4": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0eac",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0f.4",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:0f.5": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0ead",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:0f.5",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:10.0": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0eb0",
+      "driver": "ivbep_uncore",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:10.0",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:10.1": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0eb1",
+      "driver": "ivbep_uncore",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:10.1",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:10.2": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0eb2",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:10.2",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:10.3": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0eb3",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:10.3",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:10.4": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0eb4",
+      "driver": "ivbep_uncore",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:10.4",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:10.5": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0eb5",
+      "driver": "ivbep_uncore",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:10.5",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:10.6": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0eb6",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:10.6",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:10.7": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0eb7",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:10.7",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:13.0": {
+      "class": "0x088000",
+      "device": "0x0e1d",
+      "path": "/sys/devices/pci0000:ff/0000:ff:13.0",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:13.1": {
+      "class": "0x110100",
+      "device": "0x0e34",
+      "driver": "ivbep_uncore",
+      "path": "/sys/devices/pci0000:ff/0000:ff:13.1",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:13.4": {
+      "class": "0x088000",
+      "device": "0x0e81",
+      "path": "/sys/devices/pci0000:ff/0000:ff:13.4",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:13.5": {
+      "class": "0x110100",
+      "device": "0x0e36",
+      "driver": "ivbep_uncore",
+      "path": "/sys/devices/pci0000:ff/0000:ff:13.5",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:16.0": {
+      "class": "0x088000",
+      "device": "0x0ec8",
+      "path": "/sys/devices/pci0000:ff/0000:ff:16.0",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:16.1": {
+      "class": "0x088000",
+      "device": "0x0ec9",
+      "path": "/sys/devices/pci0000:ff/0000:ff:16.1",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:16.2": {
+      "class": "0x088000",
+      "device": "0x0eca",
+      "path": "/sys/devices/pci0000:ff/0000:ff:16.2",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x84ef",
+      "subsystem_vendor": "0x1043",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1c.0": {
+      "class": "0x088000",
+      "device": "0x0e60",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1c.0",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x0000",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1c.1": {
+      "class": "0x110100",
+      "device": "0x0e38",
+      "driver": "ivbep_uncore",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1c.1",
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x0000",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1d.0": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0e68",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1d.0",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1d.1": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0e79",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1d.1",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1d.2": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0e6a",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1d.2",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1d.3": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0e6b",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1d.3",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1d.4": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0e6c",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1d.4",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1d.5": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0e6d",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1d.5",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1e.0": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0ef0",
+      "driver": "ivbep_uncore",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1e.0",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1e.1": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0ef1",
+      "driver": "ivbep_uncore",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1e.1",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1e.2": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0ef2",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1e.2",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1e.3": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0ef3",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1e.3",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1e.4": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0ef4",
+      "driver": "ivbep_uncore",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1e.4",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1e.5": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0ef5",
+      "driver": "ivbep_uncore",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1e.5",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1e.6": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0ef6",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1e.6",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    },
+    "0000:ff:1e.7": {
+      "class": "0x088000",
+      "current_link_speed": "Unknown",
+      "current_link_width": "0",
+      "device": "0x0ef7",
+      "max_link_speed": "Unknown",
+      "max_link_width": "255",
+      "path": "/sys/devices/pci0000:ff/0000:ff:1e.7",
+      "pcie_port_type": 9,
+      "revision": "0x04",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x8086",
+      "vendor": "0x8086"
+    }
+  },
+  "pci_names": {
+    "1002:6798": "Advanced Micro Devices, Inc. [AMD/ATI] Tahiti XT [Radeon HD 7970/8970 OEM / R9 280X]",
+    "1002:aaa0": "Advanced Micro Devices, Inc. [AMD/ATI] Tahiti HDMI Audio [Radeon HD 7870 XT / 7950/7970]",
+    "1106:3403": "VIA Technologies, Inc. VT6315 Series Firewire Controller",
+    "144d:a80c": "Samsung Electronics Co Ltd NVMe SSD Controller S4LV008[Pascal]",
+    "1b21:1142": "ASMedia Technology Inc. ASM1042A USB 3.0 Host Controller",
+    "1b4b:9130": "Marvell Technology Group Ltd. 88SE9128 PCIe SATA 6 Gb/s RAID controller with HyperDuo",
+    "8086:0e00": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 DMI2",
+    "8086:0e02": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 PCI Express Root Port 1a",
+    "8086:0e03": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 PCI Express Root Port 1b",
+    "8086:0e04": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 PCI Express Root Port 2a",
+    "8086:0e08": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 PCI Express Root Port 3a",
+    "8086:0e0a": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 PCI Express Root Port 3c",
+    "8086:0e1d": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 R2PCIe",
+    "8086:0e1e": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 UBOX Registers",
+    "8086:0e1f": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 UBOX Registers",
+    "8086:0e28": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 VTd/Memory Map/Misc",
+    "8086:0e2a": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 IIO RAS",
+    "8086:0e2c": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 IOAPIC",
+    "8086:0e30": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Home Agent 0",
+    "8086:0e34": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 R2PCIe",
+    "8086:0e36": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 QPI Ring Performance Ring Monitoring",
+    "8086:0e38": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Home Agent 1",
+    "8086:0e60": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Home Agent 1",
+    "8086:0e68": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 1 Target Address/Thermal Registers",
+    "8086:0e6a": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 1 Channel Target Address Decoder Registers",
+    "8086:0e6b": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 1 Channel Target Address Decoder Registers",
+    "8086:0e6c": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 1 Channel Target Address Decoder Registers",
+    "8086:0e6d": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 1 Channel Target Address Decoder Registers",
+    "8086:0e71": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 0 RAS Registers",
+    "8086:0e79": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 1 RAS Registers",
+    "8086:0e80": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 QPI Link 0",
+    "8086:0e81": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 QPI Ring Registers",
+    "8086:0e90": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 QPI Link 1",
+    "8086:0ea0": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Home Agent 0",
+    "8086:0ea8": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 0 Target Address/Thermal Registers",
+    "8086:0eaa": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 0 Channel Target Address Decoder Registers",
+    "8086:0eab": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 0 Channel Target Address Decoder Registers",
+    "8086:0eac": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 0 Channel Target Address Decoder Registers",
+    "8086:0ead": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 0 Channel Target Address Decoder Registers",
+    "8086:0eb0": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 1 Channel 0-3 Thermal Control 0",
+    "8086:0eb1": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 1 Channel 0-3 Thermal Control 1",
+    "8086:0eb2": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 1 Channel 0-3 ERROR Registers 0",
+    "8086:0eb3": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 1 Channel 0-3 ERROR Registers 1",
+    "8086:0eb4": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 1 Channel 0-3 Thermal Control 2",
+    "8086:0eb5": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 1 Channel 0-3 Thermal Control 3",
+    "8086:0eb6": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 1 Channel 0-3 ERROR Registers 2",
+    "8086:0eb7": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 1 Channel 0-3 ERROR Registers 3",
+    "8086:0ec0": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Power Control Unit 0",
+    "8086:0ec1": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Power Control Unit 1",
+    "8086:0ec2": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Power Control Unit 2",
+    "8086:0ec3": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Power Control Unit 3",
+    "8086:0ec8": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 System Address Decoder",
+    "8086:0ec9": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Broadcast Registers",
+    "8086:0eca": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Broadcast Registers",
+    "8086:0ee0": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Unicast Registers",
+    "8086:0ee1": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Unicast Registers",
+    "8086:0ee2": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Unicast Registers",
+    "8086:0ee3": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Unicast Registers",
+    "8086:0ee4": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Unicast Registers",
+    "8086:0ee5": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Unicast Registers",
+    "8086:0ee6": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Unicast Registers",
+    "8086:0ee7": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Unicast Registers",
+    "8086:0ee8": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Unicast Registers",
+    "8086:0ee9": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Unicast Registers",
+    "8086:0eea": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Unicast Registers",
+    "8086:0eeb": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Unicast Registers",
+    "8086:0ef0": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 0 Channel 0-3 Thermal Control 0",
+    "8086:0ef1": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 0 Channel 0-3 Thermal Control 1",
+    "8086:0ef2": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 0 Channel 0-3 ERROR Registers 0",
+    "8086:0ef3": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 0 Channel 0-3 ERROR Registers 1",
+    "8086:0ef4": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 0 Channel 0-3 Thermal Control 2",
+    "8086:0ef5": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 0 Channel 0-3 Thermal Control 3",
+    "8086:0ef6": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 0 Channel 0-3 ERROR Registers 2",
+    "8086:0ef7": "Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 Integrated Memory Controller 0 Channel 0-3 ERROR Registers 3",
+    "8086:10d3": "Intel Corporation 82574L Gigabit Network Connection",
+    "8086:10fb": "Intel Corporation 82599ES 10-Gigabit SFI/SFP+ Network Connection",
+    "8086:1503": "Intel Corporation 82579V Gigabit Network Connection",
+    "8086:1d02": "Intel Corporation C600/X79 series chipset 6-Port SATA AHCI Controller",
+    "8086:1d10": "Intel Corporation C600/X79 series chipset PCI Express Root Port 1",
+    "8086:1d12": "Intel Corporation C600/X79 series chipset PCI Express Root Port 2",
+    "8086:1d14": "Intel Corporation C600/X79 series chipset PCI Express Root Port 3",
+    "8086:1d18": "Intel Corporation C600/X79 series chipset PCI Express Root Port 5",
+    "8086:1d1a": "Intel Corporation C600/X79 series chipset PCI Express Root Port 6",
+    "8086:1d1e": "Intel Corporation C600/X79 series chipset PCI Express Root Port 8",
+    "8086:1d20": "Intel Corporation C600/X79 series chipset High Definition Audio Controller",
+    "8086:1d22": "Intel Corporation C600/X79 series chipset SMBus Host Controller",
+    "8086:1d26": "Intel Corporation C600/X79 series chipset USB2 Enhanced Host Controller #1",
+    "8086:1d2d": "Intel Corporation C600/X79 series chipset USB2 Enhanced Host Controller #2",
+    "8086:1d3a": "Intel Corporation C600/X79 series chipset MEI Controller #1",
+    "8086:1d3e": "Intel Corporation C600/X79 series chipset PCI Express Virtual Root Port",
+    "8086:1d41": "Intel Corporation C600/X79 series chipset LPC Controller",
+    "8086:244e": "Intel Corporation 82801 PCI Bridge"
+  },
+  "platform": "linux",
+  "schema": 2,
+  "signatures": {
+    "259:1": {
+      "fs_label": "tank",
+      "fs_type": "zfs_member"
+    },
+    "8:18": {
+      "fs_type": "vfat"
+    },
+    "8:19": {
+      "fs_label": "rpool",
+      "fs_type": "zfs_member"
+    },
+    "8:2": {
+      "fs_type": "vfat"
+    },
+    "8:3": {
+      "fs_label": "rpool",
+      "fs_type": "zfs_member"
+    }
+  },
+  "stacked": {},
+  "swaps": [
+    {
+      "dev": "251:0",
+      "path": "/dev/zram0"
+    },
+    {
+      "dev": "230:80",
+      "path": "/dev/zd80"
+    }
+  ],
+  "usb": {},
+  "zfs_pools": {
+    "rpool": {
+      "alloc": 92053061632,
+      "size": 506806140928
+    },
+    "tank": {
+      "alloc": 154454237184,
+      "size": 3985729650688
+    }
+  }
+}

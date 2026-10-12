@@ -308,13 +308,28 @@ def test_a_capture_accepts_a_minimal_reading_carrying_every_new_field() -> None:
 
 @pytest.mark.os_agnostic
 def test_every_committed_linux_fixture_still_validates_with_the_new_fields_unread() -> None:
-    fixtures = sorted(FIXTURES.glob("linux-*.json"))
-    assert fixtures
-    for fixture in fixtures:
+    """A capture older than the mount reader validates with those fields unread.
+
+    Split on whether the raw JSON carries the key at all, not on the parsed
+    field, so the assertion is not the filter restated: a capture that never
+    recorded the key must come back ``None``, one that did must come back read.
+    Both kinds must be present, or one half inspects nothing.
+    """
+    older: list[str] = []
+    newer: list[str] = []
+    for fixture in sorted(FIXTURES.glob("linux-*.json")):
         reading = json.loads(fixture.read_text(encoding="utf-8"))
         capture = LinuxCapture.model_validate(reading)
-        assert capture.mounts is None, fixture
-        assert capture.signatures is None, fixture
+        if "mounts" in reading:
+            newer.append(fixture.name)
+            assert capture.mounts is not None, fixture
+            assert capture.signatures is not None, fixture
+        else:
+            older.append(fixture.name)
+            assert capture.mounts is None, fixture
+            assert capture.signatures is None, fixture
+    assert older, "no committed capture predates the mount reader, so the unread half inspects nothing"
+    assert newer, "no committed capture carries the mount reader's fields, so the read half inspects nothing"
 
 
 # What a desktop's mountinfo also carries: a network share, a FUSE mount in a

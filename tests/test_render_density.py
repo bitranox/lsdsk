@@ -58,6 +58,7 @@ DENSITY_COUNTS: dict[str, dict[TreeDensity, int]] = {
     "linux-minimal": {TreeDensity.STORAGE_ONLY: 5, TreeDensity.STORAGE_AND_SIBLINGS: 5, TreeDensity.FULL: 87},
     "linux-nvme-board": {TreeDensity.STORAGE_ONLY: 13, TreeDensity.STORAGE_AND_SIBLINGS: 13, TreeDensity.FULL: 45},
     "linux-usb-ehci": {TreeDensity.STORAGE_ONLY: 4, TreeDensity.STORAGE_AND_SIBLINGS: 4, TreeDensity.FULL: 82},
+    "linux-zfs-filesystems": {TreeDensity.STORAGE_ONLY: 5, TreeDensity.STORAGE_AND_SIBLINGS: 5, TreeDensity.FULL: 94},
     "windows-ahci": {TreeDensity.STORAGE_ONLY: 4, TreeDensity.STORAGE_AND_SIBLINGS: 7, TreeDensity.FULL: 27},
     "windows-usb-uas": {TreeDensity.STORAGE_ONLY: 5, TreeDensity.STORAGE_AND_SIBLINGS: 5, TreeDensity.FULL: 25},
     "windows-chipset-switch": {

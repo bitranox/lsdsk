@@ -96,7 +96,12 @@ def test_expander_phys_linked_to_the_hba_port_are_not_phys_the_controller_uses()
     assert (controller.port_count, controller.ports_used, controller.ports_free) == (8, 2, 6)
 
 
-_NON_SAS_CAPTURES = ("linux-minimal.json", "linux-nvme-board.json", "linux-usb-ehci.json")
+_NON_SAS_CAPTURES = (
+    "linux-minimal.json",
+    "linux-nvme-board.json",
+    "linux-usb-ehci.json",
+    "linux-zfs-filesystems.json",
+)
 
 
 def test_an_ahci_or_nvme_controller_uses_one_port_per_drive_hanging_off_it() -> None:

@@ -363,8 +363,18 @@ def test_build_inventory_carries_the_usage_on_its_disks() -> None:
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 
 
+def _records_mounts(fixture_path: Path) -> bool:
+    """Whether a committed capture was taken by a reader that recorded mountinfo."""
+    return "mounts" in json.loads(fixture_path.read_text(encoding="utf-8"))
+
+
+_LINUX_FIXTURES = sorted(FIXTURES.glob("linux-*.json"))
+
+
 @pytest.mark.os_agnostic
-@pytest.mark.parametrize("fixture_path", sorted(FIXTURES.glob("linux-*.json")), ids=lambda p: p.name)
+@pytest.mark.parametrize(
+    "fixture_path", [path for path in _LINUX_FIXTURES if not _records_mounts(path)], ids=lambda p: p.name
+)
 def test_every_committed_linux_fixture_predates_usage_capture(fixture_path: Path) -> None:
     from lsdsk.adapters.hw.snapshot import build_from
 
@@ -372,6 +382,31 @@ def test_every_committed_linux_fixture_predates_usage_capture(fixture_path: Path
     inventory = build_from(reading)
     for disk in inventory.disks:
         assert disk.usage is None
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    "fixture_path", [path for path in _LINUX_FIXTURES if _records_mounts(path)], ids=lambda p: p.name
+)
+def test_a_committed_linux_fixture_that_recorded_mounts_reports_what_its_disks_hold(fixture_path: Path) -> None:
+    """The other side: a capture that took the reading carries a usage on every drive.
+
+    Split on the raw key rather than on the result, so this cannot pass by
+    selecting only the drives that already carry one.
+    """
+    from lsdsk.adapters.hw.snapshot import build_from
+
+    inventory = build_from(json.loads(fixture_path.read_text(encoding="utf-8")))
+    assert inventory.disks
+    for disk in inventory.disks:
+        assert disk.usage is not None, disk.node
+
+
+@pytest.mark.os_agnostic
+def test_both_kinds_of_committed_linux_capture_remain() -> None:
+    """Either parametrized half above inspects nothing if its kind disappears."""
+    assert any(_records_mounts(path) for path in _LINUX_FIXTURES)
+    assert any(not _records_mounts(path) for path in _LINUX_FIXTURES)
 
 
 @pytest.mark.os_agnostic
