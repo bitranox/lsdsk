@@ -321,56 +321,123 @@ _OPENERS: Final[dict[str, str]] = {"{": "}", "(": ")", "[": "]"}
 _SCRUB_PATTERNS_VARIABLE: Final = "LOG_SCRUB_PATTERNS"
 
 
-def _is_left_open(piece: str) -> bool:
-    """Whether `piece` opens a bracket it never closes, which a regex does not do on purpose.
+def _unclosed_brackets(piece: str) -> dict[str, int]:
+    r"""Each bracket kind that `piece` opens as regex syntax, with how many stay open.
+
+    A bracket is syntax only outside a character class and without a backslash
+    in front of it: ``[(]`` and ``\(`` match a literal parenthesis and open
+    nothing. A ``]`` straight after the class's ``[`` (or ``[^``) is a member of
+    the class, not its end.
 
     Args:
         piece: One comma-separated piece of the text form.
 
     Returns:
-        ``True`` when any of ``{``, ``(`` and ``[`` has more openers than closers.
+        For ``{``, ``(`` and ``[`` the number of openers left without a closer.
+
+    Example:
+        >>> _unclosed_brackets("k=a{1")["{"], _unclosed_brackets("k=[(]")["("], _unclosed_brackets("k=\\(")["("]
+        (1, 0, 0)
+    """
+    depth = dict.fromkeys(_OPENERS, 0)
+    closers = {closer: opener for opener, closer in _OPENERS.items() if opener != "["}
+    in_class = False
+    class_start = 0
+    index = 0
+    while index < len(piece):
+        char = piece[index]
+        if char == "\\":
+            index += 2
+            continue
+        if in_class:
+            if char == "]" and index > class_start:
+                in_class = False
+                depth["["] -= 1
+        elif char == "[":
+            in_class = True
+            depth["["] += 1
+            class_start = index + (2 if piece[index + 1 : index + 2] == "^" else 1)
+        elif char in depth:
+            depth[char] += 1
+        elif char in closers:
+            depth[closers[char]] -= 1
+        index += 1
+    return depth
+
+
+def _is_left_open(piece: str) -> bool:
+    r"""Whether `piece` opens a bracket it never closes, which a regex does not do on purpose.
+
+    Args:
+        piece: One comma-separated piece of the text form.
+
+    Returns:
+        ``True`` when a ``{``, ``(`` or ``[`` that is regex syntax has more
+        openers than closers; a bracket in a character class or escaped is a
+        literal and does not count.
 
     Example:
         >>> _is_left_open("token=a{1"), _is_left_open("token=a{1,3}"), _is_left_open("k=[0-9]")
         (True, False, False)
+        >>> _is_left_open("k=[(]"), _is_left_open("k=\\(")
+        (False, False)
     """
-    return any(piece.count(opener) > piece.count(closer) for opener, closer in _OPENERS.items())
+    return any(count > 0 for count in _unclosed_brackets(piece).values())
 
 
-def _dropped_scrub_entries(text: str) -> list[str]:
-    """The pieces of a text-form ``scrub_patterns`` that are the tail of a regex cut at its comma.
+class _DroppedPiece(NamedTuple):
+    """A piece of the text form that was not read as an entry, and why."""
+
+    piece: str
+    reason: str
+
+
+#: Why a piece that follows a group left open was not read as an entry of its own.
+_REASON_CUT = "the text form is field=regex pairs split on every comma, and this piece continues a cut regex"
+
+#: Why a piece with no ``=`` was not read as an entry.
+_REASON_NO_EQUALS = "the text form is field=regex pairs split on every comma, and this piece has no '='"
+
+
+def _dropped_scrub_entries(text: str) -> list[_DroppedPiece]:
+    """The pieces of a text-form ``scrub_patterns`` that were not read as an entry, each with its reason.
 
     The text form is ``field=regex`` pairs split on every comma, so a regex that
     holds one (``token=a{1,3}``) is cut in two. The tail is dropped without a
     word when it has no ``=``, and is read as a pair of its own when it has one
-    (``token=a{1,3=x}`` yields an entry named ``3``). Either way it follows a
-    piece that opened a bracket and never closed it, which is how a cut is told
-    from a deliberate list.
+    (``token=a{1,3=x}`` yields an entry named ``3``). A tail follows a piece that
+    opened a regex bracket and never closed it, which is how a cut is told from
+    a deliberate list; a piece with no ``=`` after one that closed everything is
+    plainly not a pair, and says that instead of blaming a cut.
 
     Args:
         text: The text form, from the section or from the environment.
 
     Returns:
-        Each non-blank piece that is such a tail, in order.
+        Each non-blank piece that was not read as an entry, in order.
 
     Example:
-        >>> _dropped_scrub_entries("token=a{1,3}, key=.+")
+        >>> [p.piece for p in _dropped_scrub_entries("token=a{1,3}, key=.+")]
         ['3}']
-        >>> _dropped_scrub_entries("token=a{1,3=x}, key=.+")
+        >>> [p.piece for p in _dropped_scrub_entries("token=a{1,3=x}, key=.+")]
         ['3=x}']
         >>> _dropped_scrub_entries("token=a{2}, key=.+,")
         []
+        >>> _dropped_scrub_entries("a=x,junk")[0].reason.endswith("has no '='")
+        True
     """
     pieces = [piece.strip() for piece in text.split(",")]
-    tails: list[str] = []
+    dropped: list[_DroppedPiece] = []
     previous = ""
     for piece in pieces:
         if not piece:
             continue
-        if "=" not in piece or _is_left_open(previous):
-            tails.append(piece)
+        if _is_left_open(previous):
+            dropped.append(_DroppedPiece(piece, _REASON_CUT))
+        elif "=" not in piece:
+            dropped.append(_DroppedPiece(piece, _REASON_NO_EQUALS))
         previous = piece
-    return tails
+    return dropped
 
 
 class _ScrubText(NamedTuple):
@@ -412,12 +479,12 @@ def _scrub_pattern_notes(section: Mapping[str, object]) -> list[str]:
     return [
         RejectedValue(
             dotted=origin,
-            raw=piece,
-            reason="the text form is field=regex pairs split on every comma, and this piece continues a cut regex",
+            raw=dropped.piece,
+            reason=dropped.reason,
             used="the other entries; give a regex containing a comma as a table in a file",
         ).as_sentence()
         for origin, text in _scrub_texts(section)
-        for piece in _dropped_scrub_entries(text)
+        for dropped in _dropped_scrub_entries(text)
     ]
 
 
