@@ -203,7 +203,6 @@ def test_a_container_resolves_every_disk_to_none() -> None:
     assert usage == {"PhysicalDrive0": None}
 
 
-@pytest.mark.os_agnostic
 def test_one_volumes_paths_keep_the_order_the_reader_listed_them_in() -> None:
     """First-seen order holds inside a volume too: a letter listed after a folder mount stays after it."""
     capture = _capture(

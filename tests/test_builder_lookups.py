@@ -347,7 +347,6 @@ def test_a_monitor_with_an_unreadable_temperature_does_not_shadow_the_next_one()
     assert disk.health.temperature_c == 42, "an unreadable monitor hid the one that answered"
 
 
-@pytest.mark.os_agnostic
 def test_a_port_token_written_in_non_ascii_digits_names_no_port() -> None:
     """A regex digit class accepts every Unicode decimal digit, so the port token is matched as ASCII only.
 

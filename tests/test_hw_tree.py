@@ -536,7 +536,6 @@ def test_a_capture_full_of_small_parent_cycles_is_cut_in_one_pass() -> None:
     )
 
 
-@pytest.mark.os_agnostic
 def test_cycles_that_sort_after_a_healthy_device_are_all_broken_and_every_device_reaches_a_root() -> None:
     """The walk does not stop at, or only look at, the cycle that happens to sort first.
 
