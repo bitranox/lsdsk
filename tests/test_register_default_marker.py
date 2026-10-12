@@ -407,3 +407,29 @@ def test_a_table_explains_the_mark_exactly_when_a_column_it_drew_carries_one() -
             arms.add(drawn)
             assert explained == drawn, f"width {width}: mark drawn {drawn}, legend drawn {explained}\n{page}"
     assert arms == {True, False}, f"the sweep never reached both arms: {arms}"
+
+
+#: A register-default link whose two figures differ, which no committed capture has: every one
+#: reads capable == running, so a swap of the two columns was invisible to the whole suite.
+_UNEQUAL = PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=5.0, max_width=2)
+
+
+def test_the_hop_columns_of_a_register_default_keep_capable_and_running_apart() -> None:
+    """`capable` is the maximum and `running` is the negotiated link, marked or not."""
+    pair = theme.hop_link_cells(_UNEQUAL, register_default=True)
+
+    assert (pair.capable[0], pair.running[0]) == ("Gen2x2*", "Gen1x1*")
+
+
+def test_the_link_pair_of_a_register_default_keeps_running_and_capable_apart() -> None:
+    """The slot view's pair is ordered running first; a swap would label each figure with the other's."""
+    pair = theme.link_pair_cells(_UNEQUAL, register_default=True)
+
+    assert (pair.running[0], pair.capable[0]) == ("Gen1x1*", "Gen2x2*")
+
+
+@pytest.mark.parametrize("text", ["Intel Gen1x1*", "Gen1x1* (on)", "x Gen1x1*", "Gen1x1**"])
+def test_text_that_merely_contains_a_marked_figure_summons_no_legend(text: str) -> None:
+    """The mark is matched on the whole cell, so published text ending in a figure draws no legend."""
+    assert not theme.marks_register_default(text)
+    assert theme.register_default_legend([text]) == ""
