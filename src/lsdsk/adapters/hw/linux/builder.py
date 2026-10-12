@@ -53,6 +53,7 @@ from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble, port_kind_of
 from ..refusals import refusals_of
 from .capture import AtaBlobs, NvmeBlobs, NvmeClassEntry
+from .filesystems import build_filesystems
 from .usage import resolve_usage
 
 if TYPE_CHECKING:
@@ -1176,6 +1177,8 @@ def build_inventory(capture: LinuxCapture) -> Inventory:
     usage = resolve_usage(capture, environment)
     disks = tuple(disk.with_changes(usage=usage.get(disk.node)) for disk in build_disks(capture))
 
+    filesystems, unread_filesystems = build_filesystems(capture, environment)
+
     used = _ports_used(capture, disks)
 
     return Inventory(
@@ -1195,6 +1198,8 @@ def build_inventory(capture: LinuxCapture) -> Inventory:
         environment_detail=detail,
         board=board_name(capture.environment),
         devices_accessible=capture.devices_accessible,
+        filesystems=filesystems,
+        unread_filesystems=unread_filesystems,
     )
 
 

@@ -390,6 +390,63 @@ def _disk_usage(block: BlockEntry, capture: LinuxCapture, sources: _Sources) -> 
     return DiskUsage(boot=_is_boot(merged, sources.boot_pools), uses=merged)
 
 
+def _member_devs(block: BlockEntry, stacked: Mapping[str, StackedEntry]) -> set[str]:
+    """Every maj:min a mount or a swap could name that lives on one disk."""
+    leaves = [(block.dev, block.holders), *((p.dev, p.holders) for p in (block.partitions or {}).values())]
+    devs = {dev for dev, _holders in leaves if dev}
+    for _dev, holders in leaves:
+        for holder in holders:
+            for member in (holder, *_closure(holder, stacked)):
+                devs.update(_devs_of(stacked.get(member, StackedEntry())))
+    return devs
+
+
+def disks_by_device(capture: LinuxCapture) -> dict[str, frozenset[str]]:
+    """Which disks each device number lives on, the inverse of what a disk is used by.
+
+    Built from the same holder closure as :func:`resolve_usage`, so a mount and
+    the ``used by`` cell can never disagree about which disk holds it.
+
+    Args:
+        capture: A Linux reading.
+
+    Returns:
+        Every ``maj:min`` a mount could name (a disk's own, its partitions' and
+        every stacked device above them) to the disk nodes it lives on.
+        Virtual disks are left out.
+    """
+    found: dict[str, set[str]] = {}
+    for node, block in capture.block.items():
+        if block.virtual:
+            continue
+        for dev in _member_devs(block, capture.stacked):
+            found.setdefault(dev, set()).add(node)
+    return {dev: frozenset(nodes) for dev, nodes in found.items()}
+
+
+def disks_by_pool(capture: LinuxCapture) -> dict[str, frozenset[str]]:
+    """Which disks each ZFS pool's members sit on, partition evidence first.
+
+    Args:
+        capture: A Linux reading.
+
+    Returns:
+        Pool name to the disk nodes carrying one of its members.
+    """
+    found: dict[str, set[str]] = {}
+    for node, block in capture.block.items():
+        if block.virtual:
+            continue
+        partitions = tuple((block.partitions or {}).values())
+        signatures = [_signature_of(partition.dev, capture) for partition in partitions]
+        if not any(signature is not None for signature in signatures):
+            signatures = [_signature_of(block.dev, capture)]
+        for signature in signatures:
+            if signature is not None and signature.fs_type == _ZFS_MEMBER and signature.fs_label:
+                found.setdefault(signature.fs_label, set()).add(node)
+    return {pool: frozenset(nodes) for pool, nodes in found.items()}
+
+
 def resolve_usage(capture: LinuxCapture, environment: Environment) -> dict[str, DiskUsage | None]:
     """Resolve what every non-virtual disk in a capture is used for.
 
@@ -413,4 +470,4 @@ def resolve_usage(capture: LinuxCapture, environment: Environment) -> dict[str, 
     return {node: _disk_usage(block, capture, sources) for node, block in capture.block.items() if not block.virtual}
 
 
-__all__ = ["BOOT_MOUNTS", "resolve_usage"]
+__all__ = ["BOOT_MOUNTS", "disks_by_device", "disks_by_pool", "resolve_usage"]

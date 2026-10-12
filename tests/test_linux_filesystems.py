@@ -1,0 +1,225 @@
+"""The filesystems that live on a Linux disk, built from hand-made captures."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from workcount import work_to_run
+
+from lsdsk.adapters.hw.linux.capture import LinuxCapture
+from lsdsk.adapters.hw.linux.filesystems import build_filesystems
+from lsdsk.adapters.hw.linux.usage import disks_by_device, resolve_usage
+from lsdsk.domain.enums import Environment, FilesystemKind
+
+BARE_METAL = Environment.BARE_METAL
+
+
+def _capture(block: dict[str, Any], **extra: Any) -> LinuxCapture:
+    reading: dict[str, Any] = {
+        "schema": 2,
+        "platform": "linux",
+        "hostname": "h",
+        "kernel": "6.1",
+        "pci": {},
+        "block": block,
+        "mounts": [],
+        "swaps": [],
+        "stacked": {},
+        "signatures": {},
+    }
+    reading.update(extra)
+    return LinuxCapture.model_validate(reading)
+
+
+def _disk(dev: str, partitions: dict[str, Any] | None = None, holders: tuple[str, ...] = ()) -> dict[str, Any]:
+    return {"dev": dev, "holders": list(holders), "partitions": partitions or {}}
+
+
+def _mount(dev: str, mountpoint: str, fstype: str = "ext4", source: str = "") -> dict[str, str]:
+    return {"dev": dev, "mountpoint": mountpoint, "fstype": fstype, "source": source}
+
+
+def test_a_filesystem_on_lvm_over_two_disks_names_both() -> None:
+    capture = _capture(
+        {
+            "sda": _disk("8:0", {"sda1": {"dev": "8:1", "holders": ["dm-0"]}}),
+            "sdb": _disk("8:16", {"sdb1": {"dev": "8:17", "holders": ["dm-0"]}}),
+        },
+        stacked={"dm-0": {"dev": "253:0", "dm_name": "vg0-var", "dm_uuid": "LVM-"}},
+        mounts=[_mount("253:0", "/var")],
+        filesystem_space={"253:0": {"frsize": 4096, "blocks": 100, "bfree": 10, "bavail": 5, "files": 9, "ffree": 3}},
+    )
+    rows, refused = build_filesystems(capture, BARE_METAL)
+    assert refused == ()
+    assert rows is not None
+    (var,) = rows
+    assert (var.name, var.disks, var.used_bytes, var.free_bytes) == ("/var", ("sda", "sdb"), 90 * 4096, 5 * 4096)
+
+
+def test_bind_mounts_of_one_filesystem_are_one_row() -> None:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        mounts=[_mount("8:1", "/"), _mount("8:1", "/srv/a"), _mount("8:1", "/srv/b")],
+        filesystem_space={},
+    )
+    rows, _ = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    assert [(row.name, row.other_mounts) for row in rows] == [("/", ("/srv/a", "/srv/b"))]
+
+
+def test_a_pool_is_one_row_with_its_members_and_no_datasets() -> None:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}}), "sdb": _disk("8:16", {"sdb1": {"dev": "8:17"}})},
+        signatures={
+            "8:1": {"fs_type": "zfs_member", "fs_label": "tank"},
+            "8:17": {"fs_type": "zfs_member", "fs_label": "tank"},
+        },
+        mounts=[_mount("0:50", "/tank", "zfs", "tank"), _mount("0:51", "/tank/a", "zfs", "tank")],
+        zfs_pools={"tank": {"size": 1000, "alloc": 960}},
+        filesystem_space={},
+    )
+    rows, _ = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    (pool,) = rows
+    assert (pool.kind, pool.name, pool.disks, pool.other_mounts, pool.used_percent) == (
+        FilesystemKind.POOL,
+        "tank",
+        ("sda", "sdb"),
+        (),
+        96,
+    )
+
+
+def test_a_pool_allocated_beyond_its_size_never_reports_a_negative_figure() -> None:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        signatures={"8:1": {"fs_type": "zfs_member", "fs_label": "tank"}},
+        zfs_pools={"tank": {"size": 1000, "alloc": 1200}},
+    )
+    rows, _ = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    (pool,) = rows
+    assert (pool.size_bytes, pool.used_bytes, pool.free_bytes, pool.used_percent) == (1000, 1000, 0, 100)
+
+
+def test_more_free_inodes_than_inodes_is_clamped_to_the_total() -> None:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        mounts=[_mount("8:1", "/")],
+        filesystem_space={"8:1": {"frsize": 4096, "blocks": 10, "bfree": 5, "bavail": 5, "files": 100, "ffree": 150}},
+    )
+    rows, _ = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    assert (rows[0].inodes_total, rows[0].inodes_free) == (100, 100)
+    assert rows[0].inodes_used_percent == 0
+
+
+def test_more_free_blocks_than_blocks_never_reports_negative_use() -> None:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        mounts=[_mount("8:1", "/")],
+        filesystem_space={"8:1": {"frsize": 4096, "blocks": 10, "bfree": 15, "bavail": 15, "files": 1, "ffree": 1}},
+    )
+    rows, _ = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    assert rows[0].used_bytes == 0
+
+
+def test_a_missing_control_device_with_pool_members_is_a_refusal() -> None:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        signatures={"8:1": {"fs_type": "zfs_member", "fs_label": "tank"}},
+        zfs_pools=None,
+        filesystem_space={},
+    )
+    _rows, refused = build_filesystems(capture, BARE_METAL)
+    assert [(r.reading, r.reason) for r in refused] == [("zfs-pools", "the ZFS control device was not available")]
+
+
+def test_no_control_device_and_no_pool_members_is_not_a_refusal() -> None:
+    capture = _capture({"sda": _disk("8:0")}, zfs_pools=None, filesystem_space={})
+    assert build_filesystems(capture, BARE_METAL)[1] == ()
+
+
+def test_a_refused_statvfs_is_carried_on_its_row() -> None:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        mounts=[_mount("8:1", "/data")],
+        filesystem_space={"8:1": {"error": "Permission denied"}},
+    )
+    rows, _ = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    assert [(r.reading, r.reason) for r in rows[0].readings_refused] == [("statvfs", "Permission denied")]
+    assert rows[0].used_bytes is None
+
+
+def test_a_mount_on_no_inventory_disk_is_not_a_row() -> None:
+    capture = _capture({"sda": _disk("8:0")}, mounts=[_mount("7:0", "/snap/x", "squashfs")], filesystem_space={})
+    assert build_filesystems(capture, BARE_METAL)[0] == ()
+
+
+def test_a_container_and_an_unread_mount_table_read_nothing() -> None:
+    assert build_filesystems(_capture({}), Environment.CONTAINER) == (None, ())
+    assert build_filesystems(_capture({}, mounts=None), BARE_METAL) == (None, ())
+
+
+def test_every_mount_the_used_by_cell_names_resolves_to_the_same_disk() -> None:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1", "holders": ["dm-0"]}})},
+        stacked={
+            "dm-0": {"dev": "253:0", "dm_name": "cr", "dm_uuid": "CRYPT-", "holders": ["dm-1"]},
+            "dm-1": {"dev": "253:1", "dm_name": "vg-root", "dm_uuid": "LVM-"},
+        },
+        mounts=[_mount("253:1", "/")],
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    by_device = disks_by_device(capture)
+    named = 0
+    for node, disk_usage in usage.items():
+        assert disk_usage is not None
+        for use in disk_usage.uses:
+            for mountpoint in use.mounts:
+                (mount,) = [m for m in capture.mounts or () if m.mountpoint == mountpoint]
+                assert node in by_device[mount.dev]
+                named += 1
+    assert named > 0
+
+
+class _CountedText(str):
+    """A mountpoint whose every comparison and hash is a Python call."""
+
+    __slots__ = ()
+
+    def __eq__(self, other: object) -> bool:
+        return str.__eq__(self, other)
+
+    def __hash__(self) -> int:
+        return str.__hash__(self)
+
+
+def _binds(count: int) -> LinuxCapture:
+    capture = _capture(
+        {"sdc": _disk("8:32")},
+        mounts=[_mount("8:32", f"/bind/{n}") for n in range(count)],
+        filesystem_space={},
+    )
+    # Validation turns a str subclass back into str, so the counted text goes
+    # in afterwards through copies, which do not validate.
+    mounts = [mount.model_copy(update={"mountpoint": _CountedText(mount.mountpoint)}) for mount in capture.mounts or ()]
+    return capture.model_copy(update={"mounts": mounts})
+
+
+def _work(count: int) -> int:
+    capture = _binds(count)
+    rows, work = work_to_run(lambda: build_filesystems(capture, BARE_METAL)[0])
+    # Control: all binds folded into the one row, so the counted work is the folding.
+    assert rows is not None
+    assert [len(row.other_mounts) for row in rows] == [count - 1]
+    return work
+
+
+def test_building_the_rows_of_many_bind_mounts_grows_linearly() -> None:
+    ratio = _work(4_000) / _work(1_000)
+
+    # Four times the mounts: linear reads about 4, a list scan about 14.
+    assert ratio < 6, f"4000 mounts cost {ratio:.1f}x the work of 1000"
