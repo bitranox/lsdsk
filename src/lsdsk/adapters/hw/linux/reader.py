@@ -1177,10 +1177,8 @@ def read_system() -> dict[str, Any]:
         "swaps": mounts.read_swaps(),
         "stacked": mounts.read_stacked(sorted(holders)),
         "signatures": mounts.read_signatures(devnums),
-        "zfs_pools": pools,
+        **zfs.capture_fields(pools, pools_error),
     }
-    if pools_error is not None:
-        reading["zfs_pools_error"] = pools_error
     return reading
 
 

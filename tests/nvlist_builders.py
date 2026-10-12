@@ -58,6 +58,14 @@ def embedded_array(name: str, lists: list[list[bytes]]) -> bytes:
 
 
 def stream(items: list[bytes]) -> bytes:
+    """A native-encoded nvlist stream: header, nvlist header and the given pairs.
+
+    Args:
+        items: Already-encoded pairs.
+
+    Returns:
+        The stream bytes.
+    """
     return bytes([0, 1, 0, 0]) + struct.pack("<iI", 0, 1) + pairs(items)
 
 
