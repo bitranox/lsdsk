@@ -223,3 +223,64 @@ def test_building_the_rows_of_many_bind_mounts_grows_linearly() -> None:
 
     # Four times the mounts: linear reads about 4, a list scan about 14.
     assert ratio < 6, f"4000 mounts cost {ratio:.1f}x the work of 1000"
+
+
+def test_a_refused_zfs_pool_listing_is_carried_with_its_message() -> None:
+    capture = _capture({"sda": _disk("8:0")}, zfs_pools_error="ioctl failed: EPERM", filesystem_space={})
+    _rows, refused = build_filesystems(capture, BARE_METAL)
+    assert [(r.reading, r.reason) for r in refused] == [("zfs-pools", "ioctl failed: EPERM")]
+
+
+def _inode_row(**space: int) -> tuple[int | None, int | None]:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        mounts=[_mount("8:1", "/")],
+        filesystem_space={"8:1": {"frsize": 4096, "blocks": 10, "bfree": 5, "bavail": 5, **space}},
+    )
+    rows, _ = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    return rows[0].inodes_total, rows[0].inodes_free
+
+
+def test_the_inode_pair_is_emitted_whole_or_not_at_all() -> None:
+    assert _inode_row(files=100, ffree=40) == (100, 40)
+    assert _inode_row(ffree=40) == (None, None)
+    assert _inode_row(files=100) == (None, None)
+
+
+def _read_only_of(*flags: bool | None) -> bool:
+    mounts = [
+        {**_mount("8:1", f"/m{index}"), **({} if flag is None else {"read_only": flag})}
+        for index, flag in enumerate(flags)
+    ]
+    capture = _capture({"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})}, mounts=mounts, filesystem_space={})
+    rows, _ = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    (row,) = rows
+    return row.read_only
+
+
+def test_a_filesystem_is_read_only_only_when_every_mount_of_it_is() -> None:
+    assert _read_only_of(True, True) is True
+    assert _read_only_of(True, False) is False
+    assert _read_only_of(False, True) is False
+    assert _read_only_of(True, None) is False
+
+
+def test_a_mount_whose_device_is_unknown_is_found_through_its_source_device() -> None:
+    mount = {**_mount("0:99", "/data", "btrfs"), "source_dev": "8:1"}
+    capture = _capture({"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})}, mounts=[mount], filesystem_space={})
+    rows, _ = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    assert [(row.name, row.disks) for row in rows] == [("/data", ("sda",))]
+
+
+def test_a_pool_with_no_member_disk_makes_no_row() -> None:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        signatures={"8:1": {"fs_type": "zfs_member", "fs_label": "tank"}},
+        zfs_pools={"tank": {"size": 1000, "alloc": 10}, "ghost": {"size": 500, "alloc": 5}},
+    )
+    rows, _ = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    assert [row.name for row in rows] == ["tank"]

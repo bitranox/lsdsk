@@ -1865,7 +1865,8 @@ class Filesystem(DomainModel, frozen=True):
         free_bytes: Bytes free to an ordinary user, ``None`` when not read.
         inodes_total: Inode count, ``None`` when not read.
         inodes_free: Free inodes, ``None`` when not read.
-        read_only: Whether it is mounted read-only.
+        read_only: Whether every mount of it is read-only; one writable
+            mountpoint is enough for it to fill.
         readings_refused: Readings the system refused for this filesystem.
 
     Example:

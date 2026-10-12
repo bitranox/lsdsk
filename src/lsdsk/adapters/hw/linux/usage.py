@@ -308,6 +308,34 @@ def _signature_of(dev: str | None, capture: LinuxCapture) -> FilesystemSignature
     return capture.signatures.get(dev)
 
 
+def _partition_signatures(block: BlockEntry, capture: LinuxCapture) -> list[FilesystemSignature | None]:
+    """The udev signature of each partition of one disk, in partition order."""
+    return [_signature_of(partition.dev, capture) for partition in (block.partitions or {}).values()]
+
+
+def _whole_signature(
+    block: BlockEntry,
+    partition_signatures: list[FilesystemSignature | None],
+    capture: LinuxCapture,
+) -> FilesystemSignature | None:
+    """The whole disk's signature, consulted only when no partition carries one.
+
+    A filesystem that runs to the end of its disk (ZFS keeps labels there)
+    makes the whole disk look like a member too, so a partition's own
+    signature beats it. This is the one place that rule is written.
+    """
+    if any(signature is not None for signature in partition_signatures):
+        return None
+    return _signature_of(block.dev, capture)
+
+
+def _signatures_of(block: BlockEntry, capture: LinuxCapture) -> list[FilesystemSignature | None]:
+    """The signatures that count for one disk: its partitions', else the whole disk's."""
+    partition_signatures = _partition_signatures(block, capture)
+    whole = _whole_signature(block, partition_signatures, capture)
+    return [whole] if whole is not None else partition_signatures
+
+
 def _is_boot(merged: tuple[DiskUse, ...], boot_pools: frozenset[str]) -> bool:
     """Whether a disk's merged uses mark it as a boot disk.
 
@@ -376,9 +404,8 @@ def _disk_usage(block: BlockEntry, capture: LinuxCapture, sources: _Sources) -> 
         cannot rule out a use it did not see (see :func:`_undecidable`).
     """
     partitions = tuple((block.partitions or {}).values())
-    partition_signatures = [_signature_of(partition.dev, capture) for partition in partitions]
-    carried = any(signature is not None for signature in partition_signatures)
-    whole_signature = None if carried else _signature_of(block.dev, capture)
+    partition_signatures = _partition_signatures(block, capture)
+    whole_signature = _whole_signature(block, partition_signatures, capture)
 
     uses = _leaf_uses(block.dev, block.holders, whole_signature, sources, capture.stacked)
     for partition, signature in zip(partitions, partition_signatures, strict=True):
@@ -437,11 +464,7 @@ def disks_by_pool(capture: LinuxCapture) -> dict[str, frozenset[str]]:
     for node, block in capture.block.items():
         if block.virtual:
             continue
-        partitions = tuple((block.partitions or {}).values())
-        signatures = [_signature_of(partition.dev, capture) for partition in partitions]
-        if not any(signature is not None for signature in signatures):
-            signatures = [_signature_of(block.dev, capture)]
-        for signature in signatures:
+        for signature in _signatures_of(block, capture):
             if signature is not None and signature.fs_type == _ZFS_MEMBER and signature.fs_label:
                 found.setdefault(signature.fs_label, set()).add(node)
     return {pool: frozenset(nodes) for pool, nodes in found.items()}

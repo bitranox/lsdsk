@@ -44,11 +44,10 @@ def _grouped(mounts: tuple[MountEntry, ...]) -> dict[str, list[MountEntry]]:
 
 
 def _inode_figures(space: SpaceEntry) -> _Figures:
-    """The inode counts, with the free count never above the total."""
-    free = space.ffree
-    if free is not None and space.files is not None:
-        free = min(free, space.files)
-    return {"inodes_total": space.files, "inodes_free": free}
+    """The inode counts, only when both were read, with the free count never above the total."""
+    if space.files is None or space.ffree is None:
+        return {}
+    return {"inodes_total": space.files, "inodes_free": min(space.ffree, space.files)}
 
 
 def _figures(space: SpaceEntry | None, fs_type: str) -> _Figures:
@@ -75,7 +74,7 @@ def _mount_row(group: list[MountEntry], disks: frozenset[str], space: SpaceEntry
         other_mounts=tuple(mountpoints[1:]),
         fs_type=first.fstype,
         disks=tuple(sorted(disks, key=disk_name_order)),
-        read_only=bool(first.read_only),
+        read_only=all(mount.read_only is True for mount in group),
         readings_refused=refusals_of({"statvfs": None if space is None else space.error}),
         **_figures(space, first.fstype),
     )
