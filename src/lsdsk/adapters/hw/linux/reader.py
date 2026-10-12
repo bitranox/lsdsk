@@ -1044,7 +1044,10 @@ def read_environment(*, proc: Path = _HOST_PROC, root: Path | None = None) -> di
     for entry in entries:
         name, _, value = entry.decode("utf-8", errors="replace").partition("=")
         if name == "container":
-            evidence["container_marker"] = value
+            # Stored in a field bounded at the capture's device-text limit, so a longer
+            # value reads as "not read" rather than ending the scan at the model.
+            if len(value) <= MAX_DEVICE_TEXT:
+                evidence["container_marker"] = value
             break
 
     present = [path for path in _CONTAINER_MARKER_FILES if _probe(tree / path, Path.exists)]

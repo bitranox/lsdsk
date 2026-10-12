@@ -13,7 +13,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from lsdsk.adapters.hw.capture import MAX_DEVICE_TEXT
 from lsdsk.adapters.hw.linux.reader import read_environment
+from lsdsk.adapters.hw.snapshot import build_from
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -91,3 +93,28 @@ def test_a_carriage_return_inside_a_mount_point_does_not_cut_the_row(tmp_path: P
     (proc / "self" / "mountinfo").write_bytes(b"6226 6210 0:99 /cpu /proc/cpu\rinfo rw - fuse.lxcfs lxcfs rw\n")
 
     assert read_environment(proc=proc)["mount_markers"] == "lxc"
+
+
+def _built_from_environment_of(tmp_path: Path, marker: str) -> dict[str, object]:
+    """Read PID 1's environment holding ``container=marker``, then build a capture around what was read."""
+    proc = tmp_path / "proc"
+    (proc / "1").mkdir(parents=True)
+    (proc / "1" / "environ").write_bytes(f"PATH=/bin\0container={marker}\0".encode())
+    evidence = read_environment(proc=proc)
+    build_from(
+        {"schema": 2, "platform": "linux", "hostname": "h", "kernel": "6.8.0", "pci": {}, "environment": evidence}
+    )
+    return evidence
+
+
+def test_a_container_marker_longer_than_a_device_text_reads_as_not_read_and_the_capture_builds(tmp_path: Path) -> None:
+    """The value reaches a field bounded at ``MAX_DEVICE_TEXT``, which refused the whole capture."""
+    evidence = _built_from_environment_of(tmp_path, "x" * (MAX_DEVICE_TEXT + 10))
+
+    assert "container_marker" not in evidence
+
+
+def test_a_container_marker_at_the_device_text_bound_is_kept(tmp_path: Path) -> None:
+    marker = "x" * MAX_DEVICE_TEXT
+
+    assert _built_from_environment_of(tmp_path, marker)["container_marker"] == marker
