@@ -53,3 +53,9 @@ def test_the_bound_on_one_piece_of_device_text_is_4096_characters() -> None:
     assert bounded.validate_python("a" * 4096) == "a" * 4096
     with pytest.raises(ValidationError, match="at most 4096"):
         bounded.validate_python("a" * 4097)
+
+
+def test_a_quoted_value_is_cut_at_eighty_characters_by_default() -> None:
+    """The default quote limit is 80: a value of exactly 80 is whole, one more is cut at 80 and marked."""
+    assert visible_text("a" * 80) == "a" * 80
+    assert visible_text("a" * 81) == "a" * 80 + "..."

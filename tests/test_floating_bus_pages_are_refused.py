@@ -154,3 +154,10 @@ def test_an_all_ones_identify_controller_names_no_controller(
 def test_each_decoder_refuses_an_all_ones_page(refuse: Callable[[], object]) -> None:
     with pytest.raises(ValueError, match="all ones"):
         refuse()
+
+
+def test_an_ata_smart_response_longer_than_the_page_is_judged_on_the_page() -> None:
+    """The 512-byte table is what floats; a longer response is not rescued by a byte after it."""
+    with pytest.raises(ValueError, match="all ones"):
+        decode_attributes(b"\xff" * SMART_DATA_LENGTH + b"\x00")
+    assert decode_attributes(bytes(SMART_DATA_LENGTH) + b"\xff") == ()
