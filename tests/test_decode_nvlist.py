@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from lsdsk.adapters.hw.decode.nvlist import MAX_DEPTH, NvValue, PoolSpace, decode_nvlist, pool_space
+from lsdsk.adapters.hw.decode.nvlist import MAX_DEPTH, MAX_PAIRS, NvValue, PoolSpace, decode_nvlist, pool_space
 
 _UINT64, _STRING, _UINT64_ARRAY, _NVLIST, _NVLIST_ARRAY = 8, 9, 16, 19, 20
 
@@ -91,7 +91,9 @@ def test_a_list_array_decodes_every_member_in_order() -> None:
 def test_an_unknown_pair_type_is_skipped_by_its_size() -> None:
     boolean_value = 21
     blob = _stream([_pair("flag", boolean_value, struct.pack("<i", 1)), _u64("kept", 5)])
-    assert decode_nvlist(blob)["kept"] == 5
+    decoded = decode_nvlist(blob)
+    assert decoded["kept"] == 5
+    assert "flag" not in decoded
 
 
 def _nested(depth: int) -> bytes:
@@ -99,6 +101,18 @@ def _nested(depth: int) -> bytes:
     for level in range(depth):
         inner = [_embedded(f"l{level}", inner)]
     return _stream(inner)
+
+
+def _with_name_size(pair: bytes, name_size: int) -> bytes:
+    patched = bytearray(pair)
+    struct.pack_into("<h", patched, 4, name_size)
+    return bytes(patched)
+
+
+def test_a_list_nested_exactly_to_the_depth_limit_still_decodes() -> None:
+    # The top list is depth 0 and each embedded list is one deeper, so _nested(n)
+    # reaches depth n and the check refuses only depth > MAX_DEPTH.
+    assert "l31" in decode_nvlist(_nested(MAX_DEPTH))
 
 
 @pytest.mark.parametrize(
@@ -111,6 +125,14 @@ def _nested(depth: int) -> bytes:
         (_stream([_pair("x", _UINT64, b"")]), "runs past"),
         (_nested(MAX_DEPTH + 1), "nested deeper"),
         (_stream([_text("s", "x" * 70_000)]), "string longer"),
+        (_stream([_pair("x", _UINT64, b""), _u64("next", 1)]), "runs past"),
+        (_stream([_pair("a", _UINT64_ARRAY, struct.pack("<Q", 1), nelem=3), _u64("next", 1)]), "runs past"),
+        (_stream([_u64("a", 1)] * (MAX_PAIRS + 1)), "more than"),
+        (_stream([struct.pack("<i", 8) + bytes(28)]), "less than its own header"),
+        (_stream([_with_name_size(_u64("a", 1), 200)]), "name runs past"),
+        (_stream([_pair("s", _STRING, b"abcdefgh")]), "string runs past"),
+        (_stream([_pair("c", _NVLIST_ARRAY, b"", nelem=MAX_PAIRS + 1)]), "list array declares"),
+        (_stream([_pair("c", _NVLIST_ARRAY, b"", nelem=-1)]), "list array declares"),
     ],
 )
 def test_a_malformed_buffer_is_refused_with_its_reason(blob: bytes, reason: str) -> None:
@@ -123,6 +145,7 @@ def test_a_malformed_buffer_is_refused_with_its_reason(blob: bytes, reason: str)
     [
         ({}, "no vdev_tree"),
         ({"vdev_tree": {}}, "no vdev_stats"),
+        ({"vdev_tree": {"vdev_stats": ({"a": 1},) * 6}}, "no vdev_stats"),
         ({"vdev_tree": {"vdev_stats": (1, 2, 3)}}, "too short"),
         ({"vdev_tree": {"vdev_stats": (0, 0, 0, 5, 4)}}, "more allocated than"),
     ],

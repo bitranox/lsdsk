@@ -33,9 +33,11 @@ _PAIR_HEADER = struct.Struct("<ihhii")
 _END_MARKER = 4
 _NATIVE, _LITTLE_ENDIAN = 0, 1
 _UINT64, _STRING, _UINT64_ARRAY, _NVLIST, _NVLIST_ARRAY = 8, 9, 16, 19, 20
+_DECODED_KINDS = frozenset({_UINT64, _STRING, _UINT64_ARRAY, _NVLIST, _NVLIST_ARRAY})
 _VS_ALLOC, _VS_SPACE = 3, 4
 
 NvValue: TypeAlias = int | str | tuple[int, ...] | Mapping[str, "NvValue"] | tuple[Mapping[str, "NvValue"], ...]
+NvList: TypeAlias = Mapping[str, NvValue]
 
 
 class PoolSpace(NamedTuple):
@@ -61,9 +63,11 @@ class _Reader:
         self.blob = blob
         self.pairs = 0
 
-    def need(self, start: int, length: int, what: str) -> None:
-        if length < 0 or start + length > len(self.blob):
-            msg = f"{what} runs past the end of the buffer"
+    def need(self, start: int, length: int, what: str, limit: int | None = None) -> None:
+        """Refuse a read of ``length`` bytes at ``start`` that crosses ``limit`` (default: the buffer end)."""
+        bound = len(self.blob) if limit is None else limit
+        if length < 0 or start + length > bound:
+            msg = f"{what} runs past {'the end of the buffer' if limit is None else 'its pair'}"
             raise ValueError(msg)
 
     def pair_list(self, start: int, depth: int) -> tuple[dict[str, NvValue], int]:
@@ -78,6 +82,9 @@ class _Reader:
             if size == 0:
                 return out, position + _END_MARKER
             name, value, kind, count, end = self._pair_head(position, size)
+            if kind not in _DECODED_KINDS:
+                position = end
+                continue
             out[name], position = self._value(kind, value, count, end, depth)
 
     def _pair_head(self, position: int, size: int) -> tuple[str, int, int, int, int]:
@@ -100,18 +107,16 @@ class _Reader:
 
     def _value(self, kind: int, value: int, count: int, end: int, depth: int) -> tuple[NvValue, int]:
         if kind == _UINT64:
-            self.need(value, 8, "a uint64")
+            self.need(value, 8, "a uint64", end)
             return struct.unpack_from("<Q", self.blob, value)[0], end
         if kind == _STRING:
             return self._string(value, end), end
         if kind == _UINT64_ARRAY:
-            self.need(value, 8 * count, "a uint64 array")
+            self.need(value, 8 * count, "a uint64 array", end)
             return struct.unpack_from(f"<{count}Q", self.blob, value), end
         if kind == _NVLIST:
             return self.pair_list(end, depth + 1)
-        if kind == _NVLIST_ARRAY:
-            return self._list_array(count, end, depth)
-        return 0, end
+        return self._list_array(count, end, depth)
 
     def _string(self, value: int, end: int) -> str:
         terminator = self.blob.find(b"\0", value, end)
@@ -123,11 +128,11 @@ class _Reader:
             raise ValueError(msg)
         return self.blob[value:terminator].decode("utf-8", errors="replace")
 
-    def _list_array(self, count: int, end: int, depth: int) -> tuple[tuple[Mapping[str, NvValue], ...], int]:
+    def _list_array(self, count: int, end: int, depth: int) -> tuple[tuple[NvList, ...], int]:
         if count < 0 or count > MAX_PAIRS:
             msg = f"a list array declares {count} members"
             raise ValueError(msg)
-        members: list[Mapping[str, NvValue]] = []
+        members: list[NvList] = []
         position = end
         for _ in range(count):
             member, position = self.pair_list(position, depth + 1)
@@ -170,7 +175,7 @@ def _integers(value: NvValue | None) -> tuple[int, ...] | None:
     return numbers if len(numbers) == len(value) else None
 
 
-def pool_space(config: Mapping[str, NvValue]) -> PoolSpace:
+def pool_space(config: NvList) -> PoolSpace:
     """Read a pool's size and allocation from its stats config.
 
     Args:
@@ -200,4 +205,13 @@ def pool_space(config: Mapping[str, NvValue]) -> PoolSpace:
     return PoolSpace(size_bytes=size, alloc_bytes=alloc)
 
 
-__all__ = ["MAX_DEPTH", "MAX_PAIRS", "MAX_STRING_BYTES", "NvValue", "PoolSpace", "decode_nvlist", "pool_space"]
+__all__ = [
+    "MAX_DEPTH",
+    "MAX_PAIRS",
+    "MAX_STRING_BYTES",
+    "NvList",
+    "NvValue",
+    "PoolSpace",
+    "decode_nvlist",
+    "pool_space",
+]
