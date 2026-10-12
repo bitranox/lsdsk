@@ -208,7 +208,9 @@ def test_every_ioctl_the_module_exports_is_pinned_by_a_table() -> None:
 #: STORAGE_PROTOCOL_TYPE has ProtocolTypeScsi 1, Ata 2, Nvme 3; STORAGE_PROTOCOL_NVME_DATA_TYPE
 #: has NVMeDataTypeIdentify 1 and NVMeDataTypeLogPage 2; ntddscsi.h gives ATA_FLAGS_DRDY_REQUIRED
 #: 0x01 and ATA_FLAGS_DATA_IN 0x02, and SCSI_IOCTL_DATA_IN 1 (OUT 0, UNSPECIFIED 2); winbase.h
-#: gives DRIVE_CDROM 5 and DRIVE_RAMDISK 6; winioctl.h's PARTITION_STYLE has MBR 0, GPT 1, RAW 2.
+#: gives DRIVE_CDROM 5 and DRIVE_RAMDISK 6; winioctl.h's PARTITION_STYLE has MBR 0, GPT 1, RAW 2;
+#: winnt.h gives FILE_SHARE_READ 1 and FILE_SHARE_WRITE 2, and GetVolumeInformationW's flag table
+#: (learn.microsoft.com, fileapi/nf-fileapi-getvolumeinformationw) gives FILE_READ_ONLY_VOLUME 0x00080000.
 SDK_SELECTOR_VALUES = {
     "STORAGE_DEVICE_PROPERTY": 0,
     "STORAGE_ADAPTER_PROPERTY": 1,
@@ -227,6 +229,9 @@ SDK_SELECTOR_VALUES = {
     "DRIVE_CDROM": 5,
     "DRIVE_RAMDISK": 6,
     "PARTITION_STYLE_GPT": 1,
+    "FILE_SHARE_READ": 0x00000001,
+    "FILE_SHARE_WRITE": 0x00000002,
+    "FILE_READ_ONLY_VOLUME": 0x00080000,
 }
 SELECTOR_PREFIXES = (
     "STORAGE_",
@@ -237,6 +242,7 @@ SELECTOR_PREFIXES = (
     "SCSI_IOCTL_",
     "DRIVE_",
     "PARTITION_STYLE_",
+    "FILE_",
 )
 
 

@@ -94,6 +94,10 @@ PARTITION_STYLE_GPT = 1
 DRIVE_CDROM = 5
 DRIVE_RAMDISK = 6
 
+# GetVolumeInformationW's file-system flag for a volume mounted read-only,
+# from winnt.h.
+FILE_READ_ONLY_VOLUME = 0x00080000
+
 # USB hub ioctls, each CTL_CODE(FILE_DEVICE_USB, function, METHOD_BUFFERED,
 # FILE_ANY_ACCESS), issued on a handle to the HUB and naming the port in the
 # request. Every one is a query.
@@ -621,6 +625,24 @@ def configure_prototypes(setupapi: WinLibrary, cfgmgr32: WinLibrary, kernel32: W
     kernel32.GetVolumeNameForVolumeMountPointW.argtypes = (wintypes.LPCWSTR, wintypes.LPWSTR, DWORD)
     kernel32.GetDriveTypeW.restype = ctypes.c_uint32
     kernel32.GetDriveTypeW.argtypes = (wintypes.LPCWSTR,)
+    kernel32.GetDiskFreeSpaceExW.restype = BOOL
+    kernel32.GetDiskFreeSpaceExW.argtypes = (
+        wintypes.LPCWSTR,
+        ctypes.POINTER(ctypes.c_uint64),
+        ctypes.POINTER(ctypes.c_uint64),
+        ctypes.POINTER(ctypes.c_uint64),
+    )
+    kernel32.GetVolumeInformationW.restype = BOOL
+    kernel32.GetVolumeInformationW.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.LPWSTR,
+        DWORD,
+        ctypes.POINTER(DWORD),
+        ctypes.POINTER(DWORD),
+        ctypes.POINTER(DWORD),
+        wintypes.LPWSTR,
+        DWORD,
+    )
 
 
 # The registry hive that holds the firmware's own description of the machine.
@@ -695,6 +717,7 @@ __all__ = [
     "DRIVE_RAMDISK",
     "DWORD",
     "ERROR_NO_MORE_FILES",
+    "FILE_READ_ONLY_VOLUME",
     "FILE_SHARE_READ",
     "FILE_SHARE_WRITE",
     "GENERIC_READ",

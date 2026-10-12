@@ -49,6 +49,9 @@ _EXTENTS_BUFFER_SIZE = EXTENTS_HEADER.size + MAX_EXTENTS * EXTENT_ENTRY.size
 #: drive letter or a short folder mount, so this is generous rather than tight.
 _PATHS_BUFFER_CHARS = 4096
 _MAX_PATH = 260
+#: The filesystem name buffer: names are a handful of characters (NTFS, ReFS,
+#: exFAT), so this is generous rather than tight.
+_FS_NAME_CHARS = 64
 
 
 def _volume_paths(kernel32: api.WinLibrary, volume: str) -> tuple[tuple[str, ...], str | None]:
@@ -121,12 +124,48 @@ def _is_esp(kernel32: api.WinLibrary, handle: int) -> bool | None:
     return parse_is_esp(response.raw[: returned.value])
 
 
-def _read_one_volume(kernel32: api.WinLibrary, volume: str) -> dict[str, Any]:
-    """Read one volume's mount paths, drive type, disk extents and ESP status.
+def _volume_space(kernel32: api.WinLibrary, path: str, *, last_error: Callable[[], int]) -> dict[str, Any]:
+    """Read one volume's capacity, free space, filesystem name and read-only flag.
+
+    Asked of the volume's first mount path, the same rule as ``GetDriveTypeW``:
+    measured unelevated on Windows 11, both calls answer there. The two calls
+    stand alone, so a refusal of one leaves the other's figures in place.
+
+    Args:
+        kernel32: The typed facade over the Win32 entry points.
+        path: The volume's first mount path.
+        last_error: Answers ``GetLastError`` for the call that just failed.
+
+    Returns:
+        The figures that were read, plus ``space_error`` when the space call
+        was refused and ``fs_info_error`` when ``GetVolumeInformationW`` was,
+        so an absent field is never an unexplained one.
+    """
+    available, total, free = ctypes.c_uint64(), ctypes.c_uint64(), ctypes.c_uint64()
+    entry: dict[str, Any] = {}
+    if kernel32.GetDiskFreeSpaceExW(path, ctypes.byref(available), ctypes.byref(total), ctypes.byref(free)):
+        entry.update(total_bytes=total.value, free_bytes=free.value, available_bytes=available.value)
+    else:
+        entry["space_error"] = f"could not read the volume's free space (error {last_error()})"
+    flags = api.DWORD()
+    fs_name = ctypes.create_unicode_buffer(_FS_NAME_CHARS)
+    if kernel32.GetVolumeInformationW(path, None, 0, None, None, ctypes.byref(flags), fs_name, _FS_NAME_CHARS):
+        entry["fs_type"] = fs_name.value
+        entry["read_only"] = bool(flags.value & api.FILE_READ_ONLY_VOLUME)
+    else:
+        entry["fs_info_error"] = f"could not read the volume's filesystem name (error {last_error()})"
+    return entry
+
+
+def _read_one_volume(
+    kernel32: api.WinLibrary, volume: str, *, last_error: Callable[[], int] = api.last_error
+) -> dict[str, Any]:
+    """Read one volume's mount paths, drive type, space, disk extents and ESP status.
 
     Args:
         kernel32: The typed facade over the Win32 entry points.
         volume: The volume's GUID path, trailing backslash included.
+        last_error: Answers ``GetLastError`` for the space call that just failed.
 
     Returns:
         One volume's reading, shaped for the capture model to type.
@@ -140,6 +179,7 @@ def _read_one_volume(kernel32: api.WinLibrary, volume: str) -> dict[str, Any]:
         # volume that refuses to open, its letter answered DRIVE_FIXED while
         # its GUID path answered DRIVE_NO_ROOT_DIR.
         entry["drive_type"] = int(kernel32.GetDriveTypeW(paths[0]))
+        entry.update(_volume_space(kernel32, paths[0], last_error=last_error))
     handle = kernel32.CreateFileW(
         volume.rstrip("\\"),
         0,
@@ -191,7 +231,7 @@ def read_volumes(
         return volumes if last_error() == api.ERROR_NO_MORE_FILES else None
     try:
         while True:
-            volumes[buffer.value] = _read_one_volume(kernel32, buffer.value)
+            volumes[buffer.value] = _read_one_volume(kernel32, buffer.value, last_error=last_error)
             if not kernel32.FindNextVolumeW(handle, buffer, _MAX_PATH):
                 return volumes if last_error() == api.ERROR_NO_MORE_FILES else None
     finally:

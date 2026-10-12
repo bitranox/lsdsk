@@ -58,6 +58,10 @@ class FakeVolume:
         openable: Whether ``CreateFileW`` opens it.
         esp: Whether its GPT partition is the EFI System Partition, or ``None``
             when the partition ioctl fails.
+        space: Total, free and free-for-the-caller bytes, or ``None`` when
+            ``GetDiskFreeSpaceExW`` fails.
+        fs_type: The filesystem name, or ``None`` when ``GetVolumeInformationW`` fails.
+        flags: The file-system flags ``GetVolumeInformationW`` reports.
     """
 
     paths: tuple[str, ...] | None = ()
@@ -65,6 +69,9 @@ class FakeVolume:
     disks: tuple[int, ...] | None = (0,)
     openable: bool = True
     esp: bool | None = None
+    space: tuple[int, int, int] | None = (100, 40, 30)
+    fs_type: str | None = "NTFS"
+    flags: int = 0
 
 
 @dataclass
@@ -142,7 +149,42 @@ class FakeVolumeKernel:
         return 1
 
     def GetDriveTypeW(self, root: str) -> int:  # noqa: N802 - the Win32 entry point's own name
-        return next(volume.drive_type for volume in self.volumes.values() if volume.paths and volume.paths[0] == root)
+        return self._volume_at(root).drive_type
+
+    def _volume_at(self, root: str) -> FakeVolume:
+        return next(volume for volume in self.volumes.values() if volume.paths and volume.paths[0] == root)
+
+    def GetDiskFreeSpaceExW(  # noqa: N802 - the Win32 entry point's own name
+        self, root: str, available: object, total: object, free: object
+    ) -> int:
+        space = self._volume_at(root).space
+        if space is None:
+            self.error = ERROR_NOT_READY
+            return 0
+        getattr(total, "_obj").value = space[0]  # noqa: B009 - a CArgObject's referent
+        getattr(free, "_obj").value = space[1]  # noqa: B009 - a CArgObject's referent
+        getattr(available, "_obj").value = space[2]  # noqa: B009 - a CArgObject's referent
+        return 1
+
+    def GetVolumeInformationW(  # noqa: N802 - the Win32 entry point's own name
+        self,
+        root: str,
+        name: object,
+        name_len: int,
+        serial: object,
+        max_component: object,
+        flags: object,
+        fs_name: ctypes.Array[ctypes.c_wchar],
+        fs_len: int,
+    ) -> int:
+        del name, name_len, serial, max_component, fs_len
+        volume = self._volume_at(root)
+        if volume.fs_type is None:
+            self.error = ERROR_ACCESS_DENIED
+            return 0
+        fs_name.value = volume.fs_type
+        getattr(flags, "_obj").value = volume.flags  # noqa: B009 - a CArgObject's referent
+        return 1
 
     def CreateFileW(  # noqa: N802 - the Win32 entry point's own name
         self, path: str, access: int, share: int, security: object, disposition: int, flags: int, template: object
@@ -417,3 +459,73 @@ def test_a_letterless_volume_that_refuses_to_open_still_does_not_block() -> None
     usage = _usage(fake, "PhysicalDrive1")
     assert usage is not None
     assert (usage.boot, usage.uses) == (False, ())
+
+
+def test_a_volume_with_a_path_carries_its_space_type_and_read_only_flag() -> None:
+    fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",), flags=api.FILE_READ_ONLY_VOLUME)})
+    entry = _read(fake)[VOLUME_C]
+    assert (entry["total_bytes"], entry["free_bytes"], entry["available_bytes"]) == (100, 40, 30)
+    assert entry["fs_type"] == "NTFS"
+    assert entry["read_only"] is True
+    VolumeEntry.model_validate(entry)
+
+
+def test_a_volume_without_the_read_only_flag_is_read_write_whatever_other_flags_it_has() -> None:
+    """The control: another flag set must not read as read-only (0x00040000 is FILE_NAMED_STREAMS)."""
+    fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",), flags=0x00040000)})
+    assert _read(fake)[VOLUME_C]["read_only"] is False
+
+
+def test_a_refused_space_call_is_recorded_with_its_error() -> None:
+    fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("D:\\",), space=None)}, error=999)
+    entry = _read(fake)[VOLUME_C]
+    # The injected getter answers what the fake's failing call left (21); a
+    # read of the real api.last_error could not see the fake at all.
+    assert entry["space_error"] == "could not read the volume's free space (error 21)"
+    assert "total_bytes" not in entry
+    assert entry["fs_type"] == "NTFS"
+    assert "fs_info_error" not in entry
+    VolumeEntry.model_validate(entry)
+
+
+def test_a_refused_filesystem_query_is_recorded_and_keeps_the_space_figures() -> None:
+    fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("D:\\",), fs_type=None)})
+    entry = _read(fake)[VOLUME_C]
+    assert entry["fs_info_error"] == "could not read the volume's filesystem name (error 5)"
+    assert (entry["total_bytes"], entry["free_bytes"], entry["available_bytes"]) == (100, 40, 30)
+    assert "fs_type" not in entry
+    assert "read_only" not in entry
+    assert "space_error" not in entry
+    VolumeEntry.model_validate(entry)
+
+
+def test_a_volume_without_a_path_is_never_asked_for_its_space() -> None:
+    fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=())})
+    entry = _read(fake)[VOLUME_C]
+    for key in ("space_error", "fs_info_error", "total_bytes", "fs_type", "read_only"):
+        assert key not in entry
+
+
+def test_the_space_of_a_volume_that_refuses_to_open_is_still_read() -> None:
+    fake = FakeVolumeKernel({VOLUME_X: FakeVolume(paths=("X:\\",), openable=False)})
+    entry = _read(fake)[VOLUME_X]
+    assert entry["error"].startswith("could not open the volume")
+    assert entry["total_bytes"] == 100
+
+
+def test_a_capture_taken_before_the_space_fields_existed_still_validates() -> None:
+    entry = VolumeEntry.model_validate({"paths": ["C:\\"], "drive_type": DRIVE_FIXED})
+    assert entry.total_bytes is None
+    assert entry.fs_type is None
+    assert entry.read_only is None
+    assert entry.space_error is None
+    assert entry.fs_info_error is None
+
+
+@pytest.mark.parametrize("field", ["total_bytes", "free_bytes", "available_bytes"])
+def test_a_space_figure_past_what_windows_can_answer_is_refused(field: str) -> None:
+    VolumeEntry.model_validate({field: 2**64 - 1})
+    with pytest.raises(ValueError, match="less than or equal to 18446744073709551615"):
+        VolumeEntry.model_validate({field: 2**64})
+    with pytest.raises(ValueError, match="greater than or equal to 0"):
+        VolumeEntry.model_validate({field: -1})

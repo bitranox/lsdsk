@@ -75,6 +75,7 @@ def bus_type_of(value: object) -> object:
 # did not print oddly, it pushed four columns off the disks table, so the
 # drive's serial and firmware disappeared rather than the number looking wrong.
 _UINT32_MAX = 0xFFFFFFFF  # DEVPKEY UINumber, read as a UINT32
+_UINT64_MAX = 2**64 - 1  # GetDiskFreeSpaceExW answers in ULARGE_INTEGER
 _PCIE_SLOT_NUMBER_MAX = 0x1FFF  # the 13-bit Physical Slot Number the domain's slot number means
 _LARGE_INTEGER_MAX = 2**63 - 1  # IOCTL_DISK_GET_LENGTH_INFO answers in one
 _SHORT_MIN = -(2**15)  # the temperature fields are each a ctypes.c_short
@@ -360,6 +361,26 @@ class VolumeEntry(CaptureModel, frozen=True):
             tell a failure on an optical drive or a RAM disk, which can sit on
             no physical disk, from one on a fixed volume. ``None`` for a volume
             with no path.
+        total_bytes: The volume's capacity from ``GetDiskFreeSpaceExW``;
+            absent from a capture taken before this field existed, and ``None``
+            when the call was refused (see `space_error`).
+        free_bytes: Free bytes on the volume, whoever asks; absent from a
+            capture taken before this field existed.
+        available_bytes: Free bytes the caller may use (quota-aware); absent
+            from a capture taken before this field existed.
+        fs_type: The filesystem name ``GetVolumeInformationW`` answered
+            (``NTFS``, ``ReFS``, ``FAT32``); absent from a capture taken before
+            this field existed, and ``None`` when that call was refused.
+        read_only: Whether the volume is mounted read-only; absent from a
+            capture taken before this field existed, and ``None`` when
+            ``GetVolumeInformationW`` was refused.
+        space_error: Why ``GetDiskFreeSpaceExW`` was refused, in which case
+            the three figures above are ``None`` without meaning an empty
+            volume; absent from a capture taken before this field existed.
+        fs_info_error: Why ``GetVolumeInformationW`` was refused, in which
+            case `fs_type` and `read_only` are ``None`` without meaning a
+            read-write volume of unknown name; absent from a capture taken
+            before this field existed.
     """
 
     paths: Entries[DeviceText] = ()
@@ -368,6 +389,13 @@ class VolumeEntry(CaptureModel, frozen=True):
     error: DeviceText | None = None
     paths_error: DeviceText | None = None
     drive_type: int | None = Field(default=None, ge=0, le=_UINT32_MAX)
+    total_bytes: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    free_bytes: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    available_bytes: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    fs_type: DeviceText | None = None
+    read_only: bool | None = None
+    space_error: DeviceText | None = None
+    fs_info_error: DeviceText | None = None
 
 
 class WindowsCapture(CaptureHeader, frozen=True):
