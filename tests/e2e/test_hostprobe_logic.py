@@ -339,11 +339,11 @@ def test_a_pool_row_within_one_point_of_the_cap_agrees() -> None:
 
 
 def test_a_pool_row_two_points_from_the_cap_disagrees_and_names_both_figures() -> None:
-    rows = [_root(), _pool("tank", used=53 * _GIB, free=47 * _GIB)]
+    rows = [_root(), _pool("tank", used=52 * _GIB, free=48 * _GIB)]
     found = _judged(rows, _ZPOOL_HALF)[0]["filesystems:pools-agree-with-zpool"]
     assert not found["passed"]
     assert "tank" in found["detail"]
-    assert "53" in found["detail"]
+    assert "52" in found["detail"]
     assert "cap 50" in found["detail"]
 
 

@@ -62,7 +62,13 @@ def system_ioctl(fd: int, request: int, command: bytearray) -> int:
 
 
 def _ask(fd: int, request: int, name: str, ioctl: Ioctl) -> bytes:
-    """Issue one ioctl, growing the reply buffer while the kernel asks for more."""
+    """Issue one ioctl, growing the reply buffer while the kernel asks for more.
+
+    The kernel refuses a reply too large for the buffer with ``ENOMEM`` and
+    writes the size it needs back. A needed size no larger than the buffer it
+    just refused cannot fit on a retry, so it is refused at once rather than
+    retried with the same buffer until the attempts run out.
+    """
     room = _FIRST_REPLY_BYTES
     for _ in range(_ATTEMPTS):
         command = bytearray(_COMMAND_BYTES)
@@ -75,10 +81,14 @@ def _ask(fd: int, request: int, name: str, ioctl: Ioctl) -> bytes:
         except OSError as error:
             if error.errno != errno.ENOMEM:
                 raise
-            room = struct.unpack_from("<Q", command, _DST_SIZE)[0]
-            if room > MAX_REPLY_BYTES:
-                msg = f"the reply is larger than {MAX_REPLY_BYTES} bytes ({room})"
+            needed = struct.unpack_from("<Q", command, _DST_SIZE)[0]
+            if needed > MAX_REPLY_BYTES:
+                msg = f"the reply is larger than {MAX_REPLY_BYTES} bytes ({needed})"
                 raise ValueError(msg) from error
+            if needed <= room:
+                msg = f"the kernel refused a {room}-byte buffer as too small yet asked for only {needed} bytes"
+                raise ValueError(msg) from error
+            room = needed
             continue
         written = struct.unpack_from("<Q", command, _DST_SIZE)[0]
         return ctypes.string_at(reply, min(written, room))

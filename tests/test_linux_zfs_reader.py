@@ -127,6 +127,24 @@ def test_the_growing_reply_gives_up_after_its_attempts(tmp_path: Path) -> None:
     assert "the reply kept growing" in error
 
 
+def test_a_needed_size_no_larger_than_the_refused_buffer_is_refused_at_once(tmp_path: Path) -> None:
+    class Shrinking(FakeDevice):
+        answers = 0
+
+        def __call__(self, _fd: int, request: int, command: bytearray) -> int:
+            type(self).answers += 1
+            struct.pack_into("<Q", command, _DST_SIZE, 1_000)
+            raise OSError(errno.ENOMEM, "too small")
+
+    pools, error = zfs.read_pools(_device(tmp_path), ioctl=Shrinking({}))
+    assert pools is None
+    assert error is not None
+    assert "asked for only 1000 bytes" in error
+    assert "kept growing" not in error
+    # Refused on the first answer rather than retried with a buffer that cannot fit.
+    assert Shrinking.answers == 1
+
+
 _MINIMAL: dict[str, object] = {
     "schema": SCHEMA_VERSION,
     "platform": "linux",
