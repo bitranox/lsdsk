@@ -22,10 +22,11 @@ System Role:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
 import rich_click as click
-from pydantic import AfterValidator, BaseModel, SerializeAsAny
+from pydantic import AfterValidator, BaseModel, SerializeAsAny, SerializerFunctionWrapHandler, model_serializer
 from pydantic_core import PydanticSerializationError
 
 from lsdsk.domain.enums import ActionCommand, OutputFormat
@@ -34,7 +35,6 @@ from . import safe_console
 from .exit_codes import ExitCode, error_type_for
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
     from typing import NoReturn
 
 
@@ -46,6 +46,33 @@ class PayloadTooDeepError(ValueError):
 #: with this, so a command cannot add one that skips the sanitiser: the omission
 #: is unrepresentable rather than something each caller remembers.
 WireText = Annotated[str, AfterValidator(safe_console.escape_lone_surrogates)]
+
+
+def _escaped(value: object) -> object:
+    r"""`value` with every lone surrogate in any string inside it written as its escape.
+
+    Walks the containers a serialised model is made of, so it reaches a string
+    wherever the payload nested it. A string with nothing to escape is returned
+    as it came, which keeps an enum member an enum member.
+
+    Args:
+        value: What a model serialised to.
+
+    Returns:
+        The same structure, with each string made writable as JSON.
+
+    Example:
+        >>> _escaped({"a": ["bad\udcffname", ("x",)]})
+        {'a': ['bad\\udcffname', ['x']]}
+    """
+    if isinstance(value, str):
+        text = safe_console.escape_lone_surrogates(value)
+        return value if text == value else text
+    if isinstance(value, Mapping):
+        return {_escaped(key): _escaped(item) for key, item in cast("Mapping[object, object]", value).items()}
+    if isinstance(value, (list, tuple)):
+        return [_escaped(item) for item in cast("Sequence[object]", value)]
+    return value
 
 
 class ActionResult(BaseModel, extra="forbid"):
@@ -61,7 +88,25 @@ class ActionResult(BaseModel, extra="forbid"):
     misspelled field name is refused here instead of reaching a caller with the
     key silently missing. The one payload whose keys are genuinely data - the
     user's own merged configuration - says so with :class:`MappingResult`.
+
+    Every string a payload carries is made writable as JSON where the model is
+    serialised, not where it is built: a path or a value from the operating
+    system can hold a byte no UTF-8 text can, and the JSON writer refuses a lone
+    surrogate. Doing it once here, over whatever the fields serialised to, means
+    a field a later command adds is covered without anyone remembering to mark it.
     """
+
+    @model_serializer(mode="wrap")
+    def _writable_as_json(self, handler: SerializerFunctionWrapHandler) -> Any:
+        """Serialise as the fields say, then escape each string the result holds.
+
+        Args:
+            handler: Pydantic's own serialiser for this model.
+
+        Returns:
+            What the model serialised to, with each lone surrogate escaped.
+        """
+        return _escaped(handler(self))
 
 
 class MappingResult(ActionResult, extra="allow"):
