@@ -240,14 +240,12 @@ SELECTOR_PREFIXES = (
 )
 
 
-@pytest.mark.os_agnostic
 @pytest.mark.parametrize(("name", "number"), sorted(SDK_SELECTOR_VALUES.items()))
 def test_a_selector_constant_is_the_number_the_sdk_assigns(name: str, number: int) -> None:
     """Each selector is held against the SDK enum, not against the module that dispatches on it."""
     assert getattr(api, name) == number
 
 
-@pytest.mark.os_agnostic
 def test_every_selector_constant_the_module_defines_is_pinned_by_the_table() -> None:
     """A new selector constant must join the table, or its value is unchecked.
 
