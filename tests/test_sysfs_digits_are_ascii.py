@@ -148,12 +148,14 @@ def _pci_device_of_class(tmp_path: Path, class_text: str) -> dict[str, Any]:
     return read_pci(tmp_path / "devices")["0000_03_00.0"]
 
 
+@pytest.mark.os_linux
 def test_an_ahci_class_written_in_other_digits_is_not_an_ahci_controller(tmp_path: Path) -> None:
     fullwidth = "0x" + "".join(chr(ord(c) + 0xFEE0) for c in "010601")
 
     assert "ahci" not in _pci_device_of_class(tmp_path, fullwidth)
 
 
+@pytest.mark.os_linux
 def test_an_ahci_class_in_ascii_is_read_for_its_registers(tmp_path: Path) -> None:
     assert "ahci" in _pci_device_of_class(tmp_path, "0x010601")
 
