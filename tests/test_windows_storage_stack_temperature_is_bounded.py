@@ -84,6 +84,30 @@ def test_an_implausible_value_in_any_field_is_unread(
     assert figures[key[field]] is None, f"{implausible} was shown as a {field} reading"
 
 
+@pytest.mark.parametrize("implausible", [-(2**15), MIN_PLAUSIBLE_CELSIUS - 1, MAX_PLAUSIBLE_CELSIUS + 1, 2**15 - 1])
+def test_an_implausible_temperature_leaves_the_disk_with_no_health_reading_at_all(
+    implausible: int, tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    """With no sound temperature the disk has no health, rather than a health holding only the thresholds."""
+    sound = {"temperature_c": 41, "warning_c": 70, "critical_c": 80}
+    data = _data_with({**sound, "temperature_c": implausible}, tmp_path, cli_runner, production_factory)
+
+    (disk,) = data["disks"]
+    assert disk["health"] is None
+
+
+def test_a_sound_temperature_keeps_the_disk_health_reading(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    """Liveness: the same harness reports a health object when the temperature is sound."""
+    data = _data_with(
+        {"temperature_c": 41, "warning_c": 70, "critical_c": 80}, tmp_path, cli_runner, production_factory
+    )
+
+    (disk,) = data["disks"]
+    assert disk["health"] is not None
+
+
 def _limit_findings(data: Any) -> list[str]:
     return [
         finding["title"]

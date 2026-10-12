@@ -199,6 +199,70 @@ def test_every_ioctl_the_module_exports_is_pinned_by_a_table() -> None:
     assert exported == set(STORAGE_IOCTL_PARTS) | set(USB_HUB_FUNCTIONS)
 
 
+#: The selector constants the fakes dispatch on, as the SDK numbers them. Written from the headers
+#: and never read back from winapi.py, because a fake that dispatches on the module's own name
+#: agrees with any value the name is given. STORAGE_PROPERTY_ID is winioctl.h's enum
+#: (StorageDeviceProperty 0, StorageAdapterProperty 1, StorageDeviceSeekPenaltyProperty 7,
+#: StorageAdapterProtocolSpecificProperty 49, StorageDeviceProtocolSpecificProperty 50,
+#: StorageDeviceTemperatureProperty 52); STORAGE_QUERY_TYPE has PropertyStandardQuery 0;
+#: STORAGE_PROTOCOL_TYPE has ProtocolTypeScsi 1, Ata 2, Nvme 3; STORAGE_PROTOCOL_NVME_DATA_TYPE
+#: has NVMeDataTypeIdentify 1 and NVMeDataTypeLogPage 2; ntddscsi.h gives ATA_FLAGS_DRDY_REQUIRED
+#: 0x01 and ATA_FLAGS_DATA_IN 0x02, and SCSI_IOCTL_DATA_IN 1 (OUT 0, UNSPECIFIED 2); winbase.h
+#: gives DRIVE_CDROM 5 and DRIVE_RAMDISK 6; winioctl.h's PARTITION_STYLE has MBR 0, GPT 1, RAW 2.
+SDK_SELECTOR_VALUES = {
+    "STORAGE_DEVICE_PROPERTY": 0,
+    "STORAGE_ADAPTER_PROPERTY": 1,
+    "STORAGE_DEVICE_SEEK_PENALTY_PROPERTY": 7,
+    "STORAGE_ADAPTER_PROTOCOL_SPECIFIC_PROPERTY": 49,
+    "STORAGE_DEVICE_PROTOCOL_SPECIFIC_PROPERTY": 50,
+    "STORAGE_DEVICE_TEMPERATURE_PROPERTY": 52,
+    "PROPERTY_STANDARD_QUERY": 0,
+    "PROTOCOL_TYPE_ATA": 2,
+    "PROTOCOL_TYPE_NVME": 3,
+    "NVME_DATA_TYPE_IDENTIFY": 1,
+    "NVME_DATA_TYPE_LOG_PAGE": 2,
+    "ATA_FLAGS_DRDY_REQUIRED": 0x01,
+    "ATA_FLAGS_DATA_IN": 0x02,
+    "SCSI_IOCTL_DATA_IN": 1,
+    "DRIVE_CDROM": 5,
+    "DRIVE_RAMDISK": 6,
+    "PARTITION_STYLE_GPT": 1,
+}
+SELECTOR_PREFIXES = (
+    "STORAGE_",
+    "PROPERTY_",
+    "PROTOCOL_TYPE_",
+    "NVME_DATA_TYPE_",
+    "ATA_FLAGS_",
+    "SCSI_IOCTL_",
+    "DRIVE_",
+    "PARTITION_STYLE_",
+)
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(("name", "number"), sorted(SDK_SELECTOR_VALUES.items()))
+def test_a_selector_constant_is_the_number_the_sdk_assigns(name: str, number: int) -> None:
+    """Each selector is held against the SDK enum, not against the module that dispatches on it."""
+    assert getattr(api, name) == number
+
+
+@pytest.mark.os_agnostic
+def test_every_selector_constant_the_module_defines_is_pinned_by_the_table() -> None:
+    """A new selector constant must join the table, or its value is unchecked.
+
+    Read from the module's namespace rather than ``__all__``, which omits
+    ``PROTOCOL_TYPE_ATA``; structures share the ``STORAGE_`` prefix and are
+    classes, so only the integers count.
+    """
+    defined = {
+        name
+        for name, value in vars(api).items()
+        if name.startswith(SELECTOR_PREFIXES) and isinstance(value, int) and not isinstance(value, bool)
+    }
+    assert defined == set(SDK_SELECTOR_VALUES)
+
+
 def _names_fields(target: ast.expr) -> bool:
     """Whether an assignment target is ``_fields_`` - in a class body, or set on the class afterwards."""
     return getattr(target, "id", "") == "_fields_" or (isinstance(target, ast.Attribute) and target.attr == "_fields_")
