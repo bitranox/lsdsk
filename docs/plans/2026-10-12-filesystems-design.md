@@ -85,6 +85,10 @@ On the printed default page the section follows the disks table. In `CliCommand`
 APPENDED, so it is TUI key `9` and keys `1` to `8` keep their meaning; the enum order and the page
 order are already decoupled.
 
+Every page is bound as `N,fN`, so page 9 takes `f9`, which was the rescan key. Settled with the user
+2026-10-12: page 9 is `9,f9` like every other page, rescan moves to `r,f10`, and quit keeps `q` and
+`escape` and gives up `f10`.
+
 The JSON scan envelope gains a `filesystems` list, bytes as integers and every figure nullable. The
 disks table and its `used by` cell are unchanged.
 
