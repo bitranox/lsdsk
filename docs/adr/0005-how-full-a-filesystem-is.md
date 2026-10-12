@@ -69,12 +69,24 @@ nothing else, so a recapture cannot put a serial in a place the fixture scrub do
 
 **Absent is not refused.** A missing `/dev/zfs` (no node, or a node with no driver behind it) is no
 refusal when no disk carries a ZFS member, the line the AHCI reader draws for a controller with no
-BAR5. Absent while a disk does carry a pool member is a refusal of the reading `zfs-pools`, reported under the subject `filesystems`: the
-pool exists and could not be read. A refused `statvfs` is recorded against its filesystem under
-`statvfs`, a Windows volume's under `volume-space` (the space query) or `volume-info` (the
-filesystem-information query), and each becomes a `skipped` line, so `ok` is
-`false` on a scan that missed one. A container, or a capture whose mountinfo was not read, carries
-`filesystems: null`, which means not read; an empty list means read and none found.
+BAR5, and neither is a refused one (a node at mode 0600 on a host with no pool): a pool row exists
+only for a pool with a member on an inventoried disk, so with no member the listing missed nothing.
+Absent or refused while a disk does carry a pool member is a refusal of the reading `zfs-pools`,
+reported under the subject `filesystems`: the pool exists and could not be read. A refused
+`statvfs` is recorded against its filesystem under `statvfs`, a Windows volume's under
+`volume-space` (the space query) or `volume-info` (the filesystem-information query), and each
+becomes a `skipped` line, so `ok` is `false` on a scan that missed one. A container, or a capture
+whose mountinfo was not read, carries `filesystems: null`, which means not read; an empty list
+means read and none found.
+
+**A capture from before this section is not read, not read as blank.** The builder decides from the
+capture's own keys, never from a version string. The Linux reader writes `filesystem_space`
+whenever it read mountinfo, so a capture without it is from before the reading; the Windows reader
+records on every volume with a path either the figures or the reason each of its two calls was
+refused, so a capture in which no such volume carries any of them is from before it. Either replays
+as `filesystems: null` with no refusal, the same `ok` as before the section existed. Read as an
+empty reading instead, it drew a row of `-` for every mount, pool and volume and claimed the ZFS
+control device was missing on a host that was never asked.
 
 **Windows.** `GetDiskFreeSpaceExW` and `GetVolumeInformationW` are asked on each volume's first
 mount path, over the volumes `used by` already enumerates. Measured unelevated through a

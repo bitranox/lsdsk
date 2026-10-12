@@ -95,6 +95,7 @@ def test_a_pool_allocated_beyond_its_size_never_reports_a_negative_figure() -> N
         {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
         signatures={"8:1": {"fs_type": "zfs_member", "fs_label": "tank"}},
         zfs_pools={"tank": {"size": 1000, "alloc": 1200}},
+        filesystem_space={},
     )
     rows, _ = build_filesystems(capture, BARE_METAL)
     assert rows is not None
@@ -159,8 +160,20 @@ def test_a_mount_on_no_inventory_disk_is_not_a_row() -> None:
 
 
 def test_a_container_and_an_unread_mount_table_read_nothing() -> None:
-    assert build_filesystems(_capture({}), Environment.CONTAINER) == (None, ())
+    assert build_filesystems(_capture({}, filesystem_space={}), Environment.CONTAINER) == (None, ())
     assert build_filesystems(_capture({}, mounts=None), BARE_METAL) == (None, ())
+
+
+def test_a_capture_taken_before_space_was_read_reads_nothing() -> None:
+    # A capture from before this reading: mounts and pool members, no
+    # filesystem_space and no zfs_pools, which must not claim the control
+    # device was missing nor draw rows of "-".
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}, "sda2": {"dev": "8:2"}})},
+        signatures={"8:2": {"fs_type": "zfs_member", "fs_label": "tank"}},
+        mounts=[_mount("8:1", "/boot")],
+    )
+    assert build_filesystems(capture, BARE_METAL) == (None, ())
 
 
 def test_every_mount_the_used_by_cell_names_resolves_to_the_same_disk() -> None:
@@ -226,9 +239,21 @@ def test_building_the_rows_of_many_bind_mounts_grows_linearly() -> None:
 
 
 def test_a_refused_zfs_pool_listing_is_carried_with_its_message() -> None:
-    capture = _capture({"sda": _disk("8:0")}, zfs_pools_error="ioctl failed: EPERM", filesystem_space={})
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        signatures={"8:1": {"fs_type": "zfs_member", "fs_label": "tank"}},
+        zfs_pools_error="ioctl failed: EPERM",
+        filesystem_space={},
+    )
     _rows, refused = build_filesystems(capture, BARE_METAL)
     assert [(r.reading, r.reason) for r in refused] == [("zfs-pools", "ioctl failed: EPERM")]
+
+
+def test_a_refused_zfs_pool_listing_with_no_pool_member_is_not_a_refusal() -> None:
+    # /dev/zfs at mode 0600 on a host with no pool: the refused listing could
+    # have missed no row, the same rule as a missing control device.
+    capture = _capture({"sda": _disk("8:0")}, zfs_pools_error="Permission denied", filesystem_space={})
+    assert build_filesystems(capture, BARE_METAL) == ((), ())
 
 
 def _inode_row(**space: int) -> tuple[int | None, int | None]:
@@ -280,6 +305,7 @@ def test_a_pool_with_no_member_disk_makes_no_row() -> None:
         {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
         signatures={"8:1": {"fs_type": "zfs_member", "fs_label": "tank"}},
         zfs_pools={"tank": {"size": 1000, "alloc": 10}, "ghost": {"size": 500, "alloc": 5}},
+        filesystem_space={},
     )
     rows, _ = build_filesystems(capture, BARE_METAL)
     assert rows is not None

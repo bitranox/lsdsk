@@ -16,7 +16,10 @@ def _disk(node: str) -> dict[str, Any]:
 
 
 def _volume(*, paths: tuple[str, ...] = (), disks: tuple[int, ...] = (), **extra: Any) -> dict[str, Any]:
+    """A volume as the current reader records it: one with a path names its filesystem unless told it refused."""
     entry: dict[str, Any] = {"paths": list(paths), "disks": list(disks)}
+    if paths and "fs_info_error" not in extra:
+        entry["fs_type"] = "NTFS"
     entry.update(extra)
     return entry
 
@@ -139,3 +142,18 @@ def test_nothing_is_claimed_in_a_container_or_without_volumes() -> None:
     capture = _one_disk({"0": _volume(paths=("C:\\",), disks=(0,))})
     assert build_filesystems(capture, Environment.CONTAINER) == (None, ())
     assert build_filesystems(_capture({"\\\\?\\p0": _disk("PhysicalDrive0")}), BARE_METAL) == (None, ())
+
+
+def test_volumes_from_a_capture_taken_before_space_was_read_are_not_read() -> None:
+    # The volume fields of a capture from before the space reading: paths and
+    # extents, and nothing the two space calls write.
+    capture = _one_disk({"0": {"paths": ["C:\\"], "disks": [0], "drive_type": 3}})
+    assert build_filesystems(capture, BARE_METAL) == (None, ())
+
+
+def test_one_volume_that_carries_a_space_field_makes_the_volumes_read() -> None:
+    for field in ({"total_bytes": 10}, {"space_error": "e"}, {"fs_type": "NTFS"}, {"fs_info_error": "e"}):
+        capture = _one_disk({"0": {"paths": ["C:\\"], "disks": [0], **field}, "1": {"paths": ["D:\\"], "disks": [0]}})
+        rows, _ = build_filesystems(capture, BARE_METAL)
+        assert rows is not None, field
+        assert [row.name for row in rows] == ["C:\\", "D:\\"], field

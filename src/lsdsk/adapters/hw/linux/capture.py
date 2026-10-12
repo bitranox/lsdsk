@@ -557,6 +557,11 @@ class LinuxCapture(CaptureHeader, frozen=True):
             an empty map is a reading that found no pool.
         zfs_pools_error: Why the pools could not be read, or why one of them
             could not.
+        filesystem_space: Each mounted filesystem's ``statvfs`` reading, keyed
+            by its ``maj:min``. The live reader writes it whenever it read
+            mountinfo, so ``None`` marks a capture taken before this field
+            existed (or one whose mountinfo was not read); an empty map is a
+            reading with nothing to stat.
     """
 
     platform: Literal[Platform.LINUX]

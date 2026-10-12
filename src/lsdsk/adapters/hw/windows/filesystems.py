@@ -18,6 +18,8 @@ from ..refusals import refusals_of
 from .usage import disk_numbers
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from .capture import VolumeEntry, WindowsCapture
 
 
@@ -60,6 +62,24 @@ def _nodes_of(entry: VolumeEntry, numbered: dict[int, str]) -> tuple[str, ...]:
     return tuple(sorted(nodes, key=disk_name_order))
 
 
+def _space_was_read(volumes: Iterable[VolumeEntry]) -> bool:
+    """Whether any volume with a path carries what the space reading writes.
+
+    The reader asks every volume that has a path and always records either the
+    figures or the reason they were refused, from each of its two calls; a
+    capture taken before those fields existed carries none of them on any
+    volume, and its volumes are then not read rather than read as blank.
+    """
+    return any(
+        entry.total_bytes is not None
+        or entry.space_error is not None
+        or entry.fs_type is not None
+        or entry.fs_info_error is not None
+        for entry in volumes
+        if entry.paths
+    )
+
+
 def build_filesystems(
     capture: WindowsCapture, environment: Environment
 ) -> tuple[tuple[Filesystem, ...] | None, tuple[RefusedReading, ...]]:
@@ -70,11 +90,14 @@ def build_filesystems(
         environment: What kind of machine it came from.
 
     Returns:
-        The rows (``None`` in a container or when the volumes were not read,
-        the same rule as ``used by``) and the refusals that belong to no
-        single row, of which Windows has none.
+        The rows and the refusals that belong to no single row, of which
+        Windows has none. The rows are ``None`` in a container or when the
+        volumes were not read, the same rule as ``used by``, and ``None`` too
+        for a capture taken before the volumes' space was read.
     """
     if environment is Environment.CONTAINER or capture.volumes is None:
+        return None, ()
+    if not _space_was_read(capture.volumes.values()):
         return None, ()
     numbered = disk_numbers(frozenset(entry.node for entry in capture.disks.values() if entry.node))
     placed = [(entry, _nodes_of(entry, numbered)) for entry in capture.volumes.values() if entry.paths]

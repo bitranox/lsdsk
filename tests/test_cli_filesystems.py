@@ -64,3 +64,53 @@ def test_a_refused_row_is_named_in_skipped_with_its_subject_and_reason(
     assert "statvfs: /data - Permission denied" in envelope["skipped"]
     assert envelope["ok"] is False
     assert [one["name"] for one in envelope["data"]["filesystems"]] == ["/data"]
+
+
+def _envelope(cli_runner: CliRunner, production_factory: Callable[[], Any], capture: Path) -> dict[str, Any]:
+    result = cli_runner.invoke(
+        cli_mod.cli, ["filesystems", "--replay", str(capture), "--format", "json"], obj=production_factory
+    )
+    envelope: dict[str, Any] = json.loads(result.output)
+    return envelope
+
+
+def _without_space_reading(tmp_path: Path) -> Path:
+    """The ZFS fixture as lsdsk 1.7.x wrote it: mounts and pool members, no space or pool listing."""
+    reading: dict[str, Any] = json.loads((FIXTURES / "linux-zfs-filesystems.json").read_text(encoding="utf-8"))
+    for key in ("filesystem_space", "zfs_pools", "zfs_pools_error"):
+        reading.pop(key, None)
+    path = tmp_path / "before-space.json"
+    path.write_text(json.dumps(reading), encoding="utf-8")
+    return path
+
+
+def test_a_linux_capture_taken_before_space_was_read_replays_as_not_read(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    capture = _without_space_reading(tmp_path)
+    # Control: the capture still carries what the false refusal keyed on.
+    reading = json.loads(capture.read_text(encoding="utf-8"))
+    assert reading["mounts"]
+    assert any(one.get("fs_type") == "zfs_member" for one in reading["signatures"].values())
+
+    envelope = _envelope(cli_runner, production_factory, capture)
+
+    assert envelope["data"]["filesystems"] is None
+    # What the capture replayed as before filesystems existed: nothing skipped.
+    assert envelope["skipped"] == []
+    assert envelope["ok"] is True
+
+
+def test_a_windows_capture_taken_before_space_was_read_replays_as_not_read(
+    cli_runner: CliRunner, production_factory: Callable[[], Any]
+) -> None:
+    capture = FIXTURES / "windows-chipset-switch.json"
+    # Control: the capture has volumes with paths, so only the missing space fields decide.
+    volumes = json.loads(capture.read_text(encoding="utf-8"))["volumes"]
+    assert any(one["paths"] for one in volumes.values())
+
+    envelope = _envelope(cli_runner, production_factory, capture)
+
+    assert envelope["data"]["filesystems"] is None
+    assert envelope["skipped"] == []
+    assert envelope["ok"] is True

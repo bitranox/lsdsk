@@ -17,6 +17,8 @@ from ..refusals import refusals_of
 from .usage import disks_by_device, disks_by_pool
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from .capture import LinuxCapture, MountEntry, SpaceEntry
 
 
@@ -80,11 +82,12 @@ def _mount_row(group: list[MountEntry], disks: frozenset[str], space: SpaceEntry
     )
 
 
-def _mount_rows(capture: LinuxCapture) -> list[Filesystem]:
+def _mount_rows(
+    capture: LinuxCapture, *, mounts: Sequence[MountEntry], space: Mapping[str, SpaceEntry]
+) -> list[Filesystem]:
     by_device = disks_by_device(capture)
-    space = capture.filesystem_space or {}
     rows: list[Filesystem] = []
-    for dev, group in _grouped(tuple(capture.mounts or ())).items():
+    for dev, group in _grouped(tuple(mounts)).items():
         disks = by_device.get(dev, frozenset()) | by_device.get(group[0].source_dev or "", frozenset())
         if disks:
             rows.append(_mount_row(group, disks, space.get(dev)))
@@ -119,9 +122,17 @@ def _pool_rows(capture: LinuxCapture) -> list[Filesystem]:
 
 
 def _pool_refusals(capture: LinuxCapture) -> tuple[RefusedReading, ...]:
+    """The pool listing's refusal, reported only when a disk here carries a pool member.
+
+    A pool row exists only for a pool with a member on an inventory disk, so a
+    listing that failed - refused, or with no control device at all - can have
+    missed a row only when such a member exists; anywhere else it missed nothing.
+    """
+    if not disks_by_pool(capture):
+        return ()
     if capture.zfs_pools_error is not None:
         return refusals_of({"zfs-pools": capture.zfs_pools_error})
-    if capture.zfs_pools is None and disks_by_pool(capture):
+    if capture.zfs_pools is None:
         return refusals_of({"zfs-pools": _NO_CONTROL_DEVICE})
     return ()
 
@@ -136,12 +147,17 @@ def build_filesystems(
         environment: What kind of machine it came from.
 
     Returns:
-        The rows (``None`` in a container or when mountinfo was not read, the
-        same rule as ``used by``) and the refusals that belong to no single row.
+        The rows and the refusals that belong to no single row. The rows are
+        ``None`` in a container or when mountinfo was not read, the same rule
+        as ``used by``, and ``None`` too for a capture taken before space was
+        read at all: the live reader writes ``filesystem_space`` whenever it
+        read mountinfo, so its absence marks such a capture, and reading it as
+        an empty reading would draw a row of ``-`` for every mount and pool.
     """
-    if environment is Environment.CONTAINER or capture.mounts is None:
+    mounts, space = capture.mounts, capture.filesystem_space
+    if environment is Environment.CONTAINER or mounts is None or space is None:
         return None, ()
-    return (*_mount_rows(capture), *_pool_rows(capture)), _pool_refusals(capture)
+    return (*_mount_rows(capture, mounts=mounts, space=space), *_pool_rows(capture)), _pool_refusals(capture)
 
 
 __all__ = ["build_filesystems"]
