@@ -40,6 +40,8 @@ _CUT_MARK = " ... (more pools failed)"
 _WRITE_BACK = True
 
 Ioctl = Callable[[int, int, bytearray], int]
+#: Opens a path with the given flags. ``read_pools`` closes the descriptor it returns with
+#: ``os.close``, so a substitute must return a real descriptor or raise.
 Opener = Callable[[Path, int], int]
 
 
@@ -124,7 +126,8 @@ def read_pools(
     Args:
         device: The ZFS control device.
         ioctl: The call that reaches it; the system's ``fcntl.ioctl`` by default.
-        opener: Opens the device read-only and returns a descriptor; ``os.open`` by default.
+        opener: Opens the device read-only and returns a descriptor, which is closed
+            with ``os.close``; ``os.open`` by default.
 
     Returns:
         ``(None, None)`` when there is no control device (no ZFS here, or a

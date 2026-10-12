@@ -127,15 +127,6 @@ def test_the_growing_reply_gives_up_after_its_attempts(tmp_path: Path) -> None:
     assert "the reply kept growing" in error
 
 
-def test_a_device_that_cannot_be_opened_is_a_refusal_with_its_reason(tmp_path: Path) -> None:
-    blocker = _device(tmp_path)
-    pools, error = zfs.read_pools(blocker / "zfs", ioctl=FakeDevice({}))
-    assert pools is None
-    assert error is not None
-    assert error.startswith("could not open ")
-    assert "Not a directory" in error
-
-
 _MINIMAL: dict[str, object] = {
     "schema": SCHEMA_VERSION,
     "platform": "linux",
@@ -204,9 +195,10 @@ def test_a_node_with_no_driver_behind_it_is_absent_not_a_refusal(tmp_path: Path,
     assert zfs.read_pools(_device(tmp_path), opener=_refusing_open(code)) == (None, None)
 
 
-def test_a_permission_failure_opening_the_device_is_a_refusal(tmp_path: Path) -> None:
-    pools, error = zfs.read_pools(_device(tmp_path), opener=_refusing_open(errno.EACCES))
+@pytest.mark.parametrize("code", [errno.EACCES, errno.EPERM, errno.ENOTDIR])
+def test_a_device_that_cannot_be_opened_is_a_refusal_with_its_reason(tmp_path: Path, code: int) -> None:
+    pools, error = zfs.read_pools(_device(tmp_path), opener=_refusing_open(code))
     assert pools is None
     assert error is not None
     assert error.startswith("could not open ")
-    assert os.strerror(errno.EACCES) in error
+    assert os.strerror(code) in error
