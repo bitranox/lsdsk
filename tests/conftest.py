@@ -825,7 +825,8 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
             f"healthy={facts.get('healthy_buses')} blind={facts.get('blind_buses')}"
         )
         write(f"    / row: {facts.get('root_row')}")
-        for pool in facts.get("zfs_pools") or []:
+        pools: list[dict[str, Any]] = facts.get("zfs_pools") or []
+        for pool in pools:
             write(
                 f"    zfs pool {pool.get('pool')}: lsdsk {pool.get('lsdsk_percent')}% "
                 f"({pool.get('lsdsk_used_bytes')}/{pool.get('lsdsk_size_bytes')} bytes) "
