@@ -27,8 +27,9 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   read-only filesystem raises none. The limits are the new `[thresholds]` keys
   `filesystem_full_hint_percent`, `filesystem_full_warning_percent`, `inodes_full_hint_percent` and
   `inodes_full_warning_percent`; a value outside 1 to 100 falls back to its default with a warning.
-- **A capture of a machine with ZFS pools and stat-ed filesystems**, `linux-zfs-filesystems`, as a
-  committed fixture.
+- **A capture of a machine with ZFS pools**, `linux-zfs-filesystems`, as a committed fixture. Its
+  mounts are all ZFS datasets, so no filesystem in it was stat-ed: the Linux `statvfs` path is
+  covered by hand-built captures only.
 
 ### Changed
 

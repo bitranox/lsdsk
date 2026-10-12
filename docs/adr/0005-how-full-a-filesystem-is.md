@@ -134,9 +134,16 @@ Left out: fill trends over time, LVM unallocated space, quotas and ZFS-specific 
 ## Consequences
 
 Captures gain optional fields (`SCHEMA_VERSION` stays 2), so every committed fixture still parses
-and exercises the not-read arm, where the section says the filesystems were not read. The
-populated arm is a new capture, `linux-zfs-filesystems`, carrying ext4 mounts and ZFS pools. The
-serial invariant runs over it, and a pool's configuration is absent from it by construction.
+and every one older than the section exercises the not-read arm, where the section says the
+filesystems were not read. The populated arm is a new capture, `linux-zfs-filesystems`, from a
+Proxmox node: two imported ZFS pools, and mounts that are all ZFS datasets, so its
+`filesystem_space` is the empty map. The serial invariant runs over it, and a pool's configuration
+is absent from it by construction.
+
+The Linux `statvfs` arm is therefore covered by hand-built captures only. No committed capture
+carries a mount that was stat-ed, and no end-to-end host exercises it, since every reachable node
+boots from ZFS and leaves its EFI system partition unmounted. A capture of a machine with an ext4 or
+xfs filesystem on a listed disk, and an end-to-end host that has one, are still needed.
 
 `f10` no longer quits; it rescans. A machine with a nearly full
 filesystem that used to exit 0 can now exit 1, which is the point of the section and the reason the
