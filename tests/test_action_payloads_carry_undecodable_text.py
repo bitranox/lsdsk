@@ -45,7 +45,7 @@ def no_cached_configuration() -> Iterator[None]:
 def _make(path: Path, *, directory: bool) -> None:
     try:
         if directory:
-            path.mkdir()
+            path.mkdir(parents=True, exist_ok=True)
         else:
             path.write_bytes(b"x")
     except OSError as error:
@@ -117,8 +117,7 @@ def test_deploy_names_a_config_directory_with_undecodable_bytes(
     user_config_dir_under: Callable[[str], Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """``DeployResult.deployed`` lists the files, whose directory carries the byte."""
-    _make_root = user_config_dir_under(BAD_NAME)
-    _make_root.mkdir(parents=True, exist_ok=True)
+    _make(user_config_dir_under(BAD_NAME), directory=True)
 
     code, envelope = _run(["config-deploy", "--target", "user", "--format", "json"], capsys)
 

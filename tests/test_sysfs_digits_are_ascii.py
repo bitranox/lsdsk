@@ -125,6 +125,7 @@ def _usb_disk_under_a_device_of_version(tmp_path: Path, version: str) -> dict[st
     return read_usb({"sdz": {"device_path": str(device / "1-1:1.0" / "host0")}})
 
 
+@pytest.mark.os_posix
 def test_a_usb_version_in_other_digits_is_asked_about_rather_than_believed_to_have_no_bos(tmp_path: Path) -> None:
     fullwidth = f"{chr(0xFF11)}.{chr(0xFF10)}"
 
@@ -133,6 +134,7 @@ def test_a_usb_version_in_other_digits_is_asked_about_rather_than_believed_to_ha
     assert "bos_none" not in device
 
 
+@pytest.mark.os_posix
 def test_a_usb_version_below_2_1_declares_no_bos(tmp_path: Path) -> None:
     (device,) = _usb_disk_under_a_device_of_version(tmp_path, "1.0").values()
 
