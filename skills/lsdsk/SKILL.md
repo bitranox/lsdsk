@@ -81,7 +81,7 @@ uvx lsdsk disks               # one row per disk
 uvx lsdsk trend               # what each error counter is DOING, not just its total
 uvx lsdsk filesystems         # how full each filesystem, ZFS pool or Windows volume on an inventoried disk is; inodes where the table is fixed
 uvx lsdsk record              # store one reading, print nothing, for a timer
-uvx lsdsk tui                 # the same nine views, interactive (1-9 or f1-f9, left/right, r rescans, q quits)
+uvx lsdsk tui                 # the same nine views, interactive (1-9 or f1-f9, left/right, r or f10 rescans, q or escape quits)
 uvx lsdsk snapshot -o m.json  # capture the raw reading
 uvx lsdsk info                # version, homepage and the shell command name
 uvx lsdsk config              # show effective configuration (--section thresholds for one)
@@ -345,8 +345,10 @@ that live on an inventoried disk.** Each entry carries `kind` (`mount`, `pool` o
 as `df` has it), `inodes_total`, `inodes_free`, `read_only` and `readings_refused`.
 It is `null` when the capture did not read filesystems and `[]` when it did and
 none sits on an inventoried disk, so test for `None` before treating it as empty.
-A refused reading (subjects `statvfs`, `zfs-pools`, `volume-space`) appears as a
-`skipped` line, not as a missing row.
+A refused reading appears as a `skipped` line, not as a missing row. The line reads
+`<reading>: <filesystem> - <reason>`, the reading being `statvfs`, `volume-space` or `volume-info`
+and the subject the filesystem's own name, or `zfs-pools` with the subject `filesystems` when the
+refusal belongs to no single filesystem.
 
 **`data.virtual_disks` is a second list of the same shape**, holding the devices
 with no hardware behind them. It is always populated, whatever `--expand-virtual`

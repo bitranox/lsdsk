@@ -238,9 +238,9 @@ nicht gelesen wurden; `free_bytes` ist der Platz, der einem gewöhnlichen Benutz
 steht. Die Liste selbst ist `null`, wenn die Dateisysteme gar nicht gelesen wurden, etwa in einem Container oder aus einer
 Aufnahme, die vor ihnen gemacht wurde, und eine leere Liste heisst, dass sie gelesen wurden und keines
 auf einer inventarisierten Platte liegt. Eine Messung, die das System verweigert hat, steht in den
-`readings_refused` des Dateisystems (`statvfs` für einen Einhängepunkt, `volume-space` für ein
-Windows-Volume) oder, wenn sie zu keinem einzelnen Dateisystem gehört, als Satz in `skipped`, der
-`zfs-pools` nennt; `ok` ist also `false`, und eine fehlende Zahl wird nie für eine ruhige gehalten.
+`readings_refused` des Dateisystems (`statvfs` für einen Einhängepunkt, `volume-space` oder `volume-info` für ein
+Windows-Volume) oder, wenn sie zu keinem einzelnen Dateisystem gehört, als `skipped`-Zeile
+`zfs-pools: filesystems - <Grund>`; `ok` ist also `false`, und eine fehlende Zahl wird nie für eine ruhige gehalten.
 Der Exit-Code bleibt das Urteil über die Maschine.
 
 `lsdsk --no-record record` wird mit `22` abgelehnt statt befolgt. Bei jedem

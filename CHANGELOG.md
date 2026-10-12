@@ -19,7 +19,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   list of `{kind, name, other_mounts, fs_type, disks, size_bytes, used_bytes, free_bytes,
   inodes_total, inodes_free, read_only, readings_refused}`, or `null` where the filesystems were
   not read (a container, or a capture taken before they were). A refused reading is a `skipped`
-  line naming `statvfs`, `zfs-pools` or `volume-space`, so `ok` is `false` on a scan that missed
+  line whose reading is `statvfs`, `zfs-pools`, `volume-space` or `volume-info`, so `ok` is `false` on a scan that missed
   one.
 - **A nearly full filesystem or inode table is a finding.** At or above 85 percent is a hint and at
   or above 95 a warning, for space and, on a fixed inode table (ext2, ext3, ext4), for inodes. The
