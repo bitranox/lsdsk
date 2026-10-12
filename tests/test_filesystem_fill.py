@@ -76,6 +76,17 @@ def test_the_inode_finding_names_inodes_not_bytes() -> None:
     assert finding.action.startswith("Remove small files or rebuild it with more inodes")
 
 
+def test_a_space_finding_on_no_inventoried_disk_names_none() -> None:
+    fs = _mount(used_bytes=96_000_000_000, free_bytes=4_000_000_000, size_bytes=100_000_000_000, disks=())
+    (finding,) = diagnose_filesystems(_inventory(fs))
+    assert finding.detail == "96.0 GB of 100.0 GB used, 4.0 GB free."
+
+
+def test_an_inode_finding_on_no_inventoried_disk_names_none() -> None:
+    (finding,) = diagnose_filesystems(_inventory(_mount(inodes_total=1000, inodes_free=30, disks=())))
+    assert finding.detail == "970 of 1000 inodes used, 30 free."
+
+
 def test_a_read_only_mount_is_never_judged() -> None:
     fs = _mount("/snap", "squashfs", used_bytes=100, free_bytes=0, inodes_total=10, inodes_free=0, read_only=True)
     assert diagnose_filesystems(_inventory(fs)) == []

@@ -43,19 +43,24 @@ def _gigabytes(count: int) -> float:
     return count / _BYTES_PER_GB
 
 
+def _on_disks(fs: Filesystem) -> str:
+    """The ``, on sda`` clause naming the disks, or nothing when none resolved (a ZFS pool, a Windows volume)."""
+    return f", on {', '.join(fs.disks)}" if fs.disks else ""
+
+
 def _space_detail(fs: Filesystem) -> str:
     # Only reached when used_percent exists, so both figures were read.
     used = fs.used_bytes or 0
     free = fs.free_bytes or 0
     size = fs.size_bytes if fs.size_bytes is not None else used + free
     figures = f"{_gigabytes(used):.1f} GB of {_gigabytes(size):.1f} GB used, {_gigabytes(free):.1f} GB free"
-    return f"{figures}, on {', '.join(fs.disks)}."
+    return f"{figures}{_on_disks(fs)}."
 
 
 def _inode_detail(fs: Filesystem) -> str:
     total = fs.inodes_total or 0
     free = fs.inodes_free or 0
-    return f"{total - free} of {total} inodes used, {free} free, on {', '.join(fs.disks)}."
+    return f"{total - free} of {total} inodes used, {free} free{_on_disks(fs)}."
 
 
 def _space_finding(fs: Filesystem, thresholds: Thresholds) -> list[Finding]:
