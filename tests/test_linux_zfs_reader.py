@@ -7,7 +7,6 @@ import errno
 import os
 import struct
 import sys
-import termios
 from typing import TYPE_CHECKING
 
 import pytest
@@ -15,9 +14,11 @@ from nvlist_builders import pool_config, pool_names
 
 from lsdsk.adapters.hw.linux import zfs
 from lsdsk.adapters.hw.linux.capture import LinuxCapture, PoolEntry
+from lsdsk.adapters.hw.snapshot import SCHEMA_VERSION
 from lsdsk.domain.text import MAX_DEVICE_TEXT
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 _DST, _DST_SIZE = 4112, 4120
@@ -132,6 +133,16 @@ def test_a_device_that_cannot_be_opened_is_a_refusal_with_its_reason(tmp_path: P
     assert pools is None
     assert error is not None
     assert error.startswith("could not open ")
+    assert "Not a directory" in error
+
+
+_MINIMAL: dict[str, object] = {
+    "schema": SCHEMA_VERSION,
+    "platform": "linux",
+    "hostname": "example",
+    "kernel": "6.1.0",
+    "pci": dict[str, object](),
+}
 
 
 def test_many_failing_pools_keep_the_error_inside_the_capture_text_cap(tmp_path: Path) -> None:
@@ -148,6 +159,8 @@ def test_many_failing_pools_keep_the_error_inside_the_capture_text_cap(tmp_path:
 
 @pytest.mark.os_posix
 def test_the_system_ioctl_writes_the_kernels_answer_back_into_the_command() -> None:
+    import termios
+
     read_fd, write_fd = os.pipe()
     try:
         os.write(write_fd, b"x" * 7)
@@ -157,15 +170,6 @@ def test_the_system_ioctl_writes_the_kernels_answer_back_into_the_command() -> N
     finally:
         os.close(read_fd)
         os.close(write_fd)
-
-
-_MINIMAL: dict[str, object] = {
-    "schema": 1,
-    "platform": "linux",
-    "hostname": "example",
-    "kernel": "6.1.0",
-    "pci": dict[str, object](),
-}
 
 
 def test_a_capture_carries_the_pools_and_the_reason_they_were_not_all_read() -> None:
@@ -186,3 +190,23 @@ def test_a_pool_entry_outside_unsigned_64_bits_is_refused(value: int, fragment: 
 def test_the_reason_key_appears_only_when_there_is_a_reason() -> None:
     assert zfs.capture_fields(None, None) == {"zfs_pools": None}
     assert zfs.capture_fields({}, "why") == {"zfs_pools": {}, "zfs_pools_error": "why"}
+
+
+def _refusing_open(code: int) -> Callable[[Path, int], int]:
+    def opener(_path: Path, _flags: int) -> int:
+        raise OSError(code, os.strerror(code))
+
+    return opener
+
+
+@pytest.mark.parametrize("code", [errno.ENODEV, errno.ENXIO])
+def test_a_node_with_no_driver_behind_it_is_absent_not_a_refusal(tmp_path: Path, code: int) -> None:
+    assert zfs.read_pools(_device(tmp_path), opener=_refusing_open(code)) == (None, None)
+
+
+def test_a_permission_failure_opening_the_device_is_a_refusal(tmp_path: Path) -> None:
+    pools, error = zfs.read_pools(_device(tmp_path), opener=_refusing_open(errno.EACCES))
+    assert pools is None
+    assert error is not None
+    assert error.startswith("could not open ")
+    assert os.strerror(errno.EACCES) in error

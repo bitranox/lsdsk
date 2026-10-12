@@ -40,6 +40,7 @@ _CUT_MARK = " ... (more pools failed)"
 _WRITE_BACK = True
 
 Ioctl = Callable[[int, int, bytearray], int]
+Opener = Callable[[Path, int], int]
 
 
 def system_ioctl(fd: int, request: int, command: bytearray) -> int:
@@ -116,13 +117,14 @@ def capture_fields(pools: dict[str, dict[str, int]] | None, error: str | None) -
 
 
 def read_pools(
-    device: Path = ZFS_DEVICE, *, ioctl: Ioctl | None = None
+    device: Path = ZFS_DEVICE, *, ioctl: Ioctl | None = None, opener: Opener | None = None
 ) -> tuple[dict[str, dict[str, int]] | None, str | None]:
     """Read every imported pool's size and allocation.
 
     Args:
         device: The ZFS control device.
         ioctl: The call that reaches it; the system's ``fcntl.ioctl`` by default.
+        opener: Opens the device read-only and returns a descriptor; ``os.open`` by default.
 
     Returns:
         ``(None, None)`` when there is no control device (no ZFS here, or a
@@ -132,7 +134,7 @@ def read_pools(
     """
     call = ioctl or system_ioctl
     try:
-        fd = os.open(device, os.O_RDONLY)
+        fd = (opener or os.open)(device, os.O_RDONLY)
     except OSError as error:
         # No node, or a node with no driver behind it (ENODEV/ENXIO): ZFS is not here, which is no refusal.
         if isinstance(error, FileNotFoundError) or error.errno in {errno.ENODEV, errno.ENXIO}:
@@ -161,6 +163,7 @@ __all__ = [
     "ZFS_IOC_POOL_CONFIGS",
     "ZFS_IOC_POOL_STATS",
     "Ioctl",
+    "Opener",
     "capture_fields",
     "read_pools",
     "system_ioctl",
