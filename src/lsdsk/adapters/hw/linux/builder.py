@@ -578,14 +578,31 @@ def _index_capture(capture: LinuxCapture) -> _IndexedCapture:
 
 
 def _sas_phys_by_port(capture: LinuxCapture) -> dict[str, tuple[SasPhyEntry, ...]]:
-    """Group the SAS phys by the port their own ``port`` link names.
+    """Group every SAS phy by the port its own ``port`` link names.
 
     A phy recorded with no port - in none, or taken before the reader kept the
-    link - is in no group, so it can never be handed to a disk.
+    link - is in no group, so it can never be handed to a disk. The expander's
+    phys are grouped too: a drive behind an expander is attached through one of
+    them, and the link it runs at is that phy's.
     """
+    return _group_phys_by_port(capture, lambda _name: True)
+
+
+def _host_phys_by_port(capture: LinuxCapture) -> dict[str, tuple[SasPhyEntry, ...]]:
+    """Group only the controller's own host phys by port, for counting what it has in use.
+
+    The kernel also links an expander's phys to the port above them, but they
+    are the expander's rather than the controller's, so counting them raised the
+    ports in use past what the port count covers.
+    """
+    return _group_phys_by_port(capture, lambda name: _HOST_PHY.fullmatch(name) is not None)
+
+
+def _group_phys_by_port(capture: LinuxCapture, keep: Callable[[str], bool]) -> dict[str, tuple[SasPhyEntry, ...]]:
+    """Group the ``sas_phy`` entries whose class name passes ``keep`` by their port link."""
     groups: dict[str, list[SasPhyEntry]] = {}
-    for entry in capture.classes.sas_phy.values():
-        if entry.port:
+    for name, entry in capture.classes.sas_phy.items():
+        if entry.port and keep(name):
             groups.setdefault(entry.port, []).append(entry)
     return {port: tuple(entries) for port, entries in groups.items()}
 
@@ -685,7 +702,7 @@ def _ports_used(capture: LinuxCapture, disks: Iterable[Disk]) -> dict[str, int]:
     Counting the disks instead reported an HBA with eight phys and twenty drives
     behind one expander as full, and a wide port to an expander as one port.
     """
-    phys_by_port = _sas_phys_by_port(capture)
+    phys_by_port = _host_phys_by_port(capture)
     taken: dict[str, set[str]] = {}
     for disk in disks:
         if disk.controller_address is not None:

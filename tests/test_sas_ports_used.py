@@ -36,9 +36,21 @@ def _drive_behind_expander(index: int) -> dict[str, Any]:
     return {"size": "7814037168", "device_path": path, "device": {"model": "X", "vendor": "SEAGATE"}, "vpd": {}}
 
 
-def _controller(*, host_phys: int, wide_members: int, drives: int) -> Controller:
+def _expander_phy(number: int) -> dict[str, str]:
+    """One phy of the expander below ``port-6:0``, which the kernel also links to that port."""
+    name = f"phy-6:0:{number}"
+    return {
+        "path": f"{_HBA}/host6/port-6:0/expander-6:0/{name}/sas_phy/{name}",
+        "negotiated_linkrate": "6.0 Gbit",
+        "maximum_linkrate_hw": "12.0 Gbit",
+        "port": "port-6:0",
+    }
+
+
+def _controller(*, host_phys: int, wide_members: int, drives: int, expander_phys: int = 0) -> Controller:
     """The one HBA of a capture: ``host_phys`` host phys, the first ``wide_members`` forming ``port-6:0``."""
     phys = {f"phy-6:{n}": _host_phy(n, port="port-6:0" if n < wide_members else None) for n in range(host_phys)}
+    phys.update({f"phy-6:0:{n}": _expander_phy(n) for n in range(expander_phys)})
     reading = {
         "schema": 2,
         "platform": "linux",
@@ -69,3 +81,16 @@ def test_a_port_whose_phys_are_not_recorded_counts_as_one_used_phy_however_many_
     controller = _controller(host_phys=8, wide_members=0, drives=20)
 
     assert (controller.ports_used, controller.ports_free) == (1, 7)
+
+
+def test_a_two_phy_wide_port_with_four_drives_uses_two_of_eight_phys() -> None:
+    controller = _controller(host_phys=8, wide_members=2, drives=4)
+
+    assert (controller.port_count, controller.ports_used, controller.ports_free) == (8, 2, 6)
+
+
+def test_expander_phys_linked_to_the_hba_port_are_not_phys_the_controller_uses() -> None:
+    """The kernel links an expander's phys to the port above it, but they are the expander's, not the HBA's."""
+    controller = _controller(host_phys=8, wide_members=2, drives=4, expander_phys=2)
+
+    assert (controller.port_count, controller.ports_used, controller.ports_free) == (8, 2, 6)
