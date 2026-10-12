@@ -47,7 +47,7 @@ ANNOTATED_COUNTERS: tuple[CounterKind, ...] = (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from ...domain.enums import Severity
     from ...domain.history import DiskSeries, History, Trend
@@ -469,14 +469,44 @@ def filesystem_table_row(filesystem: Filesystem, *, both_scales: bool) -> Row:
     }
 
 
-def _filesystem_legend(columns: Sequence[Column], rows: Sequence[MarkedRow]) -> str:
-    """Name `-` and `n/a`, each only when a surviving column draws it."""
-    drawn = {row.cells[column.key][0] for row in rows for column in columns}
+def filesystem_marked_row(
+    filesystem: Filesystem, severities: Mapping[str, Severity], *, both_scales: bool
+) -> MarkedRow:
+    """One filesystem's row with the marker its findings earn, shared by the printed and interactive views.
+
+    Args:
+        filesystem: The filesystem to describe.
+        severities: Worst severity per filesystem name, from :func:`severity_index`.
+        both_scales: Whether a capacity names the decimal and the binary scale.
+
+    Returns:
+        The severity marker and the cells of :func:`filesystem_table_row`.
+    """
+    severity = severities.get(filesystem.name)
+    marker = (theme.marker_for(severity), theme.style_for(severity))
+    return MarkedRow(marker=marker, cells=filesystem_table_row(filesystem, both_scales=both_scales))
+
+
+def filesystem_legend_for(drawn: Iterable[str]) -> str:
+    """Name `-` and `n/a`, each only when a cell drawn carries it.
+
+    Args:
+        drawn: The text of every cell the view drew.
+
+    Returns:
+        The legend sentence, empty when neither marker was drawn.
+    """
+    shown = set(drawn)
     parts = (
         (theme.NOT_READ, FILESYSTEM_NOT_READ_LEGEND),
         (theme.NOT_APPLICABLE, FILESYSTEM_NOT_APPLICABLE_LEGEND),
     )
-    return "; ".join(legend for marker, legend in parts if marker in drawn)
+    return "; ".join(legend for marker, legend in parts if marker in shown)
+
+
+def _filesystem_legend(columns: Sequence[Column], rows: Sequence[MarkedRow]) -> str:
+    """The legend for the markers a surviving column of `rows` draws."""
+    return filesystem_legend_for(row.cells[column.key][0] for row in rows for column in columns)
 
 
 def render_filesystems(inventory: Inventory, findings: Sequence[Finding], width: int = DEFAULT_WIDTH) -> Table:
@@ -495,15 +525,9 @@ def render_filesystems(inventory: Inventory, findings: Sequence[Finding], width:
     if inventory.filesystems is None:
         return _render(title, FILESYSTEM_COLUMNS, TableRows(()), width, FILESYSTEMS_NOT_READ_SENTENCE)
     severities = severity_index(findings)
-
-    def marked(filesystem: Filesystem, *, both_scales: bool) -> MarkedRow:
-        severity = severities.get(filesystem.name)
-        marker = (theme.marker_for(severity), theme.style_for(severity))
-        return MarkedRow(marker=marker, cells=filesystem_table_row(filesystem, both_scales=both_scales))
-
     rows = TableRows(
-        [marked(one, both_scales=True) for one in inventory.filesystems],
-        [marked(one, both_scales=False) for one in inventory.filesystems],
+        [filesystem_marked_row(one, severities, both_scales=True) for one in inventory.filesystems],
+        [filesystem_marked_row(one, severities, both_scales=False) for one in inventory.filesystems],
     )
     layout, drawn = _fitted(FILESYSTEM_COLUMNS, rows, width)
     return _render(title, FILESYSTEM_COLUMNS, rows, width, _filesystem_legend(layout.columns, drawn))
@@ -724,6 +748,8 @@ __all__ = [
     "counter_text",
     "disk_columns",
     "disk_table_row",
+    "filesystem_legend_for",
+    "filesystem_marked_row",
     "filesystem_table_row",
     "health_table_row",
     "render_controllers",

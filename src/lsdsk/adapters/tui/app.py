@@ -69,6 +69,7 @@ CONTROLLER_COLUMNS = ("", *(column.title for column in tables.CONTROLLER_COLUMNS
 # severity marker, which the printed table draws as a fixed gutter instead.
 DISK_COLUMNS = ("", *(column.title for column in tables.DISK_COLUMNS))
 HEALTH_COLUMNS = ("", *(column.title for column in tables.HEALTH_COLUMNS))
+FILESYSTEM_COLUMNS = ("", *(column.title for column in tables.FILESYSTEM_COLUMNS))
 SLOT_COLUMNS = tuple(column.title for column in report.SLOT_COLUMNS)
 # Derived from the printed view's own columns rather than restated, for the
 # reason DISK_COLUMNS is: a page and the command of one name are one view, and a
@@ -246,7 +247,7 @@ class LsdskApp(App[None]):
     Screen { layout: vertical; }
     #verdict { height: auto; padding: 0 1; }
     #unread-note { height: auto; padding: 0 1; }
-    #controller-legend, #slot-legend { height: auto; padding: 0 1; }
+    #controller-legend, #slot-legend, #filesystem-legend, #filesystem-note { height: auto; padding: 0 1; }
     TabbedContent { height: 1fr; }
     DataTable { height: 1fr; width: 1fr; }
     #wwn-row { height: 2; padding: 0 1; }
@@ -441,10 +442,12 @@ class LsdskApp(App[None]):
                 # The note under it, and the whole section when there is no
                 # history yet: an empty table would say nothing about WHY.
                 yield Static(id="trend-body")
-            # Only so the page the enum names can be reached; its content is
-            # the next change.
-            with TabPane("Filesystems", id=CliCommand.FILESYSTEMS.value):
-                yield Static(id="filesystems-body")
+            with TabPane("Filesystems", id=CliCommand.FILESYSTEMS.value), Vertical():
+                # An inventory that did not read them says so in the note and
+                # hides the table: an empty table would read as "no filesystems".
+                yield Static(id="filesystem-note")
+                yield DataTable[str](id="filesystem-table", zebra_stripes=True, cursor_type="row")
+                yield Static(id="filesystem-legend")
         # Outside the TabbedContent, so it is one widget with one handler rather
         # than a copy per page free to answer differently, and so it survives a
         # page switch with the row the reader left it on.
@@ -476,6 +479,7 @@ class LsdskApp(App[None]):
         self._fill_health()
         self._fill_slots()
         self._fill_trend()
+        self._fill_filesystems()
         self._fill_smart()
         self._fill_findings()
         self._refill_tree()
@@ -567,6 +571,30 @@ class LsdskApp(App[None]):
                 key=slot.address,
             )
         self._explain_marks("#slot-legend", drawn)
+
+    def _fill_filesystems(self) -> None:
+        """Populate the filesystems page, or say the filesystems were not read."""
+        table = rows_of(self.query_one("#filesystem-table"))
+        table.add_columns(*FILESYSTEM_COLUMNS)
+        filesystems = self.inventory.filesystems
+        note = self.query_one("#filesystem-note", Static)
+        note.update(Text(tables.FILESYSTEMS_NOT_READ_SENTENCE, style=tui_palette.restyle(theme.STYLE_CEILING)))
+        note.display = filesystems is None
+        self.query_one("#filesystem-table", DataTable).display = filesystems is not None
+        severities = report.severity_index(self.findings)
+        drawn: list[str] = []
+        for filesystem in filesystems or ():
+            row = tables.filesystem_marked_row(filesystem, severities, both_scales=True)
+            drawn.extend(row.cells[column.key][0] for column in tables.FILESYSTEM_COLUMNS)
+            table.add_row(*_marked(row, tables.FILESYSTEM_COLUMNS), key=filesystem.name)
+        self._explain_filesystem_marks(drawn)
+
+    def _explain_filesystem_marks(self, drawn: Iterable[str]) -> None:
+        """Name `-` and `n/a` under the table, each only when a drawn cell carries it."""
+        legend = self.query_one("#filesystem-legend", Static)
+        text = tables.filesystem_legend_for(drawn)
+        legend.update(Text(text, style=tui_palette.restyle(theme.STYLE_UNKNOWN)) if text else Text(""))
+        legend.display = bool(text)
 
     def _fill_disks(self) -> None:
         """Populate the disk page."""
@@ -1110,13 +1138,21 @@ class LsdskApp(App[None]):
         self._fill_findings()
         self._refill_tree()
         self._fill_smart()
-        for table_id in ("#controller-table", "#disk-table", "#health-table", "#slot-table", "#trend-table"):
+        for table_id in (
+            "#controller-table",
+            "#disk-table",
+            "#health-table",
+            "#slot-table",
+            "#trend-table",
+            "#filesystem-table",
+        ):
             rows_of(self.query_one(table_id)).clear(columns=True)
         self._fill_controllers()
         self._fill_disks()
         self._fill_health()
         self._fill_slots()
         self._fill_trend()
+        self._fill_filesystems()
         # The panel holds a record built from the PREVIOUS diagnosis, so it is
         # redrawn like every other page: refreshing the banner and leaving one
         # view on the first scan's answer is what put two verdicts on one screen
@@ -1127,6 +1163,7 @@ class LsdskApp(App[None]):
 __all__ = [
     "CONTROLLER_COLUMNS",
     "DISK_COLUMNS",
+    "FILESYSTEM_COLUMNS",
     "HEALTH_COLUMNS",
     "PAGE_LABELS",
     "SLOT_COLUMNS",

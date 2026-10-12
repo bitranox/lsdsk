@@ -24,10 +24,22 @@ if TYPE_CHECKING:
     from textual.widgets import DataTable
 
 
+class ColumnLike(Protocol):
+    """What a test reads of a table's column: the heading it was added under."""
+
+    @property
+    def label(self) -> Text: ...
+
+
 class RowTable(Protocol):
     """The subset of ``DataTable`` this application calls."""
 
     row_count: int
+
+    # The headings a page really drew, which a test compares with the printed
+    # table's rather than with the tuple the page was built from.
+    @property
+    def columns(self) -> Mapping[object, ColumnLike]: ...
 
     def add_columns(self, *labels: str) -> object: ...
 
@@ -88,4 +100,4 @@ def raising_table_id(event: DataTable.RowHighlighted) -> str | None:
     return cast("RowEvent", event).data_table.id
 
 
-__all__ = ["RowEvent", "RowTable", "raising_table_id", "rows_of"]
+__all__ = ["ColumnLike", "RowEvent", "RowTable", "raising_table_id", "rows_of"]
