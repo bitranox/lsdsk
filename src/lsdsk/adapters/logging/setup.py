@@ -81,7 +81,9 @@ class LoggingConfigModel(BaseModel):
     service: str | None = None
     environment: str = "prod"
 
-    model_config = ConfigDict(extra="allow")
+    # lib_layered_config reads an unquoted all-digit .env value (LIB_LOG_RICH__SERVICE=4711) as an int;
+    # the conversion is lossless, so turning it back into text restores what the operator wrote.
+    model_config = ConfigDict(extra="allow", coerce_numbers_to_str=True)
 
 
 def _build_runtime_config(section: Mapping[str, object]) -> lib_log_rich.runtime.RuntimeConfig:
@@ -98,7 +100,7 @@ def _build_runtime_config(section: Mapping[str, object]) -> lib_log_rich.runtime
         Fully configured runtime settings ready for lib_log_rich.init().
 
     Raises:
-        pydantic.ValidationError: When ``service`` or ``environment`` is not text,
+        pydantic.ValidationError: When ``service`` or ``environment`` is neither text nor a number,
             or the library's own model refuses a value.
 
     Note:
