@@ -394,7 +394,8 @@ def note_the_findings_this_page_left_out(
         if counts[severity]
     )
     console.print("")
-    console.print(note(f"{named} on this machine are not on this page: run `lsdsk findings` to read them."))
+    verb = "is" if len(left_out) == 1 else "are"
+    console.print(note(f"{named} on this machine {verb} not on this page: run `lsdsk findings` to read them."))
 
 
 class TrendEntry(BaseModel):

@@ -67,6 +67,24 @@ def test_a_section_that_exits_non_zero_accounts_for_it_on_the_page(
 
 
 @pytest.mark.os_agnostic
+def test_a_single_finding_left_off_the_page_is_counted_in_the_singular(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], strip_ansi: Callable[[str], str]
+) -> None:
+    """One warning "are not on this page" is the sentence that read as a typo.
+
+    The verb agrees with the TOTAL left off, so one finding of any severity is
+    "is" and several, of one severity or of several, are "are".
+    """
+    result = cli_runner.invoke(
+        cli, ["controllers", "--replay", "tests/fixtures/hw/windows-chipset-switch.json"], obj=production_factory
+    )
+    said = " ".join(strip_ansi(result.stdout).split())
+
+    assert "1 warning on this machine is not on this page" in said, said[-300:]
+    assert "are not on this page" not in said, said[-300:]
+
+
+@pytest.mark.os_agnostic
 @pytest.mark.parametrize("section", SECTIONS)
 def test_a_section_that_exits_zero_says_nothing_about_findings(
     section: str, cli_runner: CliRunner, production_factory: Callable[[], Any], strip_ansi: Callable[[str], str]
@@ -78,7 +96,7 @@ def test_a_section_that_exits_zero_says_nothing_about_findings(
     """
     result = cli_runner.invoke(cli, [section, "--replay", HEALTHY], obj=production_factory)
     assert result.exit_code == 0, f"{section} exits {result.exit_code} on the healthy capture"
-    assert "are not on this page" not in strip_ansi(result.stdout), result.stdout[-400:]
+    assert "not on this page" not in strip_ansi(result.stdout), result.stdout[-400:]
 
 
 @pytest.mark.os_agnostic
@@ -109,7 +127,7 @@ def test_the_page_that_lists_every_finding_does_not_point_elsewhere(
     """
     for command in SELF_EXPLAINING:
         said = strip_ansi(run(cli_runner, production_factory, command).stdout)
-        assert "are not on this page" not in said, f"{command} answers a question it has answered:\n{said[-300:]}"
+        assert "not on this page" not in said, f"{command} answers a question it has answered:\n{said[-300:]}"
 
 
 @pytest.mark.os_agnostic
@@ -128,4 +146,4 @@ def test_the_machine_readable_form_is_untouched(
     result = cli_runner.invoke(cli, [section, "--format", "json", "--replay", FIXTURE], obj=production_factory)
     envelope = json.loads(result.stdout)
     assert envelope["command"] == section
-    assert "are not on this page" not in result.stdout
+    assert "not on this page" not in result.stdout
