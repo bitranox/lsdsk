@@ -32,7 +32,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 #: Exit codes the tool documents. Anything else is a contract breach whatever
 #: the output said.
@@ -308,6 +308,192 @@ def _usage_fact(usage: Any) -> dict[str, Any] | None:
     return {"boot": bool(usage.get("boot")), "uses": [_use_text(u) for u in uses]}
 
 
+#: How far lsdsk's percent may sit from ``zpool list``'s cap. They are computed
+#: from different byte pairs: lsdsk rounds ``used / (used + free)`` UP, zpool
+#: reports ``alloc / size`` as a whole number, and a pool's free space is not
+#: always size minus alloc (slop, reservations). One point is the rounding; more
+#: is a different figure.
+POOL_PERCENT_TOLERANCE = 1
+
+
+class ZpoolRow(NamedTuple):
+    """One line of ``zpool list -Hp -o name,size,alloc,free,cap``, in exact bytes."""
+
+    size: int
+    alloc: int
+    free: int
+    cap: int
+
+
+def parse_zpool_list(text: str) -> dict[str, ZpoolRow]:
+    """Pools by name from ``zpool list -Hp`` output, refusing a line it cannot read.
+
+    A guessed figure would make the comparison agree with whatever it was fed.
+    """
+    pools: dict[str, ZpoolRow] = {}
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        fields = line.split("\t")
+        try:
+            if len(fields) != 5:
+                raise ValueError(len(fields))
+            pools[fields[0]] = ZpoolRow(*(int(value.rstrip("%")) for value in fields[1:]))
+        except ValueError as error:
+            message = f"zpool list line is not name and four numbers: {line!r}"
+            raise ValueError(message) from error
+    return pools
+
+
+def used_percent(row: dict[str, Any]) -> int | None:
+    """A row's fill as lsdsk's domain states it: ``ceil(100 * used / (used + free))``."""
+    used, free = row.get("used_bytes"), row.get("free_bytes")
+    if used is None or free is None or used + free <= 0:
+        return None
+    return -(-100 * used // (used + free))
+
+
+def _pool_verdict(name: str, row: dict[str, Any] | None, pool: ZpoolRow | None) -> tuple[str | None, dict[str, Any]]:
+    """Why one pool's two sides disagree (None when they agree), and the figures both gave."""
+    percent = used_percent(row) if row else None
+    figures: dict[str, Any] = {
+        "pool": name,
+        "lsdsk_percent": percent,
+        "lsdsk_used_bytes": row.get("used_bytes") if row else None,
+        "lsdsk_size_bytes": row.get("size_bytes") if row else None,
+        "zpool_cap": pool.cap if pool else None,
+        "zpool_alloc": pool.alloc if pool else None,
+        "zpool_size": pool.size if pool else None,
+    }
+    if pool is None:
+        return f"{name}: lsdsk reports a pool zpool list does not show", figures
+    if row is None:
+        return f"{name}: zpool list shows it (cap {pool.cap}) and lsdsk reports no row", figures
+    if percent is None:
+        return f"{name}: lsdsk row has no used/free figures, zpool cap {pool.cap}", figures
+    if abs(percent - pool.cap) > POOL_PERCENT_TOLERANCE:
+        return f"{name}: lsdsk {percent}% vs zpool cap {pool.cap}", figures
+    return None, figures
+
+
+def judge_pools(rows: list[dict[str, Any]], zpool_text: str | None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Every pool either side knows must be known by both, within the tolerance.
+
+    ``zpool_text`` is None where there is no ``zpool`` binary. A host with no
+    pool on either side makes no claim, which the facts record as zero pools
+    checked, so the runner can tell a fleet that checked none from one that did.
+    """
+    lsdsk_pools = {str(row["name"]): row for row in rows if row.get("kind") == "pool"}
+    zpool_pools = parse_zpool_list(zpool_text or "")
+    names = sorted(set(lsdsk_pools) | set(zpool_pools))
+    verdicts = [_pool_verdict(name, lsdsk_pools.get(name), zpool_pools.get(name)) for name in names]
+    facts: dict[str, Any] = {"zfs_pools_checked": len(names), "zfs_pools": [figures for _, figures in verdicts]}
+    if not names:
+        return [], facts
+    broken = [why for why, _ in verdicts if why]
+    detail = "; ".join(broken) or f"{len(names)} pool(s) within {POOL_PERCENT_TOLERANCE} point of zpool list"
+    return [check("filesystems:pools-agree-with-zpool", not broken, detail)], facts
+
+
+def _root_figures_unread(root: dict[str, Any]) -> list[str]:
+    return [key for key in ("size_bytes", "used_bytes", "free_bytes") if root.get(key) is None]
+
+
+def root_fstype_from_mounts(text: str) -> str | None:
+    """The filesystem type of the LAST mount over ``/`` in ``/proc/self/mounts`` text, or None."""
+    found: str | None = None
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) >= 3 and fields[1] == "/":
+            found = fields[2]
+    return found
+
+
+def read_root_fstype() -> str | None:
+    """What this Linux host has mounted at ``/``, or None where that cannot be read."""
+    try:
+        return root_fstype_from_mounts(Path("/proc/self/mounts").read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return None
+
+
+def _zfs_root_covered(rows: list[dict[str, Any]]) -> bool:
+    """Whether some pool row carries size, used and free, which is where a ZFS root is accounted."""
+    return any(row.get("kind") == "pool" and not _root_figures_unread(row) for row in rows)
+
+
+def judge_root_row(
+    rows: list[dict[str, Any]] | None, environment: object, system: str, root_fstype: str | None
+) -> tuple[list[dict[str, Any]], str]:
+    """Whether ``/`` is accounted for, and the reason when it is exempt, never silently.
+
+    A row named ``/`` with its figures is the normal answer. lsdsk lists a ZFS
+    filesystem under its POOL rather than as a mount, so on a ZFS root the
+    accounting is a populated pool row, and that is required instead. Only an
+    ABSENT row is otherwise excused, and only inside a container, where the root
+    sits on an overlay or a disk lsdsk does not inventory. A row that exists
+    with figures missing is a broken reading wherever it is. Windows rows are
+    volumes, so ``/`` does not apply there.
+    """
+    name = "filesystems:root-row-populated"
+    if system != "Linux":
+        return [], f"not applicable: {system} reports volumes, not a / mount"
+    root = next((row for row in rows or [] if row.get("name") == "/"), None)
+    if root is None and root_fstype == "zfs":
+        covered = _zfs_root_covered(rows or [])
+        detail = "zfs root, covered by a populated pool row" if covered else "zfs root and no pool row carries figures"
+        return [check(name, covered, detail)], "zfs root: accounted by its pool row" if covered else "missing"
+    if root is None:
+        if environment == "container":
+            return [check(name, True, "")], "exempt: container, / is not on an inventoried disk"
+        found = f"no / row among {len(rows or [])} filesystem(s) in a {environment} environment"
+        return [check(name, False, found)], "missing"
+    unread = _root_figures_unread(root)
+    detail = f"/ has no {', '.join(unread)}" if unread else "/ size, used and free read"
+    return [check(name, not unread, detail)], "populated" if not unread else "unread"
+
+
+def judge_filesystems(
+    data: dict[str, Any], zpool_text: str | None, *, system: str, root_fstype: str | None
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """The filesystems section against this host: the root row, and each ZFS pool against zpool."""
+    if "filesystems" not in data:
+        return [check("filesystems:section-present", False, "the envelope carries no filesystems key")], {}
+    rows: list[dict[str, Any]] | None = data["filesystems"]
+    results, root_row = judge_root_row(rows, data.get("environment"), system, root_fstype)
+    pool_results, facts = judge_pools(rows or [], zpool_text)
+    facts["root_row"] = root_row
+    return [*results, *pool_results], facts
+
+
+def read_zpool_list() -> str | None:
+    """``zpool list`` as this host prints it, or None when there is no usable ZFS here."""
+    zpool = shutil.which("zpool")
+    if zpool is None:
+        return None
+    done = subprocess.run(  # noqa: S603 - argv list, no shell; the binary was resolved just above
+        [zpool, "list", "-Hp", "-o", "name,size,alloc,free,cap"],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=60,
+    )
+    return done.stdout if done.returncode == 0 else None
+
+
+def filesystems_agree_with_the_host(invocation: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Drive ``filesystems`` here and judge it against the host's own ``zpool list``."""
+    code, out, _ = run(invocation, ["filesystems", "--format", "json"])
+    if code not in DOCUMENTED_EXITS:
+        return [check("filesystems:ran", False, f"exit {code}")], {}
+    try:
+        data: dict[str, Any] = json.loads(out)["data"]
+        return judge_filesystems(data, read_zpool_list(), system=platform.system(), root_fstype=read_root_fstype())
+    except Exception as error:
+        return [check("filesystems:parse", False, f"{type(error).__name__}: {str(error)[:120]}")], {}
+
+
 def snapshot_refuses_replay(invocation: list[str], workdir: Path) -> list[dict[str, Any]]:
     """It captures the machine it runs on, so --replay must not silently apply.
 
@@ -345,6 +531,9 @@ def main() -> int:
         usage, usage_facts = usage_boot_disk_found(invocation)
         checks += usage
         facts.update(usage_facts)
+        fs_checks, fs_facts = filesystems_agree_with_the_host(invocation)
+        checks += fs_checks
+        facts.update(fs_facts)
         checks += snapshot_refuses_replay(invocation, workdir)
 
     envelope = {

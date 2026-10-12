@@ -824,6 +824,13 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
             f"buses={facts.get('by_bus')} privileged={facts.get('privileged')} "
             f"healthy={facts.get('healthy_buses')} blind={facts.get('blind_buses')}"
         )
+        write(f"    / row: {facts.get('root_row')}")
+        for pool in facts.get("zfs_pools") or []:
+            write(
+                f"    zfs pool {pool.get('pool')}: lsdsk {pool.get('lsdsk_percent')}% "
+                f"({pool.get('lsdsk_used_bytes')}/{pool.get('lsdsk_size_bytes')} bytes) "
+                f"zpool cap {pool.get('zpool_cap')}% ({pool.get('zpool_alloc')}/{pool.get('zpool_size')} bytes)"
+            )
     for skip in skipped_hosts:
         write(f"  SKIPPED {skip}")
 

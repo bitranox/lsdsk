@@ -246,3 +246,23 @@ def test_a_windows_host_was_actually_probed() -> None:
         f"host tests did not run first. Probed: {[f.get('host') for f in PROBED] or 'nothing'}"
     )
     assert windows[0].get("blind_buses") == [], f"a transport read nothing: {windows[0].get('blind_buses')}"
+
+
+@pytest.mark.local_only
+@pytest.mark.integration
+def test_zfs_pools_were_actually_compared_with_zpool_list() -> None:
+    """Each host's own pool rows were judged against its own ``zpool list``, on at least one host.
+
+    The per-host test fails a pool whose row sits more than a point from
+    ``zpool list``'s cap, but a host with no pool makes no claim, so a fleet
+    where no host was reachable, or none had ZFS, would pass it by checking
+    nothing. This counts the pools the run really compared, and fails on zero.
+    The fleet has ZFS hosts, so zero means the comparison did not happen.
+    """
+    if not HOSTS:
+        pytest.skip(f"{HOSTS_VAR} is not set; see .env.example")
+    compared = {str(facts.get("host")): int(facts.get("zfs_pools_checked") or 0) for facts in PROBED}
+    assert sum(compared.values()) >= 1, (
+        "no ZFS pool was compared with zpool list on any host in this run. "
+        f"Pools checked per host: {compared or 'no host was probed'}"
+    )
