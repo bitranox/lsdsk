@@ -24,6 +24,20 @@ SMART_LOG_LENGTH = 512
 # NVMe reports temperatures in Kelvin.
 _KELVIN_OFFSET = 273
 
+# Identify Controller text fields (SN, MN, FR) are ASCII strings padded with
+# spaces; a NUL is tolerated as padding too. Anything else was never published.
+_ASCII_PRINTABLE = range(0x20, 0x7F)
+_TEXT_FIELDS = ((4, 20), (24, 40), (64, 8))
+
+# SMART / Health log, byte 0: bits 0-5 are defined (spare, temperature,
+# reliability, read-only, volatile backup, persistent memory region - NVM
+# Express Base Specification 1.4 and 2.0, Figure "SMART / Health Information
+# Log"); bits 7:6 are reserved, so a set one means the page is noise.
+_CRITICAL_WARNING_RESERVED_BITS = 0xC0
+
+# Available Spare (byte 3) is a percentage.
+_PERCENT_MAX = 100
+
 # Data units in the SMART log count thousands of 512-byte units.
 _DATA_UNIT_BYTES = 512 * 1000
 
@@ -61,6 +75,31 @@ def _kelvin_to_celsius(kelvin: int) -> int | None:
     return None if kelvin == 0 else plausible_celsius(kelvin - _KELVIN_OFFSET)
 
 
+def _refuse_a_non_ascii_text_field(blob: bytes) -> None:
+    """Refuse an Identify page whose serial, model or firmware holds a non-ASCII byte.
+
+    Raises:
+        ValueError: For a text field no controller could have published, which
+            is noise with a few bytes changed, as an all-ones check cannot see.
+    """
+    for start, length in _TEXT_FIELDS:
+        if any(byte and byte not in _ASCII_PRINTABLE for byte in blob[start : start + length]):
+            message = f"Identify Controller text field at byte {start} is not ASCII: it is not an Identify answer"
+            raise ValueError(message)
+
+
+def _refuse_an_implausible_health_field(blob: bytes) -> None:
+    """Refuse a SMART log whose spare percentage or warning bits could not be published.
+
+    Raises:
+        ValueError: For an available spare above 100 percent or a reserved
+            critical-warning bit set.
+    """
+    if blob[3] > _PERCENT_MAX or blob[0] & _CRITICAL_WARNING_RESERVED_BITS:
+        message = "SMART log carries a value the specification does not allow: it is not a health log"
+        raise ValueError(message)
+
+
 def decode_identify_controller(blob: bytes) -> NvmeIdentity:
     """Decode an NVMe Identify Controller data structure.
 
@@ -72,7 +111,8 @@ def decode_identify_controller(blob: bytes) -> NvmeIdentity:
 
     Raises:
         ValueError: If the buffer is shorter than one Identify response or is
-            all ones, which is what a bus with nothing on it answers.
+            all ones, which is what a bus with nothing on it answers, or if a
+            serial, model or firmware field holds a byte outside ASCII.
 
     Example:
         >>> decode_identify_controller(bytes(4096)).model
@@ -82,6 +122,7 @@ def decode_identify_controller(blob: bytes) -> NvmeIdentity:
         message = f"Identify Controller is {len(blob)} bytes, expected at least {IDENTIFY_CONTROLLER_LENGTH}"
         raise ValueError(message)
     refuse_a_floating_page(blob[:IDENTIFY_CONTROLLER_LENGTH], what="Identify Controller")
+    _refuse_a_non_ascii_text_field(blob)
 
     warning, critical = struct.unpack_from("<HH", blob, 266)
     return NvmeIdentity(
@@ -111,7 +152,9 @@ def decode_smart_log(blob: bytes, identity: NvmeIdentity | None = None) -> Healt
     Raises:
         ValueError: If the buffer is shorter than one log page or the page is
             all ones: a floating bus answers that way, and decoding it would
-            report a failing drive at 255 percent wear.
+            report a failing drive at 255 percent wear. Also if the available
+            spare exceeds 100 percent or a reserved critical-warning bit is
+            set, which is the same noise with a few bytes changed.
 
     Example:
         >>> health = decode_smart_log(bytes([0, 0, 0, 100]) + bytes(508))
@@ -129,6 +172,7 @@ def decode_smart_log(blob: bytes, identity: NvmeIdentity | None = None) -> Healt
     refuse_a_floating_page(blob[:SMART_LOG_LENGTH], what="SMART log")
     if not any(blob[:SMART_LOG_LENGTH]):
         return Health()
+    _refuse_an_implausible_health_field(blob)
     critical_warning = blob[0]
     composite_kelvin = struct.unpack_from("<H", blob, 1)[0]
     return Health(
