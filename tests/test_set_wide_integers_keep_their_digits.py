@@ -29,3 +29,9 @@ def test_a_wide_negative_integer_is_read_exactly() -> None:
 def test_a_wide_integer_inside_a_word_stays_text() -> None:
     """The control: blanks are stripped only to read a number, never to turn text into one."""
     assert coerce_value(f"{WIDE}x") == f"{WIDE}x"
+
+
+@pytest.mark.parametrize("typed", ["٩" * 24, "9" * 23 + "٩", "²" * 24, "-" + "٩" * 24])
+def test_a_wide_run_of_non_ascii_digits_stays_text(typed: str) -> None:
+    """Digits of another script are not a JSON number, so the reader refuses them and the text is kept."""
+    assert coerce_value(typed) == typed

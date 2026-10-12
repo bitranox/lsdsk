@@ -232,7 +232,10 @@ def _exact_integer(raw: str, parsed: CoercedValue) -> CoercedValue:
     # Stripped because the JSON reader skips blanks around a number, so a padded
     # literal became the same distorted float the unpadded one does.
     digits = raw.strip()
-    if not isinstance(parsed, float) or not digits.lstrip("-").isascii() or not digits.lstrip("-").isdigit():
+    # No ASCII test beside isdigit(): a float only comes back for text the JSON
+    # reader accepted, and it accepts ASCII digits alone, so a non-ASCII digit
+    # string never reaches this line as a float.
+    if not isinstance(parsed, float) or not digits.lstrip("-").isdigit():
         return parsed
     return int(digits)
 
