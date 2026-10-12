@@ -68,3 +68,29 @@ def test_a_tail_after_a_group_left_open_still_says_it_continues_a_cut_regex(
     assert len(said) == 1, said
     assert "continues a cut regex" in said[0], said
     assert "has no '='" not in said[0], said
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "token=(a,b),key=.+",
+        "token=(?:a,b),key=.+",
+        "token=[a,b],key=.+",
+        "token=[^a,b],key=.+",
+        "token=x(a,b=c),key=.+",
+    ],
+    ids=["group", "non-capturing-group", "class", "negated-class", "group-tail-with-equals"],
+)
+def test_each_kind_of_bracket_left_open_makes_the_next_piece_a_cut_tail(
+    text: str, capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A parenthesis or a square bracket left open is a cut regex just as a brace is, not only ``{``."""
+    monkeypatch.setenv("LOG_SCRUB_PATTERNS", text)
+
+    # The library also refuses the half-open regex itself and says so on a line of
+    # its own; only the warning about the dropped piece is this test's subject.
+    said = [line for line in _said_about_scrubbing(capfd) if "split on every comma" in line]
+
+    assert len(said) == 1, said
+    assert "continues a cut regex" in said[0], said
+    assert "has no '='" not in said[0], said
