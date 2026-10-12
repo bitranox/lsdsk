@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import pydantic_core
 import pytest
+import rtoml
 
 from lsdsk.adapters.cli import cli
 from lsdsk.adapters.cli.envelope import MappingResult, PayloadTooDeepError, emit_action
@@ -81,6 +82,34 @@ def _toml_inline(depth: int) -> str:
     return "{a = " * depth + "1" + "}" * depth
 
 
+#: The least nesting at which this test still means something: well past any realistic
+#: configuration and near enough the serializers' ceilings (98 and 254) that the
+#: print-or-refuse prediction below is exercised on real depth, not on a trivial value.
+MIN_MEANINGFUL_VALUE_DEPTH = 50
+
+
+def _config_document(depth: int) -> str:
+    """The config file the CLI test writes: one section holding an inline-table value `depth` deep."""
+    return f"[bogus]\nkey = {_toml_inline(depth)}\n"
+
+
+def _deepest_value_the_toml_parser_accepts(limit: int) -> int:
+    """Step down from `limit` to the deepest inline-table value rtoml parses, in the shape the test writes.
+
+    rtoml 0.14 refuses inline tables nested about 80 deep ("cannot recurse
+    further") where 0.13 accepted 98, so the parser's own ceiling is probed
+    rather than assumed; the file is otherwise refused before the library's
+    limit or the JSON serializer is ever reached.
+    """
+    for depth in range(limit, 0, -1):
+        try:
+            rtoml.loads(_config_document(depth))
+        except rtoml.TomlParsingError:
+            continue
+        return depth
+    return 0
+
+
 @pytest.mark.os_agnostic
 def test_a_payload_too_deep_to_write_is_refused_by_name_and_writes_nothing(capsys: pytest.CaptureFixture[str]) -> None:
     """300 levels is past every platform's ceiling, so the refusal is reached everywhere."""
@@ -116,9 +145,10 @@ def test_a_configuration_at_the_librarys_limit_prints_or_is_refused_by_name(
     The prediction serializes the same document the envelope carries; on Windows
     it fails and the refusal arm runs, on Linux and macOS it prints.
     """
-    value_depth = LIBRARY_DEPTH - 2
+    value_depth = _deepest_value_the_toml_parser_accepts(LIBRARY_DEPTH - 2)
+    assert value_depth >= MIN_MEANINGFUL_VALUE_DEPTH, f"the TOML parser stops at {value_depth}, too shallow to test"
     user_config_dir.mkdir(parents=True, exist_ok=True)
-    (user_config_dir / "config.toml").write_text(f"[bogus]\nkey = {_toml_inline(value_depth)}\n", encoding="utf-8")
+    (user_config_dir / "config.toml").write_text(_config_document(value_depth), encoding="utf-8")
     document: dict[str, object] = {
         "ok": True,
         "command": "config",
