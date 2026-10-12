@@ -161,9 +161,9 @@ def test_the_documentation_invents_no_option() -> None:
     assert not invented, f"documented options that do not exist: {invented}"
 
 
-#: The prose that covers the page keys, which are eight bindings a reader meets
-#: as one sentence rather than as eight lines.
-PAGE_KEY_PROSE = "`1` to `8`"
+#: The prose that covers the page keys, which are nine bindings a reader meets
+#: as one sentence rather than as nine lines.
+PAGE_KEY_PROSE = "`1` to `9`"
 
 #: Keys Textual names one way and a reader types another.
 KEY_AS_TYPED = {"comma": ",", "full_stop": "."}
@@ -182,7 +182,7 @@ def test_the_pages_document_names_a_key_for_every_action_the_interactive_view_bi
     already found the panel. Nothing was asking whether the README's key list
     still matched, and it had stopped: `i`, `shift+up`, `shift+down`, `,` and
     `.` were all bound and unmentioned, while a sentence beside them said
-    nothing had to be selected, which six of the eight pages had stopped being
+    nothing had to be selected, which six of the nine pages had stopped being
     true of.
 
     ONE key per action rather than every alias. `f9`, `f10` and `escape` are

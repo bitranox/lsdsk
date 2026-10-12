@@ -1392,7 +1392,8 @@ _SALTED_CAPTURES = (
     "windows-chipset-switch",
 )
 
-#: The eight section commands, plus the default page as the empty argv.
+#: Eight of the nine section commands, plus the default page as the empty argv;
+#: ``filesystems`` is driven by its own test further down.
 _SALTED_VIEWS = ("topology", "controllers", "disks", "health", "smart", "slots", "trend", "findings", "")
 
 #: Control characters from every range the sanitiser covers, plus a newline,
@@ -1543,7 +1544,7 @@ _MARKUP_MARK = "MARKUPMARK"
 #: clipped cell ends in, Rich's own ellipsis, or a fold onto the next line.
 _CUT_MARKS = frozenset({">", "…", "\n", ""})
 
-#: Every command that draws a capture in human form: the eight sections, the
+#: Every command that draws a capture in human form: those eight sections, the
 #: default page, and ``report``, which is the same page under its own name.
 _MARKUP_VIEWS = (*_SALTED_VIEWS, "report")
 

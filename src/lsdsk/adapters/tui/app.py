@@ -853,7 +853,7 @@ class LsdskApp(App[None]):
             greyed, which is the opposite way round from what the names
             suggest.
 
-        A key advertised on all eight pages that answers on one is a key a
+        A key advertised on all nine pages that answers on one is a key a
         reader stops believing.
         """
         del parameters

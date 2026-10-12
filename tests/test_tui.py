@@ -238,7 +238,7 @@ async def test_the_density_key_is_gated_to_the_topology_page() -> None:
     """Verify `d` answers on the page whose view it changes, and only there.
 
     check_action hiding an action is what keeps its key off the footer AND
-    out of dispatch; a key advertised on all eight pages that answers on one
+    out of dispatch; a key advertised on all nine pages that answers on one
     is a key a reader stops believing.
     """
     app = LsdskApp(inventory())
@@ -990,7 +990,7 @@ class TestTheDiskPageKeepsALongIdentifierReachable:
         Textual reads ``False`` from ``check_action`` as hidden and ``None`` as
         shown-but-greyed, which is the opposite way round from what the names
         suggest; written the other way round this gate offered the keys on all
-        eight pages while looking correct.
+        nine pages while looking correct.
         """
         app = LsdskApp(inventory())
         async with app.run_test(size=(120, 40)) as pilot:

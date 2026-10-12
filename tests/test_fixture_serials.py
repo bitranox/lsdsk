@@ -1,12 +1,14 @@
 """A committed capture must carry one serial per drive, in every copy of it.
 
-A capture records the same drive serial in up to nine places, because the
-reader stores the raw structures it read rather than a decoded summary: the ATA
-IDENTIFY serial field, the copy of IDENTIFY embedded in VPD page 0x89, VPD page
-0x80, two designators of VPD page 0x83, the vendor-specific tail of the standard
-INQUIRY response, the NVMe Identify Controller SN field, the subsystem NQN that
-embeds it in a name string, the sysfs ``wwid`` that embeds it as hex, and the
-``serial`` attribute of the drive's controller under ``classes/nvme``.
+A capture records the same drive serial in up to eleven places, because the
+reader stores the raw structures it read rather than a decoded summary: the
+serial the platform itself publishes for the disk (Windows' ``device.serial``),
+the ATA IDENTIFY serial field, the copy of IDENTIFY embedded in VPD page 0x89,
+VPD page 0x80, two designators of VPD page 0x83 (the vendor-specific one and
+the T10 vendor-id one, counted as two), the vendor-specific tail of the
+standard INQUIRY response, the NVMe Identify Controller SN field, the subsystem
+NQN that embeds it in a name string, the sysfs ``wwid`` that embeds it as hex,
+and the ``serial`` attribute of the drive's controller under ``classes/nvme``.
 
 Fixtures are captures from real machines with the serials replaced, so a scrub
 that reaches some of those and not others leaves the real identifier published

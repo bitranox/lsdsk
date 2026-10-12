@@ -152,8 +152,8 @@ def test_the_default_page_contains_every_section_a_command_can_show() -> None:
     by a literal typed here, so rewording a heading does not fail this and a
     deleted section cannot pass it.
 
-    The page is rendered WITH a history, because the trend section is the eighth
-    section and without samples it renders an explanation instead of rows. Called
+    The page is rendered WITH a history, because the trend section is the eighth of
+    the nine sections and without samples it renders an explanation instead of rows. Called
     with no history this test could not see ``render_trend`` disappear from
     ``render_full``, which is how the prose came to say seven sections.
     """
