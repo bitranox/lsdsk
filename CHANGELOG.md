@@ -13,6 +13,10 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- **An unreadable configuration directory exits 13, as an unreadable configuration file does.**
+  `chmod 000` on the user configuration directory ended with exit 78 and `CONFIG_ERROR`, because
+  the configuration library dropped the underlying permission error; lsdsk now requires
+  lib_layered_config 7.1.4, which keeps it, so the refusal is `PERMISSION_DENIED`.
 - **An ATA temperature attribute reading zero is no longer shown as 0 C.** A drive publishing
   attribute 194 at zero and its real temperature in 190 read as 0 C; the zero now counts as not
   measured and the next temperature attribute is used. Sysfs and NVMe keep 0 C as a reading.

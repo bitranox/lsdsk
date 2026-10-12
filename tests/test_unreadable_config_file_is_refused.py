@@ -58,3 +58,35 @@ def test_an_unreadable_user_config_is_refused_with_a_json_envelope(
     assert envelope["error"]["type"] == "PERMISSION_DENIED"
     assert str(config) in envelope["error"]["message"]
     assert captured.err.startswith("Error:"), captured.err
+
+
+@pytest.mark.os_posix
+def test_an_unreadable_user_config_directory_is_refused_as_permission_denied(
+    managed_traceback_state: None,
+    user_config_dir_under: Callable[[str], Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Mode 000 on the config DIRECTORY must exit 13 like mode 000 on the file.
+
+    The layered library refused the directory without chaining the
+    ``PermissionError`` under its load error, so the refusal read as a damaged
+    configuration (78) rather than a denied read (13).
+    """
+    if _root_reads_anything():
+        pytest.skip("root enters a mode-000 directory, so there is no refusal to answer")
+    home = user_config_dir_under("unreadable-dir")
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.toml").write_text("[display]\n", encoding="utf-8")
+    home.chmod(0)
+    get_config.cache_clear()
+    try:
+        exit_code = cli_mod.main(["disks", "--format", "json"], services_factory=build_production)
+    finally:
+        home.chmod(stat.S_IRWXU)
+        get_config.cache_clear()
+
+    captured = capsys.readouterr()
+    assert exit_code == ExitCode.PERMISSION_DENIED, captured.err
+    envelope = json.loads(captured.out)
+    assert envelope["ok"] is False
+    assert envelope["error"]["type"] == "PERMISSION_DENIED"
