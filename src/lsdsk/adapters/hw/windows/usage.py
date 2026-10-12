@@ -29,7 +29,7 @@ _NODE_NUMBER = re.compile(r"PhysicalDrive(\d+)$", re.IGNORECASE)
 _DISKLESS_DRIVE_TYPES = frozenset({api.DRIVE_CDROM, api.DRIVE_RAMDISK})
 
 
-def _disk_numbers(nodes: frozenset[str]) -> dict[int, str]:
+def disk_numbers(nodes: frozenset[str]) -> dict[int, str]:
     """Map a disk's number back to its node name.
 
     Args:
@@ -149,9 +149,9 @@ def resolve_usage(capture: WindowsCapture, environment: Environment) -> dict[str
         return dict.fromkeys(nodes)
 
     volumes = capture.volumes
-    disk_numbers = _disk_numbers(nodes)
-    mounts = _letter_mounts(volumes, disk_numbers)
-    boot_nodes = _boot_nodes(capture, volumes, disk_numbers)
+    numbered = disk_numbers(nodes)
+    mounts = _letter_mounts(volumes, numbered)
+    boot_nodes = _boot_nodes(capture, volumes, numbered)
     any_volume_blocks = any(_blocks_not_mounted(entry) for entry in volumes.values())
 
     result: dict[str, DiskUsage | None] = {}
@@ -166,4 +166,4 @@ def resolve_usage(capture: WindowsCapture, environment: Environment) -> dict[str
     return result
 
 
-__all__ = ["resolve_usage"]
+__all__ = ["disk_numbers", "resolve_usage"]

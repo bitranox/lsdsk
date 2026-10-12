@@ -61,6 +61,7 @@ from ..fabric import NodeSource, assemble
 from ..linux.builder import controller_kind_of, parse_pcie_running_width, parse_pcie_speed, parse_pcie_width
 from ..refusals import refusals_of
 from .capture import HealthBlobs, is_unread_interface
+from .filesystems import build_filesystems
 from .usage import resolve_usage
 
 if TYPE_CHECKING:
@@ -733,6 +734,7 @@ def build_inventory(capture: WindowsCapture) -> Inventory:
     environment, detail = classify(capture.environment)
 
     usage = resolve_usage(capture, environment)
+    filesystems, unread_filesystems = build_filesystems(capture, environment)
     disks = tuple(disk.with_changes(usage=usage.get(disk.node)) for disk in build_disks(capture))
 
     used: dict[str, int] = {}
@@ -757,6 +759,8 @@ def build_inventory(capture: WindowsCapture) -> Inventory:
         environment_detail=detail,
         board=board_name(capture.environment),
         devices_accessible=_devices_accessible(capture),
+        filesystems=filesystems,
+        unread_filesystems=unread_filesystems,
     )
 
 
