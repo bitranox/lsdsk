@@ -53,7 +53,7 @@ from ..snapshot import SCHEMA_VERSION
 from . import mounts, usbfs
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
 # ioctl numbers. SG_IO is the generic SCSI passthrough; the NVMe admin command
 # code is _IOWR('N', 0x41, struct nvme_passthru_cmd) evaluated for a 72-byte
@@ -559,6 +559,26 @@ def read_ahci_capabilities(device: Path) -> AhciReading:
     return AhciReading({"capability": capability, "ports_implemented": implemented}, None)
 
 
+def _probe(path: Path, test: Callable[[Path], bool]) -> bool:
+    """Ask a ``Path`` predicate about a sysfs node, reading a node it may not search as absent.
+
+    Before Python 3.14 ``exists``, ``is_dir`` and ``is_symlink`` re-raise ``EACCES`` for a
+    path below a directory the process cannot search, and that escaped as a plain
+    ``PermissionError`` which aborted the whole scan over one silent device.
+
+    Args:
+        path: The node to ask about.
+        test: The predicate, such as ``Path.exists``.
+
+    Returns:
+        The predicate's answer, or ``False`` when the node could not be examined.
+    """
+    try:
+        return test(path)
+    except OSError:
+        return False
+
+
 def _entries(directory: Path) -> list[Path]:
     """List a sysfs directory, treating a device that vanished as empty.
 
@@ -592,16 +612,18 @@ def read_pci(root: Path = Path("/sys/bus/pci/devices")) -> dict[str, dict[str, A
         One entry per device, keyed by its sysfs address.
     """
     devices: dict[str, dict[str, Any]] = {}
-    if not root.is_dir():
+    if not _probe(root, Path.is_dir):
         return devices
     for device in _entries(root):
         entry: dict[str, Any] = dict(_read_attrs(device, PCI_ATTRS))
         driver = device / "driver"
-        if driver.is_symlink():
+        if _probe(driver, Path.is_symlink):
             entry["driver"] = Path(os.path.realpath(driver)).name
         entry["path"] = os.path.realpath(device)
         children = sorted(
-            child.name for child in _entries(device) if child.is_dir() and child.name.count(":") == _PCI_ADDRESS_COLONS
+            child.name
+            for child in _entries(device)
+            if _probe(child, Path.is_dir) and child.name.count(":") == _PCI_ADDRESS_COLONS
         )
         if children:
             entry["children"] = children
@@ -634,7 +656,7 @@ def read_classes(root: Path = Path("/sys/class")) -> dict[str, dict[str, dict[st
     classes: dict[str, dict[str, dict[str, str]]] = {}
     for class_name, attrs in CLASS_ATTRS.items():
         base = root / class_name
-        if not base.is_dir():
+        if not _probe(base, Path.is_dir):
             continue
         entries: dict[str, dict[str, str]] = {}
         for node in _entries(base):
@@ -658,10 +680,7 @@ def _link_name(link: Path) -> str | None:
     Returns:
         The last component of where it leads, or ``None`` when it is absent.
     """
-    try:
-        if not link.is_symlink():
-            return None
-    except OSError:
+    if not _probe(link, Path.is_symlink):
         return None
     return Path(os.path.realpath(link)).name
 
@@ -712,7 +731,7 @@ def read_block(root: Path = Path("/sys/block")) -> dict[str, dict[str, Any]]:
         One entry per block device, keyed by its kernel name.
     """
     disks: dict[str, dict[str, Any]] = {}
-    if not root.is_dir():
+    if not _probe(root, Path.is_dir):
         return disks
     for node in _entries(root):
         entry: dict[str, Any] = {"size": _read_attribute(node / "size")}
@@ -727,7 +746,7 @@ def read_block(root: Path = Path("/sys/block")) -> dict[str, dict[str, Any]]:
                 entry[name] = value
         entry["queue"] = _read_attrs(node / "queue", BLOCK_QUEUE_ATTRS)
         device = node / "device"
-        if device.exists():
+        if _probe(device, Path.exists):
             entry["device"] = _read_attrs(device, BLOCK_DEVICE_ATTRS)
             entry["device_path"] = os.path.realpath(device)
             blobs = {name: _read_blob(device / name) for name in VPD_BLOBS}
@@ -793,7 +812,7 @@ def _usb_devices_above(device_path: str) -> list[Path]:
     """Every USB device directory from the one nearest a block device up to its root hub."""
     if _USB_PATH_MARK not in device_path:
         return []
-    return [parent for parent in Path(device_path).parents if (parent / "idVendor").exists()]
+    return [parent for parent in Path(device_path).parents if _probe(parent / "idVendor", Path.exists)]
 
 
 def _read_usb_device(device: Path) -> dict[str, Any]:
@@ -813,7 +832,7 @@ def _interface_drivers(device: Path) -> list[str]:
     names = {
         Path(os.path.realpath(interface / "driver")).name
         for interface in _entries(device)
-        if ":" in interface.name and (interface / "driver").exists()
+        if ":" in interface.name and _probe(interface / "driver", Path.exists)
     }
     return sorted(names)
 
@@ -832,7 +851,7 @@ def _port_of(device: Path) -> Path | None:
     label = device.parent.name if nested else f"{_ROOT_HUB_PREFIX}{name.split('-', 1)[0]}"
     for interface in _entries(device.parent):
         candidate = interface / f"{label}-port{port}"
-        if ":" in interface.name and candidate.exists():
+        if ":" in interface.name and _probe(candidate, Path.exists):
             return candidate
     return None
 
@@ -840,7 +859,7 @@ def _port_of(device: Path) -> Path | None:
 def _twin_hub(device: Path) -> str | None:
     """The hub device owning the other-speed half of this device's socket, or None for a socket with none."""
     port = _port_of(device)
-    if port is None or not (port / "peer").exists():
+    if port is None or not _probe(port / "peer", Path.exists):
         return None
     # peer -> <hub>/<hub>:1.0/<hub>-portN, so the hub is two levels above it.
     return str(Path(os.path.realpath(port / "peer")).parent.parent)
@@ -1029,7 +1048,7 @@ def read_environment(*, proc: Path = _HOST_PROC, root: Path | None = None) -> di
             evidence["container_marker"] = value
             break
 
-    present = [path for path in _CONTAINER_MARKER_FILES if (tree / path).exists()]
+    present = [path for path in _CONTAINER_MARKER_FILES if _probe(tree / path, Path.exists)]
     if present:
         evidence["container_files"] = [_CONTAINER_MARKER_FILES[path] for path in present]
 
@@ -1106,7 +1125,7 @@ def _devices_accessible(nodes: list[str]) -> bool:
     no matching nodes at all. Elevating changes nothing there, so the difference
     decides which advice is honest.
     """
-    return any(Path(f"/dev/{node}").exists() for node in nodes) if nodes else True
+    return any(_probe(Path(f"/dev/{node}"), Path.exists) for node in nodes) if nodes else True
 
 
 def read_system() -> dict[str, Any]:

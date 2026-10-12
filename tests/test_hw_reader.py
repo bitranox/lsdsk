@@ -281,3 +281,41 @@ def test_a_cpuinfo_naming_the_hypervisor_flag_is_read(tmp_path: Path) -> None:
     (tmp_path / "cpuinfo").write_text("flags\t\t: fpu hypervisor lm\n", encoding="utf-8")
 
     assert linux_reader.read_environment(proc=tmp_path)["hypervisor_flag"] is True
+
+
+@pytest.mark.os_posix
+def test_a_block_device_whose_directory_cannot_be_searched_costs_only_its_own_reading(sysfs: Path) -> None:
+    """Before Python 3.14 ``Path.exists`` re-raises EACCES, which aborted the whole scan."""
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("root searches a directory whatever its mode, so the refusal cannot be planted")
+    sda = sysfs / _PCI_BLOCK / "sda"
+    sda.chmod(0o000)
+    try:
+        block = read_block(sysfs / "block")
+    finally:
+        sda.chmod(0o700)
+    assert "device" not in block["sda"], "an unsearchable disk was recorded as carrying a device directory"
+    assert block["sr0"]["device"]["model"] == "A Model"
+
+
+@pytest.mark.os_posix
+def test_a_pci_device_whose_directory_cannot_be_searched_costs_only_its_own_reading(tmp_path: Path) -> None:
+    """``Path.is_symlink`` on its ``driver`` link re-raised EACCES before Python 3.14."""
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("root searches a directory whatever its mode, so the refusal cannot be planted")
+    root = tmp_path / "devices"
+    for address in ("0000_03_00.0", "0000_04_00.0"):
+        (root / address).mkdir(parents=True)
+        (root / address / "vendor").write_text("0x1000\n", encoding="utf-8")
+    locked = root / "0000_03_00.0"
+    locked.chmod(0o000)
+    try:
+        devices = linux_reader.read_pci(root)
+    finally:
+        locked.chmod(0o700)
+    assert devices["0000_04_00.0"]["vendor"] == "0x1000"
+    assert "driver" not in devices["0000_03_00.0"]
