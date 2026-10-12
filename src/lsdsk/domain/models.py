@@ -25,6 +25,8 @@ from .enums import (
     ControllerKind,
     DiskKind,
     Environment,
+    FilesystemKind,
+    InodeTable,
     PciPortKind,
     Severity,
     UsbLaneRate,
@@ -1827,6 +1829,94 @@ class _PciTour:
         return sorted(found.values(), key=lambda node: pci_address_order(node.address))
 
 
+#: Filesystem types that make their inodes at format time. Everything else the
+#: tool reads (ZFS, btrfs, xfs, NTFS) grows its metadata on demand.
+FIXED_INODE_TABLE_TYPES: frozenset[str] = frozenset({"ext2", "ext3", "ext4"})
+
+
+def _ceil_percent(part: int, whole: int) -> int | None:
+    """``part`` of ``whole`` as a whole percent, rounded up, in exact integers.
+
+    A float ``ceil(100 * part / whole)`` loses precision for byte counts near
+    2**63 and can land one off, which would disagree with ``df``.
+
+    Example:
+        >>> _ceil_percent(1, 199)
+        1
+        >>> _ceil_percent(0, 0) is None
+        True
+    """
+    if whole <= 0:
+        return None
+    return -(-100 * part // whole)
+
+
+class Filesystem(DomainModel, frozen=True):
+    """How full one mounted filesystem, ZFS pool or Windows volume is.
+
+    Attributes:
+        kind: Whether this is a mount, a pool or a volume.
+        name: The mountpoint, pool name or volume path.
+        other_mounts: Further mountpoints of the same filesystem.
+        fs_type: The filesystem type, empty when it was not read.
+        disks: Nodes of the inventoried disks it lives on.
+        size_bytes: Total size, ``None`` when not read.
+        used_bytes: Bytes in use, ``None`` when not read.
+        free_bytes: Bytes free to an ordinary user, ``None`` when not read.
+        inodes_total: Inode count, ``None`` when not read.
+        inodes_free: Free inodes, ``None`` when not read.
+        read_only: Whether it is mounted read-only.
+        readings_refused: Readings the system refused for this filesystem.
+
+    Example:
+        >>> Filesystem(kind=FilesystemKind.MOUNT, name="/", used_bytes=1, free_bytes=199).used_percent
+        1
+    """
+
+    kind: FilesystemKind
+    name: DeviceText
+    other_mounts: tuple[DeviceText, ...] = ()
+    fs_type: DeviceText = ""
+    disks: tuple[DeviceText, ...] = ()
+    size_bytes: int | None = None
+    used_bytes: int | None = None
+    free_bytes: int | None = None
+    inodes_total: int | None = None
+    inodes_free: int | None = None
+    read_only: bool = False
+    readings_refused: tuple[RefusedReading, ...] = ()
+
+    @property
+    def inode_table(self) -> InodeTable:
+        """Whether the inode count of this filesystem is a ceiling.
+
+        Example:
+            >>> Filesystem(kind=FilesystemKind.MOUNT, name="/", fs_type="ext4").inode_table.value
+            'fixed'
+        """
+        return InodeTable.FIXED if self.fs_type in FIXED_INODE_TABLE_TYPES else InodeTable.DYNAMIC
+
+    @property
+    def used_percent(self) -> int | None:
+        """How full it is, rounded UP so it agrees with ``df`` on the same mount.
+
+        Free means free to an ordinary user, so ext4's reserved blocks count as
+        unavailable, which is what ``df`` prints too.
+        """
+        if self.used_bytes is None or self.free_bytes is None:
+            return None
+        return _ceil_percent(self.used_bytes, self.used_bytes + self.free_bytes)
+
+    @property
+    def inodes_used_percent(self) -> int | None:
+        """How many inodes are in use, only where the table is a ceiling."""
+        if self.inode_table is not InodeTable.FIXED:
+            return None
+        if self.inodes_total is None or self.inodes_free is None:
+            return None
+        return _ceil_percent(self.inodes_total - self.inodes_free, self.inodes_total)
+
+
 class Inventory(DomainModel, frozen=True):
     """Everything one scan found on one machine.
 
@@ -1849,6 +1939,11 @@ class Inventory(DomainModel, frozen=True):
             view. Its roots are the machine's root buses, one synthetic node
             each, so two root complexes stay two trees rather than 82 sibling
             lines. Empty when the capture carries no PCI devices at all.
+        filesystems: How full each mounted filesystem, ZFS pool and Windows
+            volume is. ``None`` means the capture did not read them; an empty
+            tuple means they were read and none lives on an inventoried disk.
+        unread_filesystems: Filesystem readings the system refused, each with
+            its reason, so a scan that missed one is not mistaken for complete.
         privileged: Whether the scan had the rights to read SMART data.
         environment: Whether this is bare metal, a guest, or a container.
         environment_detail: The runtime or hypervisor, when it could be named.
@@ -1867,6 +1962,8 @@ class Inventory(DomainModel, frozen=True):
     disks: tuple[Disk, ...] = ()
     virtual_disks: tuple[Disk, ...] = ()
     unread_interfaces: tuple[RefusedReading, ...] = ()
+    filesystems: tuple[Filesystem, ...] | None = None
+    unread_filesystems: tuple[RefusedReading, ...] = ()
     slots: tuple[PcieSlot, ...] = ()
     pci_tree: tuple[PciNode, ...] = ()
     privileged: bool = False
@@ -2548,11 +2645,13 @@ class Inventory(DomainModel, frozen=True):
 
 
 __all__ = [
+    "FIXED_INODE_TABLE_TYPES",
     "PCIE_MAX_LINK_WIDTH",
     "Controller",
     "Disk",
     "DiskUsage",
     "DiskUse",
+    "Filesystem",
     "Finding",
     "Health",
     "InterfaceLink",

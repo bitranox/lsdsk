@@ -194,6 +194,41 @@ class UseKind(StrEnum):
     STACK = "stack"
 
 
+class FilesystemKind(StrEnum):
+    """What a row of the filesystems section is.
+
+    Attributes:
+        MOUNT: A mounted filesystem on a disk this scan inventoried.
+        POOL: A ZFS pool, counted once whatever its datasets.
+        VOLUME: A Windows volume.
+
+    Example:
+        >>> FilesystemKind.POOL.value
+        'pool'
+    """
+
+    MOUNT = "mount"
+    POOL = "pool"
+    VOLUME = "volume"
+
+
+class InodeTable(StrEnum):
+    """Whether a filesystem's inode count is a ceiling it can run into.
+
+    Attributes:
+        FIXED: Made at format time, so the filesystem can be full of files
+            while it still has space.
+        DYNAMIC: Grown on demand, so an inode count says nothing about fullness.
+
+    Example:
+        >>> InodeTable.FIXED.value
+        'fixed'
+    """
+
+    FIXED = "fixed"
+    DYNAMIC = "dynamic"
+
+
 class ControllerKind(StrEnum):
     """What sort of storage controller this is, from its PCI class code.
 
@@ -414,6 +449,8 @@ __all__ = [
     "DeployTarget",
     "DiskKind",
     "Environment",
+    "FilesystemKind",
+    "InodeTable",
     "OutputFormat",
     "PciPortKind",
     "Platform",
