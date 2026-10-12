@@ -63,7 +63,7 @@ contribution:
 Take one with `lsdsk snapshot -o capture.json`. It records what the kernel or
 Windows published about your controllers and drives, including model and serial
 numbers, so read it before sending it: the serial of a drive is recorded in up
-to eight places and `tests/test_fixture_serials.py` documents where.
+to eleven places and `tests/test_fixture_serials.py` documents where.
 
 ## 7. Security & Configuration
 

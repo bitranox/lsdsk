@@ -383,15 +383,23 @@ lsdsk --set thresholds.crc_errors_significant=10 findings
 
 Diese entscheiden den Schweregrad und damit den Exit-Code.
 
-| Schlüssel                    | Vorgabe | Wirkung                                                                                         |
-|------------------------------|---------|-------------------------------------------------------------------------------------------------|
-| `wear_warning_percent`       | `80`    | Verbrauchte Nennlebensdauer, ab der ein Laufwerk eine Warnung bekommt                           |
-| `wear_critical_percent`      | `95`    | Und ab der es kritisch heisst                                                                   |
-| `crc_errors_significant`     | `100`   | Darunter ist ein CRC-Stand der Schnittstelle ein Hinweis statt einer Warnung                    |
-| `mixed_firmware_threshold`   | `2`     | Verschiedene Firmwarestände eines Modells, ab denen es gemeldet wird                            |
-| `wear_projection_min_points` | `2`     | Prozentpunkte gemessener Verschleissbewegung, bevor ein Verschleiss-Enddatum hochgerechnet wird |
-| `quiet_expected_min`         | `10.0`  | Fehler, die die Rate des Laufwerks vorhergesagt haben muss, bevor Schweigen als Beleg zählt     |
-| `min_span_hours`             | `1`     | Betriebsstunden zwischen zwei Messungen, bevor überhaupt eine Rate gerechnet wird               |
+| Schlüssel                         | Vorgabe | Wirkung                                                                                                      |
+|-----------------------------------|---------|--------------------------------------------------------------------------------------------------------------|
+| `wear_warning_percent`            | `80`    | Verbrauchte Nennlebensdauer, ab der ein Laufwerk eine Warnung bekommt                                        |
+| `wear_critical_percent`           | `95`    | Und ab der es kritisch heisst                                                                                |
+| `crc_errors_significant`          | `100`   | Darunter ist ein CRC-Stand der Schnittstelle ein Hinweis statt einer Warnung                                 |
+| `mixed_firmware_threshold`        | `2`     | Verschiedene Firmwarestände eines Modells, ab denen es gemeldet wird                                         |
+| `wear_projection_min_points`      | `2`     | Prozentpunkte gemessener Verschleissbewegung, bevor ein Verschleiss-Enddatum hochgerechnet wird              |
+| `quiet_expected_min`              | `10.0`  | Fehler, die die Rate des Laufwerks vorhergesagt haben muss, bevor Schweigen als Beleg zählt                  |
+| `min_span_hours`                  | `1`     | Betriebsstunden zwischen zwei Messungen, bevor überhaupt eine Rate gerechnet wird                            |
+| `filesystem_full_hint_percent`    | `85`    | Wie voll ein Dateisystem, Pool oder Volume ist, ab dieser Zahl, bevor es ein Hinweis wird                    |
+| `filesystem_full_warning_percent` | `95`    | Und ab dieser Zahl, bevor es eine Warnung wird, die den Exit-Code `1` ergibt                                 |
+| `inodes_full_hint_percent`        | `85`    | Wie viel einer festen Inode-Tabelle (ext2, ext3, ext4) belegt ist, ab dieser Zahl, bevor es ein Hinweis wird |
+| `inodes_full_warning_percent`     | `95`    | Und ab dieser Zahl, bevor es eine Warnung wird, die den Exit-Code `1` ergibt                                 |
+
+Die vier Füllschlüssel nehmen eine ganze Prozentzahl von 1 bis 100. Ein Wert ausserhalb dieses Bereichs
+oder eine Zahl, die nicht ganz ist, fällt mit einer Warnung auf die Vorgabe zurück. Ein schreibgeschütztes
+Dateisystem wird von keinem von ihnen beurteilt.
 
 ### `[display]` - Anordnung und Farbe
 

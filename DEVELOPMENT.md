@@ -90,7 +90,7 @@ are. Models, firmware revisions and every measurement are as captured.
 
 Each is named for what it holds rather than where it came from, so a test
 naming one says what it is testing: `linux-sas-hba`, `linux-nvme-board`,
-`linux-minimal`, `linux-usb-ehci`, `windows-ahci`, `windows-usb-uas`,
+`linux-minimal`, `linux-usb-ehci`, `linux-zfs-filesystems`, `windows-ahci`, `windows-usb-uas`,
 `windows-chipset-switch`. `linux-sas-hba-later` is the same capture
 taken later, and the two deliberately share a hostname because the history
 tests need it - the store refuses to mix two machines.
@@ -102,7 +102,7 @@ lsdsk snapshot -o /tmp/capture.json
 ```
 
 then rename it, rewrite its `hostname` field, and replace the serials before
-committing. A capture records the same serial in up to eight places, including
+committing. A capture records the same serial in up to eleven places, including
 two that hide it from any text search: the NVMe subsystem NQN embeds it in a
 name string, and the sysfs `wwid` embeds it as hex. Scrubbing only the JSON
 field, or only the locations you can see, leaves the real one embedded and makes

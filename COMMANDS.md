@@ -209,6 +209,18 @@ and the run says so: `ok` is `false` and `skipped` carries the sentence naming
 the store and why, so an unreadable history is never mistaken for a quiet one.
 The exit code is still the machine's verdict.
 
+`lsdsk filesystems --format json` carries the machine's inventory like every other section, and
+`data.filesystems` is a list with one entry per mounted filesystem, ZFS pool or Windows volume on
+an inventoried disk, each `{kind, name, other_mounts, fs_type, disks, size_bytes, used_bytes,
+free_bytes, inodes_total, inodes_free, read_only, readings_refused}`. `kind` is `mount`, `pool` or
+`volume`; the byte and inode figures are integers, each `null` where it was not read; `free_bytes`
+is the space free to an ordinary user. The list itself is `null` when the filesystems were not read
+at all, as in a container or from a capture taken before they were, and an empty list means they were read and none
+lives on an inventoried disk. A reading the system refused is recorded in the filesystem's
+`readings_refused` (`statvfs` for a mount, `volume-space` for a Windows volume) or, when it belongs
+to no single filesystem, as a sentence in `skipped` naming `zfs-pools`, so `ok` is `false` and a
+missing figure is never mistaken for a quiet one. The exit code is still the machine's verdict.
+
 `lsdsk --no-record record` is refused at `22` rather than obeyed. On every other
 command the flag means "judge the counters against the store without adding this
 reading to it", which is sensible; on `record`, whose only job is to add this

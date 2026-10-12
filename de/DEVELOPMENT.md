@@ -95,8 +95,8 @@ Firmwarestände und jede Messung sind wie aufgenommen.
 
 Jede ist danach benannt, was sie enthält, und nicht danach, woher sie kommt; ein
 Test, der eine nennt, sagt damit, was er prüft: `linux-sas-hba`,
-`linux-nvme-board`, `linux-minimal`, `linux-usb-ehci`, `windows-ahci`,
-`windows-usb-uas`, `windows-chipset-switch`. `linux-sas-hba-later` ist
+`linux-nvme-board`, `linux-minimal`, `linux-usb-ehci`, `linux-zfs-filesystems`,
+`windows-ahci`, `windows-usb-uas`, `windows-chipset-switch`. `linux-sas-hba-later` ist
 dieselbe Aufnahme zu einem späteren Zeitpunkt, und die beiden teilen sich
 absichtlich einen Hostnamen, weil die Verlaufstests ihn brauchen: der Speicher
 weigert sich, zwei Maschinen zu vermischen.
@@ -109,7 +109,7 @@ lsdsk snapshot -o /tmp/capture.json
 
 Dann umbenennen, das Feld `hostname` neu schreiben und die Seriennummern
 ersetzen, bevor Sie committen. Eine Aufnahme hält dieselbe Seriennummer an bis
-zu acht Stellen fest, darunter zwei, die sie vor jeder Textsuche verbergen: die
+zu elf Stellen fest, darunter zwei, die sie vor jeder Textsuche verbergen: die
 NVMe-Subsystem-NQN bettet sie in eine Namenszeichenkette ein, und das `wwid` in
 sysfs bettet sie als Hex ein. Nur das JSON-Feld zu säubern, oder nur die
 Stellen, die man sieht, lässt die echte eingebettet zurück und bringt die

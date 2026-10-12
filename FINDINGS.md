@@ -47,6 +47,9 @@ fault, and what it refuses to guess. Back to the [README](README.md).
   uncorrectable sectors and NVMe media errors on any count above zero.
 - Temperature against the limits the drive itself publishes, not a guess.
 - Identical models running mismatched firmware.
+- A filesystem, ZFS pool or Windows volume that is nearly full, and an ext2, ext3 or ext4 filesystem
+  that has nearly used up its inode table: a hint at or above 85 percent and a warning at or above 95,
+  both configurable. A filesystem mounted read-only raises neither.
 - Where there is room for another drive, and whether that controller has the
   bandwidth to feed it. A SAS HBA answers this exactly, because it counts only
   its own host phys that report a hardware link rate, and never an expander's.
@@ -240,3 +243,28 @@ A device-backed swap keeps its path; a swap file does not, because nothing downs
 and it can name a user or a project. A Windows volume is keyed by a per-capture ordinal rather
 than its GUID path, and a Fedora-style `luks-<UUID>` mapping name is recorded as the literal
 `luks`.
+
+## How full a filesystem is
+
+The `filesystems` page judges two figures for each filesystem, against a hint limit and a warning
+limit each: how full its space is, and how much of its inode table is used. The inode figure is
+judged only for ext2, ext3 and ext4, whose inodes are made when the filesystem is formatted and can
+run out while space is left. Every other filesystem this tool reads, such as ZFS, btrfs, xfs and
+NTFS, grows its metadata on demand, so its inode count says nothing about fullness: the table
+shows `n/a` for it and nothing is judged.
+
+A finding fires AT its limit and says "at or above". By default that is 85 percent for a hint,
+which exits 0, and 95 percent for a warning, which exits 1. The four limits are the
+`filesystem_full_hint_percent`, `filesystem_full_warning_percent`, `inodes_full_hint_percent` and
+`inodes_full_warning_percent` keys of `[thresholds]` in [CONFIG.md](CONFIG.md). A filesystem
+mounted read-only is listed and raises no finding, because nothing can fill it.
+
+The percentage is computed the way the `Use%` column of `df` is: used divided by used plus the
+space free to an ordinary user, rounded up. On ext4 with reserved blocks it can therefore be higher
+than used divided by size, which is what the detail line of the finding prints. The same sum on
+the same mount gives the same figure as `df`.
+
+A ZFS pool is one row, whatever datasets it holds, and its size and allocation are read from ZFS
+itself, since asking the filesystem about one dataset answers for that dataset's own data plus the
+pool's free space. A Windows volume is judged on the figures the volume reports. A filesystem
+whose figures were not read raises nothing.

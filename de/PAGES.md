@@ -1,4 +1,4 @@
-# Die acht Seiten
+# Die neun Seiten
 
 [English](../PAGES.md) | **Deutsch**
 
@@ -7,23 +7,23 @@ Jede Seite entspricht einem Unterbefehl, der dieselbe Ansicht als Text ausgibt, 
 `lsdsk health` sind also eine Sache unter einem Namen. Zurück zur
 [README](README.md).
 
-Die interaktive Ansicht wird bedient wie die `*top`-Familie: `1` bis `8` oder
-die zugehörige Funktionstaste wechseln die Seite, `q` beendet. Die Fusszeile
+Die interaktive Ansicht wird bedient wie die `*top`-Familie: `1` bis `9` oder
+die zugehörige Funktionstaste wechseln die Seite, `q` oder `escape` beendet. Die Fusszeile
 führt diese auf, es ist also nichts auswendig zu lernen. `left`, `right`, `tab`
-und `shift+tab` schalten ebenfalls zwischen den Seiten weiter, und `r` liest neu
+und `shift+tab` schalten ebenfalls zwischen den Seiten weiter, und `r` oder `f10` liest neu
 ein, ohne in der Fusszeile zu erscheinen. Die Seiten tragen dieselben Namen wie
 die Befehle, in derselben Reihenfolge, `4` und `lsdsk health` sind also dieselbe
 Ansicht mit denselben Spalten. Jede Seite steht für sich und zeigt jede Platte,
 es muss also nichts ausgewählt werden, um eine zu lesen.
 
-Sechs der acht Seiten führen ausserdem einen Cursor - Topologie, Controller,
+Sechs der neun Seiten führen ausserdem einen Cursor - Topologie, Controller,
 Platten, Gesundheit, Steckplätze und Verlauf -, den `up` und `down` bewegen. Eine
 Tafel unter der Tabelle antwortet für das, worauf der Cursor steht: jeder Wert,
 für den die Zeile keine Spalte hatte, dann die Befunde, mit
 Begründung und Abhilfe. `i` blendet die Tafel aus und gibt der Tabelle den ganzen
 Bildschirm; `shift+up` und `shift+down` rollen darin und werden nur angeboten,
 wenn der Eintrag höher ist als die Tafel. SMART und Befunde führen keinen
-Cursor, rollen als ganze Seite, und die Tafel liest dort `Nothing selected.`
+Cursor, rollen als ganze Seite, und die Tafel liest dort `Nothing selected.` Auf der Dateisystemseite liest die Tafel ebenfalls `Nothing selected.`
 
 Auf der Topologieseite schaltet `d` um, wie detailliert die PCI-Struktur dargestellt wird,
 dieselbe Einstellung, die `--tree-density` für jede Ansicht setzt. 
@@ -104,3 +104,14 @@ letzten Messung, die Spanne, über die sie gemessen wurde, eine Rate pro Stunde,
 und ein Urteil. Zwei Laufwerke lesen hier `rising`. Eines liest
 `no new in 16h, 235 were due`, ein Zähler, der zu steigen aufgehört hat. 
 Der Rest sagt `too soon to say`, solange nicht genug Zeit zwischen zwei Messungen vergangen ist.
+
+## 9 Dateisysteme
+
+Wie voll jedes eingehängte Dateisystem, jeder ZFS-Pool und jedes Windows-Volume auf einer Platte
+ist, so wie `df` es meldet: Grösse, belegt und frei, dann `use%` und, wo das Dateisystem seine Inodes
+beim Formatieren anlegt, `inodes%`. Ein ZFS-Pool ist eine Zeile, gleich welche Datasets er enthält.
+`-` kennzeichnet eine Zahl, die niemand gelesen hat, und `n/a` eine Inode-Zahl für ein Dateisystem,
+das Inodes nach Bedarf anlegt, sodass es keine Tabelle zu füllen gibt; eine Zeile unter der Tabelle
+nennt, welches von beiden die Tabelle gezeichnet hat. Eine Zeile, auf die ein Befund zutrifft, trägt
+die Markierung dieses Befunds. Siehe [FINDINGS.md](FINDINGS.md#wie-voll-ein-dateisystem-ist), wann
+ein Füllstand zum Befund wird.

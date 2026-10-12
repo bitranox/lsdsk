@@ -384,15 +384,23 @@ lsdsk --set thresholds.crc_errors_significant=10 findings
 
 These decide severity, and therefore the exit code.
 
-| Key                          | Default | Effect                                                                            |
-|------------------------------|---------|-----------------------------------------------------------------------------------|
-| `wear_warning_percent`       | `80`    | Rated endurance consumed before a drive is called a warning                       |
-| `wear_critical_percent`      | `95`    | And before it is called critical                                                  |
-| `crc_errors_significant`     | `100`   | Below this an interface CRC count is a hint rather than a warning                 |
-| `mixed_firmware_threshold`   | `2`     | Distinct firmware revisions of one model before it is reported                    |
-| `wear_projection_min_points` | `2`     | Percentage points of measured wear movement before a wear-out date is projected   |
-| `quiet_expected_min`         | `10.0`  | Errors the drive's own rate must have predicted before silence counts as evidence |
-| `min_span_hours`             | `1`     | Power-on hours between two readings before a rate is computed at all              |
+| Key                               | Default | Effect                                                                                       |
+|-----------------------------------|---------|----------------------------------------------------------------------------------------------|
+| `wear_warning_percent`            | `80`    | Rated endurance consumed before a drive is called a warning                                  |
+| `wear_critical_percent`           | `95`    | And before it is called critical                                                             |
+| `crc_errors_significant`          | `100`   | Below this an interface CRC count is a hint rather than a warning                            |
+| `mixed_firmware_threshold`        | `2`     | Distinct firmware revisions of one model before it is reported                               |
+| `wear_projection_min_points`      | `2`     | Percentage points of measured wear movement before a wear-out date is projected              |
+| `quiet_expected_min`              | `10.0`  | Errors the drive's own rate must have predicted before silence counts as evidence            |
+| `min_span_hours`                  | `1`     | Power-on hours between two readings before a rate is computed at all                         |
+| `filesystem_full_hint_percent`    | `85`    | How full a filesystem, pool or volume is, at or above, before it is a hint                   |
+| `filesystem_full_warning_percent` | `95`    | And, at or above, before it is a warning, which exits 1                                      |
+| `inodes_full_hint_percent`        | `85`    | How much of a fixed inode table (ext2, ext3, ext4) is used, at or above, before it is a hint |
+| `inodes_full_warning_percent`     | `95`    | And, at or above, before it is a warning, which exits 1                                      |
+
+The four fill keys take a whole percentage from 1 to 100. A value outside that range, or one that is
+not a whole number, falls back to the default with a warning. A read-only filesystem is judged by
+none of them.
 
 ### `[display]` - layout and colour
 

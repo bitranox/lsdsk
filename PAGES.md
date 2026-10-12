@@ -1,4 +1,4 @@
-# The eight pages
+# The nine pages
 
 **English** | [Deutsch](de/PAGES.md)
 
@@ -6,23 +6,23 @@ One page per topic, in the order the number keys reach them. Each page
 corresponds to a subcommand that prints the same view as text, so `4` and
 `lsdsk health` are one thing under one name. Back to the [README](README.md).
 
-The interactive view is operated the way the `*top` family is: `1` to `8` or the
-matching function key switch page, and `q` quits; the footer lists those, so
+The interactive view is operated the way the `*top` family is: `1` to `9` or the
+matching function key switch page, and `q` or `escape` quits; the footer lists those, so
 there is nothing to memorise. `left`, `right`, `tab` and `shift+tab` also step
-between pages, and `r` rescans, without appearing in the footer.
+between pages, and `r` or `f10` rescans, without appearing in the footer.
 The pages carry the same names as the commands, in the same order, so `4` and
 `lsdsk health` are the same view, drawing the same columns.
 Each page stands alone and shows every disk, so nothing has to be selected to
 read one.
 
-Six of the eight pages also carry a cursor - topology, controllers, disks,
+Six of the nine pages also carry a cursor - topology, controllers, disks,
 health, slots and trend - which `up` and `down` move. A panel under the table
 answers for whatever the cursor is on: every value the row had no column for,
 then the findings, with their reasoning and their remedy. `i` hides the
 panel and gives the table the whole screen; `shift+up` and `shift+down` scroll
 inside it, and are offered only when the record is taller than the panel is.
 SMART and findings carry no cursor, scroll as a page, and the panel reads
-`Nothing selected.` there.
+`Nothing selected.` there. On the filesystems page the panel reads `Nothing selected.` as well.
 
 On the topology page, `d` switches how much detail the PCI fabric is drawn in,
 the same setting `--tree-density` sets for every view. `,` and `.` scroll the
@@ -97,3 +97,13 @@ The counters over time rather than as a single value: the change since the last 
 span it was measured over, a rate per hour, and a verdict. Two drives here read `rising`. One
 reads `no new in 16h, 235 were due`, a counter that has stopped climbing.
 The rest say `too soon to say`, until enough time has passed between two readings.
+
+## 9 Filesystems
+
+How full each mounted filesystem, ZFS pool and Windows volume on a disk is, the way `df` reports
+it: size, used and free, then `use%` and, where the filesystem makes its inodes at format time,
+`inodes%`. A ZFS pool is one row whatever datasets it holds. `-` marks a figure nobody read, and
+`n/a` an inode figure for a filesystem that creates inodes on demand, so there is no table to
+fill; a line under the table names whichever of the two the table drew. A row a finding applies to
+carries that finding's marker. See [FINDINGS.md](FINDINGS.md#how-full-a-filesystem-is) for when a
+fill level becomes a finding.

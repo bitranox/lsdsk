@@ -58,6 +58,10 @@ Fehler nennt, und was es zu raten ablehnt. Zurück zur [README](README.md).
 - Temperatur gegen die Grenzen, die das Laufwerk selbst veröffentlicht, nicht
   gegen eine Schätzung.
 - Gleiche Modelle mit unterschiedlicher Firmware.
+- Ein Dateisystem, ein ZFS-Pool oder ein Windows-Volume, das fast voll ist, und ein ext2-, ext3- oder
+  ext4-Dateisystem, das seine Inode-Tabelle fast aufgebraucht hat: ein Hinweis ab 85 Prozent und eine
+  Warnung ab 95, beides einstellbar. Ein schreibgeschützt eingehängtes Dateisystem löst keines von
+  beiden aus.
 - Wo Platz für ein weiteres Laufwerk ist, und ob dieser Controller die
   Bandbreite hat, es zu speisen. Ein SAS-HBA beantwortet das genau, weil er
   nur seine eigenen Host-Phys zählt, die eine Hardware-Linkrate melden, und nie
@@ -273,3 +277,30 @@ Swap behält seinen Pfad; eine Swap-Datei nicht, weil nichts nachgelagert ihn li
 Benutzer oder ein Projekt nennen könnte. Ein Windows-Volume wird über eine Ordnungszahl pro
 Momentaufnahme referenziert statt über seinen GUID-Pfad, und ein Fedora-typischer
 `luks-<UUID>`-Zuordnungsname wird als das wörtliche `luks` aufgezeichnet.
+
+## Wie voll ein Dateisystem ist
+
+Die Seite `filesystems` beurteilt für jedes Dateisystem zwei Zahlen, jeweils gegen eine
+Hinweisgrenze und eine Warngrenze: wie voll sein Speicherplatz ist und wie viel seiner Inode-Tabelle
+belegt ist. Die Inode-Zahl wird nur für ext2, ext3 und ext4 beurteilt, deren Inodes beim Formatieren
+des Dateisystems angelegt werden und ausgehen können, während noch Platz übrig ist. Jedes andere
+Dateisystem, das dieses Werkzeug liest, etwa ZFS, btrfs, xfs und NTFS, legt seine Metadaten nach
+Bedarf an, seine Inode-Zahl sagt also nichts darüber, wie voll es ist: die Tabelle zeigt dafür `n/a`,
+und nichts wird beurteilt.
+
+Ein Befund tritt AN seiner Grenze ein und sagt „at or above“. Vorgabe sind 85 Prozent für einen
+Hinweis, der den Exit-Code `0` lässt, und 95 Prozent für eine Warnung, die den Exit-Code `1` ergibt. Die vier Grenzen sind
+die Schlüssel `filesystem_full_hint_percent`, `filesystem_full_warning_percent`,
+`inodes_full_hint_percent` und `inodes_full_warning_percent` unter `[thresholds]` in
+[CONFIG.md](CONFIG.md). Ein schreibgeschützt eingehängtes Dateisystem wird aufgeführt und löst keinen
+Befund aus, weil nichts es füllen kann.
+
+Der Prozentsatz wird so gerechnet wie die Spalte `Use%` von `df`: belegt, geteilt durch belegt plus
+den Platz, der einem gewöhnlichen Benutzer frei zur Verfügung steht, aufgerundet. Auf ext4 mit
+reservierten Blöcken kann er daher höher sein als belegt geteilt durch Grösse, was die Detailzeile
+des Befunds ausgibt. Dieselbe Rechnung auf demselben Einhängepunkt ergibt dieselbe Zahl wie `df`.
+
+Ein ZFS-Pool ist eine Zeile, gleich welche Datasets er enthält, und seine Grösse und Belegung werden
+von ZFS selbst gelesen, denn wer das Dateisystem nach einem Dataset fragt, erhält die eigenen Daten
+dieses Datasets plus den freien Platz des Pools. Ein Windows-Volume wird nach den Zahlen beurteilt,
+die das Volume meldet. Ein Dateisystem, dessen Zahlen nicht gelesen wurden, löst nichts aus.

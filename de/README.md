@@ -67,7 +67,7 @@ uvx lsdsk@latest --help   # weitere Hilfe
 
 `uvx lsdsk@latest` öffnet am Terminal eine interaktive Ansicht mit einer Seite je Thema; 
 in eine Pipe oder eine Datei umgeleitet gibt es dieselben Daten als eine Seite aus: das Mainboard, 
-was defekt ist, den Controllerbaum, die Kennung jeder Platte, Verschleiss und Fehlerzähler, jedes SMART-Attribut,
+was defekt ist, den Controllerbaum, die Kennung jeder Platte, wie voll jedes Dateisystem ist, Verschleiss und Fehlerzähler, jedes SMART-Attribut,
 die PCIe-Steckplätze, und jeden Befund mit seiner Begründung.
 
 ## Die TUI
@@ -76,11 +76,11 @@ Zifferntasten wechseln zwischen den Seiten, `Tab` schaltet weiter, und jede
 Seite ist zugleich ein Unterbefehl: `lsdsk health` gibt genau das aus, was
 Seite 4 zeigt.
 
-![Die interaktive Ansicht von lsdsk: acht Seiten, die wechselnde Baumdichte, die Detailtafel und eine Tabelle, die verschoben wird](../docs/media/lsdsk-demo.gif)
+![Die interaktive Ansicht von lsdsk: neun Seiten, die wechselnde Baumdichte, die Detailtafel und eine Tabelle, die verschoben wird](../docs/media/lsdsk-demo.gif)
 
-Sechs der acht Seiten führen einen Cursor, und eine Tafel unter der Tabelle
+Sechs der neun Seiten führen einen Cursor, und eine Tafel unter der Tabelle
 bietet Detailinformationen: jeder Wert, für den die Zeile keine Spalte
-hatte und die entsprechenden Befunde. [PAGES.md](PAGES.md) beschreibt alle acht Seiten im Detail.
+hatte und die entsprechenden Befunde. [PAGES.md](PAGES.md) beschreibt alle neun Seiten im Detail.
 
 Über eine Pipe, oder in eine Datei oder mit dem Kommando `lsdsk report` gibt 
 das Programm stattdessen einen Text aus, mit den wichtigsten Befunden zuerst.
@@ -167,7 +167,7 @@ Jeder Befehl, den lsdsk absetzt, ist ein Lesezugriff. Es schreibt also nie auf e
 
 | Dokument                                                                          | Was es behandelt                                                                                               |
 |-----------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
-| [PAGES.md](PAGES.md)                                                              | Die acht Seiten und die Tastenbelegung                                                                         |
+| [PAGES.md](PAGES.md)                                                              | Die neun Seiten und die Tastenbelegung                                                                         |
 | [REPORT.md](REPORT.md)                                                            | Der Bericht auf einer Seite                                                                                    |
 | [COMMANDS.md](COMMANDS.md)                                                        | Jeder Befehl und jede globale Option, der JSON-Umschlag und die Exit-Codes                                     |
 | [FINDINGS.md](FINDINGS.md)                                                        | Was es meldet, welchen Beleg jede Regel braucht                                                                |

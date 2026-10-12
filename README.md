@@ -66,7 +66,7 @@ uvx lsdsk@latest --help   # get further help
 
 `uvx lsdsk@latest` opens an interactive view at a terminal, with a page per
 topic; piped or redirected it prints the same data as one page: the mainboard,
-what is wrong, the controller tree, every disk's identity, wear and error
+what is wrong, the controller tree, every disk's identity, how full each filesystem is, wear and error
 counters, every SMART attribute, the PCIe slots, and each finding with its
 reasoning.
 
@@ -74,11 +74,11 @@ reasoning.
 
 Number keys switch between the pages, `Tab` cycles, and every page is also a subcommand, so `lsdsk health` prints exactly what page 4 shows.
 
-![The lsdsk interactive view: eight pages, the tree density cycling, the detail panel, and a table being scrolled](https://raw.githubusercontent.com/bitranox/lsdsk/main/docs/media/lsdsk-demo.gif)
+![The lsdsk interactive view: nine pages, the tree density cycling, the detail panel, and a table being scrolled](https://raw.githubusercontent.com/bitranox/lsdsk/main/docs/media/lsdsk-demo.gif)
 
-Six of the eight pages carry a cursor, and a panel under the table gives the
+Six of the nine pages carry a cursor, and a panel under the table gives the
 detail: every value the row had no column for, and the findings that go with it.
-[PAGES.md](https://github.com/bitranox/lsdsk/blob/main/PAGES.md) describes all eight pages in detail.
+[PAGES.md](https://github.com/bitranox/lsdsk/blob/main/PAGES.md) describes all nine pages in detail.
 
 Through a pipe, into a file, or with the command `lsdsk report`, the program
 prints text instead, most important findings first.
@@ -157,7 +157,7 @@ Every command lsdsk issues is a read. It never writes to a device or a controlle
 
 | Document                                                                                                                   | What it covers                                                                       |
 |----------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
-| [PAGES.md](https://github.com/bitranox/lsdsk/blob/main/PAGES.md)                                                           | The eight pages and the key bindings                                                 |
+| [PAGES.md](https://github.com/bitranox/lsdsk/blob/main/PAGES.md)                                                           | The nine pages and the key bindings                                                  |
 | [REPORT.md](https://github.com/bitranox/lsdsk/blob/main/REPORT.md)                                                         | The one-page report                                                                  |
 | [COMMANDS.md](https://github.com/bitranox/lsdsk/blob/main/COMMANDS.md)                                                     | Every command and global option, the JSON envelope, and the exit codes               |
 | [FINDINGS.md](https://github.com/bitranox/lsdsk/blob/main/FINDINGS.md)                                                     | What it reports, and what evidence each rule needs                                   |

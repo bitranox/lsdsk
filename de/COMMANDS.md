@@ -229,6 +229,20 @@ trägt den Satz, der den Speicher und den Grund nennt, damit ein unlesbarer
 Verlauf nie für einen ruhigen gehalten wird. Der Exit-Code bleibt das Urteil
 über die Maschine.
 
+`lsdsk filesystems --format json` trägt wie jeder andere Abschnitt das Inventar der Maschine, und
+`data.filesystems` ist eine Liste mit einem Eintrag je eingehängtem Dateisystem, ZFS-Pool oder
+Windows-Volume auf einer inventarisierten Platte, jeweils `{kind, name, other_mounts, fs_type, disks,
+size_bytes, used_bytes, free_bytes, inodes_total, inodes_free, read_only, readings_refused}`. `kind`
+ist `mount`, `pool` oder `volume`; die Byte- und Inode-Zahlen sind ganze Zahlen, jeweils `null`, wo sie
+nicht gelesen wurden; `free_bytes` ist der Platz, der einem gewöhnlichen Benutzer frei zur Verfügung
+steht. Die Liste selbst ist `null`, wenn die Dateisysteme gar nicht gelesen wurden, etwa in einem Container oder aus einer
+Aufnahme, die vor ihnen gemacht wurde, und eine leere Liste heisst, dass sie gelesen wurden und keines
+auf einer inventarisierten Platte liegt. Eine Messung, die das System verweigert hat, steht in den
+`readings_refused` des Dateisystems (`statvfs` für einen Einhängepunkt, `volume-space` für ein
+Windows-Volume) oder, wenn sie zu keinem einzelnen Dateisystem gehört, als Satz in `skipped`, der
+`zfs-pools` nennt; `ok` ist also `false`, und eine fehlende Zahl wird nie für eine ruhige gehalten.
+Der Exit-Code bleibt das Urteil über die Maschine.
+
 `lsdsk --no-record record` wird mit `22` abgelehnt statt befolgt. Bei jedem
 anderen Befehl bedeutet die Option „die Zähler gegen den Speicher beurteilen,
 ohne diese Messung aufzunehmen“, und das ergibt Sinn; bei `record`, dessen

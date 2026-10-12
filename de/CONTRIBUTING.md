@@ -101,7 +101,7 @@ Erstellen Sie eine Aufzeichnung mit `lsdsk snapshot -o capture.json`. Sie hält
 fest, was der Kernel oder Windows über Ihre Controller und Laufwerke
 veröffentlicht hat, einschließlich Modell- und Seriennummern. Lesen Sie sie
 also, bevor Sie sie versenden: die Seriennummer eines Laufwerks steht an bis zu
-acht Stellen, und `tests/test_fixture_serials.py` hält fest, an welchen.
+elf Stellen, und `tests/test_fixture_serials.py` hält fest, an welchen.
 
 ## 7. Sicherheit und Konfiguration
 
