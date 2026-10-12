@@ -26,6 +26,20 @@ Fehler nennt, und was es zu raten ablehnt. Zurück zur [README](README.md).
 - Ein Controller, den das Mainboard begrenzt, mit der PCIe-Generation, die ihn
   anheben würde, und der Angabe, ob die angeschlossenen Laufwerke den
   Unterschied überhaupt nutzen können.
+- Ein Controller, dessen Laufwerke zusammen mehr ziehen können, als seine
+  Anbindung tragen kann, gemessen an dem, was der Link tragen KANN, nicht an
+  seiner Ruhegeschwindigkeit, denn ein PCIe-Link fällt im Leerlauf auf seine
+  niedrigste Geschwindigkeit und trainiert unter Last wieder hoch.
+- Ein Controller, dessen Anbindung die PCIe-Untergrenze (Gen1x1, 0.25 GB/s) als
+  laufenden und möglichen Link zugleich meldet, wo dieser Wert ein
+  Register-Vorgabewert ist und kein Link: ein Hinweis statt einer Warnung wegen
+  Überbuchung, der auf die Spezifikation der Karte oder des Boards verweist.
+  lsdsk glaubt das nur bei drei Lesungen zusammen: der eigene Link des
+  Controllers liegt auf der Untergrenze, eine andere Funktion am selben Switch
+  meldet dieselbe Untergrenze hinter einem Port desselben Herstellers, und ein
+  anderes Gerät an diesem Switch meldet einen echten Link über der Untergrenze.
+  Die Ansichten markieren einen solchen Wert als `Gen1x1*` und sagen, was die
+  Markierung bedeutet.
 - Jede andere PCIe-Karte - eine Grafikkarte, eine Netzwerkkarte, ein Switch,
   der eine davon trägt -, deren Link auf weniger Lanes läuft, als beide Enden
   unterstützen, oder deren Steckplatz sie unter das drosselt, was die Karte

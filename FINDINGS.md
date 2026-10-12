@@ -21,6 +21,17 @@ fault, and what it refuses to guess. Back to the [README](README.md).
   the one it has.
 - A controller capped by the mainboard, with the PCIe generation that would lift
   it and whether the attached drives can even use the difference.
+- A controller whose drives can pull more together than its uplink can carry,
+  judged against what the link CAN carry rather than its resting speed, since a
+  PCIe link drops to its lowest speed while idle and retrains under load.
+- A controller whose uplink reads the PCIe floor (Gen1x1, 0.25 GB/s) as both
+  its running and capable link, where that figure is a register default rather
+  than a link: a hint, not an oversubscription warning, sending you to the
+  card's or board's specification. lsdsk believes this only on three readings
+  together: the controller's own link sits at the floor, another function on the
+  same switch publishes the identical floor behind a port of the same vendor,
+  and some other device on that switch reports a real link above the floor.
+  The views mark such a figure `Gen1x1*` and say what the mark means.
 - Any other PCIe card - a graphics card, a network card, a switch carrying
   either - whose link runs on fewer lanes than both ends support, or whose slot
   caps it below what the card can do, as a hint naming a free slot that would
