@@ -1077,18 +1077,41 @@ def board_line(inventory: Inventory, fabric: Fabric) -> Text:
     Returns:
         The board line.
     """
-    line = Text(inventory.board or inventory.hostname, style=theme.STYLE_IDENTIFIER)
+    name = inventory.board or inventory.hostname
     # Every root complex the MACHINE has, not the ones this density drew: how
     # much of the fabric is on screen is a display choice, and a board does not
     # lose a root complex because the view is not showing what hangs off it.
     roots = [node.address for node in fabric.nodes if node.is_root]
-    if roots:
-        complexes = "root complex" if len(roots) == 1 else "root complexes"
-        line.append(f"   {len(roots)} {complexes} ({', '.join(roots)})")
+    complexes = "root complex" if len(roots) == 1 else "root complexes"
     best = _best_root_port(fabric.nodes)
-    if best is not None:
-        line.append(f"   root ports to PCIe {best}")
-    line.append(f"   {sum(1 for node in fabric.nodes if not node.is_root)} PCI devices")
+    devices = f"   {sum(1 for node in fabric.nodes if not node.is_root)} PCI devices"
+    # Richest first. The line is one physical line at every width, so a field
+    # is given up whole, least useful first, rather than left to wrap and strand
+    # "PCI devices" on a line that reads as a second heading.
+    candidates = [
+        [
+            *([f"   {len(roots)} {complexes} ({', '.join(roots)})"] if roots else []),
+            *([f"   root ports to PCIe {best}"] if best is not None else []),
+            devices,
+        ],
+        [*([f"   {len(roots)} {complexes} ({', '.join(roots)})"] if roots else []), devices],
+        [*([f"   {len(roots)} {complexes}"] if roots else []), devices],
+        [devices],
+        [],
+    ]
+    for optional in candidates:
+        tail = "".join(optional)
+        if len(name) + len(tail) <= fabric.width:
+            return _board_text(name, tail)
+    # Not even the bare name fits beside the device count: the name is the last
+    # thing cut, and the cut is marked.
+    return _board_text(clip(name, fabric.width), "")
+
+
+def _board_text(name: str, tail: str) -> Text:
+    """The board line: the name in the identifier style, the fields after it plain."""
+    line = Text(name, style=theme.STYLE_IDENTIFIER)
+    line.append(tail)
     return line
 
 
