@@ -6,11 +6,13 @@ with a value asserted under its own heading rather than somewhere on the row.
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from typing import Any
 
 import pytest
+from rich.console import Console
 from textual.widgets import DataTable, Static, TabbedContent
 
 from lsdsk.adapters.hw.snapshot import build_from
@@ -207,6 +209,13 @@ async def test_a_rescan_does_not_add_the_filesystem_columns_or_rows_twice() -> N
         assert (len(table.columns), table.row_count) == shape
 
 
+def _panel_plain(app: LsdskApp) -> str:
+    """What the detail panel draws, as text."""
+    buffer = io.StringIO()
+    Console(width=160, file=buffer, no_color=True).print(app.query_one("#detail-body", Static).content)
+    return buffer.getvalue()
+
+
 @pytest.mark.asyncio
 async def test_no_printed_colour_reaches_the_filesystem_page_on_either_fill() -> None:
     """A row coloured by its finding is drawn in the interactive palette at mount and after a rescan."""
@@ -220,6 +229,7 @@ async def test_no_printed_colour_reaches_the_filesystem_page_on_either_fill() ->
     # Real diagnosis: /srv is 98% full, so the rule raises its warning at mount,
     # and the rescan below re-diagnoses and must keep the marker.
     pictures: list[str] = []
+    panels: list[str] = []
     async with app.run_test(size=(180, 50)) as pilot:
         await pilot.press("9")
         await pilot.pause()
@@ -227,9 +237,24 @@ async def test_no_printed_colour_reaches_the_filesystem_page_on_either_fill() ->
         await pilot.press("f10")
         await pilot.pause()
         pictures.append(app.export_screenshot().upper())
+        # The cursor above sits on the unread row, whose panel draws no finding.
+        # Moving it onto the row that carries one sweeps the panel's finding block
+        # on the rescan's fill, then again on a fresh fill after one more rescan.
+        await pilot.press("down")
+        await pilot.pause()
+        pictures.append(app.export_screenshot().upper())
+        panels.append(_panel_plain(app))
+        await pilot.press("f10")
+        await pilot.pause()
+        await pilot.press("down")
+        await pilot.pause()
+        pictures.append(app.export_screenshot().upper())
+        panels.append(_panel_plain(app))
 
     for picture in pictures:
         assert not [hue for hue in printed if hue in picture], "the printed palette reached the filesystem page"
+    # The control for the two passes added above: the panel really drew the finding's sentence.
+    assert all("98% full" in text for text in panels), "the panel's finding block was never swept"
     # The controls: the mount draws the finding's marker and both fills draw the
     # legend for the unread cell, in interactive hues, so a page drawing no
     # colour at all cannot satisfy the loop above.
