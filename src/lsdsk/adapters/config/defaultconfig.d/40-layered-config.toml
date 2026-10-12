@@ -38,7 +38,9 @@
 #
 # Format: Use octal strings (recommended) or decimal integers:
 #   - Octal string: "0o755", "0o644", "755", "640" (quoted)
-#   - Decimal integer: 493 (= 0o755), 420 (= 0o644)
+#   - Decimal integer with an 8 or 9 in it: 493 (= 0o755). An integer of only the
+#     digits 0-7 (755, 644, 420) is ambiguous and refused (the default stays in
+#     force and a warning is printed): write it as text, "0755" or "0o755".
 #
 # CLI overrides:
 #   --permissions / --no-permissions  Enable/disable permission setting

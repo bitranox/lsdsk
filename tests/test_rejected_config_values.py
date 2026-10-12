@@ -34,11 +34,13 @@ from lsdsk.adapters.config.values import (
     RejectedValue,
     SectionValues,
     accepts_flag,
+    accepts_mode,
     accepts_path,
     accepts_positive_float,
     accepts_positive_int,
     accepts_tree_density,
     flag,
+    mode_of,
     path_or_none,
     positive_float,
     positive_int,
@@ -74,6 +76,7 @@ _CAPTURE = "linux-nvme-board.json"
 #: coercer must refuse is exactly the case worth keeping in the list.
 _INT_RAWS: list[object] = [1, 99, 0, -1, True, False, "1", "abc", 2.5, None, {}, []]
 _FLOAT_RAWS: list[object] = [1, 3.5, 0, 0.0, -0.5, True, "2.5", None, {}]
+_MODE_RAWS: list[object] = [493, 0o750, 755, 420, 0, -1, True, "0755", "0o755", "999", "", None, 1.5]
 _FLAG_RAWS: list[object] = [True, False, 1, 0, "true", "", None, {}]
 _DENSITY_RAWS: list[object] = [
     "full",
@@ -375,6 +378,13 @@ def test_section_values_positive_int_refuses_by_its_own_predicate_not_the_floats
             (True, False),
             _FLAG_RAWS,
             id="flag",
+        ),
+        pytest.param(
+            accepts_mode,
+            mode_of,
+            (0o700, 0o600),
+            _MODE_RAWS,
+            id="mode",
         ),
         pytest.param(
             accepts_tree_density,

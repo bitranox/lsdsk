@@ -71,7 +71,7 @@ def test_get_permission_defaults_reads_from_config(
             "lib_layered_config": {
                 "default_permissions": {
                     "user_directory": 0o750,
-                    "user_file": 0o640,
+                    "user_file": "0o640",  # text: the int 416 would be ambiguous
                     "enabled": False,
                 }
             }
@@ -97,7 +97,7 @@ def test_get_modes_for_target_returns_config_defaults(
             "lib_layered_config": {
                 "default_permissions": {
                     "user_directory": 0o750,
-                    "user_file": 0o640,
+                    "user_file": "0o640",  # text: the int 416 would be ambiguous
                 }
             }
         }
@@ -119,7 +119,7 @@ def test_get_modes_for_target_cli_override_takes_precedence(
             "lib_layered_config": {
                 "default_permissions": {
                     "user_directory": 0o750,
-                    "user_file": 0o640,
+                    "user_file": "0o640",  # text: the int 416 would be ambiguous
                 }
             }
         }

@@ -6,7 +6,7 @@ compute effective permission modes for deployment targets.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, NamedTuple, assert_never, cast
+from typing import TYPE_CHECKING, NamedTuple, assert_never
 
 from lib_layered_config import (
     DEFAULT_APP_DIR_MODE,
@@ -17,7 +17,7 @@ from lib_layered_config import (
 from pydantic import BaseModel, ConfigDict
 
 from ...domain.enums import DeployTarget
-from .values import RejectedValue, SectionValues
+from .values import RejectedValue, SectionValues, mode_of
 
 if TYPE_CHECKING:
     from lib_layered_config import Config
@@ -77,7 +77,10 @@ class PermissionDefaults(BaseModel):
 def parse_mode(value: int | str, default: int) -> int:
     """Parse a permission mode value from config.
 
-    Accepts either an integer or an octal string (e.g., "0o755" or "755").
+    Accepts octal text (``"0o755"``, ``"0755"`` or ``"755"``) or a numeric int that cannot
+    be octal digits. An int of only the digits 0-7 (``755``) is ambiguous - an unquoted
+    ``.env`` value ``755`` arrives as that int - so it is not guessed at: the default is
+    returned, and :func:`read_permission_defaults` records the refusal.
 
     Args:
         value: Integer mode or octal string.
@@ -93,29 +96,10 @@ def parse_mode(value: int | str, default: int) -> int:
         493
         >>> parse_mode("755", 0o644)
         493
+        >>> parse_mode(755, 0o644)
+        420
     """
-    if isinstance(value, int):
-        return value
-    # value is str at this point
-    try:
-        # Handle both "755" and "0o755" formats
-        if value.startswith("0o"):
-            return int(value, 0)  # int() auto-detects 0o prefix
-        return int(value, 8)  # Plain "755" needs explicit base 8
-    except ValueError:
-        return default
-
-
-def _mode_or_default(raw: object, default: int) -> int:
-    """Coerce one already-extracted mode value, falling back rather than failing.
-
-    A malformed permission mode in a config file must not stop a deploy, and a
-    boolean is excluded explicitly: ``True``/``False`` are ints in Python and
-    would otherwise silently become mode 1 or mode 0.
-    """
-    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
-        return default
-    return parse_mode(raw, default)
+    return mode_of(value, default)
 
 
 #: The table the permission defaults are read from.
@@ -174,22 +158,17 @@ def read_permission_defaults(config: Config) -> PermissionReading:
         >>> read_permission_defaults(Config({"lib_layered_config": {"default_permissions": "x"}}, {})).rejected[0].raw
         'x'
     """
-    # Read where the section becomes a model, and each field named at its own
-    # call rather than through a helper parameterised by a key, which is field
-    # access on structured data wearing a dict's clothes.
-    raw: object = config.get("lib_layered_config.default_permissions", {})
-    section = cast("dict[str, Any]", raw) if isinstance(raw, dict) else {}
     # NOTE: lib_layered_config does not define separate HOST_* constants.
     # Host layer shares defaults with app layer (both world-readable: 755/644).
     # This is intentional per CLAUDE.md "Deployment Permissions" documentation.
     values = SectionValues(PERMISSIONS_SECTION, config)
     defaults = PermissionDefaults(
-        app_directory=_mode_or_default(section.get("app_directory"), DEFAULT_APP_DIR_MODE),
-        app_file=_mode_or_default(section.get("app_file"), DEFAULT_APP_FILE_MODE),
-        host_directory=_mode_or_default(section.get("host_directory"), DEFAULT_APP_DIR_MODE),
-        host_file=_mode_or_default(section.get("host_file"), DEFAULT_APP_FILE_MODE),
-        user_directory=_mode_or_default(section.get("user_directory"), DEFAULT_USER_DIR_MODE),
-        user_file=_mode_or_default(section.get("user_file"), DEFAULT_USER_FILE_MODE),
+        app_directory=values.mode("app_directory", DEFAULT_APP_DIR_MODE),
+        app_file=values.mode("app_file", DEFAULT_APP_FILE_MODE),
+        host_directory=values.mode("host_directory", DEFAULT_APP_DIR_MODE),
+        host_file=values.mode("host_file", DEFAULT_APP_FILE_MODE),
+        user_directory=values.mode("user_directory", DEFAULT_USER_DIR_MODE),
+        user_file=values.mode("user_file", DEFAULT_USER_FILE_MODE),
         enabled=values.flag("enabled", default=True),
     )
     return PermissionReading(defaults, values.rejected)

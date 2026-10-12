@@ -38,6 +38,10 @@ REASON_POSITIVE_INT = "not a whole number above zero, or too large to use"
 REASON_POSITIVE_FLOAT = "not a number above zero, or too large to use"
 REASON_FLAG = "not true or false"
 REASON_PATH = "not a path, or names a user this machine does not have"
+REASON_MODE = (
+    "not a file mode; write it as text: 0755 or 0o755 "
+    "(a bare integer of only the digits 0-7, such as 755, is ambiguous between octal digits and a numeric mode)"
+)
 
 #: What a refused location falls back to, said rather than resolved (see ``path``).
 USED_PLATFORM_STATE_FILE = "the per-user state file"
@@ -249,6 +253,61 @@ def flag(raw: object, *, default: bool) -> bool:
     return cast("bool", raw) if accepts_flag(raw) else default
 
 
+def _octal_text(text: str) -> int | None:
+    """The mode a text spelling names (``"0755"``, ``"755"``, ``"0o755"``), or None."""
+    try:
+        return int(text.strip(), 8)
+    except ValueError:
+        return None
+
+
+def accepts_mode(raw: object) -> bool:
+    """Whether a configured value is usable as a file permission mode.
+
+    Text is octal, with or without the ``0o`` prefix. An int is a numeric mode only when
+    it cannot be octal digits: lib_layered_config reads an unquoted ``.env`` value ``755``
+    as the int 755, which is ambiguous between the octal digits and the decimal mode, so
+    an int whose decimal digits are all 0-7 is refused rather than guessed. ``493`` has a
+    9 and so stays a numeric mode. A bool is an int in Python and would become mode 1 or 0.
+
+    Args:
+        raw: The configured value, of whatever type the file produced.
+
+    Returns:
+        Whether it can be used as it stands.
+
+    Example:
+        >>> accepts_mode("0755"), accepts_mode("0o755"), accepts_mode(493), accepts_mode(0o750)
+        (True, True, True, True)
+        >>> accepts_mode(755), accepts_mode(420), accepts_mode(True), accepts_mode("999")
+        (False, False, False, False)
+    """
+    if isinstance(raw, bool):
+        return False
+    if isinstance(raw, int):
+        return raw >= 0 and not set(str(raw)) <= set("01234567")
+    return isinstance(raw, str) and _octal_text(raw) is not None
+
+
+def mode_of(raw: object, default: int) -> int:
+    """Read a permission mode, falling back rather than failing the run.
+
+    Args:
+        raw: The configured value.
+        default: The shipped mode to use when it cannot be.
+
+    Returns:
+        The configured mode, or ``default``.
+
+    Example:
+        >>> mode_of("0o755", 0o700), mode_of(493, 0o700), mode_of(755, 0o700)
+        (493, 493, 448)
+    """
+    if not accepts_mode(raw):
+        return default
+    return raw if isinstance(raw, int) else cast("int", _octal_text(cast("str", raw)))
+
+
 def accepts_tree_density(raw: object) -> bool:
     """Whether a configured value names a density this tool draws.
 
@@ -424,6 +483,13 @@ class SectionValues:
             self._note(key, reason=REASON_FLAG, used=default)
         return flag(raw, default=default)
 
+    def mode(self, key: str, default: int) -> int:
+        """A permission mode, recording the refusal if the configured value is not one."""
+        raw = self._table.get(key)
+        if key in self._table and not accepts_mode(raw):
+            self._note(key, reason=REASON_MODE, used=oct(default))
+        return mode_of(raw, default)
+
     def tree_density(self, key: str, default: TreeDensity) -> TreeDensity:
         """A density name, recording the refusal if the configured value is not one."""
         raw = self._table.get(key)
@@ -464,6 +530,7 @@ class SectionValues:
 
 __all__ = [
     "REASON_FLAG",
+    "REASON_MODE",
     "REASON_PATH",
     "REASON_POSITIVE_FLOAT",
     "REASON_POSITIVE_INT",
@@ -472,11 +539,13 @@ __all__ = [
     "RejectedValue",
     "SectionValues",
     "accepts_flag",
+    "accepts_mode",
     "accepts_path",
     "accepts_positive_float",
     "accepts_positive_int",
     "accepts_tree_density",
     "flag",
+    "mode_of",
     "path_or_none",
     "positive_float",
     "positive_int",

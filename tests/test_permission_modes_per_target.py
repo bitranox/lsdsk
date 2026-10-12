@@ -14,14 +14,15 @@ if TYPE_CHECKING:
 
     from lib_layered_config import Config
 
-#: Six distinct figures, so a target answering with another target's value cannot pass.
-_CONFIGURED: dict[str, int] = {
-    "app_directory": 0o751,
-    "app_file": 0o641,
-    "host_directory": 0o752,
-    "host_file": 0o642,
-    "user_directory": 0o753,
-    "user_file": 0o643,
+#: Six distinct figures, so a target answering with another target's value cannot pass. Written
+#: as text: an int such as 0o641 (417) is made only of the digits 0-7 and is refused as ambiguous.
+_CONFIGURED: dict[str, str] = {
+    "app_directory": "0o751",
+    "app_file": "0o641",
+    "host_directory": "0o752",
+    "host_file": "0o642",
+    "user_directory": "0o753",
+    "user_file": "0o643",
 }
 
 

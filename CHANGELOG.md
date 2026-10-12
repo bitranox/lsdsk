@@ -5,6 +5,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **An ambiguous integer permission mode is refused, with a warning.** lib_layered_config 7.1 reads
+  an unquoted `.env` value such as `...DEFAULT_PERMISSIONS__APP_DIRECTORY=755` as the int 755, which
+  was used as the decimal mode 755 (0o1363). An integer whose decimal digits are all 0-7 (`755`,
+  `644`, `420`) is now refused: the shipped default stays in force and the warning says
+  `write it as text: 0755 or 0o755`. An integer with an 8 or 9 (`493`) stays a numeric mode, and text
+  (`0755`, `755`, `0o755`) is still octal. A TOML file that wrote a numeric mode such as `420` must
+  now write `"0o644"`. A mode that is neither (a boolean, text that is not octal) is now reported
+  the same way instead of falling back silently.
+
 ### Fixed
 
 - **A digit-only `.env` value no longer stops logging setup with `Input should be a valid string`.**
