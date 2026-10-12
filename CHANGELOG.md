@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.7.5] 2026-10-12 12:04:26
+
 ### Added
 
 - **Python 3.15 is declared and tested.** The classifier puts it into the CI matrix and `make test-all`,
@@ -16,6 +18,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 ### Changed
 
 - The devcontainer image and interpreter path move from Python 3.13 to 3.14.
+- Requires `lib_layered_config>=7.1.5` (7.1.4 carries the unreadable-directory fix below).
 
 ### Fixed
 
