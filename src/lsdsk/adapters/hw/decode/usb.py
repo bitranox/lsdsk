@@ -29,6 +29,7 @@ from dataclasses import dataclass
 
 from ....domain.enums import UsbLaneRate
 from ....domain.models import UsbSpeed
+from .captured import parse_int
 
 _BOS_DESCRIPTOR = 0x0F
 _DEVICE_CAPABILITY = 0x10
@@ -291,10 +292,8 @@ def speed_from_sysfs(speed: str | None, rx_lanes: str | None, tx_lanes: str | No
 
 def _lane_count(rx_lanes: str | None, tx_lanes: str | None) -> int:
     """The number of lanes both directions run, one when either is unread."""
-    try:
-        return min(int((rx_lanes or "").strip()), int((tx_lanes or "").strip()))
-    except ValueError:
-        return 1
+    rx, tx = parse_int(rx_lanes), parse_int(tx_lanes)
+    return 1 if rx is None or tx is None else min(rx, tx)
 
 
 def connection_request(port: int) -> bytes:

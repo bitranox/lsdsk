@@ -15,32 +15,46 @@ System Role:
 from __future__ import annotations
 
 import binascii
+import re
 from base64 import b64decode
+
+_HEX_BASE = 16
+_ASCII_BLANKS = " \t\r\n"
+_DECIMAL = re.compile(r"-?[0-9]+", re.ASCII)
+_HEXADECIMAL = re.compile(r"-?(?:0[xX])?[0-9a-fA-F]+", re.ASCII)
 
 
 def parse_int(text: str | None, base: int = 10) -> int | None:
     """Parse an integer a capture holds as text.
 
+    Only the plain ASCII spellings sysfs publishes are read: ``int`` also takes
+    a ``_`` between digits, a leading ``+`` and other scripts' digits, none of
+    which a kernel attribute ever holds, so a value written that way is a
+    mangled capture and reads as not measured.
+
     Args:
         text: The recorded value, or ``None`` when nothing was recorded.
-        base: The base the value is written in.
+        base: The base the value is written in, 10 or 16 (an optional ``0x`` is
+            accepted in base 16).
 
     Returns:
-        The integer, or ``None`` for anything unparsable, including text with a
-        non-ASCII character: ``int`` reads other scripts' digits as numbers.
+        The integer, or ``None`` for anything that is not ASCII digits of that base.
 
     Example:
         >>> parse_int("0x1022", 16)
         4130
         >>> parse_int("Unknown") is None
         True
+        >>> parse_int("1_6") is None
+        True
     """
-    if text is None or not text.isascii():
+    if text is None:
         return None
-    try:
-        return int(text, base)
-    except ValueError:
+    pattern = _HEXADECIMAL if base == _HEX_BASE else _DECIMAL
+    stripped = text.strip(_ASCII_BLANKS)
+    if pattern.fullmatch(stripped) is None:
         return None
+    return int(stripped, base)
 
 
 #: A PCI vendor or device identifier is a 16-bit configuration register, so a

@@ -48,6 +48,7 @@ from ..ata_commands import (
 )
 from ..capture import MAX_DEVICE_TEXT, MAX_PAYLOAD_BYTES
 from ..decode import ahci, pciids
+from ..decode.captured import parse_int
 from ..decode.virtualization import container_markers_in_mounts
 from ..snapshot import SCHEMA_VERSION
 from . import mounts, usbfs
@@ -476,10 +477,8 @@ def _to_class(value: object) -> int | None:
     """Return the PCI base and sub class from a class triple string."""
     if not isinstance(value, str):
         return None
-    try:
-        return int(value, 16) >> 8
-    except ValueError:
-        return None
+    parsed = parse_int(value, 16)
+    return None if parsed is None else parsed >> 8
 
 
 def _read_config(device: Path) -> bytes:
@@ -867,11 +866,11 @@ def _twin_hub(device: Path) -> str | None:
 
 def _declares_bos(version: str | None) -> bool:
     """Whether bcdUSB says the device has a BOS; an unreadable version is asked rather than assumed."""
-    try:
-        major, minor = (version or "").strip().split(".")
-        return (int(major), int(minor)) >= _FIRST_VERSION_WITH_BOS
-    except ValueError:
+    major, _, minor = (version or "").strip().partition(".")
+    parsed = (parse_int(major), parse_int(minor))
+    if parsed[0] is None or parsed[1] is None:
         return True
+    return (parsed[0], parsed[1]) >= _FIRST_VERSION_WITH_BOS
 
 
 def _read_usb_bos(device: Path) -> dict[str, Any]:
