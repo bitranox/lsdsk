@@ -6,9 +6,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "rich-click>=1.9.9",
-    "lib_cli_exit_tools>=2.4.0",
-    "lib_log_rich>=6.5.1",
-    "lib_layered_config>=7.1.8",
+    "lib_cli_exit_tools>=2.4.1",
+    "lib_log_rich>=6.5.2",
+    "lib_layered_config>=7.1.9",
     "pydantic>=2.14.1",
     "orjson>=3.13.0",
     "rich>=15.0.0",
