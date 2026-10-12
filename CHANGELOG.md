@@ -5,6 +5,51 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Added
+
+- **`--format json` says which links the pages mark as a register default.** Each controller
+  carries `link_is_register_default` and each slot `occupant_link_is_register_default`, true exactly
+  where the printed and interactive pages draw `Gen1x1*`. The raw link values are unchanged.
+
+### Fixed
+
+- **An ATA temperature attribute reading zero is no longer shown as 0 C.** A drive publishing
+  attribute 194 at zero and its real temperature in 190 read as 0 C; the zero now counts as not
+  measured and the next temperature attribute is used. Sysfs and NVMe keep 0 C as a reading.
+- **An NVMe page that is noise with a few bytes changed is refused.** An Identify Controller page
+  whose model, serial or firmware holds a byte outside ASCII, and a SMART log with an available
+  spare above 100 percent or a reserved critical-warning bit set, no longer decode into
+  replacement-character names, 255 percent spare or an impossible warning.
+- **`--format json` no longer ends with exit 70 and an empty stdout on a path or value that is not
+  UTF-8**, in `record`, `snapshot`, `config`, `config-deploy` and `config-generate-examples`. The
+  bytes are written as `\udcXX` escapes, as error messages already were, and every field a command
+  adds later is covered the same way.
+- **An empty path is a usage error.** `snapshot -o ""` failed late with a write error naming `.`,
+  and `config-generate-examples --destination ""` wrote its examples into the current directory.
+  Every path option now refuses an empty string with exit 2. `--history-file ""` still means "not
+  given".
+- **The interactive view says when a disk interface was not read**, under its banner, in the
+  sentence the printed pages use.
+- **The interactive Controllers and Slots pages explain the `*` mark** with the legend under the
+  table, also with the detail panel hidden or the cursor on an unmarked row.
+- **The topology board line stays on one line at every width.** It gives up the root-port figure,
+  the root-complex addresses, the complex count and the device count in that order, and cuts the
+  board name last with a `>` marker, where it used to wrap and strand `PCI devices` on a line of its
+  own at the default piped width.
+- **A sysfs device whose directory cannot be searched no longer aborts the scan on Python
+  3.11-3.13.** That device reads as having no device directory or driver; every other device is
+  read.
+- **A SAS controller's ports in use count only its own host phys.** Expander phys the kernel links
+  to the HBA port no longer push the count above the port total.
+- **Sysfs numbers are read as plain ASCII digits only.** `1_6`, `+8` and digits from other scripts
+  are no longer believed as lane counts, USB versions, PCI classes or other attributes.
+- **An oversized `container=` value in PID 1's environment reads as not read**, where it made the
+  whole capture be refused as not one lsdsk understands.
+- **A scrub pattern with an escaped bracket or one inside a character class** (`a=[(],b=c`) no
+  longer reports the next, valid entry as dropped, and an entry with no `=` says so instead of
+  blaming a cut regex.
+- **"1 warning on this machine is not on this page"**, no longer "are".
+
 ## [1.7.4] 2026-10-12 00:25:12
 
 ### Changed
