@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.7.7] 2026-10-12 21:21:36
+
 ### Changed
 
 - **An ambiguous integer permission mode now stops the run at startup instead of warning.** An
