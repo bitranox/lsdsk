@@ -63,7 +63,11 @@ same name. A capture taken before `hidden` existed reads every mount as reachabl
 
 **Fill is computed the way `df` computes it.** Used percent is used divided by used plus the space
 free to an ordinary user, rounded up in exact integers. Ext4's reserved blocks therefore count as
-unavailable, and lsdsk reads the same figure as `df` on the same mount.
+unavailable, and lsdsk reads the same figure as `df` on the same mount. A ZFS pool is the exception
+and rounds down, as `zpool list` does in its `cap` column: `df` reports a dataset, never a pool, so
+its rule does not reach one, and a pool then reads the same figure as the tool ZFS users already
+read. The domain therefore carries two rounding rules, keyed on the row's kind and never on its
+name or filesystem type.
 
 **Why a pool is read from ZFS, not from `statvfs`.** The measurements above rule `statvfs` out for
 size and used on a pool. The reader opens `/dev/zfs` read-only, lists the pools with

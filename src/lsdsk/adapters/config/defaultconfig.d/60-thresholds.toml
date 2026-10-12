@@ -109,8 +109,9 @@ min_span_hours = 1
 
 # How full a filesystem is before it is worth a hint.
 #
-# Default: 85. Fill is rounded up, so it agrees with df on the same mount, and
-# the finding says "at or above". Free space means free to an ordinary user.
+# Default: 85. Fill is rounded up for a mount or volume, so it agrees with df on
+# the same mount, and down for a ZFS pool, as zpool list does. The finding says
+# "at or above". Free space means free to an ordinary user.
 #
 # Consequence: a filesystem at or above this and below the warning value is a
 # hint, which exits 0. Raise it for volumes that are meant to run nearly full;

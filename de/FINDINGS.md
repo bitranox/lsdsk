@@ -296,7 +296,8 @@ die Schlüssel `filesystem_full_hint_percent`, `filesystem_full_warning_percent`
 Befund aus, weil nichts es füllen kann.
 
 Der Prozentsatz wird so gerechnet wie die Spalte `Use%` von `df`: belegt, geteilt durch belegt plus
-den Platz, der einem gewöhnlichen Benutzer frei zur Verfügung steht, aufgerundet. Auf ext4 mit
+den Platz, der einem gewöhnlichen Benutzer frei zur Verfügung steht, aufgerundet (ein ZFS-Pool
+wird stattdessen abgerundet, so wie `zpool list` ihn ausgibt). Auf ext4 mit
 reservierten Blöcken kann er daher höher sein als belegt geteilt durch Größe, was die Detailzeile
 des Befunds ausgibt. Dieselbe Rechnung auf demselben Einhängepunkt ergibt dieselbe Zahl wie `df`.
 Die Detailzeile schreibt belegt, Größe und frei so wie die Tabelle daneben, in beiden Skalen und in

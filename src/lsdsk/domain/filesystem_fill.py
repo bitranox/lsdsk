@@ -1,8 +1,9 @@
 """How full a filesystem is, and how much of its inode table is used.
 
 Both are judged from the percentages :class:`~lsdsk.domain.models.Filesystem`
-already computes, which round UP exactly as ``df`` does, so a finding and the
-table above it never disagree about the same mount. A limit is met AT the figure
+already computes, which round UP exactly as ``df`` does for a mount or volume and
+DOWN as ``zpool list`` does for a pool, so a finding and the table above it never
+disagree about the same row. A limit is met AT the figure
 ("at or above"), and a read-only mount is never judged: nothing can fill it.
 
 System Role:

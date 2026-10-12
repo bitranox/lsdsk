@@ -14,7 +14,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   whatever its datasets and is read from ZFS itself, since `statvfs` on a dataset answers for that
   dataset's own data plus the pool's free space; a bind mount or btrfs subvolume of one filesystem
   is one row showing `+N` further mountpoints. `-` marks a figure nobody read and `n/a` an inode
-  figure for a filesystem that creates inodes on demand. See ADR 0005.
+  figure for a filesystem that creates inodes on demand. A mount or volume rounds `use%` up like
+  `df`; a pool rounds it down like `zpool list`. See ADR 0005.
 - **`--format json` carries the filesystems.** Every section's envelope has `data.filesystems`, a
   list of `{kind, name, other_mounts, fs_type, disks, size_bytes, used_bytes, free_bytes,
   inodes_total, inodes_free, read_only, readings_refused}`, or `null` where the filesystems were
