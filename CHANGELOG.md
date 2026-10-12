@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.7.6] 2026-10-12 19:02:40
+
 ### Changed
 
 - **An ambiguous integer permission mode is refused, with a warning.** lib_layered_config 7.1 reads
