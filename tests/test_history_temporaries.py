@@ -91,3 +91,26 @@ def test_a_leftover_that_cannot_be_removed_is_left_without_an_error(tmp_path: Pa
         assert stuck.exists()
     finally:
         tmp_path.chmod(0o700)
+
+
+def test_a_name_with_the_underscore_mkstemp_draws_is_reaped(tmp_path: Path) -> None:
+    """``mkstemp`` draws from lowercase letters, digits AND an underscore, so a leftover may carry one."""
+    store = tmp_path / "history.json"
+    leftover = _leftover(tmp_path, ".history.json.ab_cd_12.tmp")
+
+    remove_abandoned_temporaries(store)
+
+    assert not leftover.exists(), "a leftover whose random part holds an underscore was not reaped"
+
+
+@pytest.mark.parametrize("middle", ["k3j9x2a", "k3j9x2abq"], ids=["seven", "nine"])
+def test_a_name_whose_random_part_is_not_eight_characters_is_not_a_leftover(tmp_path: Path, middle: str) -> None:
+    """``mkstemp`` draws exactly eight, so a name one short or one long was made by something else."""
+    store = tmp_path / "history.json"
+    foreign = _leftover(tmp_path, f".history.json.{middle}.tmp")
+    genuine = _leftover(tmp_path, ".history.json.k3j9x2ab.tmp")
+
+    remove_abandoned_temporaries(store)
+
+    assert not genuine.exists(), "the eight-character leftover was not reaped, so the test proves nothing"
+    assert foreign.exists(), f"a name with a {len(middle)}-character random part was taken for a leftover"
