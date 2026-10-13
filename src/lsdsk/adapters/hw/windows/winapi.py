@@ -65,6 +65,7 @@ DIGCF_DEVICEINTERFACE = 0x00000010
 
 INVALID_HANDLE_VALUE = wintypes.HANDLE(-1).value
 ERROR_NO_MORE_FILES = 18
+ERROR_MORE_DATA = 234
 ERROR_INSUFFICIENT_BUFFER = 122
 ERROR_NOT_FOUND = 1168
 ERROR_NO_MORE_ITEMS = 259
@@ -85,6 +86,9 @@ IOCTL_SCSI_PASS_THROUGH = 0x0004D004
 IOCTL_STORAGE_GET_DEVICE_NUMBER = 0x002D1080
 IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS = 0x00560000
 IOCTL_DISK_GET_PARTITION_INFO_EX = 0x00070048
+
+# Filesystem control codes, issued through the same DeviceIoControl.
+FSCTL_GET_VOLUME_BITMAP = 0x0009006F
 
 # PARTITION_INFORMATION_EX.PartitionStyle.
 PARTITION_STYLE_GPT = 1
@@ -632,6 +636,14 @@ def configure_prototypes(setupapi: WinLibrary, cfgmgr32: WinLibrary, kernel32: W
         ctypes.POINTER(ctypes.c_uint64),
         ctypes.POINTER(ctypes.c_uint64),
     )
+    kernel32.GetDiskFreeSpaceW.restype = BOOL
+    kernel32.GetDiskFreeSpaceW.argtypes = (
+        wintypes.LPCWSTR,
+        ctypes.POINTER(DWORD),
+        ctypes.POINTER(DWORD),
+        ctypes.POINTER(DWORD),
+        ctypes.POINTER(DWORD),
+    )
     kernel32.GetVolumeInformationW.restype = BOOL
     kernel32.GetVolumeInformationW.argtypes = (
         wintypes.LPCWSTR,
@@ -716,10 +728,12 @@ __all__ = [
     "DRIVE_CDROM",
     "DRIVE_RAMDISK",
     "DWORD",
+    "ERROR_MORE_DATA",
     "ERROR_NO_MORE_FILES",
     "FILE_READ_ONLY_VOLUME",
     "FILE_SHARE_READ",
     "FILE_SHARE_WRITE",
+    "FSCTL_GET_VOLUME_BITMAP",
     "GENERIC_READ",
     "GENERIC_WRITE",
     "GUID",

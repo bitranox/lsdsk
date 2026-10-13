@@ -16,10 +16,15 @@ System Role:
 
 from __future__ import annotations
 
+import re
 import struct
 import uuid
+from typing import TYPE_CHECKING, Final, NamedTuple
 
 from . import winapi as api
+
+if TYPE_CHECKING:
+    from ..decode.free_extents import FreeExtentTally
 
 #: The EFI System Partition's GPT partition type GUID.
 _ESP_TYPE_GUID = uuid.UUID("C12A7328-F81F-11D2-BA4B-00A0C93EC93B")
@@ -101,12 +106,113 @@ def parse_is_esp(raw: bytes) -> bool | None:
     return type_guid == _ESP_TYPE_GUID
 
 
+#: The fixed head of a ``VOLUME_BITMAP_BUFFER``, which the cluster bits follow.
+BITMAP_HEADER_BYTES: Final = 16
+_BITMAP_HEADER: Final = struct.Struct("<qq")  # StartingLcn, BitmapSize
+_FREE_RUN: Final = re.compile("0+")
+
+
+class BitmapHeader(NamedTuple):
+    """The fixed head of a ``VOLUME_BITMAP_BUFFER``.
+
+    Both fields are cluster counts, so a bare pair could be unpacked the wrong
+    way round without the type checker noticing.
+
+    Attributes:
+        starting_lcn: The first cluster the bits that follow describe.
+        bitmap_size: How many clusters the volume has from there.
+    """
+
+    starting_lcn: int
+    bitmap_size: int
+
+
+def parse_bitmap_header(raw: bytes) -> BitmapHeader:
+    """The starting cluster and the clusters left, from a ``VOLUME_BITMAP_BUFFER``.
+
+    Args:
+        raw: The bytes the bitmap ioctl returned, head first.
+
+    Returns:
+        The first cluster the bits describe, and how many clusters the
+        volume still has from there; it unpacks as that pair.
+
+    Raises:
+        ValueError: The buffer is short or a field is negative.
+
+    Example:
+        >>> parse_bitmap_header((8).to_bytes(8, "little") + (100).to_bytes(8, "little"))
+        BitmapHeader(starting_lcn=8, bitmap_size=100)
+    """
+    if len(raw) < BITMAP_HEADER_BYTES:
+        message = f"the volume bitmap header is {len(raw)} bytes, not {BITMAP_HEADER_BYTES}"
+        raise ValueError(message)
+    lcn, bits = _BITMAP_HEADER.unpack_from(raw)
+    if lcn < 0 or bits < 0:
+        message = f"the volume bitmap header is negative (lcn {lcn}, bits {bits})"
+        raise ValueError(message)
+    return BitmapHeader(lcn, bits)
+
+
+class FreeRunFolder:
+    """Fold a cluster bitmap, chunk by chunk, into free runs measured in bytes.
+
+    Bit ``i`` of a chunk is cluster ``i`` (least significant bit first), ``1``
+    in use. A run touching a chunk's end stays open until the next chunk says
+    whether it continues.
+    """
+
+    def __init__(self, cluster_bytes: int, tally: FreeExtentTally) -> None:
+        """Fold into ``tally``, each cluster ``cluster_bytes`` long."""
+        self._cluster = cluster_bytes
+        self._tally = tally
+        self._open = 0
+
+    def feed(self, data: bytes, nbits: int) -> None:
+        """Fold the first ``nbits`` clusters of ``data``.
+
+        Args:
+            data: The chunk's bytes, cluster bits least significant first.
+            nbits: How many of its bits are clusters.
+
+        Raises:
+            FreeExtentCapError: The volume has more free runs than the tally allows.
+        """
+        if nbits <= 0:
+            return
+        value = int.from_bytes(data[: (nbits + 7) // 8], "little") & ((1 << nbits) - 1)
+        # Binary text is most significant first; reversed, cluster 0 comes first.
+        clusters = format(value, f"0{nbits}b")[::-1]
+        carried, self._open = self._open, 0
+        for run in _FREE_RUN.finditer(clusters):
+            start, end = run.span()
+            length = end - start
+            if start == 0:
+                length, carried = length + carried, 0
+            if end == nbits:
+                self._open = length
+            else:
+                self._tally.add(length * self._cluster)
+        if carried:
+            self._tally.add(carried * self._cluster)
+
+    def finish(self) -> None:
+        """Close a run still open at the end of the last chunk."""
+        if self._open:
+            self._tally.add(self._open * self._cluster)
+            self._open = 0
+
+
 __all__ = [
+    "BITMAP_HEADER_BYTES",
     "EXTENTS_HEADER",
     "EXTENT_ENTRY",
     "MAX_EXTENTS",
     "PARTITION_HEAD",
     "PARTITION_INFORMATION_EX_SIZE",
+    "BitmapHeader",
+    "FreeRunFolder",
+    "parse_bitmap_header",
     "parse_disk_extents",
     "parse_is_esp",
 ]

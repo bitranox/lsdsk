@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, TypedDict
 from ....domain.disk_name import disk_name_order
 from ....domain.enums import Environment, FilesystemKind
 from ....domain.models import Filesystem, RefusedReading
+from ..free_space import free_space_of
 from ..refusals import refusals_of
 from .usage import disk_numbers
 
@@ -21,6 +22,9 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from .capture import VolumeEntry, WindowsCapture
+
+#: Why a run that could not open a volume for reading has no fragmentation figure.
+_NEEDS_ADMINISTRATOR = "needs Administrator"
 
 
 class _Figures(TypedDict, total=False):
@@ -51,7 +55,14 @@ def _volume_row(entry: VolumeEntry, disks: tuple[str, ...]) -> Filesystem:
         fs_type=entry.fs_type or "",
         disks=disks,
         read_only=entry.read_only is True,
-        readings_refused=refusals_of({"volume-space": entry.space_error, "volume-info": entry.fs_info_error}),
+        free_space=free_space_of(entry.free_extents),
+        readings_refused=refusals_of(
+            {
+                "volume-space": entry.space_error,
+                "volume-info": entry.fs_info_error,
+                "volume-bitmap": None if entry.free_extents is None else entry.free_extents.error,
+            }
+        ),
         **_figures(entry),
     )
 
@@ -90,8 +101,8 @@ def build_filesystems(
         environment: What kind of machine it came from.
 
     Returns:
-        The rows and the refusals that belong to no single row, of which
-        Windows has none. The rows are ``None`` in a container or when the
+        The rows and the refusals that belong to no single row: one, when an
+        unelevated run could not read the volumes' bitmaps. The rows are ``None`` in a container or when the
         volumes were not read, the same rule as ``used by``, and ``None`` too
         for a capture taken before the volumes' space was read.
     """
@@ -102,7 +113,10 @@ def build_filesystems(
     numbered = disk_numbers(frozenset(entry.node for entry in capture.disks.values() if entry.node))
     placed = [(entry, _nodes_of(entry, numbered)) for entry in capture.volumes.values() if entry.paths]
     rows = [_volume_row(entry, nodes) for entry, nodes in placed if nodes]
-    return tuple(sorted(rows, key=lambda row: disk_name_order(row.disks[0]))), ()
+    ordered = tuple(sorted(rows, key=lambda row: disk_name_order(row.disks[0])))
+    if rows and capture.volume_bitmaps_read is False:
+        return ordered, refusals_of({"fragmentation": _NEEDS_ADMINISTRATOR})
+    return ordered, ()
 
 
 __all__ = ["build_filesystems"]

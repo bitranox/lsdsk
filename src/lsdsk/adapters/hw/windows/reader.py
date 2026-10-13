@@ -1281,7 +1281,7 @@ def read_environment(*, read_value: Callable[[str, str], str] = api.read_registr
 
 
 def read_volumes_section(
-    kernel32: api.WinLibrary, *, last_error: Callable[[], int] = api.last_error
+    kernel32: api.WinLibrary, *, last_error: Callable[[], int] = api.last_error, walk_bitmaps: bool = False
 ) -> tuple[dict[str, dict[str, Any]] | None, str | None]:
     r"""Read every volume and the Windows volume, keyed by a per-capture ordinal.
 
@@ -1297,13 +1297,15 @@ def read_volumes_section(
     Args:
         kernel32: The typed facade over the Win32 entry points.
         last_error: Answers ``GetLastError`` for the call that just failed.
+        walk_bitmaps: Also walk each volume's cluster bitmap into free extents,
+            which needs Administrator.
 
     Returns:
         Every volume keyed by its ordinal, and the Windows volume's ordinal
         key (``None`` when it could not be resolved); ``(None, None)`` when the
         volumes could not be enumerated.
     """
-    by_guid = volumes.read_volumes(kernel32, last_error=last_error)
+    by_guid = volumes.read_volumes(kernel32, last_error=last_error, walk_bitmaps=walk_bitmaps)
     if by_guid is None:
         return None, None
     windows_guid = volumes.read_windows_volume(kernel32)
@@ -1374,7 +1376,8 @@ def read_system() -> dict[str, Any]:
     usb_reading = read_usb_ports(tree.kernel32, disks, tree.usb_devices(), tree.usb_hubs())
     for path, error in usb_reading.disk_errors.items():
         disks[path]["usb_link_error"] = error
-    volume_entries, windows_volume = read_volumes_section(tree.kernel32)
+    elevated = is_elevated()
+    volume_entries, windows_volume = read_volumes_section(tree.kernel32, walk_bitmaps=elevated)
 
     return {
         "schema": SCHEMA_VERSION,
@@ -1382,8 +1385,8 @@ def read_system() -> dict[str, Any]:
         "platform": Platform.WINDOWS.value,
         "hostname": platform.node(),
         "kernel": platform.version(),
-        "euid": 0 if is_elevated() else 1,
-        "elevated": is_elevated(),
+        "euid": 0 if elevated else 1,
+        "elevated": elevated,
         "environment": read_environment(),
         "devices_accessible": devices_accessible(disks),
         "pci": pci,
@@ -1396,6 +1399,7 @@ def read_system() -> dict[str, Any]:
         "usb_hubs": usb_reading.hubs,
         "volumes": volume_entries,
         "windows_volume": windows_volume,
+        "volume_bitmaps_read": elevated,
     }
 
 

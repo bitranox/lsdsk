@@ -22,7 +22,7 @@ from typing import Annotated, Literal
 from pydantic import BeforeValidator, Field
 
 from ....domain.enums import BusType, Platform
-from ..capture import CaptureHeader, CaptureModel, DeviceText, EncodedPayload, Entries, EntryMap
+from ..capture import CaptureHeader, CaptureModel, DeviceText, EncodedPayload, Entries, EntryMap, FreeExtentsEntry
 from ..decode.virtualization import VirtualizationEvidence
 
 # The transport names the reader takes from STORAGE_DEVICE_DESCRIPTOR.BusType,
@@ -381,6 +381,9 @@ class VolumeEntry(CaptureModel, frozen=True):
             case `fs_type` and `read_only` are ``None`` without meaning a
             read-write volume of unknown name; absent from a capture taken
             before this field existed.
+        free_extents: The volume's free clusters folded into runs, or why its
+            cluster bitmap was not read; absent from a capture taken before
+            this field existed and from an unelevated run.
     """
 
     paths: Entries[DeviceText] = ()
@@ -396,6 +399,7 @@ class VolumeEntry(CaptureModel, frozen=True):
     read_only: bool | None = None
     space_error: DeviceText | None = None
     fs_info_error: DeviceText | None = None
+    free_extents: FreeExtentsEntry | None = None
 
 
 class WindowsCapture(CaptureHeader, frozen=True):
@@ -428,6 +432,9 @@ class WindowsCapture(CaptureHeader, frozen=True):
         windows_volume: The ordinal key, within :attr:`volumes`, of the
             volume the Windows directory lives on, so the builder can mark
             its disk as boot. ``None`` when it could not be resolved.
+        volume_bitmaps_read: Whether this run walked each volume's cluster
+            bitmap: ``False`` for an unelevated run, which cannot; ``None`` in
+            a capture taken before this field existed.
     """
 
     platform: Literal[Platform.WINDOWS]
@@ -441,6 +448,7 @@ class WindowsCapture(CaptureHeader, frozen=True):
     usb_hubs: EntryMap[DeviceText, UsbHubEntry] = Field(default_factory=dict[DeviceText, UsbHubEntry])
     volumes: EntryMap[DeviceText, VolumeEntry] | None = None
     windows_volume: DeviceText | None = None
+    volume_bitmaps_read: bool | None = None
 
 
 __all__ = [

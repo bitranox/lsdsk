@@ -1,11 +1,13 @@
 """Read Windows volumes: what each one is mounted as, and which disk it sits on.
 
-Opening a volume needs no privilege: on a virtual and a physical Windows
-host, unelevated and elevated alike, every ordinary volume opened and every
-ioctl below succeeded. A volume this cannot open (one that refuses even
-Administrator) is recorded with an ``error``, its paths and the drive type of
-its first path; :mod:`.usage` decides from those whether its failure leaves a
-disk undecidable rather than a false "not mounted".
+Opening a volume for its identity needs no privilege: on a virtual and a
+physical Windows host, unelevated and elevated alike, every ordinary volume
+opened and every ioctl below succeeded. Opening it to read its cluster bitmap
+does need Administrator, which is why that walk happens only when asked. A
+volume this cannot open (one that refuses even Administrator) is recorded with
+an ``error``, its paths and the drive type of its first path; :mod:`.usage`
+decides from those whether its failure leaves a disk undecidable rather than a
+false "not mounted".
 
 The two Win32 responses this issues (``VOLUME_DISK_EXTENTS`` and
 ``PARTITION_INFORMATION_EX``) are decoded by :mod:`.volume_layout`, which also
@@ -30,12 +32,16 @@ import ctypes
 from ctypes import wintypes
 from typing import TYPE_CHECKING, Any
 
+from ..decode.free_extents import FreeExtentTally
 from . import winapi as api
 from .volume_layout import (
+    BITMAP_HEADER_BYTES,
     EXTENT_ENTRY,
     EXTENTS_HEADER,
     MAX_EXTENTS,
     PARTITION_INFORMATION_EX_SIZE,
+    FreeRunFolder,
+    parse_bitmap_header,
     parse_disk_extents,
     parse_is_esp,
 )
@@ -52,6 +58,13 @@ _MAX_PATH = 260
 #: The filesystem name buffer: names are a handful of characters (NTFS, ReFS,
 #: exFAT), so this is generous rather than tight.
 _FS_NAME_CHARS = 64
+#: How many bytes of cluster bits one bitmap call asks for: 8 Mi clusters, so a
+#: 500 GB volume of 4 KiB clusters takes about sixteen calls.
+_BITMAP_CHUNK_BYTES = 1 << 20
+
+
+class _BitmapRefusedError(Exception):
+    """The bitmap walk met an answer it cannot continue from; the message is the reason."""
 
 
 def _volume_paths(kernel32: api.WinLibrary, volume: str) -> tuple[tuple[str, ...], str | None]:
@@ -157,8 +170,118 @@ def _volume_space(kernel32: api.WinLibrary, path: str, *, last_error: Callable[[
     return entry
 
 
+def _cluster_bytes(kernel32: api.WinLibrary, path: str, *, last_error: Callable[[], int]) -> int:
+    """One cluster's size in bytes, from the volume's first mount path.
+
+    Raises:
+        _BitmapRefusedError: The call was refused or answered zero.
+    """
+    sectors, sector_bytes, free, total = api.DWORD(), api.DWORD(), api.DWORD(), api.DWORD()
+    if not kernel32.GetDiskFreeSpaceW(
+        path, ctypes.byref(sectors), ctypes.byref(sector_bytes), ctypes.byref(free), ctypes.byref(total)
+    ):
+        message = f"could not read the cluster size (error {last_error()})"
+        raise _BitmapRefusedError(message)
+    if sectors.value * sector_bytes.value <= 0:
+        message = "the volume reported a cluster size of zero"
+        raise _BitmapRefusedError(message)
+    return sectors.value * sector_bytes.value
+
+
+def _walk_bitmap(
+    kernel32: api.WinLibrary, handle: int, folder: FreeRunFolder, *, last_error: Callable[[], int], chunk_bytes: int
+) -> None:
+    """Fold a volume's whole cluster bitmap into ``folder``, one call's worth at a time.
+
+    ``ERROR_MORE_DATA`` is the normal answer to a call that filled its buffer
+    and left clusters over, so the next call starts where this one ended.
+
+    Raises:
+        _BitmapRefusedError: A call failed another way, or the walk could not advance.
+    """
+    output = ctypes.create_string_buffer(BITMAP_HEADER_BYTES + chunk_bytes)
+    start = 0
+    while True:
+        starting, returned = ctypes.c_int64(start), api.DWORD()
+        done = kernel32.DeviceIoControl(
+            handle,
+            api.FSCTL_GET_VOLUME_BITMAP,
+            ctypes.byref(starting),
+            ctypes.sizeof(starting),
+            output,
+            len(output),
+            ctypes.byref(returned),
+            None,
+        )
+        code = 0 if done else last_error()
+        if code not in (0, api.ERROR_MORE_DATA):
+            message = f"could not read the volume bitmap (error {code})"
+            raise _BitmapRefusedError(message)
+        lcn, remaining = parse_bitmap_header(output.raw[:BITMAP_HEADER_BYTES])
+        if lcn != start:
+            message = f"the volume bitmap restarted at cluster {lcn}, not {start}"
+            raise _BitmapRefusedError(message)
+        data = output.raw[BITMAP_HEADER_BYTES : max(returned.value, BITMAP_HEADER_BYTES)]
+        nbits = min(len(data) * 8, remaining)
+        folder.feed(data, nbits)
+        if code == 0:
+            return
+        if nbits == 0:
+            message = "the volume bitmap did not advance"
+            raise _BitmapRefusedError(message)
+        start = lcn + nbits
+
+
+def _free_extents(
+    kernel32: api.WinLibrary, volume: str, path: str, *, last_error: Callable[[], int], chunk_bytes: int
+) -> dict[str, Any]:
+    """One volume's free-extent summary from its cluster bitmap, or ``{"error": ...}``.
+
+    Args:
+        kernel32: The typed facade over the Win32 entry points.
+        volume: The volume's GUID path, trailing backslash included.
+        path: The volume's first mount path, which the cluster size is asked of.
+        last_error: Answers ``GetLastError`` for the call that just failed.
+        chunk_bytes: How many bytes of cluster bits one call asks for.
+
+    Returns:
+        The count, total, largest and histogram of the free runs, or the
+        reason the bitmap was not read to its end.
+    """
+    try:
+        cluster = _cluster_bytes(kernel32, path, last_error=last_error)
+    except _BitmapRefusedError as refused:
+        return {"error": str(refused)}
+    handle = kernel32.CreateFileW(
+        volume.rstrip("\\"),
+        api.GENERIC_READ,
+        api.FILE_SHARE_READ | api.FILE_SHARE_WRITE,
+        None,
+        api.OPEN_EXISTING,
+        0,
+        None,
+    )
+    if handle == api.INVALID_HANDLE_VALUE:
+        return {"error": f"could not open the volume for reading (error {last_error()})"}
+    tally = FreeExtentTally()
+    folder = FreeRunFolder(cluster, tally)
+    try:
+        _walk_bitmap(kernel32, handle, folder, last_error=last_error, chunk_bytes=chunk_bytes)
+        folder.finish()
+    except (_BitmapRefusedError, ValueError) as refused:  # a cap breach and a bad header are ValueErrors
+        return {"error": str(refused)}
+    finally:
+        kernel32.CloseHandle(handle)
+    return dict(tally.summary())
+
+
 def _read_one_volume(
-    kernel32: api.WinLibrary, volume: str, *, last_error: Callable[[], int] = api.last_error
+    kernel32: api.WinLibrary,
+    volume: str,
+    *,
+    last_error: Callable[[], int] = api.last_error,
+    walk_bitmaps: bool = False,
+    chunk_bytes: int = _BITMAP_CHUNK_BYTES,
 ) -> dict[str, Any]:
     """Read one volume's mount paths, drive type, space, disk extents and ESP status.
 
@@ -166,6 +289,9 @@ def _read_one_volume(
         kernel32: The typed facade over the Win32 entry points.
         volume: The volume's GUID path, trailing backslash included.
         last_error: Answers ``GetLastError`` for the space call that just failed.
+        walk_bitmaps: Also walk the volume's cluster bitmap into free extents,
+            which opens it for reading and so needs Administrator.
+        chunk_bytes: How many bytes of cluster bits one bitmap call asks for.
 
     Returns:
         One volume's reading, shaped for the capture model to type.
@@ -180,6 +306,10 @@ def _read_one_volume(
         # its GUID path answered DRIVE_NO_ROOT_DIR.
         entry["drive_type"] = int(kernel32.GetDriveTypeW(paths[0]))
         entry.update(_volume_space(kernel32, paths[0], last_error=last_error))
+        if walk_bitmaps:
+            entry["free_extents"] = _free_extents(
+                kernel32, volume, paths[0], last_error=last_error, chunk_bytes=chunk_bytes
+            )
     handle = kernel32.CreateFileW(
         volume.rstrip("\\"),
         0,
@@ -206,7 +336,11 @@ def _read_one_volume(
 
 
 def read_volumes(
-    kernel32: api.WinLibrary, *, last_error: Callable[[], int] = api.last_error
+    kernel32: api.WinLibrary,
+    *,
+    last_error: Callable[[], int] = api.last_error,
+    walk_bitmaps: bool = False,
+    chunk_bytes: int = _BITMAP_CHUNK_BYTES,
 ) -> dict[str, dict[str, Any]] | None:
     r"""Enumerate every volume on this machine and read what it is used for.
 
@@ -219,6 +353,9 @@ def read_volumes(
     Args:
         kernel32: The typed facade over the Win32 entry points.
         last_error: Answers ``GetLastError`` for the call that just failed.
+        walk_bitmaps: Also walk each volume's cluster bitmap, which needs
+            Administrator.
+        chunk_bytes: How many bytes of cluster bits one bitmap call asks for.
 
     Returns:
         One entry per volume, keyed by its ``\\?\Volume{...}\`` GUID path, or
@@ -231,7 +368,9 @@ def read_volumes(
         return volumes if last_error() == api.ERROR_NO_MORE_FILES else None
     try:
         while True:
-            volumes[buffer.value] = _read_one_volume(kernel32, buffer.value, last_error=last_error)
+            volumes[buffer.value] = _read_one_volume(
+                kernel32, buffer.value, last_error=last_error, walk_bitmaps=walk_bitmaps, chunk_bytes=chunk_bytes
+            )
             if not kernel32.FindNextVolumeW(handle, buffer, _MAX_PATH):
                 return volumes if last_error() == api.ERROR_NO_MORE_FILES else None
     finally:

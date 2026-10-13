@@ -157,3 +157,40 @@ def test_one_volume_that_carries_a_space_field_makes_the_volumes_read() -> None:
         rows, _ = build_filesystems(capture, BARE_METAL)
         assert rows is not None, field
         assert [row.name for row in rows] == ["C:\\", "D:\\"], field
+
+
+_HISTOGRAM_4K = [0, 0, 0, 4096] + [0] * 17
+
+
+def _c_drive(*, bitmaps_read: bool | None, **volume: Any) -> WindowsCapture:
+    """One NTFS volume C: on PhysicalDrive0, with its space read, as an elevated or unelevated run left it."""
+    extra: dict[str, Any] = {} if bitmaps_read is None else {"volume_bitmaps_read": bitmaps_read}
+    entry = _volume(paths=("C:\\",), disks=(0,), total_bytes=100, free_bytes=40, available_bytes=30, **volume)
+    return _capture({"\\\\?\\p0": _disk("PhysicalDrive0")}, volumes={"0": entry}, **extra)
+
+
+def test_a_volume_carries_its_free_space() -> None:
+    free_extents = {"count": 1, "total": 4096, "largest": 4096, "histogram": _HISTOGRAM_4K}
+    rows, unread = build_filesystems(_c_drive(bitmaps_read=True, free_extents=free_extents), BARE_METAL)
+    assert rows is not None
+    assert rows[0].free_space is not None
+    assert (rows[0].free_space.fragmentation_percent, unread) == (93, ())
+
+
+def test_an_unelevated_capture_says_once_that_fragmentation_needs_administrator() -> None:
+    rows, unread = build_filesystems(_c_drive(bitmaps_read=False), BARE_METAL)
+    assert rows
+    assert [(r.reading, r.reason) for r in unread] == [("fragmentation", "needs Administrator")]
+
+
+def test_a_capture_taken_before_bitmaps_were_read_says_nothing_about_them() -> None:
+    rows, unread = build_filesystems(_c_drive(bitmaps_read=None), BARE_METAL)
+    assert rows
+    assert unread == ()
+
+
+def test_a_refused_bitmap_is_carried_on_its_row() -> None:
+    reason = "could not read the volume bitmap (error 1)"
+    rows, _ = build_filesystems(_c_drive(bitmaps_read=True, free_extents={"error": reason}), BARE_METAL)
+    assert rows is not None
+    assert ("volume-bitmap", reason) in [(r.reading, r.reason) for r in rows[0].readings_refused]

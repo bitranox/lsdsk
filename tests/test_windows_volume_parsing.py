@@ -8,13 +8,20 @@ what keeps them testable on every runner (see
 
 from __future__ import annotations
 
+import hashlib
 import struct
 import uuid
 
 import pytest
 
+from lsdsk.adapters.hw.decode.free_extents import FreeExtentTally
 from lsdsk.adapters.hw.windows import volume_layout
-from lsdsk.adapters.hw.windows.volume_layout import parse_disk_extents, parse_is_esp
+from lsdsk.adapters.hw.windows.volume_layout import (
+    FreeRunFolder,
+    parse_bitmap_header,
+    parse_disk_extents,
+    parse_is_esp,
+)
 
 ESP = uuid.UUID("C12A7328-F81F-11D2-BA4B-00A0C93EC93B")
 OTHER = uuid.UUID("EBD0A0A2-B9E5-4433-87C0-68B6B72699C7")  # Microsoft Basic Data
@@ -118,3 +125,57 @@ def test_the_partition_type_is_read_at_the_sdk_offset_of_a_hand_laid_buffer() ->
     raw[0:4] = (1).to_bytes(4, "little")  # PartitionStyle = PARTITION_STYLE_GPT
     raw[32:48] = ESP.bytes_le
     assert parse_is_esp(bytes(raw)) is True
+
+
+def _naive_runs(bits: list[int]) -> list[int]:
+    runs: list[int] = []
+    current = 0
+    for bit in bits:
+        if bit == 0:
+            current += 1
+        elif current:
+            runs.append(current)
+            current = 0
+    if current:
+        runs.append(current)
+    return runs
+
+
+def _pack(bits: list[int]) -> bytes:
+    value = sum(bit << index for index, bit in enumerate(bits))
+    return value.to_bytes((len(bits) + 7) // 8, "little")
+
+
+def _stream(seed: int, count: int) -> list[int]:
+    """``count`` deterministic bytes for ``seed``, so a failing seed replays exactly."""
+    return list(hashlib.shake_256(f"free-runs-{seed}".encode()).digest(count))
+
+
+@pytest.mark.parametrize("seed", range(20))
+def test_free_runs_match_a_per_bit_count_across_chunk_edges(seed: int) -> None:
+    drawn = _stream(seed, 12000)
+    used_below = (26, 128, 230)[seed % 3]  # about 10%, 50% and 90% of the clusters in use
+    bits = [1 if value < used_below else 0 for value in drawn[: 1 + drawn[-1] * 19 % 4999]]
+    sizes = iter(8 * (1 + value % 39) for value in drawn[5000:])
+    tally = FreeExtentTally()
+    folder = FreeRunFolder(4096, tally)
+    position = 0
+    while position < len(bits):
+        size = min(next(sizes), len(bits) - position)
+        folder.feed(_pack(bits[position : position + size]), size)
+        position += size
+    folder.finish()
+    expected = _naive_runs(bits)
+    summary = tally.summary()
+    assert (summary["count"], summary["total"]) == (len(expected), 4096 * sum(expected))
+    assert summary["largest"] == 4096 * max(expected, default=0)
+
+
+def test_a_bitmap_header_is_the_starting_cluster_and_the_bit_count() -> None:
+    raw = (8).to_bytes(8, "little", signed=True) + (100).to_bytes(8, "little", signed=True)
+    assert parse_bitmap_header(raw) == (8, 100)
+
+
+def test_a_negative_header_field_is_refused() -> None:
+    with pytest.raises(ValueError, match="negative"):
+        parse_bitmap_header((-1).to_bytes(8, "little", signed=True) + bytes(8))

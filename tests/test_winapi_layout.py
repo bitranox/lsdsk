@@ -193,6 +193,26 @@ def test_a_storage_ioctl_code_is_built_from_the_sdk_parts(name: str, parts: tupl
     assert getattr(api, name) == _ctl_code(device_type, function, 0, access)
 
 
+#: (name, device type, function, method, access) per FSCTL this project issues, from winioctl.h.
+FSCTL_PARTS = (("FSCTL_GET_VOLUME_BITMAP", 0x9, 27, 3, 0),)  # FILE_DEVICE_FILE_SYSTEM, METHOD_NEITHER
+
+
+@pytest.mark.parametrize(("name", "device", "function", "method", "access"), FSCTL_PARTS)
+def test_every_fsctl_code_is_ctl_code_of_its_parts(
+    name: str, device: int, function: int, method: int, access: int
+) -> None:
+    assert getattr(api, name) == _ctl_code(device, function, method, access)
+
+
+def test_every_fsctl_the_module_exports_is_pinned_by_the_table() -> None:
+    exported = {name for name in api.__all__ if name.startswith("FSCTL_")}
+    assert exported == {parts[0] for parts in FSCTL_PARTS}
+
+
+def test_error_more_data_is_the_sdk_value() -> None:
+    assert api.ERROR_MORE_DATA == 234
+
+
 def test_every_ioctl_the_module_exports_is_pinned_by_a_table() -> None:
     """A new IOCTL_* name must join one of the two tables, or its value is unchecked."""
     exported = {name for name in api.__all__ if name.startswith("IOCTL_")}

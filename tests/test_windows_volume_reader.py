@@ -62,6 +62,9 @@ class FakeVolume:
             ``GetDiskFreeSpaceExW`` fails.
         fs_type: The filesystem name, or ``None`` when ``GetVolumeInformationW`` fails.
         flags: The file-system flags ``GetVolumeInformationW`` reports.
+        bitmap: Its cluster bitmap (``1`` is in use), or ``None`` when the
+            volume refuses an open for reading.
+        cluster_bytes: The size of one cluster.
     """
 
     paths: tuple[str, ...] | None = ()
@@ -72,6 +75,14 @@ class FakeVolume:
     space: tuple[int, int, int] | None = (100, 40, 30)
     fs_type: str | None = "NTFS"
     flags: int = 0
+    bitmap: list[int] | None = None
+    cluster_bytes: int = 4096
+
+
+def _pack(bits: list[int]) -> bytes:
+    """Cluster bits, least significant bit first, as a ``VOLUME_BITMAP_BUFFER`` carries them."""
+    value = sum(bit << index for index, bit in enumerate(bits))
+    return value.to_bytes((len(bits) + 7) // 8, "little")
 
 
 @dataclass
@@ -84,6 +95,8 @@ class FakeVolumeKernel:
     next_error: int | None = None
     error: int = 0
     path_calls: list[int] = field(default_factory=list[int])
+    opened: list[tuple[str, int]] = field(default_factory=list[tuple[str, int]])
+    bitmap_calls: int = 0
     _order: list[str] = field(default_factory=list[str])
     _handles: dict[int, str] = field(default_factory=dict[int, str])
 
@@ -166,6 +179,14 @@ class FakeVolumeKernel:
         getattr(available, "_obj").value = space[2]  # noqa: B009 - a CArgObject's referent
         return 1
 
+    def GetDiskFreeSpaceW(  # noqa: N802 - the Win32 entry point's own name
+        self, root: str, sectors: object, sector_bytes: object, free: object, total: object
+    ) -> int:
+        del free, total
+        getattr(sectors, "_obj").value = self._volume_at(root).cluster_bytes // 512  # noqa: B009 - a CArgObject's referent
+        getattr(sector_bytes, "_obj").value = 512  # noqa: B009 - a CArgObject's referent
+        return 1
+
     def GetVolumeInformationW(  # noqa: N802 - the Win32 entry point's own name
         self,
         root: str,
@@ -189,9 +210,14 @@ class FakeVolumeKernel:
     def CreateFileW(  # noqa: N802 - the Win32 entry point's own name
         self, path: str, access: int, share: int, security: object, disposition: int, flags: int, template: object
     ) -> int:
-        del access, share, security, disposition, flags, template
+        del share, security, disposition, flags, template
         name = path + "\\"
-        if not self.volumes[name].openable:
+        self.opened.append((path, access))
+        volume = self.volumes[name]
+        if not volume.openable:
+            return cast("int", api.INVALID_HANDLE_VALUE)
+        if access == api.GENERIC_READ and volume.bitmap is None:
+            self.error = ERROR_ACCESS_DENIED
             return cast("int", api.INVALID_HANDLE_VALUE)
         handle = 100 + len(self._handles)
         self._handles[handle] = name
@@ -212,8 +238,10 @@ class FakeVolumeKernel:
         returned: object,
         overlapped: object,
     ) -> int:
-        del in_buffer, in_size, overlapped
+        del in_size, overlapped
         volume = self.volumes[self._handles[handle]]
+        if code == api.FSCTL_GET_VOLUME_BITMAP:
+            return self._bitmap_answer(volume, in_buffer, out_buffer, out_size, returned)
         if code == api.IOCTL_DISK_GET_PARTITION_INFO_EX:
             answer = _gpt_partition(ESP_TYPE if volume.esp else BASIC_DATA_TYPE) if volume.esp is not None else None
         elif code == api.IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS and volume.disks is not None:
@@ -228,9 +256,32 @@ class FakeVolumeKernel:
         getattr(returned, "_obj").value = len(answer)  # noqa: B009 - a CArgObject's referent
         return 1
 
+    def _bitmap_answer(
+        self,
+        volume: FakeVolume,
+        in_buffer: object,
+        out_buffer: ctypes.Array[ctypes.c_char],
+        out_size: int,
+        returned: object,
+    ) -> int:
+        """``FSCTL_GET_VOLUME_BITMAP``: as many cluster bits as fit, ``ERROR_MORE_DATA`` when some do not."""
+        assert volume.bitmap is not None
+        self.bitmap_calls += 1
+        start = getattr(in_buffer, "_obj").value  # noqa: B009 - a CArgObject's referent
+        room_bits = (out_size - 16) * 8
+        bits = volume.bitmap[start:]
+        header = start.to_bytes(8, "little", signed=True) + len(bits).to_bytes(8, "little", signed=True)
+        payload = header + _pack(bits[:room_bits])
+        ctypes.memmove(out_buffer, payload, len(payload))
+        getattr(returned, "_obj").value = len(payload)  # noqa: B009 - a CArgObject's referent
+        if len(bits) > room_bits:
+            self.error = api.ERROR_MORE_DATA
+            return 0
+        return 1
 
-def _read(fake: FakeVolumeKernel) -> dict[str, dict[str, Any]]:
-    by_guid = volumes.read_volumes(cast("api.WinLibrary", fake), last_error=fake.last_error)
+
+def _read(fake: FakeVolumeKernel, **options: Any) -> dict[str, dict[str, Any]]:
+    by_guid = volumes.read_volumes(cast("api.WinLibrary", fake), last_error=fake.last_error, **options)
     assert by_guid is not None
     return by_guid
 
@@ -529,3 +580,34 @@ def test_a_space_figure_past_what_windows_can_answer_is_refused(field: str) -> N
         VolumeEntry.model_validate({field: 2**64})
     with pytest.raises(ValueError, match="greater than or equal to 0"):
         VolumeEntry.model_validate({field: -1})
+
+
+def test_an_elevated_run_walks_each_volume_bitmap_into_free_extents() -> None:
+    fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",), bitmap=[1, 0, 0, 1, 0, 1, 1, 1])})
+    entry = _read(fake, walk_bitmaps=True)[VOLUME_C]
+    assert (entry["free_extents"]["count"], entry["free_extents"]["total"]) == (2, 3 * 4096)
+    VolumeEntry.model_validate(entry)
+
+
+def test_an_unelevated_run_never_opens_a_volume_for_reading() -> None:
+    fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",), bitmap=[0] * 8)})
+    entry = _read(fake)[VOLUME_C]
+    assert "free_extents" not in entry
+    assert fake.opened  # control: the volume was opened, just never for reading
+    assert all(access != api.GENERIC_READ for _path, access in fake.opened)
+
+
+def test_a_volume_that_refuses_a_read_open_records_the_error() -> None:
+    fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",), bitmap=None)})
+    assert "error 5" in _read(fake, walk_bitmaps=True)[VOLUME_C]["free_extents"]["error"]
+
+
+def test_a_bitmap_larger_than_one_call_is_walked_in_chunks() -> None:
+    # 24 runs of 3, then a run of 3 + 7 = 10 that is still open when the bitmap ends.
+    bits = [1, 0, 0, 0] * 25 + [0] * 7
+    whole = _read(FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",), bitmap=bits)}), walk_bitmaps=True)
+    chunked_fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",), bitmap=bits)})
+    chunked = _read(chunked_fake, walk_bitmaps=True, chunk_bytes=1)  # 8 clusters per call
+    assert chunked_fake.bitmap_calls > 1
+    assert chunked[VOLUME_C]["free_extents"] == whole[VOLUME_C]["free_extents"]
+    assert (whole[VOLUME_C]["free_extents"]["count"], whole[VOLUME_C]["free_extents"]["largest"]) == (25, 10 * 4096)
