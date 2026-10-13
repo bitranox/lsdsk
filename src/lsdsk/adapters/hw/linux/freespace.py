@@ -101,7 +101,7 @@ def _walk(fd: int, ioctl: Ioctl, tally: FreeExtentTally, max_records: int) -> No
         FreeExtentCapError: The filesystem has more free extents than the cap.
     """
     head = _new_head()
-    previous: tuple[int, int] | None = None
+    previous: tuple[bytes, tuple[int, int]] | None = None
     seen = 0
     while True:
         ioctl(fd, FS_IOC_GETFSMAP, head)
@@ -113,10 +113,13 @@ def _walk(fd: int, ioctl: Ioctl, tally: FreeExtentTally, max_records: int) -> No
         if _fold_batch(head, entries, tally) & _LAST:
             return
         last, position = _last_position(head, entries)
-        if previous is not None and position <= previous:
+        # XFS lists a block shared by several owners as several records at one physical address and continues
+        # inside that run by owner and offset, so two batches may end at one place; only going backwards, or
+        # returning the very same record again, is a kernel that did not advance.
+        if previous is not None and (position < previous[1] or last == previous[0]):
             message = "the kernel did not advance past its last record"
             raise ValueError(message)
-        previous = position
+        previous = (last, position)
         head[_LOW_KEY : _LOW_KEY + _RECORD.size] = last
 
 
@@ -125,7 +128,7 @@ def _reason(error: Exception) -> str:
     return text[:MAX_DEVICE_TEXT]
 
 
-def _ask(mountpoint: str, ioctl: Ioctl, opener: Callable[[str], int], cap: int, max_records: int) -> dict[str, Any]:
+def _ask(mountpoint: str, ioctl: Ioctl, opener: Callable[[str], int], *, cap: int, max_records: int) -> dict[str, Any]:
     """One mountpoint's free-extent summary, or ``{"error": <reason>}``."""
     try:
         fd = opener(mountpoint)
@@ -191,7 +194,7 @@ def read_free_extents(
         if row.get("hidden") is True:
             hidden_only.append(dev)
             continue
-        reading = _ask(wanted.mountpoint, call, open_one, cap, max_records)
+        reading = _ask(wanted.mountpoint, call, open_one, cap=cap, max_records=max_records)
         if "error" in reading and dev in readings:
             continue
         readings[dev] = reading

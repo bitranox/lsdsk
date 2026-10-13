@@ -22,7 +22,8 @@ _LOW_KEY, _HIGH_KEY, _RECORDS = 64, 128, 192
 _ALL_ONES_32, _ALL_ONES_64 = 0xFFFFFFFF, 2**64 - 1
 _SPECIAL, _LAST, _FREE, _METADATA = 0x10, 0x20, 1, 3
 
-_Record = tuple[int, int, int, int]
+# (flags, owner, physical, length, offset), kept sorted by (physical, owner, offset) as the kernels list them.
+_Record = tuple[int, int, int, int, int]
 
 
 def _one_is_last(batch: list[_Record], index: int, pending: list[_Record]) -> bool:
@@ -30,10 +31,19 @@ def _one_is_last(batch: list[_Record], index: int, pending: list[_Record]) -> bo
 
 
 class FakeFsmap:
-    """Answers FS_IOC_GETFSMAP from a list of (flags, owner, physical, length), as the kernels do.
+    """Answers FS_IOC_GETFSMAP from a list of (flags, owner, physical, length, offset), as the kernels do.
 
-    A low key with a non-zero length resumes at its physical plus its length and a zero length starts from
-    the beginning; a high key that is not all ones with length 0, or a non-zero reserved byte, is EINVAL.
+    Each rule below mirrors the kernel code named with it.
+
+    - A low key whose length is zero starts from the beginning, and a non-zero one continues
+      (xfs_fsmap.c, the comment before ``info.next_daddr``: "identified by a non-zero length in the low key").
+    - A low key naming a special owner (free space, metadata) resumes at physical plus length, because no other
+      mapping can share those blocks (xfs_fsmap.c ~L505-510, ``rmap_not_shareable``: start_fsb += blockcount).
+    - A low key naming file data resumes inside the same physical block at the next offset of the same owner
+      (xfs_fsmap.c ~L511-514: ``rm_offset += rm_blockcount``), so records sharing one physical address are
+      continued by (owner, offset), which is why two batches can end at one physical address.
+    - The all-ones high key is a contract this fake imposes on the walk (it matches what xfs_io sends); the
+      kernels only require low < high. A non-zero reserved byte is the kernels' own EINVAL.
     """
 
     def __init__(self, records: list[_Record], *, fail: int | None = None) -> None:
@@ -50,10 +60,12 @@ class FakeFsmap:
             raise OSError(errno.EINVAL, os.strerror(errno.EINVAL))
 
     def _pending(self, head: bytearray) -> list[_Record]:
-        _, _, physical, _, _, length = _RECORD.unpack_from(head, _LOW_KEY)
+        _, flags, physical, owner, offset, length = _RECORD.unpack_from(head, _LOW_KEY)
         if length == 0:
             return list(self.records)
-        return [one for one in self.records if one[2] >= physical + length]
+        if flags & _SPECIAL:
+            return [one for one in self.records if one[2] >= physical + length]
+        return [one for one in self.records if (one[2], one[1], one[4]) >= (physical, owner, offset + length)]
 
     def __call__(self, _fd: int, request: int, head: bytearray) -> int:
         assert request == freespace.FS_IOC_GETFSMAP
@@ -64,19 +76,24 @@ class FakeFsmap:
         count = _HEAD.unpack_from(head, 0)[2]
         pending = self._pending(head)
         batch = pending[:count]
-        for index, (flags, owner, physical, length) in enumerate(batch):
+        for index, (flags, owner, physical, length, offset) in enumerate(batch):
             last = _LAST if _one_is_last(batch, index, pending) else 0
-            _RECORD.pack_into(head, _RECORDS + index * _RECORD.size, 0, flags | last, physical, owner, 0, length)
+            _RECORD.pack_into(head, _RECORDS + index * _RECORD.size, 0, flags | last, physical, owner, offset, length)
         struct.pack_into("<I", head, 12, len(batch))
         return 0
 
 
 def _free(physical: int, length: int) -> _Record:
-    return (_SPECIAL, _FREE, physical, length)
+    return (_SPECIAL, _FREE, physical, length, 0)
 
 
 def _metadata(physical: int, length: int) -> _Record:
-    return (_SPECIAL, _METADATA, physical, length)
+    return (_SPECIAL, _METADATA, physical, length, 0)
+
+
+def _shared(physical: int, owner: int) -> _Record:
+    """A reflinked block: file data (no special owner) at ``physical``, one record per owning inode."""
+    return (0, owner, physical, 4096, 0)
 
 
 def _opener(tmp_path: Path) -> Callable[[str], int]:
@@ -162,6 +179,16 @@ def test_a_kernel_that_does_not_advance_is_refused_not_looped(tmp_path: Path) ->
 
     reading = freespace.read_free_extents(ROWS, ioctl=Stuck([]), opener=_opener(tmp_path))
     assert "did not advance" in reading["8:1"]["error"]
+
+
+def test_a_reflinked_block_shared_past_one_batch_does_not_stop_the_walk(tmp_path: Path) -> None:
+    # 9000 owners of one physical block: three calls, the first two ending at the same physical address.
+    records = [_metadata(0, 4096), *(_shared(4096, 100 + n) for n in range(9000)), _free(1 << 40, 1 << 30)]
+    fake = FakeFsmap(records)
+    reading = freespace.read_free_extents(ROWS, ioctl=fake, opener=_opener(tmp_path))
+    entry = FreeExtentsEntry.model_validate(reading["8:1"])
+    assert (entry.count, entry.largest) == (1, 1 << 30)
+    assert fake.calls == 3
 
 
 def test_a_hidden_only_filesystem_is_recorded_as_refused_and_never_asked(tmp_path: Path) -> None:
