@@ -297,7 +297,6 @@ async def test_two_rows_sharing_a_name_each_answer_with_their_own_record() -> No
     assert hidden.readings_refused[0].reason not in back
 
 
-@pytest.mark.os_agnostic
 def test_a_counted_filesystem_shows_its_free_space_layout() -> None:
     space = FreeSpace(
         fragmentation_percent=37, free_extent_count=4, free_extent_bytes=4 * 2**20, largest_free_extent_bytes=2 * 2**20
@@ -311,7 +310,6 @@ def test_a_counted_filesystem_shows_its_free_space_layout() -> None:
     assert values["free space.average"] == theme.format_size_both(2**20)
 
 
-@pytest.mark.os_agnostic
 def test_a_pool_shows_its_score_and_n_a_for_what_zfs_does_not_publish() -> None:
     pool = Filesystem(
         kind=FilesystemKind.POOL, name="tank", fs_type="zfs", free_space=FreeSpace(fragmentation_percent=22)
@@ -321,10 +319,22 @@ def test_a_pool_shows_its_score_and_n_a_for_what_zfs_does_not_publish() -> None:
     assert {values[f"free space.{label}"] for label in ("free extents", "largest", "average")} == {theme.NOT_APPLICABLE}
 
 
-@pytest.mark.os_agnostic
 def test_an_uncounted_ext4_shows_dashes_and_a_vfat_shows_n_a() -> None:
     unread = _values(Filesystem(kind=FilesystemKind.MOUNT, name="/", fs_type="ext4"))
     impossible = _values(Filesystem(kind=FilesystemKind.MOUNT, name="/e", fs_type="vfat"))
     labels = ("fragmentation", "free extents", "largest", "average")
     assert {unread[f"free space.{label}"] for label in labels} == {theme.NOT_READ}
     assert {impossible[f"free space.{label}"] for label in labels} == {theme.NOT_APPLICABLE}
+
+
+def test_a_full_filesystem_with_no_free_extents_draws_not_applicable_where_no_figure_can_exist() -> None:
+    zero = FreeSpace(free_extent_count=0, free_extent_bytes=0, largest_free_extent_bytes=0, histogram=(0,) * 21)
+    full = _mount(free_space=zero)
+    values = _values(full)
+    assert values["free space.fragmentation"] == theme.NOT_APPLICABLE
+    assert values["free space.average"] == theme.NOT_APPLICABLE
+    assert values["free space.free extents"] == "0"
+    assert theme.NOT_READ not in {
+        values[f"free space.{label}"] for label in ("fragmentation", "free extents", "largest", "average")
+    }
+    assert "not read" not in _panel(full)

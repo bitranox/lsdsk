@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
-from typing import Any
+import os
+from typing import TYPE_CHECKING, Any
 
+from test_linux_free_extents import FakeFsmap
 from workcount import work_to_run
 
+from lsdsk.adapters.hw.linux import freespace
 from lsdsk.adapters.hw.linux.capture import LinuxCapture
 from lsdsk.adapters.hw.linux.filesystems import build_filesystems
 from lsdsk.adapters.hw.linux.usage import disks_by_device, resolve_usage
+from lsdsk.adapters.render import theme
+from lsdsk.adapters.render.tables import filesystem_table_row
 from lsdsk.domain.enums import Environment, FilesystemKind
 from lsdsk.domain.models import FreeSpace
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 BARE_METAL = Environment.BARE_METAL
 
@@ -360,6 +368,29 @@ def test_a_pool_listing_refusal_does_not_hide_the_fragmentation_refusal() -> Non
         ("zfs-pools", "pool other: stats refused"),
         ("zfs-fragmentation", "pool tank: get_props refused"),
     ]
+
+
+def test_an_empty_filesystem_walk_reads_zero_extents_and_draws_not_applicable(tmp_path: Path) -> None:
+    node = tmp_path / "mount"
+    node.write_bytes(b"")  # a plain file: Windows refuses os.open on a directory
+    rows = [{"dev": "8:1", "mountpoint": "/data", "fstype": "ext4"}]
+    reading = freespace.read_free_extents(
+        rows, ioctl=FakeFsmap([]), opener=lambda _mountpoint: os.open(node, os.O_RDONLY)
+    )
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        mounts=[_mount("8:1", "/data")],
+        filesystem_space={
+            "8:1": {"frsize": 4096, "blocks": 100, "bfree": 100, "bavail": 100, "files": 10, "ffree": 10}
+        },
+        free_extents=reading,
+    )
+    built, _ = build_filesystems(capture, BARE_METAL)
+    assert built is not None
+    (filesystem,) = built
+    assert filesystem.free_space is not None
+    assert filesystem.free_space.free_extent_count == 0
+    assert filesystem_table_row(filesystem, both_scales=True)["frag"][0] == theme.NOT_APPLICABLE
 
 
 def test_an_ext4_mount_carries_its_free_extents() -> None:

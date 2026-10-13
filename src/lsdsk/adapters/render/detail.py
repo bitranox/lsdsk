@@ -1003,11 +1003,13 @@ def _filesystem_free_space_values(filesystem: Filesystem) -> tuple[tuple[str, Ce
     score = _absent() if space.fragmentation_percent is None else _counted(space.fragmentation_percent, "%")
     if space.free_extent_count is None:  # a pool: ZFS publishes the score and nothing finer
         return (("fragmentation", score), *((label, _absent()) for label in labels[1:]))
+    # A walk that found no free run has no mean to take: the figure cannot exist, it was not missed.
+    average = _absent() if space.free_extent_count == 0 else _capacity(space.average_free_extent_bytes)
     return (
         ("fragmentation", score),
         ("free extents", _counted(space.free_extent_count)),
         ("largest", _capacity(space.largest_free_extent_bytes)),
-        ("average", _capacity(space.average_free_extent_bytes)),
+        ("average", average),
     )
 
 
