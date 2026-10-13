@@ -10,7 +10,8 @@ import sys
 from typing import TYPE_CHECKING
 
 import pytest
-from nvlist_builders import pool_config, pool_names
+from nvlist_builders import pool_config, pool_names, pool_props
+from pydantic import ValidationError
 
 from lsdsk.adapters.hw.linux import zfs
 from lsdsk.adapters.hw.linux.capture import LinuxCapture, PoolEntry
@@ -220,3 +221,48 @@ def test_a_device_that_cannot_be_opened_is_a_refusal_with_its_reason(tmp_path: P
     assert error is not None
     assert error.startswith("could not open ")
     assert os.strerror(code) in error
+
+
+def test_every_pool_is_asked_for_its_fragmentation(tmp_path: Path) -> None:
+    fake = FakeDevice(
+        {
+            (zfs.ZFS_IOC_POOL_CONFIGS, ""): pool_names(["rpool", "tank"]),
+            (zfs.ZFS_IOC_POOL_GET_PROPS, "rpool"): pool_props(fragmentation=22),
+            (zfs.ZFS_IOC_POOL_GET_PROPS, "tank"): pool_props(fragmentation=2**64 - 1),
+        }
+    )
+    assert zfs.read_pool_fragmentation(_device(tmp_path), ioctl=fake) == ({"rpool": 22, "tank": None}, None)
+
+
+def test_a_pool_whose_properties_fail_is_named_in_the_reason(tmp_path: Path) -> None:
+    fake = FakeDevice(
+        {
+            (zfs.ZFS_IOC_POOL_CONFIGS, ""): pool_names(["good", "bad"]),
+            (zfs.ZFS_IOC_POOL_GET_PROPS, "good"): pool_props(fragmentation=5),
+            (zfs.ZFS_IOC_POOL_GET_PROPS, "bad"): pool_props(fragmentation=None),
+        }
+    )
+    pools, error = zfs.read_pool_fragmentation(_device(tmp_path), ioctl=fake)
+    assert pools == {"good": 5}
+    assert error is not None
+    assert "pool bad" in error
+
+
+def test_no_control_device_is_no_fragmentation_and_no_refusal(tmp_path: Path) -> None:
+    assert zfs.read_pool_fragmentation(tmp_path / "missing", ioctl=FakeDevice({})) == (None, None)
+
+
+def test_the_fragmentation_reason_key_appears_only_with_a_reason() -> None:
+    assert zfs.fragmentation_fields(None, None) == {"zfs_fragmentation": None}
+    assert zfs.fragmentation_fields({}, "why") == {"zfs_fragmentation": {}, "zfs_fragmentation_error": "why"}
+
+
+def test_a_capture_carries_each_pool_s_fragmentation() -> None:
+    capture = LinuxCapture.model_validate({**_MINIMAL, **zfs.fragmentation_fields({"rpool": 22, "tank": None}, None)})
+    assert capture.zfs_fragmentation == {"rpool": 22, "tank": None}
+
+
+@pytest.mark.parametrize("value", [-1, 101])
+def test_a_fragmentation_outside_0_to_100_is_refused(value: int) -> None:
+    with pytest.raises(ValidationError, match="zfs_fragmentation"):
+        LinuxCapture.model_validate({**_MINIMAL, "zfs_fragmentation": {"rpool": value}})

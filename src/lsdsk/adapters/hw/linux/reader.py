@@ -1157,6 +1157,7 @@ def read_system() -> dict[str, Any]:
     ]
 
     pools, pools_error = zfs.read_pools()
+    fragmentation, fragmentation_error = zfs.read_pool_fragmentation()
     mount_rows = mounts.read_mounts()
     reading: dict[str, Any] = {
         "schema": SCHEMA_VERSION,
@@ -1179,6 +1180,7 @@ def read_system() -> dict[str, Any]:
         "stacked": mounts.read_stacked(sorted(holders)),
         "signatures": mounts.read_signatures(devnums),
         **zfs.capture_fields(pools, pools_error),
+        **zfs.fragmentation_fields(fragmentation, fragmentation_error),
         "filesystem_space": None if mount_rows is None else mounts.read_space(mount_rows),
     }
     return reading

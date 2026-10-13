@@ -18,13 +18,15 @@ import os
 import struct
 from collections.abc import Callable
 from pathlib import Path
+from typing import TypeVar
 
 from ....domain.text import MAX_DEVICE_TEXT
-from ..decode.nvlist import decode_nvlist, pool_space
+from ..decode.nvlist import decode_nvlist, pool_fragmentation, pool_space
 
 ZFS_DEVICE = Path("/dev/zfs")
 ZFS_IOC_POOL_CONFIGS = 0x5A04
 ZFS_IOC_POOL_STATS = 0x5A05
+ZFS_IOC_POOL_GET_PROPS = 0x5A27
 #: Largest reply followed. A config grows with the vdev count; this is far past
 #: any real pool and stops a kernel answer from sizing our allocation.
 MAX_REPLY_BYTES = 16 * 1024 * 1024
@@ -38,6 +40,8 @@ _ATTEMPTS = 6
 _CUT_MARK = " ... (more pools failed)"
 #: fcntl.ioctl's mutate_flag: the kernel's answer is written back into the command buffer.
 _WRITE_BACK = True
+
+_T = TypeVar("_T")
 
 Ioctl = Callable[[int, int, bytearray], int]
 #: Opens a path with the given flags. ``read_pools`` closes the descriptor it returns with
@@ -107,6 +111,10 @@ def _space_of(fd: int, pool: str, ioctl: Ioctl) -> dict[str, int]:
     return {"size": space.size_bytes, "alloc": space.alloc_bytes}
 
 
+def _fragmentation_of(fd: int, pool: str, ioctl: Ioctl) -> int | None:
+    return pool_fragmentation(decode_nvlist(_ask(fd, ZFS_IOC_POOL_GET_PROPS, pool, ioctl)))
+
+
 def _bounded(text: str) -> str:
     """Cut ``text`` to the capture's text cap, marking the cut."""
     if len(text) <= MAX_DEVICE_TEXT:
@@ -130,6 +138,35 @@ def capture_fields(pools: dict[str, dict[str, int]] | None, error: str | None) -
     return fields
 
 
+def _each_pool(
+    device: Path, ioctl: Ioctl | None, opener: Opener | None, read_one: Callable[[int, str, Ioctl], _T]
+) -> tuple[dict[str, _T] | None, str | None]:
+    """Open the control device, list the pools and read each with ``read_one``."""
+    call = ioctl or system_ioctl
+    try:
+        fd = (opener or os.open)(device, os.O_RDONLY)
+    except OSError as error:
+        # No node, or a node with no driver behind it (ENODEV/ENXIO): ZFS is not here, which is no refusal.
+        if isinstance(error, FileNotFoundError) or error.errno in {errno.ENODEV, errno.ENXIO}:
+            return None, None
+        return None, f"could not open {device} ({error.strerror})"
+    try:
+        try:
+            names = _pool_names(fd, call)
+        except (OSError, ValueError) as error:
+            return None, f"listing the pools failed: {error}"
+        readings: dict[str, _T] = {}
+        problems: list[str] = []
+        for name in names:
+            try:
+                readings[name] = read_one(fd, name, call)
+            except (OSError, ValueError) as error:
+                problems.append(f"pool {name}: {error}")
+        return readings, _bounded("; ".join(problems)) or None
+    finally:
+        os.close(fd)
+
+
 def read_pools(
     device: Path = ZFS_DEVICE, *, ioctl: Ioctl | None = None, opener: Opener | None = None
 ) -> tuple[dict[str, dict[str, int]] | None, str | None]:
@@ -147,39 +184,56 @@ def read_pools(
         could not be listed; otherwise the pools by name, with the reason any
         single pool could not be read.
     """
-    call = ioctl or system_ioctl
-    try:
-        fd = (opener or os.open)(device, os.O_RDONLY)
-    except OSError as error:
-        # No node, or a node with no driver behind it (ENODEV/ENXIO): ZFS is not here, which is no refusal.
-        if isinstance(error, FileNotFoundError) or error.errno in {errno.ENODEV, errno.ENXIO}:
-            return None, None
-        return None, f"could not open {device} ({error.strerror})"
-    try:
-        try:
-            names = _pool_names(fd, call)
-        except (OSError, ValueError) as error:
-            return None, f"listing the pools failed: {error}"
-        pools: dict[str, dict[str, int]] = {}
-        problems: list[str] = []
-        for name in names:
-            try:
-                pools[name] = _space_of(fd, name, call)
-            except (OSError, ValueError) as error:
-                problems.append(f"pool {name}: {error}")
-        return pools, _bounded("; ".join(problems)) or None
-    finally:
-        os.close(fd)
+    return _each_pool(device, ioctl, opener, _space_of)
+
+
+def read_pool_fragmentation(
+    device: Path = ZFS_DEVICE, *, ioctl: Ioctl | None = None, opener: Opener | None = None
+) -> tuple[dict[str, int | None] | None, str | None]:
+    """Read every imported pool's own FRAG, unprivileged.
+
+    Args:
+        device: The ZFS control device.
+        ioctl: The call that reaches it; the system's ``fcntl.ioctl`` by default.
+        opener: Opens the device read-only and returns a descriptor, which is closed
+            with ``os.close``; ``os.open`` by default.
+
+    Returns:
+        ``(None, None)`` when there is no control device; ``(None, reason)`` when
+        the pools could not be listed; otherwise the percentage by pool name, with
+        the reason any single pool could not be read. A value of ``None`` means
+        ZFS publishes no figure for that pool.
+    """
+    return _each_pool(device, ioctl, opener, _fragmentation_of)
+
+
+def fragmentation_fields(fragmentation: dict[str, int | None] | None, error: str | None) -> dict[str, object]:
+    """The reading keys the fragmentation read contributes.
+
+    Args:
+        fragmentation: Each pool's FRAG by name, or ``None`` when there was no control device.
+        error: Why the reading or one pool's could not be made, if it could not.
+
+    Returns:
+        ``zfs_fragmentation`` always, and ``zfs_fragmentation_error`` only when there is a reason.
+    """
+    fields: dict[str, object] = {"zfs_fragmentation": fragmentation}
+    if error is not None:
+        fields["zfs_fragmentation_error"] = error
+    return fields
 
 
 __all__ = [
     "MAX_REPLY_BYTES",
     "ZFS_DEVICE",
     "ZFS_IOC_POOL_CONFIGS",
+    "ZFS_IOC_POOL_GET_PROPS",
     "ZFS_IOC_POOL_STATS",
     "Ioctl",
     "Opener",
     "capture_fields",
+    "fragmentation_fields",
+    "read_pool_fragmentation",
     "read_pools",
     "system_ioctl",
 ]

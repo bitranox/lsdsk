@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, TypedDict
 
 from ....domain.disk_name import disk_name_order
 from ....domain.enums import Environment, FilesystemKind
-from ....domain.models import FIXED_INODE_TABLE_TYPES, Filesystem, RefusedReading
+from ....domain.models import FIXED_INODE_TABLE_TYPES, Filesystem, FreeSpace, RefusedReading
 from ..refusals import refusals_of
 from .usage import disks_by_device, disks_by_pool
 
@@ -97,6 +97,13 @@ def _mount_rows(
     return rows
 
 
+def _pool_free_space(fragmentation: Mapping[str, int | None] | None, name: str) -> FreeSpace | None:
+    """A pool's FRAG as its free-space value; ``None`` where it was not read."""
+    if fragmentation is None or name not in fragmentation:
+        return None
+    return FreeSpace(fragmentation_percent=fragmentation[name])
+
+
 def _pool_rows(capture: LinuxCapture) -> list[Filesystem]:
     members = disks_by_pool(capture)
     pools = capture.zfs_pools or {}
@@ -118,6 +125,7 @@ def _pool_rows(capture: LinuxCapture) -> list[Filesystem]:
                 name=name,
                 fs_type=_ZFS,
                 disks=tuple(sorted(members[name], key=disk_name_order)),
+                free_space=_pool_free_space(capture.zfs_fragmentation, name),
                 **figures,
             )
         )
@@ -137,7 +145,7 @@ def _pool_refusals(capture: LinuxCapture) -> tuple[RefusedReading, ...]:
         return refusals_of({"zfs-pools": capture.zfs_pools_error})
     if capture.zfs_pools is None:
         return refusals_of({"zfs-pools": _NO_CONTROL_DEVICE})
-    return ()
+    return refusals_of({"zfs-fragmentation": capture.zfs_fragmentation_error})
 
 
 def build_filesystems(

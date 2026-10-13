@@ -48,6 +48,7 @@ _ROTATING_VALUES: dict[str, bool] = {"0": False, "1": True}
 # holds ended `lsdsk disks` in a bare OverflowError.
 _UINT32_MAX = 0xFFFFFFFF  # an AHCI register, and uid_t
 _UINT64_MAX = 2**64 - 1  # a ZFS pool's size and allocation, as the kernel counts them
+_FragmentationPercent = Annotated[int, Field(ge=0, le=100)]  # a ZFS pool's FRAG
 _PCIE_PORT_TYPE_MAX = 0xF  # the PCIe capability's Device/Port Type, 4 bits
 _PCIE_SLOT_NUMBER_MAX = 0x1FFF  # Slot Capabilities' Physical Slot Number, 13 bits
 
@@ -562,6 +563,11 @@ class LinuxCapture(CaptureHeader, frozen=True):
             an empty map is a reading that found no pool.
         zfs_pools_error: Why the pools could not be read, or why one of them
             could not.
+        zfs_fragmentation: Each imported pool's FRAG by name, ``None`` for a
+            pool ZFS gives no figure for. ``None`` as a whole when there was no
+            ZFS control device, or in a capture taken before this field existed.
+        zfs_fragmentation_error: Why the fragmentation could not be read, or why
+            one pool's could not.
         filesystem_space: Each mounted filesystem's ``statvfs`` reading, keyed
             by its ``maj:min``. The live reader writes it whenever it read
             mountinfo, so ``None`` marks a capture taken before this field
@@ -586,6 +592,8 @@ class LinuxCapture(CaptureHeader, frozen=True):
     signatures: EntryMap[DeviceText, FilesystemSignature] | None = None
     zfs_pools: EntryMap[DeviceText, PoolEntry] | None = None
     zfs_pools_error: DeviceText | None = None
+    zfs_fragmentation: EntryMap[DeviceText, _FragmentationPercent | None] | None = None
+    zfs_fragmentation_error: DeviceText | None = None
     filesystem_space: EntryMap[DeviceText, SpaceEntry] | None = None
 
 

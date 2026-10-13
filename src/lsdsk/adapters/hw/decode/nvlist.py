@@ -205,6 +205,33 @@ def pool_space(config: NvList) -> PoolSpace:
     return PoolSpace(size_bytes=size, alloc_bytes=alloc)
 
 
+#: The highest fragmentation ZFS reports; anything above is ZFS_FRAG_INVALID ("-" in zpool list).
+_MAX_FRAGMENTATION = 100
+
+
+def pool_fragmentation(props: NvList) -> int | None:
+    """A pool's FRAG, from a ``ZFS_IOC_POOL_GET_PROPS`` reply.
+
+    Args:
+        props: The decoded reply: each property an nvlist carrying ``value``.
+
+    Returns:
+        The percentage, or ``None`` when ZFS publishes no figure for the pool.
+
+    Raises:
+        ValueError: The reply carries no fragmentation property or no number in it.
+    """
+    entry = props.get("fragmentation")
+    if not isinstance(entry, Mapping):
+        msg = "the pool's properties carry no fragmentation"
+        raise ValueError(msg)
+    value = entry.get("value")
+    if not isinstance(value, int):
+        msg = "the fragmentation property carries no number"
+        raise ValueError(msg)
+    return value if value <= _MAX_FRAGMENTATION else None
+
+
 __all__ = [
     "MAX_DEPTH",
     "MAX_PAIRS",
@@ -213,5 +240,6 @@ __all__ = [
     "NvValue",
     "PoolSpace",
     "decode_nvlist",
+    "pool_fragmentation",
     "pool_space",
 ]

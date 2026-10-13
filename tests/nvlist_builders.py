@@ -99,3 +99,18 @@ def pool_names(names: list[str]) -> bytes:
         The native nvlist stream.
     """
     return stream([embedded(name, [text("name", name)]) for name in names])
+
+
+def pool_props(*, fragmentation: int | None) -> bytes:
+    """A ZFS_IOC_POOL_GET_PROPS reply: each property an nvlist of value and source.
+
+    Args:
+        fragmentation: The FRAG value to publish, or ``None`` to leave the property out.
+
+    Returns:
+        The native nvlist stream.
+    """
+    items = [embedded("size", [u64("value", 100), u64("source", 0)])]
+    if fragmentation is not None:
+        items.append(embedded("fragmentation", [u64("value", fragmentation), u64("source", 0)]))
+    return stream(items)

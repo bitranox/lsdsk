@@ -10,6 +10,7 @@ from lsdsk.adapters.hw.linux.capture import LinuxCapture
 from lsdsk.adapters.hw.linux.filesystems import build_filesystems
 from lsdsk.adapters.hw.linux.usage import disks_by_device, resolve_usage
 from lsdsk.domain.enums import Environment, FilesystemKind
+from lsdsk.domain.models import FreeSpace
 
 BARE_METAL = Environment.BARE_METAL
 
@@ -310,3 +311,37 @@ def test_a_pool_with_no_member_disk_makes_no_row() -> None:
     rows, _ = build_filesystems(capture, BARE_METAL)
     assert rows is not None
     assert [row.name for row in rows] == ["tank"]
+
+
+def _pool_capture(**extra: Any) -> LinuxCapture:
+    return _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        signatures={"8:1": {"fs_type": "zfs_member", "fs_label": "tank"}},
+        mounts=[_mount("0:50", "/tank", "zfs", "tank")],
+        zfs_pools={"tank": {"size": 1000, "alloc": 500}},
+        filesystem_space={},
+        **extra,
+    )
+
+
+def test_a_pool_carries_its_own_fragmentation_and_nothing_finer() -> None:
+    rows, refusals = build_filesystems(_pool_capture(zfs_fragmentation={"tank": 37}), BARE_METAL)
+    assert rows is not None
+    (pool,) = rows
+    assert pool.free_space == FreeSpace(fragmentation_percent=37)
+    assert refusals == ()
+
+
+def test_a_capture_taken_before_fragmentation_was_read_has_no_free_space_and_no_refusal() -> None:
+    rows, refusals = build_filesystems(_pool_capture(), BARE_METAL)
+    assert rows is not None
+    assert (rows[0].free_space, refusals) == (None, ())
+
+
+def test_a_refused_fragmentation_reading_is_reported_once_for_the_inventory() -> None:
+    rows, refusals = build_filesystems(
+        _pool_capture(zfs_fragmentation={}, zfs_fragmentation_error="pool tank: boom"), BARE_METAL
+    )
+    assert rows is not None
+    assert rows[0].free_space is None
+    assert [(r.reading, r.reason) for r in refusals] == [("zfs-fragmentation", "pool tank: boom")]

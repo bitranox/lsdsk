@@ -13,13 +13,22 @@ from nvlist_builders import (
     embedded,
     embedded_array,
     pair,
+    pool_props,
     stream,
     text,
     u64,
     u64_array,
 )
 
-from lsdsk.adapters.hw.decode.nvlist import MAX_DEPTH, MAX_PAIRS, NvValue, PoolSpace, decode_nvlist, pool_space
+from lsdsk.adapters.hw.decode.nvlist import (
+    MAX_DEPTH,
+    MAX_PAIRS,
+    NvValue,
+    PoolSpace,
+    decode_nvlist,
+    pool_fragmentation,
+    pool_space,
+)
 
 
 def _stats(alloc: int, space: int) -> list[int]:
@@ -130,3 +139,17 @@ def test_a_malformed_buffer_is_refused_with_its_reason(blob: bytes, reason: str)
 def test_a_config_without_usable_stats_is_refused(config: dict[str, NvValue], reason: str) -> None:
     with pytest.raises(ValueError, match=reason):
         pool_space(config)
+
+
+def test_a_pool_reports_its_fragmentation_property() -> None:
+    assert pool_fragmentation(decode_nvlist(pool_props(fragmentation=22))) == 22
+
+
+def test_a_pool_that_publishes_no_figure_reads_none() -> None:
+    # ZFS_FRAG_INVALID is UINT64_MAX; zpool list prints it as "-".
+    assert pool_fragmentation(decode_nvlist(pool_props(fragmentation=2**64 - 1))) is None
+
+
+def test_properties_without_fragmentation_are_refused() -> None:
+    with pytest.raises(ValueError, match="no fragmentation"):
+        pool_fragmentation(decode_nvlist(pool_props(fragmentation=None)))
