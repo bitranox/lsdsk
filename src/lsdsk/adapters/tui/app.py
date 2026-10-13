@@ -42,7 +42,7 @@ from .long_page import LongPage
 from .typed_table import raising_table_id, rows_of
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Collection, Iterable, Mapping, Sequence
 
     from rich.console import RenderableType
     from textual import events
@@ -590,16 +590,17 @@ class LsdskApp(App[None]):
         note.display = not listed
         self.query_one("#filesystem-table", DataTable).display = listed
         severities = report.severity_index(self.findings)
-        drawn: list[str] = []
+        drawn: dict[str, set[str]] = {column.key: set() for column in tables.FILESYSTEM_COLUMNS}
         self._filesystem_of = {}
         for position, filesystem in enumerate(filesystems or ()):
             self._filesystem_of[str(position)] = filesystem
             row = tables.filesystem_marked_row(filesystem, severities, both_scales=True)
-            drawn.extend(row.cells[column.key][0] for column in tables.FILESYSTEM_COLUMNS)
+            for column in tables.FILESYSTEM_COLUMNS:
+                drawn[column.key].add(row.cells[column.key][0])
             table.add_row(*_marked(row, tables.FILESYSTEM_COLUMNS), key=str(position))
         self._explain_filesystem_marks(drawn)
 
-    def _explain_filesystem_marks(self, drawn: Iterable[str]) -> None:
+    def _explain_filesystem_marks(self, drawn: Mapping[str, Collection[str]]) -> None:
         """Name `-` and `n/a` under the table, each only when a drawn cell carries it."""
         legend = self.query_one("#filesystem-legend", Static)
         text = tables.filesystem_legend_for(drawn)

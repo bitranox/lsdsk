@@ -22,10 +22,11 @@ from lsdsk.adapters.tui import palette as tui_palette
 from lsdsk.adapters.tui.app import FILESYSTEM_COLUMNS
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.enums import FilesystemKind
-from lsdsk.domain.models import Filesystem, Inventory
+from lsdsk.domain.models import Filesystem, FreeSpace, Inventory
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
 
+# The row carries a fragmentation figure so the legend test sees no marker it did not mean to draw.
 _EXT4 = Filesystem(
     kind=FilesystemKind.MOUNT,
     name="/var",
@@ -36,7 +37,9 @@ _EXT4 = Filesystem(
     free_bytes=500,
     inodes_total=10,
     inodes_free=5,
+    free_space=FreeSpace(fragmentation_percent=10),
 )
+# The row carries a fragmentation figure so the legend test sees no marker it did not mean to draw.
 _FULL = Filesystem(
     kind=FilesystemKind.MOUNT,
     name="/srv",
@@ -47,7 +50,9 @@ _FULL = Filesystem(
     free_bytes=20,
     inodes_total=10,
     inodes_free=5,
+    free_space=FreeSpace(fragmentation_percent=20),
 )
+# The row carries a fragmentation figure so the legend test sees no marker it did not mean to draw.
 _POOL = Filesystem(
     kind=FilesystemKind.POOL,
     name="tank",
@@ -56,6 +61,7 @@ _POOL = Filesystem(
     size_bytes=1000,
     used_bytes=100,
     free_bytes=900,
+    free_space=FreeSpace(fragmentation_percent=30),
 )
 _UNREAD = Filesystem(kind=FilesystemKind.MOUNT, name="/data", fs_type="ext4", disks=("sdd",))
 

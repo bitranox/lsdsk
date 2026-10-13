@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import pytest
 from rich.console import Console
 
 from lsdsk.adapters.render import tables, theme
-from lsdsk.adapters.render.tables import filesystem_table_row, render_filesystems
+from lsdsk.adapters.render.tables import (
+    FILESYSTEM_COLUMNS,
+    FILESYSTEM_FRAG_NOT_APPLICABLE,
+    FILESYSTEM_NOT_APPLICABLE_LEGEND,
+    filesystem_legend_for,
+    filesystem_table_row,
+    render_filesystems,
+)
 from lsdsk.domain.enums import FilesystemKind, Severity
-from lsdsk.domain.models import Filesystem, Finding, Inventory
+from lsdsk.domain.models import Filesystem, Finding, FreeSpace, Inventory
 
 
 def _inventory(*rows: Filesystem) -> Inventory:
@@ -24,6 +32,7 @@ def _text(*rows: Filesystem, width: int = 160) -> str:
     return _text_of(_inventory(*rows), width=width)
 
 
+# The row carries a fragmentation figure so the legend test sees no marker it did not mean to draw.
 _EXT4 = Filesystem(
     kind=FilesystemKind.MOUNT,
     name="/var",
@@ -34,7 +43,9 @@ _EXT4 = Filesystem(
     free_bytes=50,
     inodes_total=10,
     inodes_free=5,
+    free_space=FreeSpace(fragmentation_percent=10),
 )
+# The row carries a fragmentation figure so the legend test sees no marker it did not mean to draw.
 _POOL = Filesystem(
     kind=FilesystemKind.POOL,
     name="tank",
@@ -43,6 +54,7 @@ _POOL = Filesystem(
     size_bytes=100,
     used_bytes=10,
     free_bytes=90,
+    free_space=FreeSpace(fragmentation_percent=20),
 )
 _UNREAD = Filesystem(kind=FilesystemKind.MOUNT, name="/data", fs_type="ext4", disks=("sdd",))
 
@@ -143,6 +155,8 @@ def test_filesystem_use_and_disks_survive_every_width() -> None:
             assert heading in rendered, f"{heading} lost at width {width}"
         present = "inodes%" in rendered
         assert not (dropped and present), f"inodes% came back at width {width}"
+        header = rendered.splitlines()[1]
+        assert not ("frag" in header and "inodes%" not in header), f"frag outlived inodes% at width {width}"
         dropped = dropped or not present
 
 
@@ -166,3 +180,47 @@ def test_two_filesystems_sharing_a_name_both_draw() -> None:
     text = _text(covered, covering)
     assert "ext4" in text
     assert "xfs" in text
+
+
+_FRAGMENTED = FreeSpace(
+    fragmentation_percent=37, free_extent_count=10, free_extent_bytes=40960, largest_free_extent_bytes=8192
+)
+
+
+@pytest.mark.parametrize(
+    ("filesystem", "cell"),
+    [
+        (Filesystem(kind=FilesystemKind.MOUNT, name="/", fs_type="ext4", free_space=_FRAGMENTED), "37%"),
+        (Filesystem(kind=FilesystemKind.MOUNT, name="/", fs_type="ext4"), theme.NOT_READ),
+        (Filesystem(kind=FilesystemKind.MOUNT, name="/boot/efi", fs_type="vfat"), theme.NOT_APPLICABLE),
+        (
+            Filesystem(
+                kind=FilesystemKind.POOL, name="tank", fs_type="zfs", free_space=FreeSpace(fragmentation_percent=None)
+            ),
+            theme.NOT_APPLICABLE,
+        ),
+        (
+            Filesystem(
+                kind=FilesystemKind.POOL, name="tank", fs_type="zfs", free_space=FreeSpace(fragmentation_percent=22)
+            ),
+            "22%",
+        ),
+    ],
+)
+def test_the_frag_cell_says_figure_unread_or_impossible(filesystem: Filesystem, cell: str) -> None:
+    assert filesystem_table_row(filesystem, both_scales=True)["frag"][0] == cell
+
+
+def test_the_n_a_legend_names_each_column_that_drew_it() -> None:
+    legend = filesystem_legend_for({"inodes": {theme.NOT_APPLICABLE}, "frag": {theme.NOT_APPLICABLE}})
+    assert "no fixed inode table on this filesystem (inodes%)" in legend
+    assert f"{FILESYSTEM_FRAG_NOT_APPLICABLE} (frag)" in legend
+
+
+def test_one_column_drawing_n_a_keeps_the_plain_sentence() -> None:
+    assert filesystem_legend_for({"inodes": {theme.NOT_APPLICABLE}}) == FILESYSTEM_NOT_APPLICABLE_LEGEND
+
+
+def test_frag_is_the_first_column_to_drop() -> None:
+    order = sorted((c for c in FILESYSTEM_COLUMNS if c.priority > 0), key=lambda c: -c.priority)
+    assert [c.key for c in order][:2] == ["frag", "inodes"]

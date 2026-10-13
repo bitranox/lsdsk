@@ -15,7 +15,7 @@ System Role:
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Final, NamedTuple
 
 from rich.table import Table
 from rich.text import Text
@@ -47,7 +47,7 @@ ANNOTATED_COUNTERS: tuple[CounterKind, ...] = (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Collection, Mapping, Sequence
 
     from ...domain.enums import Severity
     from ...domain.history import DiskSeries, History, Trend
@@ -110,8 +110,8 @@ HEALTH_COLUMNS: tuple[Column, ...] = (
 )
 
 
-# The approved drop order as the terminal narrows: inodes%, then type, then
-# size, then used. `filesystem`, `use%` and `disks` never drop - how full, and
+# The approved drop order as the terminal narrows: frag, then inodes%, then
+# type, then size, then used. `filesystem`, `use%` and `disks` never drop - how full, and
 # where - because a row without them answers nothing.
 FILESYSTEM_COLUMNS: tuple[Column, ...] = (
     Column("filesystem", "filesystem", priority=0, flexible=True, min_width=10),
@@ -121,12 +121,20 @@ FILESYSTEM_COLUMNS: tuple[Column, ...] = (
     Column("free", "free", align=Align.RIGHT, priority=1),
     Column("use", "use%", align=Align.RIGHT, priority=0),
     Column("inodes", "inodes%", align=Align.RIGHT, priority=6),
+    Column("frag", "frag", align=Align.RIGHT, priority=7),
     Column("disks", "disks", priority=0, flexible=True, min_width=6),
 )
 
 # Full sentences, so no cell can contain one by accident.
 FILESYSTEM_NOT_READ_LEGEND = f"{theme.NOT_READ} = not read"
-FILESYSTEM_NOT_APPLICABLE_LEGEND = f"{theme.NOT_APPLICABLE} = no fixed inode table on this filesystem"
+FILESYSTEM_INODES_NOT_APPLICABLE = "no fixed inode table on this filesystem"
+FILESYSTEM_FRAG_NOT_APPLICABLE = "no fragmentation figure for this filesystem"
+FILESYSTEM_NOT_APPLICABLE_LEGEND = f"{theme.NOT_APPLICABLE} = {FILESYSTEM_INODES_NOT_APPLICABLE}"
+# What `n/a` means in each column that can draw it.
+_NOT_APPLICABLE_MEANINGS: Final[dict[str, str]] = {
+    "inodes": FILESYSTEM_INODES_NOT_APPLICABLE,
+    "frag": FILESYSTEM_FRAG_NOT_APPLICABLE,
+}
 FILESYSTEMS_NOT_READ_SENTENCE = "Filesystems were not read."
 FILESYSTEMS_NONE_SENTENCE = "No filesystem on the inventoried disks."
 
@@ -441,6 +449,15 @@ def _inodes_cell(filesystem: Filesystem) -> theme.Cell:
     return _filesystem_cell(_percent_text(filesystem.inodes_used_percent))
 
 
+def _frag_cell(filesystem: Filesystem) -> theme.Cell:
+    """The free-space score; `n/a` where none can exist, `-` where one could and was not read."""
+    if not filesystem.free_space_applies:
+        return _filesystem_cell(None, marker=theme.NOT_APPLICABLE)
+    if filesystem.free_space is None:
+        return _filesystem_cell(None)
+    return _filesystem_cell(_percent_text(filesystem.free_space.fragmentation_percent), marker=theme.NOT_APPLICABLE)
+
+
 def filesystem_table_row(filesystem: Filesystem, *, both_scales: bool) -> Row:
     """One filesystem's cells for every key in :data:`FILESYSTEM_COLUMNS`, styled.
 
@@ -466,6 +483,7 @@ def filesystem_table_row(filesystem: Filesystem, *, both_scales: bool) -> Row:
         "free": capacity(filesystem.free_bytes),
         "use": _filesystem_cell(_percent_text(filesystem.used_percent)),
         "inodes": _inodes_cell(filesystem),
+        "frag": _frag_cell(filesystem),
         "disks": _filesystem_cell(" ".join(filesystem.disks) or None),
     }
 
@@ -491,26 +509,34 @@ def filesystem_marked_row(
     return MarkedRow(marker=marker, cells=filesystem_table_row(filesystem, both_scales=both_scales))
 
 
-def filesystem_legend_for(drawn: Iterable[str]) -> str:
-    """Name `-` and `n/a`, each only when a cell drawn carries it.
+def filesystem_legend_for(drawn: Mapping[str, Collection[str]]) -> str:
+    """Name `-` and `n/a`, each only where a drawn cell carries it, `n/a` per column.
 
     Args:
-        drawn: The text of every cell the view drew.
+        drawn: For each column drawn, the texts of its cells.
 
     Returns:
         The legend sentence, empty when neither marker was drawn.
     """
-    shown = set(drawn)
-    parts = (
-        (theme.NOT_READ, FILESYSTEM_NOT_READ_LEGEND),
-        (theme.NOT_APPLICABLE, FILESYSTEM_NOT_APPLICABLE_LEGEND),
-    )
-    return "; ".join(legend for marker, legend in parts if marker in shown)
+    parts: list[str] = []
+    if any(theme.NOT_READ in texts for texts in drawn.values()):
+        parts.append(FILESYSTEM_NOT_READ_LEGEND)
+    titles = {column.key: column.title for column in FILESYSTEM_COLUMNS}
+    meanings = [
+        (meaning, titles[key])
+        for key, meaning in _NOT_APPLICABLE_MEANINGS.items()
+        if theme.NOT_APPLICABLE in drawn.get(key, ())
+    ]
+    if len(meanings) == 1:
+        parts.append(f"{theme.NOT_APPLICABLE} = {meanings[0][0]}")
+    elif meanings:
+        parts.append(f"{theme.NOT_APPLICABLE} = " + ", ".join(f"{meaning} ({title})" for meaning, title in meanings))
+    return "; ".join(parts)
 
 
 def _filesystem_legend(columns: Sequence[Column], rows: Sequence[MarkedRow]) -> str:
     """The legend for the markers a surviving column of `rows` draws."""
-    return filesystem_legend_for(row.cells[column.key][0] for row in rows for column in columns)
+    return filesystem_legend_for({column.key: {row.cells[column.key][0] for row in rows} for column in columns})
 
 
 def render_filesystems(inventory: Inventory, findings: Sequence[Finding], width: int = DEFAULT_WIDTH) -> Table:
@@ -744,6 +770,8 @@ __all__ = [
     "FILESYSTEMS_NONE_SENTENCE",
     "FILESYSTEMS_NOT_READ_SENTENCE",
     "FILESYSTEM_COLUMNS",
+    "FILESYSTEM_FRAG_NOT_APPLICABLE",
+    "FILESYSTEM_INODES_NOT_APPLICABLE",
     "FILESYSTEM_NOT_APPLICABLE_LEGEND",
     "FILESYSTEM_NOT_READ_LEGEND",
     "HEALTH_COLUMNS",
