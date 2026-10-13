@@ -27,7 +27,7 @@ from typing import Annotated, Literal
 from pydantic import BeforeValidator, Field
 
 from ....domain.enums import Platform
-from ..capture import CaptureHeader, CaptureModel, DeviceText, EncodedPayload, Entries, EntryMap
+from ..capture import CaptureHeader, CaptureModel, DeviceText, EncodedPayload, Entries, EntryMap, FreeExtentsEntry
 from ..decode.virtualization import VirtualizationEvidence
 
 # ``rotational`` is a kernel-published ``0``/``1`` text flag, unlike most of
@@ -573,6 +573,9 @@ class LinuxCapture(CaptureHeader, frozen=True):
             mountinfo, so ``None`` marks a capture taken before this field
             existed (or one whose mountinfo was not read); an empty map is a
             reading with nothing to stat.
+        free_extents: Each ext4 and xfs filesystem's free-extent summary, keyed
+            by its ``maj:min``. ``None`` in a capture taken before this field
+            existed (or one whose mountinfo was not read).
     """
 
     platform: Literal[Platform.LINUX]
@@ -595,6 +598,7 @@ class LinuxCapture(CaptureHeader, frozen=True):
     zfs_fragmentation: EntryMap[DeviceText, _FragmentationPercent | None] | None = None
     zfs_fragmentation_error: DeviceText | None = None
     filesystem_space: EntryMap[DeviceText, SpaceEntry] | None = None
+    free_extents: EntryMap[DeviceText, FreeExtentsEntry] | None = None
 
 
 __all__ = [

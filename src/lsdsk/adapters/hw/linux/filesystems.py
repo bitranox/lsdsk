@@ -13,12 +13,14 @@ from typing import TYPE_CHECKING, TypedDict
 from ....domain.disk_name import disk_name_order
 from ....domain.enums import Environment, FilesystemKind
 from ....domain.models import FIXED_INODE_TABLE_TYPES, Filesystem, FreeSpace, RefusedReading
+from ..free_space import free_space_of
 from ..refusals import refusals_of
 from .usage import disks_by_device, disks_by_pool
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from ..capture import FreeExtentsEntry
     from .capture import LinuxCapture, MountEntry, SpaceEntry
 
 
@@ -67,7 +69,9 @@ def _figures(space: SpaceEntry | None, fs_type: str) -> _Figures:
     return figures
 
 
-def _mount_row(group: list[MountEntry], disks: frozenset[str], space: SpaceEntry | None) -> Filesystem:
+def _mount_row(
+    group: list[MountEntry], disks: frozenset[str], space: SpaceEntry | None, *, extents: FreeExtentsEntry | None
+) -> Filesystem:
     first = group[0]
     # A reachable mountpoint names the row: it is where the figures were read,
     # and a covered one is the very name the mount on top of it carries.
@@ -80,7 +84,13 @@ def _mount_row(group: list[MountEntry], disks: frozenset[str], space: SpaceEntry
         fs_type=first.fstype,
         disks=tuple(sorted(disks, key=disk_name_order)),
         read_only=all(mount.read_only is True for mount in group),
-        readings_refused=refusals_of({"statvfs": None if space is None else space.error}),
+        free_space=free_space_of(extents),
+        readings_refused=refusals_of(
+            {
+                "statvfs": None if space is None else space.error,
+                "free-extents": None if extents is None else extents.error,
+            }
+        ),
         **_figures(space, first.fstype),
     )
 
@@ -93,7 +103,8 @@ def _mount_rows(
     for dev, group in _grouped(tuple(mounts)).items():
         disks = by_device.get(dev, frozenset()) | by_device.get(group[0].source_dev or "", frozenset())
         if disks:
-            rows.append(_mount_row(group, disks, space.get(dev)))
+            extents = None if capture.free_extents is None else capture.free_extents.get(dev)
+            rows.append(_mount_row(group, disks, space.get(dev), extents=extents))
     return rows
 
 

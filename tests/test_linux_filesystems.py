@@ -345,3 +345,29 @@ def test_a_refused_fragmentation_reading_is_reported_once_for_the_inventory() ->
     assert rows is not None
     assert rows[0].free_space is None
     assert [(r.reading, r.reason) for r in refusals] == [("zfs-fragmentation", "pool tank: boom")]
+
+
+def test_an_ext4_mount_carries_its_free_extents() -> None:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        mounts=[_mount("8:1", "/data")],
+        filesystem_space={"8:1": {"frsize": 4096, "blocks": 100, "bfree": 50, "bavail": 50, "files": 10, "ffree": 5}},
+        free_extents={"8:1": {"count": 1, "total": 4096, "largest": 4096, "histogram": [0, 0, 0, 4096] + [0] * 17}},
+    )
+    rows, _ = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    assert rows[0].free_space is not None
+    assert rows[0].free_space.fragmentation_percent == 93
+
+
+def test_a_refused_free_extent_walk_is_carried_on_its_row() -> None:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        mounts=[_mount("8:1", "/data")],
+        filesystem_space={},
+        free_extents={"8:1": {"error": "Operation not permitted"}},
+    )
+    rows, _ = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    assert [(r.reading, r.reason) for r in rows[0].readings_refused] == [("free-extents", "Operation not permitted")]
+    assert rows[0].free_space is None

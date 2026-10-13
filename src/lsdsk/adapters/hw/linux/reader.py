@@ -51,7 +51,7 @@ from ..decode import ahci, pciids
 from ..decode.captured import parse_int
 from ..decode.virtualization import container_markers_in_mounts
 from ..snapshot import SCHEMA_VERSION
-from . import mounts, usbfs, zfs
+from . import freespace, mounts, usbfs, zfs
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -1182,6 +1182,7 @@ def read_system() -> dict[str, Any]:
         **zfs.capture_fields(pools, pools_error),
         **zfs.fragmentation_fields(fragmentation, fragmentation_error),
         "filesystem_space": None if mount_rows is None else mounts.read_space(mount_rows),
+        "free_extents": None if mount_rows is None else freespace.read_free_extents(mount_rows),
     }
     return reading
 
