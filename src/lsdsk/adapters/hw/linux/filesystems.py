@@ -152,11 +152,10 @@ def _pool_refusals(capture: LinuxCapture) -> tuple[RefusedReading, ...]:
     """
     if not disks_by_pool(capture):
         return ()
-    if capture.zfs_pools_error is not None:
-        return refusals_of({"zfs-pools": capture.zfs_pools_error})
-    if capture.zfs_pools is None:
-        return refusals_of({"zfs-pools": _NO_CONTROL_DEVICE})
-    return refusals_of({"zfs-fragmentation": capture.zfs_fragmentation_error})
+    listing = capture.zfs_pools_error
+    if listing is None and capture.zfs_pools is None:
+        listing = _NO_CONTROL_DEVICE
+    return refusals_of({"zfs-pools": listing, "zfs-fragmentation": capture.zfs_fragmentation_error})
 
 
 def build_filesystems(

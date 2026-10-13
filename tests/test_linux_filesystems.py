@@ -347,6 +347,21 @@ def test_a_refused_fragmentation_reading_is_reported_once_for_the_inventory() ->
     assert [(r.reading, r.reason) for r in refusals] == [("zfs-fragmentation", "pool tank: boom")]
 
 
+def test_a_pool_listing_refusal_does_not_hide_the_fragmentation_refusal() -> None:
+    _, refusals = build_filesystems(
+        _pool_capture(
+            zfs_pools_error="pool other: stats refused",
+            zfs_fragmentation={},
+            zfs_fragmentation_error="pool tank: get_props refused",
+        ),
+        BARE_METAL,
+    )
+    assert [(r.reading, r.reason) for r in refusals] == [
+        ("zfs-pools", "pool other: stats refused"),
+        ("zfs-fragmentation", "pool tank: get_props refused"),
+    ]
+
+
 def test_an_ext4_mount_carries_its_free_extents() -> None:
     capture = _capture(
         {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
