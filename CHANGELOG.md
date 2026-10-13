@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.9.0] 2026-10-13 19:17:37
+
 ### Added
 
 - **How scattered the free space is.** The filesystems table gains a `frag` column, the detail panel
