@@ -57,7 +57,7 @@ fragmented large filesystem would otherwise hold the run for as long as it takes
 allocate as many records. The Linux walk has a second bound, `MAX_FSMAP_RECORDS = 4_000_000`
 space-map records of any kind, and refuses with a reason naming that number. It exists because
 `FS_IOC_GETFSMAP` returns every record of the filesystem's space map, not only the free ones: a
-filesystem with reverse mapping, such as xfs, lists the extent of every file as well, so the free
+xfs filesystem with reverse mapping (`rmapbt=1`), read as root, lists the extent of every file as well, so the free
 extents alone would not bound the walk. Both are module constants and not configuration keys: a
 limit a user can raise is a limit a typo can turn into an unbounded read, and the bounds exist to
 protect the run, not to express a preference.
@@ -88,7 +88,7 @@ narrows (priority 7, so it drops before `inodes%`). The panel gains a `free spac
 `{fragmentation_percent, free_extent_count, free_extent_bytes, largest_free_extent_bytes,
 histogram}`, and `histogram` is the 21 buckets of free bytes. A filesystem with no free extent at all
 scores no figure and has no average free run, so its `fragmentation` and `average` draw `n/a` in the
-panel.
+panel, while `largest` and the free extent count draw `0`, because no free space is itself a reading.
 
 ## What was measured
 
@@ -97,13 +97,16 @@ All of it on 2026-10-13 with this change.
 - **Pool fragmentation as an ordinary user.** `ZFS_IOC_POOL_GET_PROPS` on a read-only `/dev/zfs`
   handle, run unprivileged on OpenZFS 2.4.4, answered on every pool tried. On the real-hardware run,
   13 of 13 pools on five ZFS hosts read the same figure as `zpool list`, with values from 2 to 41.
-- **ext4 and xfs, root and unprivileged.** On a throwaway Ubuntu 24.04 VM (kernel 6.8, xfsprogs
+- **ext4 and xfs, root and unprivileged.** On a throwaway Ubuntu VM (kernel 6.8, xfsprogs
   6.6), `lsdsk filesystems --format json` read three 2 GiB filesystems - ext4, xfs, and xfs with
-  `rmapbt=1` - once empty and once after writing 1.4 GiB of 1-8 MiB files and deleting every other
+  `rmapbt=1` - once empty and once after writing at least 1,400 MiB of 1-8 MiB files and deleting every other
   one. On every root reading the free extent count and free bytes equal what `e2freefrag` and
   `xfs_spaceman -c 'freesp -s'` report, and on ext4 the largest free extent equals `e2freefrag`'s
   maximum. An ordinary user read the same extent counts and scores as root on all three, with free
-  bytes equal on ext4 and one 4 KiB block apart on xfs, which changed between the two runs. Scores
+  bytes equal on ext4. On xfs the unprivileged reading was one 4 KiB block higher in free bytes in all four
+  readings (xfs and xfs with `rmapbt=1`, empty and scattered), and in the largest free extent on the two
+  scattered ones; `xfs_spaceman` run afterwards as root agreed with the root reading, and the cause was not
+  established. Scores
   were 1 to 2 empty and 15 to 17 scattered. The empty ext4 reported a 938 MB free extent across
   128 MiB block groups, so ext4's free extents are not cut at block-group boundaries there.
 - **Windows, elevated.** One `lsdsk filesystems --format json` run on a Windows 11 VM took 2.9 s warm

@@ -250,12 +250,12 @@ Windows-Volume) oder, wenn sie zu keinem einzelnen Dateisystem gehört, als `ski
 `zfs-pools: filesystems - <Grund>` oder `zfs-fragmentation: filesystems - <Grund>`; ein Windows-Lauf
 ohne Administratorrechte fügt `fragmentation: filesystems - needs Administrator` hinzu; die
 gedruckte Dateisystem-Ansicht und Seite 9 nennen diese Verweigerungen, die den ganzen Lauf
-betreffen, zusätzlich unter der Tabelle. Der Lauf über die freien Extents ist begrenzt, und ein Dateisystem jenseits einer Grenze
-wird als `free-extents`- oder `volume-bitmap`-Verweigerung seiner Zeile festgehalten, deren Grund
-die Zahl nennt: mehr als eine Million freie Extents (unter Windows freie Läufe) oder, unter Linux,
-mehr als vier Millionen Einträge der Platzkarte beliebiger Art, denn `FS_IOC_GETFSMAP` liefert jeden
-Eintrag und nicht nur die freien. `ok` ist also `false`, und eine fehlende Zahl wird nie für eine
-ruhige gehalten. Der Exit-Code bleibt das Urteil über die Maschine.
+betreffen, zusätzlich unter der Tabelle. Der Lauf über die freien Extents ist begrenzt, und ein
+Dateisystem jenseits einer Grenze wird als `free-extents`- oder `volume-bitmap`-Verweigerung seiner
+Zeile festgehalten, deren Grund die Zahl nennt: mehr als eine Million freie Extents (unter Windows
+freie Läufe) oder, unter Linux, mehr als vier Millionen Einträge der Platzkarte beliebiger Art, denn
+`FS_IOC_GETFSMAP` liefert jeden Eintrag und nicht nur die freien. `ok` ist also `false`, und eine
+fehlende Zahl wird nie für eine ruhige gehalten. Der Exit-Code bleibt das Urteil über die Maschine.
 
 `lsdsk --no-record record` wird mit `22` abgelehnt statt befolgt. Bei jedem
 anderen Befehl bedeutet die Option „die Zähler gegen den Speicher beurteilen,

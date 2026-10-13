@@ -144,7 +144,7 @@ def _pool_rows(capture: LinuxCapture) -> list[Filesystem]:
 
 
 def _pool_refusals(capture: LinuxCapture) -> tuple[RefusedReading, ...]:
-    """The pool listing's refusal, reported only when a disk here carries a pool member.
+    """The pool listing's and the pool fragmentation reading's refusals, only when a disk carries a pool member.
 
     A pool row exists only for a pool with a member on an inventory disk, so a
     listing that failed - refused, or with no control device at all - can have
