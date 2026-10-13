@@ -1869,6 +1869,48 @@ def _floor_percent(part: int, whole: int) -> int | None:
     return 100 * part // whole
 
 
+#: The mount types whose free extents lsdsk can count (through FS_IOC_GETFSMAP).
+#: A pool and a Windows volume always have a source; other mount types have none.
+FREE_EXTENT_MOUNT_TYPES: frozenset[str] = frozenset({"ext4", "xfs"})
+
+
+class FreeSpace(DomainModel, frozen=True):
+    """How scattered one filesystem's free space is.
+
+    Attributes:
+        fragmentation_percent: The ZFS-style score, 0 (free space in long runs)
+            to 100 (in tiny pieces); ``None`` where no figure exists.
+        free_extent_count: How many separate free runs there are.
+        free_extent_bytes: Their total size in bytes.
+        largest_free_extent_bytes: The longest run, in bytes.
+        histogram: Free bytes per power-of-two size bucket (see
+            :data:`lsdsk.domain.fragmentation.FREE_SPACE_BUCKETS`); empty where
+            only the score was read, as for a ZFS pool.
+
+    Example:
+        >>> FreeSpace(fragmentation_percent=22).free_extent_count is None
+        True
+    """
+
+    fragmentation_percent: int | None = Field(default=None, ge=0, le=100)
+    free_extent_count: int | None = Field(default=None, ge=0)
+    free_extent_bytes: int | None = Field(default=None, ge=0)
+    largest_free_extent_bytes: int | None = Field(default=None, ge=0)
+    histogram: tuple[int, ...] = ()
+
+    @property
+    def average_free_extent_bytes(self) -> int | None:
+        """The mean free run, ``None`` when the runs were not counted or there are none.
+
+        Example:
+            >>> FreeSpace(free_extent_count=2, free_extent_bytes=10).average_free_extent_bytes
+            5
+        """
+        if not self.free_extent_count or self.free_extent_bytes is None:
+            return None
+        return self.free_extent_bytes // self.free_extent_count
+
+
 class Filesystem(DomainModel, frozen=True):
     """How full one mounted filesystem, ZFS pool or Windows volume is.
 
@@ -1886,6 +1928,7 @@ class Filesystem(DomainModel, frozen=True):
         read_only: Whether the filesystem cannot be written to; one that has
             several mounts counts only when every mount is read-only.
         readings_refused: Readings the system refused for this filesystem.
+        free_space: How scattered the free space is, ``None`` when not read.
 
     Example:
         >>> Filesystem(kind=FilesystemKind.MOUNT, name="/", used_bytes=1, free_bytes=199).used_percent
@@ -1904,6 +1947,23 @@ class Filesystem(DomainModel, frozen=True):
     inodes_free: int | None = None
     read_only: bool = False
     readings_refused: tuple[RefusedReading, ...] = ()
+    free_space: FreeSpace | None = None
+
+    @property
+    def free_space_applies(self) -> bool:
+        """Whether a free-space figure can exist for this row at all.
+
+        Decides ``n/a`` against ``-``: a mount of a type lsdsk cannot count the
+        free extents of has no figure to read, while one it can count and did
+        not is unread.
+
+        Example:
+            >>> Filesystem(kind=FilesystemKind.MOUNT, name="/boot/efi", fs_type="vfat").free_space_applies
+            False
+        """
+        if self.kind is FilesystemKind.MOUNT:
+            return self.fs_type in FREE_EXTENT_MOUNT_TYPES
+        return True
 
     @property
     def inode_table(self) -> InodeTable:
@@ -2693,6 +2753,7 @@ class Inventory(DomainModel, frozen=True):
 
 __all__ = [
     "FIXED_INODE_TABLE_TYPES",
+    "FREE_EXTENT_MOUNT_TYPES",
     "PCIE_MAX_LINK_WIDTH",
     "Controller",
     "Disk",
@@ -2700,6 +2761,7 @@ __all__ = [
     "DiskUse",
     "Filesystem",
     "Finding",
+    "FreeSpace",
     "Health",
     "InterfaceLink",
     "Inventory",
