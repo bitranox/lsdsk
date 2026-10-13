@@ -2076,5 +2076,10 @@
       "alloc": 154454237184,
       "size": 3985729650688
     }
-  }
+  },
+  "zfs_fragmentation": {
+    "rpool": 22,
+    "tank": 11
+  },
+  "free_extents": {}
 }

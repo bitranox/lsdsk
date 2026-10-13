@@ -143,3 +143,37 @@ def test_a_refused_pool_listing_is_named_in_skipped_and_makes_ok_false(
     pools = [one for one in envelope["data"]["filesystems"] if one["kind"] == "pool"]
     assert pools
     assert all(one["size_bytes"] is None for one in pools)
+
+
+def test_the_zfs_capture_replays_each_pool_s_fragmentation(
+    cli_runner: CliRunner, production_factory: Callable[[], Any]
+) -> None:
+    envelope = _envelope(cli_runner, production_factory, FIXTURES / "linux-zfs-filesystems.json")
+    pools = {row["name"]: row["free_space"] for row in envelope["data"]["filesystems"] if row["kind"] == "pool"}
+    assert set(pools) == {"rpool", "tank"}
+    for space in pools.values():
+        assert set(space) == {
+            "fragmentation_percent",
+            "free_extent_count",
+            "free_extent_bytes",
+            "largest_free_extent_bytes",
+            "histogram",
+        }
+        assert 0 <= space["fragmentation_percent"] <= 100
+        assert (space["free_extent_count"], space["histogram"]) == (None, [])
+    assert envelope["skipped"] == []
+
+
+def test_a_capture_taken_before_fragmentation_was_read_replays_with_no_free_space_and_no_refusal(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    reading = json.loads((FIXTURES / "linux-zfs-filesystems.json").read_text(encoding="utf-8"))
+    assert "zfs_fragmentation" in reading  # control: the committed capture carries what is removed
+    for key in ("zfs_fragmentation", "zfs_fragmentation_error", "free_extents"):
+        reading.pop(key, None)
+    path = tmp_path / "lsdsk-1.8.0.json"
+    path.write_text(json.dumps(reading), encoding="utf-8")
+    envelope = _envelope(cli_runner, production_factory, path)
+    assert envelope["data"]["filesystems"]
+    assert all(row["free_space"] is None for row in envelope["data"]["filesystems"])
+    assert (envelope["skipped"], envelope["ok"]) == ([], True)
