@@ -42,26 +42,40 @@ recomputed. How far the two weightings differ on histograms of real extents was 
 - A ZFS pool: the `fragmentation` property through `ZFS_IOC_POOL_GET_PROPS`, on the same read-only
   `/dev/zfs` handle that reads size and allocation. A pool can publish no figure (`ZFS_FRAG_INVALID`,
   any value above 100, which `zpool list` prints as `-`); the reader records that as absent and the
-  cell draws `n/a`. A pool carries a score, no extent figures and an empty histogram, because ZFS does not publish its
-  free-space histogram to a caller.
+  cell draws `n/a`. A pool carries a score, no extent figures and an empty histogram, because ZFS
+  does not publish its free-space histogram to a caller.
 - ext4 and xfs: the free extents of the mounted filesystem through `FS_IOC_GETFSMAP`.
 - A Windows volume: the volume bitmap through `FSCTL_GET_VOLUME_BITMAP`, folded into free runs. This
   needs an elevated session and opens the volume by its GUID path.
 - A Linux mount of any other type (btrfs, vfat, tmpfs, and the types with no free-space source this
-  tool reads) draws `n/a`. Every Windows volume is walked whatever its type.
+  tool reads) draws `n/a`. An elevated Windows run walks every volume whatever its type; an
+  unelevated one walks none.
 
-**A bound, not a setting.** A read stops at `MAX_FREE_EXTENTS = 1_000_000` free extents (or free
+**Two bounds, not settings.** A read stops at `MAX_FREE_EXTENTS = 1_000_000` free extents (or free
 runs on Windows) per filesystem and refuses with a reason naming the number, because a very
 fragmented large filesystem would otherwise hold the run for as long as it takes to walk it and
-allocate as many records. It is a module constant and not a configuration key: a limit a user can
-raise is a limit a typo can turn into an unbounded read, and the bound exists to protect the run,
-not to express a preference.
+allocate as many records. The Linux walk has a second bound, `MAX_FSMAP_RECORDS = 4_000_000`
+space-map records of any kind, and refuses with a reason naming that number. It exists because
+`FS_IOC_GETFSMAP` returns every record of the filesystem's space map, not only the free ones: a
+filesystem with reverse mapping, such as xfs, lists the extent of every file as well, so the free
+extents alone would not bound the walk. Both are module constants and not configuration keys: a
+limit a user can raise is a limit a typo can turn into an unbounded read, and the bounds exist to
+protect the run, not to express a preference.
 
 **The refusals, by name.** A reading the system refused is recorded and becomes a `skipped` line,
 like every other refusal here: `zfs-fragmentation` (the pool listing, inventory level),
 `free-extents` (a Linux mount row), `volume-bitmap` (a Windows volume row) and `fragmentation` (the
-run-wide line a Windows run without Administrator carries in the JSON envelope's `skipped`, `fragmentation:
-filesystems - needs Administrator`; no table or page prints it). The key is a refusal that was recorded, never a field being absent.
+run-wide line a Windows run without Administrator carries in the JSON envelope's `skipped`,
+`fragmentation: filesystems - needs Administrator`). The key is a refusal that was recorded, never a
+field being absent.
+
+**The views name an inventory-level refusal.** The `zfs-pools`, `zfs-fragmentation` and
+`fragmentation` refusals belong to no row, so a row cannot carry them. The printed filesystems view,
+the same section on the default page and the interactive filesystems page each add one sentence under
+the table, `Not read: fragmentation (needs Administrator).`, naming every refusal in
+`inventory.unread_filesystems` with its reason. It is keyed on that record and never on the dashes the
+table drew, because a dash is also an ordinary unread cell. Without it an unelevated Windows run
+showed `-` in every `frag` cell and named no cause anywhere but the JSON.
 
 **`n/a` and `-` are different claims.** `n/a` in the `frag` cell means no figure can exist: the type
 has no free-space source, the pool publishes none, or there is no free space to score. `-` means a
@@ -69,10 +83,12 @@ figure could exist and was not read. The legend names each only when the table d
 carries a per-column meaning there, because the inodes column draws it too.
 
 **Shape of the output.** The table column is `frag`, right-aligned, and drops first as the terminal
-narrows (priority 7, so it drops before `inodes%`). The panel gains a `free space` group with `fragmentation`,
-`free extents`, `largest` and `average`. The JSON entry gains `free_space`: `null`, or
+narrows (priority 7, so it drops before `inodes%`). The panel gains a `free space` group with
+`fragmentation`, `free extents`, `largest` and `average`. The JSON entry gains `free_space`: `null`, or
 `{fragmentation_percent, free_extent_count, free_extent_bytes, largest_free_extent_bytes,
-histogram}`, and `histogram` is the 21 buckets of free bytes.
+histogram}`, and `histogram` is the 21 buckets of free bytes. A filesystem with no free extent at all
+scores no figure and has no average free run, so its `fragmentation` and `average` draw `n/a` in the
+panel.
 
 ## What was measured
 
@@ -85,8 +101,9 @@ All of it on 2026-10-13 with this change.
   and 5.4 s cold with a 499 GiB NTFS system volume 13% full (41,897 free extents, score 1), read
   through the volume GUID path. A temporary 4 GiB NTFS volume filled to 95% read score 3 in 2.9 s.
 - **Windows, not elevated.** A probe found that opening the volume fails with error 5, which is why
-  the run does not attempt it: every `frag` cell draws `-` and the JSON envelope's `skipped` carries
-  the `fragmentation: filesystems - needs Administrator` line.
+  the run does not attempt it: every `frag` cell draws `-`, the filesystems views say
+  `Not read: fragmentation (needs Administrator).` under the table, and the JSON envelope's `skipped`
+  carries the `fragmentation: filesystems - needs Administrator` line.
 - **Cost on a large, nearly full volume is not measured end to end.** The bitmap expansion runs about
   1.8 s per TiB of all-used clusters in a unit benchmark; no such volume was read through the whole
   path.
@@ -113,9 +130,9 @@ defragmenter, which would mean running a subprocess. This tool runs none.
 ## Consequences
 
 Captures gain optional fields (`SCHEMA_VERSION` stays 2): a pool's fragmentation, a mount's free
-extents, a Windows volume's `free_extents` entry and a Windows run's `volume_bitmaps_read`, so every committed fixture still parses and an
-older one replays with no figure. The `frag` cell of a row with no reading draws `-`, which the three
-legend tests written before the column existed had to be told about; their fixtures now carry a
-`FreeSpace` so they still test what they were written for.
+extents, a Windows volume's `free_extents` entry and a Windows run's `volume_bitmaps_read`, so every
+committed fixture still parses and an older one replays with no figure. The `frag` cell of a row with
+no reading draws `-`, which the three legend tests written before the column existed had to be told
+about; their fixtures now carry a `FreeSpace` so they still test what they were written for.
 
 Fragmentation is a snapshot of the moment of the run. It is not trended and does not feed a finding.

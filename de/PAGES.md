@@ -123,10 +123,12 @@ in seiner Spalte `FRAG` verwendet: 0 % ist freier Platz in großen Stücken, 100
 kleinen. Ein ZFS-Pool meldet die Zahl von ZFS selbst, ext4 und xfs werden aus ihren freien Extents
 bewertet und ein Windows-Volume aus seiner Volume-Bitmap, wofür eine Sitzung mit erhöhten Rechten
 nötig ist; ein Windows-Lauf ohne diese zeigt in jeder `frag`-Zelle `-`, mit der Legende
-`- = not read`. Hier heißt
-`n/a`, dass das Dateisystem keine solche Zahl hat, und `-`, dass es eine geben könnte und sie nicht
-gelesen wurde. `frag` ist die erste Spalte, die wegfällt, wenn das Terminal schmaler wird. Sie wird
-nur angezeigt und nie zum Befund.
+`- = not read`, und ein Satz unter der Tabelle nennt den Grund:
+`Not read: fragmentation (needs Administrator).` Jede andere Dateisystem-Lesung, die das System für
+die ganze Maschine verweigert hat, etwa die Liste der ZFS-Pools, wird auf dieselbe Weise genannt.
+Hier heißt `n/a`, dass das Dateisystem keine solche Zahl hat, und `-`, dass es eine geben könnte und
+sie nicht gelesen wurde. `frag` ist die erste Spalte, die wegfällt, wenn das Terminal schmaler wird.
+Sie wird nur angezeigt und nie zum Befund.
 
 Der Cursor füllt die Tafel mit dem, wofür die Tabelle keine Spalte hat: jeden weiteren Einhängepunkt
 des Dateisystems mit Namen, wo die Zeile `+N` sagt, die Platten, auf denen es liegt, das

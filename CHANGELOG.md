@@ -14,10 +14,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   histogram}`). The score is OpenZFS's own free-space fragmentation figure: a ZFS pool reports what
   `zpool list` prints, ext4 and xfs are scored from their free extents, and a Windows volume from
   its volume bitmap, which needs an elevated session (an unelevated Windows run shows `-` in every
-  `frag` cell, and the JSON `skipped` list carries `fragmentation: filesystems - needs
-  Administrator`). `n/a` marks a filesystem with no such figure and `-` one
-  that was not read; `frag` is the first column dropped as the terminal narrows. It is shown only:
-  no finding and no threshold. A read stops at a million free extents and says so. See ADR 0006.
+  `frag` cell, a sentence under the table says `Not read: fragmentation (needs Administrator).` on
+  the printed view, the default page and the interactive page, and the JSON `skipped` list carries
+  `fragmentation: filesystems - needs Administrator`). `n/a` marks a filesystem with no such figure
+  and `-` one that was not read; `frag` is the first column dropped as the terminal narrows. It is
+  shown only: no finding and no threshold. A read stops at a million free extents and, on Linux, at
+  four million space-map records of any kind, and says which. See ADR 0006.
 
 ## [1.8.0] 2026-10-13 10:32:47
 

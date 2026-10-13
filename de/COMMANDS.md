@@ -237,10 +237,10 @@ ist `mount`, `pool` oder `volume`; die Byte- und Inode-Zahlen sind ganze Zahlen,
 nicht gelesen wurden; `free_bytes` ist der Platz, der einem gewöhnlichen Benutzer frei zur Verfügung
 steht. `free_space` ist `null`, wo es nicht gelesen wurde oder der Dateisystemtyp dafür keine Quelle hat,
 und sonst `{fragmentation_percent, free_extent_count, free_extent_bytes, largest_free_extent_bytes,
-histogram}`, wobei `fragmentation_percent` `null` ist, wenn keine Zahl existiert:
-der Wert auf der Skala, die `zpool list` verwendet (0 ist freier Platz in großen Stücken, 100 in
-kleinen), dann Anzahl, Gesamtgröße und größtes der freien Extents und `histogram`, die freien Bytes
-in jeder von 21 Größenklassen ab 512 B. Ein ZFS-Pool trägt den Wert, `null` für die Extent-Zahlen und
+histogram}`: `fragmentation_percent` ist der Wert auf der Skala, die `zpool list` verwendet (0 ist
+freier Platz in großen Stücken, 100 in kleinen), oder `null`, wenn keine Zahl existiert; danach
+kommen Anzahl, Gesamtgröße und größtes der freien Extents und `histogram`, die freien Bytes in
+jeder von 21 Größenklassen ab 512 B. Ein ZFS-Pool trägt den Wert, `null` für die Extent-Zahlen und
 ein leeres `histogram`. Die Liste selbst ist `null`, wenn die Dateisysteme gar nicht gelesen wurden,
 etwa in einem Container oder aus einer Aufnahme, die vor ihnen gemacht wurde, und eine leere Liste
 heißt, dass sie gelesen wurden und keines auf einer inventarisierten Platte liegt. Eine Messung, die
@@ -248,9 +248,14 @@ das System verweigert hat, steht in den `readings_refused` des Dateisystems (`st
 `free-extents` für einen Einhängepunkt, `volume-space`, `volume-info` oder `volume-bitmap` für ein
 Windows-Volume) oder, wenn sie zu keinem einzelnen Dateisystem gehört, als `skipped`-Zeile
 `zfs-pools: filesystems - <Grund>` oder `zfs-fragmentation: filesystems - <Grund>`; ein Windows-Lauf
-ohne Administratorrechte fügt `fragmentation: filesystems - needs Administrator` hinzu. `ok` ist also
-`false`, und eine fehlende Zahl wird nie für eine ruhige gehalten.
-Der Exit-Code bleibt das Urteil über die Maschine.
+ohne Administratorrechte fügt `fragmentation: filesystems - needs Administrator` hinzu; die
+gedruckte Dateisystem-Ansicht und Seite 9 nennen diese Verweigerungen, die den ganzen Lauf
+betreffen, zusätzlich unter der Tabelle. Der Lauf über die freien Extents ist begrenzt, und ein Dateisystem jenseits einer Grenze
+wird als `free-extents`- oder `volume-bitmap`-Verweigerung seiner Zeile festgehalten, deren Grund
+die Zahl nennt: mehr als eine Million freie Extents (unter Windows freie Läufe) oder, unter Linux,
+mehr als vier Millionen Einträge der Platzkarte beliebiger Art, denn `FS_IOC_GETFSMAP` liefert jeden
+Eintrag und nicht nur die freien. `ok` ist also `false`, und eine fehlende Zahl wird nie für eine
+ruhige gehalten. Der Exit-Code bleibt das Urteil über die Maschine.
 
 `lsdsk --no-record record` wird mit `22` abgelehnt statt befolgt. Bei jedem
 anderen Befehl bedeutet die Option „die Zähler gegen den Speicher beurteilen,

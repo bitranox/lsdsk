@@ -216,9 +216,9 @@ free_bytes, inodes_total, inodes_free, read_only, free_space, readings_refused}`
 `volume`; the byte and inode figures are integers, each `null` where it was not read; `free_bytes`
 is the space free to an ordinary user. `free_space` is `null` where it was not read or the filesystem
 type has no source for it, and otherwise `{fragmentation_percent, free_extent_count,
-free_extent_bytes, largest_free_extent_bytes, histogram}`, where `fragmentation_percent` is `null`
-if no figure exists: the score on the scale `zpool list` uses (0 is free space in
-large pieces, 100 in small ones), then the number, total size and largest of the free extents, and
+free_extent_bytes, largest_free_extent_bytes, histogram}`: `fragmentation_percent` is the score on
+the scale `zpool list` uses (0 is free space in large pieces, 100 in small ones) or `null` if no
+figure exists, then come the number, total size and largest of the free extents, and
 `histogram`, the free bytes in each of 21 size classes from 512 B up. A ZFS pool carries the score,
 `null` for the extent figures and an empty `histogram`. The list itself is `null` when the
 filesystems were not read at all, as in a container or from a capture taken before they were, and
@@ -227,8 +227,13 @@ refused is recorded in the filesystem's `readings_refused` (`statvfs` or `free-e
 `volume-space`, `volume-info` or `volume-bitmap` for a Windows volume) or, when it belongs to no
 single filesystem, as the `skipped` line `zfs-pools: filesystems - <reason>` or
 `zfs-fragmentation: filesystems - <reason>`; a Windows run without Administrator adds
-`fragmentation: filesystems - needs Administrator`. So `ok` is `false` and a missing figure is
-never mistaken for a quiet one. The exit code is still the machine's verdict.
+`fragmentation: filesystems - needs Administrator`; the printed filesystems view and page 9 name
+those run-wide refusals under the table as well. The free-extent walk is bounded, and a filesystem
+past a bound is recorded as that row's `free-extents` or `volume-bitmap` refusal, its reason naming
+the number: more than a million free extents (free runs, on Windows) or, on Linux, more than four
+million space-map records of any kind, since `FS_IOC_GETFSMAP` lists every record and not only the
+free ones. So `ok` is `false` and a missing figure is never mistaken for a quiet one. The exit code
+is still the machine's verdict.
 
 `lsdsk --no-record record` is refused at `22` rather than obeyed. On every other
 command the flag means "judge the counters against the store without adding this
