@@ -601,9 +601,13 @@ class LsdskApp(App[None]):
         self._explain_filesystem_marks(drawn)
 
     def _explain_filesystem_marks(self, drawn: Mapping[str, Collection[str]]) -> None:
-        """Name `-` and `n/a` under the table, each only when a drawn cell carries it."""
+        """Name `-` and `n/a` under the table, each only when a drawn cell carries it, then any refusal."""
         legend = self.query_one("#filesystem-legend", Static)
-        text = tables.filesystem_legend_for(drawn)
+        text = "\n".join(
+            part
+            for part in (tables.filesystem_legend_for(drawn), tables.filesystem_refusals_note(self.inventory))
+            if part
+        )
         legend.update(Text(text, style=tui_palette.restyle(theme.STYLE_UNKNOWN)) if text else Text(""))
         legend.display = bool(text)
 

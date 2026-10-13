@@ -539,6 +539,35 @@ def _filesystem_legend(columns: Sequence[Column], rows: Sequence[MarkedRow]) -> 
     return filesystem_legend_for({column.key: {row.cells[column.key][0] for row in rows} for column in columns})
 
 
+def filesystem_refusals_note(inventory: Inventory) -> str:
+    """Say which filesystem readings were refused and why, from the recorded refusals.
+
+    Keyed on ``inventory.unread_filesystems`` and never on the dashes a table
+    drew: a dash is also an ordinary unread cell, and only the record knows a
+    reading was refused rather than missing. Without this sentence the page
+    shows `-` in every cell the refusal emptied and names no cause, which the
+    JSON ``skipped`` list alone carried.
+
+    Args:
+        inventory: The machine that was scanned.
+
+    Returns:
+        The sentence, or an empty string when no filesystem reading was refused.
+
+    Example:
+        >>> from ...domain.models import Inventory, RefusedReading
+        >>> refused = RefusedReading(reading="fragmentation", reason="needs Administrator")
+        >>> filesystem_refusals_note(Inventory(hostname="h", unread_filesystems=(refused,)))
+        'Not read: fragmentation (needs Administrator).'
+        >>> filesystem_refusals_note(Inventory(hostname="h"))
+        ''
+    """
+    refused = inventory.unread_filesystems
+    if not refused:
+        return ""
+    return "Not read: " + "; ".join(f"{item.reading} ({item.reason})" for item in refused) + "."
+
+
 def render_filesystems(inventory: Inventory, findings: Sequence[Finding], width: int = DEFAULT_WIDTH) -> Table:
     """Render one row per filesystem that lives on an inventoried disk.
 
@@ -562,7 +591,10 @@ def render_filesystems(inventory: Inventory, findings: Sequence[Finding], width:
         [filesystem_marked_row(one, severities, both_scales=False) for one in inventory.filesystems],
     )
     layout, drawn = _fitted(FILESYSTEM_COLUMNS, rows, width)
-    return _render(title, FILESYSTEM_COLUMNS, rows, width, _filesystem_legend(layout.columns, drawn))
+    caption = "\n".join(
+        part for part in (_filesystem_legend(layout.columns, drawn), filesystem_refusals_note(inventory)) if part
+    )
+    return _render(title, FILESYSTEM_COLUMNS, rows, width, caption)
 
 
 def render_health(
@@ -785,6 +817,7 @@ __all__ = [
     "disk_table_row",
     "filesystem_legend_for",
     "filesystem_marked_row",
+    "filesystem_refusals_note",
     "filesystem_table_row",
     "health_table_row",
     "render_controllers",
