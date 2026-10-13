@@ -196,6 +196,46 @@ def test_the_skill_enumerates_the_fields_a_controller_really_carries() -> None:
     )
 
 
+#: The sentence that enumerates a filesystem's fields.
+_FILESYSTEM_FIELDS_OPENS = "Each entry carries `kind` (`mount`, `pool` or\n`volume`)"
+_FILESYSTEM_FIELDS_ENDS = "It is `null` when"
+
+
+def _enumerated_filesystem_fields() -> list[str]:
+    """The field names the skill promises a filesystem entry carries."""
+    text = SKILL.read_text(encoding="utf-8")
+    start = text.index("**`data.filesystems` is a list")
+    listed = text.index(_FILESYSTEM_FIELDS_OPENS, start)
+    sentence = text[listed : text.index(_FILESYSTEM_FIELDS_ENDS, listed)]
+    # A parenthesis explains the field before it (the values of `kind`), it does not name another.
+    return re.findall(r"`([a-z_]+)`", re.sub(r"\([^)]*\)", "", sentence))
+
+
+def test_the_skill_enumerates_the_fields_a_filesystem_really_carries() -> None:
+    """The filesystem list is held against the payload the way the disk list is.
+
+    A script reads an enumerated list as the whole payload, so a key the envelope
+    adds and the sentence omits, such as ``free_space``, is a key no reader of the
+    skill knows to read. Only the key set is compared.
+    """
+    from lsdsk.adapters.cli.commands.scan import build_envelope
+    from lsdsk.adapters.hw import snapshot as snapshot_adapter
+
+    capture = Path(__file__).parent / "fixtures" / "hw" / "linux-zfs-filesystems.json"
+    inventory = snapshot_adapter.load(capture)
+    envelope = build_envelope(inventory, (), CliCommand.FILESYSTEMS)
+    filesystems = envelope.model_dump(mode="json")["data"]["filesystems"]
+    assert filesystems, "the capture carries no filesystem, so this test checked nothing"
+    emitted = set(filesystems[0])
+
+    promised = _enumerated_filesystem_fields()
+    assert "kind" in promised, "the enumerating sentence was not found, so this test checked nothing"
+    assert set(promised) == emitted, (
+        f"the skill and the payload disagree: only in the skill {sorted(set(promised) - emitted)}, "
+        f"only in the payload {sorted(emitted - set(promised))}"
+    )
+
+
 def _verdict_of(returned: ast.expr, calls: list[str]) -> str | None:
     """The verdict text one ``return`` hands back, or None when it hands on.
 

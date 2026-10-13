@@ -79,7 +79,7 @@ uvx lsdsk controllers         # controllers, PCIe placement, free ports
 uvx lsdsk slots               # every PCIe port: what holds it, what is free
 uvx lsdsk disks               # one row per disk
 uvx lsdsk trend               # what each error counter is DOING, not just its total
-uvx lsdsk filesystems         # how full each filesystem, ZFS pool or Windows volume on an inventoried disk is; inodes where the table is fixed
+uvx lsdsk filesystems         # how full each filesystem, ZFS pool or Windows volume on an inventoried disk is, and how scattered its free space is; inodes where the table is fixed
 uvx lsdsk record              # store one reading, print nothing, for a timer
 uvx lsdsk tui                 # the same nine views, interactive (1-9 or f1-f9, left/right, r or f10 rescans, q or escape quits)
 uvx lsdsk snapshot -o m.json  # capture the raw reading
@@ -342,13 +342,25 @@ controller, which is not a storage device and is not in `data.controllers`.
 that live on an inventoried disk.** Each entry carries `kind` (`mount`, `pool` or
 `volume`), `name`, `other_mounts`, `fs_type`, `disks`, `size_bytes`, `used_bytes`,
 `free_bytes` (free to an ordinary user, so ext4's reserved blocks count as used,
-as `df` has it), `inodes_total`, `inodes_free`, `read_only` and `readings_refused`.
+as `df` has it), `inodes_total`, `inodes_free`, `read_only`, `free_space` and `readings_refused`.
 It is `null` when the capture did not read filesystems and `[]` when it did and
 none sits on an inventoried disk, so test for `None` before treating it as empty.
+`free_space` says how scattered the free space is, and is `null` where it was not read or the
+filesystem type has no source for it. Otherwise it carries `fragmentation_percent` (0, free space in
+long runs, to 100, in tiny pieces - the scale of `zpool list` FRAG, for every kind; `null` where no
+figure exists), `free_extent_count`, `free_extent_bytes`, `largest_free_extent_bytes` and `histogram`
+(free bytes in 21 power-of-two extent-size buckets). A ZFS pool carries the score alone, its other
+keys `null` and `histogram` `[]`; ext4 and xfs mounts and Windows volumes carry all five, and
+Windows reads them only in an elevated run. It is shown only: no finding is ever raised from it.
 A refused reading appears as a `skipped` line, not as a missing row. The line reads
-`<reading>: <filesystem> - <reason>`, the reading being `statvfs`, `volume-space` or `volume-info`
-and the subject the filesystem's own name, or `zfs-pools` with the subject `filesystems` when the
-refusal belongs to no single filesystem.
+`<reading>: <filesystem> - <reason>`, the reading being `statvfs`, `free-extents`, `volume-space`,
+`volume-info` or `volume-bitmap` and the subject the filesystem's own name, or `zfs-pools`,
+`zfs-fragmentation` or `fragmentation` with the subject `filesystems` when the refusal belongs to no
+single filesystem. `fragmentation: filesystems - needs Administrator` is an unelevated Windows run:
+no volume's free space was walked, so every volume's `free_space` is `null` for that reason alone.
+A `free-extents` or `volume-bitmap` line leaves that one row's `free_space` `null`. So a `null`
+`free_space` with no `skipped` line naming that filesystem, and no run-wide one, means the type has
+no source for it (or the capture predates the reading), not that a walk failed.
 
 **`data.virtual_disks` is a second list of the same shape**, holding the devices
 with no hardware behind them. It is always populated, whatever `--expand-virtual`
