@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.8.0] 2026-10-13 10:32:47
+
 ### Added
 
 - **How full each filesystem is.** A new `filesystems` section, `lsdsk filesystems` and page 9 of
@@ -13,9 +15,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   `inodes%`. The section follows the disks table on the default page. A ZFS pool is one row
   whatever its datasets and is read from ZFS itself, since `statvfs` on a dataset answers for that
   dataset's own data plus the pool's free space; a bind mount or btrfs subvolume of one filesystem
-  is one row showing `+N` further mountpoints. `-` marks a figure nobody read and `n/a` an inode
-  figure for a filesystem that creates inodes on demand. A mount or volume rounds `use%` up like
-  `df`; a pool rounds it down like `zpool list`. See ADR 0005. The page has a cursor and the detail
+  is one row showing `+N` further mountpoints. A filesystem another mount covers is not read: its
+  row shows `-` and a refused `statvfs` reading saying so, never the figures of the mount on top.
+  `-` marks a figure nobody read and `n/a` an inode figure for a filesystem that creates inodes on
+  demand. A mount or volume rounds `use%` up like `df`; a pool rounds it down like `zpool list`.
+  See ADR 0005. The page has a cursor and the detail
   panel under it, like the other cursor pages: it names every other mountpoint the row abbreviates
   as `+N`, the raw inode counts, the read-only flag and each refused reading with its reason.
 - **`--format json` carries the filesystems.** Every section's envelope has `data.filesystems`, a
