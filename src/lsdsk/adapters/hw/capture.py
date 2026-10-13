@@ -15,9 +15,10 @@ from __future__ import annotations
 
 from typing import Annotated, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ...domain.enums import Platform
+from ...domain.fragmentation import FREE_SPACE_BUCKETS
 from ...domain.text import MAX_DEVICE_TEXT
 from ..validation import BOUNDED
 
@@ -129,6 +130,37 @@ class CaptureEnvelope(CaptureHeader, frozen=True):
     platform: Platform
 
 
+_UINT64_MAX = 2**64 - 1
+_FreeBytes = Annotated[int, Field(ge=0, le=_UINT64_MAX)]
+
+
+class FreeExtentsEntry(CaptureModel, frozen=True):
+    """One filesystem's free extents, as a bounded summary, or why they were not read.
+
+    Attributes:
+        count: How many free runs the walk met.
+        total: Their total size in bytes.
+        largest: The longest run in bytes.
+        histogram: Free bytes per power-of-two bucket, empty or exactly
+            ``FREE_SPACE_BUCKETS`` long.
+        error: Why the walk was refused or stopped; the figures are then ``None``.
+    """
+
+    count: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    total: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    largest: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    histogram: Entries[_FreeBytes] = ()
+    error: DeviceText | None = None
+
+    @field_validator("histogram")
+    @classmethod
+    def _one_bucket_per_score(cls, value: tuple[int, ...]) -> tuple[int, ...]:
+        if value and len(value) != FREE_SPACE_BUCKETS:
+            message = f"a free-space histogram has {FREE_SPACE_BUCKETS} buckets, not {len(value)}"
+            raise ValueError(message)
+        return value
+
+
 __all__ = [
     "MAX_DEVICE_TEXT",
     "MAX_ENCODED_PAYLOAD",
@@ -140,4 +172,5 @@ __all__ = [
     "EncodedPayload",
     "Entries",
     "EntryMap",
+    "FreeExtentsEntry",
 ]

@@ -37,6 +37,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/hw/decode/ata_identify.py` - Decode the 512-byte ATA IDENTIFY DEVICE response.
 - `src/lsdsk/adapters/hw/decode/ata_smart.py` - Decode the 512-byte ATA SMART READ DATA and THRESHOLDS structures.
 - `src/lsdsk/adapters/hw/decode/captured.py` - Parse the integers and base64 blobs a capture records as text, for both platform builders.
+- `src/lsdsk/adapters/hw/decode/free_extents.py` - Fold free extents into the bounded summary a capture records.
 - `src/lsdsk/adapters/hw/decode/nvlist.py` - Decode the native nvlist the ZFS control device answers in, and read a pool's size and allocation from it.
 - `src/lsdsk/adapters/hw/decode/nvme.py` - Decode NVMe Identify Controller and the SMART/Health log page.
 - `src/lsdsk/adapters/hw/decode/pciids.py` - Resolve numeric PCI vendor and device identifiers to readable names.
@@ -70,6 +71,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/hw/ata_commands.py` - The ATA commands both readers issue, and the SAT block that carries one to a drive behind a USB bridge or SAS adapter.
 - `src/lsdsk/adapters/hw/capture.py` - What every capture carries, whichever platform wrote it.
 - `src/lsdsk/adapters/hw/fabric.py` - Assemble the PCI fabric tree both platforms map onto.
+- `src/lsdsk/adapters/hw/free_space.py` - Turn a recorded free-extent summary into the domain's free-space value.
 - `src/lsdsk/adapters/hw/refusals.py` - Turn the error text a reader recorded into domain values.
 - `src/lsdsk/adapters/hw/snapshot.py` - Capture a machine's storage subsystem to JSON, and replay it.
 
