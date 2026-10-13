@@ -81,24 +81,35 @@ def test_a_list_nested_exactly_to_the_depth_limit_still_decodes() -> None:
     assert "l31" in decode_nvlist(_nested(MAX_DEPTH))
 
 
+# Every case carries an explicit id: pytest otherwise spells the whole buffer into
+# the node id, and two of these run to megabytes, past what Windows lets
+# PYTEST_CURRENT_TEST hold.
 @pytest.mark.parametrize(
     ("blob", "reason"),
     [
-        (b"", "too short"),
-        (bytes([1, 1, 0, 0]) + b"\0" * 12, "not a native"),
-        (bytes([0, 0, 0, 0]) + b"\0" * 12, "not a native"),
-        (stream([u64("a", 1)])[:-6], "runs past"),
-        (stream([pair("x", UINT64, b"")]), "runs past"),
-        (_nested(MAX_DEPTH + 1), "nested deeper"),
-        (stream([text("s", "x" * 70_000)]), "string longer"),
-        (stream([pair("x", UINT64, b""), u64("next", 1)]), "runs past"),
-        (stream([pair("a", UINT64_ARRAY, struct.pack("<Q", 1), nelem=3), u64("next", 1)]), "runs past"),
-        (stream([u64("a", 1)] * (MAX_PAIRS + 1)), "more than"),
-        (stream([struct.pack("<i", 8) + bytes(28)]), "less than its own header"),
-        (stream([_with_name_size(u64("a", 1), 200)]), "name runs past"),
-        (stream([pair("s", STRING, b"abcdefgh")]), "string runs past"),
-        (stream([pair("c", NVLIST_ARRAY, b"", nelem=MAX_PAIRS + 1)]), "list array declares"),
-        (stream([pair("c", NVLIST_ARRAY, b"", nelem=-1)]), "list array declares"),
+        pytest.param(b"", "too short", id="empty"),
+        pytest.param(bytes([1, 1, 0, 0]) + b"\0" * 12, "not a native", id="xdr-encoding"),
+        pytest.param(bytes([0, 0, 0, 0]) + b"\0" * 12, "not a native", id="encoding-zero"),
+        pytest.param(stream([u64("a", 1)])[:-6], "runs past", id="truncated-stream"),
+        pytest.param(stream([pair("x", UINT64, b"")]), "runs past", id="value-missing"),
+        pytest.param(_nested(MAX_DEPTH + 1), "nested deeper", id="too-deep"),
+        pytest.param(stream([text("s", "x" * 70_000)]), "string longer", id="string-too-long"),
+        pytest.param(stream([pair("x", UINT64, b""), u64("next", 1)]), "runs past", id="value-missing-before-next"),
+        pytest.param(
+            stream([pair("a", UINT64_ARRAY, struct.pack("<Q", 1), nelem=3), u64("next", 1)]),
+            "runs past",
+            id="array-short-of-nelem",
+        ),
+        pytest.param(stream([u64("a", 1)] * (MAX_PAIRS + 1)), "more than", id="too-many-pairs"),
+        pytest.param(stream([struct.pack("<i", 8) + bytes(28)]), "less than its own header", id="size-below-header"),
+        pytest.param(stream([_with_name_size(u64("a", 1), 200)]), "name runs past", id="name-past-pair"),
+        pytest.param(stream([pair("s", STRING, b"abcdefgh")]), "string runs past", id="string-unterminated"),
+        pytest.param(
+            stream([pair("c", NVLIST_ARRAY, b"", nelem=MAX_PAIRS + 1)]),
+            "list array declares",
+            id="list-array-too-many",
+        ),
+        pytest.param(stream([pair("c", NVLIST_ARRAY, b"", nelem=-1)]), "list array declares", id="list-array-negative"),
     ],
 )
 def test_a_malformed_buffer_is_refused_with_its_reason(blob: bytes, reason: str) -> None:

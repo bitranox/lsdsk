@@ -67,6 +67,33 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
             pytest.skip(f"{marker}: not applicable on {sys.platform}")
 
 
+# Windows caps an environment variable at 32767 characters, and pytest writes
+# "<node id> (<phase>)" into PYTEST_CURRENT_TEST before every phase. A parameter
+# id pytest spells out from a large bytes value passes on Linux and macOS and
+# errors at setup on every Windows cell, so the length is refused here, at
+# collection, on whichever machine runs the suite first.
+WINDOWS_ENVIRONMENT_VALUE_LIMIT = 32767
+LONGEST_PHASE_SUFFIX = " (teardown)"
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Refuse a node id too long for Windows to hold in ``PYTEST_CURRENT_TEST``.
+
+    Args:
+        items: Every collected test.
+
+    Raises:
+        pytest.UsageError: Naming each test whose id is too long; give its
+            parameters an explicit short ``id``.
+    """
+    room = WINDOWS_ENVIRONMENT_VALUE_LIMIT - len(LONGEST_PHASE_SUFFIX)
+    too_long = [item.nodeid for item in items if len(item.nodeid) > room]
+    if too_long:
+        named = "\n".join(f"  {nodeid[:120]}... ({len(nodeid)} characters)" for nodeid in too_long)
+        message = f"node ids longer than {room} characters fail every Windows run; give them an explicit id:\n{named}"
+        raise pytest.UsageError(message)
+
+
 @pytest.fixture(autouse=True)
 def this_machine_cannot_reach_into_the_suite(
     tmp_path_factory: pytest.TempPathFactory,
