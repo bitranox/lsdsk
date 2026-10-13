@@ -192,7 +192,7 @@ DETAIL_ORDER: Final[dict[CliCommand, tuple[str, ...]]] = {
     CliCommand.HEALTH: (detail.HEALTH, detail.COUNTERS),
     CliCommand.SLOTS: (detail.SLOT, detail.OCCUPANT),
     CliCommand.TREND: (detail.COUNTERS, detail.HEALTH),
-    CliCommand.FILESYSTEMS: (detail.SPACE, detail.INODES),
+    CliCommand.FILESYSTEMS: (detail.SPACE, detail.INODES, detail.FREE_SPACE),
 }
 
 #: Which table on which page puts what under the cursor. One mapping rather than

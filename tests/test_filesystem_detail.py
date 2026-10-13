@@ -22,7 +22,7 @@ from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.enums import FilesystemKind
 from lsdsk.domain.filesystem_fill import diagnose_filesystems
-from lsdsk.domain.models import Filesystem, Inventory, RefusedReading
+from lsdsk.domain.models import Filesystem, FreeSpace, Inventory, RefusedReading
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 GIB = 1024**3
@@ -166,7 +166,11 @@ def test_a_filesystem_nothing_refused_has_no_refused_group() -> None:
 @pytest.mark.os_agnostic
 def test_the_legend_names_only_the_markers_the_panel_drew() -> None:
     """A fully read fixed-inode mount draws neither marker, so it prints no legend."""
-    clean = _panel(_mount())
+    # the row carries a fully counted free space, so the legend test sees no marker it did not mean to draw
+    counted = FreeSpace(
+        fragmentation_percent=10, free_extent_count=4, free_extent_bytes=4 * 2**20, largest_free_extent_bytes=2**20
+    )
+    clean = _panel(_mount(free_space=counted))
     dynamic = _panel(_mount(fs_type="btrfs"))
     unread = _panel(_hidden())
 
@@ -291,3 +295,36 @@ async def test_two_rows_sharing_a_name_each_answer_with_their_own_record() -> No
     assert finding_title not in second
     assert theme.format_size_both(covering.size_bytes) in back
     assert hidden.readings_refused[0].reason not in back
+
+
+@pytest.mark.os_agnostic
+def test_a_counted_filesystem_shows_its_free_space_layout() -> None:
+    space = FreeSpace(
+        fragmentation_percent=37, free_extent_count=4, free_extent_bytes=4 * 2**20, largest_free_extent_bytes=2 * 2**20
+    )
+    values = _values(
+        Filesystem(kind=FilesystemKind.MOUNT, name="/", fs_type="ext4", free_space=space),
+    )
+    assert values["free space.fragmentation"] == "37%"
+    assert values["free space.free extents"] == "4"
+    assert values["free space.largest"] == theme.format_size_both(2 * 2**20)
+    assert values["free space.average"] == theme.format_size_both(2**20)
+
+
+@pytest.mark.os_agnostic
+def test_a_pool_shows_its_score_and_n_a_for_what_zfs_does_not_publish() -> None:
+    pool = Filesystem(
+        kind=FilesystemKind.POOL, name="tank", fs_type="zfs", free_space=FreeSpace(fragmentation_percent=22)
+    )
+    values = _values(pool)
+    assert values["free space.fragmentation"] == "22%"
+    assert {values[f"free space.{label}"] for label in ("free extents", "largest", "average")} == {theme.NOT_APPLICABLE}
+
+
+@pytest.mark.os_agnostic
+def test_an_uncounted_ext4_shows_dashes_and_a_vfat_shows_n_a() -> None:
+    unread = _values(Filesystem(kind=FilesystemKind.MOUNT, name="/", fs_type="ext4"))
+    impossible = _values(Filesystem(kind=FilesystemKind.MOUNT, name="/e", fs_type="vfat"))
+    labels = ("fragmentation", "free extents", "largest", "average")
+    assert {unread[f"free space.{label}"] for label in labels} == {theme.NOT_READ}
+    assert {impossible[f"free space.{label}"] for label in labels} == {theme.NOT_APPLICABLE}

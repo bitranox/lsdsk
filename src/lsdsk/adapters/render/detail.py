@@ -96,6 +96,7 @@ class DetailGroupLabel(StrEnum):
     MACHINE = "machine"
     SPACE = "space"
     INODES = "inodes"
+    FREE_SPACE = "free space"
     REFUSED = "refused"
 
 
@@ -116,6 +117,7 @@ OCCUPANT: Final = DetailGroupLabel.OCCUPANT
 MACHINE: Final = DetailGroupLabel.MACHINE
 SPACE: Final = DetailGroupLabel.SPACE
 INODES: Final = DetailGroupLabel.INODES
+FREE_SPACE: Final = DetailGroupLabel.FREE_SPACE
 REFUSED: Final = DetailGroupLabel.REFUSED
 
 #: Every label a group may carry, which is simply the enum's own membership.
@@ -370,6 +372,7 @@ def filesystem_detail(filesystem: Filesystem) -> Detail:
         DetailGroup(IDENTITY, _filesystem_identity_values(filesystem)),
         DetailGroup(SPACE, _filesystem_space_values(filesystem)),
         DetailGroup(INODES, _filesystem_inode_values(filesystem)),
+        DetailGroup(FREE_SPACE, _filesystem_free_space_values(filesystem)),
     ]
     if filesystem.readings_refused:
         groups.append(
@@ -989,6 +992,25 @@ def _filesystem_inode_values(filesystem: Filesystem) -> tuple[tuple[str, Cell], 
     )
 
 
+def _filesystem_free_space_values(filesystem: Filesystem) -> tuple[tuple[str, Cell], ...]:
+    """How scattered the free space is: `n/a` where no figure can exist, a dash where one was not read."""
+    labels = ("fragmentation", "free extents", "largest", "average")
+    if not filesystem.free_space_applies:
+        return tuple((label, _absent()) for label in labels)
+    space = filesystem.free_space
+    if space is None:
+        return tuple((label, _counted(None)) for label in labels)
+    score = _absent() if space.fragmentation_percent is None else _counted(space.fragmentation_percent, "%")
+    if space.free_extent_count is None:  # a pool: ZFS publishes the score and nothing finer
+        return (("fragmentation", score), *((label, _absent()) for label in labels[1:]))
+    return (
+        ("fragmentation", score),
+        ("free extents", _counted(space.free_extent_count)),
+        ("largest", _capacity(space.largest_free_extent_bytes)),
+        ("average", _capacity(space.average_free_extent_bytes)),
+    )
+
+
 def _capacity(size_bytes: int | None) -> Cell:
     """A capacity on both scales, as the filesystems table writes it, or the unread dash."""
     return ("-", theme.STYLE_UNKNOWN) if size_bytes is None else (theme.format_size_both(size_bytes), "")
@@ -1008,6 +1030,7 @@ __all__ = [
     "AT_MOST_LEGEND",
     "COUNTERS",
     "DEVICE",
+    "FREE_SPACE",
     "GROUP_LABELS",
     "HEALTH",
     "IDENTITY",
