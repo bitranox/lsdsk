@@ -97,6 +97,15 @@ All of it on 2026-10-13 with this change.
 - **Pool fragmentation as an ordinary user.** `ZFS_IOC_POOL_GET_PROPS` on a read-only `/dev/zfs`
   handle, run unprivileged on OpenZFS 2.4.4, answered on every pool tried. On the real-hardware run,
   13 of 13 pools on five ZFS hosts read the same figure as `zpool list`, with values from 2 to 41.
+- **ext4 and xfs, root and unprivileged.** On a throwaway Ubuntu 24.04 VM (kernel 6.8, xfsprogs
+  6.6), `lsdsk filesystems --format json` read three 2 GiB filesystems - ext4, xfs, and xfs with
+  `rmapbt=1` - once empty and once after writing 1.4 GiB of 1-8 MiB files and deleting every other
+  one. On every root reading the free extent count and free bytes equal what `e2freefrag` and
+  `xfs_spaceman -c 'freesp -s'` report, and on ext4 the largest free extent equals `e2freefrag`'s
+  maximum. An ordinary user read the same extent counts and scores as root on all three, with free
+  bytes equal on ext4 and one 4 KiB block apart on xfs, which changed between the two runs. Scores
+  were 1 to 2 empty and 15 to 17 scattered. The empty ext4 reported a 938 MB free extent across
+  128 MiB block groups, so ext4's free extents are not cut at block-group boundaries there.
 - **Windows, elevated.** One `lsdsk filesystems --format json` run on a Windows 11 VM took 2.9 s warm
   and 5.4 s cold with a 499 GiB NTFS system volume 13% full (41,897 free extents, score 1), read
   through the volume GUID path. A temporary 4 GiB NTFS volume filled to 95% read score 3 in 2.9 s.
@@ -112,14 +121,14 @@ All of it on 2026-10-13 with this change.
 
 ## What was only read from source
 
-- `FS_IOC_GETFSMAP` on ext4 and xfs was read from kernel source and never run on hardware here.
-- That an unprivileged caller may use it on xfs is from the same reading.
+- How `FS_IOC_GETFSMAP` behaves beyond the run above - other kernel versions, a filesystem over the
+  record bound, multi-device xfs - was read from kernel source, not run.
 - That a reflinked xfs filesystem lists a shared block as several records, so a free-space walk must
   not assume every record is distinct, is from the same reading.
 
-The Linux free-extent path is therefore covered by hand-built captures and unit tests; a capture of an
-ext4 or xfs host and an end-to-end host that has one remain needed, as they already were for the
-`statvfs` path in ADR 0005.
+The run above was a one-off: the suite still covers the Linux free-extent path with hand-built
+captures and unit tests, and a committed capture of an ext4 or xfs host and an end-to-end host that
+has one remain needed, as they already were for the `statvfs` path in ADR 0005.
 
 ## Left out
 
