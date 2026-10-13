@@ -142,6 +142,8 @@ Settled with the user: page 9 is `9,f9`, rescan moves to `r,f10`, and quit keeps
 and gives up `f10`.
 
 Left out: fill trends over time, LVM unallocated space, quotas and ZFS-specific thresholds.
+How scattered the free space is was added afterwards and is decided in
+[ADR 0006](0006-how-scattered-free-space-is.md).
 
 ## Consequences
 

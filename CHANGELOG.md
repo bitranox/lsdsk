@@ -5,6 +5,19 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Added
+
+- **How scattered the free space is.** The filesystems table gains a `frag` column, the detail panel
+  a `free space` group (`fragmentation`, `free extents`, `largest`, `average`) and every
+  `data.filesystems` entry in `--format json` a `free_space` field (`null`, or
+  `{fragmentation_percent, free_extent_count, free_extent_bytes, largest_free_extent_bytes,
+  histogram}`). The score is OpenZFS's own free-space fragmentation figure: a ZFS pool reports what
+  `zpool list` prints, ext4 and xfs are scored from their free extents, and a Windows volume from
+  its volume bitmap, which needs an elevated session (an unelevated run says `fragmentation:
+  filesystems - needs Administrator`). `n/a` marks a filesystem with no such figure and `-` one
+  that was not read; `frag` is the first column dropped as the terminal narrows. It is shown only:
+  no finding and no threshold. A read stops at a million free extents and says so. See ADR 0006.
+
 ## [1.8.0] 2026-10-13 10:32:47
 
 ### Added

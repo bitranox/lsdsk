@@ -110,8 +110,17 @@ fill; a line under the table names whichever of the two the table drew. A row a 
 carries that finding's marker. See [FINDINGS.md](FINDINGS.md#how-full-a-filesystem-is) for when a
 fill level becomes a finding.
 
+The last column, `frag`, says how scattered the free space is, on the scale `zpool list` uses for
+its `FRAG` column: 0% is free space in large pieces and 100% is free space in small ones. A ZFS
+pool reports ZFS's own figure, ext4 and xfs are scored from their free extents, and a Windows
+volume from its volume bitmap, which needs an elevated session; an unelevated run says
+`fragmentation: filesystems - needs Administrator`. Here `n/a` means the filesystem has no such
+figure and `-` that one could exist and was not read. `frag` is the first column to go as the
+terminal narrows. It is shown only and never becomes a finding.
+
 The cursor fills the panel with what the table has no column for: every other mountpoint of the
 filesystem by name where the row says `+N`, the disks it lives on, the read-only flag, the raw
-inode counts, and each reading the system refused with its reason. A row whose figures were not
+inode counts, a `free space` group (`fragmentation`, `free extents`, `largest` and `average`), and
+each reading the system refused with its reason. A row whose figures were not
 read, such as a mount hidden by another mounted over it, shows `-` and the reason, never a
 figure. Two rows can share a name, so the panel follows the row, not the name.

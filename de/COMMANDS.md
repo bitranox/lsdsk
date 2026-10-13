@@ -18,7 +18,7 @@ zur [README](README.md).
 | `lsdsk smart`                    | Die SMART-Attribute jeder Platte, gegen ihre eigenen Schwellen                                        |
 | `lsdsk findings`                 | Jeden Befund mit seiner Begründung und seiner Abhilfe                                                 |
 | `lsdsk slots`                    | Jeden PCIe-Anschluss: Fähigkeit, Bestückung, was frei ist                                             |
-| `lsdsk filesystems`              | Wie voll jedes Dateisystem, jeder Pool und jedes Volume ist: Größe, belegt, frei, Inodes              |
+| `lsdsk filesystems`              | Wie voll jedes Dateisystem, jeder Pool und jedes Volume ist und wie zerstückelt sein freier Platz ist |
 | `lsdsk trend`                    | Was jeder Fehlerzähler über die Zeit tut, nicht nur seinen Stand                                      |
 | `lsdsk record`                   | Eine Messung ablegen und nichts ausgeben, für einen Timer                                             |
 | `lsdsk tui`                      | Eine interaktive Seite je Frage, in der Art der `*top`-Werkzeuge                                      |
@@ -232,15 +232,23 @@ Verlauf nie für einen ruhigen gehalten wird. Der Exit-Code bleibt das Urteil
 `lsdsk filesystems --format json` trägt wie jeder andere Abschnitt das Inventar der Maschine, und
 `data.filesystems` ist eine Liste mit einem Eintrag je eingehängtem Dateisystem, ZFS-Pool oder
 Windows-Volume auf einer inventarisierten Platte, jeweils `{kind, name, other_mounts, fs_type, disks,
-size_bytes, used_bytes, free_bytes, inodes_total, inodes_free, read_only, readings_refused}`. `kind`
+size_bytes, used_bytes, free_bytes, inodes_total, inodes_free, read_only, free_space, readings_refused}`. `kind`
 ist `mount`, `pool` oder `volume`; die Byte- und Inode-Zahlen sind ganze Zahlen, jeweils `null`, wo sie
 nicht gelesen wurden; `free_bytes` ist der Platz, der einem gewöhnlichen Benutzer frei zur Verfügung
-steht. Die Liste selbst ist `null`, wenn die Dateisysteme gar nicht gelesen wurden, etwa in einem Container oder aus einer
-Aufnahme, die vor ihnen gemacht wurde, und eine leere Liste heißt, dass sie gelesen wurden und keines
-auf einer inventarisierten Platte liegt. Eine Messung, die das System verweigert hat, steht in den
-`readings_refused` des Dateisystems (`statvfs` für einen Einhängepunkt, `volume-space` oder `volume-info` für ein
+steht. `free_space` ist `null`, wo keine Zahl gelesen wurde oder keine existieren kann, und sonst
+`{fragmentation_percent, free_extent_count, free_extent_bytes, largest_free_extent_bytes, histogram}`:
+der Wert auf der Skala, die `zpool list` verwendet (0 ist freier Platz in großen Stücken, 100 in
+kleinen), dann Anzahl, Gesamtgröße und größtes der freien Extents und `histogram`, die freien Bytes
+in jeder von 21 Größenklassen ab 512 B. Ein ZFS-Pool trägt den Wert, `null` für die Extent-Zahlen und
+ein leeres `histogram`. Die Liste selbst ist `null`, wenn die Dateisysteme gar nicht gelesen wurden,
+etwa in einem Container oder aus einer Aufnahme, die vor ihnen gemacht wurde, und eine leere Liste
+heißt, dass sie gelesen wurden und keines auf einer inventarisierten Platte liegt. Eine Messung, die
+das System verweigert hat, steht in den `readings_refused` des Dateisystems (`statvfs` oder
+`free-extents` für einen Einhängepunkt, `volume-space`, `volume-info` oder `volume-bitmap` für ein
 Windows-Volume) oder, wenn sie zu keinem einzelnen Dateisystem gehört, als `skipped`-Zeile
-`zfs-pools: filesystems - <Grund>`; `ok` ist also `false`, und eine fehlende Zahl wird nie für eine ruhige gehalten.
+`zfs-pools: filesystems - <Grund>` oder `zfs-fragmentation: filesystems - <Grund>`; ein Windows-Lauf
+ohne Administratorrechte fügt `fragmentation: filesystems - needs Administrator` hinzu. `ok` ist also
+`false`, und eine fehlende Zahl wird nie für eine ruhige gehalten.
 Der Exit-Code bleibt das Urteil über die Maschine.
 
 `lsdsk --no-record record` wird mit `22` abgelehnt statt befolgt. Bei jedem

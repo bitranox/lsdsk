@@ -18,7 +18,7 @@ Back to the [README](README.md).
 | `lsdsk smart`                    | Every disk's SMART attributes against its thresholds                                               |
 | `lsdsk findings`                 | Every finding with its reasoning and its remedy                                                    |
 | `lsdsk slots`                    | Every PCIe port: capability, occupant, what is free                                                |
-| `lsdsk filesystems`              | How full each filesystem, pool or volume on a disk is: size, used, free, inodes                    |
+| `lsdsk filesystems`              | How full each filesystem, pool or volume on a disk is, and how scattered its free space is         |
 | `lsdsk trend`                    | What each error counter is doing over time, not just its total                                     |
 | `lsdsk record`                   | Store one reading and print nothing, for a timer                                                   |
 | `lsdsk tui`                      | An interactive page per question, `*top` style                                                     |
@@ -212,14 +212,22 @@ The exit code is still the machine's verdict.
 `lsdsk filesystems --format json` carries the machine's inventory like every other section, and
 `data.filesystems` is a list with one entry per mounted filesystem, ZFS pool or Windows volume on
 an inventoried disk, each `{kind, name, other_mounts, fs_type, disks, size_bytes, used_bytes,
-free_bytes, inodes_total, inodes_free, read_only, readings_refused}`. `kind` is `mount`, `pool` or
+free_bytes, inodes_total, inodes_free, read_only, free_space, readings_refused}`. `kind` is `mount`, `pool` or
 `volume`; the byte and inode figures are integers, each `null` where it was not read; `free_bytes`
-is the space free to an ordinary user. The list itself is `null` when the filesystems were not read
-at all, as in a container or from a capture taken before they were, and an empty list means they were read and none
-lives on an inventoried disk. A reading the system refused is recorded in the filesystem's
-`readings_refused` (`statvfs` for a mount, `volume-space` or `volume-info` for a Windows volume) or, when it belongs
-to no single filesystem, as the `skipped` line `zfs-pools: filesystems - <reason>`, so `ok` is `false` and a
-missing figure is never mistaken for a quiet one. The exit code is still the machine's verdict.
+is the space free to an ordinary user. `free_space` is `null` where no figure was read or none can
+exist, and otherwise `{fragmentation_percent, free_extent_count, free_extent_bytes,
+largest_free_extent_bytes, histogram}`: the score on the scale `zpool list` uses (0 is free space in
+large pieces, 100 in small ones), then the number, total size and largest of the free extents, and
+`histogram`, the free bytes in each of 21 size classes from 512 B up. A ZFS pool carries the score,
+`null` for the extent figures and an empty `histogram`. The list itself is `null` when the
+filesystems were not read at all, as in a container or from a capture taken before they were, and
+an empty list means they were read and none lives on an inventoried disk. A reading the system
+refused is recorded in the filesystem's `readings_refused` (`statvfs` or `free-extents` for a mount,
+`volume-space`, `volume-info` or `volume-bitmap` for a Windows volume) or, when it belongs to no
+single filesystem, as the `skipped` line `zfs-pools: filesystems - <reason>` or
+`zfs-fragmentation: filesystems - <reason>`; a Windows run without Administrator adds
+`fragmentation: filesystems - needs Administrator`. So `ok` is `false` and a missing figure is
+never mistaken for a quiet one. The exit code is still the machine's verdict.
 
 `lsdsk --no-record record` is refused at `22` rather than obeyed. On every other
 command the flag means "judge the counters against the store without adding this

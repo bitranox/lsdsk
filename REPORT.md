@@ -60,5 +60,5 @@ of them actually agreed on. An orange `disk` means the drive cannot use the port
 it occupies, which is a placement question. A red `link` means both ends could
 have gone faster and did not, which is a fault.
 
-The filesystems section follows the disks and says how full each filesystem on those disks is;
-`lsdsk filesystems` prints it alone.
+The filesystems section follows the disks and says how full each filesystem on those disks is and how
+scattered its free space is (`frag`); `lsdsk filesystems` prints it alone.
