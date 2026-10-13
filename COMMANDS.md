@@ -214,9 +214,10 @@ The exit code is still the machine's verdict.
 an inventoried disk, each `{kind, name, other_mounts, fs_type, disks, size_bytes, used_bytes,
 free_bytes, inodes_total, inodes_free, read_only, free_space, readings_refused}`. `kind` is `mount`, `pool` or
 `volume`; the byte and inode figures are integers, each `null` where it was not read; `free_bytes`
-is the space free to an ordinary user. `free_space` is `null` where no figure was read or none can
-exist, and otherwise `{fragmentation_percent, free_extent_count, free_extent_bytes,
-largest_free_extent_bytes, histogram}`: the score on the scale `zpool list` uses (0 is free space in
+is the space free to an ordinary user. `free_space` is `null` where it was not read or the filesystem
+type has no source for it, and otherwise `{fragmentation_percent, free_extent_count,
+free_extent_bytes, largest_free_extent_bytes, histogram}`, where `fragmentation_percent` is `null`
+if no figure exists: the score on the scale `zpool list` uses (0 is free space in
 large pieces, 100 in small ones), then the number, total size and largest of the free extents, and
 `histogram`, the free bytes in each of 21 size classes from 512 B up. A ZFS pool carries the score,
 `null` for the extent figures and an empty `histogram`. The list itself is `null` when the

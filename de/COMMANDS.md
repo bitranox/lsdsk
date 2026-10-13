@@ -235,8 +235,9 @@ Windows-Volume auf einer inventarisierten Platte, jeweils `{kind, name, other_mo
 size_bytes, used_bytes, free_bytes, inodes_total, inodes_free, read_only, free_space, readings_refused}`. `kind`
 ist `mount`, `pool` oder `volume`; die Byte- und Inode-Zahlen sind ganze Zahlen, jeweils `null`, wo sie
 nicht gelesen wurden; `free_bytes` ist der Platz, der einem gewöhnlichen Benutzer frei zur Verfügung
-steht. `free_space` ist `null`, wo keine Zahl gelesen wurde oder keine existieren kann, und sonst
-`{fragmentation_percent, free_extent_count, free_extent_bytes, largest_free_extent_bytes, histogram}`:
+steht. `free_space` ist `null`, wo es nicht gelesen wurde oder der Dateisystemtyp dafür keine Quelle hat,
+und sonst `{fragmentation_percent, free_extent_count, free_extent_bytes, largest_free_extent_bytes,
+histogram}`, wobei `fragmentation_percent` `null` ist, wenn keine Zahl existiert:
 der Wert auf der Skala, die `zpool list` verwendet (0 ist freier Platz in großen Stücken, 100 in
 kleinen), dann Anzahl, Gesamtgröße und größtes der freien Extents und `histogram`, die freien Bytes
 in jeder von 21 Größenklassen ab 512 B. Ein ZFS-Pool trägt den Wert, `null` für die Extent-Zahlen und

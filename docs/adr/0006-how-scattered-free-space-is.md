@@ -33,9 +33,9 @@ one figure reads the same way everywhere and a pool's score is the one `zpool li
 **21 buckets of free bytes.** Bucket `i` holds free extents of `[512 * 2**i, 1024 * 2**i)` bytes.
 Bucket 0 also takes anything under 512 B and bucket 20 takes everything from 512 MiB up. Each bucket
 is weighted by the free bytes it actually holds. ZFS weights a bucket by its lower bound times the
-count, which underweights the bytes in the upper part of a bucket. That only matters where lsdsk
-computes the score itself (ext4, xfs, Windows volumes), where the two weightings differ by a few
-points on a histogram of real extents; a pool's figure is ZFS's own and is not recomputed.
+count, which counts less than the bytes in the upper part of a bucket. That only matters where lsdsk
+computes the score itself (ext4, xfs, Windows volumes); a pool's figure is ZFS's own and is not
+recomputed. How far the two weightings differ on histograms of real extents was not measured.
 
 **Which filesystems have a figure.**
 
@@ -47,8 +47,8 @@ points on a histogram of real extents; a pool's figure is ZFS's own and is not r
 - ext4 and xfs: the free extents of the mounted filesystem through `FS_IOC_GETFSMAP`.
 - A Windows volume: the volume bitmap through `FSCTL_GET_VOLUME_BITMAP`, folded into free runs. This
   needs an elevated session and opens the volume by its GUID path.
-- Everything else (btrfs, FAT, tmpfs, and the types with no free-space source this tool reads) draws
-  `n/a`.
+- A Linux mount of any other type (btrfs, vfat, tmpfs, and the types with no free-space source this
+  tool reads) draws `n/a`. Every Windows volume is walked whatever its type.
 
 **A bound, not a setting.** A read stops at `MAX_FREE_EXTENTS = 1_000_000` free extents (or free
 runs on Windows) per filesystem and refuses with a reason naming the number, because a very
@@ -60,8 +60,8 @@ not to express a preference.
 **The refusals, by name.** A reading the system refused is recorded and becomes a `skipped` line,
 like every other refusal here: `zfs-fragmentation` (the pool listing, inventory level),
 `free-extents` (a Linux mount row), `volume-bitmap` (a Windows volume row) and `fragmentation` (the
-run-wide line a Windows run without Administrator prints, `fragmentation: filesystems - needs
-Administrator`). The key is a refusal that was recorded, never a field being absent.
+run-wide line a Windows run without Administrator carries in the JSON envelope's `skipped`, `fragmentation:
+filesystems - needs Administrator`; no table or page prints it). The key is a refusal that was recorded, never a field being absent.
 
 **`n/a` and `-` are different claims.** `n/a` in the `frag` cell means no figure can exist: the type
 has no free-space source, the pool publishes none, or there is no free space to score. `-` means a
@@ -69,7 +69,7 @@ figure could exist and was not read. The legend names each only when the table d
 carries a per-column meaning there, because the inodes column draws it too.
 
 **Shape of the output.** The table column is `frag`, right-aligned, and drops first as the terminal
-narrows (priority 7, after `inodes%`). The panel gains a `free space` group with `fragmentation`,
+narrows (priority 7, so it drops before `inodes%`). The panel gains a `free space` group with `fragmentation`,
 `free extents`, `largest` and `average`. The JSON entry gains `free_space`: `null`, or
 `{fragmentation_percent, free_extent_count, free_extent_bytes, largest_free_extent_bytes,
 histogram}`, and `histogram` is the 21 buckets of free bytes.
@@ -84,8 +84,9 @@ All of it on 2026-10-13 with this change.
 - **Windows, elevated.** One `lsdsk filesystems --format json` run on a Windows 11 VM took 2.9 s warm
   and 5.4 s cold with a 499 GiB NTFS system volume 13% full (41,897 free extents, score 1), read
   through the volume GUID path. A temporary 4 GiB NTFS volume filled to 95% read score 3 in 2.9 s.
-- **Windows, not elevated.** Opening the volume fails with error 5 and the run carries the
-  `fragmentation: filesystems - needs Administrator` line.
+- **Windows, not elevated.** A probe found that opening the volume fails with error 5, which is why
+  the run does not attempt it: every `frag` cell draws `-` and the JSON envelope's `skipped` carries
+  the `fragmentation: filesystems - needs Administrator` line.
 - **Cost on a large, nearly full volume is not measured end to end.** The bitmap expansion runs about
   1.8 s per TiB of all-used clusters in a unit benchmark; no such volume was read through the whole
   path.
@@ -112,7 +113,7 @@ defragmenter, which would mean running a subprocess. This tool runs none.
 ## Consequences
 
 Captures gain optional fields (`SCHEMA_VERSION` stays 2): a pool's fragmentation, a mount's free
-extents and a Windows run's `volume_bitmaps_read`, so every committed fixture still parses and an
+extents, a Windows volume's `free_extents` entry and a Windows run's `volume_bitmaps_read`, so every committed fixture still parses and an
 older one replays with no figure. The `frag` cell of a row with no reading draws `-`, which the three
 legend tests written before the column existed had to be told about; their fixtures now carry a
 `FreeSpace` so they still test what they were written for.

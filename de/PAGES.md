@@ -118,11 +118,12 @@ nennt, welches von beiden die Tabelle gezeichnet hat. Eine Zeile, auf die ein Be
 die Markierung dieses Befunds. Siehe [FINDINGS.md](FINDINGS.md#wie-voll-ein-dateisystem-ist), wann
 ein Füllstand zum Befund wird.
 
-Die letzte Spalte, `frag`, sagt, wie zerstückelt der freie Platz ist, auf der Skala, die `zpool list`
+Die Spalte `frag` sagt, wie zerstückelt der freie Platz ist, auf der Skala, die `zpool list`
 in seiner Spalte `FRAG` verwendet: 0 % ist freier Platz in großen Stücken, 100 % freier Platz in
 kleinen. Ein ZFS-Pool meldet die Zahl von ZFS selbst, ext4 und xfs werden aus ihren freien Extents
 bewertet und ein Windows-Volume aus seiner Volume-Bitmap, wofür eine Sitzung mit erhöhten Rechten
-nötig ist; ein Lauf ohne diese sagt `fragmentation: filesystems - needs Administrator`. Hier heißt
+nötig ist; ein Windows-Lauf ohne diese zeigt in jeder `frag`-Zelle `-`, mit der Legende
+`- = not read`. Hier heißt
 `n/a`, dass das Dateisystem keine solche Zahl hat, und `-`, dass es eine geben könnte und sie nicht
 gelesen wurde. `frag` ist die erste Spalte, die wegfällt, wenn das Terminal schmaler wird. Sie wird
 nur angezeigt und nie zum Befund.
