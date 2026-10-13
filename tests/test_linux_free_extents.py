@@ -18,7 +18,8 @@ if TYPE_CHECKING:
 
 _HEAD = struct.Struct("<IIII48x")
 _RECORD = struct.Struct("<IIQQQQ24x")
-_LOW_KEY, _RECORDS = 64, 192
+_LOW_KEY, _HIGH_KEY, _RECORDS = 64, 128, 192
+_ALL_ONES_32, _ALL_ONES_64 = 0xFFFFFFFF, 2**64 - 1
 _SPECIAL, _LAST, _FREE, _METADATA = 0x10, 0x20, 1, 3
 
 _Record = tuple[int, int, int, int]
@@ -29,7 +30,11 @@ def _one_is_last(batch: list[_Record], index: int, pending: list[_Record]) -> bo
 
 
 class FakeFsmap:
-    """Answers FS_IOC_GETFSMAP from a list of (flags, owner, physical, length), honouring the low key."""
+    """Answers FS_IOC_GETFSMAP from a list of (flags, owner, physical, length), as the kernels do.
+
+    A low key with a non-zero length resumes at its physical plus its length and a zero length starts from
+    the beginning; a high key that is not all ones with length 0, or a non-zero reserved byte, is EINVAL.
+    """
 
     def __init__(self, records: list[_Record], *, fail: int | None = None) -> None:
         """Hold the records to answer from and the errno to fail with, if any."""
@@ -37,15 +42,27 @@ class FakeFsmap:
         self.fail = fail
         self.calls = 0
 
+    def _validate(self, head: bytearray) -> None:
+        high = _RECORD.unpack_from(head, _HIGH_KEY)
+        ones = (_ALL_ONES_32, _ALL_ONES_32, _ALL_ONES_64, _ALL_ONES_64, _ALL_ONES_64, 0)
+        reserved = head[16:_LOW_KEY] + head[_LOW_KEY + 40 : _HIGH_KEY] + head[_HIGH_KEY + 40 : _RECORDS]
+        if high != ones or any(reserved):
+            raise OSError(errno.EINVAL, os.strerror(errno.EINVAL))
+
+    def _pending(self, head: bytearray) -> list[_Record]:
+        _, _, physical, _, _, length = _RECORD.unpack_from(head, _LOW_KEY)
+        if length == 0:
+            return list(self.records)
+        return [one for one in self.records if one[2] >= physical + length]
+
     def __call__(self, _fd: int, request: int, head: bytearray) -> int:
         assert request == freespace.FS_IOC_GETFSMAP
         self.calls += 1
         if self.fail is not None:
             raise OSError(self.fail, os.strerror(self.fail))
+        self._validate(head)
         count = _HEAD.unpack_from(head, 0)[2]
-        after = struct.unpack_from("<Q", head, _LOW_KEY + 8)[0]  # low key's fmr_physical
-        started = self.calls > 1
-        pending = [one for one in self.records if not started or one[2] > after]
+        pending = self._pending(head)
         batch = pending[:count]
         for index, (flags, owner, physical, length) in enumerate(batch):
             last = _LAST if _one_is_last(batch, index, pending) else 0
@@ -102,6 +119,36 @@ def test_a_filesystem_past_the_cap_is_refused_naming_the_cap(tmp_path: Path) -> 
 
 def test_the_walk_uses_the_shipped_cap_unless_told_otherwise() -> None:
     assert inspect.signature(freespace.read_free_extents).parameters["cap"].default == MAX_FREE_EXTENTS
+
+
+def test_a_walk_past_the_record_cap_is_refused_naming_the_number(tmp_path: Path) -> None:
+    # Two calls of non-free records and one free extent: far under the free-extent cap, over the record cap.
+    records = [_metadata(4096 * n, 4096) for n in range(5000)] + [_free(1 << 40, 4096)]
+    fake = FakeFsmap(records)
+    reading = freespace.read_free_extents(ROWS, ioctl=fake, opener=_opener(tmp_path), max_records=4500)
+    assert reading == {"8:1": {"error": "more than 4,500 space-map records; stopped reading at the cap"}}
+    assert fake.calls == 2
+
+
+def test_the_walk_reads_the_shipped_record_budget_unless_told_otherwise() -> None:
+    assert inspect.signature(freespace.read_free_extents).parameters["max_records"].default == (
+        freespace.MAX_FSMAP_RECORDS
+    )
+    assert freespace.MAX_FSMAP_RECORDS == 4_000_000
+
+
+def test_a_batch_that_goes_backwards_is_refused(tmp_path: Path) -> None:
+    class Backwards(FakeFsmap):
+        def __call__(self, _fd: int, _request: int, head: bytearray) -> int:
+            self.calls += 1
+            assert self.calls < 50, "the walk did not stop"
+            physical = (1 << 40) - self.calls * 4096  # never equal twice, so only an ordering check stops it
+            _RECORD.pack_into(head, _RECORDS, 0, _SPECIAL, physical, _FREE, 0, 512)
+            struct.pack_into("<I", head, 12, 1)
+            return 0
+
+    reading = freespace.read_free_extents(ROWS, ioctl=Backwards([]), opener=_opener(tmp_path))
+    assert "did not advance" in reading["8:1"]["error"]
 
 
 def test_a_kernel_that_does_not_advance_is_refused_not_looped(tmp_path: Path) -> None:

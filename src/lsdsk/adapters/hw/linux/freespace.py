@@ -3,8 +3,11 @@
 The kernel lists a filesystem's space as records - free, metadata, owned by a
 file - in physical order, a batch per call, each call resuming after the last
 record of the one before. Only the free records are kept, folded into the
-bounded summary a capture records; a filesystem with more free extents than
-the cap is refused rather than walked for minutes.
+bounded summary a capture records. Two budgets keep a read from running for
+minutes, and a filesystem past either is refused with a reason naming it: how
+many free extents it may have (``MAX_FREE_EXTENTS``) and how many records of
+any kind the walk may read (``MAX_FSMAP_RECORDS``), because a filesystem with
+reverse mapping can list every file extent it holds.
 
 One mountpoint per filesystem is asked, chosen by the rules ``read_space``
 uses: a hidden mountpoint never (the open would reach the filesystem covering
@@ -37,6 +40,8 @@ _LOW_KEY: Final = _HEAD.size
 _HIGH_KEY: Final = _LOW_KEY + _RECORD.size
 _RECORDS: Final = _HIGH_KEY + _RECORD.size
 _RECORDS_PER_CALL: Final = 4096
+#: A reading budget, not a judged figure, so it has no configuration key: records of ANY kind one walk may read.
+MAX_FSMAP_RECORDS: Final = 4_000_000
 _ALL_ONES_32: Final = 0xFFFFFFFF
 _ALL_ONES_64: Final = 2**64 - 1
 _SPECIAL_OWNER: Final = 0x10  # FMR_OF_SPECIAL_OWNER
@@ -69,32 +74,49 @@ def _fold_batch(head: bytearray, entries: int, tally: FreeExtentTally) -> int:
     return flags
 
 
-def _walk(fd: int, ioctl: Ioctl, tally: FreeExtentTally) -> None:
+def _check_batch(entries: int, seen: int, max_records: int) -> None:
+    if entries > _RECORDS_PER_CALL:
+        message = f"the kernel reported {entries} records for room of {_RECORDS_PER_CALL}"
+        raise ValueError(message)
+    if seen > max_records:
+        message = f"more than {max_records:,} space-map records; stopped reading at the cap"
+        raise ValueError(message)
+
+
+def _last_position(head: bytearray, entries: int) -> tuple[bytes, tuple[int, int]]:
+    """The batch's last record, and the (device, physical) place it stands at."""
+    start = _RECORDS + (entries - 1) * _RECORD.size
+    last = bytes(head[start : start + _RECORD.size])
+    device, _, physical, *_ = _RECORD.unpack(last)
+    return last, (device, physical)
+
+
+def _walk(fd: int, ioctl: Ioctl, tally: FreeExtentTally, max_records: int) -> None:
     """Every free record of the filesystem behind ``fd``, folded into ``tally``.
 
     Raises:
         OSError: The kernel refused the call.
-        ValueError: The kernel answered something the walk cannot continue from.
+        ValueError: The kernel answered something the walk cannot continue from,
+            or the filesystem has more records than ``max_records``.
         FreeExtentCapError: The filesystem has more free extents than the cap.
     """
     head = _new_head()
-    previous = b""
+    previous: tuple[int, int] | None = None
+    seen = 0
     while True:
         ioctl(fd, FS_IOC_GETFSMAP, head)
         entries = _HEAD.unpack_from(head, 0)[3]
         if entries == 0:
             return
-        if entries > _RECORDS_PER_CALL:
-            message = f"the kernel reported {entries} records for room of {_RECORDS_PER_CALL}"
-            raise ValueError(message)
+        seen += entries
+        _check_batch(entries, seen, max_records)
         if _fold_batch(head, entries, tally) & _LAST:
             return
-        start = _RECORDS + (entries - 1) * _RECORD.size
-        last = bytes(head[start : start + _RECORD.size])
-        if last == previous:
+        last, position = _last_position(head, entries)
+        if previous is not None and position <= previous:
             message = "the kernel did not advance past its last record"
             raise ValueError(message)
-        previous = last
+        previous = position
         head[_LOW_KEY : _LOW_KEY + _RECORD.size] = last
 
 
@@ -103,7 +125,7 @@ def _reason(error: Exception) -> str:
     return text[:MAX_DEVICE_TEXT]
 
 
-def _ask(mountpoint: str, ioctl: Ioctl, opener: Callable[[str], int], cap: int) -> dict[str, Any]:
+def _ask(mountpoint: str, ioctl: Ioctl, opener: Callable[[str], int], cap: int, max_records: int) -> dict[str, Any]:
     """One mountpoint's free-extent summary, or ``{"error": <reason>}``."""
     try:
         fd = opener(mountpoint)
@@ -111,7 +133,7 @@ def _ask(mountpoint: str, ioctl: Ioctl, opener: Callable[[str], int], cap: int) 
         return {"error": _reason(error)}
     try:
         tally = FreeExtentTally(cap)
-        _walk(fd, ioctl, tally)
+        _walk(fd, ioctl, tally, max_records)
     except (OSError, ValueError) as error:  # FreeExtentCapError is a ValueError
         return {"error": _reason(error)}
     finally:
@@ -142,6 +164,7 @@ def read_free_extents(
     ioctl: Ioctl | None = None,
     opener: Callable[[str], int] | None = None,
     cap: int = MAX_FREE_EXTENTS,
+    max_records: int = MAX_FSMAP_RECORDS,
 ) -> dict[str, dict[str, Any]]:
     """Read the free extents of every ext4 and xfs filesystem once.
 
@@ -150,6 +173,8 @@ def read_free_extents(
         ioctl: The call that reaches the kernel; ``fcntl.ioctl`` by default.
         opener: Opens a mountpoint read-only; closed with ``os.close``.
         cap: How many free extents one filesystem may have before it is refused.
+        max_records: How many records of any kind one walk may read before the
+            filesystem is refused.
 
     Returns:
         One summary per filesystem device, keyed by its ``maj:min``; a device
@@ -166,7 +191,7 @@ def read_free_extents(
         if row.get("hidden") is True:
             hidden_only.append(dev)
             continue
-        reading = _ask(wanted.mountpoint, call, open_one, cap)
+        reading = _ask(wanted.mountpoint, call, open_one, cap, max_records)
         if "error" in reading and dev in readings:
             continue
         readings[dev] = reading
@@ -175,4 +200,4 @@ def read_free_extents(
     return readings
 
 
-__all__ = ["FS_IOC_GETFSMAP", "read_free_extents"]
+__all__ = ["FS_IOC_GETFSMAP", "MAX_FSMAP_RECORDS", "read_free_extents"]
