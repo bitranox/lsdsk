@@ -857,7 +857,8 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
             write(
                 f"    zfs pool {pool.get('pool')}: lsdsk {pool.get('lsdsk_percent')}% "
                 f"({pool.get('lsdsk_used_bytes')}/{pool.get('lsdsk_size_bytes')} bytes) "
-                f"zpool cap {pool.get('zpool_cap')}% ({pool.get('zpool_alloc')}/{pool.get('zpool_size')} bytes)"
+                f"zpool cap {pool.get('zpool_cap')}% ({pool.get('zpool_alloc')}/{pool.get('zpool_size')} bytes) "
+                f"lsdsk frag {pool.get('lsdsk_frag')} zpool frag {pool.get('zpool_frag')}"
             )
     for skip in skipped_hosts:
         write(f"  SKIPPED {skip}")

@@ -317,12 +317,16 @@ POOL_PERCENT_TOLERANCE = 0
 
 
 class ZpoolRow(NamedTuple):
-    """One line of ``zpool list -Hp -o name,size,alloc,free,cap``, in exact bytes."""
+    """One line of ``zpool list -Hp -o name,size,alloc,free,cap,frag``, in exact bytes.
+
+    ``frag`` is None where zpool prints ``-``: the pool publishes no figure.
+    """
 
     size: int
     alloc: int
     free: int
     cap: int
+    frag: int | None
 
 
 def parse_zpool_list(text: str) -> dict[str, ZpoolRow]:
@@ -336,11 +340,13 @@ def parse_zpool_list(text: str) -> dict[str, ZpoolRow]:
             continue
         fields = line.split("\t")
         try:
-            if len(fields) != 5:
+            if len(fields) != 6:
                 raise ValueError(len(fields))
-            pools[fields[0]] = ZpoolRow(*(int(value.rstrip("%")) for value in fields[1:]))
+            frag = None if fields[5] == "-" else int(fields[5].rstrip("%"))
+            size, alloc, free, cap = (int(value.rstrip("%")) for value in fields[1:5])
+            pools[fields[0]] = ZpoolRow(size=size, alloc=alloc, free=free, cap=cap, frag=frag)
         except ValueError as error:
-            message = f"zpool list line is not name and four numbers: {line!r}"
+            message = f"zpool list line is not a name and five figures: {line!r}"
             raise ValueError(message) from error
     return pools
 
@@ -351,6 +357,12 @@ def used_percent(row: dict[str, Any]) -> int | None:
     if used is None or free is None or used + free <= 0:
         return None
     return 100 * used // (used + free)
+
+
+def _row_frag(row: dict[str, Any] | None) -> int | None:
+    """A filesystem row's fragmentation score, None when it carries no ``free_space`` reading."""
+    space = (row or {}).get("free_space")
+    return None if space is None else space.get("fragmentation_percent")
 
 
 def _pool_verdict(name: str, row: dict[str, Any] | None, pool: ZpoolRow | None) -> tuple[str | None, dict[str, Any]]:
@@ -364,6 +376,8 @@ def _pool_verdict(name: str, row: dict[str, Any] | None, pool: ZpoolRow | None) 
         "zpool_cap": pool.cap if pool else None,
         "zpool_alloc": pool.alloc if pool else None,
         "zpool_size": pool.size if pool else None,
+        "lsdsk_frag": _row_frag(row),
+        "zpool_frag": pool.frag if pool else None,
     }
     if pool is None:
         return f"{name}: lsdsk reports a pool zpool list does not show", figures
@@ -373,6 +387,9 @@ def _pool_verdict(name: str, row: dict[str, Any] | None, pool: ZpoolRow | None) 
         return f"{name}: lsdsk row has no used/free figures, zpool cap {pool.cap}", figures
     if abs(percent - pool.cap) > POOL_PERCENT_TOLERANCE:
         return f"{name}: lsdsk {percent}% vs zpool cap {pool.cap}", figures
+    if figures["lsdsk_frag"] != pool.frag:
+        shown = "none" if figures["lsdsk_frag"] is None else f"{figures['lsdsk_frag']}%"
+        return f"{name}: lsdsk frag {shown} vs zpool frag {pool.frag}", figures
     return None, figures
 
 
@@ -453,8 +470,44 @@ def judge_root_row(
     return [check(name, not unread, detail)], "populated" if not unread else "unread"
 
 
+def _refused_readings(row: dict[str, Any]) -> set[str]:
+    """The labels of the readings a row records as refused."""
+    refused = cast("list[dict[str, Any]]", row.get("readings_refused") or [])
+    return {str(item.get("reading")) for item in refused}
+
+
+def judge_windows_fragmentation(
+    rows: list[dict[str, Any]], skipped: list[str] | tuple[str, ...]
+) -> list[dict[str, Any]]:
+    """Whether an elevated Windows run tried every NTFS volume's bitmap.
+
+    The e2e session is elevated, so the run-wide ``needs Administrator`` line
+    means the walk was never attempted. Otherwise every NTFS volume must carry a
+    reading or a recorded ``volume-bitmap`` refusal: silence is neither.
+    """
+    name = "filesystems:fragmentation-read"
+    ntfs = [row for row in rows if str(row.get("fs_type") or "").upper() == "NTFS"]
+    if not ntfs:
+        return []
+    needs_admin = [line for line in skipped if line.startswith("fragmentation:") and "needs Administrator" in line]
+    if needs_admin:
+        return [check(name, False, f"elevated session, yet the run says: {needs_admin[0]}")]
+    silent = [
+        str(row.get("name"))
+        for row in ntfs
+        if row.get("free_space") is None and "volume-bitmap" not in _refused_readings(row)
+    ]
+    detail = f"no reading and no refusal on {', '.join(silent)}" if silent else f"{len(ntfs)} NTFS volume(s) tried"
+    return [check(name, not silent, detail)]
+
+
 def judge_filesystems(
-    data: dict[str, Any], zpool_text: str | None, *, system: str, root_fstype: str | None
+    data: dict[str, Any],
+    zpool_text: str | None,
+    *,
+    system: str,
+    root_fstype: str | None,
+    skipped: list[str] | tuple[str, ...] = (),
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """The filesystems section against this host: the root row, and each ZFS pool against zpool."""
     if "filesystems" not in data:
@@ -463,7 +516,8 @@ def judge_filesystems(
     results, root_row = judge_root_row(rows, data.get("environment"), system, root_fstype)
     pool_results, facts = judge_pools(rows or [], zpool_text)
     facts["root_row"] = root_row
-    return [*results, *pool_results], facts
+    windows = judge_windows_fragmentation(rows or [], skipped) if system == "Windows" else []
+    return [*results, *pool_results, *windows], facts
 
 
 def read_zpool_list() -> str | None:
@@ -472,7 +526,7 @@ def read_zpool_list() -> str | None:
     if zpool is None:
         return None
     done = subprocess.run(  # noqa: S603 - argv list, no shell; the binary was resolved just above
-        [zpool, "list", "-Hp", "-o", "name,size,alloc,free,cap"],
+        [zpool, "list", "-Hp", "-o", "name,size,alloc,free,cap,frag"],
         capture_output=True,
         encoding="utf-8",
         errors="replace",
@@ -488,8 +542,14 @@ def filesystems_agree_with_the_host(invocation: list[str]) -> tuple[list[dict[st
     if code not in DOCUMENTED_EXITS:
         return [check("filesystems:ran", False, f"exit {code}")], {}
     try:
-        data: dict[str, Any] = json.loads(out)["data"]
-        return judge_filesystems(data, read_zpool_list(), system=platform.system(), root_fstype=read_root_fstype())
+        envelope = json.loads(out)
+        return judge_filesystems(
+            envelope["data"],
+            read_zpool_list(),
+            system=platform.system(),
+            root_fstype=read_root_fstype(),
+            skipped=envelope.get("skipped") or [],
+        )
     except Exception as error:
         return [check("filesystems:parse", False, f"{type(error).__name__}: {str(error)[:120]}")], {}
 

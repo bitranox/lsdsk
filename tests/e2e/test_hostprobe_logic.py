@@ -294,6 +294,11 @@ def _pool(name: str, *, used: int | None, free: int | None, kind: str = "pool") 
     }
 
 
+def _framed(name: str, frag: int | None, *, used: int, free: int) -> dict[str, Any]:
+    """A pool row carrying its free-space reading, as the JSON writes it."""
+    return {**_pool(name, used=used, free=free), "free_space": {"fragmentation_percent": frag}}
+
+
 def _root(*, used: int | None = 10 * _GIB, free: int | None = 90 * _GIB) -> dict[str, Any]:
     return _pool("/", used=used, free=free, kind="mount")
 
@@ -312,30 +317,55 @@ def _judged(
     return {item["name"]: item for item in results}, facts
 
 
-#: ``zpool list -Hp -o name,size,alloc,free,cap`` for a pool 50 percent full, tab separated.
-_ZPOOL_HALF = f"tank\t{100 * _GIB}\t{50 * _GIB}\t{50 * _GIB}\t50\n"
+#: ``zpool list -Hp -o name,size,alloc,free,cap,frag`` for a pool 50 percent full, tab separated.
+_ZPOOL_HALF = f"tank\t{100 * _GIB}\t{50 * _GIB}\t{50 * _GIB}\t50\t22%\n"
 
 
 def test_zpool_list_output_parses_into_exact_bytes_and_the_cap() -> None:
-    parsed = parse_zpool_list(f"rpool\t{100 * _GIB}\t{25 * _GIB}\t{75 * _GIB}\t25\ntank\t10\t5\t5\t50\n")
+    parsed = parse_zpool_list(f"rpool\t{100 * _GIB}\t{25 * _GIB}\t{75 * _GIB}\t25\t3%\ntank\t10\t5\t5\t50\t-\n")
     assert parsed["rpool"].alloc == 25 * _GIB
     assert parsed["rpool"].cap == 25
+    assert parsed["rpool"].frag == 3
+    assert parsed["tank"].frag is None
     assert set(parsed) == {"rpool", "tank"}
     assert parse_zpool_list("") == {}
 
 
-def test_a_zpool_line_that_is_not_five_numbers_is_refused_not_guessed() -> None:
+def test_a_zpool_line_that_is_not_a_name_and_five_figures_is_refused_not_guessed() -> None:
     with pytest.raises(ValueError, match="zpool list line"):
         parse_zpool_list("tank\t100\t50\n")
+    with pytest.raises(ValueError, match="zpool list line"):
+        parse_zpool_list("tank\t100\t50\t50\t50\n")
 
 
 def test_a_pool_row_equal_to_the_cap_agrees() -> None:
-    rows = [_root(), _pool("tank", used=50 * _GIB + 1, free=50 * _GIB)]  # floor gives 50, cap says 50
+    rows = [_root(), _framed("tank", 22, used=50 * _GIB + 1, free=50 * _GIB)]  # floor gives 50, cap says 50
     checks, facts = _judged(rows, _ZPOOL_HALF)
     assert checks["filesystems:pools-agree-with-zpool"]["passed"], checks["filesystems:pools-agree-with-zpool"][
         "detail"
     ]
     assert facts["zfs_pools_checked"] == 1
+
+
+def test_a_pool_whose_frag_differs_from_zpool_fails() -> None:
+    rows = [_root(), _framed("tank", 21, used=50 * _GIB, free=50 * _GIB)]
+    found = _judged(rows, _ZPOOL_HALF)[0]["filesystems:pools-agree-with-zpool"]
+    assert not found["passed"]
+    assert "frag 21% vs zpool frag 22" in found["detail"]
+
+
+def test_a_pool_without_a_free_space_reading_fails_when_zpool_shows_a_frag() -> None:
+    rows = [_root(), _pool("tank", used=50 * _GIB, free=50 * _GIB)]
+    found = _judged(rows, _ZPOOL_HALF)[0]["filesystems:pools-agree-with-zpool"]
+    assert not found["passed"]
+    assert "frag none vs zpool frag 22" in found["detail"]
+
+
+def test_a_pool_zpool_shows_no_frag_for_must_have_none_either() -> None:
+    rows = [_root(), _framed("tank", None, used=50 * _GIB, free=50 * _GIB)]
+    checks, facts = _judged(rows, f"tank\t{100 * _GIB}\t{50 * _GIB}\t{50 * _GIB}\t50\t-\n")
+    assert checks["filesystems:pools-agree-with-zpool"]["passed"]
+    assert facts["zfs_pools"][0]["zpool_frag"] is None
 
 
 def test_a_pool_row_one_point_above_the_cap_disagrees() -> None:
@@ -360,7 +390,7 @@ def test_a_pool_row_two_points_from_the_cap_disagrees_and_names_both_figures() -
         pytest.param([_root()], id="pool-missing-from-lsdsk"),
         pytest.param([_root(), _pool("tank", used=None, free=None)], id="pool-row-unread"),
         pytest.param(
-            [_root(), _pool("tank", used=50 * _GIB, free=50 * _GIB), _pool("ghost", used=1, free=1)],
+            [_root(), _framed("tank", 22, used=50 * _GIB, free=50 * _GIB), _pool("ghost", used=1, free=1)],
             id="row-zpool-lacks",
         ),
     ],
@@ -447,3 +477,53 @@ def test_a_non_zfs_root_is_not_excused_by_an_unrelated_pool_row() -> None:
     rows = [_pool("tank", used=1, free=1)]
     found = _judged(rows, _ZPOOL_HALF, root_fstype="ext4")[0]["filesystems:root-row-populated"]
     assert not found["passed"]
+
+
+def _volume(fs_type: str | None, *, free_space: bool = False, refused: tuple[str, ...] = ()) -> dict[str, Any]:
+    """A Windows volume row as ``filesystems --format json`` writes it."""
+    return {
+        "kind": "volume",
+        "name": "C:\\",
+        "fs_type": fs_type,
+        "free_space": {"fragmentation_percent": 7} if free_space else None,
+        "readings_refused": [{"reading": reading, "reason": "denied"} for reading in refused],
+    }
+
+
+_NEEDS_ADMIN = "fragmentation: filesystems - needs Administrator"
+
+
+def _windows(rows: list[dict[str, Any]], skipped: tuple[str, ...] = ()) -> dict[str, Any]:
+    data: dict[str, Any] = {"filesystems": rows, "environment": "bare-metal"}
+    results, _ = judge_filesystems(data, None, system="Windows", root_fstype=None, skipped=skipped)
+    return {item["name"]: item for item in results}
+
+
+def test_an_ntfs_volume_with_a_reading_passes_the_windows_fragmentation_check() -> None:
+    found = _windows([_volume("NTFS", free_space=True)])["filesystems:fragmentation-read"]
+    assert found["passed"], found["detail"]
+
+
+def test_an_ntfs_volume_that_records_a_bitmap_refusal_passes_because_it_was_tried() -> None:
+    found = _windows([_volume("NTFS", refused=("volume-bitmap",))])["filesystems:fragmentation-read"]
+    assert found["passed"], found["detail"]
+
+
+def test_an_ntfs_volume_with_neither_a_reading_nor_a_refusal_fails() -> None:
+    found = _windows([_volume("NTFS")])["filesystems:fragmentation-read"]
+    assert not found["passed"]
+
+
+def test_an_elevated_run_that_says_it_needs_administrator_never_tried_the_walk() -> None:
+    found = _windows([_volume("NTFS", free_space=True)], (_NEEDS_ADMIN,))["filesystems:fragmentation-read"]
+    assert not found["passed"]
+    assert "needs Administrator" in found["detail"]
+
+
+def test_a_host_with_no_ntfs_volume_makes_no_windows_fragmentation_claim() -> None:
+    assert "filesystems:fragmentation-read" not in _windows([_volume("FAT32")])
+
+
+def test_linux_makes_no_windows_fragmentation_claim() -> None:
+    checks, _ = _judged([_root()], None)
+    assert "filesystems:fragmentation-read" not in checks
