@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.9.1] 2026-10-15 14:10:52
+
 ### Changed
 
 - **The free-space walk reads only filesystems the section can show.** On Linux, ext4 and xfs
