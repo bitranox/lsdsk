@@ -310,7 +310,11 @@ def _hidden_mount_ids(lines: Iterable[str]) -> set[str]:
     }
     on_root = {mount for mount in stacked if parent[mount] in roots}
     covered = {parent[mount] for mount in stacked - on_root}
-    occupied = {(entry.parent, entry.mountpoint) for entry in ids if entry.mount not in on_root}
+    # A mount that is its own parent sits on no directory of a parent mount, so
+    # it occupies nothing: counting it would cut off every mount below it.
+    occupied = {
+        (entry.parent, entry.mountpoint) for entry in ids if entry.mount not in on_root and entry.parent != entry.mount
+    }
     cut_off = on_root | {
         entry.mount
         for entry in ids

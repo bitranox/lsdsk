@@ -345,3 +345,38 @@ def test_the_root_and_its_mounts_are_read_with_a_mount_stacked_on_the_root(tmp_p
     assert kernel.asked == ["/data"]
     assert (by_name["/data"].used_percent, by_name["/data"].readings_refused) == (99, ())
     assert _refusals(by_name["/inside"]) == [("statvfs", HIDDEN_REASON)]
+
+
+# The top of a mount tree may name itself as its parent (the kernel's mountinfo
+# documentation allows it), so the root here is its own parent.
+SELF_PARENTED_ROOT = f"21 21 8:1 / / rw - ext4 {ABSENT_NODE}1 rw\n23 21 8:17 / /data rw - ext4 {ABSENT_NODE}2 rw\n"
+
+# The same root with a tmpfs stacked on it, which the reader drops.
+SELF_PARENTED_ROOT_UNDER_A_TMPFS = (
+    f"21 21 8:1 / / rw - ext4 {ABSENT_NODE}1 rw\n"
+    "22 21 0:60 / / rw - tmpfs overroot rw\n"
+    f"23 21 8:17 / /data rw - ext4 {ABSENT_NODE}2 rw\n"
+)
+
+
+def _hidden(tmp_path: Path, mountinfo: str) -> dict[str, bool]:
+    path = tmp_path / "mountinfo"
+    path.write_text(mountinfo, encoding="utf-8")
+    rows = mounts.read_mounts(path, device_number=lambda _source: None)
+    assert rows is not None
+    return {str(row["mountpoint"]): row.get("hidden") is True for row in rows}
+
+
+def test_a_root_that_is_its_own_parent_hides_nothing_mounted_on_it(tmp_path: Path) -> None:
+    kernel = _Kernel({"/": EMPTY, "/data": FULL})
+
+    rows = _rows(_read(tmp_path, SELF_PARENTED_ROOT, kernel))
+
+    by_name = {row.name: row for row in rows}
+    assert kernel.asked == ["/", "/data"]
+    assert (by_name["/data"].used_percent, by_name["/data"].readings_refused) == (99, ())
+    assert by_name["/"].readings_refused == ()
+
+
+def test_a_mount_stacked_on_a_self_parented_root_hides_neither_the_root_nor_its_mounts(tmp_path: Path) -> None:
+    assert _hidden(tmp_path, SELF_PARENTED_ROOT_UNDER_A_TMPFS) == {"/": False, "/data": False}
