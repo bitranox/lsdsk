@@ -515,6 +515,18 @@ def test_a_refusal_reason_is_cut_to_the_capture_text_cap(tmp_path: Path) -> None
     FreeExtentsEntry.model_validate(reading["8:1"])
 
 
+def test_a_device_count_is_summed_over_every_batch_not_taken_from_the_last(tmp_path: Path) -> None:
+    # The data device fills the first batch exactly and the realtime device the second, so the last batch names
+    # none of the mounted device's records: only a count carried across batches knows the walk saw any.
+    realtime = _new_encode_dev(8, 17)
+    data = [_free(4096 * 2 * n, 4096) for n in range(4096)]
+    fake = FakeFsmap(data, later=((realtime, [_free(4096 * 2 * n, 4096) for n in range(10)]),))
+    rows = [{"dev": "8:1", "mountpoint": "/data", "fstype": "xfs"}]
+    reading = freespace.read_free_extents(rows, ioctl=fake, opener=_opener(tmp_path))
+    assert fake.calls == 2  # control: the walk took two batches, the second all realtime
+    assert FreeExtentsEntry.model_validate(reading["8:1"]).count == 4096
+
+
 def test_section_cookies_in_place_of_device_numbers_are_all_the_mounted_device_s(tmp_path: Path) -> None:
     # An xfs whose realtime section lives inside its data device (zoned, mkfs -r rtstart) answers with section
     # cookies and clears FMH_OF_DEV_T: the data section is 1 and the realtime section 3, both on the mounted device.
