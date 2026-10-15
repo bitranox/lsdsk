@@ -18,6 +18,7 @@ Contents:
     * :func:`read_swaps` - every active swap, from ``/proc/swaps``.
     * :func:`read_partitions` - a disk's partitions and what sits on each.
     * :func:`read_stacked` - a device-mapper device's mapping and its holders.
+    * :func:`stacked_device_numbers` - every device number a stacked reading names.
     * :func:`read_signatures` - the udev database's filesystem type and label.
 """
 
@@ -570,6 +571,31 @@ def read_stacked(names: Iterable[str], root: Path = Path("/sys/block")) -> dict[
     return found
 
 
+def stacked_device_numbers(stacked: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """Every device number a :func:`read_stacked` reading names: each device's own, then its partitions'.
+
+    A ZFS pool on dm-crypt, LVM or md has its member signature on the stacked
+    device rather than on the partition beneath it, so these are looked up in
+    the udev database beside the disks' own numbers.
+
+    Args:
+        stacked: What :func:`read_stacked` returned.
+
+    Returns:
+        The numbers in reading order, without the ones that were not read.
+
+    Example:
+        >>> stacked_device_numbers({"md0": {"dev": "9:0", "partitions": {"md0p1": {"dev": "259:7"}}}})
+        ['9:0', '259:7']
+    """
+    devnums: list[str] = []
+    for entry in stacked.values():
+        partitions: Mapping[str, Mapping[str, Any]] = entry.get("partitions") or {}
+        candidates = (entry.get("dev"), *(partition.get("dev") for partition in partitions.values()))
+        devnums.extend(dev for dev in candidates if isinstance(dev, str) and dev)
+    return devnums
+
+
 def _scrub_dm_name(dm_name: str) -> str:
     """Replace a Fedora-style ``luks-<UUID>`` mapping name with the literal ``"luks"``.
 
@@ -721,4 +747,5 @@ __all__ = [
     "read_space",
     "read_stacked",
     "read_swaps",
+    "stacked_device_numbers",
 ]

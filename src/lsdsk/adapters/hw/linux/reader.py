@@ -1155,6 +1155,10 @@ def read_system() -> dict[str, Any]:
     devnums += [
         part["dev"] for entry in block.values() for part in entry.get("partitions", {}).values() if part.get("dev")
     ]
+    stacked = mounts.read_stacked(sorted(holders))
+    # A ZFS pool on dm-crypt, LVM or md carries its member signature on the
+    # stacked device, not on the partition beneath it.
+    devnums += mounts.stacked_device_numbers(stacked)
 
     pools, pools_error = zfs.read_pools()
     fragmentation, fragmentation_error = zfs.read_pool_fragmentation()
@@ -1177,7 +1181,7 @@ def read_system() -> dict[str, Any]:
         "usb": read_usb(block),
         "mounts": mount_rows,
         "swaps": mounts.read_swaps(),
-        "stacked": mounts.read_stacked(sorted(holders)),
+        "stacked": stacked,
         "signatures": mounts.read_signatures(devnums),
         **zfs.capture_fields(pools, pools_error),
         **zfs.fragmentation_fields(fragmentation, fragmentation_error),

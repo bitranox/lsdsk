@@ -417,15 +417,24 @@ def _disk_usage(block: BlockEntry, capture: LinuxCapture, sources: _Sources) -> 
     return DiskUsage(boot=_is_boot(merged, sources.boot_pools), uses=merged)
 
 
-def _member_devs(block: BlockEntry, stacked: Mapping[str, StackedEntry]) -> set[str]:
-    """Every maj:min a mount or a swap could name that lives on one disk."""
-    leaves = [(block.dev, block.holders), *((p.dev, p.holders) for p in (block.partitions or {}).values())]
-    devs = {dev for dev, _holders in leaves if dev}
-    for _dev, holders in leaves:
+def _leaves(block: BlockEntry) -> list[tuple[str | None, tuple[str, ...]]]:
+    """One disk's own device and each of its partitions, with what sits directly on each."""
+    return [(block.dev, block.holders), *((p.dev, p.holders) for p in (block.partitions or {}).values())]
+
+
+def _stacked_devs(block: BlockEntry, stacked: Mapping[str, StackedEntry]) -> set[str]:
+    """Every maj:min of a stacked device above one disk, and of that device's partitions."""
+    devs: set[str] = set()
+    for _dev, holders in _leaves(block):
         for holder in holders:
             for member in (holder, *_closure(holder, stacked)):
                 devs.update(_devs_of(stacked.get(member, StackedEntry())))
     return devs
+
+
+def _member_devs(block: BlockEntry, stacked: Mapping[str, StackedEntry]) -> set[str]:
+    """Every maj:min a mount or a swap could name that lives on one disk."""
+    return {dev for dev, _holders in _leaves(block) if dev} | _stacked_devs(block, stacked)
 
 
 def disks_by_device(capture: LinuxCapture) -> dict[str, frozenset[str]]:
@@ -454,6 +463,13 @@ def disks_by_device(capture: LinuxCapture) -> dict[str, frozenset[str]]:
 def disks_by_pool(capture: LinuxCapture) -> dict[str, frozenset[str]]:
     """Which disks each ZFS pool's members sit on, partition evidence first.
 
+    A member on dm-crypt, LVM or md carries its signature on the stacked device
+    rather than on the partition beneath it, so every stacked device above a
+    disk counts as well, through the same holder closure ``disks_by_device``
+    follows. The partition-beats-whole-disk rule stays where it was written: a
+    stacked device is not the disk's own leaf, so it never decides whether the
+    whole-disk signature is consulted.
+
     Args:
         capture: A Linux reading.
 
@@ -464,7 +480,8 @@ def disks_by_pool(capture: LinuxCapture) -> dict[str, frozenset[str]]:
     for node, block in capture.block.items():
         if block.virtual:
             continue
-        for signature in _signatures_of(block, capture):
+        stacked = [_signature_of(dev, capture) for dev in sorted(_stacked_devs(block, capture.stacked))]
+        for signature in (*_signatures_of(block, capture), *stacked):
             if signature is not None and signature.fs_type == _ZFS_MEMBER and signature.fs_label:
                 found.setdefault(signature.fs_label, set()).add(node)
     return {pool: frozenset(nodes) for pool, nodes in found.items()}

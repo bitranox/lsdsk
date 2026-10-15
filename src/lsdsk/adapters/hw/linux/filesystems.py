@@ -36,6 +36,10 @@ class _Figures(TypedDict, total=False):
 
 _ZFS = "zfs"
 _NO_CONTROL_DEVICE = "the ZFS control device was not available"
+# A pool the listing names but no member signature joins to an inventoried
+# disk: its fill cannot be placed on a row, so it is said rather than dropped.
+_UNTRACED_POOL = "zfs-pool-disks"
+_UNTRACED_POOL_REASON = "no member was traced to a disk this scan inventoried"
 
 
 def _grouped(mounts: tuple[MountEntry, ...]) -> dict[str, list[MountEntry]]:
@@ -143,19 +147,37 @@ def _pool_rows(capture: LinuxCapture) -> list[Filesystem]:
     return rows
 
 
+def _untraced_pools(capture: LinuxCapture, members: Mapping[str, frozenset[str]]) -> tuple[RefusedReading, ...]:
+    """One refusal per pool the listing names that no inventoried disk carries a member of.
+
+    Such a pool has no row, so without this its fill would go unjudged in
+    silence: a pool whose members sit behind a layer the reader did not follow
+    reads exactly like no pool at all.
+    """
+    return tuple(
+        RefusedReading(reading=_UNTRACED_POOL, reason=f"pool {name}: {_UNTRACED_POOL_REASON}")
+        for name in sorted(capture.zfs_pools or {})
+        if name not in members
+    )
+
+
 def _pool_refusals(capture: LinuxCapture) -> tuple[RefusedReading, ...]:
-    """The pool listing's and the pool fragmentation reading's refusals, only when a disk carries a pool member.
+    """The pool listing's and fragmentation reading's refusals, then every listed pool no disk was traced to.
 
     A pool row exists only for a pool with a member on an inventory disk, so a
     listing that failed - refused, or with no control device at all - can have
     missed a row only when such a member exists; anywhere else it missed nothing.
+    A listed pool with no such member is the opposite case: the listing read it
+    and no row can carry it.
     """
-    if not disks_by_pool(capture):
-        return ()
+    members = disks_by_pool(capture)
+    untraced = _untraced_pools(capture, members)
+    if not members:
+        return untraced
     listing = capture.zfs_pools_error
     if listing is None and capture.zfs_pools is None:
         listing = _NO_CONTROL_DEVICE
-    return refusals_of({"zfs-pools": listing, "zfs-fragmentation": capture.zfs_fragmentation_error})
+    return (*refusals_of({"zfs-pools": listing, "zfs-fragmentation": capture.zfs_fragmentation_error}), *untraced)
 
 
 def build_filesystems(

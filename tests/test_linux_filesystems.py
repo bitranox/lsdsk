@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any
 
+import pytest
 from test_linux_free_extents import FakeFsmap
 from workcount import work_to_run
 
@@ -15,7 +16,7 @@ from lsdsk.adapters.hw.linux.usage import disks_by_device, resolve_usage
 from lsdsk.adapters.render import theme
 from lsdsk.adapters.render.tables import filesystem_table_row
 from lsdsk.domain.enums import Environment, FilesystemKind
-from lsdsk.domain.models import FreeSpace
+from lsdsk.domain.models import FreeSpace, RefusedReading
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -417,3 +418,81 @@ def test_a_refused_free_extent_walk_is_carried_on_its_row() -> None:
     assert rows is not None
     assert [(r.reading, r.reason) for r in rows[0].readings_refused] == [("free-extents", "Operation not permitted")]
     assert rows[0].free_space is None
+
+
+# One pool member reached through each kind of stacked layer: the member
+# signature sits on the stacked device, never on the partition beneath it.
+_STACKED_POOL_MEMBERS = {
+    "dm-crypt": {"dm-0": {"dev": "253:0", "dm_name": "cryptank", "dm_uuid": "CRYPT-"}},
+    "lvm": {"dm-0": {"dev": "253:0", "dm_name": "vg0-tank", "dm_uuid": "LVM-"}},
+    "md": {"dm-0": {"dev": "253:0"}},
+    "lvm-on-crypt": {
+        "dm-0": {"dev": "253:9", "dm_name": "cr", "dm_uuid": "CRYPT-", "holders": ["dm-1"]},
+        "dm-1": {"dev": "253:0", "dm_name": "vg0-tank", "dm_uuid": "LVM-"},
+    },
+}
+
+
+@pytest.mark.parametrize("layer", sorted(_STACKED_POOL_MEMBERS))
+def test_a_pool_on_a_stacked_device_is_a_row_with_the_disk_beneath_it(layer: str) -> None:
+    capture = _capture(
+        {"nvme0n1": _disk("259:0", {"nvme0n1p1": {"dev": "259:1", "holders": ["dm-0"]}})},
+        stacked=_STACKED_POOL_MEMBERS[layer],
+        signatures={"259:1": {"fs_type": "crypto_LUKS"}, "253:0": {"fs_type": "zfs_member", "fs_label": "tank"}},
+        zfs_pools={"tank": {"size": 1000, "alloc": 980}},
+        filesystem_space={},
+    )
+    rows, refused = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    assert [(row.kind, row.name, row.disks, row.used_percent) for row in rows] == [
+        (FilesystemKind.POOL, "tank", ("nvme0n1",), 98)
+    ]
+    assert refused == ()
+
+
+def test_a_pool_on_a_stacked_device_over_two_disks_names_both() -> None:
+    capture = _capture(
+        {
+            "sda": _disk("8:0", {"sda1": {"dev": "8:1", "holders": ["md0"]}}),
+            "sdb": _disk("8:16", {"sdb1": {"dev": "8:17", "holders": ["md0"]}}),
+        },
+        stacked={"md0": {"dev": "9:0"}},
+        signatures={"9:0": {"fs_type": "zfs_member", "fs_label": "tank"}},
+        zfs_pools={"tank": {"size": 1000, "alloc": 10}},
+        filesystem_space={},
+    )
+    rows, _ = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    assert [(row.name, row.disks) for row in rows] == [("tank", ("sda", "sdb"))]
+
+
+def test_a_listed_pool_no_disk_can_be_traced_to_is_a_refusal_naming_it() -> None:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        signatures={"8:1": {"fs_type": "zfs_member", "fs_label": "tank"}},
+        zfs_pools={"tank": {"size": 1000, "alloc": 10}, "ghost": {"size": 500, "alloc": 490}},
+        filesystem_space={},
+    )
+    rows, refused = build_filesystems(capture, BARE_METAL)
+    # Control: the traced pool is a row and is not named among the refusals.
+    assert rows is not None
+    assert [row.name for row in rows] == ["tank"]
+    assert [(r.reading, r.reason) for r in refused] == [
+        ("zfs-pool-disks", "pool ghost: no member was traced to a disk this scan inventoried")
+    ]
+
+
+def test_a_listed_pool_is_a_refusal_even_when_no_disk_carries_any_pool_member() -> None:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        zfs_pools={"ghost": {"size": 500, "alloc": 490}},
+        filesystem_space={},
+    )
+    assert build_filesystems(capture, BARE_METAL) == (
+        (),
+        (
+            RefusedReading(
+                reading="zfs-pool-disks", reason="pool ghost: no member was traced to a disk this scan inventoried"
+            ),
+        ),
+    )

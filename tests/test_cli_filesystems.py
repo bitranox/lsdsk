@@ -177,3 +177,52 @@ def test_a_capture_taken_before_fragmentation_was_read_replays_with_no_free_spac
     assert envelope["data"]["filesystems"]
     assert all(row["free_space"] is None for row in envelope["data"]["filesystems"])
     assert (envelope["skipped"], envelope["ok"]) == ([], True)
+
+
+def _zfs_fixture_with(tmp_path: Path, name: str, change: Callable[[dict[str, Any]], None]) -> Path:
+    reading: dict[str, Any] = json.loads((FIXTURES / "linux-zfs-filesystems.json").read_text(encoding="utf-8"))
+    change(reading)
+    path = tmp_path / f"{name}.json"
+    path.write_text(json.dumps(reading), encoding="utf-8")
+    return path
+
+
+def _tank_behind_luks(reading: dict[str, Any]) -> None:
+    """Put tank's one member behind a dm-crypt mapping, as a ZFS-on-LUKS host records it."""
+    member = reading["signatures"].pop("259:1")
+    reading["signatures"]["259:1"] = {"fs_type": "crypto_LUKS"}
+    reading["signatures"]["253:0"] = member
+    reading["block"]["nvme0n1"]["partitions"]["nvme0n1p1"]["holders"] = ["dm-0"]
+    reading["stacked"] = {"dm-0": {"dev": "253:0", "dm_name": "cryptank", "dm_uuid": "CRYPT-", "holders": []}}
+
+
+def test_a_pool_on_dm_crypt_replays_as_its_pool_row(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    plain = _envelope(cli_runner, production_factory, FIXTURES / "linux-zfs-filesystems.json")
+    luks = _envelope(cli_runner, production_factory, _zfs_fixture_with(tmp_path, "luks", _tank_behind_luks))
+
+    def pools(envelope: dict[str, Any]) -> list[tuple[str, list[str], int | None]]:
+        rows = envelope["data"]["filesystems"]
+        return [(row["name"], row["disks"], row["used_bytes"]) for row in rows if row["kind"] == "pool"]
+
+    # Control: the committed capture draws tank on nvme0n1.
+    assert ("tank", ["nvme0n1"], 154454237184) in pools(plain)
+    assert pools(luks) == pools(plain)
+    assert (luks["skipped"], luks["ok"]) == ([], True)
+
+
+def _ghost_pool(reading: dict[str, Any]) -> None:
+    reading["zfs_pools"]["ghost"] = {"size": 1000, "alloc": 990}
+
+
+def test_a_listed_pool_no_disk_reaches_is_named_in_skipped_and_makes_ok_false(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    envelope = _envelope(cli_runner, production_factory, _zfs_fixture_with(tmp_path, "ghost", _ghost_pool))
+
+    assert envelope["skipped"] == [
+        "zfs-pool-disks: filesystems - pool ghost: no member was traced to a disk this scan inventoried"
+    ]
+    assert envelope["ok"] is False
+    assert "ghost" not in [row["name"] for row in envelope["data"]["filesystems"]]

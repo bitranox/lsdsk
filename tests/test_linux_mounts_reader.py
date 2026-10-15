@@ -564,3 +564,35 @@ def test_the_read_only_verdict_is_a_boolean_not_text(tmp_path: Path) -> None:
     assert rows is not None
     assert [type(row["read_only"]) for row in rows] == [bool, bool]
     assert [row["read_only"] for row in rows] == [False, True]
+
+
+def _stacked_node(root: Path, name: str, dev: str, *, holders: tuple[str, ...] = ()) -> Path:
+    node = root / name
+    (node / "holders").mkdir(parents=True)
+    for holder in holders:
+        (node / "holders" / holder).mkdir()
+    (node / "dev").write_text(f"{dev}\n", encoding="utf-8")
+    return node
+
+
+def test_every_stacked_device_and_its_partitions_is_a_device_to_look_signatures_up_for(tmp_path: Path) -> None:
+    sysfs = tmp_path / "block"
+    _stacked_node(sysfs, "dm-0", "253:0", holders=("dm-1",))
+    _stacked_node(sysfs, "dm-1", "253:1")
+    md = _stacked_node(sysfs, "md0", "9:0")
+    (md / "md0p1").mkdir()
+    (md / "md0p1" / "partition").write_text("1\n", encoding="utf-8")
+    (md / "md0p1" / "dev").write_text("259:7\n", encoding="utf-8")
+    udev = tmp_path / "udev"
+    udev.mkdir()
+    # A pool member behind crypt-under-LVM: only the deepest layer carries it.
+    (udev / "b253:1").write_bytes(b"E:ID_FS_TYPE=zfs_member\nE:ID_FS_LABEL=tank\nE:ID_FS_UUID=SECRET\n")
+
+    devnums = mounts.stacked_device_numbers(mounts.read_stacked(["dm-0", "md0"], sysfs))
+
+    assert sorted(devnums) == ["253:0", "253:1", "259:7", "9:0"]
+    assert mounts.read_signatures(devnums, udev) == {"253:1": {"fs_type": "zfs_member", "fs_label": "tank"}}
+
+
+def test_a_stacked_device_whose_number_was_not_read_names_no_device() -> None:
+    assert mounts.stacked_device_numbers({"dm-0": {"holders": [], "partitions": {"dm-0p1": {"holders": []}}}}) == []
