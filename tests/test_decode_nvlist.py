@@ -23,6 +23,7 @@ from nvlist_builders import (
 from lsdsk.adapters.hw.decode.nvlist import (
     MAX_DEPTH,
     MAX_PAIRS,
+    MAX_STRING_BYTES,
     NvValue,
     PoolSpace,
     decode_nvlist,
@@ -153,3 +154,34 @@ def test_a_pool_that_publishes_no_figure_reads_none() -> None:
 def test_properties_without_fragmentation_are_refused() -> None:
     with pytest.raises(ValueError, match="no fragmentation"):
         pool_fragmentation(decode_nvlist(pool_props(fragmentation=None)))
+
+
+@pytest.mark.parametrize("name_size", [0, -1])
+def test_a_pair_whose_name_has_no_room_for_its_terminator_is_refused(name_size: int) -> None:
+    # A name size counts the NUL, so anything under one cannot be a name.
+    with pytest.raises(ValueError, match="a pair's name runs past the pair"):
+        decode_nvlist(stream([_with_name_size(u64("a", 1), name_size)]))
+
+
+def test_a_string_of_exactly_the_longest_length_decodes_and_one_more_is_refused() -> None:
+    longest = "x" * MAX_STRING_BYTES
+    assert decode_nvlist(stream([text("s", longest)])) == {"s": longest}
+    with pytest.raises(ValueError, match=f"a string longer than {MAX_STRING_BYTES} bytes"):
+        decode_nvlist(stream([text("s", longest + "x")]))
+
+
+def test_a_uint64_array_declaring_a_negative_count_is_refused() -> None:
+    with pytest.raises(ValueError, match="a uint64 array runs past its pair"):
+        decode_nvlist(stream([pair("a", UINT64_ARRAY, bytes(8), nelem=-1)]))
+
+
+def test_stats_one_value_short_of_the_space_slot_are_refused() -> None:
+    # vdev_stats[4] is the space; four values end at the allocation.
+    with pytest.raises(ValueError, match=r"pool vdev_stats too short \(4 values\)"):
+        pool_space({"vdev_tree": {"vdev_stats": (0, 7, 0, 1)}})
+
+
+@pytest.mark.parametrize(("value", "read"), [(100, 100), (101, None)])
+def test_a_fragmentation_of_100_is_a_figure_and_anything_above_is_none(value: int, read: int | None) -> None:
+    # zpool list prints 100 as 100%; only ZFS_FRAG_INVALID (and anything else past 100) has no figure.
+    assert pool_fragmentation(decode_nvlist(pool_props(fragmentation=value))) == read

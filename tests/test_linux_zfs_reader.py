@@ -10,7 +10,7 @@ import sys
 from typing import TYPE_CHECKING
 
 import pytest
-from nvlist_builders import pool_config, pool_names, pool_props
+from nvlist_builders import UINT64_ARRAY, embedded, pair, pool_config, pool_names, pool_props, stream, text, u64_array
 from pydantic import ValidationError
 
 from lsdsk.adapters.hw.linux import zfs
@@ -266,3 +266,133 @@ def test_a_capture_carries_each_pool_s_fragmentation() -> None:
 def test_a_fragmentation_outside_0_to_100_is_refused(value: int) -> None:
     with pytest.raises(ValidationError, match="zfs_fragmentation"):
         LinuxCapture.model_validate({**_MINIMAL, "zfs_fragmentation": {"rpool": value}})
+
+
+def test_the_three_request_numbers_are_openzfs_own() -> None:
+    # include/sys/fs/zfs.h (zfs-2.4.0), enum zfs_ioc: ZFS_IOC_FIRST is ('Z' << 8) on Linux and the requests count up
+    # from it - POOL_CONFIGS the 5th (/* 0x5a04 */), POOL_STATS the 6th (/* 0x5a05 */), POOL_GET_PROPS the 40th
+    # (/* 0x5a27 */). Linux passes them through without _IOWR encoding.
+    first = ord("Z") << 8
+    assert (
+        first + 0x04,
+        first + 0x05,
+        first + 0x27,
+    ) == (zfs.ZFS_IOC_POOL_CONFIGS, zfs.ZFS_IOC_POOL_STATS, zfs.ZFS_IOC_POOL_GET_PROPS)
+
+
+class _ControlDevice:
+    """An opener handing out real descriptors of the null device, remembering each one and the flags asked."""
+
+    def __init__(self) -> None:
+        """Start with nothing opened."""
+        self.opened: list[int] = []
+        self.flags: list[int] = []
+
+    def __call__(self, _path: Path, flags: int) -> int:
+        self.flags.append(flags)
+        fd = os.open(os.devnull, os.O_RDONLY)
+        self.opened.append(fd)
+        return fd
+
+    def all_closed(self) -> bool:
+        """Whether every descriptor handed out is closed now: fstat on a closed one fails with EBADF."""
+        for fd in self.opened:
+            try:
+                os.fstat(fd)
+            except OSError as error:
+                assert error.errno == errno.EBADF
+                continue
+            os.close(fd)  # do not leak it into the rest of the suite
+            return False
+        return True
+
+
+_LISTED = {(zfs.ZFS_IOC_POOL_CONFIGS, ""): pool_names(["tank"])}
+
+
+@pytest.mark.parametrize(
+    ("read", "fake"),
+    [
+        (zfs.read_pools, FakeDevice({**_LISTED, (zfs.ZFS_IOC_POOL_STATS, "tank"): pool_config(alloc=1, space=2)})),
+        (
+            zfs.read_pool_fragmentation,
+            FakeDevice({**_LISTED, (zfs.ZFS_IOC_POOL_GET_PROPS, "tank"): pool_props(fragmentation=3)}),
+        ),
+        (zfs.read_pools, FakeDevice({}, fail=errno.EPERM)),  # the listing itself refused
+    ],
+    ids=["pools", "fragmentation", "listing-refused"],
+)
+def test_the_control_device_is_opened_read_only_and_closed(
+    tmp_path: Path, read: Callable[..., tuple[object, str | None]], fake: FakeDevice
+) -> None:
+    device = _ControlDevice()
+    read(_device(tmp_path), ioctl=fake, opener=device)
+    assert device.flags == [os.O_RDONLY]  # every request needs only read access; nothing here writes to a pool
+    assert device.all_closed()
+
+
+def test_a_needed_size_equal_to_the_refused_buffer_is_refused_at_once(tmp_path: Path) -> None:
+    class SameSize(FakeDevice):
+        answers = 0
+
+        def __call__(self, _fd: int, request: int, command: bytearray) -> int:
+            type(self).answers += 1
+            room = struct.unpack_from("<Q", command, _DST_SIZE)[0]
+            struct.pack_into("<Q", command, _DST_SIZE, room)  # asks for exactly the buffer it refused
+            raise OSError(errno.ENOMEM, "too small")
+
+    pools, error = zfs.read_pools(_device(tmp_path), ioctl=SameSize({}))
+    assert pools is None
+    assert error == (
+        "listing the pools failed: the ioctl failed with ENOMEM on a 262144-byte buffer without asking for more"
+        " (262144 bytes)"
+    )
+    assert SameSize.answers == 1
+
+
+_SHORT_REASON = "nvlist buffer too short (8 bytes)"
+
+
+def test_a_reason_exactly_at_the_text_cap_is_kept_whole(tmp_path: Path) -> None:
+    name = "p" * (MAX_DEVICE_TEXT - len(f"pool : {_SHORT_REASON}"))
+    fake = FakeDevice(
+        {
+            (zfs.ZFS_IOC_POOL_CONFIGS, ""): pool_names([name]),
+            (zfs.ZFS_IOC_POOL_STATS, name): b"\x00\x01\x00\x00" + bytes(4),
+        }
+    )
+    pools, error = zfs.read_pools(_device(tmp_path), ioctl=fake)
+    assert pools == {}
+    assert error is not None
+    assert error == f"pool {name}: {_SHORT_REASON}"
+    assert len(error) == MAX_DEVICE_TEXT
+
+
+def _stats_reply(stats: bytes) -> bytes:
+    return stream([text("name", "pool"), embedded("vdev_tree", [text("type", "root"), stats])])
+
+
+@pytest.mark.parametrize(
+    ("reply", "reason"),
+    [
+        pytest.param(
+            _stats_reply(u64_array("vdev_stats", [0, 7, 0, 1])), "pool vdev_stats too short (4 values)", id="four-stats"
+        ),
+        pytest.param(
+            _stats_reply(pair("vdev_stats", UINT64_ARRAY, bytes(8), nelem=-1)),
+            "a uint64 array runs past its pair",
+            id="negative-array-count",
+        ),
+    ],
+)
+def test_a_malformed_pool_reply_is_that_pool_s_refusal_and_the_others_are_read(
+    tmp_path: Path, reply: bytes, reason: str
+) -> None:
+    fake = FakeDevice(
+        {
+            (zfs.ZFS_IOC_POOL_CONFIGS, ""): pool_names(["bad", "good"]),
+            (zfs.ZFS_IOC_POOL_STATS, "bad"): reply,
+            (zfs.ZFS_IOC_POOL_STATS, "good"): pool_config(alloc=1, space=4),
+        }
+    )
+    assert zfs.read_pools(_device(tmp_path), ioctl=fake) == ({"good": {"size": 4, "alloc": 1}}, f"pool bad: {reason}")
