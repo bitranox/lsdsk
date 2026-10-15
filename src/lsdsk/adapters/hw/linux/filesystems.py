@@ -180,6 +180,20 @@ def _pool_refusals(capture: LinuxCapture) -> tuple[RefusedReading, ...]:
     return (*refusals_of({"zfs-pools": listing, "zfs-fragmentation": capture.zfs_fragmentation_error}), *untraced)
 
 
+def builds_filesystems(environment: Environment) -> bool:
+    """Whether a machine of this kind gets a filesystems section at all.
+
+    Not in a container, where the host's own use of its disks is invisible -
+    the same rule as ``used by``. The live reader asks it too, so it reads no
+    filesystem figure for a section that will not be drawn.
+
+    Example:
+        >>> builds_filesystems(Environment.CONTAINER), builds_filesystems(Environment.BARE_METAL)
+        (False, True)
+    """
+    return environment is not Environment.CONTAINER
+
+
 def build_filesystems(
     capture: LinuxCapture, environment: Environment
 ) -> tuple[tuple[Filesystem, ...] | None, tuple[RefusedReading, ...]]:
@@ -198,9 +212,9 @@ def build_filesystems(
         an empty reading would draw a row of ``-`` for every mount and pool.
     """
     mounts, space = capture.mounts, capture.filesystem_space
-    if environment is Environment.CONTAINER or mounts is None or space is None:
+    if not builds_filesystems(environment) or mounts is None or space is None:
         return None, ()
     return (*_mount_rows(capture, mounts=mounts, space=space), *_pool_rows(capture)), _pool_refusals(capture)
 
 
-__all__ = ["build_filesystems"]
+__all__ = ["build_filesystems", "builds_filesystems"]

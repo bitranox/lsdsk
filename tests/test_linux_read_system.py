@@ -47,7 +47,12 @@ def _mountpoints(rows: Sequence[Mapping[str, str | bool]]) -> list[str]:
     return [str(row["mountpoint"]) for row in rows]
 
 
-def _readers(recorded: _Recorded, *, mounts: list[dict[str, str | bool]] | None = _MOUNTS) -> reader.SystemReaders:
+def _readers(
+    recorded: _Recorded,
+    *,
+    mounts: list[dict[str, str | bool]] | None = _MOUNTS,
+    environment: dict[str, Any] | None = None,
+) -> reader.SystemReaders:
     def stacked(names: list[str]) -> dict[str, dict[str, Any]]:
         recorded.stacked.append(list(names))
         return {name: entry for name, entry in _STACKED.items() if name in names}
@@ -69,7 +74,7 @@ def _readers(recorded: _Recorded, *, mounts: list[dict[str, str | bool]] | None 
         pci=dict,
         pci_names=lambda _pci: {},
         classes=dict,
-        environment=lambda: {"hypervisor_flag": False},
+        environment=lambda: environment or {"hypervisor_flag": False},
         host=lambda: reader.HostIdentity("host", "6.12.0", 0),
         devices_accessible=lambda _nodes: True,
         ata=lambda _nodes: {},
@@ -122,3 +127,12 @@ def test_statvfs_is_asked_only_about_filesystems_an_inventoried_disk_carries() -
     # Every mount was stat-ed once, a loop image and a mount on an unknown device among them, though only a
     # filesystem on an inventoried disk can be a row (ADR 0005).
     assert recorded.space == [["/", "/boot"]]
+
+
+def test_inside_a_container_no_filesystem_is_stat_ed_or_walked() -> None:
+    # The filesystems section is never built in a container, where the host's own use of its disks is invisible,
+    # so a walk there costs real time per filesystem for a reading nothing shows.
+    recorded = _Recorded()
+    reading = reader.read_system(_readers(recorded, environment={"container_marker": "lxc"}))
+    assert (recorded.space, recorded.free_extents) == ([[]], [[]])
+    assert (reading["filesystem_space"], reading["free_extents"]) == ({}, {})

@@ -52,10 +52,11 @@ from ..ata_commands import (
 from ..capture import MAX_DEVICE_TEXT, MAX_PAYLOAD_BYTES
 from ..decode import ahci, pciids
 from ..decode.captured import parse_int
-from ..decode.virtualization import container_markers_in_mounts
+from ..decode.virtualization import classify, container_markers_in_mounts
 from ..snapshot import SCHEMA_VERSION
 from . import freespace, mounts, usbfs, zfs
 from .capture import LinuxCapture
+from .filesystems import builds_filesystems
 from .usage import disks_by_device
 
 if TYPE_CHECKING:
@@ -1140,21 +1141,25 @@ def free_extent_devices(reading: Mapping[str, Any]) -> frozenset[str] | None:
 
     ``statvfs`` and the free-space walk skip a filesystem no inventoried disk
     carries - one the section drops anyway, and a network or FUSE mount that
-    could hang the call. The answer comes from the section's own mapping over
+    could hang the call - and skip every filesystem in a container, where the
+    section is never built. The answer comes from the section's own rules over
     the typed reading, so the two cannot disagree about which device that is.
 
     Args:
         reading: The reading as ``read_system`` has built it, before the walk.
 
     Returns:
-        The device numbers, or ``None`` when the reading does not type, which
-        walks every filesystem rather than guess: the run's own parse of the
-        same reading refuses it later with the real reason.
+        The device numbers, none in a container, or ``None`` when the reading
+        does not type, which walks every filesystem rather than guess: the
+        run's own parse of the same reading refuses it later with the real
+        reason.
     """
     try:
         capture = LinuxCapture.model_validate(reading)
     except ValidationError:
         return None
+    if not builds_filesystems(classify(capture.environment).environment):
+        return frozenset()
     return frozenset(disks_by_device(capture))
 
 
