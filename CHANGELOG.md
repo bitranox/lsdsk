@@ -5,6 +5,13 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- CONFIG.md no longer says Windows ignores every permission setting. A mode configured in a file or
+  the environment is not read there, but a mode given on the command line (`--dir-mode`,
+  `--file-mode` or a `--set` of a `lib_layered_config.default_permissions` key) is still checked,
+  and an unsafe one is refused on Windows as well.
+
 ## [1.9.1] 2026-10-15 14:10:52
 
 ### Changed

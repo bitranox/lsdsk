@@ -231,7 +231,7 @@ lsdsk config-deploy --target user
 
 #### File Permissions (POSIX Only)
 
-On Linux and macOS, `config-deploy` sets Unix file permissions based on the target layer. Windows uses ACLs and ignores these settings.
+On Linux and macOS, `config-deploy` sets Unix file permissions based on the target layer. Windows uses ACLs and applies no mode, so a mode configured in a file or the environment is not read there; a mode given on the command line (`--dir-mode`, `--file-mode` or a `--set` of a `lib_layered_config.default_permissions` key) is still checked, and an unsafe one is refused on every platform.
 
 | Target | Directory Mode      | File Mode           | Description                             |
 |--------|:-------------------:|:-------------------:|-----------------------------------------|

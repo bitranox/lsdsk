@@ -230,7 +230,7 @@ lsdsk config-deploy --target user
 
 #### Dateirechte (nur POSIX)
 
-Unter Linux und macOS setzt `config-deploy` die Unix-Dateirechte je nach Zielschicht. Windows verwendet ACLs und ignoriert diese Einstellungen.
+Unter Linux und macOS setzt `config-deploy` die Unix-Dateirechte je nach Zielschicht. Windows verwendet ACLs und setzt keinen Modus, daher wird ein in einer Datei oder der Umgebung konfigurierter Modus dort nicht gelesen; ein auf der Kommandozeile angegebener Modus (`--dir-mode`, `--file-mode` oder ein `--set` eines `lib_layered_config.default_permissions`-Schlüssels) wird dennoch geprüft, und ein unsicherer wird auf jeder Plattform abgelehnt.
 
 | Ziel   | Verzeichnisrechte   | Dateirechte         | Beschreibung                                   |
 |--------|:-------------------:|:-------------------:|------------------------------------------------|
