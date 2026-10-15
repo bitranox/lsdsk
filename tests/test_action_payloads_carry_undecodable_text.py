@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
+from undecodable_names import NEEDS_A_SURROGATE_ESCAPING_FILESYSTEM
 
 from lsdsk.adapters import cli as cli_mod
 from lsdsk.adapters.cli.envelope import ActionResult, MappingResult, emit_action
@@ -72,6 +73,7 @@ def _run(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[int, dict
     return code, json.loads(captured.out)
 
 
+@NEEDS_A_SURROGATE_ESCAPING_FILESYSTEM
 @pytest.mark.os_posix
 def test_record_names_a_store_with_undecodable_bytes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """``RecordResult.store`` is the history file's path, and the store was written before the envelope."""
@@ -85,6 +87,7 @@ def test_record_names_a_store_with_undecodable_bytes(tmp_path: Path, capsys: pyt
     assert ESCAPED in _strings(envelope)
 
 
+@NEEDS_A_SURROGATE_ESCAPING_FILESYSTEM
 @pytest.mark.os_posix
 def test_snapshot_names_an_output_with_undecodable_bytes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """``SnapshotResult.path`` echoes the ``-o`` value."""
@@ -98,6 +101,7 @@ def test_snapshot_names_an_output_with_undecodable_bytes(tmp_path: Path, capsys:
     assert ESCAPED in _strings(envelope)
 
 
+@NEEDS_A_SURROGATE_ESCAPING_FILESYSTEM
 @pytest.mark.os_posix
 def test_generate_examples_names_a_destination_with_undecodable_bytes(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -112,6 +116,7 @@ def test_generate_examples_names_a_destination_with_undecodable_bytes(
     assert ESCAPED in _strings(envelope)
 
 
+@NEEDS_A_SURROGATE_ESCAPING_FILESYSTEM
 @pytest.mark.os_posix
 def test_deploy_names_a_config_directory_with_undecodable_bytes(
     user_config_dir_under: Callable[[str], Path], capsys: pytest.CaptureFixture[str]

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from undecodable_names import NEEDS_A_SURROGATE_ESCAPING_FILESYSTEM
 
 from lsdsk.adapters import cli as cli_mod
 from lsdsk.adapters.config.loader import get_config
@@ -43,6 +44,7 @@ def _run(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[int, str]
     return exit_code, captured.out
 
 
+@NEEDS_A_SURROGATE_ESCAPING_FILESYSTEM
 @pytest.mark.os_posix
 def test_a_history_file_with_undecodable_bytes_in_its_name_still_yields_json(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
