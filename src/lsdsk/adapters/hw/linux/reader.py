@@ -33,6 +33,7 @@ import base64
 import ctypes
 import mmap
 import os
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -58,7 +59,7 @@ from .capture import LinuxCapture
 from .usage import disks_by_device
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Mapping, Sequence
 
 # ioctl numbers. SG_IO is the generic SCSI passthrough; the NVMe admin command
 # code is _IOWR('N', 0x41, struct nvme_passthru_cmd) evaluated for a 72-byte
@@ -1157,18 +1158,79 @@ def free_extent_devices(reading: Mapping[str, Any]) -> frozenset[str] | None:
     return frozenset(disks_by_device(capture))
 
 
-def read_system() -> dict[str, Any]:
+class HostIdentity(NamedTuple):
+    """Who and what the reading ran on: three values a capture records beside the hardware."""
+
+    hostname: str
+    kernel: str
+    euid: int
+
+
+def _host_identity() -> HostIdentity:
+    # os.geteuid exists only on POSIX; it is reached at call time so the module imports anywhere.
+    return HostIdentity(os.uname().nodename, os.uname().release, os.geteuid())
+
+
+@dataclass(frozen=True, kw_only=True)
+class SystemReaders:
+    """Every reading :func:`read_system` composes, each defaulting to the one that reads this machine.
+
+    ``read_system`` decides WHICH devices each later reading is asked about from
+    the readings before it - the udev lookup from the disks and the stacked
+    layers above them, the statvfs and free-space walks from the filesystems an
+    inventoried disk carries - so a test replaces these to drive that wiring
+    without a machine behind it.
+    """
+
+    block: Callable[[], dict[str, dict[str, Any]]] = read_block
+    pci: Callable[[], dict[str, dict[str, Any]]] = read_pci
+    pci_names: Callable[[Mapping[str, Mapping[str, object]]], dict[str, str]] = pciids.resolve_names
+    classes: Callable[[], dict[str, dict[str, dict[str, str]]]] = read_classes
+    environment: Callable[[], dict[str, Any]] = read_environment
+    host: Callable[[], HostIdentity] = _host_identity
+    devices_accessible: Callable[[list[str]], bool] = _devices_accessible
+    ata: Callable[[list[str]], dict[str, dict[str, str]]] = read_ata_blobs
+    nvme: Callable[[list[str]], dict[str, dict[str, str]]] = read_nvme_blobs
+    usb: Callable[[Mapping[str, Mapping[str, Any]]], dict[str, dict[str, Any]]] = read_usb
+    stacked: Callable[[list[str]], dict[str, dict[str, Any]]] = mounts.read_stacked
+    signatures: Callable[[list[str]], dict[str, dict[str, str]] | None] = mounts.read_signatures
+    pools: Callable[[], tuple[dict[str, dict[str, int]] | None, str | None]] = zfs.read_pools
+    fragmentation: Callable[[], tuple[dict[str, int | None] | None, str | None]] = zfs.read_pool_fragmentation
+    mount_table: Callable[[], list[dict[str, str | bool]] | None] = mounts.read_mounts
+    swaps: Callable[[], list[dict[str, str]] | None] = mounts.read_swaps
+    space: Callable[[Sequence[Mapping[str, str | bool]]], dict[str, dict[str, int | str]]] = mounts.read_space
+    free_extents: Callable[[Sequence[Mapping[str, str | bool]]], dict[str, dict[str, Any]]] = (
+        freespace.read_free_extents
+    )
+
+
+def _signature_devnums(block: Mapping[str, Mapping[str, Any]], stacked: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """Every device number the udev database is looked up for: each disk's, its partitions', and the stacked ones."""
+    devnums = [entry["dev"] for entry in block.values() if entry.get("dev")]
+    devnums += [
+        part["dev"] for entry in block.values() for part in entry.get("partitions", {}).values() if part.get("dev")
+    ]
+    # A ZFS pool on dm-crypt, LVM or md carries its member signature on the
+    # stacked device, not on the partition beneath it.
+    return devnums + mounts.stacked_device_numbers(stacked)
+
+
+def read_system(readers: SystemReaders | None = None) -> dict[str, Any]:
     """Read the whole storage subsystem from this machine.
+
+    Args:
+        readers: Where each reading comes from; this machine's own readers by
+            default.
 
     Returns:
         A JSON-serialisable reading, the same shape a snapshot stores and
         :func:`~lsdsk.adapters.hw.linux.builder.build_inventory` consumes.
     """
-    block = read_block()
+    read = readers or SystemReaders()
+    block = read.block()
     scsi_nodes = [node for node in block if node.startswith("sd")]
-    ata_nodes = ata_passthrough_nodes(block)
     nvme_nodes = [node for node in block if node.startswith("nvme")]
-    pci = read_pci()
+    pci = read.pci()
 
     # What device-mapper sits on a disk's own block node or on any of its
     # partitions, so a crypt-under-LVM chain is followed from either end.
@@ -1176,48 +1238,40 @@ def read_system() -> dict[str, Any]:
     holders |= {
         name for entry in block.values() for part in entry.get("partitions", {}).values() for name in part["holders"]
     }
-    # Every device number this run has seen, so the udev database is looked up
-    # for exactly the devices a mount or a stacked layer could name.
-    devnums = [entry["dev"] for entry in block.values() if entry.get("dev")]
-    devnums += [
-        part["dev"] for entry in block.values() for part in entry.get("partitions", {}).values() if part.get("dev")
-    ]
-    stacked = mounts.read_stacked(sorted(holders))
-    # A ZFS pool on dm-crypt, LVM or md carries its member signature on the
-    # stacked device, not on the partition beneath it.
-    devnums += mounts.stacked_device_numbers(stacked)
+    stacked = read.stacked(sorted(holders))
 
-    pools, pools_error = zfs.read_pools()
-    fragmentation, fragmentation_error = zfs.read_pool_fragmentation()
-    mount_rows = mounts.read_mounts()
+    pools, pools_error = read.pools()
+    fragmentation, fragmentation_error = read.fragmentation()
+    mount_rows = read.mount_table()
+    host = read.host()
     reading: dict[str, Any] = {
         "schema": SCHEMA_VERSION,
         "captured_at": datetime.now(UTC).isoformat(),
         "platform": Platform.LINUX.value,
-        "environment": read_environment(),
-        "devices_accessible": _devices_accessible([*scsi_nodes, *nvme_nodes]),
-        "hostname": os.uname().nodename,
-        "kernel": os.uname().release,
-        "euid": os.geteuid(),
+        "environment": read.environment(),
+        "devices_accessible": read.devices_accessible([*scsi_nodes, *nvme_nodes]),
+        "hostname": host.hostname,
+        "kernel": host.kernel,
+        "euid": host.euid,
         "pci": pci,
-        "pci_names": pciids.resolve_names(pci),
-        "classes": read_classes(),
+        "pci_names": read.pci_names(pci),
+        "classes": read.classes(),
         "block": block,
-        "ata": read_ata_blobs(ata_nodes),
-        "nvme": read_nvme_blobs(nvme_nodes),
-        "usb": read_usb(block),
+        "ata": read.ata(ata_passthrough_nodes(block)),
+        "nvme": read.nvme(nvme_nodes),
+        "usb": read.usb(block),
         "mounts": mount_rows,
-        "swaps": mounts.read_swaps(),
+        "swaps": read.swaps(),
         "stacked": stacked,
-        "signatures": mounts.read_signatures(devnums),
+        "signatures": read.signatures(_signature_devnums(block, stacked)),
         **zfs.capture_fields(pools, pools_error),
         **zfs.fragmentation_fields(fragmentation, fragmentation_error),
-        "filesystem_space": None if mount_rows is None else mounts.read_space(mount_rows),
+        "filesystem_space": None if mount_rows is None else read.space(mount_rows),
     }
     reading["free_extents"] = (
         None
         if mount_rows is None
-        else freespace.read_free_extents(freespace.rows_on_disks(mount_rows, free_extent_devices(reading)))
+        else read.free_extents(freespace.rows_on_disks(mount_rows, free_extent_devices(reading)))
     )
     return reading
 
@@ -1227,8 +1281,10 @@ __all__ = [
     "NVME_IOCTL_ADMIN_CMD",
     "SG_IO",
     "AhciReading",
+    "HostIdentity",
     "NvmePassthruCommand",
     "SgIoHeader",
+    "SystemReaders",
     "ata_passthrough",
     "ata_passthrough_nodes",
     "free_extent_devices",
