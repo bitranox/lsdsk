@@ -87,14 +87,22 @@ def _nodes_of(entry: VolumeEntry, numbered: dict[int, str]) -> tuple[str, ...]:
     return tuple(sorted(nodes, key=disk_name_order))
 
 
-def _space_was_read(volumes: Iterable[VolumeEntry]) -> bool:
-    """Whether any volume with a path carries what the space reading writes.
+def _space_was_read(capture: WindowsCapture) -> bool:
+    """Whether the capture's volumes were asked for their space.
 
-    The reader asks every volume that has a path and always records either the
+    The reader records that it did (``volume_space_read``), which holds even
+    when no volume came back with a path: a machine whose one volume would not
+    give its paths was read, and that volume's refusal must reach the run.
+
+    A capture taken before that flag is judged from its volumes instead: the
+    reader asks every volume that has a path and always records either the
     figures or the reason they were refused, from each of its two calls; a
     capture taken before those fields existed carries none of them on any
     volume, and its volumes are then not read rather than read as blank.
     """
+    if capture.volume_space_read is not None:
+        return capture.volume_space_read
+    volumes = capture.volumes.values() if capture.volumes is not None else ()
     return any(
         entry.total_bytes is not None
         or entry.space_error is not None
@@ -181,7 +189,7 @@ def build_filesystems(
     """
     if environment is Environment.CONTAINER or capture.volumes is None:
         return None, ()
-    if not _space_was_read(capture.volumes.values()):
+    if not _space_was_read(capture):
         return None, ()
     numbered = disk_numbers(frozenset(entry.node for entry in capture.disks.values() if entry.node))
     rows = [

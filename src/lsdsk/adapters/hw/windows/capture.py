@@ -444,6 +444,11 @@ class WindowsCapture(CaptureHeader, frozen=True):
         volume_bitmaps_read: Whether this run walked each volume's cluster
             bitmap: ``False`` for an unelevated run, which cannot; ``None`` in
             a capture taken before this field existed.
+        volume_space_read: Whether this run asked every volume with a path
+            for its space and filesystem, which the reader always does; it
+            makes the volumes read even when no volume came back with a path.
+            ``None`` in a capture taken before this field existed, whose
+            volumes are judged read from their own space fields instead.
     """
 
     platform: Literal[Platform.WINDOWS]
@@ -458,6 +463,7 @@ class WindowsCapture(CaptureHeader, frozen=True):
     volumes: EntryMap[DeviceText, VolumeEntry] | None = None
     windows_volume: DeviceText | None = None
     volume_bitmaps_read: bool | None = None
+    volume_space_read: bool | None = None
 
 
 __all__ = [

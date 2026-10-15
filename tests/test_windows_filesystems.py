@@ -427,3 +427,43 @@ def test_two_volumes_whose_paths_were_not_read_are_refused_under_two_names() -> 
         f"volume 4: {failed}; could not open the volume (error 5)",
     ]
     assert len({r.reason for r in unread}) == len(unread)
+
+
+_PATHS_UNREAD = "could not read the volume's paths (error 234)"
+
+
+def test_a_volume_that_is_the_only_one_with_a_path_is_still_refused_when_its_paths_fail() -> None:
+    """A run that records it read the volumes' space is read, even when no volume came back with a path."""
+    capture = _capture(
+        {"\\\\?\\p0": _disk("PhysicalDrive0")},
+        volumes={"0": _volume(disks=(0,), paths_error=_PATHS_UNREAD)},
+        volume_space_read=True,
+    )
+    rows, unread = build_filesystems(capture, BARE_METAL)
+    assert rows == ()
+    assert [(r.reading, r.reason) for r in unread] == [("volume", f"volume 0 on PhysicalDrive0: {_PATHS_UNREAD}")]
+
+
+def test_a_capture_without_the_space_flag_keeps_inferring_from_the_volumes() -> None:
+    """The control: a capture taken before the flag existed, with no path read, is still not read."""
+    capture = _one_disk({"0": _volume(disks=(0,), paths_error=_PATHS_UNREAD)})
+    assert build_filesystems(capture, BARE_METAL) == (None, ())
+
+
+def test_a_replayed_run_whose_only_pathed_volume_failed_is_incomplete(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    from lsdsk.adapters.cli import cli
+
+    payload = json.loads((FIXTURES / "windows-usb-uas.json").read_text(encoding="utf-8"))
+    payload["volumes"] = {"0": _volume(disks=(0,), paths_error=_PATHS_UNREAD)}
+    payload["volume_space_read"] = True
+    capture = tmp_path / "capture.json"
+    capture.write_text(json.dumps(payload), encoding="utf-8")
+    result = cli_runner.invoke(
+        cli, ["filesystems", "--replay", str(capture), "--format", "json"], obj=production_factory
+    )
+    envelope = json.JSONDecoder().raw_decode(result.output[result.output.index("{") :])[0]
+    assert envelope["data"]["filesystems"] == []
+    assert envelope["ok"] is False
+    assert f"volume: filesystems - volume 0 on PhysicalDrive0: {_PATHS_UNREAD}" in envelope["skipped"]

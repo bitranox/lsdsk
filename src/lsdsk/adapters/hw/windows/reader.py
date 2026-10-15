@@ -1417,6 +1417,9 @@ def read_system() -> dict[str, Any]:
         "volumes": volume_entries,
         "windows_volume": windows_volume,
         "volume_bitmaps_read": elevated,
+        # Every volume with a path was asked for its space above, so the
+        # volumes are read even on a machine where no path came back.
+        "volume_space_read": True,
     }
 
 
