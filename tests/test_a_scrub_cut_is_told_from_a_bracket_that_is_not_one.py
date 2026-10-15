@@ -139,3 +139,28 @@ def test_a_cut_after_a_piece_with_a_stray_closing_bracket_is_still_a_cut(
     assert len(said) == 1, said
     assert "LOG_SCRUB_PATTERNS=z):" in said[0], said
     assert "continues a cut regex" in said[0], said
+
+
+@pytest.mark.parametrize(
+    ("text", "cut", "read"),
+    [
+        pytest.param("k=a{1,3,token=.+", ["3"], "token=.+", id="never closed"),
+        pytest.param("k=a{1,2,3,token=.+,x=y", ["2", "3"], "x=y", id="never closed, cut twice"),
+    ],
+)
+def test_a_piece_with_an_equals_sign_after_a_cut_that_never_closes_is_an_entry_of_its_own(
+    text: str, cut: list[str], read: str, capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``token=.+`` follows the cut ``k=a{1,3``, which nothing ever closes, so the library reads it as an entry.
+
+    Rejoining every piece onto a group that stays open to the end announced
+    ``token=.+`` as ignored while the library was scrubbing with it. A piece with
+    no ``=`` inside the cut is still named.
+    """
+    monkeypatch.setenv("LOG_SCRUB_PATTERNS", text)
+
+    said = [line for line in _said_about_scrubbing(capfd) if "split on every comma" in line]
+
+    assert [line.split("LOG_SCRUB_PATTERNS=", 1)[1].split(":", 1)[0] for line in said] == cut, said
+    assert all("continues a cut regex" in line for line in said), said
+    assert not any(read in line for line in said), said
