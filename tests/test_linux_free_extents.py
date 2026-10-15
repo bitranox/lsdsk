@@ -15,6 +15,7 @@ from lsdsk.adapters.hw.decode.free_extents import MAX_FREE_EXTENTS
 from lsdsk.adapters.hw.linux import freespace, reader
 from lsdsk.adapters.hw.linux.capture import LinuxCapture
 from lsdsk.adapters.hw.linux.usage import disks_by_device
+from lsdsk.domain.text import MAX_DEVICE_TEXT
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -389,3 +390,119 @@ def test_the_reader_asks_for_exactly_the_devices_the_filesystems_section_keeps()
 
 def test_a_reading_that_does_not_parse_walks_every_filesystem() -> None:
     assert reader.free_extent_devices({**_raw_reading(), "block": "not a mapping"}) is None
+
+
+class _Descriptors:
+    """An opener handing out real descriptors (of the null device) and remembering each one."""
+
+    def __init__(self) -> None:
+        """Start with nothing opened."""
+        self.opened: list[int] = []
+
+    def __call__(self, _mountpoint: str) -> int:
+        fd = os.open(os.devnull, os.O_RDONLY)
+        self.opened.append(fd)
+        return fd
+
+    def all_closed(self) -> bool:
+        """Whether every descriptor handed out is closed now: fstat on a closed one fails with EBADF."""
+        for fd in self.opened:
+            try:
+                os.fstat(fd)
+            except OSError as error:
+                assert error.errno == errno.EBADF
+                continue
+            os.close(fd)  # do not leak it into the rest of the suite
+            return False
+        return True
+
+
+@pytest.mark.parametrize(
+    ("fake", "cap", "outcome"),
+    [
+        (FakeFsmap([_free(0, 4096)]), MAX_FREE_EXTENTS, "count"),
+        (FakeFsmap([], fail=errno.EPERM), MAX_FREE_EXTENTS, "error"),  # the kernel refused: OSError
+        (FakeFsmap([_free(0, 512), _free(4096, 512)]), 1, "error"),  # past the cap: ValueError
+        (FakeFsmap([_free(0, 4096)], device=_new_encode_dev(9, 9)), MAX_FREE_EXTENTS, "error"),  # other device
+    ],
+    ids=["read", "refused", "past-the-cap", "no-record-on-the-device"],
+)
+def test_the_mountpoint_is_closed_on_every_way_out(fake: FakeFsmap, cap: int, outcome: str) -> None:
+    opener = _Descriptors()
+    reading = freespace.read_free_extents(ROWS, ioctl=fake, opener=opener, cap=cap)
+    assert outcome in reading["8:1"]
+    assert len(opener.opened) == 1
+    assert opener.all_closed()
+
+
+def test_a_record_owned_by_inode_one_without_the_special_flag_is_a_file_not_free_space(tmp_path: Path) -> None:
+    # ext4's bad-blocks inode is inode 1, the very number FMR_OWN_FREE uses; only the special-owner flag tells them
+    # apart (include/uapi/linux/fsmap.h: FMR_OF_SPECIAL_OWNER).
+    records = [(0, _FREE, 0, 4096, 0), _free(8192, 4096)]
+    reading = freespace.read_free_extents(ROWS, ioctl=FakeFsmap(records), opener=_opener(tmp_path))
+    assert (reading["8:1"]["count"], reading["8:1"]["total"]) == (1, 4096)
+
+
+def test_the_largest_free_extent_is_the_longest_not_the_last(tmp_path: Path) -> None:
+    records = [_free(0, 1 << 30), _free(1 << 31, 4096)]
+    reading = freespace.read_free_extents(ROWS, ioctl=FakeFsmap(records), opener=_opener(tmp_path))
+    assert reading["8:1"]["largest"] == 1 << 30
+
+
+def test_a_second_mountpoint_of_a_read_filesystem_is_not_walked_again() -> None:
+    rows = [{"dev": "8:1", "mountpoint": "/a", "fstype": "xfs"}, {"dev": "8:1", "mountpoint": "/b", "fstype": "xfs"}]
+    fake, opener = FakeFsmap([_free(0, 4096)]), _Descriptors()
+    reading = freespace.read_free_extents(rows, ioctl=fake, opener=opener)
+    assert reading["8:1"]["count"] == 1
+    assert (fake.calls, len(opener.opened)) == (1, 1)
+    assert opener.all_closed()
+
+
+def test_when_every_mountpoint_refuses_the_first_reason_is_kept(tmp_path: Path) -> None:
+    refusals = {"/a": errno.EACCES, "/b": errno.ENOENT}
+
+    def opener(mountpoint: str) -> int:
+        code = refusals[mountpoint]
+        raise OSError(code, os.strerror(code))
+
+    rows = [{"dev": "8:1", "mountpoint": "/a", "fstype": "ext4"}, {"dev": "8:1", "mountpoint": "/b", "fstype": "ext4"}]
+    reading = freespace.read_free_extents(rows, ioctl=FakeFsmap([_free(0, 4096)]), opener=opener)
+    assert reading == {"8:1": {"error": os.strerror(errno.EACCES)}}
+
+
+def test_a_walk_of_exactly_the_record_budget_is_read(tmp_path: Path) -> None:
+    records = [_metadata(0, 4096), _metadata(4096, 4096), _free(8192, 4096)]
+    reading = freespace.read_free_extents(ROWS, ioctl=FakeFsmap(records), opener=_opener(tmp_path), max_records=3)
+    assert reading["8:1"]["count"] == 1
+    refused = freespace.read_free_extents(ROWS, ioctl=FakeFsmap(records), opener=_opener(tmp_path), max_records=2)
+    assert refused == {"8:1": {"error": "more than 2 space-map records; stopped reading at the cap"}}
+
+
+def test_a_reachable_mountpoint_s_reading_beats_a_hidden_one_s_refusal(tmp_path: Path) -> None:
+    rows = [
+        {"dev": "8:1", "mountpoint": "/covered", "fstype": "xfs", "hidden": True},
+        {"dev": "8:1", "mountpoint": "/data", "fstype": "xfs"},
+    ]
+    reading = freespace.read_free_extents(rows, ioctl=FakeFsmap([_free(0, 4096)]), opener=_opener(tmp_path))
+    assert reading["8:1"]["count"] == 1
+    assert "error" not in reading["8:1"]
+
+
+def test_a_kernel_reporting_more_records_than_the_room_given_is_refused(tmp_path: Path) -> None:
+    class Overflowing(FakeFsmap):
+        def __call__(self, _fd: int, _request: int, head: bytearray) -> int:
+            self.calls += 1
+            struct.pack_into("<I", head, 12, 4097)
+            return 0
+
+    reading = freespace.read_free_extents(ROWS, ioctl=Overflowing([]), opener=_opener(tmp_path))
+    assert reading == {"8:1": {"error": "the kernel reported 4097 records for room of 4096"}}
+
+
+def test_a_refusal_reason_is_cut_to_the_capture_text_cap(tmp_path: Path) -> None:
+    def opener(_mountpoint: str) -> int:
+        raise OSError(errno.EIO, "x" * (3 * MAX_DEVICE_TEXT))
+
+    reading = freespace.read_free_extents(ROWS, ioctl=FakeFsmap([]), opener=opener)
+    assert reading == {"8:1": {"error": "x" * MAX_DEVICE_TEXT}}
+    FreeExtentsEntry.model_validate(reading["8:1"])

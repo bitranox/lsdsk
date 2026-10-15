@@ -80,3 +80,10 @@ def test_free_extents_adding_up_past_64_bits_stop_the_tally() -> None:
     with pytest.raises(ValueError, match=r"add up to more than 18,446,744,073,709,551,615 bytes"):
         tally.add(1)
     assert tally.summary()["total"] == 2**64 - 1  # the refused extent was not folded in
+
+
+def test_a_summary_with_no_histogram_has_its_counts_and_no_score() -> None:
+    # A summary carrying counts but no histogram (empty, as the capture model allows) is not scored.
+    space = free_space_of(FreeExtentsEntry(count=0, total=0, largest=0))
+    assert space is not None
+    assert (space.fragmentation_percent, space.free_extent_count, space.histogram) == (None, 0, ())

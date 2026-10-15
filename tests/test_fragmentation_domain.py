@@ -98,3 +98,7 @@ def test_a_free_space_figure_applies_only_where_a_source_exists(
 def test_a_percent_outside_0_to_100_is_refused() -> None:
     with pytest.raises(ValueError, match="less than or equal to 100"):
         FreeSpace(fragmentation_percent=101)
+
+
+def test_no_free_extents_have_no_average_rather_than_a_division_by_zero() -> None:
+    assert FreeSpace(free_extent_count=0, free_extent_bytes=0).average_free_extent_bytes is None
