@@ -496,3 +496,27 @@ def test_a_listed_pool_is_a_refusal_even_when_no_disk_carries_any_pool_member() 
             ),
         ),
     )
+
+
+def _typed_inode_row(fs_type: str) -> tuple[int | None, int | None, int | None]:
+    capture = _capture(
+        {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},
+        mounts=[_mount("8:1", "/data", fs_type)],
+        filesystem_space={"8:1": {"frsize": 4096, "blocks": 10, "bfree": 5, "bavail": 5, "files": 100, "ffree": 40}},
+    )
+    rows, _ = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    (row,) = rows
+    return row.inodes_total, row.inodes_free, row.inodes_used_percent
+
+
+@pytest.mark.parametrize("fs_type", ["ext2", "ext3", "ext4"])
+def test_every_ext_generation_carries_its_fixed_inode_table(fs_type: str) -> None:
+    assert _typed_inode_row(fs_type) == (100, 40, 60)
+
+
+@pytest.mark.parametrize("fs_type", ["xfs", "btrfs", "vfat"])
+def test_a_filesystem_that_makes_inodes_on_demand_keeps_no_inode_figures(fs_type: str) -> None:
+    # statvfs answers an inode count for these too; it is not a ceiling, so the
+    # row does not carry it at all rather than carrying a figure nothing judges.
+    assert _typed_inode_row(fs_type) == (None, None, None)
