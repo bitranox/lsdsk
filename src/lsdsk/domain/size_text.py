@@ -29,16 +29,30 @@ def _scaled(size_bytes: int, step: float, units: tuple[str, ...]) -> str:
     """One capacity on one scale, to the unit that keeps it under three digits.
 
     A non-zero figure is never written as zero: below one step it is whole
-    bytes, and it moves to the next unit only once it reaches one of that unit.
+    bytes, and it moves to the next unit once the figure AS WRITTEN reaches the
+    step. Judged on the unrounded value, 1023.9 KiB stayed in KiB and printed
+    ``1024KiB``, a figure that has reached the step it is held under.
+
+    Example:
+        >>> _scaled(1_048_575, _BINARY_STEP, _BINARY_UNITS)
+        '1.0MiB'
+        >>> _scaled(999_999_999_999, _DECIMAL_STEP, _DECIMAL_UNITS)
+        '1.0TB'
     """
-    value = float(size_bytes)
-    for unit in units:
-        if value < step or unit == units[-1]:
-            if unit == units[0]:
-                return f"{int(value)}{unit}"
-            return f"{value:.1f}{unit}" if value < _ONE_DECIMAL_BELOW else f"{value:.0f}{unit}"
+    if size_bytes < step:
+        return f"{int(size_bytes)}{units[0]}"
+    value = size_bytes / step
+    for unit in units[1:-1]:
+        figure = _figure(value)
+        if float(figure) < step:
+            return f"{figure}{unit}"
         value /= step
-    return "-"
+    return f"{_figure(value)}{units[-1]}"
+
+
+def _figure(value: float) -> str:
+    """A scaled value written with one decimal below ten and whole from ten on."""
+    return f"{value:.1f}" if value < _ONE_DECIMAL_BELOW else f"{value:.0f}"
 
 
 def format_capacity(size_bytes: int) -> str:
