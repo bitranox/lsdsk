@@ -352,6 +352,40 @@ def clip(value: str, width: int) -> str:
     return value[: max(width - 1, 0)] + ELLIPSIS if width else ""
 
 
+def clip_keeping(value: str, width: int, tail: str) -> str:
+    """Shorten a value to a width, cutting what stands before ``tail`` and keeping ``tail`` whole.
+
+    For a cell that is a name followed by a count of something else, such as
+    a mountpoint and how many other mountpoints the filesystem has: cut from
+    the end, the count is the first thing to go, and it goes exactly when the
+    name is long. Where the width leaves no room for even one character of the
+    rest and its mark, or the value does not end in ``tail``, it is clipped as
+    :func:`clip` would.
+
+    Args:
+        value: The text to fit, ending in ``tail``.
+        width: The most characters to keep, marker included.
+        tail: The end of ``value`` to keep whole; empty keeps nothing.
+
+    Returns:
+        ``value`` unchanged when it fits, otherwise ``width`` characters with
+        the clip mark before ``tail``.
+
+    Example:
+        >>> clip_keeping("/srv/long-name +2", 12, " +2")
+        '/srv/lon> +2'
+        >>> clip_keeping("/srv +2", 12, " +2")
+        '/srv +2'
+        >>> clip_keeping("/srv/long-name +2", 4, " +2")
+        '/sr>'
+        >>> clip_keeping("/srv/long-name", 8, "")
+        '/srv/lo>'
+    """
+    if len(value) <= width or not tail or not value.endswith(tail) or width - len(tail) < _CLIPPED:
+        return clip(value, width)
+    return clip(value[: -len(tail)], width - len(tail)) + tail
+
+
 def pad(value: str, width: int, align: Align) -> str:
     """Fit one cell to a width, truncating with an ellipsis when it overflows.
 
@@ -388,6 +422,7 @@ __all__ = [
     "Column",
     "Layout",
     "clip",
+    "clip_keeping",
     "fit",
     "natural_widths",
     "pad",

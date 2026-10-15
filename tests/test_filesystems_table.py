@@ -10,6 +10,7 @@ from rich.console import Console
 
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import tables, theme
+from lsdsk.adapters.render.layout import ELLIPSIS
 from lsdsk.adapters.render.tables import (
     FILESYSTEM_COLUMNS,
     FILESYSTEM_FRAG_NOT_APPLICABLE,
@@ -230,6 +231,20 @@ def test_frag_is_the_first_column_to_drop() -> None:
     assert [c.key for c in order][:2] == ["frag", "inodes"]
 
 
+# A long mountpoint with a bind mount beside it, the case where the count matters most and was lost.
+_LONG_BOUND = Filesystem(
+    kind=FilesystemKind.MOUNT,
+    name="/srv/a mount with spaces and a very long name that goes on",
+    other_mounts=("/srv/bind",),
+    fs_type="ext4",
+    disks=("sdb",),
+    size_bytes=100,
+    used_bytes=50,
+    free_bytes=50,
+    inodes_total=10,
+    inodes_free=5,
+    free_space=FreeSpace(fragmentation_percent=10),
+)
 # Eight disks, so the disks cell is the widest thing on the row and the first flexible one a squeeze reaches.
 _WIDE_POOL = Filesystem(
     kind=FilesystemKind.POOL,
@@ -243,6 +258,14 @@ _WIDE_POOL = Filesystem(
 )
 # Every column the table may drop, in the order it drops them.
 _DROPPABLE_TITLES = ("frag", "inodes%", "type", "size", "used", "free")
+
+
+def test_the_other_mounts_count_survives_every_width_and_only_the_name_is_clipped() -> None:
+    for width in range(200, 29, -1):
+        row = _text(_LONG_BOUND, width=width).splitlines()[2]
+        assert " +1 " in row, f"the +1 was lost at width {width}: {row!r}"
+        if _LONG_BOUND.name not in row:
+            assert f"{ELLIPSIS} +1 " in row, f"the name was cut without its mark at width {width}: {row!r}"
 
 
 def test_the_disks_cell_is_cut_only_once_every_droppable_column_is_gone() -> None:

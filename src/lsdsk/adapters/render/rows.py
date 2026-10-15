@@ -11,9 +11,13 @@ System Role:
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from types import MappingProxyType
+from typing import TYPE_CHECKING, NamedTuple
 
 from .theme import Cell
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 #: A rendered row: column key to styled cell.
 Row = dict[str, Cell]
@@ -31,10 +35,16 @@ class MarkedRow(NamedTuple):
     Attributes:
         marker: The severity marker's text and style.
         cells: The row's data, keyed by column key.
+        kept_tails: Per column key, the END of that cell's text which a clip
+            keeps whole, cutting what stands before it instead. Carried beside
+            the cell rather than recognised in its text, because the builder
+            knows which characters are a count it appended and the text cannot
+            say so: a mountpoint may itself end in `` +2``.
     """
 
     marker: Cell
     cells: Row
+    kept_tails: Mapping[str, str] = MappingProxyType({})
 
 
 __all__ = ["MarkedRow", "Row"]

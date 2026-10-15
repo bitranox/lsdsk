@@ -26,7 +26,7 @@ from ...domain.history import CounterKind, identity_of, trend_for
 from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_WWN_WIDTH
 from . import theme
-from .layout import Column, Layout, clip
+from .layout import Column, Layout, clip, clip_keeping
 from .report import disk_row, severity_index, virtual_note
 from .rows import MarkedRow
 
@@ -246,7 +246,7 @@ def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, 
     for row in drawn:
         marker_text, marker_style = row.marker
         cells = [
-            Text(clip(text, widths[column.key]), style=style)
+            Text(clip_keeping(text, widths[column.key], row.kept_tails.get(column.key, "")), style=style)
             for column, (text, style) in ((c, row.cells.get(c.key, ("-", theme.STYLE_UNKNOWN))) for c in chosen)
         ]
         table.add_row(Text(marker_text, style=marker_style), *cells)
@@ -475,9 +475,8 @@ def filesystem_table_row(filesystem: Filesystem, *, both_scales: bool) -> Row:
     def capacity(value: int | None) -> theme.Cell:
         return _filesystem_cell(None if value is None else size(value))
 
-    shown = f"{filesystem.name} +{len(filesystem.other_mounts)}" if filesystem.other_mounts else filesystem.name
     return {
-        "filesystem": (shown, theme.STYLE_IDENTIFIER),
+        "filesystem": (filesystem.name + _other_mounts_tail(filesystem), theme.STYLE_IDENTIFIER),
         "type": _filesystem_cell(filesystem.fs_type or None),
         "size": capacity(filesystem.size_bytes),
         "used": capacity(filesystem.used_bytes),
@@ -487,6 +486,11 @@ def filesystem_table_row(filesystem: Filesystem, *, both_scales: bool) -> Row:
         "frag": _frag_cell(filesystem),
         "disks": _filesystem_cell(" ".join(filesystem.disks) or None),
     }
+
+
+def _other_mounts_tail(filesystem: Filesystem) -> str:
+    """The count of further mountpoints a row's name carries, or nothing when there are none."""
+    return f" +{len(filesystem.other_mounts)}" if filesystem.other_mounts else ""
 
 
 def filesystem_marked_row(
@@ -507,7 +511,14 @@ def filesystem_marked_row(
     """
     severity = severities.get(filesystem.name) if filesystem.fill_was_read else None
     marker = (theme.marker_for(severity), theme.style_for(severity))
-    return MarkedRow(marker=marker, cells=filesystem_table_row(filesystem, both_scales=both_scales))
+    # The count is the end of the name cell, so a clip from the end took it
+    # first and took it exactly when the name was long; it is kept whole and
+    # the name is cut before it instead.
+    return MarkedRow(
+        marker=marker,
+        cells=filesystem_table_row(filesystem, both_scales=both_scales),
+        kept_tails={"filesystem": _other_mounts_tail(filesystem)},
+    )
 
 
 def filesystem_legend_for(drawn: Mapping[str, Collection[str]]) -> str:

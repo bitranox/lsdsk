@@ -9,7 +9,7 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 from rich.console import Console
@@ -23,6 +23,9 @@ from lsdsk.adapters.tui.app import FILESYSTEM_COLUMNS
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.enums import FilesystemKind
 from lsdsk.domain.models import Filesystem, FreeSpace, Inventory
+
+if TYPE_CHECKING:
+    from rich.text import Text
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
 
@@ -316,3 +319,28 @@ async def test_two_filesystems_sharing_a_name_mount_and_both_rows_show() -> None
         types = [str(table.get_row_at(index)[FILESYSTEM_COLUMNS.index("type")]) for index in range(table.row_count)]
 
     assert types == ["ext4", "xfs"]
+
+
+@pytest.mark.asyncio
+async def test_the_other_mounts_count_is_drawn_beside_a_long_name_at_every_page_width() -> None:
+    long_bound = Filesystem(
+        kind=FilesystemKind.MOUNT,
+        name="/srv/a mount with spaces and a very long name that goes on",
+        other_mounts=("/srv/bind",),
+        fs_type="ext4",
+        disks=("sdb",),
+    )
+    for size in ((80, 30), (180, 50)):
+        app = LsdskApp(read_machine(long_bound))
+        async with app.run_test(size=size) as pilot:
+            await pilot.press("9")
+            await pilot.pause()
+            shown = cells_of(app, long_bound.name)["filesystem"]
+            # The width the page actually gives the column, padding excluded, not the cell's own text.
+            # The page fills it with Text cells; query_one cannot check a generic at runtime.
+            table = cast("DataTable[Text]", app.query_one("#filesystem-table", DataTable))
+            column = list(table.columns.values())[FILESYSTEM_COLUMNS.index("filesystem")]
+            room = column.get_render_width(table) - 2 * table.cell_padding
+
+        assert shown == f"{long_bound.name} +1", size
+        assert room >= len(shown), f"the column at {size} has room for {room} of {len(shown)} characters"
