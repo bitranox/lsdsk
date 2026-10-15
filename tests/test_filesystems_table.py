@@ -294,3 +294,46 @@ def test_the_capture_s_pool_keeps_its_disks_whole_while_a_droppable_column_stand
         header = lines[1].split()
         standing = [title for title in _DROPPABLE_TITLES if title in header]
         assert whole in row or not standing, f"{pool.name}'s disks cut at width {width} while {standing} stand"
+
+
+# Two names that differ only after a long shared prefix, beside a pool whose disk list is the widest cell.
+_TWIN_NAMES = tuple(
+    Filesystem(
+        kind=FilesystemKind.MOUNT,
+        name=f"/mnt/pool-{letter}/backups/daily",
+        fs_type="ext4",
+        disks=(f"sd{letter}",),
+        size_bytes=4_000_000_000_000,
+        used_bytes=1_500_000_000_000,
+        free_bytes=2_500_000_000_000,
+        inodes_total=10,
+        inodes_free=5,
+        free_space=FreeSpace(fragmentation_percent=10),
+    )
+    for letter in "ab"
+)
+_TWELVE_DISK_POOL = Filesystem(
+    kind=FilesystemKind.POOL,
+    name="tank",
+    fs_type="zfs",
+    disks=tuple(f"sd{letter}" for letter in "abcdefghijkl"),
+    size_bytes=4_000_000_000_000,
+    used_bytes=1_500_000_000_000,
+    free_bytes=2_500_000_000_000,
+    free_space=FreeSpace(fragmentation_percent=20),
+)
+
+
+def test_a_filesystem_name_is_cut_only_once_every_droppable_column_is_gone() -> None:
+    """A cut name can read the same as its neighbour's, which a dropped column or a second size scale never does."""
+    cut_at: list[int] = []
+    for width in range(220, 19, -1):
+        rendered = _text(*_TWIN_NAMES, _TWELVE_DISK_POOL, width=width)
+        if all(one.name in rendered for one in _TWIN_NAMES):
+            continue
+        cut_at.append(width)
+        lines = rendered.splitlines()
+        header = next(line for line in lines if line.startswith(" ")).split()
+        standing = [title for title in _DROPPABLE_TITLES if title in header]
+        assert not standing, f"names cut at width {width} while {standing} still stand:\n{rendered}"
+    assert cut_at, "the arm never reached a width that cuts a name, so it asserted nothing"

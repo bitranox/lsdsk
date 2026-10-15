@@ -142,9 +142,12 @@ class Layout:
         """Take the fuller rows where the width affords them, the plain ones where it does not.
 
         A link figure may carry what it is worth, and that detail is the FIRST
-        thing a narrow terminal gives up - before a column is dropped and before
-        a value is cut. It is an embellishment on a figure; a column is a fact
-        the tool was asked for.
+        thing a narrow terminal gives up - before a column is dropped. It is an
+        embellishment on a figure; a column is a fact the tool was asked for.
+        A flexible column still narrows to its ``min_width`` to make room for
+        it, as it would for any other column; a value that must stay whole
+        while anything droppable stands is marked ``shrinks_last``, and then
+        the fuller rows cost a column first and are refused.
 
         Two conditions, and the second is the one that is easy to miss: the
         fuller rows are taken only if they cost no column AND if they actually
