@@ -347,3 +347,18 @@ def test_an_unelevated_capture_with_no_row_claims_no_fragmentation_refusal() -> 
     elsewhere = _volume(paths=("E:\\",), disks=(7,), total_bytes=100, free_bytes=40, available_bytes=30)
     capture = _capture({"\\\\?\\p0": _disk("PhysicalDrive0")}, volumes={"0": elsewhere}, volume_bitmaps_read=False)
     assert build_filesystems(capture, BARE_METAL) == ((), ())
+
+
+def test_an_unelevated_run_reports_a_volume_it_could_not_place_beside_the_fragmentation_refusal() -> None:
+    """The default run is unelevated: an unplaced volume must not be lost behind the run-wide refusal."""
+    placed = _volume(paths=("C:\\",), disks=(0,), total_bytes=100, free_bytes=40, available_bytes=30)
+    unplaced = _volume(disks=(0,), paths_error="could not read the volume's paths (error 234)")
+    capture = _capture(
+        {"\\\\?\\p0": _disk("PhysicalDrive0")}, volumes={"0": placed, "1": unplaced}, volume_bitmaps_read=False
+    )
+    rows, unread = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    assert [row.name for row in rows] == ["C:\\"]
+    assert [r.reading for r in unread] == ["volume", "fragmentation"]
+    assert unread[0].reason.endswith("could not read the volume's paths (error 234)")
+    assert unread[1].reason == "needs Administrator"
