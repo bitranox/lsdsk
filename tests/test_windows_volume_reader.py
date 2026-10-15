@@ -116,6 +116,7 @@ class FakeVolumeKernel:
     opened: list[tuple[str, int]] = field(default_factory=list[tuple[str, int]])
     bitmap_calls: int = 0
     closed: list[int] = field(default_factory=list[int])
+    granted: list[tuple[int, int]] = field(default_factory=list[tuple[int, int]])
     _order: list[str] = field(default_factory=list[str])
     _handles: dict[int, str] = field(default_factory=dict[int, str])
 
@@ -240,6 +241,7 @@ class FakeVolumeKernel:
             return cast("int", api.INVALID_HANDLE_VALUE)
         handle = 100 + len(self._handles)
         self._handles[handle] = name
+        self.granted.append((handle, access))
         return handle
 
     def CloseHandle(self, handle: int) -> int:  # noqa: N802 - the Win32 entry point's own name
@@ -695,3 +697,43 @@ def test_a_bitmap_answer_starting_past_the_cluster_asked_for_is_refused() -> Non
     entry, fake = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, bitmap_lcn_ahead=8))
     assert entry["free_extents"] == {"error": "the volume bitmap restarted at cluster 8, past 0"}
     assert fake.bitmap_calls == 1
+
+
+def _bitmap_handles(fake: FakeVolumeKernel) -> list[int]:
+    """The handles the walk opened for reading, in the order they were opened."""
+    return [handle for handle, access in fake.granted if access == api.GENERIC_READ]
+
+
+def test_a_bitmap_answer_that_does_not_advance_is_refused_rather_than_asked_again() -> None:
+    """ERROR_MORE_DATA with no cluster bits would ask the same question forever; the fake stops at a limit."""
+    entry, fake = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, bitmap_stalls=True))
+    assert entry["free_extents"] == {"error": "the volume bitmap did not advance"}
+    assert fake.bitmap_calls == 1
+
+
+def test_a_failing_bitmap_call_is_refused_with_its_error() -> None:
+    entry, fake = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, bitmap_error=ERROR_ACCESS_DENIED))
+    assert entry["free_extents"] == {"error": "could not read the volume bitmap (error 5)"}
+    assert fake.bitmap_calls == 1
+
+
+def test_a_cluster_size_of_zero_is_refused_before_the_volume_is_opened_for_reading() -> None:
+    entry, fake = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, cluster_bytes=0))
+    assert entry["free_extents"] == {"error": "the volume reported a cluster size of zero"}
+    assert _bitmap_handles(fake) == []
+
+
+@pytest.mark.parametrize(
+    "volume",
+    [
+        FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP),
+        FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, bitmap_error=ERROR_ACCESS_DENIED),
+        FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, bitmap_stalls=True),
+    ],
+    ids=["walked", "refused", "stalled"],
+)
+def test_the_handle_opened_for_the_bitmap_is_closed_however_the_walk_ends(volume: FakeVolume) -> None:
+    _, fake = _walked(volume)
+    opened = _bitmap_handles(fake)
+    assert len(opened) == 1  # control: the walk did open the volume for reading
+    assert opened[0] in fake.closed

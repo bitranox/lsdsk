@@ -179,3 +179,31 @@ def test_a_bitmap_header_is_the_starting_cluster_and_the_bit_count() -> None:
 def test_a_negative_header_field_is_refused() -> None:
     with pytest.raises(ValueError, match="negative"):
         parse_bitmap_header((-1).to_bytes(8, "little", signed=True) + bytes(8))
+
+
+def _folded(*chunks: tuple[bytes, int]) -> dict[str, int | list[int]]:
+    """Feed each ``(data, nbits)`` chunk to one folder in turn, and summarise the tally."""
+    tally = FreeExtentTally()
+    folder = FreeRunFolder(4096, tally)
+    for data, nbits in chunks:
+        folder.feed(data, nbits)
+    folder.finish()
+    return tally.summary()
+
+
+def test_bits_past_nbits_in_the_last_byte_are_not_clusters() -> None:
+    """0xA0 is clusters 0-4 free, 5 used, 6 free, 7 used; only the first four are the volume's."""
+    summary = _folded((b"\xa0", 4))
+    assert (summary["count"], summary["total"], summary["largest"]) == (1, 4 * 4096, 4 * 4096)
+
+
+def test_a_chunk_of_zero_clusters_folds_nothing() -> None:
+    """A zero-cluster chunk is not one free cluster, alone or between two halves of an open run."""
+    assert (_folded((b"\x00", 0))["count"], _folded((b"\x00", 0))["total"]) == (0, 0)
+    summary = _folded((b"\x00", 8), (b"\x00", 0), (b"\x00", 8))
+    assert (summary["count"], summary["total"]) == (1, 16 * 4096)
+
+
+def test_a_negative_bitmap_size_is_refused() -> None:
+    with pytest.raises(ValueError, match=r"negative \(lcn 0, bits -1\)"):
+        parse_bitmap_header(bytes(8) + (-1).to_bytes(8, "little", signed=True))

@@ -340,3 +340,10 @@ def test_a_volume_that_could_not_be_placed_is_named_by_its_drive_letter_too() ->
     failed = _volume(paths=("D:\\mnt\\d\\", "D:\\"), drive_type=3, error="could not open the volume (error 5)")
     _, unread = build_filesystems(_one_disk({"0": _volume(paths=("C:\\",), disks=(0,)), "1": failed}), BARE_METAL)
     assert [r.reason for r in unread] == ["D:\\: could not open the volume (error 5)"]
+
+
+def test_an_unelevated_capture_with_no_row_claims_no_fragmentation_refusal() -> None:
+    """Fragmentation is a figure of a row: with no row nothing was refused, and the run stays complete."""
+    elsewhere = _volume(paths=("E:\\",), disks=(7,), total_bytes=100, free_bytes=40, available_bytes=30)
+    capture = _capture({"\\\\?\\p0": _disk("PhysicalDrive0")}, volumes={"0": elsewhere}, volume_bitmaps_read=False)
+    assert build_filesystems(capture, BARE_METAL) == ((), ())
