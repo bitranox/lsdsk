@@ -8,6 +8,8 @@ import os
 import struct
 from typing import TYPE_CHECKING
 
+import pytest
+
 from lsdsk.adapters.hw.capture import FreeExtentsEntry
 from lsdsk.adapters.hw.decode.free_extents import MAX_FREE_EXTENTS
 from lsdsk.adapters.hw.linux import freespace
@@ -22,11 +24,20 @@ _LOW_KEY, _HIGH_KEY, _RECORDS = 64, 128, 192
 _ALL_ONES_32, _ALL_ONES_64 = 0xFFFFFFFF, 2**64 - 1
 _SPECIAL, _LAST, _FREE, _METADATA = 0x10, 0x20, 1, 3
 
+
+def _new_encode_dev(major: int, minor: int) -> int:
+    """include/linux/kdev_t.h new_encode_dev, written out here so the module under test is not its own oracle."""
+    return (minor & 0xFF) | (major << 8) | ((minor & ~0xFF) << 12)
+
+
+# What both kernels write into fmr_device for the "8:1" the ROWS below name.
+_DATA = _new_encode_dev(8, 1)
+
 # (flags, owner, physical, length, offset), kept sorted by (physical, owner, offset) as the kernels list them.
 _Record = tuple[int, int, int, int, int]
 
 
-def _one_is_last(batch: list[_Record], index: int, pending: list[_Record]) -> bool:
+def _one_is_last(batch: list[tuple[int, _Record]], index: int, pending: list[tuple[int, _Record]]) -> bool:
     return index == len(batch) - 1 and len(batch) == len(pending)
 
 
@@ -46,9 +57,20 @@ class FakeFsmap:
       kernels only require low < high. A non-zero reserved byte is the kernels' own EINVAL.
     """
 
-    def __init__(self, records: list[_Record], *, fail: int | None = None) -> None:
-        """Hold the records to answer from and the errno to fail with, if any."""
-        self.records = records
+    def __init__(
+        self,
+        records: list[_Record],
+        *,
+        fail: int | None = None,
+        device: int = _DATA,
+        later: tuple[tuple[int, list[_Record]], ...] = (),
+    ) -> None:
+        """Hold the records of ``device`` and of every ``later`` (higher-numbered) device, and the errno to fail with.
+
+        Each device is listed whole after the one before it, as both kernels walk their sorted device handlers
+        (xfs_fsmap.c ``xfs_getfsmap``: a handler whose device is past the low key's starts from the beginning).
+        """
+        self.devices = ((device, records), *later)
         self.fail = fail
         self.calls = 0
 
@@ -59,13 +81,21 @@ class FakeFsmap:
         if high != ones or any(reserved):
             raise OSError(errno.EINVAL, os.strerror(errno.EINVAL))
 
-    def _pending(self, head: bytearray) -> list[_Record]:
-        _, flags, physical, owner, offset, length = _RECORD.unpack_from(head, _LOW_KEY)
-        if length == 0:
-            return list(self.records)
+    def _pending_on(self, records: list[_Record], low: tuple[int, ...]) -> list[_Record]:
+        _, flags, physical, owner, offset, length = low
         if flags & _SPECIAL:
-            return [one for one in self.records if one[2] >= physical + length]
-        return [one for one in self.records if (one[2], one[1], one[4]) >= (physical, owner, offset + length)]
+            return [one for one in records if one[2] >= physical + length]
+        return [one for one in records if (one[2], one[1], one[4]) >= (physical, owner, offset + length)]
+
+    def _pending(self, head: bytearray) -> list[tuple[int, _Record]]:
+        low = _RECORD.unpack_from(head, _LOW_KEY)
+        pending: list[tuple[int, _Record]] = []
+        for device, records in self.devices:
+            if low[5] == 0 or device > low[0]:
+                pending.extend((device, one) for one in records)
+            elif device == low[0]:
+                pending.extend((device, one) for one in self._pending_on(records, low))
+        return pending
 
     def __call__(self, _fd: int, request: int, head: bytearray) -> int:
         assert request == freespace.FS_IOC_GETFSMAP
@@ -76,9 +106,10 @@ class FakeFsmap:
         count = _HEAD.unpack_from(head, 0)[2]
         pending = self._pending(head)
         batch = pending[:count]
-        for index, (flags, owner, physical, length, offset) in enumerate(batch):
+        for index, (device, (flags, owner, physical, length, offset)) in enumerate(batch):
             last = _LAST if _one_is_last(batch, index, pending) else 0
-            _RECORD.pack_into(head, _RECORDS + index * _RECORD.size, 0, flags | last, physical, owner, offset, length)
+            place = _RECORDS + index * _RECORD.size
+            _RECORD.pack_into(head, place, device, flags | last, physical, owner, offset, length)
         struct.pack_into("<I", head, 12, len(batch))
         return 0
 
@@ -216,3 +247,58 @@ def test_the_real_ioctl_number_is_the_uapi_one() -> None:
     # _IOWR('X', 59, struct fsmap_head): dir 3, size 192, type 0x58, nr 59.
     assert (3 << 30) | (192 << 16) | (ord("X") << 8) | 59 == freespace.FS_IOC_GETFSMAP
     assert _HEAD.size + 2 * _RECORD.size == 192
+
+
+def test_a_realtime_device_s_free_extents_are_not_folded_into_the_data_device(tmp_path: Path) -> None:
+    # An xfs with a realtime section lists the rt device's free extents after the data device's, under the
+    # rt device's own fmr_device (xfs_fsmap.c handlers[2], xfs_getfsmap_rtdev_rtbitmap).
+    realtime = _new_encode_dev(8, 17)
+    fake = FakeFsmap(
+        [_metadata(0, 4096), _free(4096, 4096)],
+        later=((realtime, [_metadata(0, 4096), _free(1 << 20, 1 << 30)]),),
+    )
+    rows = [{"dev": "8:1", "mountpoint": "/data", "fstype": "xfs"}]
+    reading = freespace.read_free_extents(rows, ioctl=fake, opener=_opener(tmp_path))
+    entry = FreeExtentsEntry.model_validate(reading["8:1"])
+    assert (entry.count, entry.total, entry.largest) == (1, 4096, 4096)
+
+
+def test_a_space_map_that_names_none_of_the_filesystem_s_device_is_refused(tmp_path: Path) -> None:
+    # Every record under another device number: counting them would describe some other device, and counting
+    # none would report a filesystem with no free space; neither is a reading of this one.
+    fake = FakeFsmap([_metadata(0, 4096), _free(4096, 4096)], device=_new_encode_dev(8, 2))
+    reading = freespace.read_free_extents(ROWS, ioctl=fake, opener=_opener(tmp_path))
+    assert reading == {"8:1": {"error": "the space map listed 2 records and none on this filesystem's device 8:1"}}
+
+
+def test_an_empty_space_map_is_an_empty_reading_not_a_device_mismatch(tmp_path: Path) -> None:
+    reading = freespace.read_free_extents(ROWS, ioctl=FakeFsmap([]), opener=_opener(tmp_path))
+    assert reading["8:1"]["count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("dev", "encoded"),
+    [
+        ("8:1", 0x801),
+        ("253:0", 0xFD00),
+        ("259:300", (300 & 0xFF) | (259 << 8) | ((300 & ~0xFF) << 12)),
+        ("4095:1048575", 0xFF | (4095 << 8) | ((1048575 & ~0xFF) << 12)),
+    ],
+)
+def test_a_device_number_is_encoded_as_the_kernel_s_new_encode_dev(dev: str, encoded: int) -> None:
+    major, minor = (int(part) for part in dev.split(":"))
+    assert freespace.encode_device(dev) == encoded == _new_encode_dev(major, minor)
+    assert encoded <= _ALL_ONES_32  # fmr_device is a u32
+
+
+@pytest.mark.parametrize("dev", ["8", "8:", ":1", "x:1", "8:1:2", "-8:1", "٨:1", "4096:0", "8:1048576"])
+def test_a_device_number_that_is_not_major_minor_has_no_encoding(dev: str) -> None:
+    assert freespace.encode_device(dev) is None
+
+
+def test_a_row_whose_device_number_cannot_be_encoded_is_refused_unwalked(tmp_path: Path) -> None:
+    fake = FakeFsmap([_free(0, 4096)])
+    rows = [{"dev": "8:x", "mountpoint": "/data", "fstype": "ext4"}]
+    reading = freespace.read_free_extents(rows, ioctl=fake, opener=_opener(tmp_path))
+    assert reading == {"8:x": {"error": "the device number 8:x is not major:minor"}}
+    assert fake.calls == 0

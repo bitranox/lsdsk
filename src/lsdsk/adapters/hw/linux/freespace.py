@@ -13,6 +13,10 @@ One mountpoint per filesystem is asked, chosen by the rules ``read_space``
 uses: a hidden mountpoint never (the open would reach the filesystem covering
 it), and the next mountpoint only after a refusal.
 
+Every device the filesystem spans is listed - an xfs realtime section and an
+external log come after the data device - so only the records naming the
+mounted device itself are counted.
+
 System Role:
     Adapter layer, Linux reading half. Impure: opens mountpoints and issues ioctls.
 """
@@ -47,6 +51,9 @@ _ALL_ONES_64: Final = 2**64 - 1
 _SPECIAL_OWNER: Final = 0x10  # FMR_OF_SPECIAL_OWNER
 _LAST: Final = 0x20  # FMR_OF_LAST
 _OWN_FREE: Final = 1  # FMR_OWNER(0, 1)
+_MAJOR_LIMIT: Final = 1 << 12  # dev_t holds 12 bits of major and MINORBITS (20) of minor: include/linux/kdev_t.h
+_MINOR_LIMIT: Final = 1 << 20
+_LOW_MINOR: Final = 0xFF
 _HIDDEN_REASON: Final = (
     "another mount hides every mountpoint of it, so the free-space map there would read a different filesystem"
 )
@@ -60,6 +67,35 @@ def _open_directory(mountpoint: str) -> int:
     )
 
 
+def encode_device(dev: str) -> int | None:
+    """The ``fmr_device`` number GETFSMAP gives the device a mountinfo ``maj:min`` names.
+
+    Both kernels name the mounted device by ``new_encode_dev`` of its ``dev_t``
+    and say so with FMH_OF_DEV_T (fs/xfs/xfs_fsmap.c ``handlers[0].dev``,
+    fs/ext4/fsmap.c ``handlers[0].gfd_dev``), and include/linux/kdev_t.h writes
+    that as ``(minor & 0xff) | (major << 8) | ((minor & ~0xff) << 12)``.
+    mountinfo prints the same ``dev_t``'s major and minor.
+
+    Args:
+        dev: A ``maj:min`` as mountinfo prints it.
+
+    Returns:
+        The encoded number, or ``None`` when ``dev`` is not two ASCII numbers
+        that fit a ``dev_t``.
+
+    Example:
+        >>> hex(encode_device("259:300"))
+        '0x11032c'
+    """
+    major_text, colon, minor_text = dev.partition(":")
+    if not colon or not all(part.isascii() and part.isdigit() for part in (major_text, minor_text)):
+        return None
+    major, minor = int(major_text), int(minor_text)
+    if major >= _MAJOR_LIMIT or minor >= _MINOR_LIMIT:
+        return None
+    return (minor & _LOW_MINOR) | (major << 8) | ((minor & ~_LOW_MINOR) << 12)
+
+
 def _new_head() -> bytearray:
     head = bytearray(_RECORDS + _RECORDS_PER_CALL * _RECORD.size)
     _HEAD.pack_into(head, 0, 0, 0, _RECORDS_PER_CALL, 0)
@@ -67,14 +103,24 @@ def _new_head() -> bytearray:
     return head
 
 
-def _fold_batch(head: bytearray, entries: int, tally: FreeExtentTally) -> int:
-    """Fold one call's free records into ``tally``; return the last record's flags."""
-    flags = 0
+class _Batch(NamedTuple):
+    """What one call's records said: the last record's flags, and how many named the mounted device."""
+
+    last_flags: int
+    on_device: int
+
+
+def _fold_batch(head: bytearray, entries: int, tally: FreeExtentTally, device: int) -> _Batch:
+    """Fold one call's free records on ``device`` into ``tally``."""
+    flags, on_device = 0, 0
     for index in range(entries):
-        _, flags, _, owner, _, length = _RECORD.unpack_from(head, _RECORDS + index * _RECORD.size)
+        record_device, flags, _, owner, _, length = _RECORD.unpack_from(head, _RECORDS + index * _RECORD.size)
+        if record_device != device:
+            continue
+        on_device += 1
         if flags & _SPECIAL_OWNER and owner == _OWN_FREE:
             tally.add(length)
-    return flags
+    return _Batch(flags, on_device)
 
 
 def _check_batch(entries: int, seen: int, max_records: int) -> None:
@@ -94,8 +140,18 @@ def _last_position(head: bytearray, entries: int) -> tuple[bytes, tuple[int, int
     return last, (device, physical)
 
 
-def _walk(fd: int, ioctl: Ioctl, tally: FreeExtentTally, max_records: int) -> None:
-    """Every free record of the filesystem behind ``fd``, folded into ``tally``.
+class _Counts(NamedTuple):
+    """How many records a walk read on every device, and how many of them named the mounted one."""
+
+    records: int
+    on_device: int
+
+
+def _walk(fd: int, ioctl: Ioctl, tally: FreeExtentTally, *, device: int, max_records: int) -> _Counts:
+    """Every free record on ``device`` of the filesystem behind ``fd``, folded into ``tally``.
+
+    Returns:
+        How many records were read, and how many of them named ``device``.
 
     Raises:
         OSError: The kernel refused the call.
@@ -105,16 +161,18 @@ def _walk(fd: int, ioctl: Ioctl, tally: FreeExtentTally, max_records: int) -> No
     """
     head = _new_head()
     previous: tuple[bytes, tuple[int, int]] | None = None
-    seen = 0
+    seen = on_device = 0
     while True:
         ioctl(fd, FS_IOC_GETFSMAP, head)
         entries = _HEAD.unpack_from(head, 0)[3]
         if entries == 0:
-            return
+            break
         seen += entries
         _check_batch(entries, seen, max_records)
-        if _fold_batch(head, entries, tally) & _LAST:
-            return
+        batch = _fold_batch(head, entries, tally, device)
+        on_device += batch.on_device
+        if batch.last_flags & _LAST:
+            break
         last, position = _last_position(head, entries)
         # XFS lists a block shared by several owners as several records at one physical address and continues
         # inside that run by owner and offset, so two batches may end at one place; only going backwards, or
@@ -124,27 +182,7 @@ def _walk(fd: int, ioctl: Ioctl, tally: FreeExtentTally, max_records: int) -> No
             raise ValueError(message)
         previous = (last, position)
         head[_LOW_KEY : _LOW_KEY + _RECORD.size] = last
-
-
-def _reason(error: Exception) -> str:
-    text = (error.strerror if isinstance(error, OSError) else None) or str(error)
-    return text[:MAX_DEVICE_TEXT]
-
-
-def _ask(mountpoint: str, ioctl: Ioctl, opener: Callable[[str], int], *, cap: int, max_records: int) -> dict[str, Any]:
-    """One mountpoint's free-extent summary, or ``{"error": <reason>}``."""
-    try:
-        fd = opener(mountpoint)
-    except OSError as error:
-        return {"error": _reason(error)}
-    try:
-        tally = FreeExtentTally(cap)
-        _walk(fd, ioctl, tally, max_records)
-    except (OSError, ValueError) as error:  # FreeExtentCapError is a ValueError
-        return {"error": _reason(error)}
-    finally:
-        os.close(fd)
-    return dict(tally.summary())
+    return _Counts(seen, on_device)
 
 
 class _Target(NamedTuple):
@@ -152,6 +190,34 @@ class _Target(NamedTuple):
 
     dev: str
     mountpoint: str
+
+
+def _reason(error: Exception) -> str:
+    text = (error.strerror if isinstance(error, OSError) else None) or str(error)
+    return text[:MAX_DEVICE_TEXT]
+
+
+def _ask(target: _Target, ioctl: Ioctl, opener: Callable[[str], int], *, cap: int, max_records: int) -> dict[str, Any]:
+    """One mountpoint's free-extent summary, or ``{"error": <reason>}``."""
+    device = encode_device(target.dev)
+    if device is None:
+        return {"error": f"the device number {target.dev} is not major:minor"[:MAX_DEVICE_TEXT]}
+    try:
+        fd = opener(target.mountpoint)
+    except OSError as error:
+        return {"error": _reason(error)}
+    try:
+        tally = FreeExtentTally(cap)
+        counts = _walk(fd, ioctl, tally, device=device, max_records=max_records)
+    except (OSError, ValueError) as error:  # FreeExtentCapError is a ValueError
+        return {"error": _reason(error)}
+    finally:
+        os.close(fd)
+    if counts.records and not counts.on_device:
+        # A wrong idea of the device number would otherwise read as a filesystem with no free space at all.
+        message = f"the space map listed {counts.records} records and none on this filesystem's device {target.dev}"
+        return {"error": message[:MAX_DEVICE_TEXT]}
+    return dict(tally.summary())
 
 
 def _wanted(row: Mapping[str, str | bool], readings: Mapping[str, Any]) -> _Target | None:
@@ -197,7 +263,7 @@ def read_free_extents(
         if row.get("hidden") is True:
             hidden_only.append(dev)
             continue
-        reading = _ask(wanted.mountpoint, call, open_one, cap=cap, max_records=max_records)
+        reading = _ask(wanted, call, open_one, cap=cap, max_records=max_records)
         if "error" in reading and dev in readings:
             continue
         readings[dev] = reading
@@ -206,4 +272,4 @@ def read_free_extents(
     return readings
 
 
-__all__ = ["FS_IOC_GETFSMAP", "MAX_FSMAP_RECORDS", "read_free_extents"]
+__all__ = ["FS_IOC_GETFSMAP", "MAX_FSMAP_RECORDS", "encode_device", "read_free_extents"]
