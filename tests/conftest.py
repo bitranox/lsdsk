@@ -130,7 +130,7 @@ def this_machine_cannot_reach_into_the_suite(
     # redirected at all, so a runner carrying a per-user lsdsk config read it.
     # Measured with a plausible one: 11 failed across 8 files.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(state / "config"))
-    monkeypatch.setenv("APPDATA", str(state / "roaming"))
+    _point_appdata_at(state / "roaming", monkeypatch)
     # And the colour answer, which is an INPUT to a third of these tests rather
     # than a preference. Rich and click honour FORCE_COLOR even off a terminal,
     # so `CliRunner(color=False)` does not stop ANSI reaching the captured
@@ -281,6 +281,23 @@ def seed_user_config(
     return _seed
 
 
+def _point_appdata_at(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    r"""Point ``%APPDATA%`` at ``root`` and create it, as every real Windows profile has it.
+
+    lib_layered_config deploys a user file under ``%LOCALAPPDATA%`` instead when the
+    ``%APPDATA%`` directory does not exist. Pointed at a directory nobody made, a
+    Windows deploy therefore wrote somewhere other than where the test looked: the
+    accepted-mode control failed on finding no file, and every "the refused deploy
+    wrote nothing" assertion passed whatever the deploy did.
+
+    Args:
+        root: The directory that stands in for ``%APPDATA%``.
+        monkeypatch: Used to set the variable for this test only.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("APPDATA", str(root))
+
+
 def _user_config_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     r"""The directory THIS platform's loader reads a user-level config from.
 
@@ -311,7 +328,7 @@ def _user_config_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         return support / __init__conf__.LAYEREDCONF_VENDOR / __init__conf__.LAYEREDCONF_APP
     if sys.platform == "win32":
         root = tmp_path / "appdata"
-        monkeypatch.setenv("APPDATA", str(root))
+        _point_appdata_at(root, monkeypatch)
         return root / __init__conf__.LAYEREDCONF_VENDOR / __init__conf__.LAYEREDCONF_APP
     root = tmp_path / "xdg"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(root))

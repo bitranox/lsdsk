@@ -65,6 +65,10 @@ def _deploy(arguments: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[i
     return exit_code, " ".join(capsys.readouterr().err.split())
 
 
+#: The refusals below are POSIX behaviour: Windows applies no mode, so the deploy never
+#: reads the configured ones there and has nothing to refuse. What Windows does instead
+#: is pinned by ``test_a_configured_mode_is_not_judged_where_no_mode_is_applied``.
+@pytest.mark.os_posix
 @pytest.mark.parametrize(
     "refused",
     [
@@ -102,6 +106,7 @@ def test_a_mode_the_deploy_refuses_is_refused_once_and_never_announced_as_a_fall
     assert not (user_config_dir / "config.toml").exists(), "a refused deploy wrote the file"
 
 
+@pytest.mark.os_posix
 def test_the_refusal_names_the_options_this_command_has(
     user_config_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -125,6 +130,26 @@ def test_a_mode_the_deploy_accepts_deploys_without_a_word_about_it(
 ) -> None:
     """The liveness control for the refusals above: an accepted value runs to exit 0 and writes the file."""
     monkeypatch.setenv(USER_FILE_VARIABLE, "0o640")
+
+    exit_code, said = _deploy(["config-deploy", "--target", "user"], capsys)
+
+    assert exit_code == 0, said
+    assert USER_FILE_KEY not in said, said
+    assert (user_config_dir / "config.toml").is_file()
+
+
+@pytest.mark.os_windows
+def test_a_configured_mode_is_not_judged_where_no_mode_is_applied(
+    user_config_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Windows uses ACLs, so a configured mode the POSIX deploy refuses neither stops nor reaches it.
+
+    The same file may configure a Linux machine, where the value is judged; refusing
+    it here would fail a deploy over a setting this platform never applies.
+    """
+    monkeypatch.setenv(USER_FILE_VARIABLE, "0o777")
 
     exit_code, said = _deploy(["config-deploy", "--target", "user"], capsys)
 
