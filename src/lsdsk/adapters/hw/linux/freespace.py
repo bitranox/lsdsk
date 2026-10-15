@@ -13,9 +13,12 @@ One mountpoint per filesystem is asked, chosen by the rules ``read_space``
 uses: a hidden mountpoint never (the open would reach the filesystem covering
 it), and the next mountpoint only after a refusal.
 
-Every device the filesystem spans is listed - an xfs realtime section and an
-external log come after the data device - so only the records naming the
-mounted device itself are counted.
+Every device the filesystem spans is listed - an xfs realtime device or an
+external log beside the data device, in device-number order - so only the
+records naming the mounted device itself are counted. Where the kernel says
+its device fields are not device numbers (FMH_OF_DEV_T clear: an xfs whose
+realtime section lives inside the data device names its sections 1, 2 and 3),
+every section is on the mounted device and every record is counted.
 
 System Role:
     Adapter layer, Linux reading half. Impure: opens mountpoints and issues ioctls.
@@ -52,6 +55,7 @@ _ALL_ONES_64: Final = 2**64 - 1
 _SPECIAL_OWNER: Final = 0x10  # FMR_OF_SPECIAL_OWNER
 _LAST: Final = 0x20  # FMR_OF_LAST
 _OWN_FREE: Final = 1  # FMR_OWNER(0, 1)
+_OF_DEV_T: Final = 0x1  # FMH_OF_DEV_T: every fmr_device is a dev_t
 _MAJOR_LIMIT: Final = 1 << 12  # dev_t holds 12 bits of major and MINORBITS (20) of minor: include/linux/kdev_t.h
 _MINOR_LIMIT: Final = 1 << 20
 _LOW_MINOR: Final = 0xFF
@@ -111,12 +115,12 @@ class _Batch(NamedTuple):
     on_device: int
 
 
-def _fold_batch(head: bytearray, entries: int, tally: FreeExtentTally, device: int) -> _Batch:
-    """Fold one call's free records on ``device`` into ``tally``."""
+def _fold_batch(head: bytearray, entries: int, tally: FreeExtentTally, device: int | None) -> _Batch:
+    """Fold one call's free records on ``device`` into ``tally``; every record when ``device`` is ``None``."""
     flags, on_device = 0, 0
     for index in range(entries):
         record_device, flags, _, owner, _, length = _RECORD.unpack_from(head, _RECORDS + index * _RECORD.size)
-        if record_device != device:
+        if device is not None and record_device != device:
             continue
         on_device += 1
         if flags & _SPECIAL_OWNER and owner == _OWN_FREE:
@@ -151,6 +155,9 @@ class _Counts(NamedTuple):
 def _walk(fd: int, ioctl: Ioctl, tally: FreeExtentTally, *, device: int, max_records: int) -> _Counts:
     """Every free record on ``device`` of the filesystem behind ``fd``, folded into ``tally``.
 
+    Where the kernel clears FMH_OF_DEV_T its device fields are section cookies,
+    every one of them on the mounted device, so every record is counted.
+
     Returns:
         How many records were read, and how many of them named ``device``.
 
@@ -165,12 +172,13 @@ def _walk(fd: int, ioctl: Ioctl, tally: FreeExtentTally, *, device: int, max_rec
     seen = on_device = 0
     while True:
         ioctl(fd, FS_IOC_GETFSMAP, head)
-        entries = _HEAD.unpack_from(head, 0)[3]
+        _, out_flags, _, entries = _HEAD.unpack_from(head, 0)
         if entries == 0:
             break
         seen += entries
         _check_batch(entries, seen, max_records)
-        batch = _fold_batch(head, entries, tally, device)
+        # Section cookies rather than device numbers all stand for the mounted device (xfs_getfsmap_device).
+        batch = _fold_batch(head, entries, tally, device if out_flags & _OF_DEV_T else None)
         on_device += batch.on_device
         if batch.last_flags & _LAST:
             break

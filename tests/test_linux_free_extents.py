@@ -26,6 +26,7 @@ _RECORD = struct.Struct("<IIQQQQ24x")
 _LOW_KEY, _HIGH_KEY, _RECORDS = 64, 128, 192
 _ALL_ONES_32, _ALL_ONES_64 = 0xFFFFFFFF, 2**64 - 1
 _SPECIAL, _LAST, _FREE, _METADATA = 0x10, 0x20, 1, 3
+_OF_DEV_T = 0x1  # FMH_OF_DEV_T, include/uapi/linux/fsmap.h
 
 
 def _new_encode_dev(major: int, minor: int) -> int:
@@ -67,14 +68,19 @@ class FakeFsmap:
         fail: int | None = None,
         device: int = _DATA,
         later: tuple[tuple[int, list[_Record]], ...] = (),
+        dev_t: bool = True,
     ) -> None:
         """Hold the records of ``device`` and of every ``later`` (higher-numbered) device, and the errno to fail with.
 
         Each device is listed whole after the one before it, as both kernels walk their sorted device handlers
         (xfs_fsmap.c ``xfs_getfsmap``: a handler whose device is past the low key's starts from the beginning).
+        ``dev_t`` is whether the answer sets FMH_OF_DEV_T, as ext4 always does and xfs does unless its realtime
+        section lives inside the data device (xfs_fsmap.c: ``if (!mp->m_sb.sb_rtstart) head->fmh_oflags =
+        FMH_OF_DEV_T``), when ``fmr_device`` is a section cookie (XFS_DEV_DATA 1, XFS_DEV_LOG 2, XFS_DEV_RT 3).
         """
         self.devices = ((device, records), *later)
         self.fail = fail
+        self.dev_t = dev_t
         self.calls = 0
 
     def _validate(self, head: bytearray) -> None:
@@ -114,6 +120,7 @@ class FakeFsmap:
             place = _RECORDS + index * _RECORD.size
             _RECORD.pack_into(head, place, device, flags | last, physical, owner, offset, length)
         struct.pack_into("<I", head, 12, len(batch))
+        struct.pack_into("<I", head, 4, _OF_DEV_T if self.dev_t else 0)
         return 0
 
 
@@ -506,3 +513,28 @@ def test_a_refusal_reason_is_cut_to_the_capture_text_cap(tmp_path: Path) -> None
     reading = freespace.read_free_extents(ROWS, ioctl=FakeFsmap([]), opener=opener)
     assert reading == {"8:1": {"error": "x" * MAX_DEVICE_TEXT}}
     FreeExtentsEntry.model_validate(reading["8:1"])
+
+
+def test_section_cookies_in_place_of_device_numbers_are_all_the_mounted_device_s(tmp_path: Path) -> None:
+    # An xfs whose realtime section lives inside its data device (zoned, mkfs -r rtstart) answers with section
+    # cookies and clears FMH_OF_DEV_T: the data section is 1 and the realtime section 3, both on the mounted device.
+    fake = FakeFsmap(
+        [_metadata(0, 4096), _free(4096, 4096)],
+        device=1,
+        later=((3, [_free(1 << 20, 1 << 30)]),),
+        dev_t=False,
+    )
+    rows = [{"dev": "8:1", "mountpoint": "/zoned", "fstype": "xfs"}]
+    reading = freespace.read_free_extents(rows, ioctl=fake, opener=_opener(tmp_path))
+    assert "error" not in reading["8:1"], reading["8:1"]
+    entry = FreeExtentsEntry.model_validate(reading["8:1"])
+    assert (entry.count, entry.total, entry.largest) == (2, 4096 + (1 << 30), 1 << 30)
+
+
+def test_device_numbers_flagged_as_such_are_still_filtered_to_the_mounted_device(tmp_path: Path) -> None:
+    # Control for the cookie test: the same records with FMH_OF_DEV_T set are device numbers, and 1 and 3 are not
+    # the mounted 8:1, so they are refused rather than counted.
+    fake = FakeFsmap([_free(4096, 4096)], device=1, later=((3, [_free(1 << 20, 1 << 30)]),))
+    rows = [{"dev": "8:1", "mountpoint": "/data", "fstype": "xfs"}]
+    reading = freespace.read_free_extents(rows, ioctl=fake, opener=_opener(tmp_path))
+    assert reading == {"8:1": {"error": "the space map listed 2 records and none on this filesystem's device 8:1"}}
