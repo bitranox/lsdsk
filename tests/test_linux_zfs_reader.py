@@ -396,3 +396,38 @@ def test_a_malformed_pool_reply_is_that_pool_s_refusal_and_the_others_are_read(
         }
     )
     assert zfs.read_pools(_device(tmp_path), ioctl=fake) == ({"good": {"size": 4, "alloc": 1}}, f"pool bad: {reason}")
+
+
+def test_a_bound_the_decoder_missed_costs_one_pool_its_reading_not_the_run(tmp_path: Path) -> None:
+    # The decoder checks every length before following it, so these stand for a check it lacks: an index past a
+    # short tuple, a struct format built from a bad count. Either one ends that pool's reading, never the run's.
+    class Slipping(FakeDevice):
+        def __call__(self, fd: int, request: int, command: bytearray) -> int:
+            name = bytes(command[:16]).split(b"\0", 1)[0]
+            if name == b"short":
+                raise IndexError("tuple index out of range")
+            if name == b"badcount":
+                raise struct.error("bad char in struct format")
+            return super().__call__(fd, request, command)
+
+    fake = Slipping(
+        {
+            (zfs.ZFS_IOC_POOL_CONFIGS, ""): pool_names(["badcount", "good", "short"]),
+            (zfs.ZFS_IOC_POOL_STATS, "good"): pool_config(alloc=1, space=4),
+        }
+    )
+    assert zfs.read_pools(_device(tmp_path), ioctl=fake) == (
+        {"good": {"size": 4, "alloc": 1}},
+        "pool badcount: bad char in struct format; pool short: tuple index out of range",
+    )
+
+
+def test_a_listing_the_decoder_could_not_bound_is_the_listing_s_refusal(tmp_path: Path) -> None:
+    class Slipping(FakeDevice):
+        def __call__(self, fd: int, request: int, command: bytearray) -> int:
+            raise struct.error("unpack_from requires a buffer of at least 8 bytes")
+
+    assert zfs.read_pool_fragmentation(_device(tmp_path), ioctl=Slipping({})) == (
+        None,
+        "listing the pools failed: unpack_from requires a buffer of at least 8 bytes",
+    )

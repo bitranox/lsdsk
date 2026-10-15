@@ -41,6 +41,11 @@ _CUT_MARK = " ... (more pools failed)"
 #: fcntl.ioctl's mutate_flag: the kernel's answer is written back into the command buffer.
 _WRITE_BACK = True
 
+#: What asking about the pools can raise. The decoder checks every length before following it, so OSError and
+#: ValueError are the expected two; an IndexError or a struct.error stands for a check it lacks, and must cost
+#: that one reading rather than end the run with every other reading in it.
+_READ_FAILURES = (OSError, ValueError, IndexError, struct.error)
+
 _T = TypeVar("_T")
 
 Ioctl = Callable[[int, int, bytearray], int]
@@ -153,14 +158,14 @@ def _each_pool(
     try:
         try:
             names = _pool_names(fd, call)
-        except (OSError, ValueError) as error:
+        except _READ_FAILURES as error:
             return None, f"listing the pools failed: {error}"
         readings: dict[str, _T] = {}
         problems: list[str] = []
         for name in names:
             try:
                 readings[name] = read_one(fd, name, call)
-            except (OSError, ValueError) as error:
+            except _READ_FAILURES as error:
                 problems.append(f"pool {name}: {error}")
         return readings, _bounded("; ".join(problems)) or None
     finally:
