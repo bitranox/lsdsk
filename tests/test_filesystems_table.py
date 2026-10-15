@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -369,3 +370,14 @@ def test_a_name_in_wide_characters_is_cut_by_cells_and_keeps_its_count() -> None
         assert all(cell_len(line) <= width for line in rendered.splitlines()), f"wider than {width}:\n{rendered}"
         row = rendered.splitlines()[2]
         assert " +1 " in row, f"the +1 was lost at width {width}: {row!r}"
+
+
+def test_the_drop_order_comment_names_every_droppable_column_in_the_order_they_drop() -> None:
+    """The comment above FILESYSTEM_COLUMNS is the approved order; it once left `free` out."""
+    source = Path(tables.__file__).read_text(encoding="utf-8")
+    block = source[: source.index("FILESYSTEM_COLUMNS: tuple[Column, ...] = (")].rsplit("\n\n", 1)[1]
+    prose = " ".join(line.lstrip("# ").strip() for line in block.splitlines())
+    stated = re.search(r"The approved drop order as the terminal narrows: (.+?)\.", prose)
+    assert stated, prose
+    droppable = sorted((column for column in FILESYSTEM_COLUMNS if column.priority > 0), key=lambda c: -c.priority)
+    assert stated.group(1).split(", then ") == [column.title for column in droppable]

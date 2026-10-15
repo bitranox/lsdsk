@@ -122,8 +122,8 @@ HEALTH_COLUMNS: tuple[Column, ...] = (
 
 
 # The approved drop order as the terminal narrows: frag, then inodes%, then
-# type, then size, then used. `filesystem`, `use%` and `disks` never drop - how full, and
-# where - because a row without them answers nothing. Nor is `filesystem` or `disks`
+# type, then size, then used, then free. `filesystem`, `use%` and `disks` never drop -
+# how full, and where - because a row without them answers nothing. Nor is `filesystem` or `disks`
 # CUT while any droppable column still stands (`shrinks_last`): a cut list hides a
 # disk, and two names sharing a long prefix, cut, read as one filesystem.
 FILESYSTEM_COLUMNS: tuple[Column, ...] = (
