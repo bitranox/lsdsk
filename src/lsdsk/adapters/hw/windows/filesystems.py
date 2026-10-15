@@ -1,7 +1,7 @@
 """Turn a Windows reading into the volumes that live on its disks.
 
-Pure: a capture in, one ``Filesystem`` per volume that has a path and sits on
-an inventoried disk.
+Pure: a capture in, one ``Filesystem`` per volume that :func:`.usage.can_be_a_row`
+admits: a path, an inventoried disk, and not an optical drive or a RAM disk.
 
 System Role:
     Adapter layer, translation half of the Windows mapping path.
@@ -16,7 +16,7 @@ from ....domain.enums import Environment, FilesystemKind
 from ....domain.models import Filesystem, RefusedReading
 from ..free_space import free_space_of
 from ..refusals import refusals_of
-from .usage import blocks_not_mounted, disk_numbers, named_first
+from .usage import blocks_not_mounted, can_be_a_row, disk_numbers, named_first
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -134,7 +134,7 @@ def _unplaced_volumes(volumes: Iterable[VolumeEntry]) -> tuple[RefusedReading, .
 def build_filesystems(
     capture: WindowsCapture, environment: Environment
 ) -> tuple[tuple[Filesystem, ...] | None, tuple[RefusedReading, ...]]:
-    """Every volume with a path that lives on one of the capture's disks.
+    """Every volume that can be a row: a path, one of the capture's disks, and a drive type a disk sits behind.
 
     Args:
         capture: A Windows reading, live or replayed.
@@ -153,8 +153,11 @@ def build_filesystems(
     if not _space_was_read(capture.volumes.values()):
         return None, ()
     numbered = disk_numbers(frozenset(entry.node for entry in capture.disks.values() if entry.node))
-    placed = [(entry, _nodes_of(entry, numbered)) for entry in capture.volumes.values() if entry.paths]
-    rows = [_volume_row(entry, nodes) for entry, nodes in placed if nodes]
+    rows = [
+        _volume_row(entry, _nodes_of(entry, numbered))
+        for entry in capture.volumes.values()
+        if can_be_a_row(entry, numbered)
+    ]
     ordered = tuple(sorted(rows, key=lambda row: disk_name_order(row.disks[0])))
     unplaced = _unplaced_volumes(capture.volumes.values())
     if rows and capture.volume_bitmaps_read is False:

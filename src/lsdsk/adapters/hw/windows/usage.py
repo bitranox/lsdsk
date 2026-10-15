@@ -9,14 +9,14 @@ System Role:
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from ....domain.enums import Environment, UseKind
 from ....domain.models import DiskUsage, DiskUse
 from . import winapi as api
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Container, Sequence
 
     from .capture import VolumeEntry, WindowsCapture
 
@@ -31,6 +31,54 @@ _DRIVE_LETTER_ROOT = re.compile(r"[A-Za-z]:\\", re.ASCII)
 # Drive types no physical disk sits behind, so a failure to place one on a disk
 # says nothing about any disk this tool lists.
 DISKLESS_DRIVE_TYPES = frozenset({api.DRIVE_CDROM, api.DRIVE_RAMDISK})
+
+
+class VolumeFacts(Protocol):
+    """What decides whether a volume can be a filesystem row.
+
+    A captured :class:`~.capture.VolumeEntry` carries these, and so does the
+    reader's reading of a volume in progress, which is how one predicate
+    answers for both.
+    """
+
+    @property
+    def paths(self) -> Sequence[str]:
+        """Every mount path the volume answers to."""
+        ...
+
+    @property
+    def disks(self) -> Sequence[int]:
+        """The disk numbers the volume's extents name."""
+        ...
+
+    @property
+    def drive_type(self) -> int | None:
+        """What ``GetDriveTypeW`` answered for its first path, ``None`` with no path."""
+        ...
+
+
+def can_be_a_row(volume: VolumeFacts, inventoried: Container[int]) -> bool:
+    """Whether a volume becomes a filesystem row: the one rule the reader's walk and the builder share.
+
+    A row needs a path to name it and an inventoried disk its extents reach;
+    an optical drive or a RAM disk sits on no disk this tool lists whatever
+    its extents say. The reader walks exactly these volumes' bitmaps, as
+    Administrator, and the builder makes exactly these rows, so a figure is
+    never read for a row that is then dropped, nor a row drawn whose figure
+    was never asked for.
+
+    Args:
+        volume: What was read of the volume.
+        inventoried: The disk numbers of the disks the inventory lists.
+
+    Returns:
+        Whether the volume is a row.
+    """
+    return (
+        bool(volume.paths)
+        and volume.drive_type not in DISKLESS_DRIVE_TYPES
+        and any(number in inventoried for number in volume.disks)
+    )
 
 
 def named_first(paths: Sequence[str]) -> tuple[str, ...]:
@@ -193,4 +241,12 @@ def resolve_usage(capture: WindowsCapture, environment: Environment) -> dict[str
     return result
 
 
-__all__ = ["DISKLESS_DRIVE_TYPES", "blocks_not_mounted", "disk_numbers", "named_first", "resolve_usage"]
+__all__ = [
+    "DISKLESS_DRIVE_TYPES",
+    "VolumeFacts",
+    "blocks_not_mounted",
+    "can_be_a_row",
+    "disk_numbers",
+    "named_first",
+    "resolve_usage",
+]

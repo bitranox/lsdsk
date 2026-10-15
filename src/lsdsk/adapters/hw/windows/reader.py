@@ -49,9 +49,10 @@ from ..snapshot import SCHEMA_VERSION
 from . import volumes
 from . import winapi as api
 from .capture import UNREADABLE_INTERFACE_LABEL, bus_type_of
+from .usage import disk_numbers
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Mapping, Sequence
+    from collections.abc import Callable, Container, Iterator, Mapping, Sequence
 
 # PCI hardware identifiers look like PCI\VEN_8086&DEV_A182&SUBSYS_...&REV_11.
 _HARDWARE_ID = re.compile(r"PCI\\VEN_([0-9A-F]{4})&DEV_([0-9A-F]{4})", re.IGNORECASE)
@@ -851,8 +852,13 @@ def _disk_length(kernel32: api.WinLibrary, handle: int) -> int | None:
     return response.value if returned else None
 
 
-def _device_number(kernel32: api.WinLibrary, handle: int) -> int | None:
-    """Return the PhysicalDrive number Windows assigned to a disk."""
+def _device_number(kernel32: api.WinLibrary, handle: int) -> tuple[int | None, str | None]:
+    """Return the PhysicalDrive number Windows assigned to a disk, or why it was not read.
+
+    The number is what every volume's extents name a disk by, so a disk
+    without one can carry no volume's row: the refusal is recorded so the
+    scan says it is incomplete rather than leaving that volume out silently.
+    """
     response = api.STORAGE_DEVICE_NUMBER()
     returned = wintypes.DWORD()
     ok = kernel32.DeviceIoControl(
@@ -865,7 +871,9 @@ def _device_number(kernel32: api.WinLibrary, handle: int) -> int | None:
         ctypes.byref(returned),
         None,
     )
-    return response.DeviceNumber if ok else None
+    if not ok:
+        return None, f"Win32 error {api.last_error()}"
+    return response.DeviceNumber, None
 
 
 def _seek_penalty(kernel32: api.WinLibrary, handle: int) -> bool | None:
@@ -921,9 +929,11 @@ def read_disk(kernel32: api.WinLibrary, path: str, ancestors: list[str]) -> dict
         return entry
     entry["passthrough"] = passthrough
     try:
-        number = _device_number(kernel32, handle)
+        number, number_error = _device_number(kernel32, handle)
         if number is not None:
             entry["node"] = f"PhysicalDrive{number}"
+        if number_error is not None:
+            entry["device_number_error"] = number_error
         entry["device"] = _descriptor_strings(query_property(kernel32, handle, api.STORAGE_DEVICE_PROPERTY))
         length = _disk_length(kernel32, handle)
         if length is not None:
@@ -1281,7 +1291,10 @@ def read_environment(*, read_value: Callable[[str, str], str] = api.read_registr
 
 
 def read_volumes_section(
-    kernel32: api.WinLibrary, *, last_error: Callable[[], int] = api.last_error, walk_bitmaps: bool = False
+    kernel32: api.WinLibrary,
+    *,
+    last_error: Callable[[], int] = api.last_error,
+    walk_on: Container[int] | None = None,
 ) -> tuple[dict[str, dict[str, Any]] | None, str | None]:
     r"""Read every volume and the Windows volume, keyed by a per-capture ordinal.
 
@@ -1297,15 +1310,16 @@ def read_volumes_section(
     Args:
         kernel32: The typed facade over the Win32 entry points.
         last_error: Answers ``GetLastError`` for the call that just failed.
-        walk_bitmaps: Also walk each volume's cluster bitmap into free extents,
-            which needs Administrator.
+        walk_on: The inventoried disk numbers, to also walk the cluster
+            bitmap of each volume that can be a row on one of them into free
+            extents, which needs Administrator; ``None`` walks none.
 
     Returns:
         Every volume keyed by its ordinal, and the Windows volume's ordinal
         key (``None`` when it could not be resolved); ``(None, None)`` when the
         volumes could not be enumerated.
     """
-    by_guid = volumes.read_volumes(kernel32, last_error=last_error, walk_bitmaps=walk_bitmaps)
+    by_guid = volumes.read_volumes(kernel32, last_error=last_error, walk_on=walk_on)
     if by_guid is None:
         return None, None
     windows_guid = volumes.read_windows_volume(kernel32)
@@ -1377,7 +1391,10 @@ def read_system() -> dict[str, Any]:
     for path, error in usb_reading.disk_errors.items():
         disks[path]["usb_link_error"] = error
     elevated = is_elevated()
-    volume_entries, windows_volume = read_volumes_section(tree.kernel32, walk_bitmaps=elevated)
+    # Only a volume on a disk this run inventoried can be a row, so only those are walked.
+    nodes = frozenset(str(record["node"]) for record in disks.values() if "node" in record)
+    walk_on = frozenset(disk_numbers(nodes)) if elevated else None
+    volume_entries, windows_volume = read_volumes_section(tree.kernel32, walk_on=walk_on)
 
     return {
         "schema": SCHEMA_VERSION,

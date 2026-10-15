@@ -268,3 +268,43 @@ def test_a_data_offset_at_the_end_of_the_header_is_read() -> None:
 
     assert base64.b64decode(record["smart_log"]) == _full(api.NVME_DATA_TYPE_LOG_PAGE)
     assert not [key for key in record if key.endswith("_error")]
+
+
+class _NumberlessKernel32(FakeNvmeKernel32):
+    """A disk that answers everything but its PhysicalDrive number."""
+
+    def DeviceIoControl(  # noqa: N802 - the Win32 name
+        self,
+        handle: int,
+        code: int,
+        in_buffer: object,
+        in_size: int,
+        out_buffer: object,
+        out_size: int,
+        returned: object,
+        overlapped: object,
+    ) -> int:
+        if code == api.IOCTL_STORAGE_GET_DEVICE_NUMBER:
+            return 0
+        return super().DeviceIoControl(handle, code, in_buffer, in_size, out_buffer, out_size, returned, overlapped)
+
+
+def test_a_refused_device_number_is_recorded_rather_than_leaving_the_disk_unnamed_in_silence() -> None:
+    entry = _read(_NumberlessKernel32(answer=_full))
+    assert "node" not in entry
+    assert entry["device_number_error"].startswith("Win32 error")
+
+
+def test_a_refused_device_number_reaches_the_disk_as_a_refused_reading() -> None:
+    """No volume's extents can name a disk without its number, so the scan says it is incomplete."""
+    entry = _read(_NumberlessKernel32(answer=_full))
+    refused = {reading.reading for reading in _inventory_with(entry).disks[0].readings_refused}
+    assert "device-number" in refused
+
+
+def test_a_disk_that_answered_its_number_refuses_no_device_number() -> None:
+    """The control: the same disk with its number answered is named and refuses nothing about it."""
+    entry = _read(FakeNvmeKernel32(answer=_full))
+    assert (entry["node"], "device_number_error" in entry) == ("PhysicalDrive3", False)
+    refused = {reading.reading for reading in _inventory_with(entry).disks[0].readings_refused}
+    assert "device-number" not in refused

@@ -23,6 +23,7 @@ import pytest
 from lsdsk.adapters.hw.windows import volumes
 from lsdsk.adapters.hw.windows import winapi as api
 from lsdsk.adapters.hw.windows.capture import VolumeEntry, WindowsCapture
+from lsdsk.adapters.hw.windows.filesystems import build_filesystems
 from lsdsk.adapters.hw.windows.reader import read_volumes_section
 from lsdsk.adapters.hw.windows.usage import resolve_usage
 from lsdsk.domain.enums import Environment
@@ -345,6 +346,8 @@ def _usage(fake: FakeVolumeKernel, node: str) -> DiskUsage | None:
 
 
 VOLUME_C = "\\\\?\\Volume{c}\\"
+#: The disk numbers the inventory lists, which an elevated read walks the volumes of.
+INVENTORIED = frozenset({0, 1})
 VOLUME_X = "\\\\?\\Volume{x}\\"
 
 
@@ -621,7 +624,7 @@ def test_a_space_figure_past_what_windows_can_answer_is_refused(field: str) -> N
 
 def test_an_elevated_run_walks_each_volume_bitmap_into_free_extents() -> None:
     fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",), bitmap=[1, 0, 0, 1, 0, 1, 1, 1])})
-    entry = _read(fake, walk_bitmaps=True)[VOLUME_C]
+    entry = _read(fake, walk_on=INVENTORIED)[VOLUME_C]
     assert (entry["free_extents"]["count"], entry["free_extents"]["total"]) == (2, 3 * 4096)
     VolumeEntry.model_validate(entry)
 
@@ -636,15 +639,15 @@ def test_an_unelevated_run_never_opens_a_volume_for_reading() -> None:
 
 def test_a_volume_that_refuses_a_read_open_records_the_error() -> None:
     fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",), bitmap=None)})
-    assert "error 5" in _read(fake, walk_bitmaps=True)[VOLUME_C]["free_extents"]["error"]
+    assert "error 5" in _read(fake, walk_on=INVENTORIED)[VOLUME_C]["free_extents"]["error"]
 
 
 def test_a_bitmap_larger_than_one_call_is_walked_in_chunks() -> None:
     # 24 runs of 3, then a run of 3 + 7 = 10 that is still open when the bitmap ends.
     bits = [1, 0, 0, 0] * 25 + [0] * 7
-    whole = _read(FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",), bitmap=bits)}), walk_bitmaps=True)
+    whole = _read(FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",), bitmap=bits)}), walk_on=INVENTORIED)
     chunked_fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",), bitmap=bits)})
-    chunked = _read(chunked_fake, walk_bitmaps=True, chunk_bytes=1)  # 8 clusters per call
+    chunked = _read(chunked_fake, walk_on=INVENTORIED, chunk_bytes=1)  # 8 clusters per call
     assert chunked_fake.bitmap_calls > 1
     assert chunked[VOLUME_C]["free_extents"] == whole[VOLUME_C]["free_extents"]
     assert (whole[VOLUME_C]["free_extents"]["count"], whole[VOLUME_C]["free_extents"]["largest"]) == (25, 10 * 4096)
@@ -667,7 +670,7 @@ DRIVE_RAMDISK = 6
 def test_an_elevated_run_never_walks_a_volume_that_cannot_be_a_row(volume: FakeVolume) -> None:
     """A volume no inventoried disk can carry is dropped by the builder, so it is never opened for reading."""
     fake = FakeVolumeKernel({VOLUME_X: volume})
-    entry = _read(fake, walk_bitmaps=True)[VOLUME_X]
+    entry = _read(fake, walk_on=INVENTORIED)[VOLUME_X]
     assert "free_extents" not in entry
     assert fake.opened  # control: the volume was opened, just never for reading
     assert all(access != api.GENERIC_READ for _path, access in fake.opened)
@@ -682,7 +685,7 @@ def test_an_elevated_run_never_walks_a_pathless_esp_whose_extents_reach_a_disk()
     size of a first path it does not have.
     """
     fake = FakeVolumeKernel({VOLUME_X: FakeVolume(paths=(), disks=(0,), esp=True, bitmap=[0] * 8)})
-    entry = _read(fake, walk_bitmaps=True)[VOLUME_X]
+    entry = _read(fake, walk_on=INVENTORIED)[VOLUME_X]
     assert (entry["disks"], entry["esp"]) == ([0], True)  # control: the extents and the partition were read
     assert "free_extents" not in entry
     assert all(access != api.GENERIC_READ for _path, access in fake.opened)
@@ -692,7 +695,7 @@ def test_an_elevated_run_never_walks_a_pathless_esp_whose_extents_reach_a_disk()
 def test_an_elevated_run_walks_a_fixed_volume_on_a_disk_after_reading_its_extents() -> None:
     """The control: the same fake, a volume that will be a row, is walked."""
     fake = FakeVolumeKernel({VOLUME_X: FakeVolume(paths=("X:\\",), disks=(0,), bitmap=[0] * 8)})
-    entry = _read(fake, walk_bitmaps=True)[VOLUME_X]
+    entry = _read(fake, walk_on=INVENTORIED)[VOLUME_X]
     assert entry["free_extents"]["count"] == 1
     assert [access for _path, access in fake.opened] == [0, api.GENERIC_READ]
 
@@ -704,7 +707,7 @@ _RUNS_BITMAP = [1, 0, 0, 0] * 25 + [0] * 7
 def _walked(volume: FakeVolume, *, chunk_bytes: int = 3) -> tuple[dict[str, Any], FakeVolumeKernel]:
     """Walk one fixed volume on disk 0 with ``chunk_bytes`` of cluster bits per call."""
     fake = FakeVolumeKernel({VOLUME_C: volume})
-    entry = _read(fake, walk_bitmaps=True, chunk_bytes=chunk_bytes)[VOLUME_C]
+    entry = _read(fake, walk_on=INVENTORIED, chunk_bytes=chunk_bytes)[VOLUME_C]
     return entry, fake
 
 
@@ -837,7 +840,7 @@ _FOLDER_FIRST = ("C:\\mnt\\x\\", "X:\\")
 def test_every_call_that_takes_a_root_is_asked_of_the_drive_letter_whatever_windows_listed_first() -> None:
     """The row is named by the letter, so the figures beside it are read from the letter too."""
     fake = FakeVolumeKernel({VOLUME_X: FakeVolume(paths=_FOLDER_FIRST, disks=(0,), bitmap=[0] * 8)})
-    entry = _read(fake, walk_bitmaps=True)[VOLUME_X]
+    entry = _read(fake, walk_on=INVENTORIED)[VOLUME_X]
     # GetDriveTypeW, GetDiskFreeSpaceExW, GetVolumeInformationW and GetDiskFreeSpaceW.
     assert fake.asked_roots == ["X:\\"] * 4
     assert entry["paths"] == ["X:\\", "C:\\mnt\\x\\"]
@@ -856,3 +859,50 @@ def test_a_volume_listed_letter_first_is_asked_in_the_same_order() -> None:
     entry = _read(fake)[VOLUME_X]
     assert fake.asked_roots == ["X:\\"] * 3
     assert entry["paths"] == ["X:\\", "C:\\mnt\\x\\"]
+
+
+def test_an_elevated_read_never_walks_a_volume_on_a_disk_the_inventory_does_not_list() -> None:
+    """Disk 7 is not inventoried, so the builder makes no row of X:, and the walk must not read it for one."""
+    fake = FakeVolumeKernel({VOLUME_X: FakeVolume(paths=("X:\\",), disks=(7,), bitmap=[0] * 8)})
+    entry = _read(fake, walk_on=INVENTORIED)[VOLUME_X]
+    assert entry["disks"] == [7]  # control: the extents were read
+    assert "free_extents" not in entry
+    assert fake.bitmap_calls == 0
+
+
+def _row_or_not() -> dict[str, FakeVolume]:
+    """A volume of every shape the row rule tells apart, on disk 0 unless it says otherwise."""
+    return {
+        "\\\\?\\Volume{row}\\": FakeVolume(paths=("C:\\",), disks=(0,), bitmap=[0] * 8),
+        "\\\\?\\Volume{ram}\\": FakeVolume(paths=("R:\\",), drive_type=DRIVE_RAMDISK, disks=(0,), bitmap=[0] * 8),
+        "\\\\?\\Volume{cd}\\": FakeVolume(paths=("E:\\",), drive_type=DRIVE_CDROM, disks=(0,), bitmap=[0] * 8),
+        "\\\\?\\Volume{elsewhere}\\": FakeVolume(paths=("Y:\\",), disks=(7,), bitmap=[0] * 8),
+        "\\\\?\\Volume{esp}\\": FakeVolume(paths=(), disks=(0,), esp=True, bitmap=[0] * 8),
+        "\\\\?\\Volume{spanned}\\": FakeVolume(paths=("S:\\",), disks=(7, 0), bitmap=[0] * 8),
+    }
+
+
+def test_the_reader_walks_exactly_the_volumes_the_builder_makes_rows_of() -> None:
+    """One rule decides both: a walked volume is a row, and a row's volume was walked."""
+    fake = FakeVolumeKernel(_row_or_not())
+    by_ordinal, _ = read_volumes_section(
+        cast("api.WinLibrary", fake), last_error=fake.last_error, walk_on=frozenset({0})
+    )
+    assert by_ordinal is not None
+    capture = WindowsCapture.model_validate(
+        {
+            "schema": 2,
+            "platform": "win32",
+            "hostname": "h",
+            "kernel": "10.0",
+            "pci": {},
+            "disks": {"\\\\?\\p0": {"node": "PhysicalDrive0"}},
+            "volumes": by_ordinal,
+            "volume_bitmaps_read": True,
+        }
+    )
+    rows, _ = build_filesystems(capture, Environment.BARE_METAL)
+    assert rows is not None
+    walked = {entry["paths"][0] for entry in by_ordinal.values() if "free_extents" in entry}
+    assert walked == {row.name for row in rows} == {"C:\\", "S:\\"}
+    assert all(row.free_space is not None for row in rows)

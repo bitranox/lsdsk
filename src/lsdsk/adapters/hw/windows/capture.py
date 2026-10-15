@@ -246,6 +246,10 @@ class DiskEntry(CaptureModel, frozen=True):
         usb_link_error: Why the hub port a USB disk is plugged into could not be
             asked about its link: the hub would not open, the port did not
             answer, or the disk's place on the hub is not known.
+        device_number_error: Why ``IOCTL_STORAGE_GET_DEVICE_NUMBER`` was
+            refused, in which case `node` is absent and no volume's extents
+            can be matched to this disk; absent from a capture taken before
+            this field existed.
         interface_unreadable: True for the stand-in the reader writes when a disk
             interface was listed but its path could not be read. It is a
             skipped reading, not a drive, so the builder keeps it out of the
@@ -263,6 +267,7 @@ class DiskEntry(CaptureModel, frozen=True):
     ata: HealthBlobs | None = None
     error: DeviceText | None = None
     usb_link_error: DeviceText | None = None
+    device_number_error: DeviceText | None = None
     interface_unreadable: bool = False
 
 

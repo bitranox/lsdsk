@@ -362,3 +362,12 @@ def test_an_unelevated_run_reports_a_volume_it_could_not_place_beside_the_fragme
     assert [r.reading for r in unread] == ["volume", "fragmentation"]
     assert unread[0].reason.endswith("could not read the volume's paths (error 234)")
     assert unread[1].reason == "needs Administrator"
+
+
+def test_a_ram_disk_whose_extents_name_an_inventoried_disk_is_not_a_row() -> None:
+    """Some RAM disk drivers report extents on a real disk; no disk sits behind one, so it is no row."""
+    ram = _volume(paths=("R:\\",), disks=(0,), drive_type=6, total_bytes=100, free_bytes=40, available_bytes=40)
+    rows, unread = build_filesystems(_one_disk({"0": _volume(paths=("C:\\",), disks=(0,)), "1": ram}), BARE_METAL)
+    assert rows is not None
+    assert [row.name for row in rows] == ["C:\\"]
+    assert unread == ()

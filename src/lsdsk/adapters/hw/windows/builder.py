@@ -622,6 +622,7 @@ def _refusals_for(entry: DiskEntry, record: HealthBlobs) -> tuple[RefusedReading
         {
             "device": entry.error,
             "usb-link": entry.usb_link_error,
+            "device-number": entry.device_number_error,
             **({} if entry.device.is_image_file else health),
         }
     )

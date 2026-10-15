@@ -30,11 +30,11 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from ..decode.free_extents import FreeExtentTally
 from . import winapi as api
-from .usage import DISKLESS_DRIVE_TYPES, named_first
+from .usage import can_be_a_row, named_first
 from .volume_layout import (
     BITMAP_HEADER_BYTES,
     EXTENT_ENTRY,
@@ -48,7 +48,7 @@ from .volume_layout import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Container
 
 _EXTENTS_BUFFER_SIZE = EXTENTS_HEADER.size + MAX_EXTENTS * EXTENT_ENTRY.size
 
@@ -62,6 +62,14 @@ _FS_NAME_CHARS = 64
 #: How many bytes of cluster bits one bitmap call asks for: 8 Mi clusters, so a
 #: 500 GB volume of 4 KiB clusters takes about sixteen calls.
 _BITMAP_CHUNK_BYTES = 1 << 20
+
+
+class _ReadSoFar(NamedTuple):
+    """What the walk decision reads of a volume, once its paths, drive type and extents are in."""
+
+    paths: tuple[str, ...]
+    disks: tuple[int, ...]
+    drive_type: int | None
 
 
 class _BitmapRefusedError(Exception):
@@ -286,7 +294,7 @@ def _read_one_volume(
     volume: str,
     *,
     last_error: Callable[[], int] = api.last_error,
-    walk_bitmaps: bool = False,
+    walk_on: Container[int] | None = None,
     chunk_bytes: int = _BITMAP_CHUNK_BYTES,
 ) -> dict[str, Any]:
     """Read one volume's mount paths, drive type, space, disk extents and ESP status.
@@ -295,10 +303,12 @@ def _read_one_volume(
         kernel32: The typed facade over the Win32 entry points.
         volume: The volume's GUID path, trailing backslash included.
         last_error: Answers ``GetLastError`` for the space call that just failed.
-        walk_bitmaps: Also walk the volume's cluster bitmap into free extents,
-            which opens it for reading and so needs Administrator. Only a
-            volume that can be a row is walked (see :func:`_can_be_a_row`),
-            which is why its extents are read first.
+        walk_on: The inventoried disk numbers, when the volume's cluster
+            bitmap is to be walked into free extents, which opens it for
+            reading and so needs Administrator; ``None`` walks nothing. Only
+            a volume that can be a row on one of these disks is walked (see
+            :func:`.usage.can_be_a_row`), which is why its extents are read
+            first.
         chunk_bytes: How many bytes of cluster bits one bitmap call asks for.
 
     Returns:
@@ -339,29 +349,19 @@ def _read_one_volume(
             entry["esp"] = esp
     finally:
         kernel32.CloseHandle(handle)
-    if walk_bitmaps and _can_be_a_row(entry):
+    read_so_far = _ReadSoFar(paths, tuple(entry.get("disks", ())), entry.get("drive_type"))
+    if walk_on is not None and can_be_a_row(read_so_far, walk_on):
         entry["free_extents"] = _free_extents(
             kernel32, volume, paths[0], last_error=last_error, chunk_bytes=chunk_bytes
         )
     return entry
 
 
-def _can_be_a_row(entry: dict[str, Any]) -> bool:
-    """Whether a volume read so far could become a filesystem row, and so is worth walking.
-
-    A row needs a path to name it and a disk its extents reach; an optical
-    drive or a RAM disk sits on no disk this tool lists whatever its extents
-    say. Walking any other volume opens it for reading, as Administrator, for
-    a figure the builder then drops.
-    """
-    return bool(entry["paths"]) and bool(entry.get("disks")) and entry.get("drive_type") not in DISKLESS_DRIVE_TYPES
-
-
 def read_volumes(
     kernel32: api.WinLibrary,
     *,
     last_error: Callable[[], int] = api.last_error,
-    walk_bitmaps: bool = False,
+    walk_on: Container[int] | None = None,
     chunk_bytes: int = _BITMAP_CHUNK_BYTES,
 ) -> dict[str, dict[str, Any]] | None:
     r"""Enumerate every volume on this machine and read what it is used for.
@@ -375,8 +375,9 @@ def read_volumes(
     Args:
         kernel32: The typed facade over the Win32 entry points.
         last_error: Answers ``GetLastError`` for the call that just failed.
-        walk_bitmaps: Also walk each volume's cluster bitmap, which needs
-            Administrator.
+        walk_on: The inventoried disk numbers, to also walk the cluster
+            bitmap of each volume that can be a row on one of them, which
+            needs Administrator; ``None`` walks none.
         chunk_bytes: How many bytes of cluster bits one bitmap call asks for.
 
     Returns:
@@ -391,7 +392,7 @@ def read_volumes(
     try:
         while True:
             volumes[buffer.value] = _read_one_volume(
-                kernel32, buffer.value, last_error=last_error, walk_bitmaps=walk_bitmaps, chunk_bytes=chunk_bytes
+                kernel32, buffer.value, last_error=last_error, walk_on=walk_on, chunk_bytes=chunk_bytes
             )
             if not kernel32.FindNextVolumeW(handle, buffer, _MAX_PATH):
                 return volumes if last_error() == api.ERROR_NO_MORE_FILES else None
