@@ -74,6 +74,12 @@ class Column:
             its own - the list of disks a filesystem lives on - cutting it
             hides one of them, which costs more than any column that could
             still be dropped instead.
+        never_dropped: Whether the column outlives even the one-line reduction
+            of :meth:`Layout.on_one_line`, which otherwise drops whole columns
+            from the right once the undroppable ones overrun. For a column a row
+            answers nothing without - how full a filesystem is, and which disks
+            it lives on - a cut value still answers part of the question and a
+            missing one answers none of it, so a flexible one is cut instead.
     """
 
     key: str
@@ -84,6 +90,7 @@ class Column:
     min_width: int = 8
     max_width: int | None = None
     shrinks_last: bool = False
+    never_dropped: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,7 +196,10 @@ class Layout:
         than survive as a stub; then whole columns go from the right, because a
         figure cut short is a different figure rather than a shorter one; and
         the first column, which names the row, stays and is clipped to
-        whatever is left.
+        whatever is left. A column marked ``never_dropped`` survives both
+        steps, and where the clipped first column still leaves the row too
+        wide, a flexible one of those gives up characters next, down to the
+        clip mark and one character.
 
         Args:
             available: Width the row may take.
@@ -208,18 +218,27 @@ class Layout:
             >>> narrowest = layout.on_one_line(8)
             >>> [column.key for column in narrowest.columns], narrowest.widths["a"] < 8, narrowest.required() <= 8
             (['a'], True, True)
+            >>> kept = [Column("a", "a"), Column("b", "b"), Column("c", "c", flexible=True, never_dropped=True)]
+            >>> pinned = Layout(tuple(kept), {"a": 8, "b": 6, "c": 9}).on_one_line(16)
+            >>> [column.key for column in pinned.columns], pinned.widths["a"], pinned.widths["c"], pinned.required()
+            (['a', 'c'], 2, 7, 16)
         """
         if self.required() <= available:
             return self
         columns = list(self.columns)
         widths = dict(self.widths)
         for column in reversed(self.columns[1:]):
-            if column.flexible and _required(columns, widths) > available:
+            if column.flexible and not column.never_dropped and _required(columns, widths) > available:
                 columns.remove(column)
-        while len(columns) > 1 and _required(columns, widths) > available:
-            columns.pop()
+        droppable = [column for column in columns[1:] if not column.never_dropped]
+        while droppable and _required(columns, widths) > available:
+            columns.remove(droppable.pop())
         first = columns[0].key
         widths[first] = max(widths[first] - max(_required(columns, widths) - available, 0), _CLIPPED)
+        for column in reversed(columns[1:]):
+            if column.flexible and column.never_dropped:
+                excess = max(_required(columns, widths) - available, 0)
+                widths[column.key] = max(widths[column.key] - excess, _CLIPPED)
         return Layout(tuple(columns), widths, bandwidth=self.bandwidth)
 
 

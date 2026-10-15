@@ -26,7 +26,7 @@ from ...domain.history import CounterKind, identity_of, trend_for
 from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_WWN_WIDTH
 from . import theme
-from .layout import Column, Layout, clip, clip_keeping
+from .layout import GUTTER, Column, Layout, clip, clip_keeping
 from .report import disk_row, severity_index, virtual_note
 from .rows import MarkedRow
 
@@ -54,6 +54,17 @@ if TYPE_CHECKING:
     from ...domain.models import Controller, Disk, Filesystem, Finding, Inventory, PcieLink
     from .rows import Row
     from .theme import Cell
+
+#: The marker column, as wide as the widest severity marker. A floor as well as
+#: a width, so nothing can squeeze the one cell that says a row needs action.
+_MARKER_WIDTH = max(len(marker) for marker in theme.SEVERITY_MARKERS.values())
+#: How much wider a console a table fills than its layout reckons. The layout
+#: measures a row behind the tree's gutter and a gap after every column; a table
+#: starts with the narrower marker column and carries no padding after its last
+#: column, so a layout that just fits ``width + 1`` is a table exactly ``width``
+#: wide. Used only where a row is cut to one line, so every width at which the
+#: table already fit draws as it did.
+_TABLE_SLACK = len(GUTTER) - _MARKER_WIDTH
 
 # Width assumed when the output is not going to a terminal.
 DEFAULT_WIDTH = DEFAULT_PIPED_WIDTH
@@ -120,10 +131,10 @@ FILESYSTEM_COLUMNS: tuple[Column, ...] = (
     Column("size", "size", align=Align.RIGHT, priority=4),
     Column("used", "used", align=Align.RIGHT, priority=3),
     Column("free", "free", align=Align.RIGHT, priority=1),
-    Column("use", "use%", align=Align.RIGHT, priority=0),
+    Column("use", "use%", align=Align.RIGHT, priority=0, never_dropped=True),
     Column("inodes", "inodes%", align=Align.RIGHT, priority=6),
     Column("frag", "frag", align=Align.RIGHT, priority=7),
-    Column("disks", "disks", priority=0, flexible=True, min_width=6, shrinks_last=True),
+    Column("disks", "disks", priority=0, flexible=True, min_width=6, shrinks_last=True, never_dropped=True),
 )
 
 # Full sentences, so no cell can contain one by accident.
@@ -170,11 +181,18 @@ def _fitted(columns: Sequence[Column], rows: TableRows, width: int) -> tuple[Lay
     One function for the printed table and for a caller that must know which
     columns survived before it writes a legend, so the two cannot be given
     different answers.
+
+    The layout is cut down to one line, as the tree's is: below the width the
+    undroppable columns need, a table handed to Rich wider than the console is
+    squeezed column by column - the marker column with the rest, so a row lost
+    its severity - and its cells are cut with Rich's own ellipsis, which put
+    ``Gen3`` and a mark where a link figure stood.
     """
+    room = width + _TABLE_SLACK
     if rows.plain is None:
-        return Layout.for_rows(columns, rows.texts(bandwidth=True), width), rows.rich
+        return Layout.for_rows(columns, rows.texts(bandwidth=True), width).on_one_line(room), rows.rich
     layout = Layout.preferring(columns, rows.texts(bandwidth=True), rows.texts(bandwidth=False), width)
-    return layout, rows.rich if layout.bandwidth else rows.plain
+    return layout.on_one_line(room), rows.rich if layout.bandwidth else rows.plain
 
 
 def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, caption: str = "") -> Table:
@@ -226,7 +244,7 @@ def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, 
         pad_edge=False,
         padding=(0, 1),
     )
-    table.add_column("", width=2, no_wrap=True)
+    table.add_column("", width=_MARKER_WIDTH, min_width=_MARKER_WIDTH, no_wrap=True)
     for column in chosen:
         justify = Align.RIGHT.value if column.align is Align.RIGHT else Align.LEFT.value
         table.add_column(
