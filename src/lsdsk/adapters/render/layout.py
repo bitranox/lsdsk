@@ -69,6 +69,11 @@ class Column:
             SATA one beside it, so without a ceiling that one drive sets the
             width of the whole column and pushes the rest of the row off the
             page.
+        shrinks_last: Whether a flexible column gives up space only once no
+            droppable column is left. For a cell whose every part is a fact of
+            its own - the list of disks a filesystem lives on - cutting it
+            hides one of them, which costs more than any column that could
+            still be dropped instead.
     """
 
     key: str
@@ -78,6 +83,7 @@ class Column:
     flexible: bool = False
     min_width: int = 8
     max_width: int | None = None
+    shrinks_last: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,7 +256,8 @@ def fit(columns: Sequence[Column], widths: dict[str, int], available: int) -> li
 
     Flexible columns shrink to their minimum before anything is dropped,
     because a slightly truncated model name is more useful than losing the
-    temperature entirely.
+    temperature entirely. A column marked ``shrinks_last`` is the exception: it
+    shrinks only once every droppable column is gone.
 
     Args:
         columns: Candidate columns, in display order.
@@ -266,6 +273,12 @@ def fit(columns: Sequence[Column], widths: dict[str, int], available: int) -> li
         ['a', 'b']
         >>> [c.key for c in fit(cols, {"a": 5, "b": 5}, 8)]
         ['a']
+        >>> last = [Column("a", "a", flexible=True, min_width=2, shrinks_last=True), Column("b", "b", priority=9)]
+        >>> narrowed = {"a": 9, "b": 5}
+        >>> [c.key for c in fit(last, narrowed, 16)], narrowed["a"]
+        (['a'], 9)
+        >>> [c.key for c in fit(last, narrowed, 10)], narrowed["a"]
+        (['a'], 5)
     """
     chosen = list(columns)
     while chosen and _required(chosen, widths) > available:
@@ -273,6 +286,8 @@ def fit(columns: Sequence[Column], widths: dict[str, int], available: int) -> li
             continue
         droppable = [column for column in chosen if column.priority > 0]
         if not droppable:
+            if _shrink_one(chosen, widths, last=True):
+                continue
             break
         victim = max(droppable, key=lambda column: column.priority)
         chosen.remove(victim)
@@ -288,9 +303,17 @@ def _required(columns: Sequence[Column], widths: dict[str, int]) -> int:
     return len(GUTTER) + sum(widths[column.key] for column in columns) + len(GAP) * len(columns)
 
 
-def _shrink_one(columns: Sequence[Column], widths: dict[str, int]) -> bool:
-    """Take one character from the widest flexible column, if any has slack."""
-    flexible = [column for column in columns if column.flexible and widths[column.key] > column.min_width]
+def _shrink_one(columns: Sequence[Column], widths: dict[str, int], *, last: bool = False) -> bool:
+    """Take one character from the widest flexible column, if any has slack.
+
+    ``last`` picks which flexible columns may give it: the ordinary ones, or
+    those that shrink only once nothing droppable is left.
+    """
+    flexible = [
+        column
+        for column in columns
+        if column.flexible and column.shrinks_last is last and widths[column.key] > column.min_width
+    ]
     if not flexible:
         return False
     widest = max(flexible, key=lambda column: widths[column.key])

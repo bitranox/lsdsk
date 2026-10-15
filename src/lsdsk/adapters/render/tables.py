@@ -112,7 +112,8 @@ HEALTH_COLUMNS: tuple[Column, ...] = (
 
 # The approved drop order as the terminal narrows: frag, then inodes%, then
 # type, then size, then used. `filesystem`, `use%` and `disks` never drop - how full, and
-# where - because a row without them answers nothing.
+# where - because a row without them answers nothing. Nor is `disks` CUT while any
+# droppable column still stands (`shrinks_last`): a cut list hides a disk.
 FILESYSTEM_COLUMNS: tuple[Column, ...] = (
     Column("filesystem", "filesystem", priority=0, flexible=True, min_width=10),
     Column("type", "type", priority=5),
@@ -122,7 +123,7 @@ FILESYSTEM_COLUMNS: tuple[Column, ...] = (
     Column("use", "use%", align=Align.RIGHT, priority=0),
     Column("inodes", "inodes%", align=Align.RIGHT, priority=6),
     Column("frag", "frag", align=Align.RIGHT, priority=7),
-    Column("disks", "disks", priority=0, flexible=True, min_width=6),
+    Column("disks", "disks", priority=0, flexible=True, min_width=6, shrinks_last=True),
 )
 
 # Full sentences, so no cell can contain one by accident.

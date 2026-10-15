@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 from rich.console import Console
 
+from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import tables, theme
 from lsdsk.adapters.render.tables import (
     FILESYSTEM_COLUMNS,
@@ -224,3 +228,46 @@ def test_one_column_drawing_n_a_keeps_the_plain_sentence() -> None:
 def test_frag_is_the_first_column_to_drop() -> None:
     order = sorted((c for c in FILESYSTEM_COLUMNS if c.priority > 0), key=lambda c: -c.priority)
     assert [c.key for c in order][:2] == ["frag", "inodes"]
+
+
+# Eight disks, so the disks cell is the widest thing on the row and the first flexible one a squeeze reaches.
+_WIDE_POOL = Filesystem(
+    kind=FilesystemKind.POOL,
+    name="tank",
+    fs_type="zfs",
+    disks=tuple(f"sd{letter}" for letter in "abcdefgh"),
+    size_bytes=100,
+    used_bytes=10,
+    free_bytes=90,
+    free_space=FreeSpace(fragmentation_percent=20),
+)
+# Every column the table may drop, in the order it drops them.
+_DROPPABLE_TITLES = ("frag", "inodes%", "type", "size", "used", "free")
+
+
+def test_the_disks_cell_is_cut_only_once_every_droppable_column_is_gone() -> None:
+    whole = " ".join(_WIDE_POOL.disks)
+    cut_at: list[int] = []
+    for width in range(200, 29, -1):
+        rendered = _text(_EXT4, _WIDE_POOL, width=width)
+        if whole in rendered:
+            continue
+        cut_at.append(width)
+        header = rendered.splitlines()[1].split()
+        standing = [title for title in _DROPPABLE_TITLES if title in header]
+        assert not standing, f"disks cut at width {width} while {standing} still stand"
+    assert cut_at, "the arm never reached a width that cuts the disks cell, so it asserted nothing"
+
+
+def test_the_capture_s_pool_keeps_its_disks_whole_while_a_droppable_column_stands() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "hw" / "linux-zfs-filesystems.json"
+    machine = build_from(json.loads(fixture.read_text(encoding="utf-8")))
+    pool = next(one for one in machine.filesystems or () if len(one.disks) > 1)
+    whole = " ".join(pool.disks)
+    for width in range(200, 29, -1):
+        lines = _text_of(machine, width=width).splitlines()
+        # The marker column and its padding take the first four characters of every row.
+        row = next(line for line in lines[2:] if line[4:].startswith(f"{pool.name} "))
+        header = lines[1].split()
+        standing = [title for title in _DROPPABLE_TITLES if title in header]
+        assert whole in row or not standing, f"{pool.name}'s disks cut at width {width} while {standing} stand"
