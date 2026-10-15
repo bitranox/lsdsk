@@ -151,14 +151,16 @@ def report_profile_that_named_nothing(config: Config, profile: str | None) -> No
     """Say so on stderr when `profile` loaded nothing under that name.
 
     A profile REPLACES the configuration directories rather than adding to them, so a name
-    with one letter wrong reads no file at all and every value falls back to the shipped one,
+    with one letter wrong reads no configuration file at all - not even the ones read without
+    a profile - and every value the environment or ``--set`` does not give is the shipped one,
     at exit 0. Every other identifier typed at this CLI answers back - an unknown ``--set``
     key is refused, an unknown file key gets a did-you-mean, an invalid profile SYNTAX exits
     22 - and this was the one well-formed name allowed to mean nothing quietly.
 
     Warned rather than refused, for the same reason an unknown file key is: the values are
     inert either way and the run still diagnoses the hardware, which is what somebody is at
-    the terminal for.
+    the terminal for. The suggestion is left out when it is the name typed, which happens for
+    a profile directory that exists and holds nothing readable.
 
     Args:
         config: The configuration as loaded, carrying which files it came from.
@@ -170,9 +172,10 @@ def report_profile_that_named_nothing(config: Config, profile: str | None) -> No
     if profile is None or contributed_layers(config, profile):
         return
     suggestion = nearest_profile(profile, existing_profiles())
-    meant = f" Did you mean {suggestion}?" if suggestion else ""
+    meant = f" Did you mean {suggestion}?" if suggestion not in (None, profile) else ""
     safe_console.echo(
-        f"Warning: profile {profile} named nothing, so every value is the one configured without it.{meant}",
+        f"Warning: profile {profile} named nothing, so every value the environment or --set "
+        f"does not give is the shipped default.{meant}",
         err=True,
     )
 

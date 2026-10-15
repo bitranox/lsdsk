@@ -188,6 +188,48 @@ def test_a_profile_that_named_nothing_is_warned_about_in_every_spelling(
     assert "Warning: profile nosuch named nothing" in said, said
 
 
+def test_the_warning_names_the_shipped_defaults_as_what_is_in_force(
+    user_config_dir: Path,
+    managed_traceback_state: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """It said values were "the one configured without it", which is the unprofiled config.
+
+    A profile replaces the configuration directories, so the unprofiled files are not read
+    either: what is in force is the shipped default, unless the environment or --set gives one.
+    """
+    (user_config_dir / "config.toml").parent.mkdir(parents=True, exist_ok=True)
+    (user_config_dir / "config.toml").write_text("[display]\nwwn_width = 11\n", encoding="utf-8", newline="\n")
+
+    exit_code, out, err = _run(["--profile", "nosuch", "config", "--section", "display.wwn_width"], capsys)
+
+    said = " ".join(err.split())
+    assert exit_code == 0, said
+    assert "shipped default" in said, said
+    assert "configured without it" not in said, said
+    assert "11" not in out, "the unprofiled file was read after all, so the premise of the warning is wrong"
+
+
+def test_an_empty_profile_is_not_offered_as_its_own_correction(
+    user_config_dir: Path,
+    managed_traceback_state: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A profile directory holding nothing readable is the nearest name to itself.
+
+    The warning used to end "Did you mean x?" for ``--profile x``, which sends the reader to
+    retype what they already typed rather than to the empty directory.
+    """
+    (user_config_dir / "profile" / PROFILE).mkdir(parents=True)
+
+    exit_code, _out, err = _run(["--profile", PROFILE, "config"], capsys)
+
+    said = " ".join(err.split())
+    assert exit_code == 0, said
+    assert f"Warning: profile {PROFILE} named nothing" in said, said
+    assert "Did you mean" not in said, said
+
+
 def test_a_subcommand_profile_keeps_the_explicit_env_file(
     tmp_path: Path,
     user_config_dir: Path,
