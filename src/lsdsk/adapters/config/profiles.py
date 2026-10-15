@@ -29,11 +29,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-# The one place this package reaches past lib_layered_config's top-level
-# exports. The public surface has no way to ask "which directories would you
-# search", and nothing else can answer which profiles exist on this machine:
-# with a wrong profile the loader reads none of them, so there is no provenance
-# to learn it from. Typed, and covered by the tests beside this module.
+# Reaches past lib_layered_config's top-level exports, as a few modules here
+# do where the library keeps a name below them. The public surface has no way
+# to ask "which directories would you search", and nothing else can answer
+# which profiles exist on this machine: with a wrong profile the loader reads
+# none of them, so there is no provenance to learn it from. Typed, and covered
+# by the tests beside this module.
 from lib_layered_config.adapters.path_resolvers.default import DefaultPathResolver
 
 from lsdsk import __init__conf__

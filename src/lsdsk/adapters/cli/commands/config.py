@@ -15,7 +15,11 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import lib_log_rich.runtime
 import rich_click as click
-from lib_layered_config import Config, redact_mapping
+from lib_layered_config import Config, DeployModeError, redact_mapping
+
+# Below the top-level exports because the library exports the parser only inside
+# DeployMode.from_text, which also judges safety - the deploy's job, not the option's.
+from lib_layered_config.domain.deploy_mode import parse_mode_text
 from rich.console import Console
 
 from lsdsk import __init__conf__
@@ -380,7 +384,12 @@ def _resolve_config(
 
 
 def _parse_octal_mode(ctx: click.Context, param: click.Parameter, value: str | None) -> int | None:
-    """Parse octal mode string (e.g., '750' or '0o750') to int.
+    """Parse an octal mode (``750`` or ``0o750``) by the rule the files and ``--set`` are read by.
+
+    That rule is lib_layered_config's ``parse_mode_text``, so the option has no reading of its
+    own: ``int(value, 8)`` also took a ``_`` separator, surrounding whitespace, a sign, ``0O``
+    and any Unicode digit, which deployed a mode the same text in a file was refused for.
+    Whether a parsed mode is SAFE is still the deploy's to judge, as it is for every source.
 
     Args:
         ctx: Click context (unused but required by callback signature).
@@ -391,15 +400,14 @@ def _parse_octal_mode(ctx: click.Context, param: click.Parameter, value: str | N
         Integer permission mode, or None if value was None.
 
     Raises:
-        click.BadParameter: If value cannot be parsed as octal.
+        click.BadParameter: If the library refuses the text, with its reason.
     """
     if value is None:
         return None
     try:
-        # Handle both '750' and '0o750' formats
-        return int(value, 8) if not value.startswith("0o") else int(value, 0)
-    except ValueError as exc:
-        raise click.BadParameter(f"Invalid octal mode: {value}") from exc
+        return parse_mode_text(value)
+    except DeployModeError as exc:
+        raise click.BadParameter(f"Invalid octal mode: {exc}") from exc
 
 
 @click.command("config-deploy", context_settings=CLICK_CONTEXT_SETTINGS)
