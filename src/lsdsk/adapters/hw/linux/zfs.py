@@ -5,9 +5,11 @@ ZFS_IOC_POOL_CONFIGS has policy zfs_secpolicy_none, ZFS_IOC_POOL_STATS has
 zfs_secpolicy_read, which asks only for the global zone or a visible pool).
 Linux passes the request number through as it is, with no _IOWR encoding.
 
-Only the pool name, size and allocation leave this module. The config a pool
-answers with also names every vdev by path, often a by-id name that embeds a
-drive serial, so it is decoded here and dropped.
+Only the pool name, size and allocation, and where each pool's members are,
+leave this module. The config a pool answers with names every vdev by path,
+often a by-id name that embeds a drive serial, so a path is resolved here to
+the device number it names and dropped; the host name and the vdev GUIDs the
+config also carries never leave either.
 """
 
 from __future__ import annotations
@@ -16,12 +18,13 @@ import ctypes
 import errno
 import os
 import struct
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from ....domain.text import MAX_DEVICE_TEXT
-from ..decode.nvlist import decode_nvlist, pool_fragmentation, pool_space
+from ..decode.nvlist import NvList, NvValue, decode_nvlist, pool_fragmentation, pool_space
+from .mounts import device_number_of
 
 ZFS_DEVICE = Path("/dev/zfs")
 ZFS_IOC_POOL_CONFIGS = 0x5A04
@@ -109,6 +112,96 @@ def _ask(fd: int, request: int, name: str, ioctl: Ioctl) -> bytes:
 
 def _pool_names(fd: int, ioctl: Ioctl) -> list[str]:
     return sorted(decode_nvlist(_ask(fd, ZFS_IOC_POOL_CONFIGS, "", ioctl)))
+
+
+#: The vdev keys under which a config nests further vdevs: a top-level vdev's
+#: children, and the cache and spare devices the vdev tree lists beside them.
+_NESTED_VDEVS = ("children", "l2cache", "spares")
+
+
+def _nested(node: NvList) -> list[NvList]:
+    """Every vdev nested directly under ``node``."""
+    found: list[NvList] = []
+    for key in _NESTED_VDEVS:
+        value = node.get(key)
+        if isinstance(value, tuple):
+            found.extend(member for member in value if isinstance(member, Mapping))
+    return found
+
+
+def _leaf_vdevs(tree: NvList, device_number: Callable[[str], str | None]) -> list[dict[str, str]]:
+    """Every leaf vdev with a path, as its type and the device number the path resolves to.
+
+    Walked with an explicit stack: the decoder already bounds how deep and how
+    many lists a reply may hold, so this walk is bounded by the same figures.
+    """
+    leaves: list[dict[str, str]] = []
+    pending: list[NvList] = [tree]
+    while pending:
+        node = pending.pop()
+        below = _nested(node)
+        pending.extend(reversed(below))
+        path, kind = node.get("path"), node.get("type")
+        if isinstance(node.get("children"), tuple) or not isinstance(path, str) or not isinstance(kind, str):
+            continue
+        leaf = {"kind": kind[:MAX_DEVICE_TEXT]}
+        dev = device_number(path)
+        if dev is not None:
+            leaf["dev"] = dev
+        leaves.append(leaf)
+    return leaves
+
+
+def _layout(config: NvValue, device_number: Callable[[str], str | None]) -> dict[str, Any]:
+    """One pool's GUID and leaf vdevs from its config, without any path or name in it."""
+    if not isinstance(config, Mapping):
+        return {}
+    layout: dict[str, Any] = {}
+    guid = config.get("pool_guid")
+    if isinstance(guid, int):
+        layout["guid"] = str(guid)
+    tree = config.get("vdev_tree")
+    if isinstance(tree, Mapping):
+        layout["vdevs"] = _leaf_vdevs(tree, device_number)
+    return layout
+
+
+def read_pool_layouts(
+    device: Path = ZFS_DEVICE,
+    *,
+    ioctl: Ioctl | None = None,
+    opener: Opener | None = None,
+    device_number: Callable[[str], str | None] = device_number_of,
+) -> dict[str, dict[str, Any]]:
+    """Where every listed pool has its members, from each pool's own config.
+
+    Args:
+        device: The ZFS control device.
+        ioctl: The call that reaches it; the system's ``fcntl.ioctl`` by default.
+        opener: Opens the device read-only and returns a descriptor, which is
+            closed with ``os.close``; ``os.open`` by default.
+        device_number: Resolves a vdev's path to its block device number,
+            overridable because no unprivileged test can create a block device.
+
+    Returns:
+        One layout per listed pool, keyed by name: ``guid`` (the pool GUID in
+        decimal, as udev writes it on a member) and ``vdevs`` (every leaf vdev
+        with a path, as ``kind`` and the ``dev`` it resolved to), either absent
+        when the config did not carry it. Empty when there is no control
+        device or the listing could not be read: ``read_pools`` reads the
+        same listing and records why.
+    """
+    try:
+        fd = (opener or os.open)(device, os.O_RDONLY)
+    except OSError:
+        return {}
+    try:
+        configs = decode_nvlist(_ask(fd, ZFS_IOC_POOL_CONFIGS, "", ioctl or system_ioctl))
+    except _READ_FAILURES:
+        return {}
+    finally:
+        os.close(fd)
+    return {name: _layout(config, device_number) for name, config in configs.items()}
 
 
 def _space_of(fd: int, pool: str, ioctl: Ioctl) -> dict[str, int]:
@@ -239,6 +332,7 @@ __all__ = [
     "capture_fields",
     "fragmentation_fields",
     "read_pool_fragmentation",
+    "read_pool_layouts",
     "read_pools",
     "system_ioctl",
 ]

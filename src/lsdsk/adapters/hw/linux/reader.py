@@ -1201,6 +1201,7 @@ class SystemReaders:
     signatures: Callable[[list[str]], dict[str, dict[str, str]] | None] = mounts.read_signatures
     pools: Callable[[], tuple[dict[str, dict[str, int]] | None, str | None]] = zfs.read_pools
     fragmentation: Callable[[], tuple[dict[str, int | None] | None, str | None]] = zfs.read_pool_fragmentation
+    pool_layouts: Callable[[], dict[str, dict[str, Any]]] = zfs.read_pool_layouts
     mount_table: Callable[[], list[dict[str, str | bool]] | None] = mounts.read_mounts
     swaps: Callable[[], list[dict[str, str]] | None] = mounts.read_swaps
     space: Callable[[Sequence[Mapping[str, str | bool]]], dict[str, dict[str, int | str]]] = mounts.read_space
@@ -1270,6 +1271,7 @@ def read_system(readers: SystemReaders | None = None) -> dict[str, Any]:
         "stacked": stacked,
         "signatures": read.signatures(_signature_devnums(block, stacked)),
         **zfs.capture_fields(pools, pools_error),
+        "zfs_pool_layouts": read.pool_layouts(),
         **zfs.fragmentation_fields(fragmentation, fragmentation_error),
     }
     # statvfs and the free-space walk are both asked only about a filesystem the section can keep a row for.

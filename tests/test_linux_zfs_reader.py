@@ -10,7 +10,19 @@ import sys
 from typing import TYPE_CHECKING
 
 import pytest
-from nvlist_builders import UINT64_ARRAY, embedded, pair, pool_config, pool_names, pool_props, stream, text, u64_array
+from nvlist_builders import (
+    UINT64_ARRAY,
+    embedded,
+    embedded_array,
+    pair,
+    pool_config,
+    pool_names,
+    pool_props,
+    stream,
+    text,
+    u64,
+    u64_array,
+)
 from pydantic import ValidationError
 
 from lsdsk.adapters.hw.linux import zfs
@@ -431,3 +443,85 @@ def test_a_listing_the_decoder_could_not_bound_is_the_listing_s_refusal(tmp_path
         None,
         "listing the pools failed: unpack_from requires a buffer of at least 8 bytes",
     )
+
+
+def _leaf(kind: str, path: str) -> list[bytes]:
+    return [text("type", kind), u64("guid", 99), text("path", path), u64("whole_disk", 1)]
+
+
+def _configs_with_layouts() -> bytes:
+    """A POOL_CONFIGS reply as OpenZFS writes it: a mirror of two disks plus a cache device, and a file pool."""
+    tank = [
+        text("name", "tank"),
+        text("hostname", "secret-host"),
+        u64("pool_guid", 2936817686098969225),
+        embedded(
+            "vdev_tree",
+            [
+                text("type", "root"),
+                embedded_array(
+                    "children",
+                    [
+                        [
+                            text("type", "mirror"),
+                            embedded_array(
+                                "children",
+                                [
+                                    _leaf("disk", "/dev/disk/by-id/ata-SERIAL1-part1"),
+                                    _leaf("disk", "/dev/disk/by-id/ata-SERIAL2-part1"),
+                                ],
+                            ),
+                        ]
+                    ],
+                ),
+                embedded_array("l2cache", [_leaf("disk", "/dev/nvme0n1p3")]),
+            ],
+        ),
+    ]
+    scratch = [
+        text("name", "scratch"),
+        u64("pool_guid", 7),
+        embedded("vdev_tree", [text("type", "root"), embedded_array("children", [_leaf("file", "/srv/pool.img")])]),
+    ]
+    bare = [text("name", "bare")]
+    return stream([embedded("tank", tank), embedded("scratch", scratch), embedded("bare", bare)])
+
+
+def test_each_pool_s_layout_names_its_leaf_vdevs_by_device_number_and_no_path(tmp_path: Path) -> None:
+    fake = FakeDevice({(zfs.ZFS_IOC_POOL_CONFIGS, ""): _configs_with_layouts()})
+    numbers = {
+        "/dev/disk/by-id/ata-SERIAL1-part1": "8:1",
+        "/dev/disk/by-id/ata-SERIAL2-part1": "8:17",
+        "/dev/nvme0n1p3": "259:3",
+    }
+    layouts = zfs.read_pool_layouts(_device(tmp_path), ioctl=fake, device_number=numbers.get)
+    assert layouts == {
+        "tank": {
+            "guid": "2936817686098969225",
+            "vdevs": [
+                {"kind": "disk", "dev": "8:1"},
+                {"kind": "disk", "dev": "8:17"},
+                {"kind": "disk", "dev": "259:3"},
+            ],
+        },
+        "scratch": {"guid": "7", "vdevs": [{"kind": "file"}]},
+        "bare": {},
+    }
+    # A path, a serial in a by-id name and the host name are read, and none of them is kept.
+    assert "SERIAL" not in repr(layouts)
+    assert "secret-host" not in repr(layouts)
+    LinuxCapture.model_validate(
+        {
+            "schema": SCHEMA_VERSION,
+            "platform": "linux",
+            "hostname": "h",
+            "kernel": "6.1",
+            "pci": {},
+            "zfs_pool_layouts": layouts,
+        }
+    )
+
+
+def test_no_control_device_or_a_refused_listing_is_no_layout(tmp_path: Path) -> None:
+    assert zfs.read_pool_layouts(tmp_path / "absent") == {}
+    assert zfs.read_pool_layouts(_device(tmp_path), ioctl=FakeDevice({}, fail=errno.EACCES)) == {}

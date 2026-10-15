@@ -16,7 +16,7 @@ from ....domain.models import DiskUsage, DiskUse
 from .capture import BlockEntry, FilesystemSignature, LinuxCapture, StackedEntry
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
 #: Mountpoints whose disk the machine boots from. ``/efi`` is systemd's
 #: recommended mountpoint for the EFI system partition, the same intent as
@@ -460,6 +460,57 @@ def disks_by_device(capture: LinuxCapture) -> dict[str, frozenset[str]]:
     return {dev: frozenset(nodes) for dev, nodes in found.items()}
 
 
+def devices_on_virtual_disks(capture: LinuxCapture) -> frozenset[str]:
+    """Every ``maj:min`` on a virtual disk (a loop, a zram, a zvol), by the closure ``disks_by_device`` follows.
+
+    Args:
+        capture: A Linux reading.
+
+    Returns:
+        Each virtual disk's own device number, its partitions' and every
+        stacked device above them.
+    """
+    found: set[str] = set()
+    for block in capture.block.values():
+        if block.virtual:
+            found |= _member_devs(block, capture.stacked)
+    return frozenset(found)
+
+
+def _disks_by_member(
+    capture: LinuxCapture, key: Callable[[FilesystemSignature], str | None]
+) -> dict[str, frozenset[str]]:
+    """Which disks carry a ZFS member signature, grouped by ``key`` of that signature, partition evidence first."""
+    found: dict[str, set[str]] = {}
+    for node, block in capture.block.items():
+        if block.virtual:
+            continue
+        stacked = [_signature_of(dev, capture) for dev in sorted(_stacked_devs(block, capture.stacked))]
+        for signature in (*_signatures_of(block, capture), *stacked):
+            if signature is None or signature.fs_type != _ZFS_MEMBER:
+                continue
+            group = key(signature)
+            if group:
+                found.setdefault(group, set()).add(node)
+    return {group: frozenset(nodes) for group, nodes in found.items()}
+
+
+def disks_by_pool_guid(capture: LinuxCapture) -> dict[str, frozenset[str]]:
+    """Which disks carry a ZFS member, by the GUID of the pool its label belongs to.
+
+    The same walk as :func:`disks_by_pool`, keyed by the label's pool GUID
+    rather than its name, so two pools that share a name - a guest's root pool
+    on a host volume beside the host's own - are told apart.
+
+    Args:
+        capture: A Linux reading.
+
+    Returns:
+        Pool GUID, in decimal as udev writes it, to the disk nodes carrying a member of it.
+    """
+    return _disks_by_member(capture, lambda signature: signature.fs_uuid)
+
+
 def disks_by_pool(capture: LinuxCapture) -> dict[str, frozenset[str]]:
     """Which disks each ZFS pool's members sit on, partition evidence first.
 
@@ -476,15 +527,7 @@ def disks_by_pool(capture: LinuxCapture) -> dict[str, frozenset[str]]:
     Returns:
         Pool name to the disk nodes carrying one of its members.
     """
-    found: dict[str, set[str]] = {}
-    for node, block in capture.block.items():
-        if block.virtual:
-            continue
-        stacked = [_signature_of(dev, capture) for dev in sorted(_stacked_devs(block, capture.stacked))]
-        for signature in (*_signatures_of(block, capture), *stacked):
-            if signature is not None and signature.fs_type == _ZFS_MEMBER and signature.fs_label:
-                found.setdefault(signature.fs_label, set()).add(node)
-    return {pool: frozenset(nodes) for pool, nodes in found.items()}
+    return _disks_by_member(capture, lambda signature: signature.fs_label)
 
 
 def resolve_usage(capture: LinuxCapture, environment: Environment) -> dict[str, DiskUsage | None]:
@@ -510,4 +553,11 @@ def resolve_usage(capture: LinuxCapture, environment: Environment) -> dict[str, 
     return {node: _disk_usage(block, capture, sources) for node, block in capture.block.items() if not block.virtual}
 
 
-__all__ = ["BOOT_MOUNTS", "disks_by_device", "disks_by_pool", "resolve_usage"]
+__all__ = [
+    "BOOT_MOUNTS",
+    "devices_on_virtual_disks",
+    "disks_by_device",
+    "disks_by_pool",
+    "disks_by_pool_guid",
+    "resolve_usage",
+]

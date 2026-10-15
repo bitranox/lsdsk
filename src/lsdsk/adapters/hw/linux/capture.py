@@ -417,18 +417,24 @@ class StackedEntry(CaptureModel, frozen=True):
 class FilesystemSignature(CaptureModel, frozen=True):
     """What the udev database says a block device's content is formatted as.
 
-    Only the two properties this tool reads: the database also carries
-    serials and by-id paths, and keeping those out of a capture's new fields
-    is what keeps them free of identifiers.
+    Only the properties this tool reads: the database also carries serials
+    and by-id paths, and keeping those out of a capture's new fields is what
+    keeps them free of identifiers.
 
     Attributes:
         fs_type: The filesystem or RAID member type udev detected, such as
             ``zfs_member``.
         fs_label: The filesystem's own label, when it has one.
+        fs_uuid: For a ``zfs_member`` only, the GUID of the pool the label
+            belongs to, in decimal as udev writes it, so a member is joined to
+            the listed pool it really belongs to rather than to any pool of
+            the same name. ``None`` for every other type, and in a capture
+            taken before this field existed.
     """
 
     fs_type: DeviceText | None = None
     fs_label: DeviceText | None = None
+    fs_uuid: DeviceText | None = None
 
 
 class PoolEntry(CaptureModel, frozen=True):
@@ -441,6 +447,37 @@ class PoolEntry(CaptureModel, frozen=True):
 
     size: int = Field(ge=0, le=_UINT64_MAX)
     alloc: int = Field(ge=0, le=_UINT64_MAX)
+
+
+class VdevEntry(CaptureModel, frozen=True):
+    """One leaf vdev of an imported pool, as the pool's own config names it, without its path.
+
+    The path is dropped once resolved: it is often a by-id name embedding a
+    drive serial.
+
+    Attributes:
+        kind: The vdev's type as the config names it, such as ``disk`` or ``file``.
+        dev: The ``maj:min`` of the block device its path resolved to. ``None``
+            for a path that is not a block device - a file vdev - or that did
+            not resolve.
+    """
+
+    kind: DeviceText
+    dev: DeviceText | None = None
+
+
+class PoolLayout(CaptureModel, frozen=True):
+    """Where one listed pool's members are, from the pool's own config.
+
+    Attributes:
+        guid: The pool's GUID in decimal, the value udev writes as a member's
+            ``ID_FS_UUID``. ``None`` when the config carried none.
+        vdevs: Every leaf vdev with a path. ``None`` when the config carried
+            no readable vdev tree, a different fact from a pool with no such leaf.
+    """
+
+    guid: DeviceText | None = None
+    vdevs: Entries[VdevEntry] | None = None
 
 
 class BlockEntry(CaptureModel, frozen=True):
@@ -601,6 +638,12 @@ class LinuxCapture(CaptureHeader, frozen=True):
             an empty map is a reading that found no pool.
         zfs_pools_error: Why the pools could not be read, or why one of them
             could not.
+        zfs_pool_layouts: Where each pool the ZFS listing names has its
+            members, by pool name, from the pool's own config. The live reader
+            writes it on every run, empty when no pool was listed or the
+            listing could not be read; ``None`` marks a capture taken before
+            this field existed, whose pools are joined to disks by their
+            members' udev labels alone.
         zfs_fragmentation: Each imported pool's FRAG by name, ``None`` for a
             pool ZFS gives no figure for. ``None`` as a whole when there was no
             ZFS control device, or in a capture taken before this field existed.
@@ -633,6 +676,7 @@ class LinuxCapture(CaptureHeader, frozen=True):
     signatures: EntryMap[DeviceText, FilesystemSignature] | None = None
     zfs_pools: EntryMap[DeviceText, PoolEntry] | None = None
     zfs_pools_error: DeviceText | None = None
+    zfs_pool_layouts: EntryMap[DeviceText, PoolLayout] | None = None
     zfs_fragmentation: EntryMap[DeviceText, _FragmentationPercent | None] | None = None
     zfs_fragmentation_error: DeviceText | None = None
     filesystem_space: EntryMap[DeviceText, SpaceEntry] | None = None
@@ -655,6 +699,7 @@ __all__ = [
     "PartitionEntry",
     "PciEntry",
     "PoolEntry",
+    "PoolLayout",
     "QueueAttributes",
     "SasPhyEntry",
     "ScsiHostEntry",
@@ -663,5 +708,6 @@ __all__ = [
     "SwapEntry",
     "SysfsClasses",
     "UsbDeviceEntry",
+    "VdevEntry",
     "VpdPages",
 ]

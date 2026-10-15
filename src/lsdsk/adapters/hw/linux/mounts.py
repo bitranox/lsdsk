@@ -83,9 +83,13 @@ _KERNEL_PATH_ENCODING = "utf-8"
 # The kernel writes a space, tab, newline or backslash in a mount path as a
 # three-digit octal escape, so "/boot efi" arrives as "/boot\040efi".
 _OCTAL_ESCAPE = re.compile(r"\\([0-7]{3})")
-# The two udev properties this tool reads. The database also holds serials and
+# The udev properties this tool reads. The database also holds serials and
 # paths; keeping only these keeps a capture's new fields free of identifiers.
 _SIGNATURE_KEYS = {"ID_FS_TYPE": "fs_type", "ID_FS_LABEL": "fs_label"}
+# A ZFS member's ID_FS_UUID is its pool's GUID, which tells two pools of one
+# name apart; any other filesystem's UUID is nothing this tool reads.
+_ZFS_MEMBER = "zfs_member"
+_POOL_GUID_KEY = "ID_FS_UUID"
 
 # mountinfo's fields left of " - " run id, parent id, maj:min, root, mountpoint,
 # options[, optional tags]; field 4 (index 4, after a whitespace split) is the
@@ -718,7 +722,7 @@ def _uuid_type(dm_uuid: str | None) -> str | None:
 
 
 def read_signatures(devnums: Iterable[str], root: Path = Path("/run/udev/data")) -> dict[str, dict[str, str]] | None:
-    """Read the udev database's filesystem type and label for each device.
+    """Read the udev database's filesystem type and label for each device, and a ZFS member's pool GUID.
 
     Args:
         devnums: The ``maj:min`` device numbers to look up.
@@ -742,11 +746,12 @@ def read_signatures(devnums: Iterable[str], root: Path = Path("/run/udev/data"))
 
 
 def _udev_signature(path: Path) -> dict[str, str]:
-    """The filesystem type and label a udev database entry carries, if any."""
+    """The filesystem type and label a udev database entry carries, and a ZFS member's pool GUID, if any."""
     text = _read_short_text(path, limit=MAX_ATTRIBUTE_CHARS)
     if text is None:
         return {}
     found: dict[str, str] = {}
+    uuid: str | None = None
     for line in text.split("\n"):
         if not line.startswith("E:"):
             continue
@@ -754,6 +759,10 @@ def _udev_signature(path: Path) -> dict[str, str]:
         name = _SIGNATURE_KEYS.get(key)
         if name is not None:
             found[name] = value
+        elif key == _POOL_GUID_KEY:
+            uuid = value
+    if uuid is not None and found.get("fs_type") == _ZFS_MEMBER:
+        found["fs_uuid"] = uuid
     return found
 
 

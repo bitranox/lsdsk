@@ -84,6 +84,7 @@ def _readers(
         signatures=signatures,
         pools=lambda: (None, None),
         fragmentation=lambda: (None, None),
+        pool_layouts=lambda: {"tank": {"guid": "42", "vdevs": [{"kind": "disk", "dev": "8:1"}]}},
         mount_table=lambda: mounts,
         swaps=list,
         space=space,
@@ -136,3 +137,10 @@ def test_inside_a_container_no_filesystem_is_stat_ed_or_walked() -> None:
     reading = reader.read_system(_readers(recorded, environment={"container_marker": "lxc"}))
     assert (recorded.space, recorded.free_extents) == ([[]], [[]])
     assert (reading["filesystem_space"], reading["free_extents"]) == ({}, {})
+
+
+def test_each_listed_pool_s_layout_reaches_the_capture() -> None:
+    reading = reader.read_system(_readers(_Recorded()))
+    layouts = LinuxCapture.model_validate(reading).zfs_pool_layouts
+    assert layouts is not None
+    assert [(vdev.kind, vdev.dev) for vdev in layouts["tank"].vdevs or ()] == [("disk", "8:1")]

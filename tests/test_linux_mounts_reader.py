@@ -586,12 +586,14 @@ def test_every_stacked_device_and_its_partitions_is_a_device_to_look_signatures_
     udev = tmp_path / "udev"
     udev.mkdir()
     # A pool member behind crypt-under-LVM: only the deepest layer carries it.
-    (udev / "b253:1").write_bytes(b"E:ID_FS_TYPE=zfs_member\nE:ID_FS_LABEL=tank\nE:ID_FS_UUID=SECRET\n")
+    (udev / "b253:1").write_bytes(b"E:ID_FS_TYPE=zfs_member\nE:ID_FS_LABEL=tank\nE:ID_FS_UUID=42\nE:ID_SERIAL=SECRET\n")
 
     devnums = mounts.stacked_device_numbers(mounts.read_stacked(["dm-0", "md0"], sysfs))
 
     assert sorted(devnums) == ["253:0", "253:1", "259:7", "9:0"]
-    assert mounts.read_signatures(devnums, udev) == {"253:1": {"fs_type": "zfs_member", "fs_label": "tank"}}
+    assert mounts.read_signatures(devnums, udev) == {
+        "253:1": {"fs_type": "zfs_member", "fs_label": "tank", "fs_uuid": "42"}
+    }
 
 
 def test_a_stacked_device_whose_number_was_not_read_names_no_device() -> None:
@@ -720,3 +722,15 @@ def test_a_fuse_source_is_free_text_and_names_no_device(tmp_path: Path, fstype: 
     assert rows is not None
     # Control: fuseblk is the kernel opening the named block device itself, so its source does name the disk.
     assert [(row["dev"], row.get("source_dev")) for row in rows] == [("0:91", "8:1")]
+
+
+def test_a_zfs_member_keeps_its_pool_guid_and_no_other_filesystem_keeps_its_uuid(tmp_path: Path) -> None:
+    # The GUID tells a host pool from a guest's of the same name; an ext4 UUID is nothing the tool reads.
+    (tmp_path / "b8:1").write_bytes(
+        b"E:ID_FS_TYPE=zfs_member\nE:ID_FS_LABEL=rpool\nE:ID_FS_UUID=2936817686098969225\nE:ID_FS_UUID_SUB=7\n"
+    )
+    (tmp_path / "b8:2").write_bytes(b"E:ID_FS_UUID=0b5e-1d\nE:ID_FS_TYPE=ext4\n")
+    assert mounts.read_signatures(["8:1", "8:2"], tmp_path) == {
+        "8:1": {"fs_type": "zfs_member", "fs_label": "rpool", "fs_uuid": "2936817686098969225"},
+        "8:2": {"fs_type": "ext4"},
+    }

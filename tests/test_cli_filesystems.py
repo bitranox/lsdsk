@@ -226,3 +226,45 @@ def test_a_listed_pool_no_disk_reaches_is_named_in_skipped_and_makes_ok_false(
     ]
     assert envelope["ok"] is False
     assert "ghost" not in [row["name"] for row in envelope["data"]["filesystems"]]
+
+
+def _filepool(reading: dict[str, Any]) -> None:
+    """A pool on files beside the fixture's own two, as ``zpool create filepool /srv/pool.img`` leaves a host."""
+    reading["zfs_pools"]["filepool"] = {"size": 10737418240, "alloc": 9663676416}
+    reading["zfs_fragmentation"]["filepool"] = 5
+    reading["mounts"].append({"dev": "0:77", "fstype": "zfs", "mountpoint": "/filepool", "source": "filepool"})
+
+
+def _with_layouts(reading: dict[str, Any]) -> None:
+    """The fixture's pools as the pool configs place them: rpool on the two SATA partitions, tank on the NVMe one."""
+    reading["zfs_pool_layouts"] = {
+        "rpool": {"guid": "1", "vdevs": [{"kind": "disk", "dev": "8:3"}, {"kind": "disk", "dev": "8:19"}]},
+        "tank": {"guid": "2", "vdevs": [{"kind": "disk", "dev": "259:1"}]},
+    }
+    if "filepool" in reading["zfs_pools"]:
+        reading["zfs_pool_layouts"]["filepool"] = {"guid": "3", "vdevs": [{"kind": "file"}]}
+
+
+def test_a_pool_on_files_is_no_row_and_no_refusal(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    def filepool_with_layouts(reading: dict[str, Any]) -> None:
+        _filepool(reading)
+        _with_layouts(reading)
+
+    plain = _envelope(cli_runner, production_factory, FIXTURES / "linux-zfs-filesystems.json")
+    laid_out = _envelope(cli_runner, production_factory, _zfs_fixture_with(tmp_path, "layouts", _with_layouts))
+    files = _envelope(cli_runner, production_factory, _zfs_fixture_with(tmp_path, "files", filepool_with_layouts))
+    unplaced = _envelope(cli_runner, production_factory, _zfs_fixture_with(tmp_path, "unplaced", _filepool))
+
+    # Controls: the committed capture, and the same capture with its pools' layouts, both read clean and agree.
+    assert (plain["skipped"], plain["ok"]) == ([], True)
+    assert laid_out["data"]["filesystems"] == plain["data"]["filesystems"]
+    assert (laid_out["skipped"], laid_out["ok"]) == ([], True)
+    # The pool's config says its one member is a file: there was no disk of its own to find.
+    assert (files["skipped"], files["ok"]) == ([], True)
+    assert files["data"]["filesystems"] == plain["data"]["filesystems"]
+    # Opposite arm: recorded before the layouts were read, nothing says what the pool sits on, so it is refused.
+    assert unplaced["skipped"] == [
+        "zfs-pool-disks: filesystems - pool filepool: no member was traced to a disk this scan inventoried"
+    ]
