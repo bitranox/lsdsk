@@ -15,11 +15,7 @@ import pytest
 
 from lsdsk.adapters import cli as cli_mod
 from lsdsk.adapters.config.deploy import deploy_configuration
-from lsdsk.adapters.config.permissions import (
-    get_modes_for_target,
-    get_permission_defaults,
-    parse_mode,
-)
+from lsdsk.adapters.config.permissions import read_permission_defaults
 from lsdsk.composition import build_production
 from lsdsk.domain.deployment import DeployRequest
 from lsdsk.domain.enums import DeployTarget
@@ -43,144 +39,28 @@ class CapturedDeployArgs:
     file_mode: int | None = None
 
 
-@pytest.mark.os_agnostic
-def test_get_permission_defaults_returns_library_defaults_when_not_configured(
+def test_permissions_are_set_when_nothing_is_configured(
     config_factory: Callable[[dict[str, Any]], Config],
 ) -> None:
-    """Returns lib_layered_config defaults when no config section exists."""
-    config = config_factory({})
+    """With no section configured, modes are set: the switch defaults to on."""
+    reading = read_permission_defaults(config_factory({}))
 
-    defaults = get_permission_defaults(config)
-
-    assert defaults.app_directory == 0o755
-    assert defaults.app_file == 0o644
-    assert defaults.host_directory == 0o755
-    assert defaults.host_file == 0o644
-    assert defaults.user_directory == 0o700
-    assert defaults.user_file == 0o600
-    assert defaults.enabled is True
+    assert reading.defaults.enabled is True
+    assert reading.rejected == ()
 
 
-@pytest.mark.os_agnostic
-def test_get_permission_defaults_reads_from_config(
+def test_the_configured_switch_is_read_and_the_modes_beside_it_are_left_to_the_deploy(
     config_factory: Callable[[dict[str, Any]], Config],
 ) -> None:
-    """Reads permission defaults from [lib_layered_config.default_permissions]."""
+    """``enabled`` is lsdsk's to settle; a mode next to it, usable or not, is not judged here."""
     config = config_factory(
-        {
-            "lib_layered_config": {
-                "default_permissions": {
-                    "user_directory": 0o750,
-                    "user_file": "0o640",  # text: the int 416 would be ambiguous
-                    "enabled": False,
-                }
-            }
-        }
+        {"lib_layered_config": {"default_permissions": {"user_file": "abc", "app_file": "0o640", "enabled": False}}}
     )
 
-    defaults = get_permission_defaults(config)
+    reading = read_permission_defaults(config)
 
-    assert defaults.user_directory == 0o750
-    assert defaults.user_file == 0o640
-    assert defaults.enabled is False
-    # Non-overridden values use library defaults
-    assert defaults.app_directory == 0o755
-
-
-@pytest.mark.os_agnostic
-def test_get_modes_for_target_returns_config_defaults(
-    config_factory: Callable[[dict[str, Any]], Config],
-) -> None:
-    """Returns configured defaults for the specified target layer."""
-    config = config_factory(
-        {
-            "lib_layered_config": {
-                "default_permissions": {
-                    "user_directory": 0o750,
-                    "user_file": "0o640",  # text: the int 416 would be ambiguous
-                }
-            }
-        }
-    )
-
-    dir_mode, file_mode = get_modes_for_target(DeployTarget.USER, config)
-
-    assert dir_mode == 0o750
-    assert file_mode == 0o640
-
-
-@pytest.mark.os_agnostic
-def test_get_modes_for_target_cli_override_takes_precedence(
-    config_factory: Callable[[dict[str, Any]], Config],
-) -> None:
-    """CLI overrides take precedence over config defaults."""
-    config = config_factory(
-        {
-            "lib_layered_config": {
-                "default_permissions": {
-                    "user_directory": 0o750,
-                    "user_file": "0o640",  # text: the int 416 would be ambiguous
-                }
-            }
-        }
-    )
-
-    dir_mode, file_mode = get_modes_for_target(
-        DeployTarget.USER,
-        config,
-        dir_mode_override=0o700,
-        file_mode_override=0o600,
-    )
-
-    assert dir_mode == 0o700
-    assert file_mode == 0o600
-
-
-@pytest.mark.os_agnostic
-def test_get_modes_for_target_returns_library_defaults_for_app_layer(
-    config_factory: Callable[[dict[str, Any]], Config],
-) -> None:
-    """Returns library defaults for app layer when not configured."""
-    config = config_factory({})
-
-    dir_mode, file_mode = get_modes_for_target(DeployTarget.APP, config)
-
-    assert dir_mode == 0o755
-    assert file_mode == 0o644
-
-
-# ======================== parse_mode Tests ========================
-
-
-@pytest.mark.os_agnostic
-def test_parse_mode_accepts_integer() -> None:
-    """parse_mode returns integer values unchanged."""
-    assert parse_mode(493, 0o644) == 493
-    assert parse_mode(0o755, 0o644) == 0o755
-
-
-@pytest.mark.os_agnostic
-def test_parse_mode_accepts_octal_string_with_prefix() -> None:
-    """parse_mode parses '0o755' format."""
-    assert parse_mode("0o755", 0o644) == 0o755
-    assert parse_mode("0o644", 0o755) == 0o644
-    assert parse_mode("0o700", 0o755) == 0o700
-
-
-@pytest.mark.os_agnostic
-def test_parse_mode_accepts_octal_string_without_prefix() -> None:
-    """parse_mode parses '755' format (no 0o prefix)."""
-    assert parse_mode("755", 0o644) == 0o755
-    assert parse_mode("644", 0o755) == 0o644
-    assert parse_mode("600", 0o755) == 0o600
-
-
-@pytest.mark.os_agnostic
-def test_parse_mode_returns_default_on_invalid_string() -> None:
-    """parse_mode returns default for invalid octal strings."""
-    assert parse_mode("abc", 0o644) == 0o644
-    assert parse_mode("999", 0o755) == 0o755  # 9 is not a valid octal digit
-    assert parse_mode("", 0o700) == 0o700
+    assert reading.defaults.enabled is False
+    assert reading.rejected == ()
 
 
 @pytest.mark.os_agnostic

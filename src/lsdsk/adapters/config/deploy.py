@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from lib_layered_config import deploy_config, generate_examples
+from lib_layered_config import DeployPermissionsError, deploy_config, generate_examples
 from lib_layered_config.examples.deploy import DeployAction
 
 from lsdsk import __init__conf__
@@ -19,6 +19,15 @@ if TYPE_CHECKING:
     from lsdsk.domain.deployment import DeployRequest
 
 _DEPLOYED_ACTIONS = frozenset({DeployAction.CREATED, DeployAction.OVERWRITTEN})
+
+#: What a refused configured mode is followed by, in this command's own options.
+#: The library's hint names its own parameters (``dir_mode``, ``set_permissions=False``),
+#: which a reader of ``config-deploy`` has no way to pass.
+_DEPLOY_ANYWAY_HINT = (
+    "to deploy anyway, give both --dir-mode and --file-mode (the built-in ones are 0o700 and 0o600 "
+    "for user, 0o755 and 0o644 for app and host); --no-permissions also deploys, but leaves every "
+    "mode to the umask, which can make a user file that holds secrets readable by other accounts"
+)
 
 
 def _refuse_a_directory_at_a_target(destinations: Iterable[Path]) -> None:
@@ -69,6 +78,9 @@ def deploy_configuration(request: DeployRequest) -> list[Path]:
         PermissionError: When deploying to app/host without sufficient privileges.
         ValueError: When invalid target names are provided.
         ConfigurationError: A directory stands where a configuration file belongs.
+        DeployPermissionsError: A configured or overriding mode was refused by the
+            library, which decides every mode; nothing has been written. It is a
+            ``ValueError``.
 
     Side Effects:
         Creates configuration files in platform-specific directories:
@@ -100,26 +112,37 @@ def deploy_configuration(request: DeployRequest) -> list[Path]:
     # Convert enum values to strings for lib_layered_config
     target_strings = [target.value for target in request.targets]
 
-    results = deploy_config(
-        source=source,
-        vendor=__init__conf__.LAYEREDCONF_VENDOR,
-        app=__init__conf__.LAYEREDCONF_APP,
-        slug=__init__conf__.LAYEREDCONF_SLUG,
-        profile=request.profile,
-        targets=target_strings,
-        force=request.force,
-        # The library takes a bool. None here means the caller expressed no
-        # preference, which is the CLI passing neither --permissions nor
-        # --no-permissions, and the answer to that is the documented default.
-        set_permissions=request.set_permissions is not False,
-        # The library reads ``enabled`` from the configuration itself and refuses
-        # a value that is not a boolean, even though this call has already decided
-        # it (see above) and the caller coerced the configured one with a warning.
-        # Handing it the settled answer replaces the key it would validate.
-        permission_overrides={"enabled": request.set_permissions is not False},
-        dir_mode=request.dir_mode,
-        file_mode=request.file_mode,
-    )
+    try:
+        results = deploy_config(
+            source=source,
+            vendor=__init__conf__.LAYEREDCONF_VENDOR,
+            app=__init__conf__.LAYEREDCONF_APP,
+            slug=__init__conf__.LAYEREDCONF_SLUG,
+            profile=request.profile,
+            targets=target_strings,
+            force=request.force,
+            # The library takes a bool. None here means the caller expressed no
+            # preference, which is the CLI passing neither --permissions nor
+            # --no-permissions, and the answer to that is the documented default.
+            set_permissions=request.set_permissions is not False,
+            # The library reads ``enabled`` from the configuration itself and refuses
+            # a value that is not a boolean, even though this call has already decided
+            # it (see above) and the caller coerced the configured one with a warning.
+            # Handing it the settled answer replaces the key it would validate. The
+            # request's own overrides - the command line's ``--set`` modes - go in
+            # beside it, because the library's read does not include the command line.
+            permission_overrides={
+                **dict(request.permission_overrides),
+                "enabled": request.set_permissions is not False,
+            },
+            dir_mode=request.dir_mode,
+            file_mode=request.file_mode,
+        )
+    except DeployPermissionsError as refused:
+        # The refusal itself is the library's: it read the section from its own layers
+        # and is the one decider of a mode. Only the closing hint is reworded.
+        hint = _DEPLOY_ANYWAY_HINT if refused.hint is not None else None
+        raise DeployPermissionsError(refused.problems, hint=hint) from refused
 
     _refuse_a_directory_at_a_target(result.destination for result in results)
     # Extract paths where files were actually created or overwritten

@@ -21,7 +21,7 @@ from rich.console import Console
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.loader import invalid_profile_message, shipped_table_paths
 from lsdsk.adapters.config.overrides import apply_overrides
-from lsdsk.adapters.config.permissions import read_permission_defaults
+from lsdsk.adapters.config.permissions import permission_overrides_from, read_permission_defaults
 from lsdsk.adapters.config.secrets import redact_secrets
 from lsdsk.adapters.config.values import REASON_SECTION, RejectedValue, rendered
 from lsdsk.domain.deployment import DeployRequest
@@ -477,6 +477,7 @@ def cli_config_deploy(
                 set_permissions=set_permissions,
                 dir_mode=dir_mode,
                 file_mode=file_mode,
+                permission_overrides=permission_overrides_from(cli_ctx.set_overrides),
             ),
             output_format=output_format,
         )
@@ -501,7 +502,8 @@ def _execute_deploy(
     Raises:
         SystemExit: On permission or other errors.
     """
-    # Get permission defaults from config
+    # What lsdsk decides itself. The modes are not read here: the deploy reads them
+    # from its own layers and is the one place that refuses one it cannot use.
     reading = read_permission_defaults(cli_ctx.config)
     perm_defaults = reading.defaults
     for rejected in reading.rejected:

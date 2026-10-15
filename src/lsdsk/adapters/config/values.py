@@ -41,7 +41,6 @@ REASON_POSITIVE_FLOAT = "not a number above zero, or too large to use"
 REASON_PERCENT = "not a whole number from 1 to 100"
 REASON_FLAG = "not true or false"
 REASON_PATH = "not a path, or names a user this machine does not have"
-REASON_MODE = "not a file mode; write it as text: 0755 or 0o755"
 REASON_AMBIGUOUS_MODE = (
     "ambiguous: a bare integer of only the digits 0-7 may be octal digits or a numeric mode; "
     "write it as text: 0755 or 0o755"
@@ -296,44 +295,13 @@ def flag(raw: object, *, default: bool) -> bool:
     return cast("bool", raw) if accepts_flag(raw) else default
 
 
-def _octal_text(text: str) -> int | None:
-    """The mode a text spelling names (``"0755"``, ``"755"``, ``"0o755"``), or None."""
-    try:
-        return int(text.strip(), 8)
-    except ValueError:
-        return None
-
-
-def accepts_mode(raw: object) -> bool:
-    """Whether a configured value is usable as a file permission mode.
-
-    Text is octal, with or without the ``0o`` prefix. An int is a numeric mode only when
-    it cannot be octal digits: lib_layered_config reads an unquoted ``.env`` value ``755``
-    as the int 755, which is ambiguous between the octal digits and the decimal mode, so
-    an int whose decimal digits are all 0-7 is refused rather than guessed. ``493`` has a
-    9 and so stays a numeric mode. A bool is an int in Python and would become mode 1 or 0.
-
-    Args:
-        raw: The configured value, of whatever type the file produced.
-
-    Returns:
-        Whether it can be used as it stands.
-
-    Example:
-        >>> accepts_mode("0755"), accepts_mode("0o755"), accepts_mode(493), accepts_mode(0o750)
-        (True, True, True, True)
-        >>> accepts_mode(755), accepts_mode(420), accepts_mode(True), accepts_mode("999")
-        (False, False, False, False)
-    """
-    if isinstance(raw, bool):
-        return False
-    if isinstance(raw, int):
-        return raw >= 0 and not set(str(raw)) <= set("01234567")
-    return isinstance(raw, str) and _octal_text(raw) is not None
-
-
 def is_ambiguous_mode(raw: object) -> bool:
     """Whether a configured mode is an int that could be octal digits (``755``, ``644``, ``0``).
+
+    The one judgement lsdsk makes of a permission mode itself. Every other mode is judged
+    by ``config-deploy`` when it applies it: lib_layered_config reads the section from its
+    own layers and refuses whatever it cannot use, so a second rule here could only
+    disagree with it - and did, announcing a fallback for runs the deploy then refused.
 
     Args:
         raw: The configured value.
@@ -369,25 +337,6 @@ class AmbiguousModeError(ValueError):
         self.dotted = dotted
         self.raw = raw
         super().__init__(f"{dotted}={raw!r}: {REASON_AMBIGUOUS_MODE}")
-
-
-def mode_of(raw: object, default: int) -> int:
-    """Read a permission mode, falling back rather than failing the run.
-
-    Args:
-        raw: The configured value.
-        default: The shipped mode to use when it cannot be.
-
-    Returns:
-        The configured mode, or ``default``.
-
-    Example:
-        >>> mode_of("0o755", 0o700), mode_of(493, 0o700), mode_of(755, 0o700)
-        (493, 493, 448)
-    """
-    if not accepts_mode(raw):
-        return default
-    return raw if isinstance(raw, int) else cast("int", _octal_text(cast("str", raw)))
 
 
 def accepts_tree_density(raw: object) -> bool:
@@ -572,18 +521,18 @@ class SectionValues:
             self._note(key, reason=REASON_FLAG, used=default)
         return flag(raw, default=default)
 
-    def mode(self, key: str, default: int) -> int:
-        """A permission mode, recording the refusal if the configured value is not one.
+    def refuse_an_ambiguous_mode(self, key: str) -> None:
+        """Stop the run when this key holds an int that could be octal digits.
+
+        Nothing else about the value is judged here: the deploy that applies a mode is
+        the one place that decides whether it can be used (see :func:`is_ambiguous_mode`).
 
         Raises:
-            AmbiguousModeError: For an int that could be octal digits; the one value that stops the run.
+            AmbiguousModeError: For such an int; the one value that stops the run.
         """
         raw = self._table.get(key)
         if is_ambiguous_mode(raw):
             raise AmbiguousModeError(f"{self._section}.{key}", raw)
-        if key in self._table and not accepts_mode(raw):
-            self._note(key, reason=REASON_MODE, used=oct(default))
-        return mode_of(raw, default)
 
     def tree_density(self, key: str, default: TreeDensity) -> TreeDensity:
         """A density name, recording the refusal if the configured value is not one."""
@@ -626,7 +575,6 @@ class SectionValues:
 __all__ = [
     "REASON_AMBIGUOUS_MODE",
     "REASON_FLAG",
-    "REASON_MODE",
     "REASON_PATH",
     "REASON_PERCENT",
     "REASON_POSITIVE_FLOAT",
@@ -637,7 +585,6 @@ __all__ = [
     "RejectedValue",
     "SectionValues",
     "accepts_flag",
-    "accepts_mode",
     "accepts_path",
     "accepts_percent",
     "accepts_positive_float",
@@ -645,7 +592,6 @@ __all__ = [
     "accepts_tree_density",
     "flag",
     "is_ambiguous_mode",
-    "mode_of",
     "path_or_none",
     "percent",
     "positive_float",

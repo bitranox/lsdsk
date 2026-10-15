@@ -37,6 +37,11 @@ class DeployRequest(DomainModel, frozen=True):
             neither ``--permissions`` nor ``--no-permissions`` was given.
         dir_mode: The directory mode to use instead of the layer's default.
         file_mode: The file mode to use instead of the layer's default.
+        permission_overrides: ``(setting, value)`` pairs for the deploy's
+            ``[lib_layered_config.default_permissions]`` settings, laid over
+            what it reads from the configuration and validated the same way.
+            The command line's ``--set`` modes travel here, because the deploy's
+            own read of the configuration does not include the command line.
 
     Example:
         >>> request = DeployRequest(targets=(DeployTarget.USER,))
@@ -52,6 +57,7 @@ class DeployRequest(DomainModel, frozen=True):
     set_permissions: bool | None = None
     dir_mode: int | None = None
     file_mode: int | None = None
+    permission_overrides: tuple[tuple[str, object], ...] = ()
 
 
 __all__ = ["DeployRequest"]

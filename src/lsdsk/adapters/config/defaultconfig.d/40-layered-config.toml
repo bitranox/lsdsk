@@ -36,11 +36,13 @@
 #
 # POSIX only: Permissions are set on Linux/macOS. No-op on Windows (uses ACLs).
 #
-# Format: Use octal strings (recommended) or decimal integers:
-#   - Octal string: "0o755", "0o644", "755", "640" (quoted)
-#   - Decimal integer with an 8 or 9 in it: 493 (= 0o755). An integer of only the
-#     digits 0-7 (755, 644, 420) is ambiguous and stops the run at startup
-#     (exit 78): write it as text, "0755" or "0o755".
+# Format: an octal string, quoted: "0o755", "0o644", "755", "640".
+#   config-deploy judges every mode when it applies it, and refuses one it
+#   cannot use before anything is written: a bare integer (it is read as
+#   decimal), text that is not plain octal digits, and a mode that adds group
+#   or world write, an execute bit on a file, or a special bit. An integer of
+#   only the digits 0-7 (755, 644, 420) stops every run at startup (exit 78):
+#   write it as text, "0755" or "0o755".
 #
 # CLI overrides:
 #   --permissions / --no-permissions  Enable/disable permission setting
