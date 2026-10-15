@@ -122,3 +122,20 @@ def test_every_piece_of_a_regex_cut_at_several_commas_continues_the_cut(
     assert len(said) == cut_pieces, said
     assert all("continues a cut regex" in line for line in said), said
     assert not any("has no '='" in line for line in said), said
+
+
+def test_a_cut_after_a_piece_with_a_stray_closing_bracket_is_still_a_cut(
+    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The run being rejoined starts at the entry ``k=(y``, never at an earlier one.
+
+    Carried on from ``a=x)``, the stray ``)`` cancels the ``(`` that ``k=(y`` leaves
+    open, so ``z)`` would be blamed on having no ``=`` instead of on the cut.
+    """
+    monkeypatch.setenv("LOG_SCRUB_PATTERNS", "a=x),k=(y,z),key=.+")
+
+    said = [line for line in _said_about_scrubbing(capfd) if "split on every comma" in line]
+
+    assert len(said) == 1, said
+    assert "LOG_SCRUB_PATTERNS=z):" in said[0], said
+    assert "continues a cut regex" in said[0], said
