@@ -5,7 +5,6 @@ all subcommands. Handles global flags like --traceback, --profile, and --set.
 
 Contents:
     * :func:`cli` - Root command group with global options.
-    * :func:`_report_profile_that_named_nothing` - warn about a profile nothing answered to.
     * :func:`_report_keys_nothing_reads` - warn about a file key nothing reads.
     * :func:`_refuse_an_ambiguous_mode` - refuse an int permission mode that could be octal digits.
     * :func:`_report_values_nothing_uses` - warn about a value nothing can use.
@@ -18,7 +17,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import rich_click as click
-from lib_layered_config import ConfigError
 
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.history import read_history_settings
@@ -29,13 +27,16 @@ from lsdsk.adapters.config.loader import (
     require_an_intact_installation,
 )
 from lsdsk.adapters.config.overrides import apply_overrides
-from lsdsk.adapters.config.permissions import read_permission_defaults
-from lsdsk.adapters.config.profiles import contributed_layers, existing_profiles, nearest_profile
 from lsdsk.adapters.config.tunables import read_display_settings, read_thresholds
-from lsdsk.adapters.config.values import AmbiguousModeError
 from lsdsk.domain.enums import TreeDensity
 
 from . import safe_console
+from .config_loading import (
+    UnusableConfigError,
+    load_profile_config,
+    refuse_an_ambiguous_mode,
+    report_profile_that_named_nothing,
+)
 from .constants import CLICK_CONTEXT_SETTINGS, TREE_DENSITY_TOKENS
 from .context import CLIContext, apply_traceback_preferences, store_cli_context
 from .envelope import RefusedBeforeTheRun
@@ -154,49 +155,12 @@ def _load_or_refuse(ctx: click.Context, services: AppServices, *, profile: str |
         require_an_intact_installation()
     except DamagedInstallationError as error:
         _refuse_before_the_run(ctx, str(error), ExitCode.CONFIG_ERROR)
+    # The mapping of a failed load to its code is shared with the subcommands that reload
+    # under their own --profile, so the two spellings of one request cannot answer apart.
     try:
-        return services.get_config(profile=profile, dotenv_path=env_file)
-    except ConfigError as error:
-        code = ExitCode.PERMISSION_DENIED if _refused_for_permission(error) else ExitCode.CONFIG_ERROR
-        _refuse_before_the_run(ctx, str(error), code)
-    except PermissionError as error:
-        _refuse_before_the_run(ctx, str(error), ExitCode.PERMISSION_DENIED)
-    except OSError as error:
-        _refuse_before_the_run(ctx, str(error), ExitCode.CONFIG_ERROR)
-
-
-def _refused_for_permission(error: BaseException) -> bool:
-    """Whether a configuration error was, underneath, a read the system refused.
-
-    The layered library reports an unreadable configuration file as its own
-    ``LayerLoadError`` and keeps the ``PermissionError`` as the cause, so the
-    refusal is a permission problem the reader fixes with ``chmod``, not a file
-    they wrote wrong, and it keeps the exit code that says so.
-
-    Args:
-        error: The error the loader raised.
-
-    Returns:
-        ``True`` when a ``PermissionError`` stands anywhere in its cause chain.
-
-    Example:
-        >>> try:
-        ...     try:
-        ...         raise PermissionError(13, "denied")
-        ...     except PermissionError as inner:
-        ...         raise ValueError("cannot be read") from inner
-        ... except ValueError as outer:
-        ...     _refused_for_permission(outer)
-        True
-        >>> _refused_for_permission(ValueError("not valid TOML"))
-        False
-    """
-    seen: BaseException | None = error
-    while seen is not None:
-        if isinstance(seen, PermissionError):
-            return True
-        seen = seen.__cause__
-    return False
+        return load_profile_config(services, profile=profile, env_file=env_file)
+    except UnusableConfigError as refused:
+        _refuse_before_the_run(ctx, refused.message, refused.code)
 
 
 def _refuse_before_the_run(ctx: click.Context, message: str, code: ExitCode) -> NoReturn:
@@ -223,44 +187,11 @@ def _refuse_before_the_run(ctx: click.Context, message: str, code: ExitCode) -> 
     raise RefusedBeforeTheRun(message, code=code, command=ctx.invoked_subcommand) from None
 
 
-def _report_profile_that_named_nothing(config: Config, profile: str | None) -> None:
-    """Say so on stderr when ``--profile`` loaded nothing under that name.
-
-    A profile REPLACES the configuration directories rather than adding to
-    them, so a name with one letter wrong reads no file at all and every value
-    falls back to the shipped one at exit 0. Every other identifier typed at
-    this CLI answers back - an unknown ``--set`` key is refused, an unknown file
-    key gets a did-you-mean, an invalid profile SYNTAX exits 22 - and this was
-    the one well-formed name allowed to mean nothing quietly.
-
-    Warned rather than refused, for the same reason an unknown file key is: the
-    values are inert either way and the run still diagnoses the hardware, which
-    is what somebody is at the terminal for.
-
-    Args:
-        config: The configuration as loaded, carrying which files it came from.
-        profile: The name that was asked for, or ``None`` when none was.
-
-    Side Effects:
-        Writes one line to stderr when the name answered nothing.
-    """
-    if profile is None or contributed_layers(config, profile):
-        return
-    suggestion = nearest_profile(profile, existing_profiles())
-    meant = f" Did you mean {suggestion}?" if suggestion else ""
-    safe_console.echo(
-        f"Warning: profile {profile} named nothing, so every value is the one configured without it.{meant}",
-        err=True,
-    )
-
-
 def _refuse_an_ambiguous_mode(ctx: click.Context, config: Config) -> None:
     """Refuse the run when a permission mode is an int that could be octal digits.
 
-    The one configured value that stops a run instead of falling back: ``755`` from an
-    unquoted ``.env`` line is the int 755, which is either octal digits or the decimal
-    mode 0o1363, and guessing either gives a mode nobody can be sure they meant. Every
-    other refused value keeps the warn-and-use-the-default behaviour.
+    The decision is :func:`~.config_loading.refuse_an_ambiguous_mode`, shared with the
+    subcommands that reload under their own ``--profile``; this answers it from the root.
 
     Args:
         ctx: The root group's context.
@@ -270,9 +201,9 @@ def _refuse_an_ambiguous_mode(ctx: click.Context, config: Config) -> None:
         RefusedBeforeTheRun: With ``CONFIG_ERROR`` for such a mode.
     """
     try:
-        read_permission_defaults(config)
-    except AmbiguousModeError as error:
-        _refuse_before_the_run(ctx, str(error), ExitCode.CONFIG_ERROR)
+        refuse_an_ambiguous_mode(config)
+    except UnusableConfigError as refused:
+        _refuse_before_the_run(ctx, refused.message, refused.code)
 
 
 def _report_values_nothing_uses(config: Config, *, history_file: Path | None) -> None:
@@ -484,7 +415,7 @@ def cli(
     # closes such gaps with a cast to the real type (see typed_click.py).
     services = cast("AppServices", ctx.obj())
     config = _load_or_refuse(ctx, services, profile=profile, env_file=env_file)
-    _report_profile_that_named_nothing(config, profile)
+    report_profile_that_named_nothing(config, profile)
     _report_keys_nothing_reads(config)
     config = _apply_cli_overrides(config, set_overrides)
     # After the overrides, not before: an unknown --set KEY is refused outright and
@@ -500,6 +431,7 @@ def cli(
             config=config,
             services=services,
             profile=profile,
+            env_file=env_file,
             set_overrides=set_overrides,
             replay=replay,
             history_file=history_file,

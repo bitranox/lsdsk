@@ -46,6 +46,7 @@ class CLIContext:
     config: Config
     services: AppServices
     profile: str | None = None
+    env_file: str | None = None
     set_overrides: tuple[str, ...] = ()
     replay: Path | None = None
     history_file: Path | None = None
@@ -57,7 +58,7 @@ class CLIContext:
 def store_cli_context(ctx: click.Context, context: CLIContext) -> None:
     """Store CLI state on the Click context for subcommands to read.
 
-    Takes the built context rather than its nine fields. Every one of those was
+    Takes the built context rather than its fields. Every one of those was
     a pure tramp - forwarded, never read - into a body whose only statement
     constructed this object, so the parameter list grew by one each time a
     global option was added and the signature said nothing the dataclass did not

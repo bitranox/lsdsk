@@ -29,6 +29,12 @@ from lsdsk.domain.enums import ActionCommand, DeployTarget, OutputFormat, WriteO
 from lsdsk.domain.errors import ConfigurationError
 
 from .. import safe_console
+from ..config_loading import (
+    UnusableConfigError,
+    load_profile_config,
+    refuse_an_ambiguous_mode,
+    report_profile_that_named_nothing,
+)
 from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION
 from ..context import CLIContext, get_cli_context
 from ..envelope import ActionResult, MappingResult, PayloadTooDeepError, emit_action, fail
@@ -107,7 +113,7 @@ def cli_config(ctx: click.Context, output_format: OutputFormat, section: str | N
     """
     cli_ctx = get_cli_context(ctx)
     _refuse_an_invalid_profile(profile, output_format=output_format)
-    effective_config, effective_profile = _resolve_config(cli_ctx, profile)
+    effective_config, effective_profile = _resolve_config(cli_ctx, profile, output_format=output_format)
     ignored_sections = _ignored_sections(effective_config)
 
     extra = {"command": ActionCommand.CONFIG.value, "format": output_format.value, "profile": effective_profile}
@@ -338,25 +344,39 @@ def _get_effective_profile(cli_ctx: CLIContext, profile_override: str | None) ->
     return profile_override if profile_override else cli_ctx.profile
 
 
-def _resolve_config(cli_ctx: CLIContext, profile: str | None) -> tuple[Config, str | None]:
-    """Resolve configuration from context or reload with profile override.
+def _resolve_config(
+    cli_ctx: CLIContext, profile: str | None, *, output_format: OutputFormat
+) -> tuple[Config, str | None]:
+    """The configuration this command works from, reloaded when its own ``--profile`` names one.
 
-    When a subcommand-level profile override is specified, reloads config
-    with that profile and reapplies any root-level ``--set`` overrides
-    stored in the CLI context.
+    A reload goes through the decisions the root group makes for ``--profile X COMMAND``, in
+    the same order, so the two spellings of one request answer alike: a file that cannot be
+    read leaves 78 or 13 with the envelope, a profile that named nothing is warned about, the
+    root's ``--set`` overrides and ``--env-file`` are applied again, and a mode that could be
+    octal digits stops the run. Called bare, the reload left ``LayerLoadError`` and exit 70.
+
+    The overrides were validated by the root group already, so applying them again cannot
+    refuse here.
 
     Args:
         cli_ctx: CLI context containing stored config and services.
-        profile: Optional profile override.
+        profile: The command's own ``--profile``, or ``None`` to keep the root's configuration.
+        output_format: What the caller asked for, which decides how a refusal answers.
 
     Returns:
         Tuple of (config, effective_profile).
     """
     effective_profile = _get_effective_profile(cli_ctx, profile)
-    if profile:
-        config = cli_ctx.services.get_config(profile=profile)
-        return apply_overrides(config, cli_ctx.set_overrides), effective_profile
-    return cli_ctx.config, effective_profile
+    if not profile:
+        return cli_ctx.config, effective_profile
+    try:
+        loaded = load_profile_config(cli_ctx.services, profile=profile, env_file=cli_ctx.env_file)
+        report_profile_that_named_nothing(loaded, profile)
+        config = apply_overrides(loaded, cli_ctx.set_overrides)
+        refuse_an_ambiguous_mode(config)
+    except UnusableConfigError as refused:
+        fail(refused.message, refused.code, output_format=output_format)
+    return config, effective_profile
 
 
 def _parse_octal_mode(ctx: click.Context, param: click.Parameter, value: str | None) -> int | None:
@@ -454,7 +474,9 @@ def cli_config_deploy(
     """
     cli_ctx = get_cli_context(ctx)
     _refuse_an_invalid_profile(profile, output_format=output_format)
-    effective_profile = _get_effective_profile(cli_ctx, profile)
+    # The configuration of the profile this deploy writes, so ``enabled`` and every refusal
+    # are read from it rather than from the root's, which may name another profile or none.
+    config, effective_profile = _resolve_config(cli_ctx, profile, output_format=output_format)
     target_values = tuple(t.value for t in targets)
 
     extra = {
@@ -470,6 +492,7 @@ def cli_config_deploy(
         )
         _execute_deploy(
             cli_ctx,
+            config,
             DeployRequest(
                 targets=targets,
                 force=force,
@@ -485,6 +508,7 @@ def cli_config_deploy(
 
 def _execute_deploy(
     cli_ctx: CLIContext,
+    config: Config,
     request: DeployRequest,
     *,
     output_format: OutputFormat = OutputFormat.HUMAN,
@@ -493,6 +517,7 @@ def _execute_deploy(
 
     Args:
         cli_ctx: CLI context containing services.
+        config: The configuration of the profile being deployed, which ``enabled`` is read from.
         request: What to deploy, as the command line asked for it. Its
             ``set_permissions`` is still ``None`` where neither
             ``--permissions`` nor ``--no-permissions`` was given, and this is
@@ -504,7 +529,7 @@ def _execute_deploy(
     """
     # What lsdsk decides itself. The modes are not read here: the deploy reads them
     # from its own layers and is the one place that refuses one it cannot use.
-    reading = read_permission_defaults(cli_ctx.config)
+    reading = read_permission_defaults(config)
     perm_defaults = reading.defaults
     for rejected in reading.rejected:
         safe_console.echo(rejected.as_sentence(), err=True)
