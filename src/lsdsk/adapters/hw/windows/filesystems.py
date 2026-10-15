@@ -115,19 +115,26 @@ def _unplaced_reason(entry: VolumeEntry) -> str:
     return "; ".join(reasons)
 
 
+def _may_have_a_path(entry: VolumeEntry) -> bool:
+    """Whether a volume has a path, or might: its paths were read and found, or were never read."""
+    return bool(entry.paths) or entry.paths_error is not None
+
+
 def _unplaced_volumes(volumes: Iterable[VolumeEntry]) -> tuple[RefusedReading, ...]:
     """One refusal per volume that could be a row on an inventoried disk but could not be placed.
 
-    Decided by :func:`.usage.blocks_not_mounted`, the rule that leaves the
-    ``used by`` column undecided, so the two views cannot disagree about one
-    volume: a volume that makes ``not mounted`` unclaimable is one this section
-    may be missing a row for. An optical drive or a RAM disk, and a hidden
-    volume with no path, are neither, and say nothing.
+    Decided first by :func:`.usage.blocks_not_mounted`, the rule that leaves
+    the ``used by`` column undecided, so this section never refuses a volume
+    the column could decide: an optical drive or a RAM disk says nothing. A
+    row also needs a path, so a volume known to have none is silent here too.
+    That is where the two views part: an EFI system partition carries no path
+    by design, so its failure leaves no row missing, while it still leaves the
+    column undecided, a known ESP on an unknown disk being any disk's boot mark.
     """
     return tuple(
         RefusedReading(reading=_VOLUME_READING, reason=_unplaced_reason(entry))
         for entry in volumes
-        if blocks_not_mounted(entry)
+        if blocks_not_mounted(entry) and _may_have_a_path(entry)
     )
 
 

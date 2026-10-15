@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from lsdsk.adapters.hw.windows.capture import WindowsCapture
 from lsdsk.adapters.hw.windows.filesystems import build_filesystems
-from lsdsk.adapters.hw.windows.usage import blocks_not_mounted
+from lsdsk.adapters.hw.windows.usage import blocks_not_mounted, resolve_usage
 from lsdsk.domain.enums import Environment, FilesystemKind
 
 if TYPE_CHECKING:
@@ -209,11 +209,12 @@ _CDROM = 5
 
 
 def _undecidable_volumes() -> dict[str, Any]:
-    """C: on the disk, beside the three ways a volume can fail to be placed and the one that says nothing.
+    """C: on the disk, beside the two ways a volume can fail to be placed and two that say nothing here.
 
     D: would not open, a second volume's paths were not read, an ESP's extents
     were not read, and E: is an optical drive whose extents were not read: the
-    first three could each be a row on the disk, the last cannot.
+    first two could each be a row on the disk; the ESP has no path to be one
+    by, and the optical drive sits on no disk.
     """
     space: dict[str, Any] = {"total_bytes": 100, "free_bytes": 40, "available_bytes": 30}
     return {
@@ -232,7 +233,6 @@ def test_a_volume_that_could_not_be_placed_is_recorded_rather_than_left_out() ->
     assert [(r.reading, r.reason) for r in unread] == [
         ("volume", "D:\\: could not open the volume (error 5)"),
         ("volume", "could not read the volume's paths (error 234)"),
-        ("volume", "EFI system partition: could not read the volume's disk extents (error 1)"),
     ]
 
 
@@ -246,9 +246,12 @@ def test_an_optical_drive_that_could_not_be_placed_is_not_a_refusal() -> None:
 
 
 def test_the_refusals_of_unplaced_volumes_agree_with_the_used_by_column() -> None:
-    """One decider for both views: a volume refused here is exactly one that leaves used-by undecided."""
+    """One decider for both views wherever a row is possible: a volume refused here leaves used-by undecided.
+
+    The pathless ESP ("3") is the one volume the views part on, held by its own tests below.
+    """
     volumes = _undecidable_volumes()
-    for key in ("1", "2", "3", "4"):
+    for key in ("1", "2", "4"):
         capture = _one_disk({"0": volumes["0"], key: volumes[key]})
         assert capture.volumes is not None
         _, unread = build_filesystems(capture, BARE_METAL)
@@ -371,3 +374,30 @@ def test_a_ram_disk_whose_extents_name_an_inventoried_disk_is_not_a_row() -> Non
     assert rows is not None
     assert [row.name for row in rows] == ["C:\\"]
     assert unread == ()
+
+
+def test_a_pathless_esp_whose_extents_failed_is_no_filesystems_refusal_but_keeps_used_by_undecided() -> None:
+    """An ESP has no path by design, so it is never a row and its failure leaves no row missing.
+
+    It still leaves the used-by column undecided, because a known ESP on an
+    unknown disk could be any disk's boot mark: the two views ask different
+    questions of the same failure.
+    """
+    esp = _volume(esp=True, error="could not read the volume's disk extents (error 1)")
+    capture = _one_disk({"0": _volume(paths=("C:\\",), disks=(0,)), "1": esp})
+    rows, unread = build_filesystems(capture, BARE_METAL)
+    assert rows is not None
+    assert [row.name for row in rows] == ["C:\\"]
+    assert unread == ()
+    assert resolve_usage(capture, BARE_METAL)["PhysicalDrive0"] is not None  # C: names the disk
+
+
+def test_a_pathless_esp_alone_on_its_disk_still_leaves_that_disk_undecided() -> None:
+    """The used-by half: with no letter to name the second disk, the failed ESP keeps it undecided."""
+    esp = _volume(esp=True, error="could not read the volume's disk extents (error 1)")
+    capture = _capture(
+        {"\\\\?\\p0": _disk("PhysicalDrive0"), "\\\\?\\p1": _disk("PhysicalDrive1")},
+        volumes={"0": _volume(paths=("C:\\",), disks=(0,)), "1": esp},
+    )
+    assert build_filesystems(capture, BARE_METAL)[1] == ()
+    assert resolve_usage(capture, BARE_METAL)["PhysicalDrive1"] is None
