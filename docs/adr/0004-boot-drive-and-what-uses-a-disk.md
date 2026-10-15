@@ -25,7 +25,10 @@ how a partitioned md array (IMSM or DDF fake RAID) reaches its mount. ZFS is the
 cannot reach: `/` is a dataset, its `maj:min` is anonymous, and sysfs lists no holder for a pool
 member. The udev database (`/run/udev/data/b<maj>:<min>`, world-readable) records
 `ID_FS_TYPE=zfs_member` and the pool name in `ID_FS_LABEL` for each member partition, and the
-mount's source names the pool (`rpool/ROOT/...`), which joins the two. The capture keeps only what
+mount's source names the pool (`rpool/ROOT/...`), which joins the two. The reader also looks the
+signature up on stacked devices (dm-crypt, LVM, md), which is how the filesystems section traces a
+pool on one to its disks; the used-by cell of such a disk still names the stacked layer
+(`crypt:<name>`). The capture keeps only what
 this resolution reads: a mount with no block device behind it (tmpfs, NFS, FUSE), any source other
 than a ZFS pool name, a mapping UUID past its type prefix (`LVM-`, `CRYPT-`), and a swap FILE's
 path (only a device-backed swap's `/dev/...` path and `dev` are kept; the resolver joins on `dev`

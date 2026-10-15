@@ -247,7 +247,11 @@ heißt, dass sie gelesen wurden und keines auf einer inventarisierten Platte lie
 das System verweigert hat, steht in den `readings_refused` des Dateisystems (`statvfs` oder
 `free-extents` für einen Einhängepunkt, `volume-space`, `volume-info` oder `volume-bitmap` für ein
 Windows-Volume) oder, wenn sie zu keinem einzelnen Dateisystem gehört, als `skipped`-Zeile
-`zfs-pools: filesystems - <Grund>` oder `zfs-fragmentation: filesystems - <Grund>`; ein Windows-Lauf
+`zfs-pools: filesystems - <Grund>`, `zfs-fragmentation: filesystems - <Grund>`,
+`zfs-pool-disks: filesystems - pool <Name>: <Grund>` (ein Pool, den die ZFS-Liste nennt und der sich
+auf keine inventarisierte Platte zurückführen lässt) oder, unter Windows, `volume: filesystems -
+<Grund>` (ein Volume, dessen Pfade oder Platten-Extents nicht gelesen werden konnten, sodass es sich
+nicht zuordnen ließ; der Grund nennt es beim Laufwerksbuchstaben, wo es einen hat); ein Windows-Lauf
 ohne Administratorrechte fügt `fragmentation: filesystems - needs Administrator` hinzu; die
 gedruckte Dateisystem-Ansicht und Seite 9 nennen diese Verweigerungen, die den ganzen Lauf
 betreffen, zusätzlich unter der Tabelle. Der Lauf über die freien Extents ist begrenzt, und ein

@@ -352,11 +352,17 @@ figure exists), `free_extent_count`, `free_extent_bytes`, `largest_free_extent_b
 (free bytes in 21 power-of-two extent-size buckets). A ZFS pool carries the score alone, its other
 keys `null` and `histogram` `[]`; ext4 and xfs mounts and Windows volumes carry all five, and
 Windows reads them only in an elevated run. It is shown only: no finding is ever raised from it.
-A refused reading appears as a `skipped` line, not as a missing row. The line reads
+A refused reading appears as a `skipped` line, which makes `ok` false; a row whose reading was
+refused stays in the list with that figure `null`. The line reads
 `<reading>: <filesystem> - <reason>`, the reading being `statvfs`, `free-extents`, `volume-space`,
 `volume-info` or `volume-bitmap` and the subject the filesystem's own name, or `zfs-pools`,
-`zfs-fragmentation` or `fragmentation` with the subject `filesystems` when the refusal belongs to no
-single filesystem. `fragmentation: filesystems - needs Administrator` is an unelevated Windows run:
+`zfs-fragmentation`, `zfs-pool-disks`, `volume` or `fragmentation` with the subject `filesystems`
+when the refusal belongs to no single filesystem. `zfs-pool-disks` is a pool the ZFS listing names
+that no inventoried disk could be traced to (`pool <name>: no member was traced to a disk this scan
+inventoried`), and `volume` a Windows volume whose paths or disk extents could not be read (the
+reason names it by its drive letter where it has one). Such a pool or volume has no row in
+`data.filesystems`, so its fill is not judged and the line is the only trace of it.
+`fragmentation: filesystems - needs Administrator` is an unelevated Windows run:
 no volume's free space was walked, so every volume's `free_space` is `null` for that reason alone.
 A `free-extents` or `volume-bitmap` line leaves that one row's `free_space` `null`. So a `null`
 `free_space` with no `skipped` line naming that filesystem, and no run-wide one, means the type has

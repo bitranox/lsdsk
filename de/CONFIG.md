@@ -263,7 +263,12 @@ Die Vorgaben für die Rechte lassen sich in `[lib_layered_config.default_permiss
 
 ```toml
 [lib_layered_config.default_permissions]
-# Werte: Oktal-Strings ("0o755", "0755", "755") oder eine Dezimalzahl mit einer 8 oder 9 (493).
+# Werte: Oktal-Strings in Anführungszeichen ("0o755", "0755", "755"). config-deploy prüft
+# jeden Modus, wenn es ihn anwendet, und lehnt ab, bevor etwas geschrieben wird: eine
+# bloße Zahl, Text, der nicht nur aus Oktalziffern besteht, einen Modus, der Gruppe oder
+# Welt Schreibrechte gibt, auf einer Datei ein Ausführungsbit oder ein Sonderbit setzt,
+# und einen Verzeichnismodus ohne rwx für den Besitzer. Ein mit --set gegebener Modus
+# wird genauso angewendet und geprüft.
 # Eine Zahl nur aus den Ziffern 0-7 (755, 644, 420) ist mehrdeutig und beendet den Lauf
 # beim Start (Exit 78): als Text schreiben, "0755" oder "0o755".
 app_directory = "0o755"

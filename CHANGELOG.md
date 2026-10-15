@@ -5,6 +5,74 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **The free-space walk reads only filesystems the section can show.** On Linux, ext4 and xfs
+  filesystems that live on no inventoried disk (a loop image, a network block device) are no longer
+  walked, since the filesystems section never shows their rows. On an elevated Windows run, the
+  cluster bitmap of an optical drive, a RAM disk, or a volume whose disk extents could not be read or
+  named no disk is no longer opened and walked, for the same reason.
+- A malformed ZFS pool reply that slips past a decoder bound now costs only that pool's reading
+  instead of ending the run. No input known today produces one.
+
+### Fixed
+
+- **A ZFS pool on dm-crypt/LUKS, LVM or md no longer vanishes from the filesystems section.** It now
+  appears with the disks beneath it, so its fill is judged; before, such a pool was dropped with no
+  refusal and `ok` stayed true. A pool the ZFS listing names that no inventoried disk can be traced to
+  is now recorded as the refused reading `zfs-pool-disks` (skipped line `zfs-pool-disks: filesystems -
+  pool <name>: no member was traced to a disk this scan inventoried`, `ok` false) instead of being
+  dropped in silence.
+- **On Windows, a volume that could not be placed no longer disappears silently.** A volume whose
+  mount paths could not be read, or that would not open or report its disk extents, is now a
+  `volume: filesystems - <reason>` line in `skipped`, naming the volume by its drive letter where it
+  has one, so `ok` is false. An optical drive, a RAM disk or a hidden volume with no path still says
+  nothing, the same rule the used-by column applies.
+- **On Windows, a volume's size, used and free figures are all the ones Windows reports to the user
+  running lsdsk.** Under a per-user disk quota, used was the quota's size less the whole volume's
+  free space, so a user with a 10 GiB quota on a volume with 200 GiB free read used 0 and a quota at
+  its limit raised no fill finding. Without a quota the figures are unchanged.
+- **A filesystem mounted under a folder whose name is not valid UTF-8 is now read.** `statvfs` and
+  the free-extent walk are asked at the path's own bytes, where a lossy decoding always failed with
+  `No such file or directory`. Such a byte is shown as a `\xNN` escape. A non-ASCII mountpoint is
+  also read correctly under a locale whose filesystem encoding is not UTF-8.
+- **An xfs filesystem with a realtime section no longer has the realtime device's free extents
+  counted into its free-space figures.** Only records on the mounted device itself are counted, and
+  a free-space map that lists none of that device's records is refused rather than read as no free
+  space.
+- **A filesystem whose free extents add up past 2^64 - 1 bytes is refused on its own row**
+  (`free-extents`) instead of failing the whole run.
+- **On Windows, a volume bitmap answer whose starting cluster the filesystem rounded down** - which
+  the documentation of `FSCTL_GET_VOLUME_BITMAP` allows - is now folded from the cluster that was
+  asked for, instead of losing the volume's fragmentation figure to a refusal.
+- **A Windows volume row is named by its drive letter** even when Windows lists a folder mount of the
+  volume first.
+- **A mount that mountinfo lists as its own parent** no longer makes every mount below it read as
+  hidden.
+- **The filesystems table no longer cuts a filesystem's disk list (`sda s>`) while a column that can
+  be dropped still stands.** `frag`, `inodes%`, `type`, `size`, `used` and `free` go first, and the
+  sizes give up their second scale before the list is cut.
+- **A filesystem mounted at several places keeps its ` +N` count** in the filesystems table when its
+  mountpoint is too long for the column: the name is clipped with `>` before the count
+  (`/srv/a mount with spaces and a ve> +1`), rather than the count being cut off.
+- **A capacity just under a unit step is written in the next unit** instead of at the step:
+  1,048,575 bytes reads `1.0MiB` (was `1024KiB`) and 999,999,999,999 bytes `1.0TB` (was `1000GB`).
+- **`config-deploy` judges a permission mode in one place, and a `--set` mode takes effect.** lsdsk
+  used to check `[lib_layered_config.default_permissions]` modes with its own rule while the deploy
+  decided them, so values such as `-1`, `1_0` or `0o77777777` passed without a word and were then
+  refused, and `abc` printed "Using 0o600" on a run that was refused anyway. Now the deploy's refusal
+  (exit 22, naming the setting and where it was set) is the only thing said about a mode, and its
+  hint names `--dir-mode`/`--file-mode` and `--no-permissions`. A mode given with `--set`, which
+  `lsdsk config` already showed as in force, is now applied by `config-deploy` and checked like any
+  other value; it used to be dropped and the file written with the shipped mode. A bare integer is
+  no longer offered as a mode in the shipped configuration.
+- **An all-digit `history.path` is used as the file name.** `LSDSK___HISTORY__PATH=4711` (or an
+  unquoted `.env` line) reaches the configuration as a number. It was refused as "not a path" and the
+  history went to the per-user state file. It now names the file `4711`, as written.
+- **Every piece of a scrub pattern cut at several commas is named as part of the cut.** In
+  `LOG_SCRUB_PATTERNS=k=a{1,2,3}`, the third and later pieces were reported as having no `=` instead
+  of continuing a cut regex. The entry was dropped either way; now the reason is right.
+
 ## [1.9.0] 2026-10-13 19:17:37
 
 ### Added

@@ -225,8 +225,12 @@ filesystems were not read at all, as in a container or from a capture taken befo
 an empty list means they were read and none lives on an inventoried disk. A reading the system
 refused is recorded in the filesystem's `readings_refused` (`statvfs` or `free-extents` for a mount,
 `volume-space`, `volume-info` or `volume-bitmap` for a Windows volume) or, when it belongs to no
-single filesystem, as the `skipped` line `zfs-pools: filesystems - <reason>` or
-`zfs-fragmentation: filesystems - <reason>`; a Windows run without Administrator adds
+single filesystem, as the `skipped` line `zfs-pools: filesystems - <reason>`,
+`zfs-fragmentation: filesystems - <reason>`, `zfs-pool-disks: filesystems - pool <name>: <reason>`
+(a pool the ZFS listing names that no inventoried disk can be traced to) or, on Windows,
+`volume: filesystems - <reason>` (a volume whose paths or disk extents could not be read, so it
+could not be placed; the reason names it by its drive letter where it has one); a Windows run
+without Administrator adds
 `fragmentation: filesystems - needs Administrator`; the printed filesystems view and page 9 name
 those run-wide refusals under the table as well. The free-extent walk is bounded, and a filesystem
 past a bound is recorded as that row's `free-extents` or `volume-bitmap` refusal, its reason naming

@@ -98,7 +98,10 @@ refusal when no disk carries a ZFS member, the line the AHCI reader draws for a 
 BAR5, and neither is a refused one (a node at mode 0600 on a host with no pool): a pool row exists
 only for a pool with a member on an inventoried disk, so with no member the listing missed nothing.
 Absent or refused while a disk does carry a pool member is a refusal of the reading `zfs-pools`,
-reported under the subject `filesystems`: the pool exists and could not be read. A refused
+reported under the subject `filesystems`: the pool exists and could not be read. A pool member is
+traced to its disk through the same holder closure the used-by column follows, so a pool on
+dm-crypt, LVM or md reaches the disks beneath it; a pool the listing names that no inventoried disk
+can be traced to is a refusal of the reading `zfs-pool-disks` and draws no row. A refused
 `statvfs` is recorded against its filesystem under `statvfs`, a Windows volume's under
 `volume-space` (the space query) or `volume-info` (the filesystem-information query), and each
 becomes a `skipped` line, so `ok` is `false` on a scan that missed one. A container, or a capture
@@ -115,9 +118,15 @@ empty reading instead, it drew a row of `-` for every mount, pool and volume and
 control device was missing on a host that was never asked.
 
 **Windows.** `GetDiskFreeSpaceExW` and `GetVolumeInformationW` are asked on each volume's first
-mount path, over the volumes `used by` already enumerates. Measured unelevated through a
-limited-run-level scheduled task, both answer. A volume with no mount path, such as the EFI system
-and recovery partitions, has nothing to ask and is not a row.
+mount path, drive-letter roots before folder mounts, over the volumes `used by` already enumerates.
+Measured unelevated through a limited-run-level scheduled task, both answer. A volume with no mount
+path, such as the EFI system and recovery partitions, has nothing to ask and is not a row. A row's
+size, used and free are the figures `GetDiskFreeSpaceExW` reports to the caller (its total and its
+free-to-caller bytes, used being the one less the other), so all three share one scope: under a
+per-user quota that is the quota, and the volume-wide free figure is recorded but not drawn. A
+volume whose paths could not be read, or that would not open or report its disk extents, is a
+refusal of the run-wide reading `volume`, decided by the same rule that leaves its disk's used-by
+cell undecided; an optical drive, a RAM disk or a hidden volume with no path stays silent.
 
 **The inode rule.** An inode count is a ceiling only where the table is made at format time, which
 the builder decides from the filesystem TYPE and never from the numbers, since a ZFS `f_files`
@@ -141,7 +150,8 @@ filesystem with several mounts counts as read-only only when every mount is.
 Settled with the user: page 9 is `9,f9`, rescan moves to `r,f10`, and quit keeps `q` and `escape`
 and gives up `f10`.
 
-Left out: fill trends over time, LVM unallocated space, quotas and ZFS-specific thresholds.
+Left out: fill trends over time, LVM unallocated space, reporting a quota as a quota (a Windows
+row follows one as the caller sees it, nothing more) and ZFS-specific thresholds.
 How scattered the free space is was added afterwards and is decided in
 [ADR 0006](0006-how-scattered-free-space-is.md).
 

@@ -48,8 +48,11 @@ recomputed. How far the two weightings differ on histograms of real extents was 
 - A Windows volume: the volume bitmap through `FSCTL_GET_VOLUME_BITMAP`, folded into free runs. This
   needs an elevated session and opens the volume by its GUID path.
 - A Linux mount of any other type (btrfs, vfat, tmpfs, and the types with no free-space source this
-  tool reads) draws `n/a`. An elevated Windows run walks every volume whatever its type; an
-  unelevated one walks none.
+  tool reads) draws `n/a`. An elevated Windows run walks every volume that can be a row - one
+  with a mount path whose disk extents name an inventoried disk and that is not an optical drive or
+  a RAM disk - and reads those extents first; an unelevated one walks none. The Linux walk likewise
+  reads only filesystems on an inventoried disk, asking the section's own device mapping, since a
+  filesystem on no such disk is never a row.
 
 **Two bounds, not settings.** A read stops at `MAX_FREE_EXTENTS = 1_000_000` free extents (or free
 runs on Windows) per filesystem and refuses with a reason naming the number, because a very
@@ -69,8 +72,8 @@ run-wide line a Windows run without Administrator carries in the JSON envelope's
 `fragmentation: filesystems - needs Administrator`). The key is a refusal that was recorded, never a
 field being absent.
 
-**The views name an inventory-level refusal.** The `zfs-pools`, `zfs-fragmentation` and
-`fragmentation` refusals belong to no row, so a row cannot carry them. The printed filesystems view,
+**The views name an inventory-level refusal.** The `zfs-pools`, `zfs-fragmentation`,
+`zfs-pool-disks`, `volume` and `fragmentation` refusals belong to no row, so a row cannot carry them. The printed filesystems view,
 the same section on the default page and the interactive filesystems page each add one sentence under
 the table, `Not read: fragmentation (needs Administrator).`, naming every refusal in
 `inventory.unread_filesystems` with its reason. It is keyed on that record and never on the dashes the

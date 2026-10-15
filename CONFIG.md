@@ -264,7 +264,11 @@ Permission defaults can be customized in `[lib_layered_config.default_permission
 
 ```toml
 [lib_layered_config.default_permissions]
-# Values: octal strings ("0o755", "0755", "755"), or a decimal integer with an 8 or 9 (493).
+# Values: octal strings, quoted ("0o755", "0755", "755"). config-deploy judges every mode
+# when it applies it and refuses, before anything is written, a bare integer, text that is
+# not plain octal digits, a mode adding group or world write, an execute bit on a file,
+# or a special bit, and a directory mode without owner rwx. A mode given with --set is
+# applied and judged the same way.
 # An integer of only the digits 0-7 (755, 644, 420) stops the run at startup (exit 78):
 # write it as text, "0755" or "0o755".
 app_directory = "0o755"
