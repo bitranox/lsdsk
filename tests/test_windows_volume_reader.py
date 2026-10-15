@@ -121,6 +121,7 @@ class FakeVolumeKernel:
     closed: list[int] = field(default_factory=list[int])
     granted: list[tuple[int, int]] = field(default_factory=list[tuple[int, int]])
     find_closed: int = 0
+    asked_roots: list[str] = field(default_factory=list[str])
     _order: list[str] = field(default_factory=list[str])
     _handles: dict[int, str] = field(default_factory=dict[int, str])
 
@@ -190,7 +191,9 @@ class FakeVolumeKernel:
         return self._volume_at(root).drive_type
 
     def _volume_at(self, root: str) -> FakeVolume:
-        return next(volume for volume in self.volumes.values() if volume.paths and volume.paths[0] == root)
+        """The volume a root-taking call names, recording the root it was asked of."""
+        self.asked_roots.append(root)
+        return next(volume for volume in self.volumes.values() if volume.paths and root in volume.paths)
 
     def GetDiskFreeSpaceExW(  # noqa: N802 - the Win32 entry point's own name
         self, root: str, available: object, total: object, free: object
@@ -825,3 +828,31 @@ def test_an_enumeration_that_never_started_closes_no_handle() -> None:
     fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",))}, first_error=ERROR_ACCESS_DENIED)
     assert volumes.read_volumes(cast("api.WinLibrary", fake), last_error=fake.last_error) is None
     assert fake.find_closed == 0
+
+
+#: A volume Windows lists by a folder mount first and its drive letter second.
+_FOLDER_FIRST = ("C:\\mnt\\x\\", "X:\\")
+
+
+def test_every_call_that_takes_a_root_is_asked_of_the_drive_letter_whatever_windows_listed_first() -> None:
+    """The row is named by the letter, so the figures beside it are read from the letter too."""
+    fake = FakeVolumeKernel({VOLUME_X: FakeVolume(paths=_FOLDER_FIRST, disks=(0,), bitmap=[0] * 8)})
+    entry = _read(fake, walk_bitmaps=True)[VOLUME_X]
+    # GetDriveTypeW, GetDiskFreeSpaceExW, GetVolumeInformationW and GetDiskFreeSpaceW.
+    assert fake.asked_roots == ["X:\\"] * 4
+    assert entry["paths"] == ["X:\\", "C:\\mnt\\x\\"]
+
+
+def test_the_used_by_cell_names_a_folder_first_volume_by_its_letter_like_its_row() -> None:
+    fake = FakeVolumeKernel({VOLUME_X: FakeVolume(paths=_FOLDER_FIRST, disks=(0,))})
+    usage = _usage(fake, "PhysicalDrive0")
+    assert usage is not None
+    assert [use.mounts for use in usage.uses] == [("X:\\", "C:\\mnt\\x\\")]
+
+
+def test_a_volume_listed_letter_first_is_asked_in_the_same_order() -> None:
+    """The control: the order moves a letter forward and changes nothing for a volume already in it."""
+    fake = FakeVolumeKernel({VOLUME_X: FakeVolume(paths=("X:\\", "C:\\mnt\\x\\"), disks=(0,))})
+    entry = _read(fake)[VOLUME_X]
+    assert fake.asked_roots == ["X:\\"] * 3
+    assert entry["paths"] == ["X:\\", "C:\\mnt\\x\\"]

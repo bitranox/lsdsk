@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..decode.free_extents import FreeExtentTally
 from . import winapi as api
-from .usage import DISKLESS_DRIVE_TYPES
+from .usage import DISKLESS_DRIVE_TYPES, named_first
 from .volume_layout import (
     BITMAP_HEADER_BYTES,
     EXTENT_ENTRY,
@@ -304,7 +304,10 @@ def _read_one_volume(
     Returns:
         One volume's reading, shaped for the capture model to type.
     """
-    paths, paths_error = _volume_paths(kernel32, volume)
+    listed, paths_error = _volume_paths(kernel32, volume)
+    # Letters first before anything is asked of a path, so the drive type, the
+    # space and the cluster size are read from the letter the row is named by.
+    paths = named_first(listed)
     entry: dict[str, Any] = {"paths": list(paths)}
     if paths_error is not None:
         entry["paths_error"] = paths_error

@@ -204,7 +204,7 @@ def test_a_container_resolves_every_disk_to_none() -> None:
 
 
 def test_one_volumes_paths_keep_the_order_the_reader_listed_them_in() -> None:
-    """First-seen order holds inside a volume too: a letter listed after a folder mount stays after it."""
+    """First-seen order holds inside a volume too: a path listed twice keeps its first place."""
     capture = _capture(
         disks={"\\\\?\\p0": _disk("PhysicalDrive0")},
         volumes={"\\\\?\\Volume{v}\\": _volume(paths=("D:\\", "C:\\mnt\\x\\", "D:\\"), disks=(0,))},
@@ -212,3 +212,14 @@ def test_one_volumes_paths_keep_the_order_the_reader_listed_them_in() -> None:
     usage = resolve_usage(capture, BARE_METAL)
     assert usage["PhysicalDrive0"] is not None
     assert usage["PhysicalDrive0"].uses == (DiskUse(kind=UseKind.LETTER, mounts=("D:\\", "C:\\mnt\\x\\")),)
+
+
+def test_a_capture_that_listed_a_folder_mount_first_still_names_the_letter_first() -> None:
+    """A capture taken before the reader ordered paths: the used-by cell orders them the way the row does."""
+    capture = _capture(
+        disks={"\\\\?\\p0": _disk("PhysicalDrive0")},
+        volumes={"0": _volume(paths=("C:\\mnt\\x\\", "X:\\"), disks=(0,))},
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    assert usage["PhysicalDrive0"] is not None
+    assert usage["PhysicalDrive0"].uses == (DiskUse(kind=UseKind.LETTER, mounts=("X:\\", "C:\\mnt\\x\\")),)

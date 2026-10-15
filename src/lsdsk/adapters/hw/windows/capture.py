@@ -347,6 +347,8 @@ class VolumeEntry(CaptureModel, frozen=True):
     Attributes:
         paths: Every mount path the volume answers to: a drive letter, a bare
             folder mount, or both when a letter is also mounted as a folder.
+            Drive-letter roots come first; a capture taken before the reader
+            ordered them holds the order Windows listed them in.
         disks: The disk numbers the volume's extents span; more than one for a
             spanned or striped dynamic volume, none for a volume this machine
             could not place on a disk at all (a RAM disk).

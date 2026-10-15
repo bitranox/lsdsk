@@ -16,6 +16,8 @@ from ....domain.models import DiskUsage, DiskUse
 from . import winapi as api
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from .capture import VolumeEntry, WindowsCapture
 
 #: A disk's node, as :mod:`.builder` names it. A fixture capture's
@@ -23,10 +25,35 @@ if TYPE_CHECKING:
 #: the committed Windows fixtures), so this reads the number back out rather
 #: than re-deriving the name from the interface path the way the builder does.
 _NODE_NUMBER = re.compile(r"PhysicalDrive(\d+)$", re.IGNORECASE)
+#: A drive-letter root, the name a reader knows a volume by.
+_DRIVE_LETTER_ROOT = re.compile(r"[A-Za-z]:\\", re.ASCII)
 
 # Drive types no physical disk sits behind, so a failure to place one on a disk
 # says nothing about any disk this tool lists.
 DISKLESS_DRIVE_TYPES = frozenset({api.DRIVE_CDROM, api.DRIVE_RAMDISK})
+
+
+def named_first(paths: Sequence[str]) -> tuple[str, ...]:
+    r"""A volume's paths with its drive-letter roots first, each kind in the order Windows listed it.
+
+    ``GetVolumePathNamesForVolumeNameW`` documents no order, so a volume with
+    a folder mount listed first was named by the folder. A stable sort moves
+    the letters forward and reorders nothing else. The reader applies it
+    before it asks anything of a path, so every call is asked of the letter
+    the row is named by; the builder and :func:`resolve_usage` apply it again
+    for a capture taken before the reader did.
+
+    Args:
+        paths: A volume's mount paths, in the order Windows listed them.
+
+    Returns:
+        The same paths, drive-letter roots first.
+
+    Example:
+        >>> named_first(("C:\\mnt\\c\\", "C:\\"))
+        ('C:\\', 'C:\\mnt\\c\\')
+    """
+    return tuple(sorted(paths, key=lambda path: _DRIVE_LETTER_ROOT.fullmatch(path) is None))
 
 
 def disk_numbers(nodes: frozenset[str]) -> dict[int, str]:
@@ -49,7 +76,7 @@ def disk_numbers(nodes: frozenset[str]) -> dict[int, str]:
 
 
 def _letter_mounts(volumes: dict[str, VolumeEntry], disk_numbers: dict[int, str]) -> dict[str, list[str]]:
-    """Every volume path reaching each disk, deduplicated and in first-seen order.
+    """Every volume path reaching each disk, deduplicated and in first-seen order, letters first per volume.
 
     Args:
         volumes: Every volume the reader enumerated.
@@ -68,7 +95,7 @@ def _letter_mounts(volumes: dict[str, VolumeEntry], disk_numbers: dict[int, str]
             node = disk_numbers.get(disk_number)
             if node is None:
                 continue
-            mounts.setdefault(node, {}).update(dict.fromkeys(entry.paths))
+            mounts.setdefault(node, {}).update(dict.fromkeys(named_first(entry.paths)))
     return {node: list(bucket) for node, bucket in mounts.items()}
 
 
@@ -166,4 +193,4 @@ def resolve_usage(capture: WindowsCapture, environment: Environment) -> dict[str
     return result
 
 
-__all__ = ["DISKLESS_DRIVE_TYPES", "blocks_not_mounted", "disk_numbers", "resolve_usage"]
+__all__ = ["DISKLESS_DRIVE_TYPES", "blocks_not_mounted", "disk_numbers", "named_first", "resolve_usage"]
