@@ -202,7 +202,19 @@ def test_an_oversized_file_is_refused_for_its_size_and_not_for_its_contents(tmp_
 
     with pytest.raises(ConfigurationError) as raised:
         load(huge)
-    assert "MB, which is far larger than" in str(raised.value)
+    assert "MiB, which is far larger than" in str(raised.value)
+
+
+def test_an_oversized_file_states_its_size_and_the_limit_on_the_binary_scale(tmp_path: Path) -> None:
+    """Both figures are divided by 1024 twice, so both are MiB; called MB they read 5 percent small."""
+    huge = _sparse_file(tmp_path / "sparse.json", MAX_INPUT_BYTES * 4)
+
+    with pytest.raises(ConfigurationError) as raised:
+        load(huge)
+    message = str(raised.value)
+    assert f"is {MAX_INPUT_BYTES * 4 / 1024 / 1024:.1f} MiB," in message, message
+    assert f"(the limit is {MAX_INPUT_BYTES // 1024 // 1024} MiB)" in message, message
+    assert " MB" not in message, message
 
 
 # --------------------------------------------------------------------------

@@ -26,7 +26,12 @@ _ONE_DECIMAL_BELOW = 10
 
 
 def _scaled(size_bytes: int, step: float, units: tuple[str, ...]) -> str:
-    """One capacity on one scale, to the unit that keeps it under three digits.
+    """One capacity on one scale, to the unit that keeps the figure as written below one step.
+
+    The step is 1000 on the decimal scale and 1024 on the binary one, so a
+    binary figure can run to four digits: ``1000KiB`` is the binary scale's
+    own spelling of 1,024,000 bytes, short of the 1024 that would make it
+    ``1.0MiB``.
 
     A non-zero figure is never written as zero: below one step it is whole
     bytes, and it moves to the next unit once the figure AS WRITTEN reaches the
@@ -38,6 +43,8 @@ def _scaled(size_bytes: int, step: float, units: tuple[str, ...]) -> str:
         '1.0MiB'
         >>> _scaled(999_999_999_999, _DECIMAL_STEP, _DECIMAL_UNITS)
         '1.0TB'
+        >>> _scaled(1_024_000, _BINARY_STEP, _BINARY_UNITS)
+        '1000KiB'
     """
     if size_bytes < step:
         return f"{int(size_bytes)}{units[0]}"

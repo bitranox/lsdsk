@@ -514,8 +514,8 @@ def _refuse_what_the_reader_would_refuse(body: str, path: Path) -> None:
     if not fits_a_bounded_read(body):
         size = len(body.encode("utf-8"))
         message = (
-            f"the history store would be {size / 1024 / 1024:.1f} MB, larger than the history reader accepts "
-            f"({MAX_INPUT_BYTES // 1024 // 1024} MB), so nothing was written and the previous store is kept"
+            f"the history store would be {size / 1024 / 1024:.1f} MiB, larger than the history reader accepts "
+            f"({MAX_INPUT_BYTES // 1024 // 1024} MiB), so nothing was written and the previous store is kept"
         )
         raise OSError(errno.EFBIG, message, str(path))
 

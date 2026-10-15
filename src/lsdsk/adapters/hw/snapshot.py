@@ -202,8 +202,8 @@ def serialise(capture: dict[str, Any]) -> str:
         # can be: refused here, where the file is still unwritten, rather than
         # at the replay, where the machine it describes may be long gone.
         message = (
-            f"This reading is {len(body) / 1024 / 1024:.1f} MB as a snapshot, larger than --replay reads "
-            f"({MAX_INPUT_BYTES // 1024 // 1024} MB), so it was not written."
+            f"This reading is {len(body) / 1024 / 1024:.1f} MiB as a snapshot, larger than --replay reads "
+            f"({MAX_INPUT_BYTES // 1024 // 1024} MiB), so it was not written."
         )
         raise ConfigurationError(message)
     return body

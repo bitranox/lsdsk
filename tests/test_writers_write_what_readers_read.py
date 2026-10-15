@@ -16,6 +16,7 @@ drives, because one name may carry no more than `MAX_DEVICE_TEXT` characters.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -165,3 +166,20 @@ def test_a_snapshot_its_own_replay_would_refuse_is_not_written(tmp_path: Path) -
         snapshot.save(capture, destination)
 
     assert not destination.exists(), "a snapshot nothing can replay was written"
+
+
+def test_the_writers_state_their_sizes_on_the_binary_scale(tmp_path: Path) -> None:
+    """Both refusals divide by 1024 twice, so they say MiB; called MB the figures read 5 percent small."""
+    store = tmp_path / "history.json"
+    models = _models_filling(store, MAX_INPUT_BYTES + 1)
+    with pytest.raises(OSError, match="larger than the history reader accepts") as history:
+        save_history(_padded(models), store)
+    capture: dict[str, Any] = {"schema": 2, "platform": "linux", "hostname": HOST, "kernel": "6.1", "pci": {}}
+    capture["context"] = "x" * MAX_INPUT_BYTES
+    with pytest.raises(ConfigurationError, match="larger than --replay reads") as replay:
+        snapshot.save(capture, tmp_path / "capture.json")
+    limit = f"({MAX_INPUT_BYTES // 1024 // 1024} MiB)"
+    for message in (str(history.value), str(replay.value)):
+        assert re.search(r"\b\d+\.\d MiB\b", message), message
+        assert limit in message, message
+        assert " MB" not in message, message

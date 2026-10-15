@@ -209,8 +209,8 @@ def _read_bytes_bounded(path: Path, *, what: str, regular_file_only: bool = Fals
 
     if size > MAX_INPUT_BYTES:
         message = (
-            f"{path} is {size / 1024 / 1024:.1f} MB, which is far larger than {what} ever is "
-            f"(the limit is {MAX_INPUT_BYTES // 1024 // 1024} MB). Check the path."
+            f"{path} is {size / 1024 / 1024:.1f} MiB, which is far larger than {what} ever is "
+            f"(the limit is {MAX_INPUT_BYTES // 1024 // 1024} MiB). Check the path."
         )
         raise ConfigurationError(message)
 
@@ -227,7 +227,8 @@ def _read_bytes_bounded(path: Path, *, what: str, regular_file_only: bool = Fals
         # Deliberately no figure: the read stopped early, so the size is not
         # something this branch measured and must not be stated as if it were.
         message = (
-            f"{path} is larger than {what} ever is (the limit is {MAX_INPUT_BYTES // 1024 // 1024} MB). Check the path."
+            f"{path} is larger than {what} ever is "
+            f"(the limit is {MAX_INPUT_BYTES // 1024 // 1024} MiB). Check the path."
         )
         raise ConfigurationError(message)
 
