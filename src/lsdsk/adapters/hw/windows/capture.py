@@ -361,11 +361,13 @@ class VolumeEntry(CaptureModel, frozen=True):
             tell a failure on an optical drive or a RAM disk, which can sit on
             no physical disk, from one on a fixed volume. ``None`` for a volume
             with no path.
-        total_bytes: The volume's capacity from ``GetDiskFreeSpaceExW``;
+        total_bytes: The capacity ``GetDiskFreeSpaceExW`` reports to the
+            caller, which a per-user quota can make less than the volume's;
             absent from a capture taken before this field existed, and ``None``
             when the call was refused (see `space_error`).
         free_bytes: Free bytes on the volume, whoever asks; absent from a
-            capture taken before this field existed.
+            capture taken before this field existed. Recorded, never drawn: it
+            is the one figure of the three not on the caller's scope.
         available_bytes: Free bytes the caller may use (quota-aware); absent
             from a capture taken before this field existed.
         fs_type: The filesystem name ``GetVolumeInformationW`` answered

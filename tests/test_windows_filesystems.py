@@ -74,7 +74,7 @@ def test_a_volume_on_an_inventory_disk_is_a_row_with_its_space() -> None:
         ("C:\\mnt\\x\\",),
         ("PhysicalDrive0",),
     )
-    assert (c.size_bytes, c.used_bytes, c.free_bytes, c.fs_type) == (100, 60, 30, "NTFS")
+    assert (c.size_bytes, c.used_bytes, c.free_bytes, c.fs_type) == (100, 70, 30, "NTFS")
     assert (c.inodes_total, c.inodes_free, c.inodes_used_percent) == (None, None, None)
 
 
@@ -124,10 +124,10 @@ def test_free_above_total_never_gives_a_negative_used_figure() -> None:
 
 
 def test_a_figure_that_was_not_read_stays_none_rather_than_zero() -> None:
-    capture = _one_disk({"0": _volume(paths=("D:\\",), disks=(0,), total_bytes=100, available_bytes=30)})
+    capture = _one_disk({"0": _volume(paths=("D:\\",), disks=(0,), total_bytes=100, free_bytes=40)})
     rows, _ = build_filesystems(capture, BARE_METAL)
     assert rows is not None
-    assert (rows[0].size_bytes, rows[0].used_bytes, rows[0].free_bytes) == (100, None, 30)
+    assert (rows[0].size_bytes, rows[0].used_bytes, rows[0].free_bytes) == (100, None, None)
 
 
 def test_a_read_only_volume_is_read_only() -> None:
@@ -287,3 +287,29 @@ def test_the_same_replay_with_every_volume_placed_is_complete(
     envelope = _replayed({"0": volumes["0"], "4": volumes["4"]}, tmp_path, cli_runner, production_factory)
     assert [row["name"] for row in envelope["data"]["filesystems"]] == ["C:\\"]
     assert (envelope["ok"], envelope["skipped"]) == (True, [])
+
+
+_GIB = 1 << 30
+
+
+def test_a_quota_limited_volume_reads_the_callers_own_fill() -> None:
+    """GetDiskFreeSpaceExW's total and available are the caller's under a quota, its total-free is the volume's.
+
+    A 10 GiB quota with 2 GiB of it left, on a volume with 200 GiB free: the
+    row's three figures are one scope, the caller's, so the quota reads 80%
+    full rather than used 0 beside a free figure smaller than the size.
+    """
+    quota = _volume(paths=("D:\\",), disks=(0,), total_bytes=10 * _GIB, free_bytes=200 * _GIB, available_bytes=2 * _GIB)
+    rows, _ = build_filesystems(_one_disk({"0": quota}), BARE_METAL)
+    assert rows is not None
+    (row,) = rows
+    assert (row.size_bytes, row.used_bytes, row.free_bytes) == (10 * _GIB, 8 * _GIB, 2 * _GIB)
+    assert row.used_percent == 80
+
+
+def test_a_volume_without_a_quota_reads_the_same_whichever_free_figure_is_subtracted() -> None:
+    """The control: with no quota Windows reports one free figure twice, and the row is the volume's own."""
+    plain = _volume(paths=("D:\\",), disks=(0,), total_bytes=100, free_bytes=40, available_bytes=40)
+    rows, _ = build_filesystems(_one_disk({"0": plain}), BARE_METAL)
+    assert rows is not None
+    assert (rows[0].size_bytes, rows[0].used_bytes, rows[0].free_bytes) == (100, 60, 40)

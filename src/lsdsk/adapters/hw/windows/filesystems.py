@@ -38,12 +38,23 @@ class _Figures(TypedDict, total=False):
 
 
 def _figures(entry: VolumeEntry) -> _Figures:
-    """The byte figures of one volume, each present only when its source was read, none negative."""
+    """The byte figures of one volume, each present only when its source was read, none negative.
+
+    All three are the CALLER's, the one scope ``GetDiskFreeSpaceExW`` answers
+    for both a total and a free figure: under a per-user quota its total and
+    its free-to-the-caller may be less than the volume's, while its
+    total-free is always the volume's (Microsoft Learn, GetDiskFreeSpaceExW,
+    on ``lpTotalNumberOfBytes``, ``lpFreeBytesAvailableToCaller`` and
+    ``lpTotalNumberOfFreeBytes``). Used is therefore the caller's total less
+    the caller's free; subtracting the volume's free from a quota's total read
+    a quota-limited user as using nothing. With no quota the two free figures
+    are the same number and the row is the volume's own.
+    """
     figures = _Figures()
     if entry.total_bytes is not None:
         figures["size_bytes"] = entry.total_bytes
-        if entry.free_bytes is not None:
-            figures["used_bytes"] = max(entry.total_bytes - entry.free_bytes, 0)
+        if entry.available_bytes is not None:
+            figures["used_bytes"] = max(entry.total_bytes - entry.available_bytes, 0)
     if entry.available_bytes is not None:
         figures["free_bytes"] = entry.available_bytes
     return figures
