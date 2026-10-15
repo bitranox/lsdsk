@@ -37,6 +37,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from pydantic import ValidationError
+
 from ....domain.enums import Platform
 from ..ata_commands import (
     ATA_IDENTIFY_DEVICE,
@@ -52,6 +54,8 @@ from ..decode.captured import parse_int
 from ..decode.virtualization import container_markers_in_mounts
 from ..snapshot import SCHEMA_VERSION
 from . import freespace, mounts, usbfs, zfs
+from .capture import LinuxCapture
+from .usage import disks_by_device
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -1130,6 +1134,29 @@ def _devices_accessible(nodes: list[str]) -> bool:
     return any(_probe(Path(f"/dev/{node}"), Path.exists) for node in nodes) if nodes else True
 
 
+def free_extent_devices(reading: Mapping[str, Any]) -> frozenset[str] | None:
+    """Every ``maj:min`` the filesystems section can keep a row for, worked out from the reading so far.
+
+    The free-space walk is the one reading that costs real time per
+    filesystem, so it skips a filesystem no inventoried disk carries - one the
+    section drops anyway. The answer comes from the section's own mapping over
+    the typed reading, so the two cannot disagree about which device that is.
+
+    Args:
+        reading: The reading as ``read_system`` has built it, before the walk.
+
+    Returns:
+        The device numbers, or ``None`` when the reading does not type, which
+        walks every filesystem rather than guess: the run's own parse of the
+        same reading refuses it later with the real reason.
+    """
+    try:
+        capture = LinuxCapture.model_validate(reading)
+    except ValidationError:
+        return None
+    return frozenset(disks_by_device(capture))
+
+
 def read_system() -> dict[str, Any]:
     """Read the whole storage subsystem from this machine.
 
@@ -1186,8 +1213,12 @@ def read_system() -> dict[str, Any]:
         **zfs.capture_fields(pools, pools_error),
         **zfs.fragmentation_fields(fragmentation, fragmentation_error),
         "filesystem_space": None if mount_rows is None else mounts.read_space(mount_rows),
-        "free_extents": None if mount_rows is None else freespace.read_free_extents(mount_rows),
     }
+    reading["free_extents"] = (
+        None
+        if mount_rows is None
+        else freespace.read_free_extents(freespace.rows_on_disks(mount_rows, free_extent_devices(reading)))
+    )
     return reading
 
 
@@ -1200,6 +1231,7 @@ __all__ = [
     "SgIoHeader",
     "ata_passthrough",
     "ata_passthrough_nodes",
+    "free_extent_devices",
     "nvme_admin",
     "parse_pcie_capability",
     "read_ahci_capabilities",

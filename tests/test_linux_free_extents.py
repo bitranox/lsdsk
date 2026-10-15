@@ -12,7 +12,9 @@ import pytest
 
 from lsdsk.adapters.hw.capture import FreeExtentsEntry
 from lsdsk.adapters.hw.decode.free_extents import MAX_FREE_EXTENTS
-from lsdsk.adapters.hw.linux import freespace
+from lsdsk.adapters.hw.linux import freespace, reader
+from lsdsk.adapters.hw.linux.capture import LinuxCapture
+from lsdsk.adapters.hw.linux.usage import disks_by_device
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -324,3 +326,66 @@ def test_a_free_total_past_64_bits_refuses_that_filesystem_and_keeps_the_others(
     assert reading["8:2"]["count"] == 1
     for summary in reading.values():
         FreeExtentsEntry.model_validate(summary)  # the capture model takes every row, so the run survives
+
+
+def test_a_filesystem_on_no_inventoried_disk_is_never_walked(tmp_path: Path) -> None:
+    rows = [
+        {"dev": "8:1", "mountpoint": "/", "fstype": "ext4"},
+        {"dev": "7:0", "mountpoint": "/image", "fstype": "ext4"},  # a loop device: no disk behind it
+        {"dev": "0:99", "mountpoint": "/by-source", "fstype": "xfs", "source_dev": "8:2"},
+    ]
+    opened: list[str] = []
+    open_any = _opener(tmp_path)
+
+    def opener(mountpoint: str) -> int:
+        opened.append(mountpoint)
+        return open_any(mountpoint)
+
+    kept = freespace.rows_on_disks(rows, frozenset({"8:1", "8:2"}))
+    reading = freespace.read_free_extents(kept, ioctl=FakeFsmap([_free(0, 4096)]), opener=opener)
+    # The same rule the filesystems section keeps a row by: its own device, or the device its source names.
+    assert opened == ["/", "/by-source"]
+    assert set(reading) == {"8:1", "0:99"}
+
+
+def test_every_mountpoint_of_a_kept_filesystem_stays_so_a_refusal_can_fall_back() -> None:
+    rows = [
+        {"dev": "8:1", "mountpoint": "/a", "fstype": "ext4", "hidden": True},
+        {"dev": "7:0", "mountpoint": "/image", "fstype": "ext4"},
+        {"dev": "8:1", "mountpoint": "/b", "fstype": "ext4", "source_dev": "7:0"},
+    ]
+    # One row whose source names a disk keeps its device's every row, hidden ones included, in order.
+    assert freespace.rows_on_disks(rows, frozenset({"7:0"})) == rows
+    assert freespace.rows_on_disks(rows, frozenset({"8:1"})) == [rows[0], rows[2]]
+    assert freespace.rows_on_disks(rows, None) == rows
+    assert freespace.rows_on_disks(rows, frozenset()) == []
+
+
+def _raw_reading() -> dict[str, object]:
+    return {
+        "schema": 2,
+        "platform": "linux",
+        "hostname": "h",
+        "kernel": "6.1",
+        "pci": {},
+        "block": {
+            "sda": {"dev": "8:0", "holders": [], "partitions": {"sda1": {"dev": "8:1", "holders": ["dm-0"]}}},
+            "loop0": {"dev": "7:0", "holders": [], "virtual": True},
+        },
+        "stacked": {"dm-0": {"dev": "253:0", "holders": []}},
+        "mounts": [
+            {"dev": "253:0", "mountpoint": "/", "fstype": "xfs"},
+            {"dev": "7:0", "mountpoint": "/i", "fstype": "ext4"},
+        ],
+    }
+
+
+def test_the_reader_asks_for_exactly_the_devices_the_filesystems_section_keeps() -> None:
+    raw = _raw_reading()
+    devices = reader.free_extent_devices(raw)
+    assert devices == frozenset(disks_by_device(LinuxCapture.model_validate(raw)))
+    assert devices == {"8:0", "8:1", "253:0"}  # the crypt or LVM device above the partition too, never the loop
+
+
+def test_a_reading_that_does_not_parse_walks_every_filesystem() -> None:
+    assert reader.free_extent_devices({**_raw_reading(), "block": "not a mapping"}) is None

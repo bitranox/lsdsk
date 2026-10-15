@@ -33,7 +33,7 @@ from ..decode.free_extents import MAX_FREE_EXTENTS, FreeExtentTally
 from .zfs import Ioctl, system_ioctl
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Collection, Mapping, Sequence
 
 #: ``_IOWR('X', 59, struct fsmap_head)`` from include/uapi/linux/fsmap.h.
 FS_IOC_GETFSMAP: Final = 0xC0C0583B
@@ -230,6 +230,30 @@ def _wanted(row: Mapping[str, str | bool], readings: Mapping[str, Any]) -> _Targ
     return _Target(dev, mountpoint)
 
 
+def rows_on_disks(
+    rows: Sequence[Mapping[str, str | bool]], devices: Collection[str] | None
+) -> list[Mapping[str, str | bool]]:
+    """Every row of each filesystem that lives on an inventoried disk, so nothing else is walked.
+
+    A filesystem is kept by the rule the filesystems section keeps a row by -
+    its own device, or the device its source names, is on a disk - and keeps
+    every one of its rows, so a refused or hidden mountpoint still falls back
+    to the next.
+
+    Args:
+        rows: What ``mounts.read_mounts`` returned.
+        devices: Every ``maj:min`` that lives on an inventoried disk, or
+            ``None`` when that could not be worked out, which keeps every row.
+
+    Returns:
+        The kept rows, in their own order.
+    """
+    if devices is None:
+        return list(rows)
+    kept = {row.get("dev") for row in rows if row.get("dev") in devices or row.get("source_dev") in devices}
+    return [row for row in rows if row.get("dev") in kept]
+
+
 def read_free_extents(
     rows: Sequence[Mapping[str, str | bool]],
     *,
@@ -272,4 +296,4 @@ def read_free_extents(
     return readings
 
 
-__all__ = ["FS_IOC_GETFSMAP", "MAX_FSMAP_RECORDS", "encode_device", "read_free_extents"]
+__all__ = ["FS_IOC_GETFSMAP", "MAX_FSMAP_RECORDS", "encode_device", "read_free_extents", "rows_on_disks"]
