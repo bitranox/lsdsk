@@ -60,6 +60,16 @@ def _figures(entry: VolumeEntry) -> _Figures:
     return figures
 
 
+def _is_quota(entry: VolumeEntry) -> bool:
+    """Whether the caller's free figure is narrower than the volume's, which only a per-user quota makes it.
+
+    With no quota ``GetDiskFreeSpaceExW`` reports one free figure twice.
+    """
+    return (
+        entry.free_bytes is not None and entry.available_bytes is not None and entry.free_bytes != entry.available_bytes
+    )
+
+
 def _volume_row(entry: VolumeEntry, disks: tuple[str, ...]) -> Filesystem:
     paths = named_first(entry.paths)
     return Filesystem(
@@ -70,6 +80,7 @@ def _volume_row(entry: VolumeEntry, disks: tuple[str, ...]) -> Filesystem:
         disks=disks,
         read_only=entry.read_only is True,
         free_space=free_space_of(entry.free_extents),
+        space_is_quota=_is_quota(entry),
         readings_refused=refusals_of(
             {
                 "volume-space": entry.space_error,

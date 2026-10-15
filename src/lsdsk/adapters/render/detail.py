@@ -57,6 +57,7 @@ if TYPE_CHECKING:
         Disk,
         Filesystem,
         Finding,
+        FreeSpace,
         Health,
         Inventory,
         PcieLink,
@@ -992,17 +993,32 @@ def _filesystem_inode_values(filesystem: Filesystem) -> tuple[tuple[str, Cell], 
     )
 
 
+#: Said ahead of a quota row's free-space figures, which are the whole volume's.
+_QUOTA_SCOPE: Final = "whole volume, not the quota"
+_FREE_SPACE_LABELS: Final = ("fragmentation", "free extents", "largest", "average")
+
+
 def _filesystem_free_space_values(filesystem: Filesystem) -> tuple[tuple[str, Cell], ...]:
-    """How scattered the free space is: `n/a` where no figure can exist, a dash where one was not read."""
-    labels = ("fragmentation", "free extents", "largest", "average")
+    """How scattered the free space is: `n/a` where no figure can exist, a dash where one was not read.
+
+    On a row whose size and free are a per-user quota's, the figures read are
+    still the whole volume's, so a largest run can exceed the free figure the
+    space group shows; a ``scope`` value ahead of them says which they describe.
+    """
     if not filesystem.free_space_applies:
-        return tuple((label, _absent()) for label in labels)
+        return tuple((label, _absent()) for label in _FREE_SPACE_LABELS)
     space = filesystem.free_space
     if space is None:
-        return tuple((label, _counted(None)) for label in labels)
+        return tuple((label, _counted(None)) for label in _FREE_SPACE_LABELS)
+    scope: tuple[tuple[str, Cell], ...] = (("scope", (_QUOTA_SCOPE, "")),) if filesystem.space_is_quota else ()
+    return (*scope, *_free_space_figures(space))
+
+
+def _free_space_figures(space: FreeSpace) -> tuple[tuple[str, Cell], ...]:
+    """The score and the extent figures of a free-space reading, `n/a` for those a pool does not publish."""
     score = _absent() if space.fragmentation_percent is None else _counted(space.fragmentation_percent, "%")
     if space.free_extent_count is None:  # a pool: ZFS publishes the score and nothing finer
-        return (("fragmentation", score), *((label, _absent()) for label in labels[1:]))
+        return (("fragmentation", score), *((label, _absent()) for label in _FREE_SPACE_LABELS[1:]))
     # A walk that found no free run has no mean to take: the figure cannot exist, it was not missed.
     average = _absent() if space.free_extent_count == 0 else _capacity(space.average_free_extent_bytes)
     return (

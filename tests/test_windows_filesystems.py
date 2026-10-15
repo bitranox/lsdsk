@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from lsdsk.adapters.hw.windows.capture import WindowsCapture
 from lsdsk.adapters.hw.windows.filesystems import build_filesystems
 from lsdsk.adapters.hw.windows.usage import blocks_not_mounted, resolve_usage
+from lsdsk.adapters.render import detail
 from lsdsk.domain.enums import Environment, FilesystemKind
 
 if TYPE_CHECKING:
@@ -467,3 +468,36 @@ def test_a_replayed_run_whose_only_pathed_volume_failed_is_incomplete(
     assert envelope["data"]["filesystems"] == []
     assert envelope["ok"] is False
     assert f"volume: filesystems - volume 0 on PhysicalDrive0: {_PATHS_UNREAD}" in envelope["skipped"]
+
+
+def _panel_free_space(*, free_bytes: int, available_bytes: int) -> dict[str, str]:
+    """The free-space group of one volume's detail panel, drawn from a capture through the builder."""
+    histogram = [0] * 18 + [1, 1, 1]
+    extents = {"count": 3, "total": 150 * _GIB, "largest": 120 * _GIB, "histogram": histogram}
+    volume = _volume(
+        paths=("D:\\",),
+        disks=(0,),
+        total_bytes=10 * _GIB,
+        free_bytes=free_bytes,
+        available_bytes=available_bytes,
+        free_extents=extents,
+    )
+    rows, _ = build_filesystems(_one_disk({"0": volume}), BARE_METAL)
+    assert rows is not None
+    record = detail.filesystem_detail(rows[0])
+    group = next(group for group in record.groups if group.label == detail.FREE_SPACE)
+    return {name: text for name, (text, _style) in group.values}
+
+
+def test_a_quota_limited_volume_says_its_free_extents_are_the_whole_volumes() -> None:
+    """Size and free are a 10 GiB quota's; the 120 GiB largest run is the volume's, and the panel says so."""
+    values = _panel_free_space(free_bytes=150 * _GIB, available_bytes=9 * _GIB)
+    assert values["scope"] == "whole volume, not the quota"
+    assert values["largest"] == "129GB/120GiB"  # control: the figure itself is unchanged
+
+
+def test_a_volume_without_a_quota_carries_no_scope_note() -> None:
+    """The control: with no quota the row and its extents describe the same volume, so nothing is said."""
+    values = _panel_free_space(free_bytes=9 * _GIB, available_bytes=9 * _GIB)
+    assert "scope" not in values
+    assert values["largest"] == "129GB/120GiB"

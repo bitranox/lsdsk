@@ -1929,6 +1929,9 @@ class Filesystem(DomainModel, frozen=True):
             several mounts counts only when every mount is read-only.
         readings_refused: Readings the system refused for this filesystem.
         free_space: How scattered the free space is, ``None`` when not read.
+        space_is_quota: Whether size, used and free are a per-user quota's,
+            narrower than the volume: Windows answers them on the caller's
+            scope, while ``free_space`` always describes the whole volume.
 
     Example:
         >>> Filesystem(kind=FilesystemKind.MOUNT, name="/", used_bytes=1, free_bytes=199).used_percent
@@ -1948,6 +1951,7 @@ class Filesystem(DomainModel, frozen=True):
     read_only: bool = False
     readings_refused: tuple[RefusedReading, ...] = ()
     free_space: FreeSpace | None = None
+    space_is_quota: bool = False
 
     @property
     def free_space_applies(self) -> bool:
