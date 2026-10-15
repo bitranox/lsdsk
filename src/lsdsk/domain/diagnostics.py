@@ -267,6 +267,7 @@ def _platform_limited_finding(
     """Build the finding for a controller capped by the machine, not by itself."""
     achievable_speed, achievable_width = achievable_pcie(seat_of(controller))
     shortfall = _slot_shortfall(controller)
+    peaks = _drive_peaks(controller, inventory)
 
     move = free_slot_for(seat_of(controller), inventory)
     if move is not None:
@@ -285,7 +286,7 @@ def _platform_limited_finding(
             ),
         )
         unneeded = f"{controller.name} has a faster slot free, though nothing on it needs one today"
-        return _graded_by_the_drives(controller, inventory, achievable, advice=advice, unneeded_title=unneeded)
+        return _graded_by_the_drives(peaks, achievable, advice=advice, unneeded_title=unneeded)
 
     swap = _swap_slot_for(controller, inventory)
     if swap is not None:
@@ -305,7 +306,7 @@ def _platform_limited_finding(
             ),
         )
         unneeded = f"{controller.name} could swap into a faster slot, though nothing on it needs one today"
-        return _graded_by_the_drives(controller, inventory, achievable, advice=advice, unneeded_title=unneeded)
+        return _graded_by_the_drives(peaks, achievable, advice=advice, unneeded_title=unneeded)
 
     best = _best_port_for(controller, inventory)
     if best is not None and best[1] > achievable:
@@ -315,7 +316,7 @@ def _platform_limited_finding(
             f"The card is {format_pcie_sentence(controller.link.max_speed_gtps, controller.link.max_width)} capable; "
             f"the port it sits in gives it {format_pcie_sentence(achievable_speed, achievable_width)}, short on "
             f"{shortfall}. This board has faster ports ({port_pcie}) but none of them is free or swappable. "
-            f"{_headroom_sentence(controller, inventory, achievable)}"
+            f"{_headroom_sentence(peaks, achievable)}"
         )
         action = (
             f"Freeing a {port_pcie} port would take this link to {format_gbytes(gain)}; "
@@ -326,7 +327,7 @@ def _platform_limited_finding(
             f"The card is {format_pcie_sentence(controller.link.max_speed_gtps, controller.link.max_width)} capable; "
             f"the port it sits in gives it {format_pcie_sentence(achievable_speed, achievable_width)}, short on "
             f"{shortfall}, and no port on this board would give it more. "
-            f"{_headroom_sentence(controller, inventory, achievable)}"
+            f"{_headroom_sentence(peaks, achievable)}"
         )
         action = _upgrade_sentence(controller, inventory, achievable, own_max)
 
@@ -340,8 +341,7 @@ def _platform_limited_finding(
 
 
 def _graded_by_the_drives(
-    controller: Controller,
-    inventory: Inventory,
+    peaks: _DrivePeaks,
     achievable: float,
     *,
     advice: Finding,
@@ -354,12 +354,12 @@ def _graded_by_the_drives(
     becomes a hint that says so and keeps the faster slot named for when more
     drives are added.
     """
-    if _drives_would_notice(controller, inventory, achievable):
+    if _drives_would_notice(peaks, achievable):
         return advice
     return advice.with_changes(
         severity=Severity.HINT,
         title=unneeded_title,
-        detail=f"{advice.detail} {_headroom_sentence(controller, inventory, achievable)}",
+        detail=f"{advice.detail} {_headroom_sentence(peaks, achievable)}",
         action=f"Only once more drives are added. {advice.action}",
     )
 
@@ -389,11 +389,27 @@ def _peak_demand_gbytes(disk: Disk) -> float | None:
     return interface_demand_gbytes(disk)
 
 
-def _drive_peaks(controller: Controller, inventory: Inventory) -> tuple[list[float], int]:
+class _DrivePeaks(NamedTuple):
+    """What the drives on one controller can pull, as far as it was read.
+
+    Taken once per finding and handed to every helper that weighs the drives,
+    which read these two figures and nothing else of the controller or the
+    machine.
+
+    Attributes:
+        known: The peak demand, in GB/s, of each attached drive whose link was read.
+        unread: How many attached drives had no link read.
+    """
+
+    known: tuple[float, ...]
+    unread: int
+
+
+def _drive_peaks(controller: Controller, inventory: Inventory) -> _DrivePeaks:
     """Return the peak demand of each attached drive whose link was read, and how many were not read."""
     peaks = [_peak_demand_gbytes(disk) for disk in inventory.drives_on(controller.address)]
-    known = [peak for peak in peaks if peak]
-    return known, len(peaks) - len(known)
+    known = tuple(peak for peak in peaks if peak)
+    return _DrivePeaks(known, len(peaks) - len(known))
 
 
 def _unread_demand_sentence(unread: int, count: int) -> str:
@@ -411,14 +427,14 @@ def _unread_demand_sentence(unread: int, count: int) -> str:
     return f"What {which} can pull was not read, so whether they feel this cap is not known."
 
 
-def _drives_would_notice(controller: Controller, inventory: Inventory, achievable: float) -> bool:
+def _drives_would_notice(peaks: _DrivePeaks, achievable: float) -> bool:
     """Whether the drives on a controller could use more than the seat it sits in gives.
 
     Nothing attached can use nothing. A drive whose link was not read cannot be
     shown to fit, so it counts as one that would notice: calling a move unneeded
     on a reading nobody took would bury advice that may be real.
     """
-    known, unread = _drive_peaks(controller, inventory)
+    known, unread = peaks
     if unread:
         return True
     return bool(known) and sum(known) >= achievable
@@ -431,14 +447,14 @@ def _slot_shortfall(controller: Controller) -> str:
     return controller.upstream.shortfall_against(controller.link) or "bandwidth"
 
 
-def _headroom_sentence(controller: Controller, inventory: Inventory, achievable: float) -> str:
+def _headroom_sentence(peaks: _DrivePeaks, achievable: float) -> str:
     """Say whether the attached drives can actually feel the cap, judged by the most they can pull.
 
     A drive whose link was not read is named as unknown rather than left out:
     leaving it out calls a controller with a drive on it empty, or lets the
     drives that were read stand for all of them.
     """
-    known, unread = _drive_peaks(controller, inventory)
+    known, unread = peaks
     count = len(known) + unread
     if not count:
         return "Nothing is attached to it yet."
