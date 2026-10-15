@@ -16,7 +16,7 @@ from ....domain.enums import Environment, FilesystemKind
 from ....domain.models import Filesystem, RefusedReading
 from ..free_space import free_space_of
 from ..refusals import refusals_of
-from .usage import disk_numbers
+from .usage import blocks_not_mounted, disk_numbers
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 
 #: Why a run that could not open a volume for reading has no fragmentation figure.
 _NEEDS_ADMINISTRATOR = "needs Administrator"
+#: The reading a volume that could not be placed on a disk is refused under.
+_VOLUME_READING = "volume"
 
 
 class _Figures(TypedDict, total=False):
@@ -91,6 +93,32 @@ def _space_was_read(volumes: Iterable[VolumeEntry]) -> bool:
     )
 
 
+def _unplaced_reason(entry: VolumeEntry) -> str:
+    """Why one volume could not be placed, naming it where it has a name."""
+    reasons = [reason for reason in (entry.paths_error, entry.error) if reason is not None]
+    if entry.paths:
+        return f"{entry.paths[0]}: " + "; ".join(reasons)
+    if entry.esp is True:
+        return "EFI system partition: " + "; ".join(reasons)
+    return "; ".join(reasons)
+
+
+def _unplaced_volumes(volumes: Iterable[VolumeEntry]) -> tuple[RefusedReading, ...]:
+    """One refusal per volume that could be a row on an inventoried disk but could not be placed.
+
+    Decided by :func:`.usage.blocks_not_mounted`, the rule that leaves the
+    ``used by`` column undecided, so the two views cannot disagree about one
+    volume: a volume that makes ``not mounted`` unclaimable is one this section
+    may be missing a row for. An optical drive or a RAM disk, and a hidden
+    volume with no path, are neither, and say nothing.
+    """
+    return tuple(
+        RefusedReading(reading=_VOLUME_READING, reason=_unplaced_reason(entry))
+        for entry in volumes
+        if blocks_not_mounted(entry)
+    )
+
+
 def build_filesystems(
     capture: WindowsCapture, environment: Environment
 ) -> tuple[tuple[Filesystem, ...] | None, tuple[RefusedReading, ...]]:
@@ -101,8 +129,10 @@ def build_filesystems(
         environment: What kind of machine it came from.
 
     Returns:
-        The rows and the refusals that belong to no single row: one, when an
-        unelevated run could not read the volumes' bitmaps. The rows are ``None`` in a container or when the
+        The rows and the refusals that belong to no single row: one per
+        volume that could not be placed on a disk (see
+        :func:`_unplaced_volumes`), and one when an unelevated run could not
+        read the volumes' bitmaps. The rows are ``None`` in a container or when the
         volumes were not read, the same rule as ``used by``, and ``None`` too
         for a capture taken before the volumes' space was read.
     """
@@ -114,9 +144,10 @@ def build_filesystems(
     placed = [(entry, _nodes_of(entry, numbered)) for entry in capture.volumes.values() if entry.paths]
     rows = [_volume_row(entry, nodes) for entry, nodes in placed if nodes]
     ordered = tuple(sorted(rows, key=lambda row: disk_name_order(row.disks[0])))
+    unplaced = _unplaced_volumes(capture.volumes.values())
     if rows and capture.volume_bitmaps_read is False:
-        return ordered, refusals_of({"fragmentation": _NEEDS_ADMINISTRATOR})
-    return ordered, ()
+        return ordered, (*unplaced, *refusals_of({"fragmentation": _NEEDS_ADMINISTRATOR}))
+    return ordered, unplaced
 
 
 __all__ = ["build_filesystems"]

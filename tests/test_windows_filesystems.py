@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Any
+import json
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from lsdsk.adapters.hw.windows.capture import WindowsCapture
 from lsdsk.adapters.hw.windows.filesystems import build_filesystems
+from lsdsk.adapters.hw.windows.usage import blocks_not_mounted
 from lsdsk.domain.enums import Environment, FilesystemKind
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from click.testing import CliRunner
+
 BARE_METAL = Environment.BARE_METAL
+FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 
 
 def _disk(node: str) -> dict[str, Any]:
@@ -194,3 +203,87 @@ def test_a_refused_bitmap_is_carried_on_its_row() -> None:
     rows, _ = build_filesystems(_c_drive(bitmaps_read=True, free_extents={"error": reason}), BARE_METAL)
     assert rows is not None
     assert ("volume-bitmap", reason) in [(r.reading, r.reason) for r in rows[0].readings_refused]
+
+
+_CDROM = 5
+
+
+def _undecidable_volumes() -> dict[str, Any]:
+    """C: on the disk, beside the three ways a volume can fail to be placed and the one that says nothing.
+
+    D: would not open, a second volume's paths were not read, an ESP's extents
+    were not read, and E: is an optical drive whose extents were not read: the
+    first three could each be a row on the disk, the last cannot.
+    """
+    space: dict[str, Any] = {"total_bytes": 100, "free_bytes": 40, "available_bytes": 30}
+    return {
+        "0": _volume(paths=("C:\\",), disks=(0,), **space),
+        "1": _volume(paths=("D:\\",), drive_type=3, error="could not open the volume (error 5)", **space),
+        "2": _volume(disks=(0,), paths_error="could not read the volume's paths (error 234)"),
+        "3": _volume(esp=True, error="could not read the volume's disk extents (error 1)"),
+        "4": _volume(paths=("E:\\",), drive_type=_CDROM, error="could not read the volume's disk extents (error 1)"),
+    }
+
+
+def test_a_volume_that_could_not_be_placed_is_recorded_rather_than_left_out() -> None:
+    rows, unread = build_filesystems(_one_disk(_undecidable_volumes()), BARE_METAL)
+    assert rows is not None
+    assert [row.name for row in rows] == ["C:\\"]
+    assert [(r.reading, r.reason) for r in unread] == [
+        ("volume", "D:\\: could not open the volume (error 5)"),
+        ("volume", "could not read the volume's paths (error 234)"),
+        ("volume", "EFI system partition: could not read the volume's disk extents (error 1)"),
+    ]
+
+
+def test_an_optical_drive_that_could_not_be_placed_is_not_a_refusal() -> None:
+    """The control: a volume no disk sits behind could never have been a row, so it is silent."""
+    volumes = _undecidable_volumes()
+    rows, unread = build_filesystems(_one_disk({"0": volumes["0"], "4": volumes["4"]}), BARE_METAL)
+    assert rows is not None
+    assert [row.name for row in rows] == ["C:\\"]
+    assert unread == ()
+
+
+def test_the_refusals_of_unplaced_volumes_agree_with_the_used_by_column() -> None:
+    """One decider for both views: a volume refused here is exactly one that leaves used-by undecided."""
+    volumes = _undecidable_volumes()
+    for key in ("1", "2", "3", "4"):
+        capture = _one_disk({"0": volumes["0"], key: volumes[key]})
+        assert capture.volumes is not None
+        _, unread = build_filesystems(capture, BARE_METAL)
+        assert bool(unread) is blocks_not_mounted(capture.volumes[key]), key
+
+
+def _replayed(volumes: dict[str, Any], tmp_path: Path, runner: CliRunner, factory: Callable[[], object]) -> Any:
+    """Replay windows-usb-uas, a physical machine whose committed capture reports ok, with these volumes."""
+    from lsdsk.adapters.cli import cli
+
+    payload = json.loads((FIXTURES / "windows-usb-uas.json").read_text(encoding="utf-8"))
+    payload["volumes"] = volumes
+    payload["volume_bitmaps_read"] = True
+    capture = tmp_path / "capture.json"
+    capture.write_text(json.dumps(payload), encoding="utf-8")
+    result = runner.invoke(cli, ["filesystems", "--replay", str(capture), "--format", "json"], obj=factory)
+    return json.JSONDecoder().raw_decode(result.output[result.output.index("{") :])[0]
+
+
+def test_a_replayed_volume_that_could_not_be_placed_makes_the_run_incomplete(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    envelope = _replayed(_undecidable_volumes(), tmp_path, cli_runner, production_factory)
+    assert [row["name"] for row in envelope["data"]["filesystems"]] == ["C:\\"]
+    assert envelope["ok"] is False
+    assert "volume: filesystems - D:\\: could not open the volume (error 5)" in envelope["skipped"]
+    assert "volume: filesystems - could not read the volume's paths (error 234)" in envelope["skipped"]
+    assert not any("E:\\" in line for line in envelope["skipped"])
+
+
+def test_the_same_replay_with_every_volume_placed_is_complete(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    """The control: the machine and the route are the same, so ok above is the volumes' doing."""
+    volumes = _undecidable_volumes()
+    envelope = _replayed({"0": volumes["0"], "4": volumes["4"]}, tmp_path, cli_runner, production_factory)
+    assert [row["name"] for row in envelope["data"]["filesystems"]] == ["C:\\"]
+    assert (envelope["ok"], envelope["skipped"]) == (True, [])

@@ -26,7 +26,7 @@ _NODE_NUMBER = re.compile(r"PhysicalDrive(\d+)$", re.IGNORECASE)
 
 # Drive types no physical disk sits behind, so a failure to place one on a disk
 # says nothing about any disk this tool lists.
-_DISKLESS_DRIVE_TYPES = frozenset({api.DRIVE_CDROM, api.DRIVE_RAMDISK})
+DISKLESS_DRIVE_TYPES = frozenset({api.DRIVE_CDROM, api.DRIVE_RAMDISK})
 
 
 def disk_numbers(nodes: frozenset[str]) -> dict[int, str]:
@@ -98,7 +98,7 @@ def _boot_nodes(
     return frozenset(disk_numbers[number] for number in boot_disk_numbers if number in disk_numbers)
 
 
-def _blocks_not_mounted(entry: VolumeEntry) -> bool:
+def blocks_not_mounted(entry: VolumeEntry) -> bool:
     """Whether one volume's failure leaves a disk with nothing found undecided.
 
     A volume whose paths were not read could be any disk's letter. A volume
@@ -125,7 +125,7 @@ def _blocks_not_mounted(entry: VolumeEntry) -> bool:
         return True
     if not entry.paths:
         return False
-    return entry.drive_type not in _DISKLESS_DRIVE_TYPES
+    return entry.drive_type not in DISKLESS_DRIVE_TYPES
 
 
 def resolve_usage(capture: WindowsCapture, environment: Environment) -> dict[str, DiskUsage | None]:
@@ -140,7 +140,7 @@ def resolve_usage(capture: WindowsCapture, environment: Environment) -> dict[str
         value is ``None`` in a container and when the volumes section itself
         was never read. Among disks this capture COULD place a volume on, one
         with nothing resolved is ``None`` too whenever some other volume's
-        failure could hide a use of it (see :func:`_blocks_not_mounted`) - the
+        failure could hide a use of it (see :func:`blocks_not_mounted`) - the
         global rule that "not mounted" is claimed only once every source that
         could have named the disk was read.
     """
@@ -152,7 +152,7 @@ def resolve_usage(capture: WindowsCapture, environment: Environment) -> dict[str
     numbered = disk_numbers(nodes)
     mounts = _letter_mounts(volumes, numbered)
     boot_nodes = _boot_nodes(capture, volumes, numbered)
-    any_volume_blocks = any(_blocks_not_mounted(entry) for entry in volumes.values())
+    any_volume_blocks = any(blocks_not_mounted(entry) for entry in volumes.values())
 
     result: dict[str, DiskUsage | None] = {}
     for node in nodes:
@@ -166,4 +166,4 @@ def resolve_usage(capture: WindowsCapture, environment: Environment) -> dict[str
     return result
 
 
-__all__ = ["disk_numbers", "resolve_usage"]
+__all__ = ["DISKLESS_DRIVE_TYPES", "blocks_not_mounted", "disk_numbers", "resolve_usage"]
