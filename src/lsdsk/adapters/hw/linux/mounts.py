@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
 from ....domain.errors import ConfigurationError, MissingFileError
 from ...textfile import read_text_bounded
+from .capture import replaced_surrogates
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -70,8 +71,13 @@ MAX_ATTRIBUTE_CHARS = 1024 * 1024
 # only the path's own bytes reach that directory: kernel_path turns the text back
 # into exactly those bytes, whatever the reading process's locale is. The capture
 # model shows such a byte as a printable escape. The size bound is measured on those same bytes, so
-# it is the file's own size.
+# it is the file's own size. The decode covers the whole line, but only the
+# mountpoint is asked at: every other field a row records has each such byte
+# replaced (see _recorded), because a lone surrogate there - a FUSE subtype is
+# whatever the mounting user chose - is text no capture can carry.
 _MOUNTINFO_DECODE_ERRORS = "surrogateescape"
+# The one field of a row that keeps its lone surrogates, so it can be asked at.
+_ASKED_FIELD = "mountpoint"
 # The swap list is never asked at a path: a swap FILE's path is dropped and a swap
 # DEVICE is a /dev node, so replacing a bad byte there changes nothing anything
 # reads, and keeps a lone surrogate out of the one path text a capture records.
@@ -219,7 +225,8 @@ def read_mounts(
         One row per mount a disk can sit behind, each carrying ``dev`` (the
         mounted device's own ``maj:min``, field 3), ``mountpoint`` (a byte that
         is not UTF-8 kept as a lone surrogate, so :func:`kernel_path` gives
-        back the path's own bytes) and
+        back the path's own bytes; in every other field such a byte is
+        U+FFFD) and
         ``fstype`` and ``read_only`` (a real boolean, lsdsk's own verdict rather
         than text the kernel published), plus ``source_dev`` when the source
         names a resolvable ``/dev`` node and, for ZFS only, ``source`` narrowed to the pool name,
@@ -250,8 +257,26 @@ def read_mounts(
             continue
         if line.split(" ", 1)[0] in hidden:
             row["hidden"] = True
-        rows.append(row)
+        rows.append(_recorded(row))
     return rows
+
+
+def _recorded(row: dict[str, str | bool]) -> dict[str, str | bool]:
+    r"""`row` as a capture records it: no field but the mountpoint keeps a lone surrogate.
+
+    Applied to the finished row rather than field by field, so a field a later
+    change adds cannot forget it. The source was already resolved at its own
+    bytes, so replacing a byte here changes nothing anything asks.
+
+    Example:
+        >>> row = _recorded({"mountpoint": "/caf\udce9", "fstype": "fuseblk.\udcff"})
+        >>> row["mountpoint"], row["fstype"] == "fuseblk.\ufffd"
+        ('/caf\udce9', True)
+    """
+    return {
+        key: replaced_surrogates(value) if isinstance(value, str) and key != _ASKED_FIELD else value
+        for key, value in row.items()
+    }
 
 
 class _MountIds(NamedTuple):

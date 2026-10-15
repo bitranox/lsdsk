@@ -27,7 +27,16 @@ from typing import Annotated, Literal
 from pydantic import BeforeValidator, Field
 
 from ....domain.enums import Platform
-from ..capture import CaptureHeader, CaptureModel, DeviceText, EncodedPayload, Entries, EntryMap, FreeExtentsEntry
+from ..capture import (
+    MAX_DEVICE_TEXT,
+    CaptureHeader,
+    CaptureModel,
+    DeviceText,
+    EncodedPayload,
+    Entries,
+    EntryMap,
+    FreeExtentsEntry,
+)
 from ..decode.virtualization import VirtualizationEvidence
 
 # ``rotational`` is a kernel-published ``0``/``1`` text flag, unlike most of
@@ -77,6 +86,40 @@ def _rotating_of(value: object) -> object:
 _ESCAPED_BYTES = range(0xDC80, 0xDD00)
 _ESCAPED_BYTE_BASE = 0xDC00
 _SURROGATES = range(0xD800, 0xE000)
+# What a lone surrogate becomes in text that is never asked at: the replacement
+# character a "replace" decode gives an undecodable byte.
+_REPLACEMENT = "\ufffd"
+# Where a path too long for the bound is cut, after the last whole escape that fits.
+_CUT_MARK = "..."
+_PATH_ROOM = MAX_DEVICE_TEXT - len(_CUT_MARK)
+
+
+def replaced_surrogates(text: str) -> str:
+    r"""`text` with each lone surrogate replaced, so every UTF encoding can write it.
+
+    A lone surrogate is how a decode keeps a byte that was not UTF-8, and only a
+    path that is asked at needs that byte back. Any other text holding one is
+    refused by the capture model and cannot be written to a snapshot, so it is
+    replaced with U+FFFD, as a ``replace`` decode would have done.
+
+    Args:
+        text: Text that may hold lone surrogates.
+
+    Returns:
+        The same text with each lone surrogate replaced by U+FFFD.
+
+    Example:
+        >>> replaced_surrogates("fuse.\udcff") == "fuse.\ufffd"
+        True
+        >>> replaced_surrogates("ext4")
+        'ext4'
+    """
+    return "".join(_REPLACEMENT if ord(character) in _SURROGATES else character for character in text)
+
+
+def _without_surrogates(value: object) -> object:
+    """:func:`replaced_surrogates` for a value that may not be text, which the model then refuses."""
+    return replaced_surrogates(value) if isinstance(value, str) else value
 
 
 def _printable_path(value: object) -> object:
@@ -87,15 +130,47 @@ def _printable_path(value: object) -> object:
     write one, so here it becomes the escape of the byte it stands for. A lone
     surrogate a replayed file spelled outside that range is shown as ``\uNNNN``.
 
+    An escape is four or six characters for one byte or surrogate, so a path the
+    kernel can name grows past :data:`MAX_DEVICE_TEXT` once escaped, and a mount
+    path is not even bounded by ``PATH_MAX``. Refusing it would end every command
+    over one mount, so the path is cut, between whole escapes and with a marked
+    ``...``, at the bound instead. This is the text a reading is SHOWN as; the
+    live reader asks the system at the full path before any of this runs.
+
     Example:
         >>> _printable_path("/M\udcfcll")
         '/M\\xfcll'
         >>> _printable_path("/data"), _printable_path("/a\ud800")
         ('/data', '/a\\ud800')
+        >>> cut = _printable_path("/" + "\udcff" * 2000)
+        >>> len(cut) <= MAX_DEVICE_TEXT, cut[-7:]
+        (True, '\\xff...')
     """
     if not isinstance(value, str):
         return value
-    return "".join(_printable_character(character) for character in value)
+    # Walked only as far as the bound: each character is at least one character
+    # of output, so nothing past MAX_DEVICE_TEXT of input can be shown.
+    shown: list[str] = []
+    used = 0
+    for character in value[: MAX_DEVICE_TEXT + 1]:
+        piece = _printable_character(character)
+        used += len(piece)
+        shown.append(piece)
+    if used <= MAX_DEVICE_TEXT:
+        return "".join(shown)
+    return _cut(shown)
+
+
+def _cut(pieces: list[str]) -> str:
+    """The whole pieces that fit in front of :data:`_CUT_MARK`, then the mark."""
+    kept: list[str] = []
+    used = 0
+    for piece in pieces:
+        if used + len(piece) > _PATH_ROOM:
+            break
+        kept.append(piece)
+        used += len(piece)
+    return "".join(kept) + _CUT_MARK
 
 
 def _printable_character(character: str) -> str:
@@ -106,8 +181,13 @@ def _printable_character(character: str) -> str:
     return f"\\u{code:04x}" if code in _SURROGATES else character
 
 
-#: A path read from the kernel: :data:`DeviceText` once each undecodable byte is escaped.
+#: A path read from the kernel: :data:`DeviceText` once each undecodable byte is
+#: escaped and the result cut to the bound (see :func:`_printable_path`).
 PathText = Annotated[DeviceText, BeforeValidator(_printable_path)]
+
+#: Text read from the kernel that is never asked at: :data:`DeviceText` once each
+#: lone surrogate a replayed file still carries is replaced.
+KernelText = Annotated[DeviceText, BeforeValidator(_without_surrogates)]
 
 
 class AhciRegisters(CaptureModel, frozen=True):
@@ -326,11 +406,11 @@ class MountEntry(CaptureModel, frozen=True):
             field existed, which is read as reachable, as it was then.
     """
 
-    dev: DeviceText
+    dev: KernelText
     mountpoint: PathText
-    fstype: DeviceText = ""
-    source: DeviceText = ""
-    source_dev: DeviceText | None = None
+    fstype: KernelText = ""
+    source: KernelText = ""
+    source_dev: KernelText | None = None
     read_only: bool | None = None
     hidden: bool = False
 
@@ -710,4 +790,5 @@ __all__ = [
     "UsbDeviceEntry",
     "VdevEntry",
     "VpdPages",
+    "replaced_surrogates",
 ]
