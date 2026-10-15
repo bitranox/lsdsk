@@ -94,3 +94,31 @@ def test_each_kind_of_bracket_left_open_makes_the_next_piece_a_cut_tail(
     assert len(said) == 1, said
     assert "continues a cut regex" in said[0], said
     assert "has no '='" not in said[0], said
+
+
+@pytest.mark.parametrize(
+    ("text", "cut_pieces"),
+    [
+        pytest.param("k=(a,b,c),key=.+", 2, id="group cut twice"),
+        pytest.param("k=[a,b,c],key=.+", 2, id="class cut twice"),
+        pytest.param("k=(a,b,c,d),key=.+", 3, id="group cut three times"),
+        pytest.param(r"k=\d{1,3}(a,b),key=.+", 2, id="two groups, each cut once"),
+    ],
+)
+def test_every_piece_of_a_regex_cut_at_several_commas_continues_the_cut(
+    text: str, cut_pieces: int, capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The third piece of ``k=(a,b,c)`` follows ``b``, which opened nothing, yet is still inside the group.
+
+    Judging each piece by the one before it alone called ``c)`` a piece with no ``=``,
+    so the right verdict carried the wrong reason; the group stays open across the run.
+    The library's own refusal of the whole variable (the cut leaves ``k=(a`` unterminated)
+    is a separate line and is set aside.
+    """
+    monkeypatch.setenv("LOG_SCRUB_PATTERNS", text)
+
+    said = [line for line in _said_about_scrubbing(capfd) if "split on every comma" in line]
+
+    assert len(said) == cut_pieces, said
+    assert all("continues a cut regex" in line for line in said), said
+    assert not any("has no '='" in line for line in said), said

@@ -407,10 +407,13 @@ def _dropped_scrub_entries(text: str) -> list[_DroppedPiece]:
     The text form is ``field=regex`` pairs split on every comma, so a regex that
     holds one (``token=a{1,3}``) is cut in two. The tail is dropped without a
     word when it has no ``=``, and is read as a pair of its own when it has one
-    (``token=a{1,3=x}`` yields an entry named ``3``). A tail follows a piece that
+    (``token=a{1,3=x}`` yields an entry named ``3``). A tail follows an entry that
     opened a regex bracket and never closed it, which is how a cut is told from
     a deliberate list; a piece with no ``=`` after one that closed everything is
-    plainly not a pair, and says that instead of blaming a cut.
+    plainly not a pair, and says that instead of blaming a cut. The entry is
+    judged as rejoined so far, never by the one piece before: in ``k=(a,b,c)``
+    the piece before ``c)`` is ``b``, which opens nothing, while the group it
+    sits in is still open.
 
     Args:
         text: The text form, from the section or from the environment.
@@ -427,18 +430,22 @@ def _dropped_scrub_entries(text: str) -> list[_DroppedPiece]:
         []
         >>> _dropped_scrub_entries("a=x,junk")[0].reason.endswith("has no '='")
         True
+        >>> [p.reason == _REASON_CUT for p in _dropped_scrub_entries("k=(a,b,c), key=.+")]
+        [True, True]
     """
     pieces = [piece.strip() for piece in text.split(",")]
     dropped: list[_DroppedPiece] = []
-    previous = ""
+    entry = ""
     for piece in pieces:
         if not piece:
             continue
-        if _is_left_open(previous):
+        if _is_left_open(entry):
             dropped.append(_DroppedPiece(piece, _REASON_CUT))
-        elif "=" not in piece:
+            entry = f"{entry},{piece}"
+            continue
+        if "=" not in piece:
             dropped.append(_DroppedPiece(piece, _REASON_NO_EQUALS))
-        previous = piece
+        entry = piece
     return dropped
 
 
