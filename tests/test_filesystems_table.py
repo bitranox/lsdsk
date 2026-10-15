@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+from rich.cells import cell_len
 from rich.console import Console
 
 from lsdsk.adapters.hw.snapshot import build_from
@@ -337,3 +338,34 @@ def test_a_filesystem_name_is_cut_only_once_every_droppable_column_is_gone() -> 
         standing = [title for title in _DROPPABLE_TITLES if title in header]
         assert not standing, f"names cut at width {width} while {standing} still stand:\n{rendered}"
     assert cut_at, "the arm never reached a width that cuts a name, so it asserted nothing"
+
+
+# A mountpoint in CJK, every character of which takes two terminal cells, with a bind mount beside it.
+_WIDE_CHARACTERS = Filesystem(
+    kind=FilesystemKind.MOUNT,
+    name="/media/user/写真とビデオのバックアップ領域",
+    other_mounts=("/srv/bind",),
+    fs_type="ext4",
+    disks=("sdb",),
+    size_bytes=4_000_000_000_000,
+    used_bytes=1_500_000_000_000,
+    free_bytes=2_500_000_000_000,
+    inodes_total=10,
+    inodes_free=5,
+    free_space=FreeSpace(fragmentation_percent=10),
+)
+
+
+def test_a_name_in_wide_characters_is_drawn_whole_where_there_is_room() -> None:
+    row = _text(_WIDE_CHARACTERS, _EXT4, width=120).splitlines()[2]
+    assert f"{_WIDE_CHARACTERS.name} +1 " in row, row
+
+
+def test_a_name_in_wide_characters_is_cut_by_cells_and_keeps_its_count() -> None:
+    """Widths are terminal cells: counted in characters, Rich cut the name with its own mark and took the count."""
+    for width in range(220, 29, -1):
+        rendered = _text(_WIDE_CHARACTERS, _EXT4, width=width)
+        assert "…" not in rendered, f"Rich cut a cell at width {width}:\n{rendered}"
+        assert all(cell_len(line) <= width for line in rendered.splitlines()), f"wider than {width}:\n{rendered}"
+        row = rendered.splitlines()[2]
+        assert " +1 " in row, f"the +1 was lost at width {width}: {row!r}"

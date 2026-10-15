@@ -19,6 +19,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from rich.cells import cell_len, chop_cells
+
 from ...domain.enums import Align
 
 if TYPE_CHECKING:
@@ -254,7 +256,9 @@ def natural_widths(columns: Sequence[Column], rows: Iterable[dict[str, str]]) ->
 
     Returns:
         The widest content per column, header included, with any column that
-        declares a ``max_width`` held at that ceiling.
+        declares a ``max_width`` held at that ceiling. Measured in terminal
+        cells, not characters: a CJK character takes two, and a width counted
+        in characters hands the console a value twice as wide as the column.
 
     Example:
         >>> cols = [Column("a", "aa"), Column("b", "b")]
@@ -262,11 +266,13 @@ def natural_widths(columns: Sequence[Column], rows: Iterable[dict[str, str]]) ->
         {'a': 2, 'b': 4}
         >>> natural_widths([Column("b", "b", max_width=2)], [{"b": "yyyy"}])
         {'b': 2}
+        >>> natural_widths([Column("b", "b")], [{"b": "\u5199\u771f"}])
+        {'b': 4}
     """
-    widths = {column.key: len(column.title) for column in columns}
+    widths = {column.key: cell_len(column.title) for column in columns}
     for row in rows:
         for column in columns:
-            widths[column.key] = max(widths[column.key], len(row.get(column.key, "")))
+            widths[column.key] = max(widths[column.key], cell_len(row.get(column.key, "")))
     for column in columns:
         if column.max_width is not None:
             widths[column.key] = min(widths[column.key], column.max_width)
@@ -353,11 +359,12 @@ def clip(value: str, width: int) -> str:
 
     Args:
         value: The text to fit.
-        width: The most characters to keep, marker included.
+        width: The most terminal cells to fill, marker included.
 
     Returns:
-        ``value`` unchanged when it fits, otherwise ``width`` characters ending
-        in :data:`ELLIPSIS`.
+        ``value`` unchanged when it fits, otherwise at most ``width`` cells
+        ending in :data:`ELLIPSIS`. One fewer where the cut would otherwise
+        split a character two cells wide, which is never halved.
 
     Example:
         >>> clip("abc", 5)
@@ -368,10 +375,21 @@ def clip(value: str, width: int) -> str:
         'abcd>'
         >>> clip("abc", 0)
         ''
+        >>> clip("\u5199\u771f\u3068", 6)
+        '\u5199\u771f\u3068'
+        >>> clip("\u5199\u771f\u3068", 5)
+        '\u5199\u771f>'
+        >>> clip("\u5199\u771f\u3068", 4)
+        '\u5199>'
     """
-    if len(value) <= width:
+    if cell_len(value) <= width:
         return value
-    return value[: max(width - 1, 0)] + ELLIPSIS if width else ""
+    return _leading_cells(value, width - 1) + ELLIPSIS if width else ""
+
+
+def _leading_cells(value: str, cells: int) -> str:
+    """The longest start of ``value`` that fills at most ``cells`` terminal cells, never half a character."""
+    return chop_cells(value, cells)[0] if cells > 0 and value else ""
 
 
 def clip_keeping(value: str, width: int, tail: str) -> str:
@@ -386,12 +404,12 @@ def clip_keeping(value: str, width: int, tail: str) -> str:
 
     Args:
         value: The text to fit, ending in ``tail``.
-        width: The most characters to keep, marker included.
+        width: The most terminal cells to fill, marker included.
         tail: The end of ``value`` to keep whole; empty keeps nothing.
 
     Returns:
-        ``value`` unchanged when it fits, otherwise ``width`` characters with
-        the clip mark before ``tail``.
+        ``value`` unchanged when it fits, otherwise at most ``width`` cells
+        with the clip mark before ``tail``.
 
     Example:
         >>> clip_keeping("/srv/long-name +2", 12, " +2")
@@ -402,10 +420,13 @@ def clip_keeping(value: str, width: int, tail: str) -> str:
         '/sr>'
         >>> clip_keeping("/srv/long-name", 8, "")
         '/srv/lo>'
+        >>> clip_keeping("/\u5199\u771f\u3068 +1", 8, " +1")
+        '/\u5199> +1'
     """
-    if len(value) <= width or not tail or not value.endswith(tail) or width - len(tail) < _CLIPPED:
+    room = width - cell_len(tail)
+    if cell_len(value) <= width or not tail or not value.endswith(tail) or room < _CLIPPED:
         return clip(value, width)
-    return clip(value[: -len(tail)], width - len(tail)) + tail
+    return clip(value[: -len(tail)], room) + tail
 
 
 def pad(value: str, width: int, align: Align) -> str:
@@ -417,7 +438,7 @@ def pad(value: str, width: int, align: Align) -> str:
         align: Which way the column's text is set.
 
     Returns:
-        Text of exactly ``width`` characters.
+        Text that fills exactly ``width`` terminal cells.
 
     Example:
         >>> pad("abc", 5, Align.LEFT)
@@ -426,9 +447,12 @@ def pad(value: str, width: int, align: Align) -> str:
         '  abc'
         >>> pad("abcdefgh", 5, Align.LEFT)
         'abcd>'
+        >>> pad("\u5199\u771f", 6, Align.LEFT)
+        '\u5199\u771f  '
     """
     value = clip(value, width)
-    return value.rjust(width) if align is Align.RIGHT else value.ljust(width)
+    fill = " " * (width - cell_len(value))
+    return fill + value if align is Align.RIGHT else value + fill
 
 
 __all__ = [
