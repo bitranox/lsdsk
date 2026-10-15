@@ -105,14 +105,38 @@ def _space_was_read(volumes: Iterable[VolumeEntry]) -> bool:
     )
 
 
-def _unplaced_reason(entry: VolumeEntry) -> str:
-    """Why one volume could not be placed, naming it where it has a name."""
-    reasons = [reason for reason in (entry.paths_error, entry.error) if reason is not None]
+def _unplaced_name(position: int, entry: VolumeEntry, numbered: dict[int, str]) -> str:
+    """What a reader knows an unplaced volume by: its drive letter, or its place and the disks it reached.
+
+    A volume whose paths were not read has no name of its own, so it is named
+    by its place in the enumeration, which no two volumes share, then by the
+    disks its extents reached, an inventoried one by its node and any other by
+    its number. Without the place, two such volumes on one disk printed one
+    line twice.
+
+    Args:
+        position: The volume's place among the capture's volumes, from 0.
+        entry: The volume.
+        numbered: An inventoried disk's node, keyed by its number.
+
+    Returns:
+        The name the refusal line starts with.
+    """
     if entry.paths:
-        return f"{named_first(entry.paths)[0]}: " + "; ".join(reasons)
+        return named_first(entry.paths)[0]
+    name = f"volume {position}"
+    disks = [numbered.get(number, f"disk {number}") for number in sorted(set(entry.disks))]
+    if disks:
+        name += " on " + ", ".join(disks)
     if entry.esp is True:
-        return "EFI system partition: " + "; ".join(reasons)
-    return "; ".join(reasons)
+        name += " (EFI system partition)"
+    return name
+
+
+def _unplaced_reason(position: int, entry: VolumeEntry, numbered: dict[int, str]) -> str:
+    """Why one volume could not be placed, under the name :func:`_unplaced_name` gives it."""
+    reasons = [reason for reason in (entry.paths_error, entry.error) if reason is not None]
+    return f"{_unplaced_name(position, entry, numbered)}: " + "; ".join(reasons)
 
 
 def _may_have_a_path(entry: VolumeEntry) -> bool:
@@ -120,7 +144,7 @@ def _may_have_a_path(entry: VolumeEntry) -> bool:
     return bool(entry.paths) or entry.paths_error is not None
 
 
-def _unplaced_volumes(volumes: Iterable[VolumeEntry]) -> tuple[RefusedReading, ...]:
+def _unplaced_volumes(volumes: Iterable[VolumeEntry], numbered: dict[int, str]) -> tuple[RefusedReading, ...]:
     """One refusal per volume that could be a row on an inventoried disk but could not be placed.
 
     Decided first by :func:`.usage.blocks_not_mounted`, the rule that leaves
@@ -132,8 +156,8 @@ def _unplaced_volumes(volumes: Iterable[VolumeEntry]) -> tuple[RefusedReading, .
     column undecided, a known ESP on an unknown disk being any disk's boot mark.
     """
     return tuple(
-        RefusedReading(reading=_VOLUME_READING, reason=_unplaced_reason(entry))
-        for entry in volumes
+        RefusedReading(reading=_VOLUME_READING, reason=_unplaced_reason(position, entry, numbered))
+        for position, entry in enumerate(volumes)
         if blocks_not_mounted(entry) and _may_have_a_path(entry)
     )
 
@@ -166,7 +190,7 @@ def build_filesystems(
         if can_be_a_row(entry, numbered)
     ]
     ordered = tuple(sorted(rows, key=lambda row: disk_name_order(row.disks[0])))
-    unplaced = _unplaced_volumes(capture.volumes.values())
+    unplaced = _unplaced_volumes(capture.volumes.values(), numbered)
     if rows and capture.volume_bitmaps_read is False:
         return ordered, (*unplaced, *refusals_of({"fragmentation": _NEEDS_ADMINISTRATOR}))
     return ordered, unplaced

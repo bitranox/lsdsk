@@ -232,7 +232,7 @@ def test_a_volume_that_could_not_be_placed_is_recorded_rather_than_left_out() ->
     assert [row.name for row in rows] == ["C:\\"]
     assert [(r.reading, r.reason) for r in unread] == [
         ("volume", "D:\\: could not open the volume (error 5)"),
-        ("volume", "could not read the volume's paths (error 234)"),
+        ("volume", "volume 2 on PhysicalDrive0: could not read the volume's paths (error 234)"),
     ]
 
 
@@ -278,7 +278,10 @@ def test_a_replayed_volume_that_could_not_be_placed_makes_the_run_incomplete(
     assert [row["name"] for row in envelope["data"]["filesystems"]] == ["C:\\"]
     assert envelope["ok"] is False
     assert "volume: filesystems - D:\\: could not open the volume (error 5)" in envelope["skipped"]
-    assert "volume: filesystems - could not read the volume's paths (error 234)" in envelope["skipped"]
+    assert (
+        "volume: filesystems - volume 2 on PhysicalDrive0: could not read the volume's paths (error 234)"
+        in envelope["skipped"]
+    )
     assert not any("E:\\" in line for line in envelope["skipped"])
 
 
@@ -401,3 +404,26 @@ def test_a_pathless_esp_alone_on_its_disk_still_leaves_that_disk_undecided() -> 
     )
     assert build_filesystems(capture, BARE_METAL)[1] == ()
     assert resolve_usage(capture, BARE_METAL)["PhysicalDrive1"] is None
+
+
+def test_two_volumes_whose_paths_were_not_read_are_refused_under_two_names() -> None:
+    """With no path to name them, each is named by its place in the enumeration and the disk it reached."""
+    failed = "could not read the volume's paths (error 234)"
+    capture = _capture(
+        {"\\\\?\\p0": _disk("PhysicalDrive0"), "\\\\?\\p1": _disk("PhysicalDrive1")},
+        volumes={
+            "0": _volume(paths=("C:\\",), disks=(0,)),
+            "1": _volume(disks=(0,), paths_error=failed),
+            "2": _volume(disks=(0,), paths_error=failed),
+            "3": _volume(disks=(1, 7), paths_error=failed, esp=True),
+            "4": _volume(paths_error=failed, error="could not open the volume (error 5)"),
+        },
+    )
+    _, unread = build_filesystems(capture, BARE_METAL)
+    assert [r.reason for r in unread] == [
+        f"volume 1 on PhysicalDrive0: {failed}",
+        f"volume 2 on PhysicalDrive0: {failed}",
+        f"volume 3 on PhysicalDrive1, disk 7 (EFI system partition): {failed}",
+        f"volume 4: {failed}; could not open the volume (error 5)",
+    ]
+    assert len({r.reason for r in unread}) == len(unread)
