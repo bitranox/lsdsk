@@ -71,6 +71,8 @@ class FakeVolume:
             the one asked for, which no documented answer does.
         bitmap_error: The error the bitmap call fails with, or ``None``.
         bitmap_stalls: Answer ``ERROR_MORE_DATA`` with no cluster bits at all.
+        ioctl_raises: Raise from the identity ioctls rather than answer, the way
+            a ctypes call raises on an argument it cannot convert.
     """
 
     paths: tuple[str, ...] | None = ()
@@ -87,6 +89,7 @@ class FakeVolume:
     bitmap_lcn_ahead: int = 0
     bitmap_error: int | None = None
     bitmap_stalls: bool = False
+    ioctl_raises: bool = False
 
 
 class RunawayWalkError(Exception):
@@ -117,6 +120,7 @@ class FakeVolumeKernel:
     bitmap_calls: int = 0
     closed: list[int] = field(default_factory=list[int])
     granted: list[tuple[int, int]] = field(default_factory=list[tuple[int, int]])
+    find_closed: int = 0
     _order: list[str] = field(default_factory=list[str])
     _handles: dict[int, str] = field(default_factory=dict[int, str])
 
@@ -164,6 +168,7 @@ class FakeVolumeKernel:
 
     def FindVolumeClose(self, handle: int) -> int:  # noqa: N802 - the Win32 entry point's own name
         del handle
+        self.find_closed += 1
         return 1
 
     def GetVolumePathNamesForVolumeNameW(  # noqa: N802 - the Win32 entry point's own name
@@ -263,6 +268,8 @@ class FakeVolumeKernel:
         volume = self.volumes[self._handles[handle]]
         if code == api.FSCTL_GET_VOLUME_BITMAP:
             return self._bitmap_answer(volume, in_buffer, out_buffer, out_size, returned)
+        if volume.ioctl_raises:
+            raise OSError(code)
         if code == api.IOCTL_DISK_GET_PARTITION_INFO_EX:
             answer = _gpt_partition(ESP_TYPE if volume.esp else BASIC_DATA_TYPE) if volume.esp is not None else None
         elif code == api.IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS and volume.disks is not None:
@@ -750,3 +757,56 @@ def test_the_handle_opened_for_the_bitmap_is_closed_however_the_walk_ends(volume
     opened = _bitmap_handles(fake)
     assert len(opened) == 1  # control: the walk did open the volume for reading
     assert opened[0] in fake.closed
+
+
+def _identity_handles(fake: FakeVolumeKernel) -> list[int]:
+    """The handles opened to read a volume's identity, which asks for no access at all."""
+    return [handle for handle, access in fake.granted if access == 0]
+
+
+@pytest.mark.parametrize(
+    "volume",
+    [
+        FakeVolume(paths=("C:\\",), disks=(0,), esp=False),
+        FakeVolume(paths=("C:\\",), disks=None, esp=False),
+        FakeVolume(paths=("C:\\",), disks=(0,), esp=None),
+        FakeVolume(paths=(), disks=None, esp=None),
+    ],
+    ids=["answered", "extents-refused", "partition-refused", "both-refused"],
+)
+def test_the_handle_opened_for_a_volumes_identity_is_closed_however_its_ioctls_end(volume: FakeVolume) -> None:
+    fake = FakeVolumeKernel({VOLUME_C: volume})
+    _read(fake)
+    opened = _identity_handles(fake)
+    assert len(opened) == 1  # control: the volume was opened for its identity
+    assert opened[0] in fake.closed
+
+
+def test_an_identity_ioctl_that_raises_still_closes_the_volume_and_the_enumeration() -> None:
+    fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",), ioctl_raises=True)})
+    with pytest.raises(OSError, match=str(api.IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS)):
+        volumes.read_volumes(cast("api.WinLibrary", fake), last_error=fake.last_error)
+    opened = _identity_handles(fake)
+    assert len(opened) == 1
+    assert opened[0] in fake.closed
+    assert fake.find_closed == 1
+
+
+@pytest.mark.parametrize(
+    "next_error",
+    [None, ERROR_NOT_READY],
+    ids=["ended-normally", "failed-part-way"],
+)
+def test_the_volume_enumeration_is_closed_however_it_ends(next_error: int | None) -> None:
+    fake = FakeVolumeKernel(
+        {VOLUME_C: FakeVolume(paths=("C:\\",)), VOLUME_X: FakeVolume(paths=("X:\\",))}, next_error=next_error
+    )
+    volumes.read_volumes(cast("api.WinLibrary", fake), last_error=fake.last_error)
+    assert fake.find_closed == 1
+
+
+def test_an_enumeration_that_never_started_closes_no_handle() -> None:
+    """The control: a refused first call returns no handle, so there is nothing to close."""
+    fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",))}, first_error=ERROR_ACCESS_DENIED)
+    assert volumes.read_volumes(cast("api.WinLibrary", fake), last_error=fake.last_error) is None
+    assert fake.find_closed == 0
