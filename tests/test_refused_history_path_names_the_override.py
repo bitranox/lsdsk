@@ -30,12 +30,12 @@ def warnings_of(runner: CliRunner, factory: Callable[[], object], *args: str) ->
 def test_a_refused_history_path_names_the_command_line_override_as_the_one_in_force(
     tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
 ) -> None:
-    """``--history-file X --set history.path=3`` ends 'Using X.', not the state file."""
+    """``--history-file X --set history.path=true`` ends 'Using X.', not the state file."""
     override = tmp_path / "chosen.json"
 
-    stderr = warnings_of(cli_runner, production_factory, "--history-file", str(override), "--set", "history.path=3")
+    stderr = warnings_of(cli_runner, production_factory, "--history-file", str(override), "--set", "history.path=true")
 
-    assert "ignoring history.path=3" in stderr, stderr
+    assert "ignoring history.path=true" in stderr, stderr
     assert f"Using {override}." in stderr, stderr
     assert "per-user state file" not in stderr, stderr
 
@@ -44,7 +44,7 @@ def test_a_refused_history_path_without_an_override_names_the_state_file(
     cli_runner: CliRunner, production_factory: Callable[[], object]
 ) -> None:
     """The control: with no override the fallback is the per-user state file."""
-    stderr = warnings_of(cli_runner, production_factory, "--set", "history.path=3")
+    stderr = warnings_of(cli_runner, production_factory, "--set", "history.path=true")
 
-    assert "ignoring history.path=3" in stderr, stderr
+    assert "ignoring history.path=true" in stderr, stderr
     assert "Using the per-user state file." in stderr, stderr

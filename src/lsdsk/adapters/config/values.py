@@ -406,12 +406,36 @@ def _expanded(text: str) -> Path | None:
         return None
 
 
+def _path_text(raw: object) -> str | None:
+    """The text a configured location was written as, or None when it was not text.
+
+    An int that is not a bool counts: lib_layered_config reads an unquoted all-digit
+    ``.env`` or environment value (``LSDSK___HISTORY__PATH=4711``) as that int, and the
+    conversion is lossless, so its digits are what the operator wrote - the same reading
+    the logging text settings give such a number.
+
+    Example:
+        >>> _path_text("h.json"), _path_text(4711), _path_text(True), _path_text(1.5)
+        ('h.json', '4711', None, None)
+    """
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        try:
+            return str(raw)
+        except ValueError:
+            # Past the interpreter's int-to-text limit (4300 digits by default), which a
+            # TOML literal can reach; nobody wrote that as a file name.
+            return None
+    return None
+
+
 def accepts_path(raw: object) -> bool:
     r"""Whether a configured value is usable as a file location.
 
     Any string that names a location is, blank included: an empty string is how the
     shipped default says "use the state directory", so it is a deliberate value
-    rather than a refused one.
+    rather than a refused one. So is an int, read as the digits it was written as.
 
     Args:
         raw: The configured value, of whatever type the file produced.
@@ -420,22 +444,25 @@ def accepts_path(raw: object) -> bool:
         Whether it can be used as it stands.
 
     Example:
-        >>> accepts_path(""), accepts_path("~/h.json"), accepts_path(3)
-        (True, True, False)
+        >>> accepts_path(""), accepts_path("~/h.json"), accepts_path(4711), accepts_path(True)
+        (True, True, True, False)
         >>> accepts_path("a\x00b")
         False
     """
-    if not isinstance(raw, str):
+    text = _path_text(raw)
+    if text is None:
         return False
-    return not raw.strip() or _expanded(raw) is not None
+    return not text.strip() or _expanded(text) is not None
 
 
 def path_or_none(raw: object) -> Path | None:
     r"""A configured location, or None to mean "wherever this platform keeps state".
 
     Example:
-        >>> path_or_none("  "), path_or_none(3), path_or_none("a\x00b")
+        >>> path_or_none("  "), path_or_none(True), path_or_none("a\x00b")
         (None, None, None)
+        >>> path_or_none(4711).name
+        '4711'
 
     Args:
         raw: The configured value.
@@ -443,9 +470,10 @@ def path_or_none(raw: object) -> Path | None:
     Returns:
         The expanded location, or ``None`` to mean the platform's own.
     """
-    if not accepts_path(raw) or not cast("str", raw).strip():
+    text = _path_text(raw)
+    if text is None or not text.strip():
         return None
-    return _expanded(cast("str", raw))
+    return _expanded(text)
 
 
 class SectionValues:

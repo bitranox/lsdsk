@@ -267,7 +267,7 @@ def test_a_refused_path_is_reported_even_when_the_command_line_overrides_it(
     """
     override = tmp_path / "elsewhere.json"
 
-    reading = read_history_settings(config_factory({"history": {"path": 3}}), path_override=override)
+    reading = read_history_settings(config_factory({"history": {"path": True}}), path_override=override)
 
     assert [r.dotted for r in reading.rejected] == ["history.path"], (
         "an unusable history.path went unreported because the command line overrode it"
@@ -290,7 +290,8 @@ def test_a_refused_path_is_reported_even_when_the_command_line_overrides_it(
         pytest.param("display", "tree_density", "bogus", "full", id="tree_density"),
         pytest.param("history", "max_samples_per_drive", "abc", 7, id="history positive_int"),
         pytest.param("history", "enabled", "yes", False, id="history flag"),
-        pytest.param("history", "path", 3, "", id="history path"),
+        pytest.param("history", "path", True, "", id="history path"),
+        pytest.param("history", "path", 2.5, 4711, id="history path of digits"),
         pytest.param("history", "path", "/state/a\x00b.json", "", id="history path holding a NUL"),
         pytest.param(
             "history",
@@ -501,8 +502,10 @@ def test_path_or_none_agrees_with_accepts_path_over_arbitrary_values(raw: object
     if not accepts_path(raw):
         assert path_or_none(raw) is None, f"{raw!r} is not a path but produced one"
         return
-    assert isinstance(raw, str)
-    if not raw.strip():
+    # An int that is not a bool is accepted as the digits it was written as.
+    assert isinstance(raw, str | int) and not isinstance(raw, bool), f"{raw!r} was accepted as a path"
+    text = str(raw)
+    if not text.strip():
         assert path_or_none(raw) is None, f"{raw!r} is blank and must mean the platform default, not a location"
     else:
         assert path_or_none(raw) is not None, f"{raw!r} was accepted but named no location"
