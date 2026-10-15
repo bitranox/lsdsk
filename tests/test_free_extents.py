@@ -71,3 +71,12 @@ def test_a_histogram_of_another_length_is_refused_at_the_parse(histogram: list[i
 def test_a_figure_outside_unsigned_64_bits_is_refused(value: int) -> None:
     with pytest.raises(ValidationError, match=r"greater than or equal to 0|less than or equal to"):
         FreeExtentsEntry(count=value, total=0, largest=0)
+
+
+def test_free_extents_adding_up_past_64_bits_stop_the_tally() -> None:
+    tally = FreeExtentTally()
+    tally.add(2**63)
+    tally.add(2**63 - 1)  # exactly 2**64 - 1: the largest total a capture holds
+    with pytest.raises(ValueError, match=r"add up to more than 18,446,744,073,709,551,615 bytes"):
+        tally.add(1)
+    assert tally.summary()["total"] == 2**64 - 1  # the refused extent was not folded in

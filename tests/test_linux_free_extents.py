@@ -302,3 +302,25 @@ def test_a_row_whose_device_number_cannot_be_encoded_is_refused_unwalked(tmp_pat
     reading = freespace.read_free_extents(rows, ioctl=fake, opener=_opener(tmp_path))
     assert reading == {"8:x": {"error": "the device number 8:x is not major:minor"}}
     assert fake.calls == 0
+
+
+def test_a_free_total_past_64_bits_refuses_that_filesystem_and_keeps_the_others(tmp_path: Path) -> None:
+    rows = [
+        {"dev": "8:1", "mountpoint": "/huge", "fstype": "xfs"},
+        {"dev": "8:2", "mountpoint": "/small", "fstype": "ext4"},
+    ]
+
+    class TwoFilesystems(FakeFsmap):
+        def __call__(self, fd: int, request: int, head: bytearray) -> int:
+            # The first walk is the huge filesystem's, the rest the small one's.
+            if self.calls == 0:
+                self.devices = ((_DATA, [_free(0, 2**63), _free(2**63, 2**63)]),)
+            else:
+                self.devices = ((_new_encode_dev(8, 2), [_free(0, 4096)]),)
+            return super().__call__(fd, request, head)
+
+    reading = freespace.read_free_extents(rows, ioctl=TwoFilesystems([]), opener=_opener(tmp_path))
+    assert "add up to more than" in reading["8:1"]["error"]
+    assert reading["8:2"]["count"] == 1
+    for summary in reading.values():
+        FreeExtentsEntry.model_validate(summary)  # the capture model takes every row, so the run survives

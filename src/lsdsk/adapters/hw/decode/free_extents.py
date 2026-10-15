@@ -19,6 +19,8 @@ from ....domain.fragmentation import FREE_SPACE_BUCKETS, bucket_of
 #: stops. A reading budget, not a judged figure: a filesystem past it is
 #: refused with this number in the reason rather than walked for minutes.
 MAX_FREE_EXTENTS: Final = 1_000_000
+#: The largest total a capture records: its byte figures are unsigned 64-bit.
+_MAX_TOTAL: Final = 2**64 - 1
 
 
 class FreeExtentCapError(ValueError):
@@ -52,11 +54,17 @@ class FreeExtentTally:
 
         Raises:
             FreeExtentCapError: This extent would be one more than the cap.
+            ValueError: This extent would take the total past what a capture
+                records, which would refuse the whole run rather than this
+                filesystem.
         """
         if length <= 0:
             return
         if self._count >= self._cap:
             raise FreeExtentCapError(self._cap)
+        if self._total + length > _MAX_TOTAL:
+            message = f"the free extents add up to more than {_MAX_TOTAL:,} bytes; stopped counting"
+            raise ValueError(message)
         self._count += 1
         self._total += length
         self._largest = max(self._largest, length)
