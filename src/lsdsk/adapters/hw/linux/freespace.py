@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, Final, NamedTuple
 from ....domain.models import FREE_EXTENT_MOUNT_TYPES
 from ....domain.text import MAX_DEVICE_TEXT
 from ..decode.free_extents import MAX_FREE_EXTENTS, FreeExtentTally
+from .mounts import kernel_path
 from .zfs import Ioctl, system_ioctl
 
 if TYPE_CHECKING:
@@ -62,7 +63,7 @@ _HIDDEN_REASON: Final = (
 def _open_directory(mountpoint: str) -> int:
     # O_DIRECTORY is Linux-only; read at call time so the module imports anywhere.
     return os.open(
-        mountpoint.encode("utf-8", "surrogateescape"),
+        kernel_path(mountpoint),
         os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0),
     )
 
