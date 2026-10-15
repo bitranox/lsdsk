@@ -734,3 +734,33 @@ def test_a_zfs_member_keeps_its_pool_guid_and_no_other_filesystem_keeps_its_uuid
         "8:1": {"fs_type": "zfs_member", "fs_label": "rpool", "fs_uuid": "2936817686098969225"},
         "8:2": {"fs_type": "ext4"},
     }
+
+
+def test_the_first_and_the_last_undecodable_byte_are_escaped_as_bytes(tmp_path: Path) -> None:
+    # 0x80 and 0xFF are the two ends of the range a lone surrogate stands for a byte in.
+    rows = mounts.read_mounts(_legacy_mountinfo(tmp_path, b"/a\x80b\xff"), device_number=lambda _source: None)
+    assert rows is not None
+    (stored,) = [row for row in json.loads(json.dumps(rows)) if row["dev"] == "8:2"]
+
+    assert MountEntry.model_validate(stored).mountpoint == "/a\\x80b\\xff"
+
+
+def test_a_lone_surrogate_that_stands_for_no_byte_is_escaped_as_a_code_point() -> None:
+    # U+DC00-U+DC7F and U+DD00-U+DFFF stand for no byte; a replayed file can still spell them.
+    path = "/a\udc00\udc7f\udd00\udfff\ud800"
+
+    assert MountEntry.model_validate({"dev": "8:2", "mountpoint": path}).mountpoint == (
+        "/a\\udc00\\udc7f\\udd00\\udfff\\ud800"
+    )
+
+
+def test_the_mountinfo_bound_counts_encoded_bytes_not_characters(tmp_path: Path) -> None:
+    path = tmp_path / "mountinfo"
+    content = "1 0 8:1 / /gr\u00fcn\u00fcn rw - ext4 /dev/lsdsk-test-absent0 rw\n"
+    path.write_bytes(content.encode("utf-8"))
+    size = len(content.encode("utf-8"))
+    # Two characters are two bytes each, so the characters fit a limit the bytes do not.
+    assert len(content) < size - 1
+
+    assert mounts.read_mounts(path, limit=size - 1) is None
+    assert mounts.read_mounts(path, limit=size) is not None
