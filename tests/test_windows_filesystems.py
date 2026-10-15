@@ -313,3 +313,30 @@ def test_a_volume_without_a_quota_reads_the_same_whichever_free_figure_is_subtra
     rows, _ = build_filesystems(_one_disk({"0": plain}), BARE_METAL)
     assert rows is not None
     assert (rows[0].size_bytes, rows[0].used_bytes, rows[0].free_bytes) == (100, 60, 40)
+
+
+def _names(paths: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
+    rows, _ = build_filesystems(_one_disk({"0": _volume(paths=paths, disks=(0,), total_bytes=1)}), BARE_METAL)
+    assert rows is not None
+    return rows[0].name, rows[0].other_mounts
+
+
+def test_a_volume_is_named_by_its_drive_letter_whatever_windows_lists_first() -> None:
+    assert _names(("C:\\mnt\\c\\", "D:\\mnt\\d\\", "C:\\")) == ("C:\\", ("C:\\mnt\\c\\", "D:\\mnt\\d\\"))
+    assert _names(("D:\\mnt\\z\\", "E:\\", "C:\\mnt\\a\\", "F:\\")) == (
+        "E:\\",
+        ("F:\\", "D:\\mnt\\z\\", "C:\\mnt\\a\\"),
+    )
+
+
+def test_paths_of_one_kind_keep_the_order_windows_listed() -> None:
+    """The control: the ordering moves a drive-letter root forward and reorders nothing else."""
+    assert _names(("D:\\mnt\\z\\", "C:\\mnt\\a\\")) == ("D:\\mnt\\z\\", ("C:\\mnt\\a\\",))
+    assert _names(("F:\\", "E:\\")) == ("F:\\", ("E:\\",))
+    assert _names(("C:\\mnt\\",)) == ("C:\\mnt\\", ())
+
+
+def test_a_volume_that_could_not_be_placed_is_named_by_its_drive_letter_too() -> None:
+    failed = _volume(paths=("D:\\mnt\\d\\", "D:\\"), drive_type=3, error="could not open the volume (error 5)")
+    _, unread = build_filesystems(_one_disk({"0": _volume(paths=("C:\\",), disks=(0,)), "1": failed}), BARE_METAL)
+    assert [r.reason for r in unread] == ["D:\\: could not open the volume (error 5)"]

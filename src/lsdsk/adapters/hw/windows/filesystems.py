@@ -9,6 +9,7 @@ System Role:
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, TypedDict
 
 from ....domain.disk_name import disk_name_order
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
 _NEEDS_ADMINISTRATOR = "needs Administrator"
 #: The reading a volume that could not be placed on a disk is refused under.
 _VOLUME_READING = "volume"
+#: A drive-letter root, the name a reader knows a volume by.
+_DRIVE_LETTER_ROOT = re.compile(r"[A-Za-z]:\\", re.ASCII)
 
 
 class _Figures(TypedDict, total=False):
@@ -60,11 +63,26 @@ def _figures(entry: VolumeEntry) -> _Figures:
     return figures
 
 
+def _named_first(paths: tuple[str, ...]) -> tuple[str, ...]:
+    r"""A volume's paths with its drive-letter roots first, each kind in the order Windows listed it.
+
+    ``GetVolumePathNamesForVolumeNameW`` documents no order, so a volume with
+    a folder mount listed first was named by the folder. A stable sort moves
+    the letters forward and reorders nothing else.
+
+    Example:
+        >>> _named_first(("C:\\mnt\\c\\", "C:\\"))
+        ('C:\\', 'C:\\mnt\\c\\')
+    """
+    return tuple(sorted(paths, key=lambda path: _DRIVE_LETTER_ROOT.fullmatch(path) is None))
+
+
 def _volume_row(entry: VolumeEntry, disks: tuple[str, ...]) -> Filesystem:
+    paths = _named_first(entry.paths)
     return Filesystem(
         kind=FilesystemKind.VOLUME,
-        name=entry.paths[0],
-        other_mounts=tuple(entry.paths[1:]),
+        name=paths[0],
+        other_mounts=paths[1:],
         fs_type=entry.fs_type or "",
         disks=disks,
         read_only=entry.read_only is True,
@@ -108,7 +126,7 @@ def _unplaced_reason(entry: VolumeEntry) -> str:
     """Why one volume could not be placed, naming it where it has a name."""
     reasons = [reason for reason in (entry.paths_error, entry.error) if reason is not None]
     if entry.paths:
-        return f"{entry.paths[0]}: " + "; ".join(reasons)
+        return f"{_named_first(entry.paths)[0]}: " + "; ".join(reasons)
     if entry.esp is True:
         return "EFI system partition: " + "; ".join(reasons)
     return "; ".join(reasons)
