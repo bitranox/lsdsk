@@ -168,19 +168,23 @@ class FreeRunFolder:
         self._tally = tally
         self._open = 0
 
-    def feed(self, data: bytes, nbits: int) -> None:
-        """Fold the first ``nbits`` clusters of ``data``.
+    def feed(self, data: bytes, nbits: int, *, skip: int = 0) -> None:
+        """Fold the first ``nbits`` clusters of ``data``, less the first ``skip`` of them.
 
         Args:
             data: The chunk's bytes, cluster bits least significant first.
             nbits: How many of its bits are clusters.
+            skip: How many leading clusters were already folded from an
+                earlier chunk, as when the filesystem rounded the starting
+                cluster down.
 
         Raises:
             FreeExtentCapError: The volume has more free runs than the tally allows.
         """
-        if nbits <= 0:
+        if nbits - skip <= 0:
             return
-        value = int.from_bytes(data[: (nbits + 7) // 8], "little") & ((1 << nbits) - 1)
+        value = (int.from_bytes(data[: (nbits + 7) // 8], "little") & ((1 << nbits) - 1)) >> skip
+        nbits -= skip
         # Binary text is most significant first; reversed, cluster 0 comes first.
         clusters = format(value, f"0{nbits}b")[::-1]
         carried, self._open = self._open, 0

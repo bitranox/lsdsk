@@ -65,6 +65,12 @@ class FakeVolume:
         bitmap: Its cluster bitmap (``1`` is in use), or ``None`` when the
             volume refuses an open for reading.
         cluster_bytes: The size of one cluster.
+        bitmap_rounding: The multiple ``FSCTL_GET_VOLUME_BITMAP`` rounds a
+            starting cluster down to, which the documentation allows.
+        bitmap_lcn_ahead: Clusters the answer's starting cluster lies past
+            the one asked for, which no documented answer does.
+        bitmap_error: The error the bitmap call fails with, or ``None``.
+        bitmap_stalls: Answer ``ERROR_MORE_DATA`` with no cluster bits at all.
     """
 
     paths: tuple[str, ...] | None = ()
@@ -77,6 +83,18 @@ class FakeVolume:
     flags: int = 0
     bitmap: list[int] | None = None
     cluster_bytes: int = 4096
+    bitmap_rounding: int = 1
+    bitmap_lcn_ahead: int = 0
+    bitmap_error: int | None = None
+    bitmap_stalls: bool = False
+
+
+class RunawayWalkError(Exception):
+    """The walk asked for more bitmap calls than the fake will answer: it would have looped."""
+
+
+#: More bitmap calls than any walk in this file needs; the fake stops a walk past it.
+BITMAP_CALL_LIMIT = 200
 
 
 def _pack(bits: list[int]) -> bytes:
@@ -97,6 +115,7 @@ class FakeVolumeKernel:
     path_calls: list[int] = field(default_factory=list[int])
     opened: list[tuple[str, int]] = field(default_factory=list[tuple[str, int]])
     bitmap_calls: int = 0
+    closed: list[int] = field(default_factory=list[int])
     _order: list[str] = field(default_factory=list[str])
     _handles: dict[int, str] = field(default_factory=dict[int, str])
 
@@ -224,7 +243,7 @@ class FakeVolumeKernel:
         return handle
 
     def CloseHandle(self, handle: int) -> int:  # noqa: N802 - the Win32 entry point's own name
-        del handle
+        self.closed.append(handle)
         return 1
 
     def DeviceIoControl(  # noqa: N802 - the Win32 entry point's own name
@@ -267,8 +286,14 @@ class FakeVolumeKernel:
         """``FSCTL_GET_VOLUME_BITMAP``: as many cluster bits as fit, ``ERROR_MORE_DATA`` when some do not."""
         assert volume.bitmap is not None
         self.bitmap_calls += 1
-        start = getattr(in_buffer, "_obj").value  # noqa: B009 - a CArgObject's referent
-        room_bits = (out_size - 16) * 8
+        if self.bitmap_calls > BITMAP_CALL_LIMIT:
+            raise RunawayWalkError(self.bitmap_calls)
+        if volume.bitmap_error is not None:
+            self.error = volume.bitmap_error
+            return 0
+        asked = getattr(in_buffer, "_obj").value  # noqa: B009 - a CArgObject's referent
+        start = asked - asked % volume.bitmap_rounding + volume.bitmap_lcn_ahead
+        room_bits = 0 if volume.bitmap_stalls else (out_size - 16) * 8
         bits = volume.bitmap[start:]
         header = start.to_bytes(8, "little", signed=True) + len(bits).to_bytes(8, "little", signed=True)
         payload = header + _pack(bits[:room_bits])
@@ -643,3 +668,30 @@ def test_an_elevated_run_walks_a_fixed_volume_on_a_disk_after_reading_its_extent
     entry = _read(fake, walk_bitmaps=True)[VOLUME_X]
     assert entry["free_extents"]["count"] == 1
     assert [access for _path, access in fake.opened] == [0, api.GENERIC_READ]
+
+
+#: 24 runs of 3 free clusters between used ones, then 7 free to the end: 107 clusters.
+_RUNS_BITMAP = [1, 0, 0, 0] * 25 + [0] * 7
+
+
+def _walked(volume: FakeVolume, *, chunk_bytes: int = 3) -> tuple[dict[str, Any], FakeVolumeKernel]:
+    """Walk one fixed volume on disk 0 with ``chunk_bytes`` of cluster bits per call."""
+    fake = FakeVolumeKernel({VOLUME_C: volume})
+    entry = _read(fake, walk_bitmaps=True, chunk_bytes=chunk_bytes)[VOLUME_C]
+    return entry, fake
+
+
+def test_a_starting_cluster_rounded_down_by_the_filesystem_is_walked_on_from_where_it_was_asked() -> None:
+    """FSCTL_GET_VOLUME_BITMAP may round the starting LCN down; the bits before it were already folded."""
+    whole, _ = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP), chunk_bytes=64)
+    rounded, fake = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, bitmap_rounding=16))
+    assert rounded["free_extents"] == whole["free_extents"]
+    assert fake.bitmap_calls > 2  # control: the walk restarted off a rounded cluster more than once
+    assert (whole["free_extents"]["count"], whole["free_extents"]["largest"]) == (25, 10 * 4096)
+
+
+def test_a_bitmap_answer_starting_past_the_cluster_asked_for_is_refused() -> None:
+    """Rounding goes down only: an answer that skips clusters would fold a bitmap with a hole in it."""
+    entry, fake = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, bitmap_lcn_ahead=8))
+    assert entry["free_extents"] == {"error": "the volume bitmap restarted at cluster 8, past 0"}
+    assert fake.bitmap_calls == 1

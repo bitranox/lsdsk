@@ -195,7 +195,12 @@ def _walk_bitmap(
     """Fold a volume's whole cluster bitmap into ``folder``, one call's worth at a time.
 
     ``ERROR_MORE_DATA`` is the normal answer to a call that filled its buffer
-    and left clusters over, so the next call starts where this one ended.
+    and left clusters over, so the next call starts where this one ended. The
+    filesystem may round the starting cluster DOWN (Microsoft Learn,
+    FSCTL_GET_VOLUME_BITMAP: "The starting LCN in the input buffer may be
+    rounded down before the bitmap is calculated"), so an answer starting
+    before the cluster asked for is folded from that cluster on; one starting
+    after it would leave clusters unread, and is refused.
 
     Raises:
         _BitmapRefusedError: A call failed another way, or the walk could not advance.
@@ -219,15 +224,15 @@ def _walk_bitmap(
             message = f"could not read the volume bitmap (error {code})"
             raise _BitmapRefusedError(message)
         lcn, remaining = parse_bitmap_header(output.raw[:BITMAP_HEADER_BYTES])
-        if lcn != start:
-            message = f"the volume bitmap restarted at cluster {lcn}, not {start}"
+        if lcn > start:
+            message = f"the volume bitmap restarted at cluster {lcn}, past {start}"
             raise _BitmapRefusedError(message)
         data = output.raw[BITMAP_HEADER_BYTES : max(returned.value, BITMAP_HEADER_BYTES)]
         nbits = min(len(data) * 8, remaining)
-        folder.feed(data, nbits)
+        folder.feed(data, nbits, skip=start - lcn)
         if code == 0:
             return
-        if nbits == 0:
+        if lcn + nbits <= start:
             message = "the volume bitmap did not advance"
             raise _BitmapRefusedError(message)
         start = lcn + nbits
