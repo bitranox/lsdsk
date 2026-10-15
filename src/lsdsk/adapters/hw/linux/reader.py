@@ -1138,9 +1138,9 @@ def _devices_accessible(nodes: list[str]) -> bool:
 def free_extent_devices(reading: Mapping[str, Any]) -> frozenset[str] | None:
     """Every ``maj:min`` the filesystems section can keep a row for, worked out from the reading so far.
 
-    The free-space walk is the one reading that costs real time per
-    filesystem, so it skips a filesystem no inventoried disk carries - one the
-    section drops anyway. The answer comes from the section's own mapping over
+    ``statvfs`` and the free-space walk skip a filesystem no inventoried disk
+    carries - one the section drops anyway, and a network or FUSE mount that
+    could hang the call. The answer comes from the section's own mapping over
     the typed reading, so the two cannot disagree about which device that is.
 
     Args:
@@ -1266,13 +1266,11 @@ def read_system(readers: SystemReaders | None = None) -> dict[str, Any]:
         "signatures": read.signatures(_signature_devnums(block, stacked)),
         **zfs.capture_fields(pools, pools_error),
         **zfs.fragmentation_fields(fragmentation, fragmentation_error),
-        "filesystem_space": None if mount_rows is None else read.space(mount_rows),
     }
-    reading["free_extents"] = (
-        None
-        if mount_rows is None
-        else read.free_extents(freespace.rows_on_disks(mount_rows, free_extent_devices(reading)))
-    )
+    # statvfs and the free-space walk are both asked only about a filesystem the section can keep a row for.
+    on_disks = None if mount_rows is None else freespace.rows_on_disks(mount_rows, free_extent_devices(reading))
+    reading["filesystem_space"] = None if on_disks is None else read.space(on_disks)
+    reading["free_extents"] = None if on_disks is None else read.free_extents(on_disks)
     return reading
 
 

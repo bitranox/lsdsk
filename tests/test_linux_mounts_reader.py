@@ -703,3 +703,20 @@ def test_a_utf8_mountpoint_is_asked_at_its_own_bytes_whatever_the_locale(tmp_pat
     space, extents = json.loads(done.stdout)
     assert "error" not in space["8:2"], space
     assert "error" not in extents["8:2"], extents
+
+
+@pytest.mark.parametrize("fstype", ["fuse", "fuse.sshfs", "fuse.lsdsk-test"])
+def test_a_fuse_source_is_free_text_and_names_no_device(tmp_path: Path, fstype: str) -> None:
+    # A FUSE filesystem's source is whatever its user wrote (fusermount3 -o fsname=), so a /dev path there names
+    # no device the mount sits on, and an unprivileged user could otherwise put a filesystem row on any disk.
+    path = tmp_path / "mountinfo"
+    path.write_text(
+        f"40 22 0:90 / /x rw - {fstype} {ABSENT_NODE}1 rw,user_id=1000\n"
+        f"41 22 0:91 / /y rw - fuseblk {ABSENT_NODE}1 rw,user_id=0\n",
+        encoding="utf-8",
+    )
+    resolver = _Resolver({f"{ABSENT_NODE}1": "8:1"})
+    rows = mounts.read_mounts(path, device_number=resolver)
+    assert rows is not None
+    # Control: fuseblk is the kernel opening the named block device itself, so its source does name the disk.
+    assert [(row["dev"], row.get("source_dev")) for row in rows] == [("0:91", "8:1")]

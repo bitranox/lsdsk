@@ -114,3 +114,11 @@ def test_with_no_mount_table_nothing_is_stat_ed_or_walked() -> None:
     reading = reader.read_system(_readers(recorded, mounts=None))
     assert (reading["filesystem_space"], reading["free_extents"]) == (None, None)
     assert (recorded.space, recorded.free_extents) == ([], [])
+
+
+def test_statvfs_is_asked_only_about_filesystems_an_inventoried_disk_carries() -> None:
+    recorded = _Recorded()
+    reader.read_system(_readers(recorded))
+    # Every mount was stat-ed once, a loop image and a mount on an unknown device among them, though only a
+    # filesystem on an inventoried disk can be a row (ADR 0005).
+    assert recorded.space == [["/", "/boot"]]
