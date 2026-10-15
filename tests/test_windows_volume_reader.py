@@ -671,6 +671,21 @@ def test_an_elevated_run_never_walks_a_volume_that_cannot_be_a_row(volume: FakeV
     assert fake.bitmap_calls == 0
 
 
+def test_an_elevated_run_never_walks_a_pathless_esp_whose_extents_reach_a_disk() -> None:
+    """An EFI system partition has disk extents and no path: nothing names a row, so it is never opened to read.
+
+    Its extents reach disk 0 and it is a fixed volume, so the path is the only
+    thing keeping it out of the walk, which would otherwise ask the cluster
+    size of a first path it does not have.
+    """
+    fake = FakeVolumeKernel({VOLUME_X: FakeVolume(paths=(), disks=(0,), esp=True, bitmap=[0] * 8)})
+    entry = _read(fake, walk_bitmaps=True)[VOLUME_X]
+    assert (entry["disks"], entry["esp"]) == ([0], True)  # control: the extents and the partition were read
+    assert "free_extents" not in entry
+    assert all(access != api.GENERIC_READ for _path, access in fake.opened)
+    assert fake.bitmap_calls == 0
+
+
 def test_an_elevated_run_walks_a_fixed_volume_on_a_disk_after_reading_its_extents() -> None:
     """The control: the same fake, a volume that will be a row, is walked."""
     fake = FakeVolumeKernel({VOLUME_X: FakeVolume(paths=("X:\\",), disks=(0,), bitmap=[0] * 8)})
