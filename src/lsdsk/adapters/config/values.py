@@ -117,6 +117,11 @@ def rendered(value: object) -> str:
     ``str(path)`` against the rendered text and passed everywhere the repr
     happened to contain it, which stops being true once the separators differ.
 
+    A number too long to write as text is named by its size instead. Python refuses to
+    turn an int of more than 4300 decimal digits into text, and a YAML drop-in can carry
+    one, since a hex literal is read without that limit: spelt with ``repr`` the warning
+    about the value raised, and the run died with 70 printing it.
+
     Args:
         value: The value as the configuration layer handed it over.
 
@@ -131,6 +136,8 @@ def rendered(value: object) -> str:
         '/var/lib/lsdsk/history.json'
         >>> rendered(True), rendered(False)
         ('true', 'false')
+        >>> rendered(1 << 16000), rendered([1 << 16000])
+        ('<int, 16001 bits>', '<list holding a number too long to show>')
     """
     if isinstance(value, str):
         return value
@@ -138,7 +145,14 @@ def rendered(value: object) -> str:
         return str(value)
     if isinstance(value, bool):
         return "true" if value else "false"
-    return repr(value)
+    try:
+        return repr(value)
+    except ValueError:
+        # Only the int-to-text limit raises here: a scalar is named by its width, as
+        # lib_layered_config names one, and a container by what it holds.
+        if isinstance(value, int):
+            return f"<int, {value.bit_length()} bits>"
+        return f"<{type(value).__name__} holding a number too long to show>"
 
 
 #: The largest magnitude a configured number may carry.
