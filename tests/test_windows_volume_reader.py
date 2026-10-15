@@ -711,6 +711,19 @@ def test_a_bitmap_answer_that_does_not_advance_is_refused_rather_than_asked_agai
     assert fake.bitmap_calls == 1
 
 
+def test_a_rounded_down_answer_that_ends_where_the_walk_already_was_is_refused() -> None:
+    """An answer carrying cluster bits can still fail to advance, when its start was rounded down far enough.
+
+    Asked from cluster 24 with a rounding of 32, the filesystem answers from 0
+    with 24 bits: the run ends exactly where the walk already stood. The answer
+    holds bits, so only the end of the run against the cluster asked for can
+    tell it did not move; asking again would get the same answer forever.
+    """
+    entry, fake = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, bitmap_rounding=32), chunk_bytes=3)
+    assert entry["free_extents"] == {"error": "the volume bitmap did not advance"}
+    assert fake.bitmap_calls == 2
+
+
 def test_a_failing_bitmap_call_is_refused_with_its_error() -> None:
     entry, fake = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, bitmap_error=ERROR_ACCESS_DENIED))
     assert entry["free_extents"] == {"error": "could not read the volume bitmap (error 5)"}
