@@ -65,13 +65,21 @@ MAX_ATTRIBUTE_CHARS = 1024 * 1024
 
 # mountinfo and the swap list carry paths, and a Linux path is any bytes, so a
 # folder named in a legacy encoding puts invalid UTF-8 into either file. A strict
-# decode would fail the whole scan over one row; replacing the bad bytes keeps
-# every reading. Nothing joins or decides on the path text itself (device numbers
-# and filesystem types are ASCII, and the boot paths compared against are ASCII
-# too), so a replaced character changes only what is displayed. The size bound is
-# then measured on the replaced text, a little larger than the file, which only
-# makes it refuse sooner.
+# decode would fail the whole scan over one row. mountinfo keeps each bad byte as
+# a lone surrogate: its mountpoints are ASKED (statvfs, the free-extent walk), and
+# only the path's own bytes reach that directory: kernel_path turns the text back
+# into exactly those bytes, whatever the reading process's locale is. The capture
+# model shows such a byte as a printable escape. The size bound is measured on those same bytes, so
+# it is the file's own size.
+_MOUNTINFO_DECODE_ERRORS = "surrogateescape"
+# The swap list is never asked at a path: a swap FILE's path is dropped and a swap
+# DEVICE is a /dev node, so replacing a bad byte there changes nothing anything
+# reads, and keeps a lone surrogate out of the one path text a capture records.
+# The size bound is then measured on the replaced text, a little larger than the
+# file, which only makes it refuse sooner.
 _PATH_DECODE_ERRORS = "replace"
+# How a mountpoint read from mountinfo becomes the bytes the kernel wrote.
+_KERNEL_PATH_ENCODING = "utf-8"
 # The kernel writes a space, tab, newline or backslash in a mount path as a
 # three-digit octal escape, so "/boot efi" arrives as "/boot\040efi".
 _OCTAL_ESCAPE = re.compile(r"\\([0-7]{3})")
@@ -116,6 +124,29 @@ _ANONYMOUS_MAJOR = "0"
 _LUKS_UUID_MAPPING_NAME = re.compile(
     r"^luks-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
 )
+
+
+def kernel_path(text: str) -> bytes:
+    r"""The bytes a mountpoint :func:`read_mounts` returned stands for, to ask the system at.
+
+    A ``str`` path would be encoded with the reading process's filesystem
+    encoding, which differs from the UTF-8 mountinfo was decoded with under a
+    legacy locale, and a byte that is not UTF-8 has no ``str`` spelling the
+    system would map back to it at all.
+
+    Args:
+        text: A mountpoint as :func:`read_mounts` returned it.
+
+    Returns:
+        The path's bytes, each lone surrogate back to the byte it stood for.
+
+    Example:
+        >>> kernel_path("/M\udcfcll")
+        b'/M\xfcll'
+        >>> kernel_path("/gr\u00fcn")
+        b'/gr\xc3\xbcn'
+    """
+    return text.encode(_KERNEL_PATH_ENCODING, _MOUNTINFO_DECODE_ERRORS)
 
 
 def _unescape(text: str) -> str:
@@ -180,7 +211,9 @@ def read_mounts(
 
     Returns:
         One row per mount a disk can sit behind, each carrying ``dev`` (the
-        mounted device's own ``maj:min``, field 3), ``mountpoint`` and
+        mounted device's own ``maj:min``, field 3), ``mountpoint`` (a byte that
+        is not UTF-8 kept as a lone surrogate, so :func:`kernel_path` gives
+        back the path's own bytes) and
         ``fstype`` and ``read_only`` (a real boolean, lsdsk's own verdict rather
         than text the kernel published), plus ``source_dev`` when the source
         names a resolvable ``/dev`` node and, for ZFS only, ``source`` narrowed to the pool name,
@@ -196,10 +229,10 @@ def read_mounts(
         mountinfo never reports.
     """
     try:
-        text = read_text_bounded(path, what="mountinfo", errors=_PATH_DECODE_ERRORS)
+        text = read_text_bounded(path, what="mountinfo", errors=_MOUNTINFO_DECODE_ERRORS)
     except (MissingFileError, ConfigurationError):
         return None
-    if len(text.encode("utf-8")) > limit:
+    if len(kernel_path(text)) > limit:
         return None
 
     lines = [line for line in text.split("\n") if line]
@@ -379,12 +412,12 @@ class StatvfsResult(Protocol):
 
 
 def _system_statvfs(path: str) -> StatvfsResult:
-    """Ask the system, resolving ``os.statvfs`` at call time.
+    """Ask the system at the path's own bytes, resolving ``os.statvfs`` at call time.
 
     ``os.statvfs`` does not exist on Windows, so naming it as a default would
     break the import of this module there.
     """
-    return os.statvfs(path)
+    return os.statvfs(kernel_path(path))
 
 
 def read_space(
@@ -741,6 +774,7 @@ __all__ = [
     "MAX_MOUNTINFO_BYTES",
     "StatvfsResult",
     "device_number_of",
+    "kernel_path",
     "read_mounts",
     "read_partitions",
     "read_signatures",

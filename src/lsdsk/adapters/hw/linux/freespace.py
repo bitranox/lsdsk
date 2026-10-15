@@ -54,7 +54,10 @@ _HIDDEN_REASON: Final = (
 
 def _open_directory(mountpoint: str) -> int:
     # O_DIRECTORY is Linux-only; read at call time so the module imports anywhere.
-    return os.open(mountpoint, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0))
+    return os.open(
+        mountpoint.encode("utf-8", "surrogateescape"),
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0),
+    )
 
 
 def _new_head() -> bytearray:

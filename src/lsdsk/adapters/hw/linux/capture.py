@@ -72,6 +72,44 @@ def _rotating_of(value: object) -> object:
     return _ROTATING_VALUES.get(value) if isinstance(value, str) else value
 
 
+# The lone surrogates Python decodes an undecodable byte to (surrogateescape):
+# U+DC80 to U+DCFF stand for the bytes 0x80 to 0xFF.
+_ESCAPED_BYTES = range(0xDC80, 0xDD00)
+_ESCAPED_BYTE_BASE = 0xDC00
+_SURROGATES = range(0xD800, 0xE000)
+
+
+def _printable_path(value: object) -> object:
+    r"""A path as text every output can carry: each byte that was not UTF-8 shown as ``\xNN``.
+
+    mountinfo is decoded so that such a byte survives as a lone surrogate, which
+    lets the live reader ask the directory at its own bytes; no UTF encoding can
+    write one, so here it becomes the escape of the byte it stands for. A lone
+    surrogate a replayed file spelled outside that range is shown as ``\uNNNN``.
+
+    Example:
+        >>> _printable_path("/M\udcfcll")
+        '/M\\xfcll'
+        >>> _printable_path("/data"), _printable_path("/a\ud800")
+        ('/data', '/a\\ud800')
+    """
+    if not isinstance(value, str):
+        return value
+    return "".join(_printable_character(character) for character in value)
+
+
+def _printable_character(character: str) -> str:
+    """One character of :func:`_printable_path`."""
+    code = ord(character)
+    if code in _ESCAPED_BYTES:
+        return f"\\x{code - _ESCAPED_BYTE_BASE:02x}"
+    return f"\\u{code:04x}" if code in _SURROGATES else character
+
+
+#: A path read from the kernel: :data:`DeviceText` once each undecodable byte is escaped.
+PathText = Annotated[DeviceText, BeforeValidator(_printable_path)]
+
+
 class AhciRegisters(CaptureModel, frozen=True):
     """The two AHCI registers a privileged run read from the controller itself.
 
@@ -272,7 +310,7 @@ class MountEntry(CaptureModel, frozen=True):
     Attributes:
         dev: The mounted filesystem's own ``maj:min``, mountinfo's field 3.
         mountpoint: Where it is mounted, with the kernel's octal path escapes
-            already undone.
+            already undone and each byte that is not UTF-8 shown as its hex escape.
         fstype: The filesystem type, such as ``zfs`` or ``vfat``.
         source: What was mounted, which is a dataset name for ``zfs``, a UUID
             or label for many others, or a ``/dev/`` path.
@@ -289,7 +327,7 @@ class MountEntry(CaptureModel, frozen=True):
     """
 
     dev: DeviceText
-    mountpoint: DeviceText
+    mountpoint: PathText
     fstype: DeviceText = ""
     source: DeviceText = ""
     source_dev: DeviceText | None = None

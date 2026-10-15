@@ -181,7 +181,7 @@ def test_a_mount_path_that_is_not_utf8_keeps_every_row(tmp_path: Path) -> None:
     rows = mounts.read_mounts(path)
     assert rows is not None
     assert rows[0] == {"dev": "0:28", "mountpoint": "/", "fstype": "zfs", "source": "rpool", "read_only": False}
-    assert rows[1] == {"dev": "8:1", "mountpoint": "/mnt/caf�", "fstype": "ext4", "read_only": False}
+    assert rows[1] == {"dev": "8:1", "mountpoint": "/mnt/caf\udce9", "fstype": "ext4", "read_only": False}
 
 
 @pytest.mark.os_agnostic
@@ -596,3 +596,110 @@ def test_every_stacked_device_and_its_partitions_is_a_device_to_look_signatures_
 
 def test_a_stacked_device_whose_number_was_not_read_names_no_device() -> None:
     assert mounts.stacked_device_numbers({"dm-0": {"holders": [], "partitions": {"dm-0p1": {"holders": []}}}}) == []
+
+
+# A folder named in a legacy encoding: Latin-1 "Muell", whose u-umlaut byte is not valid UTF-8.
+_LEGACY_NAME = b"/M\xfcll"
+
+
+def _legacy_mountinfo(tmp_path: Path, mountpoint: bytes) -> Path:
+    path = tmp_path / "mountinfo"
+    # The kernel writes a path's own bytes, escaping only space, tab, newline and backslash.
+    path.write_bytes(b"1 0 8:1 / / rw - ext4 /dev/sda1 rw\n2 1 8:2 / " + mountpoint + b" rw - ext4 /dev/sda2 rw\n")
+    return path
+
+
+def test_a_mountpoint_that_is_not_utf8_is_asked_at_its_own_bytes(tmp_path: Path) -> None:
+    rows = mounts.read_mounts(_legacy_mountinfo(tmp_path, _LEGACY_NAME), device_number=lambda _source: None)
+    assert rows is not None
+    asked: list[str] = []
+
+    def statvfs(path: str) -> mounts.StatvfsResult:
+        asked.append(path)
+        raise FileNotFoundError(2, "No such file or directory")
+
+    mounts.read_space(rows, statvfs=statvfs)
+
+    assert [path.encode("utf-8", "surrogateescape") for path in asked] == [b"/", _LEGACY_NAME]
+
+
+def test_a_mountpoint_that_is_not_utf8_is_captured_as_printable_text(tmp_path: Path) -> None:
+    rows = mounts.read_mounts(_legacy_mountinfo(tmp_path, _LEGACY_NAME), device_number=lambda _source: None)
+    assert rows is not None
+    # Through JSON as a snapshot stores it, then typed as a replay reads it.
+    (stored,) = [row for row in json.loads(json.dumps(rows)) if row["dev"] == "8:2"]
+
+    entry = MountEntry.model_validate(stored)
+
+    assert entry.mountpoint == "/M\\xfcll"
+    assert entry.mountpoint.isprintable()
+
+
+@pytest.mark.os_linux
+def test_a_mountpoint_that_is_not_utf8_is_read_by_statvfs_and_the_extent_walk(tmp_path: Path) -> None:
+    from test_linux_free_extents import FakeFsmap
+
+    from lsdsk.adapters.hw.linux import freespace
+
+    directory = os.fsencode(tmp_path) + b"/M\xfcll"
+    Path(os.fsdecode(directory)).mkdir()
+    rows = mounts.read_mounts(_legacy_mountinfo(tmp_path, directory), device_number=lambda _source: None)
+    assert rows is not None
+    legacy = [row for row in rows if row["dev"] == "8:2"]
+
+    space = mounts.read_space(legacy)
+    extents = freespace.read_free_extents(legacy, ioctl=FakeFsmap([]))
+
+    assert "error" not in space["8:2"], space
+    assert "error" not in extents["8:2"], extents
+
+
+_UNDER_AN_ASCII_LOCALE = """
+import json
+import sys
+from pathlib import Path
+from test_linux_free_extents import FakeFsmap
+from lsdsk.adapters.hw.linux import freespace, mounts
+
+assert sys.getfilesystemencoding() == "ascii", sys.getfilesystemencoding()
+rows = mounts.read_mounts(Path("mountinfo"), device_number=lambda _source: None)
+legacy = [row for row in rows if row["dev"] == "8:2"]
+print(json.dumps([mounts.read_space(legacy), freespace.read_free_extents(legacy, ioctl=FakeFsmap([]))]))
+"""
+
+
+@pytest.mark.os_linux
+def test_a_utf8_mountpoint_is_asked_at_its_own_bytes_whatever_the_locale(tmp_path: Path) -> None:
+    import subprocess
+    import sys
+
+    # "gruen" with its u-umlaut as the two UTF-8 bytes the kernel holds.
+    directory = os.fsencode(tmp_path) + b"/gr\xc3\xbcn"
+    Path(os.fsdecode(directory)).mkdir()
+    _legacy_mountinfo(tmp_path, directory)
+    (tmp_path / "child.py").write_text(_UNDER_AN_ASCII_LOCALE, encoding="utf-8")
+    # The C locale with UTF-8 mode off: Python then encodes a str path as ASCII,
+    # which cannot spell the u-umlaut the kernel wrote as two UTF-8 bytes.
+    environment = {
+        "PATH": os.environ.get("PATH", ""),
+        "LC_ALL": "C",
+        "PYTHONUTF8": "0",
+        "PYTHONCOERCECLOCALE": "0",
+        "PYTHONPATH": str(Path(__file__).parent),
+    }
+
+    done = subprocess.run(
+        [sys.executable, "child.py"],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=60,
+    )
+
+    assert done.returncode == 0, done.stderr
+    space, extents = json.loads(done.stdout)
+    assert "error" not in space["8:2"], space
+    assert "error" not in extents["8:2"], extents
