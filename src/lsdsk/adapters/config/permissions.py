@@ -20,8 +20,9 @@ from typing import NamedTuple, cast
 from lib_layered_config import Config
 from pydantic import BaseModel, ConfigDict
 
+from ...domain.text import visible_text
 from .overrides import apply_overrides
-from .values import RejectedValue, SectionValues
+from .values import RejectedValue, SectionValues, rendered
 
 #: The table the permission settings are read from.
 PERMISSIONS_SECTION = "lib_layered_config.default_permissions"
@@ -33,6 +34,28 @@ MODE_KEYS: tuple[str, ...] = tuple(
 
 #: The switch lsdsk settles itself and hands to the deploy as the answer.
 ENABLED_KEY = "enabled"
+
+
+class SectionGivenAsAValueError(ValueError):
+    """``--set`` gave the whole permission section as one value, which no deploy can honour.
+
+    The deploy reads the section's modes from the configuration files, and lsdsk hands it only
+    the keys ``--set`` gave inside the table plus the ``enabled`` it settled itself. A value in
+    place of the table fits neither half, so whatever the deploy did would match no sentence on
+    the screen: it is refused rather than warned about.
+    """
+
+    def __init__(self, raw: object) -> None:
+        """Word the refusal around the value that was given.
+
+        Args:
+            raw: What ``--set`` gave for the section.
+        """
+        super().__init__(
+            f"--set {PERMISSIONS_SECTION}={visible_text(rendered(raw))} gives the section as a single value, "
+            "which config-deploy cannot honour: it must be a table. Set a key inside it instead, "
+            f"such as --set {PERMISSIONS_SECTION}.user_file=0o600"
+        )
 
 
 class PermissionDefaults(BaseModel):
@@ -102,6 +125,9 @@ def permission_overrides_from(set_overrides: tuple[str, ...]) -> tuple[tuple[str
     Returns:
         ``(setting, value)`` pairs, as typed; the deploy validates each.
 
+    Raises:
+        SectionGivenAsAValueError: ``--set`` gave the section itself a value that is not a table.
+
     Example:
         >>> permission_overrides_from(("lib_layered_config.default_permissions.user_file=0o640",))
         (('user_file', '0o640'),)
@@ -111,11 +137,13 @@ def permission_overrides_from(set_overrides: tuple[str, ...]) -> tuple[tuple[str
     if not set_overrides:
         return ()
     section = apply_overrides(Config({}, {}), set_overrides).get(PERMISSIONS_SECTION)
-    if not isinstance(section, Mapping):
-        # Nothing given, or a section that is not a table: the latter is reported by
-        # read_permission_defaults, which falls back for it, and the deploy - which
-        # does not read the command line - is then exactly what that report says.
+    if section is None:
         return ()
+    if not isinstance(section, Mapping):
+        # Not a fallback: read_permission_defaults would settle ``enabled`` from the shipped
+        # section while the deploy, which does not read the command line, applied the modes
+        # the files configure - neither of which is what such a value asks for.
+        raise SectionGivenAsAValueError(section)
     table = cast("Mapping[str, object]", section)
     return tuple((name, value) for name, value in table.items() if name != ENABLED_KEY)
 
@@ -126,6 +154,7 @@ __all__ = [
     "PERMISSIONS_SECTION",
     "PermissionDefaults",
     "PermissionReading",
+    "SectionGivenAsAValueError",
     "permission_overrides_from",
     "read_permission_defaults",
 ]

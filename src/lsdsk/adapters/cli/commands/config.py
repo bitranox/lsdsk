@@ -25,7 +25,11 @@ from rich.console import Console
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.loader import invalid_profile_message, shipped_table_paths
 from lsdsk.adapters.config.overrides import apply_overrides
-from lsdsk.adapters.config.permissions import permission_overrides_from, read_permission_defaults
+from lsdsk.adapters.config.permissions import (
+    SectionGivenAsAValueError,
+    permission_overrides_from,
+    read_permission_defaults,
+)
 from lsdsk.adapters.config.secrets import redact_secrets
 from lsdsk.adapters.config.values import REASON_SECTION, RejectedValue, rendered
 from lsdsk.domain.deployment import DeployRequest
@@ -482,6 +486,10 @@ def cli_config_deploy(
     """
     cli_ctx = get_cli_context(ctx)
     _refuse_an_invalid_profile(profile, output_format=output_format)
+    try:
+        permission_overrides = permission_overrides_from(cli_ctx.set_overrides)
+    except SectionGivenAsAValueError as refused:
+        fail(str(refused), ExitCode.INVALID_ARGUMENT, output_format=output_format)
     # The configuration of the profile this deploy writes, so ``enabled`` and every refusal
     # are read from it rather than from the root's, which may name another profile or none.
     config, effective_profile = _resolve_config(cli_ctx, profile, output_format=output_format)
@@ -508,7 +516,7 @@ def cli_config_deploy(
                 set_permissions=set_permissions,
                 dir_mode=dir_mode,
                 file_mode=file_mode,
-                permission_overrides=permission_overrides_from(cli_ctx.set_overrides),
+                permission_overrides=permission_overrides,
             ),
             output_format=output_format,
         )
