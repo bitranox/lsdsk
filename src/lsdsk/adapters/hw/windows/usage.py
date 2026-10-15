@@ -1,6 +1,10 @@
 """Resolve what uses each Windows disk, from what the reader recorded.
 
-Pure: a capture in, one ``DiskUsage`` per disk out.
+Pure: a capture in, one ``DiskUsage`` per disk out. It also holds the two
+volume rules the reader and the filesystems builder must apply alike, which
+is why both import them from here rather than each keeping a copy: the order
+a volume's paths are named in (:func:`named_first`) and whether a volume can
+be a row (:func:`can_be_a_row`).
 
 System Role:
     Adapter layer, translation half of the Windows mapping path.
