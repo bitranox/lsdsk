@@ -611,3 +611,35 @@ def test_a_bitmap_larger_than_one_call_is_walked_in_chunks() -> None:
     assert chunked_fake.bitmap_calls > 1
     assert chunked[VOLUME_C]["free_extents"] == whole[VOLUME_C]["free_extents"]
     assert (whole[VOLUME_C]["free_extents"]["count"], whole[VOLUME_C]["free_extents"]["largest"]) == (25, 10 * 4096)
+
+
+DRIVE_CDROM = 5
+DRIVE_RAMDISK = 6
+
+
+@pytest.mark.parametrize(
+    "volume",
+    [
+        FakeVolume(paths=("E:\\",), drive_type=DRIVE_CDROM, disks=None, bitmap=[0] * 8),
+        FakeVolume(paths=("R:\\",), drive_type=DRIVE_RAMDISK, disks=(0,), bitmap=[0] * 8),
+        FakeVolume(paths=("X:\\",), disks=(), bitmap=[0] * 8),
+        FakeVolume(paths=("Y:\\",), disks=None, bitmap=[0] * 8),
+    ],
+    ids=["optical-no-extents", "ram-disk", "no-disk", "extents-refused"],
+)
+def test_an_elevated_run_never_walks_a_volume_that_cannot_be_a_row(volume: FakeVolume) -> None:
+    """A volume no inventoried disk can carry is dropped by the builder, so it is never opened for reading."""
+    fake = FakeVolumeKernel({VOLUME_X: volume})
+    entry = _read(fake, walk_bitmaps=True)[VOLUME_X]
+    assert "free_extents" not in entry
+    assert fake.opened  # control: the volume was opened, just never for reading
+    assert all(access != api.GENERIC_READ for _path, access in fake.opened)
+    assert fake.bitmap_calls == 0
+
+
+def test_an_elevated_run_walks_a_fixed_volume_on_a_disk_after_reading_its_extents() -> None:
+    """The control: the same fake, a volume that will be a row, is walked."""
+    fake = FakeVolumeKernel({VOLUME_X: FakeVolume(paths=("X:\\",), disks=(0,), bitmap=[0] * 8)})
+    entry = _read(fake, walk_bitmaps=True)[VOLUME_X]
+    assert entry["free_extents"]["count"] == 1
+    assert [access for _path, access in fake.opened] == [0, api.GENERIC_READ]

@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..decode.free_extents import FreeExtentTally
 from . import winapi as api
+from .usage import DISKLESS_DRIVE_TYPES
 from .volume_layout import (
     BITMAP_HEADER_BYTES,
     EXTENT_ENTRY,
@@ -290,7 +291,9 @@ def _read_one_volume(
         volume: The volume's GUID path, trailing backslash included.
         last_error: Answers ``GetLastError`` for the space call that just failed.
         walk_bitmaps: Also walk the volume's cluster bitmap into free extents,
-            which opens it for reading and so needs Administrator.
+            which opens it for reading and so needs Administrator. Only a
+            volume that can be a row is walked (see :func:`_can_be_a_row`),
+            which is why its extents are read first.
         chunk_bytes: How many bytes of cluster bits one bitmap call asks for.
 
     Returns:
@@ -306,10 +309,6 @@ def _read_one_volume(
         # its GUID path answered DRIVE_NO_ROOT_DIR.
         entry["drive_type"] = int(kernel32.GetDriveTypeW(paths[0]))
         entry.update(_volume_space(kernel32, paths[0], last_error=last_error))
-        if walk_bitmaps:
-            entry["free_extents"] = _free_extents(
-                kernel32, volume, paths[0], last_error=last_error, chunk_bytes=chunk_bytes
-            )
     handle = kernel32.CreateFileW(
         volume.rstrip("\\"),
         0,
@@ -332,7 +331,22 @@ def _read_one_volume(
             entry["esp"] = esp
     finally:
         kernel32.CloseHandle(handle)
+    if walk_bitmaps and _can_be_a_row(entry):
+        entry["free_extents"] = _free_extents(
+            kernel32, volume, paths[0], last_error=last_error, chunk_bytes=chunk_bytes
+        )
     return entry
+
+
+def _can_be_a_row(entry: dict[str, Any]) -> bool:
+    """Whether a volume read so far could become a filesystem row, and so is worth walking.
+
+    A row needs a path to name it and a disk its extents reach; an optical
+    drive or a RAM disk sits on no disk this tool lists whatever its extents
+    say. Walking any other volume opens it for reading, as Administrator, for
+    a figure the builder then drops.
+    """
+    return bool(entry["paths"]) and bool(entry.get("disks")) and entry.get("drive_type") not in DISKLESS_DRIVE_TYPES
 
 
 def read_volumes(
