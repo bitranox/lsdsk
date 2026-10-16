@@ -168,6 +168,20 @@ def test_a_swap_list_over_the_limit_is_refused_like_an_unreadable_one(tmp_path: 
     assert mounts.read_swaps(path, limit=len(content.encode("utf-8")) - 1) is None
 
 
+def test_the_swap_list_bound_counts_bytes_not_characters(tmp_path: Path) -> None:
+    # A swap file under a directory named in umlauts: each takes two bytes and one character, so a bound counted in
+    # characters would accept a file the byte bound refuses.
+    umlauts = chr(0xFC) * 4
+    content = f"Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n/srv/{umlauts}/swapfile   file\t8388604\t\t0\t\t-2\n"
+    encoded = content.encode("utf-8")
+    assert len(encoded) - len(content) == 4  # control: the umlauts are where the two counts part
+    path = tmp_path / "swaps"
+    path.write_bytes(encoded)
+
+    assert mounts.read_swaps(path, limit=len(encoded)) == [{}]
+    assert mounts.read_swaps(path, limit=len(encoded) - 1) is None
+
+
 @pytest.mark.os_agnostic
 def test_a_mount_path_that_is_not_utf8_keeps_every_row(tmp_path: Path) -> None:
     # Linux allows any bytes in a path, so a share or a removable disk mounted
