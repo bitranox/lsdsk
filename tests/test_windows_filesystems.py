@@ -256,7 +256,7 @@ def test_the_refusals_of_unplaced_volumes_agree_with_the_used_by_column() -> Non
         capture = _one_disk({"0": volumes["0"], key: volumes[key]})
         assert capture.volumes is not None
         _, unread = build_filesystems(capture, BARE_METAL)
-        assert bool(unread) is blocks_not_mounted(capture.volumes[key]), key
+        assert bool(unread) is blocks_not_mounted(capture.volumes[key], {0}), key
 
 
 def _replayed(volumes: dict[str, Any], tmp_path: Path, runner: CliRunner, factory: Callable[[], object]) -> Any:
@@ -501,3 +501,13 @@ def test_a_volume_without_a_quota_carries_no_scope_note() -> None:
     values = _panel_free_space(free_bytes=9 * _GIB, available_bytes=9 * _GIB)
     assert "scope" not in values
     assert values["largest"] == "129GB/120GiB"
+
+
+def test_a_volume_whose_paths_were_not_read_on_a_disk_this_inventory_does_not_list_is_no_refusal() -> None:
+    """Its extents were read and name another disk, so it could never have been a row here."""
+    volumes = _undecidable_volumes()
+    off_inventory = _volume(disks=(9,), paths_error="could not read the volume's paths (error 234)")
+    rows, unread = build_filesystems(_one_disk({"0": volumes["0"], "2": off_inventory}), BARE_METAL)
+    assert rows is not None
+    assert [row.name for row in rows] == ["C:\\"]
+    assert unread == ()

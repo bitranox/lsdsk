@@ -223,3 +223,33 @@ def test_a_capture_that_listed_a_folder_mount_first_still_names_the_letter_first
     usage = resolve_usage(capture, BARE_METAL)
     assert usage["PhysicalDrive0"] is not None
     assert usage["PhysicalDrive0"].uses == (DiskUse(kind=UseKind.LETTER, mounts=("X:\\", "C:\\mnt\\x\\")),)
+
+
+@pytest.mark.parametrize("extents", [(9,), ()], ids=["an-uninventoried-disk", "no-disk-at-all"])
+def test_a_volume_whose_paths_were_not_read_but_whose_extents_name_no_inventoried_disk_blocks_nothing(
+    extents: tuple[int, ...],
+) -> None:
+    """Its letter, whatever it is, belongs to a disk this inventory does not list, so no listed disk is undecided."""
+    capture = _capture(
+        disks={"\\\\?\\p0": _disk("PhysicalDrive0")},
+        volumes={
+            "\\\\?\\Volume{x}\\": _volume(disks=extents, paths_error="could not read the volume's paths (error 5)")
+        },
+    )
+    usage = resolve_usage(capture, BARE_METAL)
+    assert usage["PhysicalDrive0"] is not None
+    assert usage["PhysicalDrive0"].uses == ()
+
+
+def test_a_volume_whose_paths_and_extents_were_both_refused_still_blocks_not_mounted() -> None:
+    """The control: with its extents unread too, the volume could be on any disk."""
+    capture = _capture(
+        disks={"\\\\?\\p0": _disk("PhysicalDrive0")},
+        volumes={
+            "\\\\?\\Volume{x}\\": _volume(
+                paths_error="could not read the volume's paths (error 5)",
+                error="could not read the volume's disk extents (error 1)",
+            )
+        },
+    )
+    assert resolve_usage(capture, BARE_METAL) == {"PhysicalDrive0": None}

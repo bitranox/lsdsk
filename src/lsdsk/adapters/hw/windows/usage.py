@@ -175,10 +175,12 @@ def _boot_nodes(capture: WindowsCapture, volumes: dict[str, VolumeEntry], number
     return frozenset(numbered[number] for number in boot_disk_numbers if number in numbered)
 
 
-def blocks_not_mounted(entry: VolumeEntry) -> bool:
+def blocks_not_mounted(entry: VolumeEntry, inventoried: Container[int]) -> bool:
     """Whether one volume's failure leaves a disk with nothing found undecided.
 
-    A volume whose paths were not read could be any disk's letter. A volume
+    A volume whose paths were not read could be any disk's letter - unless its
+    extents were read and name no disk this inventory lists, when its letter
+    belongs to a disk nobody is asked about. A volume
     that failed to open or to report its extents could sit on any disk, unless
     it is an optical drive or a RAM disk, or answers to no path at all: those
     are nothing a reader looks for under a letter, and a machine's every
@@ -190,12 +192,13 @@ def blocks_not_mounted(entry: VolumeEntry) -> bool:
 
     Args:
         entry: One volume the reader enumerated.
+        inventoried: The disk numbers of the disks the inventory lists.
 
     Returns:
         Whether "not mounted" can no longer be claimed for any disk.
     """
     if entry.paths_error is not None:
-        return True
+        return entry.error is not None or any(number in inventoried for number in entry.disks)
     if entry.error is None:
         return False
     if entry.esp is True:
@@ -229,7 +232,7 @@ def resolve_usage(capture: WindowsCapture, environment: Environment) -> dict[str
     numbered = disk_numbers(nodes)
     mounts = _letter_mounts(volumes, numbered)
     boot_nodes = _boot_nodes(capture, volumes, numbered)
-    any_volume_blocks = any(blocks_not_mounted(entry) for entry in volumes.values())
+    any_volume_blocks = any(blocks_not_mounted(entry, numbered) for entry in volumes.values())
 
     result: dict[str, DiskUsage | None] = {}
     for node in nodes:

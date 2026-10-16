@@ -186,7 +186,7 @@ def _unplaced_volumes(volumes: Iterable[VolumeEntry], numbered: dict[int, str]) 
     return tuple(
         RefusedReading(reading=_VOLUME_READING, reason=_unplaced_reason(position, entry, numbered))
         for position, entry in enumerate(volumes)
-        if blocks_not_mounted(entry) and _may_have_a_path(entry)
+        if blocks_not_mounted(entry, numbered) and _may_have_a_path(entry)
     )
 
 
