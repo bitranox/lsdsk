@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.9.2] 2026-10-16 12:30:18
+
 ### Changed
 
 - **statvfs is asked only about filesystems on an inventoried disk**, the same ones the free-space
