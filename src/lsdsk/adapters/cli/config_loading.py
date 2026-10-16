@@ -1,13 +1,12 @@
 """Load one profile's configuration and settle it, with one answer for each way that fails.
 
-The root group loads the configuration once. ``config`` and ``config-deploy`` load it again
-when their own ``--profile`` names another one, and that second load used to be a bare call:
-a file it could not read escaped as the layered library's ``LayerLoadError`` (exit 70 and no
-envelope, where the root answers 78 or 13 with one), a profile that named nothing loaded
-without a word, and a mode that could be octal digits was never asked about. So every
-decision about a freshly loaded configuration lives here, and each caller supplies only HOW
-it refuses: the root group before the subcommand has parsed its ``--format``
-(:class:`~.envelope.RefusedBeforeTheRun`), a subcommand afterwards (:func:`~.envelope.fail`).
+The root group loads the configuration once, for the profile the run uses - its own
+``--profile``, or the one ``config`` or ``config-deploy`` names after it - and every decision
+about the loaded configuration lives here: which exit code a failed load leaves with, the
+refusal of a mode that could be octal digits, and the warnings about a profile that named
+nothing, a key nothing reads and a value nothing can use. The caller supplies only HOW it
+refuses: the root group does so before the subcommand has parsed its ``--format``
+(:class:`~.envelope.RefusedBeforeTheRun`).
 
 Contents:
     * :class:`UnusableConfigError` - a refusal, and the exit code it leaves with.
@@ -18,7 +17,7 @@ Contents:
     * :func:`report_values_nothing_uses` - warn about a value nothing can use.
 
 System Role:
-    Adapter layer, CLI. Shared by :mod:`.root` and :mod:`.commands.config`.
+    Adapter layer, CLI. Used by :mod:`.root`.
 """
 
 from __future__ import annotations
@@ -30,12 +29,7 @@ from lib_layered_config import ConfigError
 from lsdsk.adapters.config.history import read_history_settings
 from lsdsk.adapters.config.known_keys import nearest_known_key, unknown_owned_keys
 from lsdsk.adapters.config.permissions import read_permission_defaults
-from lsdsk.adapters.config.profiles import (
-    contributed_layers,
-    existing_profiles,
-    nearest_profile,
-    supplied_by_profile,
-)
+from lsdsk.adapters.config.profiles import contributed_layers, existing_profiles, nearest_profile
 from lsdsk.adapters.config.tunables import read_display_settings, read_thresholds
 from lsdsk.adapters.config.values import AmbiguousModeError
 
@@ -192,12 +186,7 @@ def report_profile_that_named_nothing(config: Config, profile: str | None) -> No
     )
 
 
-def _reported_here(config: Config, dotted: str, from_profile: str | None) -> bool:
-    """Whether `dotted` is this call's to report: every key, or only those a file of `from_profile` gave."""
-    return from_profile is None or supplied_by_profile(config, dotted, from_profile)
-
-
-def report_keys_nothing_reads(config: Config, *, from_profile: str | None = None) -> None:
+def report_keys_nothing_reads(config: Config) -> None:
     """Say so on stderr when a config FILE carries a key this tool does not read.
 
     Warned about rather than refused, unlike the same typo in ``--set``. A
@@ -214,24 +203,18 @@ def report_keys_nothing_reads(config: Config, *, from_profile: str | None = None
         config: The configuration as the file and environment layers left it,
             before any ``--set`` is merged in - those are refused rather than
             warned about, so they never reach here.
-        from_profile: Report only the keys a file of this profile supplied.
-            A subcommand's own ``--profile`` reloads the configuration after the
-            root group reported its own; the environment is in both loads, so
-            reporting every key again would say each of its warnings twice.
 
     Side Effects:
         Writes a line per unknown key to stderr.
     """
     for dotted in unknown_owned_keys(config.as_dict()):
-        if not _reported_here(config, dotted, from_profile):
-            continue
         section, _, key = dotted.partition(".")
         suggestion = nearest_known_key(section, key)
         meant = f" Did you mean {section}.{suggestion}?" if suggestion else ""
         safe_console.echo(f"Warning: ignoring {dotted}: [{section}] has no such key.{meant}", err=True)
 
 
-def report_values_nothing_uses(config: Config, *, history_file: Path | None, from_profile: str | None = None) -> None:
+def report_values_nothing_uses(config: Config, *, history_file: Path | None) -> None:
     """Say so on stderr when a configured VALUE is not one this tool can use.
 
     The key half of this is :func:`report_keys_nothing_reads`, and the reasoning is
@@ -255,9 +238,6 @@ def report_values_nothing_uses(config: Config, *, history_file: Path | None, fro
             refused from the command line is reported alongside one from a file.
         history_file: What ``--history-file`` asked for, so a refused
             ``history.path`` names the location that really ends up in force.
-        from_profile: Report only the values a file of this profile supplied,
-            for the reason :func:`report_keys_nothing_reads` gives; a ``--set``
-            value is the override layer's, so it is never one of them.
 
     Side Effects:
         Writes a line per refused value to stderr.
@@ -267,8 +247,7 @@ def report_values_nothing_uses(config: Config, *, history_file: Path | None, fro
         *read_display_settings(config).rejected,
         *read_history_settings(config, path_override=history_file).rejected,
     ):
-        if _reported_here(config, rejected.dotted, from_profile):
-            safe_console.echo(rejected.as_sentence(), err=True)
+        safe_console.echo(rejected.as_sentence(), err=True)
 
 
 __all__ = [

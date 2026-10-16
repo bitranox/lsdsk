@@ -3,9 +3,9 @@
 The root group warns about a config-file key nothing reads and a value nothing can use, against
 the configuration IT loaded. In the subcommand form that is the configuration without the
 profile, and the reload of profile X said nothing: a typo in X's own file and a value X's file
-gave that fell back were reported by one spelling of the request and not by the other. Running
-the root's checks again on the reload would print every environment and ``--set`` warning a
-second time, so the reload warns only about keys a file of profile X supplied.
+gave that fell back were reported by one spelling of the request and not by the other. The root
+group now loads the profile the subcommand names, once, so each warning is said once whichever
+place named the profile - and an environment, ``.env`` or ``--set`` warning is not said twice.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ _SPELLINGS = (
     pytest.param(["config", "--profile", PROFILE], id="config"),
     pytest.param(["--profile", PROFILE, "config-deploy", "--target", "user"], id="global-deploy"),
     pytest.param(["config-deploy", "--target", "user", "--profile", PROFILE], id="config-deploy"),
-    # Both at once: the root loaded X already, so the reload has nothing new to report.
+    # Both at once: one load, so nothing is reported twice.
     pytest.param(["--profile", PROFILE, "config", "--profile", PROFILE], id="both-config"),
 )
 

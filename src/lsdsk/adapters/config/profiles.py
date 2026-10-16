@@ -135,27 +135,6 @@ def contributed_layers(config: Config, profile: str) -> tuple[str, ...]:
     return tuple(paths)
 
 
-def supplied_by_profile(config: Config, dotted: str, profile: str) -> bool:
-    """Whether the value of `dotted` in force came from a file of `profile`.
-
-    Read from provenance, as :func:`contributed_layers` is and by the same test,
-    so the two cannot disagree about which files belong to a profile. A value the
-    environment, ``--set`` or the shipped defaults gave answers ``False``.
-
-    Args:
-        config: The configuration, with its provenance.
-        dotted: The setting, ``section.key``, or a section given as one value.
-        profile: The profile whose files are meant.
-
-    Returns:
-        ``True`` when the layer that supplied the value is a file under that
-        profile's directory.
-    """
-    origin = config.origin(dotted)
-    path = None if origin is None else origin.get("path")
-    return isinstance(path, str) and _is_a_file_of(path, profile)
-
-
 def _is_a_file_of(path: str, profile: str) -> bool:
     """Whether `path` lies in the directory the loader inserts for `profile`."""
     wanted = (PROFILE_SEGMENT, profile)
@@ -206,5 +185,4 @@ __all__ = [
     "contributed_layers",
     "existing_profiles",
     "nearest_profile",
-    "supplied_by_profile",
 ]

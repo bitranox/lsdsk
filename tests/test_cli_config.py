@@ -502,18 +502,18 @@ def test_when_config_generate_examples_it_passes_correct_metadata(
 
 
 @pytest.mark.os_agnostic
-def test_when_config_subcommand_profile_reloads_it_preserves_root_set_overrides(
+def test_a_config_subcommand_profile_keeps_the_root_set_overrides(
     cli_runner: CliRunner,
     config_factory: Callable[[dict[str, Any]], Config],
     clear_config_cache: None,
 ) -> None:
-    """Root --set overrides must be reapplied when config --profile reloads config.
+    """Root --set overrides apply to the profile ``config --profile`` names.
 
     When a user invokes:
         cli --set section.key=override config --profile test
 
-    The subcommand-level profile triggers a config reload. The root-level
-    --set overrides must be reapplied to the new config.
+    the root group loads profile ``test`` - the subcommand's own - once, and the
+    root-level --set overrides are applied to it.
 
     Injected at the ``AppServices`` port rather than by patching
     ``loader.get_config``: the composition root binds that name at import time,
@@ -526,10 +526,10 @@ def test_when_config_subcommand_profile_reloads_it_preserves_root_set_overrides(
 
     base_config = config_factory({"section": {"key": "original"}})
 
-    # Two calls are expected: root.py loads once, then config.py reloads for the
-    # subcommand profile. Counting them is what proves the reload happened at
-    # all - without it, a CLI that ignored --profile entirely would still show
-    # the override and pass.
+    # Exactly one call, for the subcommand's profile: counting them is what
+    # proves the profile was loaded at all - without it, a CLI that ignored
+    # --profile entirely would still show the override and pass - and that the
+    # configuration without the profile was never loaded first.
     seen_profiles: list[str | None] = []
 
     def fake_get_config(*, profile: str | None = None, **_kwargs: Any) -> Config:
@@ -545,7 +545,7 @@ def test_when_config_subcommand_profile_reloads_it_preserves_root_set_overrides(
     )
 
     assert result.exit_code == 0
-    assert seen_profiles == [None, "test"], f"the profile reload did not happen: {seen_profiles}"
+    assert seen_profiles == ["test"], f"the profile was not loaded exactly once: {seen_profiles}"
     assert "overridden" in result.stdout
     assert '"original"' not in result.stdout
 

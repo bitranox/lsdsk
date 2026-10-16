@@ -23,8 +23,7 @@ from lib_layered_config.domain.deploy_mode import parse_mode_text
 from rich.console import Console
 
 from lsdsk import __init__conf__
-from lsdsk.adapters.config.loader import invalid_profile_message, shipped_table_paths
-from lsdsk.adapters.config.overrides import apply_overrides
+from lsdsk.adapters.config.loader import shipped_table_paths
 from lsdsk.adapters.config.permissions import (
     SectionGivenAsAValueError,
     modes_the_deploy_ignores,
@@ -38,14 +37,6 @@ from lsdsk.domain.enums import ActionCommand, DeployTarget, OutputFormat, WriteO
 from lsdsk.domain.errors import ConfigurationError
 
 from .. import safe_console
-from ..config_loading import (
-    UnusableConfigError,
-    load_profile_config,
-    refuse_an_ambiguous_mode,
-    report_keys_nothing_reads,
-    report_profile_that_named_nothing,
-    report_values_nothing_uses,
-)
 from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION
 from ..context import CLIContext, get_cli_context
 from ..envelope import ActionResult, MappingResult, PayloadTooDeepError, emit_action, fail
@@ -123,8 +114,7 @@ def cli_config(ctx: click.Context, output_format: OutputFormat, section: str | N
 
     """
     cli_ctx = get_cli_context(ctx)
-    _refuse_an_invalid_profile(profile, output_format=output_format)
-    effective_config, effective_profile = _resolve_config(cli_ctx, profile, output_format=output_format)
+    effective_config, effective_profile = _settled_config(cli_ctx, profile)
     ignored_sections = _ignored_sections(effective_config)
 
     extra = {"command": ActionCommand.CONFIG.value, "format": output_format.value, "profile": effective_profile}
@@ -332,69 +322,30 @@ def _redacted_config_data(config: Config, section: str | None) -> dict[str, Any]
     return redact_secrets(redact_mapping({section: selected}))
 
 
-def _refuse_an_invalid_profile(profile: str | None, *, output_format: OutputFormat) -> None:
-    """Refuse a subcommand's ``--profile`` the library would refuse, as ``22``.
+def _settled_config(cli_ctx: CLIContext, profile: str | None) -> tuple[Config, str | None]:
+    """The configuration this command works from, which the root group has already loaded.
 
-    The global ``--profile`` is judged in the root group; this is the same
-    judgement for the option a subcommand repeats, through the same function, so
-    the two cannot disagree about a name. Done before the profile is loaded
-    because the loader signals a bad name with a bare ``ValueError``, which
-    nothing downstream turns into a refusal.
-
-    Args:
-        profile: The subcommand's own ``--profile``, or ``None``.
-        output_format: What the caller asked for, which decides how it answers.
-    """
-    refusal = invalid_profile_message(profile)
-    if refusal is not None:
-        fail(refusal, ExitCode.INVALID_ARGUMENT, output_format=output_format)
-
-
-def _get_effective_profile(cli_ctx: CLIContext, profile_override: str | None) -> str | None:
-    """Get effective profile: override takes precedence over context."""
-    return profile_override if profile_override else cli_ctx.profile
-
-
-def _resolve_config(
-    cli_ctx: CLIContext, profile: str | None, *, output_format: OutputFormat
-) -> tuple[Config, str | None]:
-    """The configuration this command works from, reloaded when its own ``--profile`` names one.
-
-    A reload goes through the decisions the root group makes for ``--profile X COMMAND``, in
-    the same order, so the two spellings of one request answer alike: a file that cannot be
-    read leaves 78 or 13 with the envelope, a profile that named nothing is warned about, the
-    root's ``--set`` overrides and ``--env-file`` are applied again, and a mode that could be
-    octal digits stops the run. Called bare, the reload left ``LayerLoadError`` and exit 70.
-
-    The overrides were validated by the root group already, so applying them again cannot
-    refuse here.
+    The root group reads this command's own ``--profile`` before it loads anything, so the
+    configuration it stored is the one of the profile named here, loaded and judged once, with
+    the root's ``--set`` overrides and ``--env-file`` applied: ``config --profile X`` and
+    ``--profile X config`` answer alike because they ARE one load. Loading the root's own first
+    and this one again judged a configuration the run never used and reported its warnings.
 
     Args:
-        cli_ctx: CLI context containing stored config and services.
-        profile: The command's own ``--profile``, or ``None`` to keep the root's configuration.
-        output_format: What the caller asked for, which decides how a refusal answers.
+        cli_ctx: CLI context containing the stored configuration and the profile it is of.
+        profile: This command's own ``--profile``, as click parsed it.
 
     Returns:
         Tuple of (config, effective_profile).
+
+    Raises:
+        RuntimeError: The root group loaded another profile than this command names, which
+            only a defect in reading the command's options can cause.
     """
-    effective_profile = _get_effective_profile(cli_ctx, profile)
-    if not profile:
-        return cli_ctx.config, effective_profile
-    # The root group already reported what it loaded; when it loaded this same profile,
-    # every file of it was among that, and reporting again would say each line twice.
-    newly_read = profile if profile != cli_ctx.profile else None
-    try:
-        loaded = load_profile_config(cli_ctx.services, profile=profile, env_file=cli_ctx.env_file)
-        report_profile_that_named_nothing(loaded, profile)
-        if newly_read is not None:
-            report_keys_nothing_reads(loaded, from_profile=newly_read)
-        config = apply_overrides(loaded, cli_ctx.set_overrides)
-        refuse_an_ambiguous_mode(config)
-    except UnusableConfigError as refused:
-        fail(refused.message, refused.code, output_format=output_format)
-    if newly_read is not None:
-        report_values_nothing_uses(config, history_file=cli_ctx.history_file, from_profile=newly_read)
-    return config, effective_profile
+    if profile is not None and profile != cli_ctx.profile:
+        message = f"the root group loaded profile {cli_ctx.profile!r}, not {profile!r}. This is a bug."
+        raise RuntimeError(message)
+    return cli_ctx.config, cli_ctx.profile
 
 
 def _parse_octal_mode(ctx: click.Context, param: click.Parameter, value: str | None) -> int | None:
@@ -495,14 +446,13 @@ def cli_config_deploy(
 
     """
     cli_ctx = get_cli_context(ctx)
-    _refuse_an_invalid_profile(profile, output_format=output_format)
     try:
         permission_overrides = permission_overrides_from(cli_ctx.set_overrides)
     except SectionGivenAsAValueError as refused:
         fail(str(refused), ExitCode.INVALID_ARGUMENT, output_format=output_format)
     # The configuration of the profile this deploy writes, so ``enabled`` and every refusal
-    # are read from it rather than from the root's, which may name another profile or none.
-    config, effective_profile = _resolve_config(cli_ctx, profile, output_format=output_format)
+    # are read from it; the root group loaded that profile, whichever place named it.
+    config, effective_profile = _settled_config(cli_ctx, profile)
     target_values = tuple(t.value for t in targets)
 
     extra = {
