@@ -111,17 +111,21 @@ def _values(record: detail.Detail, label: detail.DetailGroupLabel) -> dict[str, 
 def test_the_decider_excuses_exactly_the_two_chipset_functions_and_no_other_controller() -> None:
     """One decider, read by every view: the two SATA functions here, nothing anywhere else.
 
-    The second chip's function has no drive, so the hint never fires for it;
-    the marker is still drawn, because it says what the register is rather
-    than that something needs it.
+    Of the controllers, exactly the two SATA functions. The set every view
+    reads also names the chipsets' own USB functions on the same two switches,
+    which are no storage controller but publish the same default on the same
+    evidence. The second chip's SATA function has no drive, so the hint never
+    fires for it; the marker is still drawn, because it says what the register
+    is rather than that something needs it.
     """
-    from lsdsk.domain.diagnostics import register_default_links
+    from lsdsk.domain.diagnostics import link_is_register_default, register_default_links
 
-    assert register_default_links(_machine()) == frozenset(EXCUSED)
+    assert register_default_links(_machine()) == frozenset(EXCUSED + USB_FUNCTIONS)
+    assert {one.address for one in _machine().controllers if link_is_register_default(one, _machine())} == set(EXCUSED)
     for host in sorted(path.stem for path in FIXTURES.glob("*.json")):
         if host == CHIPSET:
             continue
-        assert register_default_links(_machine(host)) == frozenset(), f"{host}: a controller was marked"
+        assert register_default_links(_machine(host)) == frozenset(), f"{host}: a device was marked"
 
 
 def test_the_decider_marks_nothing_once_the_switch_shows_no_real_link() -> None:
@@ -433,3 +437,140 @@ def test_text_that_merely_contains_a_marked_figure_summons_no_legend(text: str) 
     """The mark is matched on the whole cell, so published text ending in a figure draws no legend."""
     assert not theme.marks_register_default(text)
     assert theme.register_default_legend([text]) == ""
+
+
+#: The chipsets' own USB functions at the floor, one per chip, on the same switches the
+#: SATA functions' evidence proves: each carries its port's vendor, and each switch passes
+#: real links on. The marker is about what the register IS, so it does not ask whether
+#: the device is a storage controller.
+USB_FUNCTIONS = ("0000:0f:00.0", "0000:0d:00.0")
+
+#: The port in front of each.
+USB_PORTS = ("0000:04:0c.0", "0000:07:0c.0")
+
+#: A second chip's USB functions on a switch that shows no real link: both read the floor
+#: and both carry their ports' vendor, so they twin each other, but with every port on
+#: that switch empty or at the floor nothing tells a register default from a slow link.
+UNPROVEN_PORTS = ("0000:12:02.0", "0000:12:03.0")
+UNPROVEN_FUNCTIONS = ("0000:15:00.0", "0000:16:00.0")
+
+
+@pytest.mark.parametrize("port", USB_PORTS)
+def test_the_slots_table_marks_a_chipset_usb_function_on_a_proven_switch(port: str) -> None:
+    """The same evidence that marks the SATA function beside it marks this one too."""
+    page = _drawn(report.render_slots(_machine(), width=200))
+    line = _line_of(page, port)
+    assert FLOOR_WORTH not in line, f"the slots table priced a register default: {line!r}"
+    assert MARKED in line, line
+
+
+@pytest.mark.parametrize("address", USB_FUNCTIONS)
+def test_the_topology_tree_marks_a_chipset_usb_function_on_a_proven_switch(address: str) -> None:
+    machine = _machine()
+    for width in (200, 90):
+        page = _drawn(
+            render_fabric(
+                machine, diagnose(machine), width, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS
+            ),
+            width,
+        )
+        line = _line_of(page, address)
+        assert FLOOR_WORTH not in line, f"the tree priced a register default at width {width}: {line!r}"
+        assert line.count(MARKED) == 2, f"width {width}: both hop columns must carry the marker: {line!r}"
+
+
+@pytest.mark.parametrize("port", USB_PORTS)
+def test_the_slot_panel_marks_a_chipset_usb_function_on_a_proven_switch(port: str) -> None:
+    machine = _machine()
+    slot = next(one for one in machine.slots if one.address == port)
+    assert _values(detail.slot_detail(slot, machine), detail.OCCUPANT)["needs"] == MARKED
+
+
+@pytest.mark.asyncio
+async def test_the_interactive_slots_page_marks_a_chipset_usb_function_on_a_proven_switch() -> None:
+    app = LsdskApp(_machine())
+    async with app.run_test(size=(200, 45)) as pilot:
+        await pilot.pause()
+        rows = rows_of(app.query_one("#slot-table"))
+        drawn = [" ".join(cell.plain for cell in rows.get_row(port)) for port in USB_PORTS]
+    for row in drawn:
+        assert FLOOR_WORTH not in row and MARKED in row, row
+
+
+def test_the_json_says_a_chipset_usb_function_is_a_register_default_and_keeps_its_registers(
+    cli_runner: CliRunner, production_factory: Callable[[], AppServices], tmp_path: Path
+) -> None:
+    from lsdsk.adapters.cli import cli
+
+    result = cli_runner.invoke(
+        cli,
+        [
+            "--replay",
+            str(FIXTURES / f"{CHIPSET}.json"),
+            "--history-file",
+            str(tmp_path / "history.json"),
+            "--no-record",
+            "slots",
+            "--format",
+            "json",
+        ],
+        obj=production_factory,
+    )
+    slots = {one["address"]: one for one in json.loads(result.stdout)["data"]["slots"]}
+    for port in USB_PORTS:
+        assert slots[port]["occupant_link_is_register_default"] is True, slots[port]
+        assert slots[port]["occupant_link"]["max_speed_gtps"] == 2.5, slots[port]
+    for port in UNPROVEN_PORTS:
+        assert slots[port]["occupant_link_is_register_default"] is False, slots[port]
+
+
+def test_a_floor_function_on_a_switch_with_no_real_link_keeps_its_figure() -> None:
+    """The control on the same board: the third reading is missing, so nothing is excused."""
+    machine = _machine()
+    page = _drawn(report.render_slots(machine, width=200))
+    for port in UNPROVEN_PORTS:
+        assert f"Gen1x1 ({FLOOR_WORTH})" in _line_of(page, port)
+    tree = _drawn(
+        render_fabric(
+            machine, diagnose(machine), 200, FabricView(density=TreeDensity.FULL), thresholds=DEFAULT_THRESHOLDS
+        )
+    )
+    for address in UNPROVEN_FUNCTIONS:
+        assert _line_of(tree, address).count(f"Gen1x1 ({FLOOR_WORTH})") == 2
+
+
+def test_a_usb_function_loses_its_mark_once_the_switch_shows_no_real_link() -> None:
+    page = _drawn(report.render_slots(_without_real_links(_machine()), width=200))
+    for port in USB_PORTS:
+        line = _line_of(page, port)
+        assert f"Gen1x1 ({FLOOR_WORTH})" in line and MARKED not in line, line
+
+
+def _with_usb_port(machine: Inventory, **changes: object) -> Inventory:
+    """The read-port switch with the USB function's port, and only that one, changed."""
+    slots = tuple(slot.with_changes(**changes) if slot.address == "0000:08:0c.0" else slot for slot in machine.slots)
+    return machine.with_changes(slots=slots)
+
+
+def test_a_read_port_switch_marks_its_usb_function_and_the_evidence_rules_still_refuse() -> None:
+    """A port occupant is judged by the same three readings a controller is, refusals included.
+
+    The positive: the USB function beside the SATA one on a switch passing a
+    real link. Then each refusal on that same port alone: an occupant carrying
+    another maker's vendor is a separate part that genuinely runs at the floor,
+    and a port whose own capability reads above the floor is a real downstream
+    port in front of a card (rule 5), so neither may be marked.
+    """
+    from lsdsk.domain.diagnostics import register_default_links
+
+    usb = "0000:10:00.0"
+    machine = _read_port_machine(real_link=True)
+    assert usb in register_default_links(machine)
+    assert MARKED in _line_of(_drawn(report.render_slots(machine, width=200)), "0000:08:0c.0")
+
+    other_maker = _with_usb_port(machine, occupant_vendor=0x10EC)
+    assert usb not in register_default_links(other_maker)
+    wide_port = PcieLink(current_speed_gtps=2.5, current_width=1, max_speed_gtps=5.0, max_width=1)
+    real_port = _with_usb_port(machine, link=wide_port)
+    assert usb not in register_default_links(real_port)
+    assert usb not in register_default_links(_read_port_machine(real_link=False))

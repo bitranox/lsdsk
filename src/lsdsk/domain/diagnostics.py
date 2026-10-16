@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from .history import DiskSeries, Trend
-    from .models import UsbLink, UsbSpeed
+    from .models import PcieLink, UsbLink, UsbSpeed
     from .thresholds import Thresholds
 
 
@@ -1344,8 +1344,67 @@ def _port_holding(controller: Controller, inventory: Inventory) -> PcieSlot | No
     return inventory.slot_at(controller.upstream_address)
 
 
+class _FloorFunction(NamedTuple):
+    """A device whose link may be a register default, and the port it sits behind.
+
+    A storage controller and the occupant a port names are judged by the same
+    readings, so both are put in this shape and one test answers both. Built
+    from a controller, the port is the one above it; built from a port, the
+    device is the one the port describes.
+
+    Attributes:
+        port: The port in front of the device.
+        link: The device's own link registers.
+        vendor: The device's own vendor, or ``None`` where it was not read.
+        address: The device's PCI address, which no reading beside it may be.
+    """
+
+    port: PcieSlot
+    link: PcieLink
+    vendor: int | None
+    address: str
+
+
 def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None:
     """Find the port that shows a controller's floor link to be a register default.
+
+    Args:
+        controller: The controller whose link is in question.
+        inventory: The machine, whose port records place it on a switch.
+
+    Returns:
+        What :func:`_twin_of` returns for the controller behind the port above
+        it, or ``None`` when it names no port.
+    """
+    own_port = _port_holding(controller, inventory)
+    if own_port is None:
+        return None
+    return _twin_of(_FloorFunction(own_port, controller.link, controller.vendor, controller.address), inventory)
+
+
+def _occupant_twin(slot: PcieSlot, inventory: Inventory) -> PcieSlot | None:
+    """Find the port that shows a port occupant's floor link to be a register default.
+
+    The same readings a storage controller is judged by: a chipset publishes
+    the floor on its USB functions exactly as on its SATA ones, and a view that
+    marked one and priced the other beside it on the same switch would say the
+    two registers mean different things.
+
+    Args:
+        slot: The port whose occupant's link is in question.
+        inventory: The machine, whose port records place it on a switch.
+
+    Returns:
+        What :func:`_twin_of` returns for the occupant, or ``None`` for an
+        empty port or one whose occupant published no link.
+    """
+    if slot.occupant_address is None or slot.occupant_link is None:
+        return None
+    return _twin_of(_FloorFunction(slot, slot.occupant_link, slot.occupant_vendor, slot.occupant_address), inventory)
+
+
+def _twin_of(function: _FloorFunction, inventory: Inventory) -> PcieSlot | None:
+    """Find the port that shows a device's floor link to be a register default.
 
     A desktop chipset used as a PCIe switch publishes 2.5 GT/s x1, as both
     running and capable, on the SATA and USB functions built into the chip,
@@ -1355,7 +1414,7 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
 
     The floor value alone cannot settle it, because a dead or downtrained link
     reads the same. Three readings together can, all on one switch: the
-    controller at the floor, a second device at the identical floor, and a link
+    device at the floor, a second device at the identical floor, and a link
     above the floor at or beneath another of the switch's ports, which shows the
     switch passes real links on rather than being narrow everywhere. Beneath
     counts because a chipset chained behind another hangs off a port of the
@@ -1375,7 +1434,7 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
     bottleneck behind a hint.
 
     Args:
-        controller: The controller whose link is in question.
+        function: The device whose link is in question, and its port.
         inventory: The machine, whose port records place it on a switch.
 
     Returns:
@@ -1383,21 +1442,19 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
         a reader can check, or ``None`` when any of the three readings is
         missing (a real link beneath a port is known only from the PCI tree),
         when either device at the floor is not the switch maker's own
-        function, or when the controller's port is not provably behind a
-        bridge, including a scan that read no port records at all.
+        function, or when the device's port is not provably behind a bridge,
+        including a scan that read no port records at all.
     """
-    own_port = _port_holding(controller, inventory)
-    if not controller.link.is_at_floor or own_port is None:
+    own_port = function.port
+    if not function.link.is_at_floor or own_port.capability_denies_a_function:
         return None
-    if own_port.capability_denies_a_function:
-        return None
-    # The controller's OWN vendor against its port's, never the port's occupant:
+    # The device's OWN vendor against its port's, never the port's occupant:
     # that occupant is whichever device behind the port is hardest to displace,
-    # which need not be this controller.
-    maker = shared_maker(own_port.vendor, controller.vendor)
+    # which need not be the controller in question.
+    maker = shared_maker(own_port.vendor, function.vendor)
     if maker is None:
         return None
-    # Ports of one switch share a bus, so the bus of the port this controller
+    # Ports of one switch share a bus, so the bus of the port this device
     # occupies names the group, but only once that bus is shown to hang behind a
     # bridge. Ports on a root bus share a number and nothing else: each is an
     # independent slot, so a reading beside one says nothing about another.
@@ -1406,10 +1463,10 @@ def _floor_twin(controller: Controller, inventory: Inventory) -> PcieSlot | None
         return None
 
     def beside(slot: PcieSlot) -> bool:
-        return slot.address != own_port.address and slot.occupant_address != controller.address
+        return slot.address != own_port.address and slot.occupant_address != function.address
 
     # The machine holds each switch's readings grouped, rather than every
-    # controller at the floor walking the ports around it: a switch carrying
+    # device at the floor walking the ports around it: a switch carrying
     # many such functions made that walk cost the square of them.
     twin = next((slot for slot in inventory.floor_functions_on(bus, maker) if beside(slot)), None)
     passes_real_links = any(beside(slot) for slot in inventory.ports_leading_above_floor_on(bus))
@@ -1448,25 +1505,35 @@ def link_is_register_default(controller: Controller, inventory: Inventory) -> bo
 
 
 def register_default_links(inventory: Inventory) -> frozenset[str]:
-    """Name every controller whose published link is a register default, by address.
+    """Name every device whose published link is a register default, by address.
 
     For a view that draws devices rather than controllers - a port and the
     occupant it names, a node of the PCI fabric - and so needs the answer for
-    the whole machine at once rather than a lookup per row.
+    the whole machine at once rather than a lookup per row. It names every
+    controller :func:`link_is_register_default` answers yes for, and every port
+    occupant the same readings excuse: a chipset's USB function publishes the
+    floor exactly as its SATA function beside it does, and is no storage
+    controller.
 
     Args:
         inventory: The machine.
 
     Returns:
-        The addresses :func:`link_is_register_default` answers yes for.
+        Those addresses, empty where the readings are not physical.
 
     Example:
         >>> register_default_links(Inventory(hostname="empty"))
         frozenset()
     """
-    return frozenset(
-        controller.address for controller in inventory.controllers if link_is_register_default(controller, inventory)
-    )
+    if not inventory.readings_are_physical:
+        return frozenset()
+    controllers = {one.address for one in inventory.controllers if _floor_twin(one, inventory) is not None}
+    occupants = {
+        slot.occupant_address
+        for slot in inventory.slots
+        if slot.occupant_address is not None and _occupant_twin(slot, inventory) is not None
+    }
+    return frozenset(controllers | occupants)
 
 
 def _demand_clause(count: int, demand: float) -> str:

@@ -30,7 +30,9 @@ FIXTURES = Path(__file__).parent / "fixtures" / "hw"
 CHIPSET = "windows-chipset-switch"
 CAPTURES = sorted(path.stem for path in FIXTURES.glob("*.json"))
 MARKED_CONTROLLERS = {"0000:0e:00.0", "0000:10:00.0"}
-MARKED_OCCUPANTS = {"0000:0e:00.0", "0000:10:00.0"}
+#: The SATA functions, plus the chipsets' own USB functions on the same two switches, which
+#: publish the floor on the same evidence and are no storage controller.
+MARKED_OCCUPANTS = {"0000:0e:00.0", "0000:10:00.0", "0000:0d:00.0", "0000:0f:00.0"}
 
 
 def _envelope(
