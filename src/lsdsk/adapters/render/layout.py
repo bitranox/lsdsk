@@ -53,6 +53,14 @@ TREE_STOP = "  "
 TREE_DOWN = "\u252c"
 TREE_LEAD = "\u2500"
 
+#: The narrowest a device column is cut to while anything else still stands:
+#: wide enough for every name a drive is known by - ``/dev/nvme10n1``,
+#: ``PhysicalDrive100`` - so only a name no reader types is ever cut. Windows
+#: names a disk whose number it refused by its device interface path, a hundred
+#: characters, and a column that would not give that up dropped every other
+#: column of every disk on the page.
+DEVICE_MIN_WIDTH = 16
+
 
 @dataclass(frozen=True, slots=True)
 class Column:
@@ -467,6 +475,7 @@ def pad(value: str, width: int, align: Align) -> str:
 
 
 __all__ = [
+    "DEVICE_MIN_WIDTH",
     "ELLIPSIS",
     "GAP",
     "GUTTER",

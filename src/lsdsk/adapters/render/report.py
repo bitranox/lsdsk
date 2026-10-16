@@ -27,7 +27,16 @@ from ...domain.enums import Align, BusType, Environment, Severity
 from ...domain.models import pcie_bandwidth_gbps, pcie_generation, serial_bandwidth_gbps
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_SUMMARY_LIMIT
 from . import theme
-from .layout import GAP, GUTTER, TREE_BRANCH, TREE_LAST, Column, Layout, pad
+from .layout import (
+    DEVICE_MIN_WIDTH,
+    GAP,
+    GUTTER,
+    TREE_BRANCH,
+    TREE_LAST,
+    Column,
+    Layout,
+    pad,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Mapping, Sequence
@@ -76,7 +85,7 @@ DEFAULT_WIDTH = DEFAULT_PIPED_WIDTH
 # Display order, and the order columns are given up in as space runs out. The
 # device and its link never go: they are the two things the tool is for.
 DISK_COLUMNS: tuple[Column, ...] = (
-    Column("device", "device", priority=0),
+    Column("device", "device", priority=0, flexible=True, min_width=DEVICE_MIN_WIDTH),
     Column("model", "model", priority=0, flexible=True, min_width=14),
     Column("size", "size", align=Align.RIGHT, priority=3),
     Column("kind", "kind", priority=6),

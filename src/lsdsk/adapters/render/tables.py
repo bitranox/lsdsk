@@ -26,7 +26,7 @@ from ...domain.history import CounterKind, identity_of, trend_for
 from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_WWN_WIDTH
 from . import theme
-from .layout import GAP, GUTTER, Column, Layout, clip, clip_keeping
+from .layout import DEVICE_MIN_WIDTH, GAP, GUTTER, Column, Layout, clip, clip_keeping
 from .report import disk_row, severity_index, virtual_note
 from .rows import MarkedRow
 
@@ -95,7 +95,7 @@ CONTROLLER_COLUMNS: tuple[Column, ...] = (
 )
 
 DISK_COLUMNS: tuple[Column, ...] = (
-    Column("device", "device", priority=0),
+    Column("device", "device", priority=0, flexible=True, min_width=DEVICE_MIN_WIDTH),
     Column("model", "model", priority=0, flexible=True, min_width=14),
     Column("wwn", "wwn", priority=3, flexible=True, min_width=12, max_width=DEFAULT_WWN_WIDTH),
     Column("serial", "serial", priority=5, flexible=True, min_width=8),
@@ -111,7 +111,7 @@ DISK_COLUMNS: tuple[Column, ...] = (
 )
 
 HEALTH_COLUMNS: tuple[Column, ...] = (
-    Column("device", "device", priority=0),
+    Column("device", "device", priority=0, flexible=True, min_width=DEVICE_MIN_WIDTH),
     Column("model", "model", priority=2, flexible=True, min_width=14),
     Column("temp", "temp", align=Align.RIGHT, priority=1),
     Column("worn", "worn", align=Align.RIGHT, priority=0),
