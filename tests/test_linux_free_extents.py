@@ -613,3 +613,24 @@ def test_a_refused_ioctl_is_asked_again_at_the_next_mountpoint() -> None:
     assert reading["8:1"]["count"] == 1
     assert (fake.calls, len(opener.opened)) == (2, 2)
     assert opener.all_closed()
+
+
+class _FailsOnContinuing(FakeFsmap):
+    """Answers a walk's first batch, then refuses every call that continues one, as a damaged allocation group does."""
+
+    def __call__(self, fd: int, request: int, head: bytearray) -> int:
+        continuing = _RECORD.unpack_from(head, _LOW_KEY)[5] != 0
+        self.fail = errno.EIO if continuing else None
+        return super().__call__(fd, request, head)
+
+
+def test_a_walk_that_fails_after_its_first_batch_is_not_walked_again_at_the_next_mountpoint() -> None:
+    rows = [{"dev": "8:1", "mountpoint": f"/srv/ct{n}", "fstype": "xfs"} for n in range(3)]
+    fake, opener = _FailsOnContinuing([_free(4096 * 2 * n, 4096) for n in range(5000)]), _Descriptors()
+
+    reading = freespace.read_free_extents(rows, ioctl=fake, opener=opener)
+
+    assert reading == {"8:1": {"error": os.strerror(errno.EIO)}}
+    # The space map broke partway: that is the filesystem's own, and every mountpoint reaches the same one.
+    assert (fake.calls, len(opener.opened)) == (2, 1)
+    assert opener.all_closed()

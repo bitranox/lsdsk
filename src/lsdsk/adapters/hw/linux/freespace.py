@@ -12,9 +12,10 @@ reverse mapping can list every file extent it holds.
 One mountpoint per filesystem is asked, chosen by the rules ``read_space``
 uses: a hidden mountpoint never (the open would reach the filesystem covering
 it), and the next mountpoint only after a refusal another mountpoint could
-change - the open or the call through it failing. A refusal of the filesystem
-itself (past a budget, a walk that did not advance, no GETFSMAP) is final, so a
-filesystem bind-mounted many times is walked once.
+change - the open or the first call through it failing. A refusal of the
+filesystem itself (past a budget, a walk that did not advance, no GETFSMAP, a
+call failing once the space map has answered) is final, so a filesystem
+bind-mounted many times is walked once.
 
 Every device the filesystem spans is listed - an xfs realtime device or an
 external log beside the data device, in device-number order - so only the
@@ -149,6 +150,15 @@ def _last_position(head: bytearray, entries: int) -> tuple[bytes, tuple[int, int
     return last, (device, physical)
 
 
+class _MidWalkError(OSError):
+    """A GETFSMAP call refused after the space map had already answered a batch.
+
+    The space map belongs to the superblock, so a walk that broke partway -
+    a damaged allocation group, an I/O error - breaks the same way at every
+    mountpoint of the filesystem, each time after re-reading what came before.
+    """
+
+
 class _Counts(NamedTuple):
     """How many records a walk read on every device, and how many of them named the mounted one."""
 
@@ -166,7 +176,8 @@ def _walk(fd: int, ioctl: Ioctl, tally: FreeExtentTally, *, device: int, max_rec
         How many records were read, and how many of them named ``device``.
 
     Raises:
-        OSError: The kernel refused the call.
+        OSError: The kernel refused the first call; :class:`_MidWalkError`
+            when it refused a later one.
         ValueError: The kernel answered something the walk cannot continue from,
             or the filesystem has more records than ``max_records``.
         FreeExtentCapError: The filesystem has more free extents than the cap.
@@ -175,7 +186,12 @@ def _walk(fd: int, ioctl: Ioctl, tally: FreeExtentTally, *, device: int, max_rec
     previous: tuple[bytes, tuple[int, int]] | None = None
     seen = on_device = 0
     while True:
-        ioctl(fd, FS_IOC_GETFSMAP, head)
+        try:
+            ioctl(fd, FS_IOC_GETFSMAP, head)
+        except OSError as error:
+            if not seen:
+                raise
+            raise _MidWalkError(error.errno, error.strerror or str(error)) from error
         _, out_flags, _, entries = _HEAD.unpack_from(head, 0)
         if entries == 0:
             break
@@ -217,10 +233,11 @@ class _Answer(NamedTuple):
         reading: The free-extent summary, or ``{"error": <reason>}``.
         settled: ``True`` for a summary and for a refusal of the filesystem
             itself - past a cap or the record budget, a walk that did not
-            advance, no GETFSMAP at all, a device number the space map does
-            not name - which every mountpoint of one device would repeat.
-            ``False`` only where opening the mountpoint, or the call through
-            it, failed, which another mountpoint can change.
+            advance, no GETFSMAP at all, a call failing after the space map
+            answered a batch, a device number the space map does not name -
+            which every mountpoint of one device would repeat. ``False`` only
+            where opening the mountpoint, or the first call through it,
+            failed, which another mountpoint can change.
     """
 
     reading: dict[str, Any]
@@ -245,7 +262,7 @@ def _ask(target: _Target, ioctl: Ioctl, opener: Callable[[str], int], *, cap: in
         counts = _walk(fd, ioctl, tally, device=device, max_records=max_records)
     except OSError as error:
         # ENOTTY is the filesystem having no GETFSMAP, the same at every mountpoint of it.
-        return _refused(_reason(error), settled=error.errno == errno.ENOTTY)
+        return _refused(_reason(error), settled=isinstance(error, _MidWalkError) or error.errno == errno.ENOTTY)
     except ValueError as error:  # FreeExtentCapError is a ValueError
         return _refused(_reason(error), settled=True)
     finally:
