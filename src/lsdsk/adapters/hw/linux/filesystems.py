@@ -187,8 +187,23 @@ def _traced_from_layouts(capture: LinuxCapture, layouts: Mapping[str, PoolLayout
     return _PoolTrace(rows, tuple(untraced), bool(rows) or (listing_refused and bool(disks_by_pool(capture))))
 
 
-def _traced_from_labels(capture: LinuxCapture) -> _PoolTrace:
+def _imported_by_label(capture: LinuxCapture) -> dict[str, frozenset[str]]:
+    """Every pool a member label names, less those a complete pool listing shows are not imported.
+
+    ZFS keeps its labels at the end of a disk, so a reused disk goes on
+    naming a pool long after it was destroyed or exported. A listing read
+    without a refusal holds every imported pool, so a name it lacks is no pool
+    of this machine; where it was not read, or could not read some pool, the
+    label may still be one, and keeps its unread row.
+    """
     members = disks_by_pool(capture)
+    if capture.zfs_pools is None or capture.zfs_pools_error is not None:
+        return members
+    return {name: disks for name, disks in members.items() if name in capture.zfs_pools}
+
+
+def _traced_from_labels(capture: LinuxCapture) -> _PoolTrace:
+    members = _imported_by_label(capture)
     untraced = tuple(name for name in sorted(capture.zfs_pools or {}) if name not in members)
     return _PoolTrace(members, untraced, bool(members))
 
@@ -203,7 +218,7 @@ def _trace_pools(capture: LinuxCapture) -> _PoolTrace:
         The pools with a row, the listed pools a refusal names, and whether a
         member is known to sit on an inventoried disk. With pool layouts a row
         exists only for a pool the kernel listed; without them, for every pool
-        a member label names, as before the layouts were read.
+        a member label names that a complete listing does not rule out.
     """
     if capture.zfs_pool_layouts is None:
         return _traced_from_labels(capture)

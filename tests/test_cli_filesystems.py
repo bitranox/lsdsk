@@ -268,3 +268,51 @@ def test_a_pool_on_files_is_no_row_and_no_refusal(
     assert unplaced["skipped"] == [
         "zfs-pool-disks: filesystems - pool filepool: no member was traced to a disk this scan inventoried"
     ]
+
+
+def _stale_label(reading: dict[str, Any]) -> None:
+    """A reused partition still carrying the label of a pool this machine never imported, as ZFS leaves it."""
+    reading["signatures"]["259:2"] = {"fs_type": "zfs_member", "fs_label": "oldpool"}
+
+
+def _disk_uses(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], capture: Path, node: str
+) -> list[tuple[str, str]]:
+    result = cli_runner.invoke(
+        cli_mod.cli, ["disks", "--replay", str(capture), "--format", "json"], obj=production_factory
+    )
+    disks = json.loads(result.output)["data"]["disks"]
+    usage = next(disk["usage"] for disk in disks if disk["node"] == node)
+    return [(use["kind"], use["name"]) for use in usage["uses"]]
+
+
+def test_a_label_naming_a_pool_the_listing_does_not_hold_is_no_pool_row(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    plain = _envelope(cli_runner, production_factory, FIXTURES / "linux-zfs-filesystems.json")
+    stale_capture = _zfs_fixture_with(tmp_path, "stale", _stale_label)
+    stale = _envelope(cli_runner, production_factory, stale_capture)
+
+    # The pool listing was read whole and holds no oldpool, so the label is not an imported pool and gets no row.
+    assert "oldpool" not in [row["name"] for row in stale["data"]["filesystems"]]
+    assert stale["data"]["filesystems"] == plain["data"]["filesystems"]
+    assert (stale["skipped"], stale["ok"]) == ([], True)
+    # used by still names what the partition carries: the label is a fact about the disk either way.
+    assert ("zfs", "oldpool") in _disk_uses(cli_runner, production_factory, stale_capture, "nvme0n1")
+
+
+def test_a_label_beside_a_listing_that_could_not_read_every_pool_keeps_its_unread_row(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    def stale_with_a_failed_pool(reading: dict[str, Any]) -> None:
+        _stale_label(reading)
+        reading["zfs_pools_error"] = "pool oldpool: Input/output error"
+
+    envelope = _envelope(
+        cli_runner, production_factory, _zfs_fixture_with(tmp_path, "failed", stale_with_a_failed_pool)
+    )
+
+    # A listing that names a pool it could not read leaves that pool absent from the map, so the label may be it.
+    row = next(row for row in envelope["data"]["filesystems"] if row["name"] == "oldpool")
+    assert (row["kind"], row["disks"], row["size_bytes"]) == ("pool", ["nvme0n1"], None)
+    assert envelope["skipped"] == ["zfs-pools: filesystems - pool oldpool: Input/output error"]
