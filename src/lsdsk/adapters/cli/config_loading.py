@@ -133,7 +133,7 @@ def _mapped(load: Callable[[], Config]) -> Config:
     try:
         return load()
     except ConfigError as error:
-        code = ExitCode.PERMISSION_DENIED if refused_for_permission(error) else ExitCode.CONFIG_ERROR
+        code = ExitCode.PERMISSION_DENIED if _refused_for_permission(error) else ExitCode.CONFIG_ERROR
         raise UnusableConfigError(str(error), code=code) from error
     except PermissionError as error:
         raise UnusableConfigError(str(error), code=ExitCode.PERMISSION_DENIED) from error
@@ -141,7 +141,7 @@ def _mapped(load: Callable[[], Config]) -> Config:
         raise UnusableConfigError(str(error), code=ExitCode.CONFIG_ERROR) from error
 
 
-def refused_for_permission(error: BaseException) -> bool:
+def _refused_for_permission(error: BaseException) -> bool:
     """Whether a configuration error was, underneath, a read the system refused.
 
     The layered library reports an unreadable configuration file as its own
@@ -162,9 +162,9 @@ def refused_for_permission(error: BaseException) -> bool:
         ...     except PermissionError as inner:
         ...         raise ValueError("cannot be read") from inner
         ... except ValueError as outer:
-        ...     refused_for_permission(outer)
+        ...     _refused_for_permission(outer)
         True
-        >>> refused_for_permission(ValueError("not valid TOML"))
+        >>> _refused_for_permission(ValueError("not valid TOML"))
         False
     """
     seen: BaseException | None = error
@@ -296,7 +296,6 @@ __all__ = [
     "UnusableConfigError",
     "load_profile_config",
     "refuse_an_ambiguous_mode",
-    "refused_for_permission",
     "report_keys_nothing_reads",
     "report_profile_that_named_nothing",
     "report_values_nothing_uses",

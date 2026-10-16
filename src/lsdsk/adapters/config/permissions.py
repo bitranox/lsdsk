@@ -39,7 +39,7 @@ MODE_KEYS: tuple[str, ...] = tuple(
 ENABLED_KEY = "enabled"
 
 #: The modes of the system-wide layers, which the deploy never takes from a user file.
-SYSTEM_MODE_KEYS: tuple[str, ...] = tuple(key for key in MODE_KEYS if not key.startswith("user_"))
+_SYSTEM_MODE_KEYS: tuple[str, ...] = tuple(key for key in MODE_KEYS if not key.startswith("user_"))
 
 #: The most characters :func:`~lsdsk.domain.text.visible_text` writes for one, ``\UNNNNNNNN``.
 _LONGEST_ESCAPE = 10
@@ -137,7 +137,7 @@ def _why_the_deploy_ignores(key: str, layer: object) -> str | None:
     """The reason the deploy leaves `key` out when `layer` gave it, or ``None`` when it uses it."""
     if layer == _DOTENV_LAYER:
         return _NOT_FROM_DOTENV
-    if layer == _USER_LAYER and key in SYSTEM_MODE_KEYS:
+    if layer == _USER_LAYER and key in _SYSTEM_MODE_KEYS:
         return _NOT_FROM_A_USER_FILE
     return None
 
@@ -253,7 +253,6 @@ __all__ = [
     "ENABLED_KEY",
     "MODE_KEYS",
     "PERMISSIONS_SECTION",
-    "SYSTEM_MODE_KEYS",
     "ModeTheDeployIgnores",
     "PermissionDefaults",
     "PermissionReading",
