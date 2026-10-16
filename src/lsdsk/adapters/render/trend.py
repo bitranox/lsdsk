@@ -18,6 +18,7 @@ from rich.text import Text
 
 from ...domain.enums import Align
 from ...domain.history import CounterKind, Trend, TrendVerdict, identity_of, trend_for
+from ...domain.rate_text import format_rate
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_WEAR_ROW_FLOOR_PERCENT
 from . import theme
 from .layout import Column
@@ -82,22 +83,6 @@ TREND_COLUMNS: tuple[Column, ...] = (
     Column("rate", "per hour", align=Align.RIGHT, priority=2),
     Column("verdict", "verdict", priority=0, flexible=True, min_width=14, never_dropped=True),
 )
-
-
-def format_rate(per_hour: float) -> str:
-    """Render a rate, dropping a decimal that would be noise.
-
-    Args:
-        per_hour: The rate against the drive's own power-on hours.
-
-    Returns:
-        The figure as a reader would quote it.
-    """
-    if per_hour >= 10:  # noqa: PLR2004 - a tenth of an error an hour is meaningless above ten
-        return f"{per_hour:.0f}"
-    if per_hour >= 0.1:  # noqa: PLR2004 - below this a fixed decimal reads as zero
-        return f"{per_hour:.1f}"
-    return f"{per_hour:.3f}"
 
 
 def verdict_style(verdict: TrendVerdict) -> str:
@@ -353,7 +338,6 @@ __all__ = [
     "WATCHED",
     "WEAR_WORTH_PLANNING_PERCENT",
     "TrendRow",
-    "format_rate",
     "render_trend",
     "trend_row",
     "trend_rows",

@@ -43,6 +43,7 @@ from .models import (
 )
 from .pcie_text import format_gbytes, format_pcie_sentence, format_usb_sentence
 from .placement import achievable_pcie, best_slot, free_slot_for, gain_in, seat_of
+from .rate_text import format_rate
 from .thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
@@ -991,10 +992,12 @@ def refine(finding: Finding, trend: Trend | None) -> Finding:
     if trend is None:
         return finding
     if trend.is_rising and trend.per_hour is not None and trend.span_hours:
-        rate = f"{trend.per_hour:.1f}" if trend.per_hour < 10 else f"{trend.per_hour:.0f}"  # noqa: PLR2004 - a decimal is noise above ten an hour
+        # Written by the trend table's own formatter, so the rate this sentence
+        # quotes is the figure in the table beside it, and a slow rise is never
+        # "about 0.0 an hour".
         measured = (
             f" It gained {trend.delta} in the last {trend.span_hours} power-on hours, "
-            f"about {rate} an hour, so this is happening now rather than in the past."
+            f"about {format_rate(trend.per_hour)} an hour, so this is happening now rather than in the past."
         )
         return finding.with_changes(
             severity=one_step_in_severity(finding.severity, towards_urgent=True),

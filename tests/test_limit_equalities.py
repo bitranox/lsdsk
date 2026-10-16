@@ -12,11 +12,11 @@ from __future__ import annotations
 import pytest
 
 from lsdsk.adapters.render import detail, theme
-from lsdsk.adapters.render.trend import format_rate
 from lsdsk.domain.diagnostics import diagnose_health
 from lsdsk.domain.enums import BusType, DiskKind, Severity
 from lsdsk.domain.history import DiskSeries, Sample
 from lsdsk.domain.models import Disk, Health, Inventory
+from lsdsk.domain.rate_text import format_rate
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 
 
