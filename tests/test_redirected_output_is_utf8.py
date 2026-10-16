@@ -194,3 +194,70 @@ def test_a_usage_error_a_terminal_cannot_encode_degrades_rather_than_crashing(
 
     assert code == 2
     assert "display.grüße-?" in buffer.getvalue().decode("latin-1")
+
+
+class _CannotSay(io.TextIOWrapper):
+    """A stream whose ``isatty`` fails, as one on a closed or detached descriptor can."""
+
+    def isatty(self) -> bool:
+        raise OSError("isatty refused")
+
+
+class _RecordingErrors(io.TextIOWrapper):
+    """A stream that remembers the encoding and error handler in force at every write."""
+
+    def __init__(self, buffer: io.BytesIO, *, encoding: str, errors: str) -> None:
+        super().__init__(buffer, encoding=encoding, errors=errors, newline="")
+        self.seen: list[tuple[str, str | None]] = []
+
+    def write(self, text: str) -> int:
+        self.seen.append((self.encoding, self.errors))
+        return super().write(text)
+
+
+def test_an_error_handler_alone_in_pythonioencoding_is_not_an_encoding_asked_for(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    production_factory: Callable[[], AppServices],
+) -> None:
+    """``PYTHONIOENCODING=:replace`` names a handler and no encoding, so the stream is still UTF-8."""
+    monkeypatch.setenv("PYTHONIOENCODING", ":replace")
+    buffer = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(buffer, encoding="latin-1", errors="strict", newline=""))
+
+    code = main(_disks_as_json(tmp_path), services_factory=production_factory)
+
+    assert code == 0
+    assert _hostname_in(buffer.getvalue()) == HOSTNAME
+
+
+def test_the_re_encoded_stream_keeps_its_error_handler(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    production_factory: Callable[[], AppServices],
+) -> None:
+    """Naming only an encoding resets the handler to ``strict``; the one the stream had is kept."""
+    monkeypatch.delenv("PYTHONIOENCODING", raising=False)
+    stream = _RecordingErrors(io.BytesIO(), encoding="latin-1", errors="backslashreplace")
+    monkeypatch.setattr(sys, "stdout", stream)
+
+    code = main(_disks_as_json(tmp_path), services_factory=production_factory)
+
+    assert code == 0
+    assert stream.seen, "nothing was written, so the handler in force was never observed"
+    assert set(stream.seen) == {("utf-8", "backslashreplace")}, stream.seen
+
+
+def test_a_stream_that_cannot_say_whether_it_is_a_terminal_keeps_its_encoding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    production_factory: Callable[[], AppServices],
+) -> None:
+    """Not knowing is treated as a terminal: the stream writes as it always did, never re-encoded."""
+    monkeypatch.delenv("PYTHONIOENCODING", raising=False)
+    buffer = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", _CannotSay(buffer, encoding="latin-1", errors="strict", newline=""))
+
+    main(_disks_as_json(tmp_path), services_factory=production_factory)
+
+    assert b'"gr\xfc\xdfe-?"' in buffer.getvalue()
