@@ -10,7 +10,8 @@ refuses: the root group does so before the subcommand has parsed its ``--format`
 
 Contents:
     * :class:`UnusableConfigError` - a refusal, and the exit code it leaves with.
-    * :func:`load_profile_config` - load, mapping each failure to its code.
+    * :func:`load_profile_config` - load, mapping each failure to its code, past a file a
+      forced deploy replaces.
     * :func:`refuse_an_ambiguous_mode` - stop on an int mode that could be octal digits.
     * :func:`report_profile_that_named_nothing` - warn about a profile nothing answered to.
     * :func:`report_keys_nothing_reads` - warn about a file key nothing reads.
@@ -26,8 +27,10 @@ from typing import TYPE_CHECKING
 
 from lib_layered_config import ConfigError
 
+from lsdsk.adapters.config.deploy import paths_the_deploy_writes
 from lsdsk.adapters.config.history import read_history_settings
 from lsdsk.adapters.config.known_keys import nearest_known_key, unknown_owned_keys
+from lsdsk.adapters.config.loader import read_config_skipping, unparsable_files
 from lsdsk.adapters.config.permissions import read_permission_defaults
 from lsdsk.adapters.config.profiles import contributed_layers, existing_profiles, nearest_profile
 from lsdsk.adapters.config.tunables import read_display_settings, read_thresholds
@@ -37,11 +40,13 @@ from . import safe_console
 from .exit_codes import ExitCode
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from lib_layered_config import Config
 
     from lsdsk.composition import AppServices
+    from lsdsk.domain.enums import DeployTarget
 
 
 class UnusableConfigError(Exception):
@@ -67,7 +72,13 @@ class UnusableConfigError(Exception):
         self.code = code
 
 
-def load_profile_config(services: AppServices, *, profile: str | None, env_file: str | None) -> Config:
+def load_profile_config(
+    services: AppServices,
+    *,
+    profile: str | None,
+    env_file: str | None,
+    overwrites: tuple[DeployTarget, ...] = (),
+) -> Config:
     """Load the configuration for `profile`, or refuse with the code its failure means.
 
     ``78`` is ``EX_CONFIG``: what broke is a file the reader wrote. A read the system refused
@@ -75,10 +86,19 @@ def load_profile_config(services: AppServices, *, profile: str | None, env_file:
     library's own error and the ``OSError`` family are caught, so a bug in the loader still
     reaches the handler that honours ``--traceback``.
 
+    A forced deploy is the one run a file that does not parse may not stop, when it is a file
+    that deploy rewrites: the deploy exists to replace it, and its own read of the permission
+    modes already skips every file it writes. Such a file is skipped here too, with one
+    warning naming it, and the configuration is the one the deploy itself reads (see
+    :func:`~lsdsk.adapters.config.loader.read_config_skipping`). An unreadable file, and a
+    broken file the deploy does not rewrite, still refuse.
+
     Args:
         services: The wired adapters, whose loader is called.
         profile: The profile to load, or ``None`` for none.
         env_file: An explicit ``.env`` path, or ``None`` for the loader's own search.
+        overwrites: The targets a ``config-deploy --force`` of this run rewrites; empty for
+            any other run.
 
     Returns:
         The merged configuration.
@@ -89,7 +109,29 @@ def load_profile_config(services: AppServices, *, profile: str | None, env_file:
             reason.
     """
     try:
-        return services.get_config(profile=profile, dotenv_path=env_file)
+        return _mapped(lambda: services.get_config(profile=profile, dotenv_path=env_file))
+    except UnusableConfigError as refused:
+        if refused.code is not ExitCode.CONFIG_ERROR or not overwrites:
+            raise
+        broken = unparsable_files(paths_the_deploy_writes(overwrites, profile=profile))
+        if not broken:
+            raise
+    for _path, reason in broken:
+        safe_console.echo(
+            f"Warning: {reason}. config-deploy --force replaces it, so it is skipped while reading the configuration.",
+            err=True,
+        )
+    return _mapped(lambda: read_config_skipping(profile=profile, skip=frozenset(path for path, _ in broken)))
+
+
+def _mapped(load: Callable[[], Config]) -> Config:
+    """Run `load`, turning each way a configuration read fails into the refusal it means.
+
+    Raises:
+        UnusableConfigError: See :func:`load_profile_config`.
+    """
+    try:
+        return load()
     except ConfigError as error:
         code = ExitCode.PERMISSION_DENIED if refused_for_permission(error) else ExitCode.CONFIG_ERROR
         raise UnusableConfigError(str(error), code=code) from error

@@ -88,7 +88,14 @@ def _print_version(ctx: click.Context, param: click.Parameter, value: bool) -> N
     ctx.exit()
 
 
-def _load_or_refuse(ctx: click.Context, services: AppServices, *, profile: str | None, env_file: str | None) -> Config:
+def _load_or_refuse(
+    ctx: click.Context,
+    services: AppServices,
+    *,
+    profile: str | None,
+    env_file: str | None,
+    overwrites: tuple[DeployTarget, ...],
+) -> Config:
     """Load the configuration, or refuse as a CONFIGURATION error and say so.
 
     A configuration file this tool cannot parse used to escape as the layered
@@ -116,6 +123,8 @@ def _load_or_refuse(ctx: click.Context, services: AppServices, *, profile: str |
         services: The wired adapters, whose loader is called.
         profile: The profile asked for on the command line.
         env_file: An explicit ``.env`` path, or ``None``.
+        overwrites: The targets a ``config-deploy --force`` of this run rewrites, whose
+            files may not stop the read that runs before them.
 
     Returns:
         The merged configuration.
@@ -137,7 +146,7 @@ def _load_or_refuse(ctx: click.Context, services: AppServices, *, profile: str |
     # The mapping of a failed load to its code lives with the rest of what is decided about a
     # loaded configuration, in config_loading.
     try:
-        return load_profile_config(services, profile=profile, env_file=env_file)
+        return load_profile_config(services, profile=profile, env_file=env_file, overwrites=overwrites)
     except UnusableConfigError as refused:
         _refuse_before_the_run(ctx, refused.message, refused.code)
 
@@ -472,9 +481,9 @@ def cli(
     services = cast("AppServices", ctx.obj())
     # The subcommand's own --profile wins, as it always did, and is read before anything is
     # loaded: loading the root's first answered for a configuration the run never used.
-    named_by_subcommand = _read_subcommand_request(ctx).profile
-    profile = named_by_subcommand if named_by_subcommand is not None else profile
-    config = _load_or_refuse(ctx, services, profile=profile, env_file=env_file)
+    request = _read_subcommand_request(ctx)
+    profile = request.profile if request.profile is not None else profile
+    config = _load_or_refuse(ctx, services, profile=profile, env_file=env_file, overwrites=request.overwrites)
     report_profile_that_named_nothing(config, profile)
     report_keys_nothing_reads(config)
     config = _apply_cli_overrides(config, set_overrides)

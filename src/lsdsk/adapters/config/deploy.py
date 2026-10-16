@@ -7,7 +7,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from lib_layered_config import DeployModeError, DeployPermissionsError, deploy_config, generate_examples
-from lib_layered_config.examples.deploy import DeployAction
+from lib_layered_config.adapters.path_resolvers.default import DefaultPathResolver
+from lib_layered_config.examples.deploy import (
+    DeployAction,
+    DeploymentStrategy,
+    LinuxDeployment,
+    MacDeployment,
+    WindowsDeployment,
+)
 
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.loader import get_default_config_path, validate_profile
@@ -17,6 +24,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from lsdsk.domain.deployment import DeployRequest
+    from lsdsk.domain.enums import DeployTarget
 
 _DEPLOYED_ACTIONS = frozenset({DeployAction.CREATED, DeployAction.OVERWRITTEN})
 
@@ -73,6 +81,57 @@ def _refuse_a_directory_at_a_target(destinations: Iterable[Path]) -> None:
         if destination.is_dir():
             message = f"{destination} is a directory, not a configuration file; move it away to deploy there"
             raise ConfigurationError(message)
+
+
+def _deployment_for(resolver: DefaultPathResolver) -> DeploymentStrategy:
+    """The library's destination strategy for the resolver's platform, chosen as the library chooses it.
+
+    The library's own chooser is private; its three strategies are not, and this is the same
+    rule (``win*`` is Windows, ``darwin`` is macOS, anything else is Linux). The test that
+    compares :func:`paths_the_deploy_writes` with what a real deploy reports writing holds the
+    two together on each platform CI runs.
+    """
+    if resolver.platform.startswith("win"):
+        return WindowsDeployment(resolver)
+    if resolver.platform == "darwin":
+        return MacDeployment(resolver)
+    return LinuxDeployment(resolver)
+
+
+def paths_the_deploy_writes(targets: Iterable[DeployTarget], *, profile: str | None) -> frozenset[Path]:
+    """Every file a deploy of `targets` writes, resolved, whether or not it exists yet.
+
+    The set lib_layered_config skips when it reads the permission modes, so that a file never
+    decides its own replacement: each target's configuration file, and in its companion ``.d``
+    directory a copy of every file the package ships in its own.
+
+    Args:
+        targets: The layers deployed to.
+        profile: The profile deployed into, or ``None``.
+
+    Returns:
+        The resolved paths.
+
+    Raises:
+        ValueError: `profile` is not a valid profile name.
+    """
+    resolver = DefaultPathResolver(
+        vendor=__init__conf__.LAYEREDCONF_VENDOR,
+        app=__init__conf__.LAYEREDCONF_APP,
+        slug=__init__conf__.LAYEREDCONF_SLUG,
+        profile=profile,
+    )
+    strategy = _deployment_for(resolver)
+    source_dot_d = get_default_config_path().with_suffix(".d")
+    shipped = sorted(entry.name for entry in source_dot_d.iterdir() if entry.is_file())
+    written: set[Path] = set()
+    for target in targets:
+        destination = strategy.destination_for(target.value)
+        if destination is None:
+            continue
+        written.add(destination.resolve())
+        written.update((destination.with_suffix(".d") / name).resolve() for name in shipped)
+    return frozenset(written)
 
 
 def deploy_configuration(request: DeployRequest) -> list[Path]:
@@ -250,4 +309,5 @@ def generate_examples_refusing_directories(
 __all__ = [
     "deploy_configuration",
     "generate_examples_refusing_directories",
+    "paths_the_deploy_writes",
 ]
