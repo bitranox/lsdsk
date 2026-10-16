@@ -1135,7 +1135,7 @@ def _devices_accessible(nodes: list[str]) -> bool:
     return any(_probe(Path(f"/dev/{node}"), Path.exists) for node in nodes) if nodes else True
 
 
-def free_extent_devices(reading: Mapping[str, Any]) -> frozenset[str] | None:
+def free_extent_devices(reading: Mapping[str, Any]) -> frozenset[str]:
     """Every ``maj:min`` the filesystems section can keep a row for, worked out from the reading so far.
 
     ``statvfs`` and the free-space walk skip a filesystem no inventoried disk
@@ -1148,15 +1148,15 @@ def free_extent_devices(reading: Mapping[str, Any]) -> frozenset[str] | None:
         reading: The reading as ``read_system`` has built it, before the walk.
 
     Returns:
-        The device numbers, none in a container, or ``None`` when the reading
-        does not type, which walks every filesystem rather than guess: the
-        run's own parse of the same reading refuses it later with the real
-        reason.
+        The device numbers; none in a container, and none when the reading
+        does not type, since the run's own parse of the same reading refuses
+        it with the real reason and a walk of every mount, a network one that
+        hangs among them, would only delay that.
     """
     try:
         capture = LinuxCapture.model_validate(reading)
     except ValidationError:
-        return None
+        return frozenset()
     if not builds_filesystems(classify(capture.environment).environment):
         return frozenset()
     return frozenset(disks_by_device(capture))

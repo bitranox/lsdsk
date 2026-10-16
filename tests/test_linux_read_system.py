@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import pytest
+from pydantic import ValidationError
+
 from lsdsk.adapters.hw.linux import reader
 from lsdsk.adapters.hw.linux.capture import LinuxCapture
 
@@ -145,3 +148,14 @@ def test_each_listed_pool_s_layout_reaches_the_capture() -> None:
     layouts = LinuxCapture.model_validate(reading).zfs_pool_layouts
     assert layouts is not None
     assert [(vdev.kind, vdev.dev) for vdev in layouts["tank"].vdevs or ()] == [("disk", "8:1")]
+
+
+def test_a_reading_that_will_be_refused_stats_and_walks_no_filesystem() -> None:
+    # A reading that does not type is refused as a whole once it is parsed, so a statvfs or a free-space walk
+    # of every mount - a network one that hangs among them - would only delay that refusal.
+    recorded = _Recorded()
+    reading = reader.read_system(_readers(recorded, environment={"hypervisor_flag": []}))
+
+    with pytest.raises(ValidationError, match="hypervisor_flag"):  # control: the run is refused for this reading
+        LinuxCapture.model_validate(reading)
+    assert (recorded.space, recorded.free_extents) == ([[]], [[]])

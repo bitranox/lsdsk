@@ -284,9 +284,7 @@ def _wanted(row: Mapping[str, str | bool], settled: Collection[str]) -> _Target 
     return _Target(dev, mountpoint)
 
 
-def rows_on_disks(
-    rows: Sequence[Mapping[str, str | bool]], devices: Collection[str] | None
-) -> list[Mapping[str, str | bool]]:
+def rows_on_disks(rows: Sequence[Mapping[str, str | bool]], devices: Collection[str]) -> list[Mapping[str, str | bool]]:
     """Every row of each filesystem that lives on an inventoried disk, so nothing else is walked.
 
     A filesystem is kept by the rule the filesystems section keeps a row by -
@@ -296,14 +294,11 @@ def rows_on_disks(
 
     Args:
         rows: What ``mounts.read_mounts`` returned.
-        devices: Every ``maj:min`` that lives on an inventoried disk, or
-            ``None`` when that could not be worked out, which keeps every row.
+        devices: Every ``maj:min`` that lives on an inventoried disk.
 
     Returns:
         The kept rows, in their own order.
     """
-    if devices is None:
-        return list(rows)
     kept = {row.get("dev") for row in rows if row.get("dev") in devices or row.get("source_dev") in devices}
     return [row for row in rows if row.get("dev") in kept]
 

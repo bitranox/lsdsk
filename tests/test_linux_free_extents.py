@@ -365,7 +365,6 @@ def test_every_mountpoint_of_a_kept_filesystem_stays_so_a_refusal_can_fall_back(
     # One row whose source names a disk keeps its device's every row, hidden ones included, in order.
     assert freespace.rows_on_disks(rows, frozenset({"7:0"})) == rows
     assert freespace.rows_on_disks(rows, frozenset({"8:1"})) == [rows[0], rows[2]]
-    assert freespace.rows_on_disks(rows, None) == rows
     assert freespace.rows_on_disks(rows, frozenset()) == []
 
 
@@ -395,8 +394,8 @@ def test_the_reader_asks_for_exactly_the_devices_the_filesystems_section_keeps()
     assert devices == {"8:0", "8:1", "253:0"}  # the crypt or LVM device above the partition too, never the loop
 
 
-def test_a_reading_that_does_not_parse_walks_every_filesystem() -> None:
-    assert reader.free_extent_devices({**_raw_reading(), "block": "not a mapping"}) is None
+def test_a_reading_that_does_not_parse_names_no_filesystem_to_walk() -> None:
+    assert reader.free_extent_devices({**_raw_reading(), "block": "not a mapping"}) == frozenset()
 
 
 class _Descriptors:
