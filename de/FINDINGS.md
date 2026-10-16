@@ -179,7 +179,7 @@ also offensichtlich, bevor Sie das Gehäuse öffnen.
 
 ```
 Micro-Star International Co., Ltd. MEG Z690 ACE (MS-7D27)   18 ports   3 free
-      port          slot  capable              running             occupant                                                                             needs                 verdict
+   port          slot  capable              running             occupant                                                                             needs                 verdict
    0000:00:01.0  #1    Gen5x8 (31.50 GB/s)  Gen3x8 (7.88 GB/s)  Advanced Micro Devices, Inc. [AMD/ATI] Hawaii XT / Grenada XT [Radeon R9 290X/390X]  Gen3x16 (15.76 GB/s)  in use (graphics)
    0000:00:01.1  #2    Gen5x8 (31.50 GB/s)  Gen2x8 (4.00 GB/s)  Intel Corporation 82599ES 10-Gigabit SFI/SFP+ Network Connection                     Gen2x8 (4.00 GB/s)    spare 27.50 GB/s
    0000:00:1c.0  #0    Gen3x1 (0.98 GB/s)   -                   empty                                                                                -                     FREE
@@ -234,7 +234,8 @@ CD-ROM- oder ein RAM-Laufwerk - keines von beiden könnte ohnehin hinter dem Buc
 Laufwerks sitzen. Ein Laufwerk ohne Pfad, das als EFI-Systempartition gelesen wurde, blockiert
 sie trotzdem: Die ESP hat absichtlich keinen Buchstaben, und eine ESP auf unbekannter Platte
 könnte die Startmarke jeder Platte sein. Ein Laufwerk, dessen eigene Pfadliste sich nicht lesen
-ließ, blockiert die Aussage ausnahmslos. Ein Container zeigt immer `-`: Die Nutzung seiner Platten durch den Wirt ist
+ließ, blockiert sie ebenfalls, es sei denn, seine Platten-Extents wurden gelesen und nennen nur
+Platten, die dieser Lauf nicht auflistet. Ein Container zeigt immer `-`: Die Nutzung seiner Platten durch den Wirt ist
 eine Tatsache über den Wirt, von innen eines gemeinsamen Kernels nicht sichtbar.
 
 Der Start wird auf jeder Plattform anders entschieden, weil beide unterschiedliche Belege

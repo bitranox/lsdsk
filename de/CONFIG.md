@@ -285,8 +285,14 @@ enabled = true
 
 Einen Modus aus einer `.env`-Datei liest das Ausrollen nie, und einen `app_*`- oder `host_*`-Modus
 liest es nur aus den mitgelieferten Vorgaben, den App- und Host-Dateien, der Umgebung und `--set`,
-nie aus einer Benutzer-Konfigurationsdatei. `config-deploy` nennt jeden solchen Schlüssel und die
-Datei, aus der er kam, in einer Warnung, damit er nicht wie angewendet wirkt.
+nie aus einer Benutzer-Konfigurationsdatei. Wo ein solcher Schlüssel etwas entschieden hätte - sein Wert weicht von dem
+ab, den das Ausrollen liest -, nennt `config-deploy` ihn und die Datei, aus der er kam, in einer
+Warnung, nachdem das Ausrollen gelaufen ist, damit er nicht wie angewendet wirkt. Eine
+Benutzerdatei, die `config-deploy` selbst geschrieben hat, trägt die ausgelieferten Modi und löst
+keine Warnung aus, und ein abgewiesenes Ausrollen antwortet allein mit seiner Abweisung. Nichts
+wird genannt, wo das Ausrollen keinen konfigurierten Modus liest: unter Windows, mit
+`--no-permissions` oder `enabled = false`, oder wenn `--dir-mode` und `--file-mode` beide
+angegeben sind.
 
 ### Beispieldateien erzeugen
 
@@ -627,6 +633,11 @@ Es ist eine Warnung und keine Zurückweisung, der Lauf berichtet also weiterhin
 über die Hardware vor Ihnen. Ein Verzeichnis, das zwar existiert, aber nichts
 Lesbares enthält, bekommt sie ebenfalls, denn es ist auf genau dieselbe Weise
 ein stiller Rückfall.
+
+Es fehlen nur die eigenen Dateien des Profils: die ausgelieferten Vorgaben, eine
+`.env`-Datei, die Umgebung und `--set` gelten weiterhin. Das erste
+`config-deploy --profile X`, das Profil X anlegt, gibt die Zeile ebenfalls aus,
+denn X enthielt nichts, als der Lauf es geladen hat; der nächste Lauf nicht.
 
 ---
 

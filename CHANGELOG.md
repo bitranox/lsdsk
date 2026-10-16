@@ -11,6 +11,72 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   readers over it (`read_pci` and `read_environment` on Linux, the PCI entry builder on Windows)
   are split into helpers with the same output, key order included.
 
+### Fixed
+
+- **On Linux a disk is marked `boot` only where the root pool's own configuration places a member.**
+  A VM guest's root pool named like the host's (`rpool`) on a host LVM volume no longer marks the
+  host's data disk under that volume as a boot disk. Captures taken before pool layouts were recorded
+  keep judging by member labels.
+- **A ZFS pool member whose configured path now names a device udev reads as something else**
+  (another filesystem, or a member of a different pool, as when a replacement disk took a faulted
+  member's `/dev` name) is no longer drawn as part of the pool. The pool is found by its GUID, or
+  refused as untraced, instead of being placed on the wrong disk.
+- A ZFS pool whose members are loop devices, zram or zvol partitions no longer produces a false
+  `zfs-pool-disks` refusal (and `ok: false`) on a live run.
+- When the ZFS pool configuration listing cannot be read while the pool listing can, pools are placed
+  by their member labels. Before, every pool was refused as untraced.
+- A free-space walk that fails partway through the space map (an I/O error, a damaged allocation
+  group) is reported once instead of being repeated at every further bind mountpoint of the same
+  filesystem. A failed open or a refused first call is still retried at the next mountpoint.
+- A FUSE mount in a capture written by an older lsdsk no longer shows on the disk its source text
+  names, in `used by` or as a filesystem row, on `--replay`.
+- A reading that will be refused as malformed no longer stats and walks every mount first, so a
+  hanging NFS mount among them cannot delay the refusal.
+- **On Windows a drive whose SMART data names its temperature keeps the storage stack's warning and
+  critical thresholds**, so a SATA drive running above the stack's warning threshold is reported. The
+  drive's own figures still win wherever it has them.
+- **A Windows run whose volume list could not be enumerated says so**: `skipped` carries
+  `volume: filesystems - could not list the volumes (Win32 error N)` and `ok` is false. Before, it
+  reported a complete run.
+- A live Windows run and the replay of its own snapshot name and order volumes identically on a
+  machine with eleven or more volumes.
+- A Windows volume whose paths could not be read, but whose extents name only disks the scan does not
+  list, no longer leaves every disk's used-by undecided or refuses the filesystems section.
+- A disk Windows would not number no longer pushes every other column off the disks table, the health
+  table or the disk tree. Its long interface path is cut with `>`; the JSON `path` field keeps it whole.
+- A Windows disk-interface list that stopped part-way is no longer counted as "1 disk interface not
+  read". The human page says "Not every disk interface was listed: <reason>." beside the count of
+  interfaces whose path could not be read.
+- **`lsdsk config --profile X` and `lsdsk config-deploy --profile X` load profile X once, exactly as
+  `lsdsk --profile X ...` does.** They first loaded and judged the configuration without the profile,
+  so a broken file outside the profile stopped them with 78 while the global spelling ran, and they
+  warned about files the run never used. A refused `[lib_log_rich]` value in X's own files is now
+  named, `--profile X config --profile X` says once (not twice) that X named nothing, and a malformed
+  file in X together with a `--set` section given as one value exits 78 in every spelling.
+- **`config-deploy --force` replaces a broken configuration file it rewrites instead of refusing over
+  it.** A file that is not valid TOML and that this deploy writes is skipped while reading, with one
+  warning naming it, and the fresh copy replaces it, with or without `--profile`. An unreadable file,
+  and a broken file the deploy does not rewrite, still refuse. That one repair run reads no `.env`
+  file.
+- `config-deploy` no longer names the app and host modes of a user file it deployed itself. A mode is
+  named only where the value in force differs from the one the deploy reads, and only after the deploy
+  has run, so a refused deploy answers with its refusal alone.
+- `config-deploy --force` that finds every file already up to date says so instead of advising
+  `--force`.
+- A `scrub_patterns` entry with `=` inside a regex cut at a comma that closes later
+  (`k=a{1,token=.+,3}`) is no longer announced as ignored; only the cut tail (`3}`) is.
+- **`lsdsk trend` keeps every row on one line at any terminal width.** On a narrow terminal it cut a
+  seven-digit total short and dropped the verdict column. It now gives up whole columns (rate, then
+  span and change, then the counter name) and keeps every total and verdict.
+- **The interactive topology page's node panel marks a register-default link `Gen1x1*`**, with its
+  legend, as the tree row above it does. It priced that link at 0.25 GB/s.
+- The column headings of `lsdsk slots` and `lsdsk smart` sit over their own columns; they sat three
+  characters to the right. Both tables keep every row on one line on a narrow terminal, where a
+  wrapped SMART row's tail read as a separate row.
+- A rising-counter finding states its rate as the trend table does. One error in thirty hours read
+  "about 0.0 an hour"; a very slow rate is never written as zero.
+- The topology board line no longer wraps when the board name uses double-width (CJK) characters.
+
 ## [1.9.2] 2026-10-16 12:30:18
 
 ### Changed

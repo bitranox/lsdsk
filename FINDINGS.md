@@ -155,7 +155,7 @@ is named with the figure, so a swap is obvious before you open the case.
 
 ```
 Micro-Star International Co., Ltd. MEG Z690 ACE (MS-7D27)   18 ports   3 free
-      port          slot  capable              running             occupant                                                                             needs                 verdict
+   port          slot  capable              running             occupant                                                                             needs                 verdict
    0000:00:01.0  #1    Gen5x8 (31.50 GB/s)  Gen3x8 (7.88 GB/s)  Advanced Micro Devices, Inc. [AMD/ATI] Hawaii XT / Grenada XT [Radeon R9 290X/390X]  Gen3x16 (15.76 GB/s)  in use (graphics)
    0000:00:01.1  #2    Gen5x8 (31.50 GB/s)  Gen2x8 (4.00 GB/s)  Intel Corporation 82599ES 10-Gigabit SFI/SFP+ Network Connection                     Gen2x8 (4.00 GB/s)    spare 27.50 GB/s
    0000:00:1c.0  #0    Gen3x1 (0.98 GB/s)   -                   empty                                                                                -                     FREE
@@ -205,7 +205,8 @@ still blocks the claim unless it has no path at all or its drive type is a CD-RO
 disk, neither of which could sit behind a volume's letter anyway. A volume with no path that
 was read as the EFI system partition still blocks it: the ESP carries no letter by design, and
 an ESP whose disk is unknown could be any disk's boot mark. A volume whose own path list
-could not be read blocks the claim outright, with no exception. A container always reads `-`:
+could not be read blocks it as well, unless its disk extents were read and name only disks this
+scan does not list. A container always reads `-`:
 the host's use of its disks is a fact about the host, invisible from inside a shared kernel.
 
 Boot is decided differently on each platform, because the two keep different evidence. On Linux

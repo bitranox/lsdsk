@@ -105,11 +105,14 @@ device refused while it exists is a refusal of the reading `zfs-pools`, reported
 `filesystems`, and draws no row. A listed pool's members come from its own configuration: each leaf
 vdev's device number is traced to its disk through the same holder closure the used-by column
 follows, so a pool on dm-crypt, LVM or md reaches the disks beneath it. A member the configuration
-could not follow falls back to the udev labels, matched by the pool's GUID and never by its name. A
-pool whose members are all files or virtual devices (loop, zram) has no row and no refusal, like any
+could not follow - which includes a configured path that now names a device udev reads as another
+filesystem or another pool's member - falls back to the udev labels, matched by the pool's GUID and
+never by its name. A pool whose members are all files or virtual devices (loop, zram, a zvol
+partition) has no row and no refusal, like any
 other filesystem on no inventoried disk; a listed pool that a reading which was not taken could have
 placed is a refusal of the reading `zfs-pool-disks` and draws no row. A capture taken before the
-configuration was recorded traces members by label name, as it did then; there a label naming a
+configuration was recorded traces members by label name, as it did then, and so does a run whose
+configuration listing could not be read while its pool listing could; there a label naming a
 pool that a fully read pool listing does not hold (a destroyed or exported pool's, left on a
 reused disk) gives no row, while beside a listing not read, or one that could not read some pool,
 the label keeps its unread row. A refused
@@ -138,11 +141,14 @@ free-to-caller bytes, used being the one less the other), so all three share one
 per-user quota that is the quota, and the volume-wide free figure is recorded but not drawn; the
 free-space figures of ADR 0006 are the whole volume's, so the row carries `space_is_quota` and the
 detail panel says so. A volume whose paths could not be read, or one with a path that would not open
-or report its disk extents, is a refusal of the run-wide reading `volume`, named by its drive letter
-or, without one, by its place in the enumeration and the disks it reached. A disk whose number
+or report its disk extents, is a refusal of the run-wide reading `volume` - except a volume whose
+paths alone failed and whose extents name only disks the scan does not list - named by its drive letter
+or, without one, by its place in the enumeration and the disks it reached; a volume list that
+could not be enumerated at all is a refusal of the same reading. A disk whose number
 Windows would not report is the refused reading `device-number`. An optical drive, a RAM disk and a
 hidden volume with no path stay silent here; an EFI system partition whose extents failed still
-leaves its disk's used-by cell undecided.
+leaves the used-by cell of every disk that found nothing undecided, since that partition could be on
+any of them.
 
 **The inode rule.** An inode count is a ceiling only where the table is made at format time, which
 the builder decides from the filesystem TYPE and never from the numbers, since a ZFS `f_files`

@@ -22,6 +22,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/domain/models.py` - Typed value objects describing storage topology, health and diagnostics.
 - `src/lsdsk/domain/pci_address.py` - The one order PCI addresses are listed in, compared as numbers.
 - `src/lsdsk/domain/pcie_text.py` - How a finding writes a PCIe figure and a bandwidth in a sentence.
+- `src/lsdsk/domain/rate_text.py` - How a counter's rate is written, in the trend table and in a finding's sentence alike.
 - `src/lsdsk/domain/placement.py` - The one search for a better seat, shared by storage controllers and every other card.
 - `src/lsdsk/domain/size_text.py` - How a capacity is written, on the scale it names, in a table column and a finding's sentence alike.
 - `src/lsdsk/domain/thresholds.py` - Every number the rules judge by, in one place and overridable.

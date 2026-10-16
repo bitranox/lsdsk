@@ -285,8 +285,12 @@ enabled = true
 
 The deploy never reads a mode from a `.env` file, and reads an `app_*` or `host_*` mode only from the
 shipped defaults, the app and host files, the environment and `--set`, never from a user
-configuration file. `config-deploy` names each such key, and the file it came from, in a warning, so
-it does not read as applied.
+configuration file. Where such a key would have decided something - its value differs from the one
+the deploy reads - `config-deploy` names it, and the file it came from, in a warning after the deploy has run,
+so it does not read as applied. A user file `config-deploy` wrote itself carries the shipped modes and draws
+no warning, and a refused deploy answers with its refusal alone. Nothing is named where the deploy reads no
+configured mode: on Windows, with `--no-permissions` or `enabled = false`, or when `--dir-mode` and
+`--file-mode` are both given.
 
 ### Generate Example Configuration Files
 
@@ -614,6 +618,11 @@ does not find `prod` and gets the same line. The warning is a warning rather
 than a refusal, so the run still reports on the hardware in front of you. A
 directory that exists but holds nothing readable gets it too, because it is a
 silent fallback in exactly the same way.
+
+Only the profile's own files are missing: the shipped defaults, a `.env` file, the
+environment and `--set` still apply. The first `config-deploy --profile X` that
+creates profile X prints the line as well, because X held nothing when the run
+loaded it; the next run does not.
 
 ---
 

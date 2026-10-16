@@ -26,11 +26,13 @@ cannot reach: `/` is a dataset, its `maj:min` is anonymous, and sysfs lists no h
 member. The udev database (`/run/udev/data/b<maj>:<min>`, world-readable) records
 `ID_FS_TYPE=zfs_member` and the pool name in `ID_FS_LABEL` for each member partition, and the
 mount's source names the pool (`rpool/ROOT/...`), which joins the two. The reader also looks the
-signature up on stacked devices (dm-crypt, LVM, md). The filesystems section traces a pool's
-members from the pool's own configuration (ADR 0005) and reads these labels only for a capture
-taken without it, or for a member the configuration could not follow, and then only where the
-label's `ID_FS_UUID` is the listed pool's GUID: a guest's pool label on a host volume carries a
-name, not membership. The used-by cell of a disk under a stacked layer still names that layer
+signature up on stacked devices (dm-crypt, LVM, md). The filesystems section and the boot mark
+both trace a pool's members from the pool's own configuration (ADR 0005), so a disk is `boot` only
+where the root pool's configuration places a member. They read these labels only for a capture
+taken without that configuration, for a run whose configuration listing could not be read, or for
+a member the configuration could not follow - including a configured path that now names a device
+udev reads as something else - and then only where the label's `ID_FS_UUID` is the listed pool's
+GUID: a guest's pool label on a host volume carries a name, not membership. The used-by cell of a disk under a stacked layer still names that layer
 (`crypt:<name>`). The capture keeps only what
 this resolution reads, plus a `zfs_member`'s `ID_FS_UUID`: a mount with no block device behind it (tmpfs, NFS, FUSE), any source other
 than a ZFS pool name, a mapping UUID past its type prefix (`LVM-`, `CRYPT-`), and a swap FILE's
@@ -80,8 +82,9 @@ found nothing in use; anything else is content. A capture without the fields ren
 `not mounted`, because absence of a reading is not a reading of absence. So a disk that resolved
 nothing reads `-` when any source that could have named it went unread: on Linux the udev
 database, the swap list, the disk's or a partition's device number, or its partition list; on
-Windows a volume whose paths could not be read, or one with a path that failed to open or to name
-its disk, unless it is an optical drive or a RAM disk. A Linux disk carrying a btrfs signature
+Windows a volume whose paths could not be read, unless its disk extents were read and name only
+disks the scan does not list, or one with a path that failed to open or to name its disk, unless it
+is an optical drive or a RAM disk. A Linux disk carrying a btrfs signature
 that resolved nothing reads `-` too: mountinfo names only one member of a multi-device btrfs
 filesystem, and joining the others would mean recording the filesystem's UUID. `not mounted`
 itself does not mean a disk is safe to wipe: a disk passed through to a virtual machine, a Storage
