@@ -58,8 +58,17 @@ def _scaled(size_bytes: int, step: float, units: tuple[str, ...]) -> str:
 
 
 def _figure(value: float) -> str:
-    """A scaled value written with one decimal below ten and whole from ten on."""
-    return f"{value:.1f}" if value < _ONE_DECIMAL_BELOW else f"{value:.0f}"
+    """A scaled value written with one decimal below ten and whole from ten on.
+
+    Decided on the figure as written, as the unit is: 9.96 rounds to ``10.0``,
+    a figure that has reached ten, so it is written whole.
+
+    Example:
+        >>> _figure(9.94), _figure(9.96), _figure(10.4)
+        ('9.9', '10', '10')
+    """
+    one_decimal = f"{value:.1f}"
+    return one_decimal if float(one_decimal) < _ONE_DECIMAL_BELOW else f"{value:.0f}"
 
 
 def format_capacity(size_bytes: int) -> str:

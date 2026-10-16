@@ -35,6 +35,8 @@ def test_a_binary_figure_never_reaches_its_own_step(size_bytes: int, written: st
     [
         (999_999_999_999, "1.0TB/931GiB"),
         (999_499_999_999, "999GB/931GiB"),
+        (999_500, "1.0MB/976KiB"),
+        (999_499, "999KB/976KiB"),
         (9_940_000_000, "9.9GB/9.3GiB"),
     ],
 )
@@ -57,3 +59,27 @@ def test_no_figure_on_any_scale_is_written_at_its_own_step() -> None:
                     number = figure.rstrip("BKMGTPi")
                     own_step = "1024" if "i" in figure else "1000"
                     assert number != own_step, (step, exponent, offset, text)
+
+
+@pytest.mark.parametrize(
+    ("size_bytes", "written"),
+    [
+        (9_949, "9.9KB/9.7KiB"),
+        (9_960, "10KB/9.7KiB"),
+        (9_999, "10KB/9.8KiB"),
+        (10_000, "10KB/9.8KiB"),
+        (10 * 1000**3 - 1, "10GB/9.3GiB"),
+        (10 * 1024 - 1, "10KB/10KiB"),
+        (10 * 1024**3 - 1, "11GB/10GiB"),
+    ],
+)
+def test_a_figure_that_rounds_to_ten_is_written_whole_like_every_figure_from_ten_on(
+    size_bytes: int, written: str
+) -> None:
+    """The one-decimal rule is about the figure as written, as the step rule is.
+
+    Judged on the unrounded value, 9.96 KB stayed under ten and printed
+    ``10.0KB``, a figure of ten carrying the decimal every figure from ten on
+    drops, so one capacity read two ways in one column.
+    """
+    assert format_capacity_both(size_bytes) == written

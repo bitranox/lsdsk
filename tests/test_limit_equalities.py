@@ -126,7 +126,8 @@ def test_a_projection_of_exactly_one_year_is_given_in_years() -> None:
     [
         (1023, "1023B"),
         (1024, "1.0KiB"),
-        (10 * 1024**3 - 1, "10.0GiB"),
+        (10 * 1024**3 - 1, "10GiB"),
+        (int(9.94 * 1024**3), "9.9GiB"),
         (10 * 1024**3, "10GiB"),
     ],
 )
@@ -139,7 +140,8 @@ def test_a_capacity_changes_unit_and_precision_exactly_at_the_step(size: int, ex
     [
         (999, "999B"),
         (1000, "1.0KB/1000B"),
-        (10 * 1000**3 - 1, "10.0GB/9.3GiB"),
+        (10 * 1000**3 - 1, "10GB/9.3GiB"),
+        (9_940_000_000, "9.9GB/9.3GiB"),
         (10 * 1000**3, "10GB/9.3GiB"),
     ],
 )
