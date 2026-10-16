@@ -184,3 +184,34 @@ def test_untraced_pools_are_refused_in_name_order_whatever_order_the_kernel_list
     assert list(LinuxCapture.model_validate(reading).zfs_pools or {}) == ["rpool", "zulu", "alpha"]  # control
     _, refused = _built(reading)
     assert refused == _untraced("alpha", "zulu")
+
+
+@pytest.mark.parametrize(
+    "found_there",
+    [
+        pytest.param({"fs_type": "ext4"}, id="another-filesystem"),
+        pytest.param({"fs_type": "zfs_member", "fs_label": "rpool", "fs_uuid": "5"}, id="another-pool-s-member"),
+    ],
+)
+def test_a_member_path_now_naming_a_device_udev_reads_as_something_else_is_found_by_the_pool_guid(
+    found_there: dict[str, str],
+) -> None:
+    # rpool's config still names sda1, as it does for a faulted member, while a replacement disk now sits at the
+    # path; the member itself is on nvme0n1p1, where udev reads rpool's own GUID.
+    reading = _host(
+        stacked={},
+        signatures={
+            "8:1": found_there,
+            "259:1": {"fs_type": "zfs_member", "fs_label": "rpool", "fs_uuid": _RPOOL_GUID},
+        },
+    )
+    assert _built(reading) == ([("rpool", ("nvme0n1",))], ())
+    # With nothing carrying the pool's GUID, the pool is no row and says so, rather than a row on the wrong disk.
+    alone = _host(stacked={}, signatures={"8:1": found_there})
+    assert _built(alone) == ([], _untraced("rpool"))
+
+
+def test_a_member_path_whose_device_udev_did_not_read_or_reads_as_this_pool_s_is_followed() -> None:
+    # Controls for the test above: no signature, or one without a GUID, contradicts nothing.
+    for signatures in ({}, {"8:1": {"fs_type": "zfs_member", "fs_label": "rpool"}}):
+        assert _built(_host(stacked={}, signatures=signatures)) == ([("rpool", ("sda",))], ())

@@ -5,9 +5,10 @@ Pure: a capture in, the rows and the refusals that belong to no single row out.
 A capture that carries ``zfs_pool_layouts`` names each listed pool's leaf
 vdevs by device number, read from the pool's own config, so a pool's member is
 the device the kernel's pool names and nothing else. A udev label decides only
-where the config could not: a member whose path did not resolve is looked for
-by its pool's GUID, never by its name, because a guest's root pool on a host
-volume carries a label of the host pool's name. A capture taken before that
+where the config could not: a member whose path did not resolve, or resolved
+to a device udev reads as something else, is looked for by its pool's GUID,
+never by its name, because a guest's root pool on a host volume carries a
+label of the host pool's name. A capture taken before that
 field joins pools to disks by their members' labels alone, as it always did.
 
 System Role:

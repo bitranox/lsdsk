@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from ....domain.enums import Environment, UseKind
 from ....domain.models import DiskUsage, DiskUse
-from .capture import BlockEntry, FilesystemSignature, LinuxCapture, PoolLayout, StackedEntry
+from .capture import BlockEntry, FilesystemSignature, LinuxCapture, PoolLayout, StackedEntry, VdevEntry
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -574,11 +574,14 @@ class PoolLookup(NamedTuple):
         by_device: Every ``maj:min`` on a disk to the disks it lives on (:func:`disks_by_device`).
         virtual: Every ``maj:min`` on a virtual disk (:func:`devices_on_virtual_disks`).
         by_guid: Pool GUID to the disks carrying a member label of it (:func:`disks_by_pool_guid`).
+        signatures: What udev read on each device, keyed by ``maj:min``; empty
+            when the udev database was not read.
     """
 
     by_device: Mapping[str, frozenset[str]]
     virtual: frozenset[str]
     by_guid: Mapping[str, frozenset[str]]
+    signatures: Mapping[str, FilesystemSignature]
 
 
 def pool_lookup(capture: LinuxCapture) -> PoolLookup:
@@ -590,7 +593,36 @@ def pool_lookup(capture: LinuxCapture) -> PoolLookup:
     Returns:
         The tables, built once for every pool of the capture.
     """
-    return PoolLookup(disks_by_device(capture), devices_on_virtual_disks(capture), disks_by_pool_guid(capture))
+    return PoolLookup(
+        disks_by_device(capture),
+        devices_on_virtual_disks(capture),
+        disks_by_pool_guid(capture),
+        capture.signatures or {},
+    )
+
+
+def _read_as_something_else(signature: FilesystemSignature | None, guid: str | None) -> bool:
+    """Whether udev read a vdev's device as something other than a member of this pool.
+
+    A faulted member keeps its path in the pool's config, and a replacement
+    disk can since have taken that path. No signature, or a member label with
+    no GUID to compare, contradicts nothing.
+    """
+    if signature is None or not signature.fs_type:
+        return False
+    if signature.fs_type != _ZFS_MEMBER:
+        return True
+    return bool(guid and signature.fs_uuid and signature.fs_uuid != guid)
+
+
+def _vdev_disks(vdev: VdevEntry, guid: str | None, lookup: PoolLookup) -> frozenset[str] | None:
+    """The disks one leaf vdev sits on: empty for a file or a virtual device, ``None`` where it was not followed."""
+    if vdev.dev is None:
+        return frozenset() if vdev.kind == _FILE_VDEV else None
+    disks = lookup.by_device.get(vdev.dev)
+    if disks is None:
+        return frozenset() if vdev.dev in lookup.virtual else None
+    return None if _read_as_something_else(lookup.signatures.get(vdev.dev), guid) else disks
 
 
 def _followed_disks(layout: PoolLayout | None, lookup: PoolLookup) -> tuple[frozenset[str], bool]:
@@ -600,21 +632,21 @@ def _followed_disks(layout: PoolLayout | None, lookup: PoolLookup) -> tuple[froz
     disks: set[str] = set()
     unfollowed = False
     for vdev in layout.vdevs:
-        if vdev.dev is None:
-            unfollowed |= vdev.kind != _FILE_VDEV
-        elif vdev.dev in lookup.by_device:
-            disks |= lookup.by_device[vdev.dev]
-        elif vdev.dev not in lookup.virtual:
+        found = _vdev_disks(vdev, layout.guid, lookup)
+        if found is None:
             unfollowed = True
+        else:
+            disks |= found
     return frozenset(disks), unfollowed
 
 
 def pool_disks(layout: PoolLayout | None, lookup: PoolLookup) -> tuple[frozenset[str], bool]:
     """The disks one listed pool sits on, by its own config, and whether a member could not be followed.
 
-    A member whose path did not resolve is looked for by its pool's GUID, never
-    by its name, because a guest's root pool on a host volume carries a label of
-    the host pool's name. The filesystems section draws its pool rows from this,
+    A member whose path did not resolve, or resolved to a device udev reads as
+    something other than a member of this pool, is looked for by its pool's
+    GUID, never by its name, because a guest's root pool on a host volume
+    carries a label of the host pool's name. The filesystems section draws its pool rows from this,
     and ``used by`` marks a boot pool's disks from it, so the two cannot disagree.
 
     Args:
