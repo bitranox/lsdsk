@@ -278,18 +278,22 @@ def _health_from(
     decode would fall silently into the ATA branch. Takes the NVMe identity the
     caller decoded too, so one blob is decoded once.
 
-    The storage stack's temperature stands in wherever passthrough gave none:
-    no health at all, or health whose SMART data or log names no temperature.
+    The storage stack fills in whatever passthrough did not read: the whole
+    health when passthrough gave none (only with a sound temperature, since a
+    disk with no reading has no health rather than an empty one), the
+    temperature when its SMART data or log names none, and each threshold it
+    lacks - ATA SMART carries no temperature threshold at all, so without the
+    stack's a SATA drive at 75 C is never judged against anything.
     Passthrough's own figures win wherever it has them.
     """
     passthrough = _passthrough_health(record, bus=bus, nvme_identity=nvme_identity)
-    stack = _stack_temperature(entry)
+    stack = _stack_figures(entry)
     if passthrough is None:
-        return stack
-    if passthrough.temperature_c is not None or stack is None:
+        return None if stack is None or stack.temperature_c is None else stack
+    if stack is None:
         return passthrough
     return passthrough.with_changes(
-        temperature_c=stack.temperature_c,
+        temperature_c=_first_known(passthrough.temperature_c, stack.temperature_c),
         temperature_warning_c=_first_known(passthrough.temperature_warning_c, stack.temperature_warning_c),
         temperature_critical_c=_first_known(passthrough.temperature_critical_c, stack.temperature_critical_c),
     )
@@ -325,24 +329,24 @@ def _celsius_or_none(reading: int | None) -> int | None:
     return None if reading is None else plausible_celsius(reading)
 
 
-def _stack_temperature(entry: DiskEntry) -> Health | None:
+def _stack_figures(entry: DiskEntry) -> Health | None:
     """The storage stack's temperature and thresholds, each held to the bound every other path uses.
 
     The driver fills three signed 16-bit fields, and one with nothing to report
     leaves a value such as -32768 or 32767. Shown as a reading, it was also a
     critical finding. Each field is judged alone, so a sound temperature keeps
-    its figure when only a threshold is absurd; with no sound figure at all the
-    disk has no health reading rather than an empty one.
+    its figure when only a threshold is absurd, and a sound threshold is still
+    offered when only the temperature is. ``None`` only when the stack was not
+    read at all; the caller decides what a reading with no temperature is worth.
     """
     temperature = entry.temperature
     if temperature is None:
         return None
-    health = Health(
+    return Health(
         temperature_c=_celsius_or_none(temperature.temperature_c),
         temperature_warning_c=_celsius_or_none(temperature.warning_c),
         temperature_critical_c=_celsius_or_none(temperature.critical_c),
     )
-    return None if health.temperature_c is None else health
 
 
 # Transports Windows names for a disk it reaches through an adapter without

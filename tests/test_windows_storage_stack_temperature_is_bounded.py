@@ -204,23 +204,102 @@ def test_passthrough_health_with_no_temperature_takes_the_storage_stacks(
     assert health["power_on_hours"] is not None, "the SMART figures stay; only the temperature is filled in"
 
 
-def test_a_passthrough_temperature_is_not_replaced_by_the_storage_stacks(
+def test_a_passthrough_temperature_keeps_the_storage_stacks_thresholds(
     tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
 ) -> None:
-    """The control: the drive's own SMART temperature (31 on this capture) wins over the stack's."""
+    """The drive's own SMART temperature (31 here) wins; the thresholds ATA SMART lacks come from the stack."""
     stack = {"temperature_c": 41, "warning_c": 70, "critical_c": 80}
     health = _health_with(
         stack, smart_has_temperature=True, tmp_path=tmp_path, runner=cli_runner, factory=production_factory
     )
 
     assert health["temperature_c"] == 31, "the capture's own SMART reading"
-    assert (health["temperature_warning_c"], health["temperature_critical_c"]) == (None, None)
+    assert (health["temperature_warning_c"], health["temperature_critical_c"]) == (70, 80)
 
 
-def test_an_implausible_stack_temperature_fills_nothing_in(
+SWITCH_FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "windows-chipset-switch.json"
+#: The SATA drive on windows-chipset-switch: SMART names a temperature, the stack a 70 C warning.
+_SATA_NODE = "PhysicalDrive0"
+#: The NVMe drive on windows-chipset-switch: its SMART log and Identify carry 52 C, 84 C and 88 C.
+_NVME_NODE = "PhysicalDrive1"
+
+
+def _switch_entry(capture: dict[str, Any], node: str) -> dict[str, Any]:
+    return next(entry for entry in capture["disks"].values() if entry.get("node") == node)
+
+
+def _with_smart_temperature(encoded: str, celsius: int) -> str:
+    """The SMART READ DATA blob with its temperature attribute's current reading set to ``celsius``."""
+    raw = bytearray(base64.b64decode(encoded))
+    slots = [_TABLE_OFFSET + slot * _ENTRY_BYTES for slot in range(_TABLE_ENTRIES)]
+    offset = next(offset for offset in slots if raw[offset] in _TEMPERATURE_ATTRIBUTES)
+    raw[offset + 5] = celsius
+    return base64.b64encode(bytes(raw)).decode("ascii")
+
+
+def _switch_data(
+    command: str,
+    mutate: Callable[[dict[str, Any]], None],
+    *,
+    tmp_path: Path,
+    runner: CliRunner,
+    factory: Callable[[], object],
+) -> Any:
+    from lsdsk.adapters.cli import cli
+
+    capture = cast("dict[str, Any]", json.loads(SWITCH_FIXTURE.read_text(encoding="utf-8")))
+    mutate(capture)
+    path = tmp_path / "windows-chipset-switch.json"
+    path.write_text(json.dumps(capture), encoding="utf-8")
+    output = runner.invoke(cli, [command, "--replay", str(path), "--format", "json"], obj=factory).output
+    decoded: object = json.JSONDecoder().raw_decode(output[output.index("{") :])[0]
+    assert isinstance(decoded, dict)
+    return cast("dict[str, Any]", decoded)["data"]
+
+
+def _switch_health(data: Any, node: str) -> tuple[int | None, int | None, int | None]:
+    health = next(disk["health"] for disk in data["disks"] if disk["node"] == node)
+    return health["temperature_c"], health["temperature_warning_c"], health["temperature_critical_c"]
+
+
+def test_a_hot_drive_whose_smart_names_its_temperature_is_judged_by_the_stacks_warning(
     tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
 ) -> None:
-    """The fallback is held to the same bound: -32768 from the stack is no temperature either."""
+    """SMART reads 75 C and the stack offers a 70 C warning: the drive is reported at its threshold.
+
+    The stack's critical figure on this capture is -32768, a driver's "nothing here", so it stays unread.
+    """
+
+    def hot(capture: dict[str, Any]) -> None:
+        ata = _switch_entry(capture, _SATA_NODE)["ata"]
+        ata["smart_data"] = _with_smart_temperature(ata["smart_data"], 75)
+
+    data = _switch_data("findings", hot, tmp_path=tmp_path, runner=cli_runner, factory=production_factory)
+
+    assert _switch_health(data, _SATA_NODE) == (75, 70, None)
+    assert any("75 C, at or above its 70 C warning threshold" in title for title in _limit_findings(data))
+
+
+def test_the_drives_own_thresholds_win_over_the_storage_stacks(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    """Both ends name every figure: the NVMe drive's own temperature and thresholds are the ones kept."""
+
+    def disagreeing_stack(capture: dict[str, Any]) -> None:
+        _switch_entry(capture, _NVME_NODE)["temperature"] = {"temperature_c": 30, "warning_c": 60, "critical_c": 65}
+
+    data = _switch_data("health", disagreeing_stack, tmp_path=tmp_path, runner=cli_runner, factory=production_factory)
+
+    assert _switch_health(data, _NVME_NODE) == (52, 84, 88)
+
+
+def test_an_implausible_stack_temperature_fills_no_temperature_in(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    """The fallback is held to the same bound: -32768 from the stack is no temperature either.
+
+    Its sound thresholds are still offered, since each field is judged alone.
+    """
     stack = {"temperature_c": -(2**15), "warning_c": 70, "critical_c": 80}
     health = _health_with(
         stack, smart_has_temperature=False, tmp_path=tmp_path, runner=cli_runner, factory=production_factory
@@ -228,6 +307,18 @@ def test_an_implausible_stack_temperature_fills_nothing_in(
 
     assert (health["temperature_c"], health["temperature_warning_c"], health["temperature_critical_c"]) == (
         None,
-        None,
-        None,
+        70,
+        80,
     )
+
+
+def test_a_smart_temperature_takes_the_thresholds_of_a_stack_whose_own_temperature_is_absurd(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    """A stack with no sound temperature still offers sound thresholds to the drive's own reading."""
+    stack = {"temperature_c": -(2**15), "warning_c": 70, "critical_c": 80}
+    health = _health_with(
+        stack, smart_has_temperature=True, tmp_path=tmp_path, runner=cli_runner, factory=production_factory
+    )
+
+    assert (health["temperature_c"], health["temperature_warning_c"], health["temperature_critical_c"]) == (31, 70, 80)
