@@ -33,6 +33,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING, NamedTuple
 
+from rich.cells import cell_len
 from rich.console import Group
 from rich.text import Text
 
@@ -1101,7 +1102,9 @@ def board_line(inventory: Inventory, fabric: Fabric) -> Text:
     ]
     for optional in candidates:
         tail = "".join(optional)
-        if len(name) + len(tail) <= fabric.width:
+        # Terminal cells, not characters: a double-width board name takes twice
+        # the room its character count says.
+        if cell_len(name) + cell_len(tail) <= fabric.width:
             return _board_text(name, tail)
     # Not even the bare name fits beside the device count: the name is the last
     # thing cut, and the cut is marked.

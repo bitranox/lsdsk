@@ -71,3 +71,20 @@ def test_a_board_name_that_cannot_fit_is_cut_and_marked() -> None:
         assert len(drawn) == 1, drawn
         assert drawn[0].startswith("A")
         assert ELLIPSIS in drawn[0], f"a cut name at width {width} was not marked: {drawn[0]!r}"
+
+
+#: A board name of characters two terminal cells wide each, as a Japanese or
+#: Chinese vendor string is: counted in characters it is half its real width.
+WIDE_BOARD = "マザーボード" * 4
+
+
+def test_a_wide_character_board_name_keeps_the_line_on_one_line_at_every_width() -> None:
+    """The fields are given up by the room the name takes on screen, not by its character count.
+
+    Measured in characters, a twenty-four character name of double-width
+    characters left the line forty-eight cells wide where the arithmetic said
+    twenty-four, so ``PCI devices`` wrapped onto a line of its own.
+    """
+    for width in range(20, 201):
+        drawn, _name = _board_at("linux-nvme-board", width, board=WIDE_BOARD)
+        assert len(drawn) == 1, f"width {width}: the board line took {len(drawn)} lines: {drawn}"
