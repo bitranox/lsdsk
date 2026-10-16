@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, TypeVar
 from ....domain.disk_name import disk_name_order
 from ....domain.enums import BusType, ControllerKind, DiskKind, PciPortKind, UsbLaneRate, UsbTransport
 from ....domain.models import (
+    IDENTIFY_READING,
     Controller,
     Disk,
     Health,
@@ -653,7 +654,7 @@ def _refusals_for(entry: DiskEntry, record: HealthBlobs) -> tuple[RefusedReading
         One value per refused reading, empty when the disk answered everything.
     """
     health: dict[str, str | None] = {
-        "identify": record.identify_error,
+        IDENTIFY_READING: record.identify_error,
         "identify-controller": record.identify_controller_error,
         "smart-data": record.smart_data_error,
         "smart-thresholds": record.smart_thresholds_error,

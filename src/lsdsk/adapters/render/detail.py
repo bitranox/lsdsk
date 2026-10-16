@@ -63,6 +63,7 @@ if TYPE_CHECKING:
         PcieLink,
         PcieSlot,
         PciNode,
+        RefusedReading,
     )
     from ...domain.thresholds import Thresholds
     from .theme import Cell
@@ -234,7 +235,9 @@ def disk_detail(
         thresholds: What this run judges wear by.
 
     Returns:
-        The record, its groups in reading order.
+        The record, its groups in reading order. The refused-readings group is
+        present only when the system refused something, as on a filesystem: it is
+        the one place a dash in this panel is given its reason.
     """
     row = tables.disk_table_row(disk, inventory.port_link_for(disk), bandwidth=True)
     series = tables.series_for(disk, history)
@@ -250,7 +253,7 @@ def disk_detail(
     # did not find one. It is written on both scales here because there is room:
     # the column above has to choose, this does not.
     size = (theme.format_size_both(disk.size_bytes), "" if disk.size_bytes else theme.STYLE_UNKNOWN)
-    groups = (
+    groups = [
         DetailGroup(
             IDENTITY,
             (
@@ -269,8 +272,10 @@ def disk_detail(
         DetailGroup(SEAT, _seat_values(disk, inventory)),
         DetailGroup(HEALTH, _health_values(disk.health, disk.bus, thresholds)),
         DetailGroup(COUNTERS, _counter_values(disk.health, series, disk.bus)),
-    )
-    return Detail(heading, groups, (FindingScope(disk.path), FindingScope(disk.model, MODEL_NOTE)))
+    ]
+    if disk.readings_refused:
+        groups.append(DetailGroup(REFUSED, _refused_values(disk.readings_refused)))
+    return Detail(heading, tuple(groups), (FindingScope(disk.path), FindingScope(disk.model, MODEL_NOTE)))
 
 
 def controller_detail(controller: Controller, inventory: Inventory) -> Detail:
@@ -374,9 +379,7 @@ def filesystem_detail(filesystem: Filesystem) -> Detail:
         DetailGroup(FREE_SPACE, _filesystem_free_space_values(filesystem)),
     ]
     if filesystem.readings_refused:
-        groups.append(
-            DetailGroup(REFUSED, tuple((one.reading, (one.reason, "")) for one in filesystem.readings_refused))
-        )
+        groups.append(DetailGroup(REFUSED, _refused_values(filesystem.readings_refused)))
     scopes = (FindingScope(filesystem.name),) if filesystem.fill_was_read else ()
     return Detail(heading, tuple(groups), scopes)
 
@@ -555,6 +558,11 @@ def _draws(marker: str, drawn: set[str]) -> bool:
     if marker in _PREFIX_MARKERS:
         return marker in drawn or any(text.startswith(f"{marker} ") for text in drawn)
     return marker in drawn
+
+
+def _refused_values(refused: Sequence[RefusedReading]) -> tuple[tuple[str, Cell], ...]:
+    """One row per refused reading, the reader's label beside the reason the system gave."""
+    return tuple((one.reading, (one.reason, "")) for one in refused)
 
 
 def _absent() -> Cell:

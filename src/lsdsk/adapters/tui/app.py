@@ -248,7 +248,7 @@ class LsdskApp(App[None]):
     CSS = """
     Screen { layout: vertical; }
     #verdict { height: auto; padding: 0 1; }
-    #unread-note { height: auto; padding: 0 1; }
+    #unread-note, #privilege-note { height: auto; padding: 0 1; }
     #controller-legend, #slot-legend, #filesystem-legend, #filesystem-note { height: auto; padding: 0 1; }
     TabbedContent { height: 1fr; }
     DataTable { height: 1fr; width: 1fr; }
@@ -402,6 +402,10 @@ class LsdskApp(App[None]):
         yield Header()
         yield Static(self.verdict_line(), id="verdict")
         yield Static(self._unread_note(), id="unread-note")
+        # Above the pages rather than on one of them: a non-elevated run dashes
+        # figures on the topology, disk and health pages alike, and the reader
+        # meets the dash on whichever page they opened.
+        yield Static(self._privilege_note(), id="privilege-note")
         with TabbedContent(initial=CliCommand.TOPOLOGY.value):
             with TabPane("Topology", id=CliCommand.TOPOLOGY.value):
                 # One option per drawn line, so a reader can put the cursor on a
@@ -480,6 +484,7 @@ class LsdskApp(App[None]):
         # is: a literal in the CSS would be a second copy of a configured number.
         self.query_one("#detail", VerticalScroll).styles.max_height = f"{self.display_settings.detail_height_percent}%"
         self._fill_unread_note()
+        self._fill_privilege_note()
         self._fill_controllers()
         self._fill_disks()
         self._fill_health()
@@ -533,6 +538,21 @@ class LsdskApp(App[None]):
         note = self.query_one("#unread-note", Static)
         note.update(self._unread_note())
         note.display = bool(report.unread_interfaces_note(self.inventory))
+
+    def _privilege_note(self) -> Text:
+        """The printed header's own sentence about what a missing privilege cost.
+
+        Built by :func:`report.privilege_note`, the function the printed header
+        calls, so a dash the reader meets here is explained in the same words.
+        """
+        note = report.privilege_note(self.inventory)
+        return Text(note, style=tui_palette.restyle(theme.STYLE_CEILING)) if note else Text("")
+
+    def _fill_privilege_note(self) -> None:
+        """Draw the privilege note, taking no room at all when there is none."""
+        note = self.query_one("#privilege-note", Static)
+        note.update(self._privilege_note())
+        note.display = bool(report.privilege_note(self.inventory))
 
     def _explain_marks(self, legend_id: str, drawn: Iterable[str]) -> None:
         """Put the register-default legend under a table, only when a drawn cell carries the mark.
@@ -1153,6 +1173,7 @@ class LsdskApp(App[None]):
         self.findings = diagnose(self.inventory, history=self.history, thresholds=self.thresholds)
         self.query_one("#verdict", Static).update(self.verdict_line())
         self._fill_unread_note()
+        self._fill_privilege_note()
         self._fill_findings()
         self._refill_tree()
         self._fill_smart()

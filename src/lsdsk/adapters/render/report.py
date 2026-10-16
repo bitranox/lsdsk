@@ -24,7 +24,7 @@ from rich.text import Text
 from ... import __init__conf__
 from ...domain.diagnostics import count_by_severity, link_is_register_default, register_default_links
 from ...domain.enums import Align, BusType, Environment, Severity
-from ...domain.models import pcie_bandwidth_gbps, pcie_generation, serial_bandwidth_gbps
+from ...domain.models import IDENTIFY_READING, pcie_bandwidth_gbps, pcie_generation, serial_bandwidth_gbps
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_SUMMARY_LIMIT
 from . import theme
 from .layout import (
@@ -74,6 +74,11 @@ HEALTH_NEEDING_SMART: tuple[tuple[str, str], ...] = (
 # form factor is absent for a different reason and is not listed here: no source
 # on any platform reports it, so no privilege recovers it.
 SLOTS_NEEDING_ROOT: tuple[str, ...] = ("physical slot numbers", "whether a port ends in a real connector")
+
+# What a refused ATA IDENTIFY costs a SATA drive where IDENTIFY is the only source
+# of its link, which is Windows: both figures the disk table draws from it, named
+# by the columns that then read "-", so the reader can tell those dashes apart.
+SATA_LINK_NEEDING_IDENTIFY = "the SATA link (disk and link columns)"
 
 # How many findings the summary shows before pointing at the full list.
 SUMMARY_LIMIT = DEFAULT_SUMMARY_LIMIT
@@ -259,7 +264,12 @@ def privilege_note(inventory: Inventory) -> str:
     """
     if inventory.privileged and inventory.devices_accessible:
         return ""
-    missing = ", ".join(name for name, _ in HEALTH_NEEDING_SMART)
+    names = [name for name, _ in HEALTH_NEEDING_SMART]
+    # Keyed on the RECORDED refusal, never on the link being null: a drive that
+    # simply publishes no SATA speed reads null too, and elevating would not help it.
+    if any(refused.reading == IDENTIFY_READING for disk in inventory.disks for refused in disk.readings_refused):
+        names.insert(0, SATA_LINK_NEEDING_IDENTIFY)
+    missing = ", ".join(names)
     if not inventory.devices_accessible:
         return (
             f"Not read: {missing}. This environment exposes no device nodes to open, "
@@ -1293,6 +1303,7 @@ __all__ = [
     "DEFAULT_WIDTH",
     "DISK_COLUMNS",
     "HEALTH_NEEDING_SMART",
+    "SATA_LINK_NEEDING_IDENTIFY",
     "SLOTS_NEEDING_ROOT",
     "SLOT_COLUMNS",
     "SUMMARY_LIMIT",

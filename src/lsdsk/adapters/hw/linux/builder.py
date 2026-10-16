@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from ....domain.disk_name import disk_name_order
 from ....domain.enums import BusType, ControllerKind, DiskKind, UsbLaneRate, UsbTransport
 from ....domain.models import (
+    IDENTIFY_READING,
     PCIE_MAX_LINK_WIDTH,
     Controller,
     Disk,
@@ -1034,7 +1035,7 @@ def _build_ata_disk(node: str, block: BlockEntry, indexed: _IndexedCapture) -> D
         readings_refused=refusals_of(
             {
                 "device": ata.error,
-                "identify": ata.identify_error,
+                IDENTIFY_READING: ata.identify_error,
                 "smart-data": ata.smart_data_error,
                 "smart-thresholds": ata.smart_thresholds_error,
                 "usb-link": _usb_refusal(usb_chain),

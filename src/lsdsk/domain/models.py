@@ -1323,6 +1323,13 @@ class RefusedReading(DomainModel, frozen=True):
     reason: DeviceText
 
 
+#: The label both platform readers give a refused ATA IDENTIFY. Named once because
+#: a renderer keys on it: on Windows IDENTIFY is the only source of a SATA drive's
+#: two link figures, so a refused one is why the disk and link columns read "-",
+#: and a view that spelled the label differently would never say so.
+IDENTIFY_READING = "identify"
+
+
 class Controller(DomainModel, frozen=True):
     """A storage controller and its position on the PCIe fabric.
 
@@ -2773,6 +2780,7 @@ class Inventory(DomainModel, frozen=True):
 __all__ = [
     "FIXED_INODE_TABLE_TYPES",
     "FREE_EXTENT_MOUNT_TYPES",
+    "IDENTIFY_READING",
     "PCIE_MAX_LINK_WIDTH",
     "Controller",
     "Disk",

@@ -5,6 +5,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- A non-elevated Windows run no longer leaves the SATA link unexplained. Windows reads a SATA drive's
+  `disk` and `link` figures only through ATA IDENTIFY, which needs Administrator, so both read `-`
+  without it and nothing on the page said why. The "Not read" sentence now names the SATA link
+  whenever a drive's IDENTIFY was refused, the interactive view shows that sentence above every
+  page (it showed it nowhere before), and a drive's detail panel lists its refused readings with the
+  reason Windows gave, as a filesystem's already did.
+
 ## [1.9.4] 2026-10-16 20:25:59
 
 ### Added
