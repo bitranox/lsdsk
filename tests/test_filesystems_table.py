@@ -381,3 +381,30 @@ def test_the_drop_order_comment_names_every_droppable_column_in_the_order_they_d
     assert stated, prose
     droppable = sorted((column for column in FILESYSTEM_COLUMNS if column.priority > 0), key=lambda c: -c.priority)
     assert stated.group(1).split(", then ") == [column.title for column in droppable]
+
+
+def _header_drawn(text: str) -> bool:
+    """Whether a line of `text` is the column header: every heading word on one line."""
+    headings = [column.title for column in FILESYSTEM_COLUMNS]
+    return any(all(heading in line.split() for heading in headings) for line in text.splitlines())
+
+
+@pytest.mark.parametrize(
+    ("filesystems", "sentence"),
+    [(None, tables.FILESYSTEMS_NOT_READ_SENTENCE), ((), tables.FILESYSTEMS_NONE_SENTENCE)],
+    ids=["not-read", "none-found"],
+)
+def test_a_list_with_no_rows_draws_its_sentence_without_a_column_header(
+    filesystems: tuple[Filesystem, ...] | None, sentence: str
+) -> None:
+    """A header names the columns of rows; over a list that has none it stands for nothing.
+
+    The trend section's empty state and the interactive page both draw the
+    sentence alone, so the printed table was the one view with a header row
+    over a list that was not read.
+    """
+    text = _text_of(Inventory(hostname="box", filesystems=filesystems))
+    assert "Filesystems on box" in text
+    assert sentence in text
+    assert not _header_drawn(text), text
+    assert _header_drawn(_text(_EXT4)), "the control: a listed filesystem keeps its header"

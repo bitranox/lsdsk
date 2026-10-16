@@ -608,14 +608,12 @@ def render_filesystems(inventory: Inventory, findings: Sequence[Finding], width:
         width: Terminal width, which decides how many columns fit.
 
     Returns:
-        A table of filesystems; with no rows and a sentence saying so when the
-        inventory did not read them or read none.
+        A table of filesystems; with no rows, no column header and a sentence
+        saying so when the inventory did not read them or read none.
     """
     title = f"Filesystems on {inventory.hostname}"
-    if inventory.filesystems is None:
-        return _render(title, FILESYSTEM_COLUMNS, TableRows(()), width, FILESYSTEMS_NOT_READ_SENTENCE)
     if not inventory.filesystems:
-        return _render(title, FILESYSTEM_COLUMNS, TableRows(()), width, FILESYSTEMS_NONE_SENTENCE)
+        return _render_no_filesystems(title, inventory, width)
     severities = severity_index(findings)
     rows = TableRows(
         [filesystem_marked_row(one, severities, both_scales=True) for one in inventory.filesystems],
@@ -626,6 +624,19 @@ def render_filesystems(inventory: Inventory, findings: Sequence[Finding], width:
         part for part in (_filesystem_legend(layout.columns, drawn), filesystem_refusals_note(inventory)) if part
     )
     return _render(title, FILESYSTEM_COLUMNS, rows, width, caption)
+
+
+def _render_no_filesystems(title: str, inventory: Inventory, width: int) -> Table:
+    """The filesystems view with no row to draw: its title and its sentence.
+
+    No column header: a header names the columns of rows, and over a list that
+    was not read or read empty it stands for nothing. The trend section's empty
+    state and the interactive page both draw the sentence alone.
+    """
+    sentence = FILESYSTEMS_NOT_READ_SENTENCE if inventory.filesystems is None else FILESYSTEMS_NONE_SENTENCE
+    table = _render(title, FILESYSTEM_COLUMNS, TableRows(()), width, sentence)
+    table.show_header = False
+    return table
 
 
 def render_health(

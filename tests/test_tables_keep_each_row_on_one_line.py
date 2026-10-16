@@ -91,7 +91,13 @@ def _header_index(lines: list[str]) -> int:
 
 
 def _rows(text: str, count: int) -> list[str]:
-    """The table's data rows: the lines after the header."""
+    """The table's data rows: the lines after the header.
+
+    A table with no rows draws no header (the filesystems view over a list that
+    was not read or read empty), so there is nothing to look for.
+    """
+    if not count:
+        return []
     lines = text.splitlines()
     header = _header_index(lines)
     return lines[header + 1 : header + 1 + count]
@@ -117,6 +123,8 @@ def _link_figures(inventory: Inventory) -> dict[str, list[dict[str, str]]]:
 
 def _cut_figures(text: str, count: int, figures: list[dict[str, str]]) -> list[str]:
     """Every link figure a drawn column holds only part of."""
+    if not count:
+        return []
     lines = text.splitlines()
     header = lines[_header_index(lines)].split()
     return [
