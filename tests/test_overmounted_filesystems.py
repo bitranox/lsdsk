@@ -405,6 +405,15 @@ def test_a_mount_on_a_plain_chroot_directory_is_the_unreachable_one(tmp_path: Pa
     assert _hidden(tmp_path, CHROOTED_INTO_A_PLAIN_DIRECTORY) == {"/sub": False, "/": True}
 
 
+def test_a_chroot_with_one_mount_of_its_own_still_tells_the_mount_on_its_directory_apart(tmp_path: Path) -> None:
+    # The smallest chroot the rule can see: /proc made inside it, then a filesystem on the chroot directory. Two
+    # listed mounts share the unlisted parent, which a true root's parent never has.
+    smallest = "".join(CHROOTED_INTO_A_PLAIN_DIRECTORY.splitlines(keepends=True)[1:])
+    assert [line.split(" ")[1] for line in smallest.splitlines()] == ["20", "20"]  # control: one parent, two children
+
+    assert _hidden(tmp_path, smallest) == {"/": True}
+
+
 def test_a_chroot_s_own_mounts_are_read_with_a_mount_on_the_chroot_directory(tmp_path: Path) -> None:
     kernel = _Kernel({"/sub": FULL})
 

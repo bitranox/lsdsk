@@ -215,3 +215,14 @@ def test_a_member_path_whose_device_udev_did_not_read_or_reads_as_this_pool_s_is
     # Controls for the test above: no signature, or one without a GUID, contradicts nothing.
     for signatures in ({}, {"8:1": {"fs_type": "zfs_member", "fs_label": "rpool"}}):
         assert _built(_host(stacked={}, signatures=signatures)) == ([("rpool", ("sda",))], ())
+
+
+def test_a_former_member_still_labelled_with_the_pool_s_guid_does_not_join_a_pool_whose_members_all_followed() -> None:
+    # A disk replaced out of rpool keeps its label, GUID and all; the config names only the member in use.
+    reading = _host(
+        signatures={
+            "8:1": {"fs_type": "zfs_member", "fs_label": "rpool", "fs_uuid": _RPOOL_GUID},
+            "253:3": {"fs_type": "zfs_member", "fs_label": "rpool", "fs_uuid": _RPOOL_GUID},
+        }
+    )
+    assert _built(reading) == ([("rpool", ("sda",))], ())
