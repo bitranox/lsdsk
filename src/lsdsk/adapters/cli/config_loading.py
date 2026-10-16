@@ -14,6 +14,8 @@ Contents:
     * :func:`load_profile_config` - load, mapping each failure to its code.
     * :func:`refuse_an_ambiguous_mode` - stop on an int mode that could be octal digits.
     * :func:`report_profile_that_named_nothing` - warn about a profile nothing answered to.
+    * :func:`report_keys_nothing_reads` - warn about a file key nothing reads.
+    * :func:`report_values_nothing_uses` - warn about a value nothing can use.
 
 System Role:
     Adapter layer, CLI. Shared by :mod:`.root` and :mod:`.commands.config`.
@@ -25,14 +27,24 @@ from typing import TYPE_CHECKING
 
 from lib_layered_config import ConfigError
 
+from lsdsk.adapters.config.history import read_history_settings
+from lsdsk.adapters.config.known_keys import nearest_known_key, unknown_owned_keys
 from lsdsk.adapters.config.permissions import read_permission_defaults
-from lsdsk.adapters.config.profiles import contributed_layers, existing_profiles, nearest_profile
+from lsdsk.adapters.config.profiles import (
+    contributed_layers,
+    existing_profiles,
+    nearest_profile,
+    supplied_by_profile,
+)
+from lsdsk.adapters.config.tunables import read_display_settings, read_thresholds
 from lsdsk.adapters.config.values import AmbiguousModeError
 
 from . import safe_console
 from .exit_codes import ExitCode
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from lib_layered_config import Config
 
     from lsdsk.composition import AppServices
@@ -180,10 +192,91 @@ def report_profile_that_named_nothing(config: Config, profile: str | None) -> No
     )
 
 
+def _reported_here(config: Config, dotted: str, from_profile: str | None) -> bool:
+    """Whether `dotted` is this call's to report: every key, or only those a file of `from_profile` gave."""
+    return from_profile is None or supplied_by_profile(config, dotted, from_profile)
+
+
+def report_keys_nothing_reads(config: Config, *, from_profile: str | None = None) -> None:
+    """Say so on stderr when a config FILE carries a key this tool does not read.
+
+    Warned about rather than refused, unlike the same typo in ``--set``. A
+    ``--set`` is typed for one run and has one consumer, so an unknown key there
+    is always a mistake; a config file is durable and shared with the libraries
+    that read the same namespace, so refusing would make it brittle. The value
+    is inert either way, and the whole point is that an inert value must not
+    read like an applied one.
+
+    On stderr in both output modes, so a parsed stdout stays exactly what a
+    caller expects.
+
+    Args:
+        config: The configuration as the file and environment layers left it,
+            before any ``--set`` is merged in - those are refused rather than
+            warned about, so they never reach here.
+        from_profile: Report only the keys a file of this profile supplied.
+            A subcommand's own ``--profile`` reloads the configuration after the
+            root group reported its own; the environment is in both loads, so
+            reporting every key again would say each of its warnings twice.
+
+    Side Effects:
+        Writes a line per unknown key to stderr.
+    """
+    for dotted in unknown_owned_keys(config.as_dict()):
+        if not _reported_here(config, dotted, from_profile):
+            continue
+        section, _, key = dotted.partition(".")
+        suggestion = nearest_known_key(section, key)
+        meant = f" Did you mean {section}.{suggestion}?" if suggestion else ""
+        safe_console.echo(f"Warning: ignoring {dotted}: [{section}] has no such key.{meant}", err=True)
+
+
+def report_values_nothing_uses(config: Config, *, history_file: Path | None, from_profile: str | None = None) -> None:
+    """Say so on stderr when a configured VALUE is not one this tool can use.
+
+    The key half of this is :func:`report_keys_nothing_reads`, and the reasoning is
+    the same: the value is inert, and an inert value must not read like an applied
+    one. ``lsdsk config`` reports the refused text back as the value in force, so
+    without this line an operator gets positive confirmation of a setting that
+    decided nothing.
+
+    Warned about rather than refused on BOTH surfaces, unlike an unknown ``--set``
+    key. The fallback is deliberate and documented: a malformed threshold must never
+    stop somebody diagnosing a failing drive, so the run goes on with the shipped
+    figure and says which one it used.
+
+    Read once per load rather than where the values are used, because
+    ``resolve_tunables`` is called by the root group and again by every view that
+    draws - a warning emitted there would repeat itself a different number of times
+    per subcommand.
+
+    Args:
+        config: The configuration with any ``--set`` already merged in, so a value
+            refused from the command line is reported alongside one from a file.
+        history_file: What ``--history-file`` asked for, so a refused
+            ``history.path`` names the location that really ends up in force.
+        from_profile: Report only the values a file of this profile supplied,
+            for the reason :func:`report_keys_nothing_reads` gives; a ``--set``
+            value is the override layer's, so it is never one of them.
+
+    Side Effects:
+        Writes a line per refused value to stderr.
+    """
+    for rejected in (
+        *read_thresholds(config).rejected,
+        *read_display_settings(config).rejected,
+        *read_history_settings(config, path_override=history_file).rejected,
+    ):
+        if _reported_here(config, rejected.dotted, from_profile):
+            safe_console.echo(rejected.as_sentence(), err=True)
+
+
 __all__ = [
     "UnusableConfigError",
     "load_profile_config",
     "refuse_an_ambiguous_mode",
     "refused_for_permission",
+    "report_keys_nothing_reads",
     "report_profile_that_named_nothing",
+    "report_values_nothing_uses",
 ]

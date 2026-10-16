@@ -41,7 +41,9 @@ from ..config_loading import (
     UnusableConfigError,
     load_profile_config,
     refuse_an_ambiguous_mode,
+    report_keys_nothing_reads,
     report_profile_that_named_nothing,
+    report_values_nothing_uses,
 )
 from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION
 from ..context import CLIContext, get_cli_context
@@ -377,13 +379,20 @@ def _resolve_config(
     effective_profile = _get_effective_profile(cli_ctx, profile)
     if not profile:
         return cli_ctx.config, effective_profile
+    # The root group already reported what it loaded; when it loaded this same profile,
+    # every file of it was among that, and reporting again would say each line twice.
+    newly_read = profile if profile != cli_ctx.profile else None
     try:
         loaded = load_profile_config(cli_ctx.services, profile=profile, env_file=cli_ctx.env_file)
         report_profile_that_named_nothing(loaded, profile)
+        if newly_read is not None:
+            report_keys_nothing_reads(loaded, from_profile=newly_read)
         config = apply_overrides(loaded, cli_ctx.set_overrides)
         refuse_an_ambiguous_mode(config)
     except UnusableConfigError as refused:
         fail(refused.message, refused.code, output_format=output_format)
+    if newly_read is not None:
+        report_values_nothing_uses(config, history_file=cli_ctx.history_file, from_profile=newly_read)
     return config, effective_profile
 
 

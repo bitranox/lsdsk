@@ -5,9 +5,7 @@ all subcommands. Handles global flags like --traceback, --profile, and --set.
 
 Contents:
     * :func:`cli` - Root command group with global options.
-    * :func:`_report_keys_nothing_reads` - warn about a file key nothing reads.
     * :func:`_refuse_an_ambiguous_mode` - refuse an int permission mode that could be octal digits.
-    * :func:`_report_values_nothing_uses` - warn about a value nothing can use.
     * :func:`_print_version` - the version line, written through the guarded sink.
 """
 
@@ -19,15 +17,12 @@ from typing import TYPE_CHECKING, Any, cast
 import rich_click as click
 
 from lsdsk import __init__conf__
-from lsdsk.adapters.config.history import read_history_settings
-from lsdsk.adapters.config.known_keys import nearest_known_key, unknown_owned_keys
 from lsdsk.adapters.config.loader import (
     DamagedInstallationError,
     invalid_profile_message,
     require_an_intact_installation,
 )
 from lsdsk.adapters.config.overrides import apply_overrides
-from lsdsk.adapters.config.tunables import read_display_settings, read_thresholds
 from lsdsk.domain.enums import TreeDensity
 
 from . import safe_console
@@ -35,7 +30,9 @@ from .config_loading import (
     UnusableConfigError,
     load_profile_config,
     refuse_an_ambiguous_mode,
+    report_keys_nothing_reads,
     report_profile_that_named_nothing,
+    report_values_nothing_uses,
 )
 from .constants import CLICK_CONTEXT_SETTINGS, TREE_DENSITY_TOKENS
 from .context import CLIContext, apply_traceback_preferences, store_cli_context
@@ -79,34 +76,6 @@ def _print_version(ctx: click.Context, param: click.Parameter, value: bool) -> N
         return
     safe_console.echo(f"{__init__conf__.shell_command} version {__init__conf__.version}")
     ctx.exit()
-
-
-def _report_keys_nothing_reads(config: Config) -> None:
-    """Say so on stderr when a config FILE carries a key this tool does not read.
-
-    Warned about rather than refused, unlike the same typo in ``--set``. A
-    ``--set`` is typed for one run and has one consumer, so an unknown key there
-    is always a mistake; a config file is durable and shared with the libraries
-    that read the same namespace, so refusing would make it brittle. The value
-    is inert either way, and the whole point is that an inert value must not
-    read like an applied one.
-
-    On stderr in both output modes, so a parsed stdout stays exactly what a
-    caller expects.
-
-    Args:
-        config: The configuration as the file and environment layers left it,
-            before any ``--set`` is merged in - those are refused rather than
-            warned about, so they never reach here.
-
-    Side Effects:
-        Writes a line per unknown key to stderr.
-    """
-    for dotted in unknown_owned_keys(config.as_dict()):
-        section, _, key = dotted.partition(".")
-        suggestion = nearest_known_key(section, key)
-        meant = f" Did you mean {section}.{suggestion}?" if suggestion else ""
-        safe_console.echo(f"Warning: ignoring {dotted}: [{section}] has no such key.{meant}", err=True)
 
 
 def _load_or_refuse(ctx: click.Context, services: AppServices, *, profile: str | None, env_file: str | None) -> Config:
@@ -204,42 +173,6 @@ def _refuse_an_ambiguous_mode(ctx: click.Context, config: Config) -> None:
         refuse_an_ambiguous_mode(config)
     except UnusableConfigError as refused:
         _refuse_before_the_run(ctx, refused.message, refused.code)
-
-
-def _report_values_nothing_uses(config: Config, *, history_file: Path | None) -> None:
-    """Say so on stderr when a configured VALUE is not one this tool can use.
-
-    The key half of this is :func:`_report_keys_nothing_reads`, and the reasoning is
-    the same: the value is inert, and an inert value must not read like an applied
-    one. ``lsdsk config`` reports the refused text back as the value in force, so
-    without this line an operator gets positive confirmation of a setting that
-    decided nothing.
-
-    Warned about rather than refused on BOTH surfaces, unlike an unknown ``--set``
-    key. The fallback is deliberate and documented: a malformed threshold must never
-    stop somebody diagnosing a failing drive, so the run goes on with the shipped
-    figure and says which one it used.
-
-    Read once here rather than where the values are used, because
-    ``resolve_tunables`` is called by the root group and again by every view that
-    draws - a warning emitted there would repeat itself a different number of times
-    per subcommand.
-
-    Args:
-        config: The configuration with any ``--set`` already merged in, so a value
-            refused from the command line is reported alongside one from a file.
-        history_file: What ``--history-file`` asked for, so a refused
-            ``history.path`` names the location that really ends up in force.
-
-    Side Effects:
-        Writes a line per refused value to stderr.
-    """
-    for rejected in (
-        *read_thresholds(config).rejected,
-        *read_display_settings(config).rejected,
-        *read_history_settings(config, path_override=history_file).rejected,
-    ):
-        safe_console.echo(rejected.as_sentence(), err=True)
 
 
 def _apply_cli_overrides(config: Config, set_overrides: tuple[str, ...]) -> Config:
@@ -416,13 +349,13 @@ def cli(
     services = cast("AppServices", ctx.obj())
     config = _load_or_refuse(ctx, services, profile=profile, env_file=env_file)
     report_profile_that_named_nothing(config, profile)
-    _report_keys_nothing_reads(config)
+    report_keys_nothing_reads(config)
     config = _apply_cli_overrides(config, set_overrides)
     # After the overrides, not before: an unknown --set KEY is refused outright and
     # never reaches here, but a --set VALUE falls back exactly as a file's does, so
     # both surfaces have to be read once the two are merged.
     _refuse_an_ambiguous_mode(ctx, config)
-    _report_values_nothing_uses(config, history_file=history_file)
+    report_values_nothing_uses(config, history_file=history_file)
     services.init_logging(config)
     store_cli_context(
         ctx,
