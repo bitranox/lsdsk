@@ -397,3 +397,47 @@ def test_a_root_pool_member_on_dm_crypt_marks_its_disk_boot_from_the_pool_layout
     luks = _zfs_fixture_with(tmp_path, "luksroot-layouts", luks_root_with_layouts)
 
     assert _boot_nodes(cli_runner, production_factory, luks) == ["sda", "sdb"]
+
+
+def _fuse_row_naming_sda2(fstype: str) -> Callable[[dict[str, Any]], None]:
+    """A mount whose source text is /dev/sda2, resolved to 8:2, as a capture from before FUSE was told apart has it."""
+
+    def change(reading: dict[str, Any]) -> None:
+        reading["mounts"].append(
+            {
+                "dev": "0:77",
+                "mountpoint": "/home/u/mnt",
+                "fstype": fstype,
+                "source": "/dev/sda2",
+                "source_dev": "8:2",
+                "read_only": False,
+            }
+        )
+
+    return change
+
+
+def test_a_fuse_mount_in_an_older_capture_is_not_on_the_disk_its_source_text_names(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    # A FUSE source is whatever its user wrote; a capture from before the reader knew that still carries a source_dev.
+    fuse = _zfs_fixture_with(tmp_path, "fuse", _fuse_row_naming_sda2("fuse.sshfs"))
+    fuseblk = _zfs_fixture_with(tmp_path, "fuseblk", _fuse_row_naming_sda2("fuseblk"))
+
+    # Control: fuseblk is the kernel opening the named block device, so that row does sit on sda.
+    assert "/home/u/mnt" in _mountpoints_on(cli_runner, production_factory, fuseblk, "sda")
+    assert "/home/u/mnt" in _row_names(cli_runner, production_factory, fuseblk)
+
+    assert "/home/u/mnt" not in _mountpoints_on(cli_runner, production_factory, fuse, "sda")
+    assert "/home/u/mnt" not in _row_names(cli_runner, production_factory, fuse)
+
+
+def _mountpoints_on(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], capture: Path, node: str
+) -> list[str]:
+    usage = _disk_usage(cli_runner, production_factory, capture, node)
+    return [mountpoint for use in usage["uses"] for mountpoint in use["mounts"]]
+
+
+def _row_names(cli_runner: CliRunner, production_factory: Callable[[], Any], capture: Path) -> list[str]:
+    return [row["name"] for row in _envelope(cli_runner, production_factory, capture)["data"]["filesystems"]]

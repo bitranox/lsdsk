@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BeforeValidator, Field
+from pydantic import BeforeValidator, Field, ValidationInfo, field_validator
 
 from ....domain.enums import Platform
 from ..capture import (
@@ -47,6 +47,28 @@ from ..decode.virtualization import VirtualizationEvidence
 # boundary conversion, keyed by the exact wire text rather than a dict lookup
 # because there are only ever the two values worth naming.
 _ROTATING_VALUES: dict[str, bool] = {"0": False, "1": True}
+
+# A FUSE mount's type is "fuse" or "fuse.<subtype>"; its source is free text the mounting user chose.
+_FUSE = "fuse"
+
+
+def is_fuse(fstype: str) -> bool:
+    """Whether a mount is FUSE, whose source is whatever text its user wrote (``fsname=``), never a device.
+
+    ``fuseblk`` is not: the kernel opens the block device its source names.
+
+    Args:
+        fstype: A mountinfo filesystem type.
+
+    Returns:
+        ``True`` for ``fuse`` and every ``fuse.<subtype>``.
+
+    Example:
+        >>> [is_fuse(name) for name in ("fuse", "fuse.sshfs", "fuseblk", "ext4")]
+        [True, True, False, False]
+    """
+    return fstype == _FUSE or fstype.startswith(f"{_FUSE}.")
+
 
 # The widths of the registers and the kernel types these fields are read
 # from. They are facts from the specifications rather than policy, which is
@@ -396,8 +418,9 @@ class MountEntry(CaptureModel, frozen=True):
             or label for many others, or a ``/dev/`` path.
         source_dev: The ``maj:min`` of ``source``, when it names a resolvable
             device node. ``None`` for a source that is not a device path (a
-            ZFS dataset, ``tmpfs``, an NFS export) and for one that could not
-            be resolved.
+            ZFS dataset, ``tmpfs``, an NFS export), for one that could not be
+            resolved, and for a FUSE mount (see :func:`is_fuse`) whatever the
+            capture says, since an older reader resolved a FUSE source too.
         read_only: Whether the mount is read-only, from either the per-mount
             or the superblock options. ``None`` when not read.
         hidden: Whether another mount hides this mountpoint, so no path
@@ -413,6 +436,12 @@ class MountEntry(CaptureModel, frozen=True):
     source_dev: KernelText | None = None
     read_only: bool | None = None
     hidden: bool = False
+
+    @field_validator("source_dev")
+    @classmethod
+    def _no_device_behind_a_fuse_source(cls, value: str | None, info: ValidationInfo) -> str | None:
+        fstype = info.data.get("fstype")
+        return None if isinstance(fstype, str) and is_fuse(fstype) else value
 
 
 class SpaceEntry(CaptureModel, frozen=True):
@@ -790,5 +819,6 @@ __all__ = [
     "UsbDeviceEntry",
     "VdevEntry",
     "VpdPages",
+    "is_fuse",
     "replaced_surrogates",
 ]

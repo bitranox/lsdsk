@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
 from ....domain.errors import ConfigurationError, MissingFileError
 from ...textfile import read_text_bounded
-from .capture import replaced_surrogates
+from .capture import is_fuse, replaced_surrogates
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -112,8 +112,6 @@ _SUPER_OPTIONS_FIELD = 2
 # join it to its pool; every other source is either a device path (already
 # resolved to source_dev) or something no disk sits behind.
 _ZFS = "zfs"
-# A FUSE mount's type is "fuse" or "fuse.<subtype>"; its source is free text the mounting user chose.
-_FUSE = "fuse"
 # The key whose presence marks a device as read: an error entry lacks it.
 _FIGURES_KEY = "frsize"
 # Why a filesystem every one of whose mountpoints is hidden was not asked:
@@ -416,7 +414,7 @@ def _parse_mountinfo_line(line: str, device_number: Callable[[str], str | None])
     dev, mountpoint, fstype = left_fields[2], _unescape(left_fields[4]), right_fields[0]
     row: dict[str, str | bool] = {"dev": dev, "mountpoint": mountpoint, "fstype": fstype}
     source = _unescape(right_fields[1])
-    source_dev = device_number(source) if source.startswith("/dev/") and not _is_fuse(fstype) else None
+    source_dev = device_number(source) if source.startswith("/dev/") and not is_fuse(fstype) else None
     if source_dev is not None:
         row["source_dev"] = source_dev
     if fstype == _ZFS:
@@ -430,18 +428,6 @@ def _parse_mountinfo_line(line: str, device_number: Callable[[str], str | None])
     super_options = right_fields[_SUPER_OPTIONS_FIELD] if len(right_fields) > _SUPER_OPTIONS_FIELD else ""
     row["read_only"] = _starts_read_only(per_mount) or _starts_read_only(super_options)
     return row
-
-
-def _is_fuse(fstype: str) -> bool:
-    """Whether a mount is FUSE, whose source is whatever text its user wrote (``fsname=``), never a device.
-
-    ``fuseblk`` is not: the kernel opens the block device its source names.
-
-    Example:
-        >>> [_is_fuse(name) for name in ("fuse", "fuse.sshfs", "fuseblk", "ext4")]
-        [True, True, False, False]
-    """
-    return fstype == _FUSE or fstype.startswith(f"{_FUSE}.")
 
 
 def _starts_read_only(options: str) -> bool:
