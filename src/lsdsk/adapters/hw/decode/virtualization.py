@@ -34,9 +34,13 @@ from ....domain.enums import Environment
 from ..capture import DeviceText  # noqa: TC001 - runtime-resolved by pydantic, see above
 
 # Container runtimes, matched against the ``container=`` variable in PID 1's
-# environment and against control-group paths.
+# environment and against control-group paths as whole words (see
+# :func:`_match_container`). "lxcfs" is LXC's own filesystem, so evidence naming
+# it names LXC; the mount reader itself records the runtime, "lxc", and a whole
+# word match would no longer find "lxc" inside "lxcfs".
 _CONTAINER_MARKERS: dict[str, str] = {
     "lxc": "LXC",
+    "lxcfs": "LXC",
     "docker": "Docker",
     "podman": "Podman",
     "systemd-nspawn": "systemd-nspawn",
@@ -172,10 +176,36 @@ class VirtualizationEvidence:
     hypervisor_type: DeviceText = ""
 
 
-def _match(haystack: str, markers: dict[str, str]) -> str | None:
-    """Return the first marker name whose key appears in the text."""
-    lowered = haystack.lower()
-    return next((name for key, name in markers.items() if key in lowered), None)
+# Anything that is not a letter or a digit separates two words of a container
+# value or a control-group path: "/", ".", "-", "@" and ":" all occur there.
+_WORD_SEPARATOR = re.compile(r"[^a-z0-9]+")
+
+
+def _words(text: str) -> tuple[str, ...]:
+    """The words of a piece of evidence, lowercased, separators dropped."""
+    return tuple(word for word in _WORD_SEPARATOR.split(text.lower()) if word)
+
+
+def _match_container(haystack: str) -> str | None:
+    """Return the first container runtime whose marker is a run of whole words in the text.
+
+    A marker is matched by its own words in order, so ``systemd-nspawn`` is
+    found in ``systemd-nspawn@web.service`` and ``lxc`` in ``lxc.payload.101``
+    or ``lxc-libvirt``, while a marker inside a longer word is not: "oci" in
+    ``associated.service`` names no runtime.
+
+    Example:
+        >>> _match_container("0::/system.slice/docker-0123abcd.scope")
+        'Docker'
+        >>> _match_container("0::/system.slice/associated.service") is None
+        True
+    """
+    words = _words(haystack)
+    for key, name in _CONTAINER_MARKERS.items():
+        wanted = _words(key)
+        if any(words[start : start + len(wanted)] == wanted for start in range(len(words) - len(wanted) + 1)):
+            return name
+    return None
 
 
 def _match_hypervisor(haystack: str) -> str | None:
@@ -237,12 +267,12 @@ def classify(evidence: VirtualizationEvidence) -> Classification:
         Classification(environment=<Environment.BARE_METAL: 'bare_metal'>, detail='')
     """
     container = (
-        _match(evidence.container_marker, _CONTAINER_MARKERS)
-        or _match(evidence.cgroup, _CONTAINER_MARKERS)
-        or _match(evidence.mount_markers, _CONTAINER_MARKERS)
+        _match_container(evidence.container_marker)
+        or _match_container(evidence.cgroup)
+        or _match_container(evidence.mount_markers)
     )
     if container is None and evidence.container_files:
-        container = _match(" ".join(evidence.container_files), _CONTAINER_MARKERS) or "container"
+        container = _match_container(" ".join(evidence.container_files)) or "container"
     if container is not None:
         return Classification(Environment.CONTAINER, container)
 
