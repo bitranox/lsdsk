@@ -24,7 +24,7 @@ from rich.cells import cell_len, chop_cells
 from ...domain.enums import Align
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
 # The gutter holds the tree glyph plus one space, so the glyph never runs
 # straight into the device name. Same width on every row, including headers.
@@ -120,11 +120,16 @@ class Layout:
             form: asked twice - once to measure and once to draw - the two
             answers can differ, and the difference is a clipped link figure,
             which is a different figure rather than a shorter one.
+        natural: How wide each column's content wanted to be, before any of it
+            was narrowed, or ``None`` where that was never measured. It is what
+            a narrowed flexible column grows back towards once dropping other
+            columns has freed the room (:meth:`widened`).
     """
 
     columns: tuple[Column, ...]
     widths: dict[str, int]
     bandwidth: bool = False
+    natural: Mapping[str, int] | None = None
 
     @classmethod
     def for_rows(cls, columns: Sequence[Column], rows: Iterable[dict[str, str]], available: int) -> Layout:
@@ -138,8 +143,9 @@ class Layout:
         Returns:
             The layout to render with.
         """
-        widths = natural_widths(columns, rows)
-        return cls(tuple(fit(columns, widths, available)), widths)
+        natural = natural_widths(columns, rows)
+        widths = dict(natural)
+        return cls(tuple(fit(columns, widths, available)), widths, natural=natural).widened(available)
 
     @classmethod
     def preferring(
@@ -191,7 +197,7 @@ class Layout:
             column.key for column in plain_layout.columns
         ]
         if kept_the_same and rich_layout.required() <= available:
-            return cls(rich_layout.columns, rich_layout.widths, bandwidth=True)
+            return cls(rich_layout.columns, rich_layout.widths, bandwidth=True, natural=rich_layout.natural)
         return plain_layout
 
     def required(self) -> int:
@@ -214,11 +220,16 @@ class Layout:
         wide, a flexible one of those gives up characters next, down to the
         clip mark and one character.
 
+        Whatever the cut leaves free is then given back to any flexible column
+        still narrower than its content (:meth:`widened`), so a cut value never
+        stands beside room the row does not use.
+
         Args:
             available: Width the row may take.
 
         Returns:
-            This layout when it already fits, otherwise the reduced one.
+            This layout when it already fits and nothing narrowed can grow,
+            otherwise the reduced or widened one.
 
         Example:
             >>> cols = [Column("a", "a"), Column("b", "b", flexible=True, min_width=6), Column("c", "c")]
@@ -240,7 +251,7 @@ class Layout:
             0
         """
         if self.required() <= available:
-            return self
+            return self.widened(available)
         columns = list(self.columns)
         widths = dict(self.widths)
         for column in reversed(self.columns[1:]):
@@ -259,7 +270,56 @@ class Layout:
             if column.flexible and column.never_dropped:
                 excess = max(_required(columns, widths) - available, 0)
                 widths[column.key] = max(widths[column.key] - excess, _CLIPPED)
-        return Layout(tuple(columns), widths, bandwidth=self.bandwidth)
+        return Layout(tuple(columns), widths, bandwidth=self.bandwidth, natural=self.natural).widened(available)
+
+    def widened(self, available: int) -> Layout:
+        """Give room the row does not use back to the flexible columns that were narrowed for it.
+
+        :func:`fit` narrows every flexible column to its ``min_width`` BEFORE it
+        drops a column, because a shortened name beats a lost column. When it
+        then drops one anyway, the room that freed is left unused while the
+        narrowed column stays cut: measured on the trend table at eighty
+        columns, the verdict was cut to fourteen cells with thirteen free
+        beside it. One cell at a time goes to the column cut deepest, never
+        past its own content.
+
+        Args:
+            available: Width the row may take.
+
+        Returns:
+            This layout when nothing narrowed can grow, otherwise one whose
+            narrowed columns take up to ``available``.
+
+        Example:
+            >>> cols = (Column("a", "a"), Column("b", "b", flexible=True, min_width=4))
+            >>> narrowed = Layout(cols, {"a": 5, "b": 4}, natural={"a": 5, "b": 20})
+            >>> narrowed.widened(20).widths, narrowed.widened(20).required()
+            ({'a': 5, 'b': 8}, 20)
+            >>> narrowed.widened(100).widths["b"]
+            20
+            >>> narrowed.widened(10) is narrowed
+            True
+            >>> Layout(cols, {"a": 5, "b": 4}).widened(100).widths["b"]
+            4
+        """
+        natural = self.natural or {}
+        widths = dict(self.widths)
+        spare = available - _required(self.columns, widths)
+        grown = False
+        while spare > 0:
+            deficits = {
+                column.key: natural[column.key] - widths[column.key]
+                for column in self.columns
+                if column.flexible and natural.get(column.key, 0) > widths[column.key]
+            }
+            if not deficits:
+                break
+            widths[max(deficits, key=lambda key: deficits[key])] += 1
+            spare -= 1
+            grown = True
+        if not grown:
+            return self
+        return Layout(self.columns, widths, bandwidth=self.bandwidth, natural=self.natural)
 
 
 def natural_widths(columns: Sequence[Column], rows: Iterable[dict[str, str]]) -> dict[str, int]:

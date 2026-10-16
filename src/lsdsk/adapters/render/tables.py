@@ -62,8 +62,9 @@ _MARKER_WIDTH = max(len(marker) for marker in theme.SEVERITY_MARKERS.values())
 #: measures a row behind the tree's gutter and a gap after every column; a table
 #: starts with the narrower marker column and carries no padding after its last
 #: column, so a layout that just fits ``width + 1`` is a table exactly ``width``
-#: wide. Used only where a row is cut to one line, so every width at which the
-#: table already fit draws as it did.
+#: wide. Used only where a row is cut or a column narrowed - the cut, and the
+#: room a narrowed column takes back - so a table whose every column is whole
+#: draws as it did.
 _TABLE_SLACK = len(GUTTER) - _MARKER_WIDTH
 #: The same for a table drawn with no marker column at all: it loses the marker
 #: and the gap after it, so it is that much narrower again than the layout

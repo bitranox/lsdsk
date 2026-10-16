@@ -728,8 +728,9 @@ def _header_line(columns: Sequence[Column], widths: dict[str, int], *, marker_fi
 
 #: How much narrower a gutter-led row is than :meth:`Layout.required` reckons:
 #: the layout counts a gap after every column, and the slots and SMART rows end
-#: at their last value. Used only where a row is cut to one line, so every width
-#: at which the table already fit draws as it did.
+#: at their last value. Used only where a row is cut or a column narrowed - the
+#: cut, and the room a narrowed column takes back - so a table whose every
+#: column is whole draws as it did.
 _NO_TRAILING_GAP = len(GAP)
 
 

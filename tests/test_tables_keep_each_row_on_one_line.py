@@ -344,3 +344,29 @@ def test_the_one_line_cut_of_the_trend_table_takes_no_more_than_the_console_lack
             clipped += 1
             assert _table_width(text) == width, f"trend at {width}: the cut left room unused\n{text}"
     assert clipped, "the control: the trend table was never cut into its first column"
+
+
+def test_a_trend_row_whose_verdict_is_cut_uses_the_full_width() -> None:
+    """Once the verdict is cut, it takes back every cell the columns dropped beside it left free.
+
+    Fitting narrowed the verdict to its minimum before it dropped the rate
+    column, and never gave back what the drop freed: at eighty columns every row
+    ended at column 67 with the verdict cut to fourteen cells and thirteen free.
+    A row whose verdict is cut must end at the console's edge. The control is a
+    row whose verdict fits whole at the same width, which must not be stretched.
+    """
+    inventory, history = _trended_machine()
+    rows = trend_rows(inventory, history)
+    cut_rows = whole_rows = 0
+    for width in range(20, 201):
+        drawn = _trend_table_lines(inventory, history, width)[-len(rows) :]
+        for line, row in zip(drawn, rows, strict=True):
+            verdict = verdict_text(row.trend)
+            if line.rstrip().endswith(verdict):
+                whole_rows += 1
+                continue
+            cut_rows += 1
+            assert line.rstrip().endswith(ELLIPSIS), f"width {width}: {verdict!r} neither whole nor cut in {line!r}"
+            assert cell_len(line.rstrip()) == width, f"width {width}: a cut verdict left room unused: {line!r}"
+    assert cut_rows, "the control: no verdict was ever cut, so the width it takes back was never asked"
+    assert whole_rows, "the control: no verdict ever fitted whole, so the cut rows had nothing to differ from"
