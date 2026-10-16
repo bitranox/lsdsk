@@ -26,10 +26,13 @@ cannot reach: `/` is a dataset, its `maj:min` is anonymous, and sysfs lists no h
 member. The udev database (`/run/udev/data/b<maj>:<min>`, world-readable) records
 `ID_FS_TYPE=zfs_member` and the pool name in `ID_FS_LABEL` for each member partition, and the
 mount's source names the pool (`rpool/ROOT/...`), which joins the two. The reader also looks the
-signature up on stacked devices (dm-crypt, LVM, md), which is how the filesystems section traces a
-pool on one to its disks; the used-by cell of such a disk still names the stacked layer
+signature up on stacked devices (dm-crypt, LVM, md). The filesystems section traces a pool's
+members from the pool's own configuration (ADR 0005) and reads these labels only for a capture
+taken without it, or for a member the configuration could not follow, and then only where the
+label's `ID_FS_UUID` is the listed pool's GUID: a guest's pool label on a host volume carries a
+name, not membership. The used-by cell of a disk under a stacked layer still names that layer
 (`crypt:<name>`). The capture keeps only what
-this resolution reads: a mount with no block device behind it (tmpfs, NFS, FUSE), any source other
+this resolution reads, plus a `zfs_member`'s `ID_FS_UUID`: a mount with no block device behind it (tmpfs, NFS, FUSE), any source other
 than a ZFS pool name, a mapping UUID past its type prefix (`LVM-`, `CRYPT-`), and a swap FILE's
 path (only a device-backed swap's `/dev/...` path and `dev` are kept; the resolver joins on `dev`
 alone) are left out. A Fedora/anaconda-default `luks-<UUID>` mapping name is narrowed to the

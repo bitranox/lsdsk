@@ -366,7 +366,7 @@ def test_a_name_in_wide_characters_is_cut_by_cells_and_keeps_its_count() -> None
     """Widths are terminal cells: counted in characters, Rich cut the name with its own mark and took the count."""
     for width in range(220, 29, -1):
         rendered = _text(_WIDE_CHARACTERS, _EXT4, width=width)
-        assert "…" not in rendered, f"Rich cut a cell at width {width}:\n{rendered}"
+        assert "\u2026" not in rendered, f"Rich cut a cell at width {width}:\n{rendered}"
         assert all(cell_len(line) <= width for line in rendered.splitlines()), f"wider than {width}:\n{rendered}"
         row = rendered.splitlines()[2]
         assert " +1 " in row, f"the +1 was lost at width {width}: {row!r}"

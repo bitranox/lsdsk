@@ -106,7 +106,8 @@ zu tun ist, und `1`, wenn eine Warnung oder ein kritischer Befund vorliegt, es
 passt also unmittelbar in eine Überwachungsprüfung. Fehler folgen den
 sysexits-Konventionen statt einem einzigen Code: `2` für eine Befehlszeile, die
 der Parser ablehnt, also eine unbekannte Option, einen unbekannten Befehl, ein
-fehlendes Pflichtargument, eine ungültige `--format`-Wahl oder eine
+fehlendes Pflichtargument, eine ungültige `--format`-Wahl, ein `--dir-mode`
+oder `--file-mode`, der kein reiner Oktalmodus ist, oder eine
 `--set`-Überschreibung, die das Werkzeug nicht unterbringt - ein Schlüssel, den
 einer seiner eigenen Abschnitte (`thresholds`, `display`, `history`) nicht hat,
 ein Abschnitt, der sich nur um einen Tippfehler von einem dieser unterscheidet,
@@ -122,7 +123,9 @@ verweigert, ein `snapshot`, dessen Ziel sich nicht schreiben lässt, und ein
 `config-generate-examples`, dessen Ziel das ebenso tut; `22` für
 ein Argument, mit dem das Werkzeug nichts anfangen
 kann, also einen Abschnitt, den `config --section` nennt und den es nicht gibt,
-oder einen `--profile`-Namen, den die Konfigurationsbibliothek ablehnt, und ebenso eine Option, die zum Befehl nicht
+oder einen `--profile`-Namen, den die Konfigurationsbibliothek ablehnt, einen Rechtemodus, den `config-deploy`
+ablehnt - konfiguriert, mit `--set` gegeben, oder ein
+`--set lib_layered_config.default_permissions`, das keine Tabelle ist -, und ebenso eine Option, die zum Befehl nicht
 passt, etwa `snapshot` mit `--replay`, oder mit `-o -` und `--format json`, was zwei
 Dokumente auf einen Datenstrom legen würde, oder `-o -`, während auch die
 Protokollkonsole auf die Standardausgabe schreibt; `70`, wenn dieses Werkzeug selbst
@@ -232,10 +235,11 @@ Verlauf nie für einen ruhigen gehalten wird. Der Exit-Code bleibt das Urteil
 `lsdsk filesystems --format json` trägt wie jeder andere Abschnitt das Inventar der Maschine, und
 `data.filesystems` ist eine Liste mit einem Eintrag je eingehängtem Dateisystem, ZFS-Pool oder
 Windows-Volume auf einer inventarisierten Platte, jeweils `{kind, name, other_mounts, fs_type, disks,
-size_bytes, used_bytes, free_bytes, inodes_total, inodes_free, read_only, free_space, readings_refused}`. `kind`
+size_bytes, used_bytes, free_bytes, inodes_total, inodes_free, read_only, space_is_quota, free_space, readings_refused}`. `kind`
 ist `mount`, `pool` oder `volume`; die Byte- und Inode-Zahlen sind ganze Zahlen, jeweils `null`, wo sie
 nicht gelesen wurden; `free_bytes` ist der Platz, der einem gewöhnlichen Benutzer frei zur Verfügung
-steht. `free_space` ist `null`, wo es nicht gelesen wurde oder der Dateisystemtyp dafür keine Quelle hat,
+steht. `space_is_quota` ist `true`, wo ein Kontingent pro Benutzer Größe, Belegung und freien Platz
+bestimmt (Windows); `free_space` beschreibt dann das ganze Volume und nicht das Kontingent. `free_space` ist `null`, wo es nicht gelesen wurde oder der Dateisystemtyp dafür keine Quelle hat,
 und sonst `{fragmentation_percent, free_extent_count, free_extent_bytes, largest_free_extent_bytes,
 histogram}`: `fragmentation_percent` ist der Wert auf der Skala, die `zpool list` verwendet (0 ist
 freier Platz in großen Stücken, 100 in kleinen), oder `null`, wenn keine Zahl existiert; danach

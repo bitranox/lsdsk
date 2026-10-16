@@ -1554,7 +1554,7 @@ _MARKUP_MARK = "MARKUPMARK"
 
 #: What may legitimately stand where the payload stops short: the ASCII mark a
 #: clipped cell ends in, Rich's own ellipsis, or a fold onto the next line.
-_CUT_MARKS = frozenset({">", "…", "\n", ""})
+_CUT_MARKS = frozenset({">", "\u2026", "\n", ""})
 
 #: Every command that draws a capture in human form: those eight sections, the
 #: default page, and ``report``, which is the same page under its own name.

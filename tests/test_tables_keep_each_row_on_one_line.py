@@ -52,7 +52,7 @@ WIDTHS = (*range(20, 65), *range(65, 221, 5))
 REFERENCE_WIDTH = 120
 #: Rich's own ellipsis. The tables cut with the ASCII clip mark instead, so this
 #: character on a page means Rich cut a cell the layout handed it whole.
-RICH_ELLIPSIS = "…"
+RICH_ELLIPSIS = "\u2026"
 
 
 def _machine(capture: str) -> tuple[Inventory, list[Finding]]:

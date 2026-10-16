@@ -54,7 +54,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/hw/linux/reader.py` - Read storage topology and device blobs from a live Linux system.
 - `src/lsdsk/adapters/hw/linux/usage.py` - Resolve what uses each Linux disk, from what the reader recorded.
 - `src/lsdsk/adapters/hw/linux/usbfs.py` - Fetch a USB device's BOS through usbfs, for kernels that do not publish it in sysfs.
-- `src/lsdsk/adapters/hw/linux/zfs.py` - Read every imported ZFS pool's size and allocation from the control device.
+- `src/lsdsk/adapters/hw/linux/zfs.py` - Read every imported ZFS pool's size, allocation and member layout from the control device.
 
 ### Adapters - hardware, Windows
 
@@ -97,6 +97,7 @@ module exists that is not listed here, or a listed path does not exist.
 
 ### Adapters - CLI
 
+- `src/lsdsk/adapters/cli/config_loading.py` - Load one profile's configuration and settle it, with one answer for each way that fails.
 - `src/lsdsk/adapters/cli/constants.py` - Shared CLI constants.
 - `src/lsdsk/adapters/cli/context.py` - Click context helpers for CLI state management.
 - `src/lsdsk/adapters/cli/envelope.py` - The machine-readable envelope for commands that act rather than report.
@@ -226,15 +227,15 @@ describes a ceiling rather than a fault. Anything above `1` means the command di
 answer the question, either because it was refused before it started or because this tool
 broke while it ran.
 
-| Code | Name                | Raised when                                                                                                                                                                                                                                                     |
-|------|---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 0    | `SUCCESS`           | The command ran and found nothing actionable                                                                                                                                                                                                                    |
-| 1    | `GENERAL_ERROR`     | A scan found a warning or a critical, or an action failed; `record` that could read no drive's power-on hours                                                                                                                                                   |
-| 13   | `PERMISSION_DENIED` | A `config-deploy` target, a `config-generate-examples`, `snapshot` or `record` destination, or a device needs privilege this run does not have                                                                                                                  |
-| 22   | `INVALID_ARGUMENT`  | `config --section` named no section, a `--profile` was rejected, `snapshot` was given a global `--replay` or `-o -` with `--format json` or while the logging console writes to stdout, or `report` or `tui` was given `--format`                               |
-| 70   | `SOFTWARE_ERROR`    | An error inside this tool: an exception no command handled, which is a bug rather than a finding                                                                                                                                                                |
-| 74   | `IO_ERROR`          | A write failed for a reason other than permission: a `snapshot` or `record` destination, a `config-deploy` or `config-generate-examples` file, or standard output itself refusing the output or closed                                                          |
-| 78   | `CONFIG_ERROR`      | A configuration file cannot be loaded, a file is not a snapshot this version reads, the counter-history store `record` would write cannot be read, lsdsk's own shipped configuration is missing, unreadable or corrupt, or this platform has no hardware reader |
+| Code | Name                | Raised when                                                                                                                                                                                                                                                                                                                                                         |
+|------|---------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 0    | `SUCCESS`           | The command ran and found nothing actionable                                                                                                                                                                                                                                                                                                                        |
+| 1    | `GENERAL_ERROR`     | A scan found a warning or a critical, or an action failed; `record` that could read no drive's power-on hours                                                                                                                                                                                                                                                       |
+| 13   | `PERMISSION_DENIED` | A `config-deploy` target, a `config-generate-examples`, `snapshot` or `record` destination, or a device needs privilege this run does not have                                                                                                                                                                                                                      |
+| 22   | `INVALID_ARGUMENT`  | `config --section` named no section, a `--profile` was rejected, `snapshot` was given a global `--replay` or `-o -` with `--format json` or while the logging console writes to stdout, or `report` or `tui` was given `--format`, or `config-deploy` refused a permission mode (configured, from `--set`, or a `default_permissions` section `--set` as one value) |
+| 70   | `SOFTWARE_ERROR`    | An error inside this tool: an exception no command handled, which is a bug rather than a finding                                                                                                                                                                                                                                                                    |
+| 74   | `IO_ERROR`          | A write failed for a reason other than permission: a `snapshot` or `record` destination, a `config-deploy` or `config-generate-examples` file, or standard output itself refusing the output or closed                                                                                                                                                              |
+| 78   | `CONFIG_ERROR`      | A configuration file cannot be loaded, a file is not a snapshot this version reads, the counter-history store `record` would write cannot be read, lsdsk's own shipped configuration is missing, unreadable or corrupt, or this platform has no hardware reader                                                                                                     |
 
 Two more are named in the enum and decided elsewhere:
 

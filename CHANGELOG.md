@@ -5,12 +5,93 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- **statvfs is asked only about filesystems on an inventoried disk**, the same ones the free-space
+  walk reads, so a loop image or a network mount is no longer asked. A FUSE mount (`fuse`,
+  `fuse.<type>`) no longer counts as sitting on the disk its source names, because that source is
+  free text the mounting user chose; `fuseblk` still does.
+- **Inside a container no filesystem is stat-ed or walked**, because the filesystems section is never
+  shown there.
+- **A ZFS pool's disks come from the pool's own configuration.** Captures now record each pool's GUID
+  and the type and device number of each member, never its path; a capture taken before this keeps
+  the earlier behaviour.
+- The refusals for an oversized input file, snapshot or history store state their sizes in MiB, the
+  unit they are computed in. They said MB.
+
 ### Fixed
 
 - CONFIG.md no longer says Windows ignores every permission setting. A mode configured in a file or
   the environment is not read there, but a mode given on the command line (`--dir-mode`,
   `--file-mode` or a `--set` of a `lib_layered_config.default_permissions` key) is still checked,
   and an unsafe one is refused on Windows as well.
+- **A byte that is not valid UTF-8 anywhere in mountinfo no longer ends every command with exit 78.**
+  One such byte in a field other than the mountpoint (a FUSE filesystem's subtype is whatever the
+  mounting user chose) made the reading unreadable, `snapshot` included. It is now recorded as
+  U+FFFD, and a capture that still carries one replays. A mountpoint longer than 4096 characters once
+  escaped is no longer refused either: its printable form is cut with a marked `...`, while statvfs
+  and the free-extent walk still ask the system at the full path.
+- **`lsdsk config --profile X` with a malformed or unreadable file in profile X exits 78 or 13** with
+  the JSON error envelope, the same as `lsdsk --profile X config`. It used to exit 70 with an empty
+  stdout.
+- **`lsdsk config-deploy --profile X` reads its settings from profile X**: the `enabled` switch, the
+  startup refusal of an integer mode that could be octal digits (78), and a malformed or unreadable
+  file of X (78 or 13). It used to read these from the configuration without the profile, and
+  deployed past a damaged profile file at exit 0. Both subcommand forms now also warn when X named
+  nothing, and keep an explicit `--env-file`.
+- **The warning for a profile that named nothing says what is in force**: the shipped default, for
+  every value the environment or `--set` does not give. It said "the one configured without it",
+  and no longer suggests the typed name as its own correction.
+- **Every row of the controllers, disks, filesystems and health tables stays on one line, with its
+  severity marker, at any width.** Below about 41 columns the marker column vanished, so `lsdsk
+  disks` at a piped width of 34 showed no `!` or `~` on any row, and cells were cut with an
+  ellipsis, so a link figure read `Gen3...`. The tables now give up columns whole, as the topology
+  tree does; a link figure is drawn whole or not at all, and the filesystems table keeps `use%` and
+  `disks` at every width.
+- **The filesystems table no longer cuts a filesystem's name while a column that can be dropped still
+  stands**, so two mountpoints sharing a long prefix no longer both read `/mnt/pool>`.
+- **A name in CJK or other double-width characters is laid out by the cells it takes on screen.** A
+  CJK mountpoint was cut short with room to spare and lost its ` +N` count; a cut never splits a
+  double-width character.
+- **A VM guest's ZFS label on a host volume no longer joins a host pool of the same name**, and on a
+  host without `/dev/zfs` it no longer draws a pool row or a false `zfs-pools` refusal. A pool whose
+  members are all files or virtual devices (loop, zram) no longer makes the scan report `ok` false;
+  `zfs-pool-disks` now names only a listed pool that a reading which was not taken could have placed.
+- **An xfs filesystem whose realtime section lives inside its data device (zoned xfs) gets its
+  free-space reading.** It was refused with "none on this filesystem's device", because the kernel
+  numbers such a filesystem's sections instead of naming the device.
+- **On Windows, a volume that could not give its paths is reported even when it is the machine's only
+  volume.** Such a capture read as never taken (`filesystems: null`, `ok` true); it is now a
+  `volume: filesystems - ...` line in `skipped`. Captures taken before this release replay as before.
+- **On Windows, every volume the filesystems section could not place is named**: one with no readable
+  path by its place in the enumeration and the disks it reached (`volume 2 on PhysicalDrive0: ...`),
+  so two such volumes no longer print the same line. An EFI system partition whose extents could not
+  be read no longer adds a `volume` line at all, since it can never be a row; it still leaves the
+  used-by column undecided.
+- **On Windows, a disk whose number Windows would not report is the refused reading `device-number`**,
+  so `ok` is false; its volumes used to drop out of the filesystems section with no trace. An
+  elevated run no longer walks a volume on a disk the scan did not list, and a RAM disk whose extents
+  name a real disk is no longer a filesystem row.
+- **On Windows, a volume listed by a folder mount before its drive letter is asked at the letter** for
+  its drive type, space, filesystem and cluster size, and the used-by column lists the letter first,
+  matching the row.
+- **On Windows, under a per-user disk quota, the detail panel marks the free-space figures as the whole
+  volume's** ("scope whole volume, not the quota"); size, used and free are the quota's. The JSON gains
+  `space_is_quota` on every filesystem row.
+- **`--dir-mode` and `--file-mode` accept exactly the spellings `--set` and a configuration file
+  accept.** `7_50`, `+750`, `-1` or `77777` is now a usage error (exit 2) naming the option; before, it
+  was deployed or refused later with 22.
+- **`--set lib_layered_config.default_permissions=<value>` that is not a table makes `config-deploy`
+  exit 22 before anything is written.** It used to announce the shipped section and deploy with the
+  configured modes.
+- **A configured number too long to print no longer crashes the run with exit 70.** A huge hex literal
+  in a YAML drop-in did; it is now reported as refused, shown as `<int, N bits>`.
+- **A scrub pattern cut at a comma that nothing closes no longer announces the entries after it as
+  ignored.** In `LOG_SCRUB_PATTERNS=k=a{1,3,token=.+` only `3` is named as lost; `token=.+` is an
+  entry lib_log_rich reads and scrubs with.
+- The exit-code tables of the skill and the module reference name `config-deploy` refusing a
+  permission mode under `22`, and CONFIG.md says a `--set` mode is checked on every `config-deploy`
+  run, even one that would not apply it.
 
 ## [1.9.1] 2026-10-15 14:10:52
 

@@ -90,18 +90,24 @@ refuse with a message.
 
 **The capture never holds a pool's configuration.** The config an answer carries names every vdev
 by path, often a by-id name embedding a drive serial, and also the host name and GUIDs. It is
-decoded at once and dropped: the capture keeps the pool name, its size and its allocation and
-nothing else, so a recapture cannot put a serial in a place the fixture scrub does not know about.
+decoded at once and reduced: the capture keeps the pool name, its size, its allocation, the pool's
+GUID and, for each leaf vdev, its type and the device number its path resolves to - never the path,
+the host name or a vdev GUID - so a recapture cannot put a serial in a place the fixture scrub does
+not know about.
 
 **Absent is not refused.** A missing `/dev/zfs` (no node, or a node with no driver behind it) is no
-refusal when no disk carries a ZFS member, the line the AHCI reader draws for a controller with no
-BAR5, and neither is a refused one (a node at mode 0600 on a host with no pool): a pool row exists
-only for a pool with a member on an inventoried disk, so with no member the listing missed nothing.
-Absent or refused while a disk does carry a pool member is a refusal of the reading `zfs-pools`,
-reported under the subject `filesystems`: the pool exists and could not be read. A pool member is
-traced to its disk through the same holder closure the used-by column follows, so a pool on
-dm-crypt, LVM or md reaches the disks beneath it; a pool the listing names that no inventoried disk
-can be traced to is a refusal of the reading `zfs-pool-disks` and draws no row. A refused
+refusal, the line the AHCI reader draws for a controller with no BAR5: a pool row exists only for a
+pool the kernel lists, so with no listing there is no pool to miss, and a member label on a disk -
+which may be a VM guest's pool on a host volume - is no evidence of one. A listing the control
+device refused while it exists is a refusal of the reading `zfs-pools`, reported under the subject
+`filesystems`, and draws no row. A listed pool's members come from its own configuration: each leaf
+vdev's device number is traced to its disk through the same holder closure the used-by column
+follows, so a pool on dm-crypt, LVM or md reaches the disks beneath it. A member the configuration
+could not follow falls back to the udev labels, matched by the pool's GUID and never by its name. A
+pool whose members are all files or virtual devices (loop, zram) has no row and no refusal, like any
+other filesystem on no inventoried disk; a listed pool that a reading which was not taken could have
+placed is a refusal of the reading `zfs-pool-disks` and draws no row. A capture taken before the
+configuration was recorded traces members by label name, as it did then. A refused
 `statvfs` is recorded against its filesystem under `statvfs`, a Windows volume's under
 `volume-space` (the space query) or `volume-info` (the filesystem-information query), and each
 becomes a `skipped` line, so `ok` is `false` on a scan that missed one. A container, or a capture
@@ -111,8 +117,9 @@ means read and none found.
 **A capture from before this section is not read, not read as blank.** The builder decides from the
 capture's own keys, never from a version string. The Linux reader writes `filesystem_space`
 whenever it read mountinfo, so a capture without it is from before the reading; the Windows reader
-records on every volume with a path either the figures or the reason each of its two calls was
-refused, so a capture in which no such volume carries any of them is from before it. Either replays
+writes `volume_space_read`, and a capture without that flag is from before the reading when no
+volume with a path carries the figures or the reason one of its two calls was refused; with the flag,
+the reading ran even where no volume is left to be a row. Either replays
 as `filesystems: null` with no refusal, the same `ok` as before the section existed. Read as an
 empty reading instead, it drew a row of `-` for every mount, pool and volume and claimed the ZFS
 control device was missing on a host that was never asked.
@@ -123,10 +130,14 @@ Measured unelevated through a limited-run-level scheduled task, both answer. A v
 path, such as the EFI system and recovery partitions, has nothing to ask and is not a row. A row's
 size, used and free are the figures `GetDiskFreeSpaceExW` reports to the caller (its total and its
 free-to-caller bytes, used being the one less the other), so all three share one scope: under a
-per-user quota that is the quota, and the volume-wide free figure is recorded but not drawn. A
-volume whose paths could not be read, or that would not open or report its disk extents, is a
-refusal of the run-wide reading `volume`, decided by the same rule that leaves its disk's used-by
-cell undecided; an optical drive, a RAM disk or a hidden volume with no path stays silent.
+per-user quota that is the quota, and the volume-wide free figure is recorded but not drawn; the
+free-space figures of ADR 0006 are the whole volume's, so the row carries `space_is_quota` and the
+detail panel says so. A volume whose paths could not be read, or one with a path that would not open
+or report its disk extents, is a refusal of the run-wide reading `volume`, named by its drive letter
+or, without one, by its place in the enumeration and the disks it reached. A disk whose number
+Windows would not report is the refused reading `device-number`. An optical drive, a RAM disk and a
+hidden volume with no path stay silent here; an EFI system partition whose extents failed still
+leaves its disk's used-by cell undecided.
 
 **The inode rule.** An inode count is a ceiling only where the table is made at format time, which
 the builder decides from the filesystem TYPE and never from the numbers, since a ZFS `f_files`

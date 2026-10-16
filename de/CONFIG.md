@@ -268,7 +268,8 @@ Die Vorgaben für die Rechte lassen sich in `[lib_layered_config.default_permiss
 # bloße Zahl, Text, der nicht nur aus Oktalziffern besteht, einen Modus, der Gruppe oder
 # Welt Schreibrechte gibt, auf einer Datei ein Ausführungsbit oder ein Sonderbit setzt,
 # und einen Verzeichnismodus ohne rwx für den Besitzer. Ein mit --set gegebener Modus
-# wird genauso angewendet und geprüft.
+# wird genauso angewendet und bei jedem Lauf von config-deploy geprüft, auch wenn er
+# nicht angewendet würde (--no-permissions, oder --dir-mode und --file-mode zusammen).
 # Eine Zahl nur aus den Ziffern 0-7 (755, 644, 420) ist mehrdeutig und beendet den Lauf
 # beim Start (Exit 78): als Text schreiben, "0755" oder "0o755".
 app_directory = "0o755"
@@ -607,12 +608,12 @@ einem falschen Buchstaben überhaupt keine Datei, und jeder Wert fällt auf den
 ausgelieferten zurück. Der Lauf endet trotzdem mit `0`, und `config` meldet
 anschließend genau diese zurückgefallenen Zahlen als die geltenden Werte.
 
-Ein `--profile`, das keine Schicht beigetragen hat, sagt das deshalb auf stderr
-und nennt das nächstliegende Profil dieser Maschine, sofern eines nahe genug
-liegt:
+Ein `--profile`, das keine Schicht beigetragen hat, sagt das deshalb auf stderr,
+ob es vor dem Unterbefehl steht oder bei `config` oder `config-deploy`, und nennt
+das nächstliegende Profil dieser Maschine, sofern eines nahe genug liegt:
 
 ```text
-Warning: profile prodd named nothing, so every value is the one configured without it. Did you mean prod?
+Warning: profile prodd named nothing, so every value the environment or --set does not give is the shipped default. Did you mean prod?
 ```
 
 Groß- und Kleinschreibung zählt, denn ein Profilverzeichnis wird exakt

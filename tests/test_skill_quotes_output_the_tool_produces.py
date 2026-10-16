@@ -198,7 +198,7 @@ def test_the_skill_enumerates_the_fields_a_controller_really_carries() -> None:
 
 #: The sentence that enumerates a filesystem's fields.
 _FILESYSTEM_FIELDS_OPENS = "Each entry carries `kind` (`mount`, `pool` or\n`volume`)"
-_FILESYSTEM_FIELDS_ENDS = "It is `null` when"
+_FILESYSTEM_FIELDS_ENDS = "The list itself is `null` when"
 
 
 def _enumerated_filesystem_fields() -> list[str]:

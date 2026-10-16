@@ -54,7 +54,7 @@ class TestEchoOnALegacyCodepage:
         safe_console.echo(f"{glyph} status", file=stream)
         assert expected in _read_back(stream)
 
-    @pytest.mark.parametrize("glyph", ["•", "…", "\u2019"])
+    @pytest.mark.parametrize("glyph", ["•", "\u2026", "\u2019"])
     def test_a_character_cp1252_has_is_left_alone(self, glyph: str) -> None:
         """Degrade only what the stream cannot take; cp1252 has these."""
         stream = _cp1252_stream()

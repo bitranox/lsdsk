@@ -268,7 +268,8 @@ Permission defaults can be customized in `[lib_layered_config.default_permission
 # when it applies it and refuses, before anything is written, a bare integer, text that is
 # not plain octal digits, a mode adding group or world write, an execute bit on a file,
 # or a special bit, and a directory mode without owner rwx. A mode given with --set is
-# applied and judged the same way.
+# applied the same way, and judged on every config-deploy run, even one that would not
+# apply it (--no-permissions, or both --dir-mode and --file-mode given).
 # An integer of only the digits 0-7 (755, 644, 420) stops the run at startup (exit 78):
 # write it as text, "0755" or "0o755".
 app_directory = "0o755"
@@ -595,11 +596,12 @@ with one letter wrong reads no file at all and every value falls back to the
 shipped one. The run still exits `0`, and `config` afterwards reports those
 fallen-back figures as the values in force.
 
-So a `--profile` that contributed no layer says so on stderr, and names the
-closest profile on this machine when one is close enough:
+So a `--profile` that contributed no layer says so on stderr, whether it is given
+before the subcommand or to `config` or `config-deploy`, and names the closest
+profile on this machine when one is close enough:
 
 ```text
-Warning: profile prodd named nothing, so every value is the one configured without it. Did you mean prod?
+Warning: profile prodd named nothing, so every value the environment or --set does not give is the shipped default. Did you mean prod?
 ```
 
 Case counts, because a profile directory is matched exactly: `--profile PROD`

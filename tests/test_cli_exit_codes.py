@@ -202,7 +202,7 @@ def _row_for(path: Path, code: int) -> str:
 DOCUMENTED_CAUSES: dict[int, tuple[str, ...]] = {
     1: ("warning or a critical", "`record`"),
     13: ("config-deploy", "config-generate-examples", "snapshot", "record"),
-    22: ("--section", "--profile", "--replay", "`report`", "`tui`", "--format", "`-o -`"),
+    22: ("--section", "--profile", "--replay", "`report`", "`tui`", "--format", "`-o -`", "config-deploy"),
     74: ("snapshot", "record", "config-deploy", "config-generate-examples", "standard output"),
     78: ("configuration", "snapshot", "counter-history store", "hardware reader"),
 }

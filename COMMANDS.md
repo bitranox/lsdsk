@@ -101,7 +101,8 @@ machine-readable form is `lsdsk snapshot`. Exit codes are `0` for nothing
 actionable and `1` when a warning or critical was found, so it drops straight
 into a monitoring check. Errors use sysexits conventions rather than a single
 code: `2` for a command line the parser refuses, which is an unknown option, an
-unknown command, a missing required argument, a bad `--format` choice or a
+unknown command, a missing required argument, a bad `--format` choice, a `--dir-mode` or
+`--file-mode` that is not a plain octal mode, or a
 `--set` override the tool refuses to place - a key one of its own sections
 (`thresholds`, `display`, `history`) does not have, a section one typo away from
 one of those, or a value nested deeper than 95 levels. A section that resembles
@@ -115,7 +116,9 @@ outright, a `snapshot` whose destination refuses to be written, and a
 `config-generate-examples` whose destination does; `22` for an
 argument the tool cannot act on, which is a section
 `config --section` names that does not exist or a `--profile` name the
-configuration library rejects,
+configuration library rejects, a permission mode `config-deploy` refuses -
+configured, given with `--set`, or a `--set lib_layered_config.default_permissions`
+that is not a table -
 and also an option that does not apply to the command, such as `snapshot` given
 `--replay`, or given `-o -` with `--format json`, which would put two documents on
 one stream, or `-o -` while the logging console writes to standard output too;
@@ -212,9 +215,10 @@ The exit code is still the machine's verdict.
 `lsdsk filesystems --format json` carries the machine's inventory like every other section, and
 `data.filesystems` is a list with one entry per mounted filesystem, ZFS pool or Windows volume on
 an inventoried disk, each `{kind, name, other_mounts, fs_type, disks, size_bytes, used_bytes,
-free_bytes, inodes_total, inodes_free, read_only, free_space, readings_refused}`. `kind` is `mount`, `pool` or
+free_bytes, inodes_total, inodes_free, read_only, space_is_quota, free_space, readings_refused}`. `kind` is `mount`, `pool` or
 `volume`; the byte and inode figures are integers, each `null` where it was not read; `free_bytes`
-is the space free to an ordinary user. `free_space` is `null` where it was not read or the filesystem
+is the space free to an ordinary user. `space_is_quota` is `true` where a per-user quota set size,
+used and free (Windows), and `free_space` then describes the whole volume rather than the quota. `free_space` is `null` where it was not read or the filesystem
 type has no source for it, and otherwise `{fragmentation_percent, free_extent_count,
 free_extent_bytes, largest_free_extent_bytes, histogram}`: `fragmentation_percent` is the score on
 the scale `zpool list` uses (0 is free space in large pieces, 100 in small ones) or `null` if no

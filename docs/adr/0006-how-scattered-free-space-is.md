@@ -145,7 +145,8 @@ defragmenter, which would mean running a subprocess. This tool runs none.
 ## Consequences
 
 Captures gain optional fields (`SCHEMA_VERSION` stays 2): a pool's fragmentation, a mount's free
-extents, a Windows volume's `free_extents` entry and a Windows run's `volume_bitmaps_read`, so every
+extents, a Windows volume's `free_extents` entry and a Windows run's `volume_bitmaps_read` (with
+`volume_space_read` and a disk's `device_number_error` beside them), so every
 committed fixture still parses and an older one replays with no figure. The `frag` cell of a row with
 no reading draws `-`, which the three legend tests written before the column existed had to be told
 about; their fixtures now carry a `FreeSpace` so they still test what they were written for.
