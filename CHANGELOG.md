@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.9.4] 2026-10-16 20:25:59
+
 ### Added
 
 - `uv.lock` is committed, and the `[tool.uv] exclude-newer` cooldown keeps releases younger than it
