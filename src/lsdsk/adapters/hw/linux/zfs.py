@@ -166,13 +166,21 @@ def _layout(config: NvValue, device_number: Callable[[str], str | None]) -> dict
     return layout
 
 
+def _zfs_absent(error: OSError) -> bool:
+    """Whether opening the control device failed because ZFS is not here, which is no refusal.
+
+    No node, or a node with no driver behind it (ENODEV/ENXIO).
+    """
+    return isinstance(error, FileNotFoundError) or error.errno in {errno.ENODEV, errno.ENXIO}
+
+
 def read_pool_layouts(
     device: Path = ZFS_DEVICE,
     *,
     ioctl: Ioctl | None = None,
     opener: Opener | None = None,
     device_number: Callable[[str], str | None] = device_number_of,
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, dict[str, Any]] | None:
     """Where every listed pool has its members, from each pool's own config.
 
     Args:
@@ -188,17 +196,20 @@ def read_pool_layouts(
         decimal, as udev writes it on a member) and ``vdevs`` (every leaf vdev
         with a path, as ``kind`` and the ``dev`` it resolved to), either absent
         when the config did not carry it. Empty when there is no control
-        device or the listing could not be read: ``read_pools`` reads the
-        same listing and records why.
+        device, so no pool to lay out. ``None`` when the device could not be
+        opened or the listing could not be read, which leaves the pools to
+        their member labels as in a capture taken before layouts were read:
+        an empty answer there would call every listed pool untraced.
+        ``read_pools`` reads the same listing and records why.
     """
     try:
         fd = (opener or os.open)(device, os.O_RDONLY)
-    except OSError:
-        return {}
+    except OSError as error:
+        return {} if _zfs_absent(error) else None
     try:
         configs = decode_nvlist(_ask(fd, ZFS_IOC_POOL_CONFIGS, "", ioctl or system_ioctl))
     except _READ_FAILURES:
-        return {}
+        return None
     finally:
         os.close(fd)
     return {name: _layout(config, device_number) for name, config in configs.items()}
@@ -244,8 +255,7 @@ def _each_pool(
     try:
         fd = (opener or os.open)(device, os.O_RDONLY)
     except OSError as error:
-        # No node, or a node with no driver behind it (ENODEV/ENXIO): ZFS is not here, which is no refusal.
-        if isinstance(error, FileNotFoundError) or error.errno in {errno.ENODEV, errno.ENXIO}:
+        if _zfs_absent(error):
             return None, None
         return None, f"could not open {device} ({error.strerror})"
     try:

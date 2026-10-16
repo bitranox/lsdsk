@@ -7,14 +7,20 @@ capture taken before that field keeps joining pools to disks by their members' l
 
 from __future__ import annotations
 
-from typing import Any
+import errno
+import os
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from lsdsk.adapters.hw.linux import zfs
 from lsdsk.adapters.hw.linux.capture import LinuxCapture
 from lsdsk.adapters.hw.linux.filesystems import build_filesystems
 from lsdsk.domain.enums import Environment
 from lsdsk.domain.models import RefusedReading
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 BARE_METAL = Environment.BARE_METAL
 _RPOOL_GUID = "2936817686098969225"
@@ -228,3 +234,20 @@ def test_a_former_member_still_labelled_with_the_pool_s_guid_does_not_join_a_poo
         }
     )
     assert _built(reading) == ([("rpool", ("sda",))], ())
+
+
+def _refused(_fd: int, _request: int, _command: bytearray) -> int:
+    raise OSError(errno.EACCES, os.strerror(errno.EACCES))
+
+
+def test_a_pool_config_listing_that_was_refused_leaves_the_pools_to_their_member_labels(tmp_path: Path) -> None:
+    # The pool listing read rpool, the config listing did not: nothing says where rpool's members are, so the labels
+    # decide as they do for a capture taken before configs were read, rather than every listed pool going untraced.
+    node = tmp_path / "zfs"
+    node.write_bytes(b"")
+    reading = _host(stacked={}, zfs_pool_layouts=zfs.read_pool_layouts(node, ioctl=_refused))
+
+    assert _built(reading) == ([("rpool", ("sda",))], ())
+    # Control: with no control device there is no pool, so there is no layout either, and no label is consulted.
+    absent = _host(stacked={}, zfs_pools=None, zfs_pool_layouts=zfs.read_pool_layouts(tmp_path / "absent"))
+    assert _built(absent) == ([], ())

@@ -522,6 +522,6 @@ def test_each_pool_s_layout_names_its_leaf_vdevs_by_device_number_and_no_path(tm
     )
 
 
-def test_no_control_device_or_a_refused_listing_is_no_layout(tmp_path: Path) -> None:
+def test_no_control_device_is_no_layout_and_a_refused_listing_is_an_unread_one(tmp_path: Path) -> None:
     assert zfs.read_pool_layouts(tmp_path / "absent") == {}
-    assert zfs.read_pool_layouts(_device(tmp_path), ioctl=FakeDevice({}, fail=errno.EACCES)) == {}
+    assert zfs.read_pool_layouts(_device(tmp_path), ioctl=FakeDevice({}, fail=errno.EACCES)) is None

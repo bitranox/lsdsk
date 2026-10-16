@@ -748,11 +748,11 @@ class LinuxCapture(CaptureHeader, frozen=True):
         zfs_pools_error: Why the pools could not be read, or why one of them
             could not.
         zfs_pool_layouts: Where each pool the ZFS listing names has its
-            members, by pool name, from the pool's own config. The live reader
-            writes it on every run, empty when no pool was listed or the
-            listing could not be read; ``None`` marks a capture taken before
-            this field existed, whose pools are joined to disks by their
-            members' udev labels alone.
+            members, by pool name, from the pool's own config. Empty when no
+            pool was listed. ``None`` when the config listing could not be
+            read, and in a capture taken before this field existed: either
+            way the pools are joined to disks by their members' udev labels
+            alone.
         zfs_fragmentation: Each imported pool's FRAG by name, ``None`` for a
             pool ZFS gives no figure for. ``None`` as a whole when there was no
             ZFS control device, or in a capture taken before this field existed.

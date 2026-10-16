@@ -1200,7 +1200,7 @@ class SystemReaders:
     signatures: Callable[[list[str]], dict[str, dict[str, str]] | None] = mounts.read_signatures
     pools: Callable[[], tuple[dict[str, dict[str, int]] | None, str | None]] = zfs.read_pools
     fragmentation: Callable[[], tuple[dict[str, int | None] | None, str | None]] = zfs.read_pool_fragmentation
-    pool_layouts: Callable[[], dict[str, dict[str, Any]]] = zfs.read_pool_layouts
+    pool_layouts: Callable[[], dict[str, dict[str, Any]] | None] = zfs.read_pool_layouts
     mount_table: Callable[[], list[dict[str, str | bool]] | None] = mounts.read_mounts
     swaps: Callable[[], list[dict[str, str]] | None] = mounts.read_swaps
     space: Callable[[Sequence[Mapping[str, str | bool]]], dict[str, dict[str, int | str]]] = mounts.read_space
