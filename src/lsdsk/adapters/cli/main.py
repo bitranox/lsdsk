@@ -302,6 +302,8 @@ def main(
     # Before any command runs, so every printer - click's, rich's, this
     # project's own - meets the same refusal on a process with no stdout.
     safe_console.stand_in_for_missing_standard_streams()
+    # Before anything is written, so the buffer the re-encoding flushes is empty.
+    safe_console.write_redirected_streams_in_utf8()
     try:
         code = _run_cli(argv, services_factory=services_factory)
     finally:

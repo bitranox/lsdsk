@@ -35,6 +35,8 @@ Contents
 * :func:`stand_in_for_missing_standard_streams` and
   :func:`standard_output_is_missing` - a process started with no stdout or no
   stderr at all
+* :func:`write_redirected_streams_in_utf8` - UTF-8 for a stream a program
+  reads, whatever the locale or console code page
 * :func:`flush_streams_or_leave` - deliver buffered output while a handler can
   still see it fail
 * :func:`restore_original_streams` - give a library caller back the descriptors
@@ -45,6 +47,7 @@ Contents
 
 from __future__ import annotations
 
+import codecs
 import contextlib
 import errno
 import io
@@ -246,6 +249,8 @@ def restore_original_streams() -> None:
     Side Effects:
         Restores process file descriptors and closes the saved duplicates, puts
         back each None :func:`stand_in_for_missing_standard_streams` replaced,
+        gives each stream :func:`write_redirected_streams_in_utf8` re-encoded
+        the encoding it had,
         and forgets any stdout failure recorded and whether one was said, so the
         next run in the same process starts from nothing.
     """
@@ -255,6 +260,12 @@ def restore_original_streams() -> None:
         sys.stderr = None
     _RECORDED_STANDARD_OUTPUT_FAILURES.clear()
     _STANDARD_OUTPUT_FAILURE_SAID.clear()
+    # Before the descriptors: giving an encoding back flushes the stream, and a
+    # descriptor still pointed at the null device takes that flush harmlessly.
+    while _REENCODED_STREAMS:
+        stream, encoding, errors = _REENCODED_STREAMS.pop()
+        with contextlib.suppress(OSError, ValueError):
+            stream.reconfigure(encoding=encoding, errors=errors)
     with _REDIRECTING:
         while _REDIRECTED_DESCRIPTORS:
             descriptor, saved = _REDIRECTED_DESCRIPTORS.popitem()
@@ -621,6 +632,82 @@ def standard_output_is_missing() -> bool:
         False
     """
     return sys.stdout is None or isinstance(sys.stdout, _MissingStandardOutput)
+
+
+#: Each stream :func:`write_redirected_streams_in_utf8` re-encoded, with the
+#: encoding and error handler it had, for :func:`restore_original_streams`.
+_REENCODED_STREAMS: Final[list[tuple[io.TextIOWrapper[Any], str, str | None]]] = []
+
+
+def _an_encoding_was_asked_for() -> bool:
+    """Whether ``PYTHONIOENCODING`` names an encoding, rather than only an error handler."""
+    requested = os.environ.get("PYTHONIOENCODING", "")
+    return bool(requested.partition(":")[0].strip())
+
+
+def _writes_utf8(stream: io.TextIOWrapper[Any]) -> bool:
+    try:
+        return codecs.lookup(stream.encoding).name == "utf-8"
+    except LookupError:
+        return False
+
+
+def _is_a_terminal_or_cannot_say(stream: io.TextIOWrapper[Any]) -> bool:
+    try:
+        return stream.isatty()
+    except (OSError, ValueError):
+        return True
+
+
+def _to_reencode(stream: object) -> io.TextIOWrapper[Any] | None:
+    """The stream itself where it is the process's own text stream, written in something other than UTF-8."""
+    if not isinstance(stream, io.TextIOWrapper):
+        return None
+    wrapper = cast("io.TextIOWrapper[Any]", stream)
+    if _writes_utf8(wrapper) or _is_a_terminal_or_cannot_say(wrapper):
+        return None
+    return wrapper
+
+
+def write_redirected_streams_in_utf8() -> None:
+    """Encode ``sys.stdout`` and ``sys.stderr`` as UTF-8 where they are not a terminal.
+
+    Python encodes a stream that is not a terminal in the LOCALE's encoding
+    unless its UTF-8 mode is on, so ``lsdsk disks --format json > out.json``
+    was cp1252 on a Windows machine and Latin-1 or ASCII on a Linux one with
+    such a locale. RFC 8259 requires JSON exchanged between systems to be UTF-8,
+    a UTF-8 reader misread those bytes, and a character outside the code page
+    was lost as ``?`` before anybody could read it. Windows device descriptions
+    are localised, so that is ordinary data on a German machine. Every format is
+    treated alike, because the stream cannot know which one it carries and a
+    program reading a pipe needs one answer for it.
+
+    Left alone: a terminal, whose encoding is what the person at it set up; an
+    encoding named in ``PYTHONIOENCODING``, which is a request; a stream that is
+    already UTF-8; and anything that is not a :class:`io.TextIOWrapper`, which
+    is a harness's or a stand-in's, not the process's own.
+
+    Called once by ``main`` before any command writes, so the buffer is empty
+    and the re-encoding flush writes nothing; :func:`restore_original_streams`
+    gives the encoding back. The error handler is kept: naming only an encoding
+    would reset it to ``strict``.
+
+    Side Effects:
+        Reconfigures ``sys.stdout`` and ``sys.stderr`` where the rule applies.
+    """
+    if _an_encoding_was_asked_for():
+        return
+    for candidate in (sys.stdout, sys.stderr):
+        stream = _to_reencode(candidate)
+        if stream is None:
+            continue
+        encoding, errors = stream.encoding, stream.errors
+        try:
+            stream.reconfigure(encoding="utf-8", errors=errors)
+        except (OSError, ValueError):
+            # The stream keeps the encoding it had, which is how it wrote before this existed.
+            continue
+        _REENCODED_STREAMS.append((stream, encoding, errors))
 
 
 def say_standard_output_failed(exc: OSError) -> None:
@@ -1081,5 +1168,6 @@ __all__ = [
     "say_standard_output_failed",
     "stand_in_for_missing_standard_streams",
     "standard_output_is_missing",
+    "write_redirected_streams_in_utf8",
     "write_unless_the_reader_left",
 ]
