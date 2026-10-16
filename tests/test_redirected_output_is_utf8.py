@@ -174,3 +174,23 @@ def test_an_encoding_named_in_pythonioencoding_is_left_as_asked(
     main(_disks_as_json(tmp_path), services_factory=production_factory)
 
     assert b'"gr\xfc\xdfe-?"' in buffer.getvalue()
+
+
+def test_a_usage_error_a_terminal_cannot_encode_degrades_rather_than_crashing(
+    monkeypatch: pytest.MonkeyPatch,
+    production_factory: Callable[[], AppServices],
+) -> None:
+    """Click prints its own usage errors, past the sink that degrades what a console cannot encode.
+
+    A terminal keeps its encoding, so a Latin-1 one is still handed the refusal as written, and
+    a character it lacks raised ``UnicodeEncodeError`` out of ``main`` instead of the exit 2
+    the refusal means.
+    """
+    monkeypatch.delenv("PYTHONIOENCODING", raising=False)
+    buffer = io.BytesIO()
+    monkeypatch.setattr(sys, "stderr", _Terminal(buffer, encoding="latin-1", errors="strict", newline=""))
+
+    code = main(["--set", f"display.{HOSTNAME}=1", "disks"], services_factory=production_factory)
+
+    assert code == 2
+    assert "display.grüße-?" in buffer.getvalue().decode("latin-1")

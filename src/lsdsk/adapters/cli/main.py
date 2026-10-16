@@ -9,6 +9,7 @@ Contents:
 
 from __future__ import annotations
 
+import functools
 import sys
 from typing import TYPE_CHECKING
 
@@ -153,8 +154,11 @@ def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppSe
         safe_console.deliver_pending_log_lines()
         # Through the guard: the BrokenPipeError from printing a usage message is
         # raised INSIDE this handler, so unguarded it escapes main() itself and the
-        # caller is told nothing about the usage error it actually made.
-        safe_console.write_unless_the_reader_left(exc.show)
+        # caller is told nothing about the usage error it actually made. And onto
+        # the encode-safe stream rather than click's own pick of stderr: a terminal
+        # that cannot encode a character the message quotes raised
+        # UnicodeEncodeError out of main() the same way.
+        safe_console.write_unless_the_reader_left(functools.partial(exc.show, file=safe_console.safe_stream(err=True)))
         _answer_a_refused_command_line(exc, args)
         return exc.exit_code
     except SystemExit as exc:
