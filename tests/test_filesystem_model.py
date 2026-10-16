@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 import pytest
+from pydantic import ValidationError
 
 from lsdsk.domain.enums import FilesystemKind, InodeTable
 from lsdsk.domain.models import Filesystem, Inventory
@@ -80,3 +81,21 @@ def test_an_inventory_older_than_the_field_has_not_read_filesystems() -> None:
     inventory = Inventory(hostname="h")
     assert inventory.filesystems is None
     assert inventory.unread_filesystems == ()
+
+
+@pytest.mark.parametrize("field", ["size_bytes", "used_bytes", "free_bytes", "inodes_total", "inodes_free"])
+def test_a_negative_figure_is_refused_where_the_filesystem_is_built(field: str) -> None:
+    """A count of bytes or inodes cannot be negative, so the value refuses one.
+
+    Every builder clamps its figures, so this is the domain's own guard: a
+    builder that stopped clamping would be refused at the construction that
+    made the figure, rather than printing a negative percentage in a table.
+    """
+    with pytest.raises(ValidationError, match=rf"{field}\n  Input should be greater than or equal to 0"):
+        _fs(**{field: -1})
+
+
+@pytest.mark.parametrize("field", ["size_bytes", "used_bytes", "free_bytes", "inodes_total", "inodes_free"])
+def test_a_zero_figure_is_a_reading(field: str) -> None:
+    """The control: the bound refuses below zero, not zero itself."""
+    assert getattr(_fs(**{field: 0}), field) == 0

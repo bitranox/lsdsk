@@ -1936,11 +1936,11 @@ class Filesystem(DomainModel, frozen=True):
     other_mounts: tuple[DeviceText, ...] = ()
     fs_type: DeviceText = ""
     disks: tuple[DeviceText, ...] = ()
-    size_bytes: int | None = None
-    used_bytes: int | None = None
-    free_bytes: int | None = None
-    inodes_total: int | None = None
-    inodes_free: int | None = None
+    size_bytes: int | None = Field(default=None, ge=0)
+    used_bytes: int | None = Field(default=None, ge=0)
+    free_bytes: int | None = Field(default=None, ge=0)
+    inodes_total: int | None = Field(default=None, ge=0)
+    inodes_free: int | None = Field(default=None, ge=0)
     read_only: bool = False
     readings_refused: tuple[RefusedReading, ...] = ()
     free_space: FreeSpace | None = None
@@ -2013,7 +2013,17 @@ class Filesystem(DomainModel, frozen=True):
 
     @property
     def inodes_used_percent(self) -> int | None:
-        """How many inodes are in use, only where the table is a ceiling."""
+        """How many inodes are in use, only where the table is a ceiling.
+
+        Rounded up, as ``df -i`` rounds; a filesystem that makes inodes on
+        demand has no ceiling to be a percentage of, whatever it counted.
+
+        Example:
+            >>> ext4 = Filesystem(kind=FilesystemKind.MOUNT, name="/", fs_type="ext4", inodes_total=200, inodes_free=50)
+            >>> xfs = Filesystem(kind=FilesystemKind.MOUNT, name="/", fs_type="xfs", inodes_total=200, inodes_free=50)
+            >>> (ext4.inodes_used_percent, xfs.inodes_used_percent)
+            (75, None)
+        """
         if self.inode_table is not InodeTable.FIXED:
             return None
         if self.inodes_total is None or self.inodes_free is None:
