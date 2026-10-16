@@ -550,3 +550,66 @@ def test_device_numbers_flagged_as_such_are_still_filtered_to_the_mounted_device
     rows = [{"dev": "8:1", "mountpoint": "/data", "fstype": "xfs"}]
     reading = freespace.read_free_extents(rows, ioctl=fake, opener=_opener(tmp_path))
     assert reading == {"8:1": {"error": "the space map listed 2 records and none on this filesystem's device 8:1"}}
+
+
+class _StuckFsmap(FakeFsmap):
+    """Answers every call with the very same free record, as a kernel that does not advance would."""
+
+    def __call__(self, _fd: int, _request: int, head: bytearray) -> int:
+        self.calls += 1
+        assert self.calls < 50, "the walk did not stop"
+        _RECORD.pack_into(head, _RECORDS, _DATA, _SPECIAL, 0, _FREE, 0, 4096)
+        struct.pack_into("<I", head, 12, 1)
+        struct.pack_into("<I", head, 4, _OF_DEV_T)
+        return 0
+
+
+class _FailsFirst(FakeFsmap):
+    """Refuses the first call with ``fail`` and answers every later one from its records."""
+
+    def __call__(self, fd: int, request: int, head: bytearray) -> int:
+        try:
+            return super().__call__(fd, request, head)
+        finally:
+            self.fail = None  # every later call is answered
+
+
+TWO_MOUNTPOINTS = [
+    {"dev": "8:1", "mountpoint": "/a", "fstype": "ext4"},
+    {"dev": "8:1", "mountpoint": "/b", "fstype": "ext4"},
+]
+
+
+@pytest.mark.parametrize(
+    ("make_fake", "limits", "calls", "reason"),
+    [
+        (lambda: FakeFsmap([_free(0, 512), _free(4096, 512)]), {"cap": 1}, 1, "more than 1 free extents"),
+        (
+            lambda: FakeFsmap([_metadata(4096 * n, 4096) for n in range(5000)] + [_free(1 << 40, 4096)]),
+            {"max_records": 4500},
+            2,
+            "more than 4,500 space-map records",
+        ),
+        (lambda: _StuckFsmap([]), {}, 2, "did not advance"),
+        (lambda: FakeFsmap([], fail=errno.ENOTTY), {}, 1, os.strerror(errno.ENOTTY)),
+        (lambda: FakeFsmap([_free(0, 4096)], device=_new_encode_dev(9, 9)), {}, 1, "none on this filesystem's device"),
+    ],
+    ids=["past-the-cap", "past-the-record-budget", "not-advancing", "no-getfsmap", "no-record-on-the-device"],
+)
+def test_a_filesystem_refused_for_what_it_is_is_not_walked_again_at_its_next_mountpoint(
+    make_fake: Callable[[], FakeFsmap], limits: dict[str, int], calls: int, reason: str
+) -> None:
+    fake, opener = make_fake(), _Descriptors()
+    reading = freespace.read_free_extents(TWO_MOUNTPOINTS, ioctl=fake, opener=opener, **limits)
+    assert reason in reading["8:1"]["error"]
+    # Every mountpoint of one device reaches one filesystem, so the second could only repeat the walk.
+    assert (fake.calls, len(opener.opened)) == (calls, 1)
+    assert opener.all_closed()
+
+
+def test_a_refused_ioctl_is_asked_again_at_the_next_mountpoint() -> None:
+    fake, opener = _FailsFirst([_free(0, 4096)], fail=errno.EIO), _Descriptors()
+    reading = freespace.read_free_extents(TWO_MOUNTPOINTS, ioctl=fake, opener=opener)
+    assert reading["8:1"]["count"] == 1
+    assert (fake.calls, len(opener.opened)) == (2, 2)
+    assert opener.all_closed()

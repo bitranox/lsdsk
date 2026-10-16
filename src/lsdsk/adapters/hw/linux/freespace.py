@@ -11,7 +11,10 @@ reverse mapping can list every file extent it holds.
 
 One mountpoint per filesystem is asked, chosen by the rules ``read_space``
 uses: a hidden mountpoint never (the open would reach the filesystem covering
-it), and the next mountpoint only after a refusal.
+it), and the next mountpoint only after a refusal another mountpoint could
+change - the open or the call through it failing. A refusal of the filesystem
+itself (past a budget, a walk that did not advance, no GETFSMAP) is final, so a
+filesystem bind-mounted many times is walked once.
 
 Every device the filesystem spans is listed - an xfs realtime device or an
 external log beside the data device, in device-number order - so only the
@@ -26,6 +29,7 @@ System Role:
 
 from __future__ import annotations
 
+import errno
 import os
 import struct
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
@@ -206,35 +210,59 @@ def _reason(error: Exception) -> str:
     return text[:MAX_DEVICE_TEXT]
 
 
-def _ask(target: _Target, ioctl: Ioctl, opener: Callable[[str], int], *, cap: int, max_records: int) -> dict[str, Any]:
-    """One mountpoint's free-extent summary, or ``{"error": <reason>}``."""
+class _Answer(NamedTuple):
+    """What one mountpoint said, and whether the filesystem's other mountpoints could say anything else.
+
+    Attributes:
+        reading: The free-extent summary, or ``{"error": <reason>}``.
+        settled: ``True`` for a summary and for a refusal of the filesystem
+            itself - past a cap or the record budget, a walk that did not
+            advance, no GETFSMAP at all, a device number the space map does
+            not name - which every mountpoint of one device would repeat.
+            ``False`` only where opening the mountpoint, or the call through
+            it, failed, which another mountpoint can change.
+    """
+
+    reading: dict[str, Any]
+    settled: bool
+
+
+def _refused(reason: str, *, settled: bool) -> _Answer:
+    return _Answer({"error": reason[:MAX_DEVICE_TEXT]}, settled)
+
+
+def _ask(target: _Target, ioctl: Ioctl, opener: Callable[[str], int], *, cap: int, max_records: int) -> _Answer:
+    """One mountpoint's free-extent summary or refusal, and whether it settles the filesystem."""
     device = encode_device(target.dev)
     if device is None:
-        return {"error": f"the device number {target.dev} is not major:minor"[:MAX_DEVICE_TEXT]}
+        return _refused(f"the device number {target.dev} is not major:minor", settled=True)
     try:
         fd = opener(target.mountpoint)
     except OSError as error:
-        return {"error": _reason(error)}
+        return _refused(_reason(error), settled=False)
     try:
         tally = FreeExtentTally(cap)
         counts = _walk(fd, ioctl, tally, device=device, max_records=max_records)
-    except (OSError, ValueError) as error:  # FreeExtentCapError is a ValueError
-        return {"error": _reason(error)}
+    except OSError as error:
+        # ENOTTY is the filesystem having no GETFSMAP, the same at every mountpoint of it.
+        return _refused(_reason(error), settled=error.errno == errno.ENOTTY)
+    except ValueError as error:  # FreeExtentCapError is a ValueError
+        return _refused(_reason(error), settled=True)
     finally:
         os.close(fd)
     if counts.records and not counts.on_device:
         # A wrong idea of the device number would otherwise read as a filesystem with no free space at all.
         message = f"the space map listed {counts.records} records and none on this filesystem's device {target.dev}"
-        return {"error": message[:MAX_DEVICE_TEXT]}
-    return dict(tally.summary())
+        return _refused(message, settled=True)
+    return _Answer(dict(tally.summary()), settled=True)
 
 
-def _wanted(row: Mapping[str, str | bool], readings: Mapping[str, Any]) -> _Target | None:
+def _wanted(row: Mapping[str, str | bool], settled: Collection[str]) -> _Target | None:
     """The row's device and mountpoint when it is worth asking about, else ``None``."""
     dev, mountpoint = row.get("dev", ""), row.get("mountpoint", "")
     if not isinstance(dev, str) or not isinstance(mountpoint, str) or not dev:
         return None
-    if row.get("fstype") not in FREE_EXTENT_MOUNT_TYPES or "count" in readings.get(dev, {}):
+    if row.get("fstype") not in FREE_EXTENT_MOUNT_TYPES or dev in settled:
         return None
     return _Target(dev, mountpoint)
 
@@ -287,19 +315,22 @@ def read_free_extents(
     """
     call, open_one = ioctl or system_ioctl, opener or _open_directory
     readings: dict[str, dict[str, Any]] = {}
+    settled: set[str] = set()
     hidden_only: list[str] = []
     for row in rows:
-        wanted = _wanted(row, readings)
+        wanted = _wanted(row, settled)
         if wanted is None:
             continue
         dev = wanted.dev
         if row.get("hidden") is True:
             hidden_only.append(dev)
             continue
-        reading = _ask(wanted, call, open_one, cap=cap, max_records=max_records)
-        if "error" in reading and dev in readings:
+        answer = _ask(wanted, call, open_one, cap=cap, max_records=max_records)
+        if answer.settled:
+            settled.add(dev)
+        if "error" in answer.reading and dev in readings:
             continue
-        readings[dev] = reading
+        readings[dev] = answer.reading
     for dev in hidden_only:
         readings.setdefault(dev, {"error": _HIDDEN_REASON})
     return readings
