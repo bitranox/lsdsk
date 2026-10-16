@@ -647,3 +647,87 @@ def test_the_check_names_an_nvme_class_serial_planted_with_another_serial() -> N
     problems = _disagreements(capture)
 
     assert any("nvme0n1 classes/nvme/serial=" in problem for problem in problems), problems
+
+
+# IDENTIFY words 108-111 hold the drive's world-wide name, most significant
+# word first: the NAA nibble, the 24-bit IEEE OUI, then 36 vendor-specific bits.
+_WWN_FIRST_WORD = 108
+_WWN_WORDS = 4
+_WWN_VENDOR_SPECIFIC_BITS = 36
+_WWN_VENDOR_SPECIFIC_MASK = (1 << _WWN_VENDOR_SPECIFIC_BITS) - 1
+
+
+def _identify_wwn(identify: bytes) -> int:
+    """The world-wide name IDENTIFY words 108-111 carry, as one integer."""
+    value = 0
+    for index in range(_WWN_FIRST_WORD, _WWN_FIRST_WORD + _WWN_WORDS):
+        value = (value << 16) | int.from_bytes(identify[index * 2 : index * 2 + 2], "little")
+    return value
+
+
+def _windows_identify_wwns(capture: Mapping[str, object]) -> dict[str, int]:
+    """Every IDENTIFY world-wide name a Windows capture holds, keyed by its drive.
+
+    A Linux capture is keyed by device name in top-level sections and is left
+    out: there the tool reports the sysfs ``wwid``, so a scrub writes a fake
+    WWN there rather than the placeholder this rule asks for.
+    """
+    found: dict[str, int] = {}
+    for device, entry in _mapping(capture.get("disks")).items():
+        identify = _blob(_mapping(_mapping(entry).get("ata")), "identify")
+        if identify is not None:
+            found[f"{device} ata/identify words 108-111"] = _identify_wwn(identify)
+    return found
+
+
+def _real_windows_wwns(capture: Mapping[str, object]) -> list[str]:
+    """The IDENTIFY world-wide names whose vendor-specific bits are not the scrub's zeros."""
+    return [where for where, wwn in _windows_identify_wwns(capture).items() if wwn & _WWN_VENDOR_SPECIFIC_MASK]
+
+
+@pytest.mark.parametrize("fixture", _fixtures(), ids=lambda path: path.stem)
+def test_no_windows_fixture_publishes_a_real_identify_wwn(fixture: Path) -> None:
+    """A WWN names one drive for life, so a Windows capture keeps only its placeholder.
+
+    The Windows builder reports no WWN, so the IDENTIFY copy has no reported
+    value to agree with and the serial agreement above cannot see it. A scrub
+    keeps the NAA nibble and the OUI, which say only who made the drive, and
+    zeroes the 36 vendor-specific bits that make it one drive.
+    """
+    real = _real_windows_wwns(_load(fixture))
+
+    assert not real, f"{fixture.name} carries a real IDENTIFY WWN in: {real}"
+
+
+def test_the_wwn_check_reads_every_windows_ata_drive() -> None:
+    """The rule must read the drives it exists for, or it passes over nothing.
+
+    windows-usb-uas holds two ATA drives, the SATA one and the SanDisk behind
+    USB; windows-chipset-switch holds one. Each scrubbed WWN keeps a real NAA
+    nibble, so a reader decoding the wrong words would read zero and be caught.
+    """
+    counts = {
+        name: _windows_identify_wwns(_load(FIXTURES / f"{name}.json"))
+        for name in ("windows-usb-uas", "windows-chipset-switch")
+    }
+
+    assert {name: len(found) for name, found in counts.items()} == {"windows-usb-uas": 2, "windows-chipset-switch": 1}
+    assert all(wwn >> 60 == 5 for found in counts.values() for wwn in found.values()), counts
+
+
+def test_the_wwn_check_names_a_planted_vendor_specific_value() -> None:
+    """The control: a WWN whose vendor-specific bits survived a scrub must be named."""
+    capture = _load(FIXTURES / "windows-chipset-switch.json")
+    disks = _mapping(capture.get("disks"))
+    device = next(name for name in sorted(disks) if _blob(_mapping(_mapping(disks[name]).get("ata")), "identify"))
+    record = _mapping(disks.get(device))
+    ata = _mapping(record.get("ata"))
+    identify = bytearray(_blob(ata, "identify") or b"")
+    last_word = (_WWN_FIRST_WORD + _WWN_WORDS - 1) * 2
+    identify[last_word : last_word + 2] = (0x1234).to_bytes(2, "little")
+    ata["identify"] = base64.b64encode(bytes(identify)).decode("ascii")
+    record["ata"] = ata
+    disks[device] = record
+    capture["disks"] = disks
+
+    assert _real_windows_wwns(capture) == [f"{device} ata/identify words 108-111"]
