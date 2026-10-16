@@ -9,6 +9,7 @@ implausible value is unread, whichever of the three fields carries it.
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -132,3 +133,101 @@ def test_a_real_threshold_below_the_temperature_still_raises_a_finding(
     data = _data_with({"temperature_c": 85, "critical_c": 80}, tmp_path, cli_runner, production_factory)
 
     assert _limit_findings(data), "a sound 85 C against a sound 80 C critical limit is a finding"
+
+
+#: The ATA attributes a SMART temperature is read from.
+_TEMPERATURE_ATTRIBUTES = (190, 194)
+#: Where SMART READ DATA's attribute table starts, how many entries it holds, and their width.
+_TABLE_OFFSET, _TABLE_ENTRIES, _ENTRY_BYTES = 2, 30, 12
+
+
+def _without_temperature_attributes(encoded: str) -> str:
+    """The SMART READ DATA blob with every temperature attribute's slot emptied."""
+    raw = bytearray(base64.b64decode(encoded))
+    for slot in range(_TABLE_ENTRIES):
+        offset = _TABLE_OFFSET + slot * _ENTRY_BYTES
+        if raw[offset] in _TEMPERATURE_ATTRIBUTES:
+            raw[offset : offset + _ENTRY_BYTES] = bytes(_ENTRY_BYTES)
+    return base64.b64encode(bytes(raw)).decode("ascii")
+
+
+def _health_with(
+    temperature: dict[str, int] | None,
+    *,
+    smart_has_temperature: bool,
+    tmp_path: Path,
+    runner: CliRunner,
+    factory: Callable[[], object],
+) -> dict[str, Any]:
+    """Replay windows-ahci with its SMART data kept, and a storage-stack reading beside it."""
+    from lsdsk.adapters.cli import cli
+
+    capture = cast("dict[str, Any]", json.loads(FIXTURE.read_text(encoding="utf-8")))
+    (entry,) = capture["disks"].values()
+    if not smart_has_temperature:
+        entry["ata"]["smart_data"] = _without_temperature_attributes(entry["ata"]["smart_data"])
+    if temperature is not None:
+        entry["temperature"] = temperature
+    path = tmp_path / "windows-ahci.json"
+    path.write_text(json.dumps(capture), encoding="utf-8")
+    output = runner.invoke(cli, ["health", "--replay", str(path), "--format", "json"], obj=factory).output
+    decoded: object = json.JSONDecoder().raw_decode(output[output.index("{") :])[0]
+    assert isinstance(decoded, dict)
+    (disk,) = cast("dict[str, Any]", decoded)["data"]["disks"]
+    health = disk["health"]
+    assert isinstance(health, dict), "the SMART data decoded, so the disk carries health"
+    return cast("dict[str, Any]", health)
+
+
+def test_smart_data_with_no_temperature_attribute_carries_none(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    """The precondition: emptying the temperature slots leaves the passthrough health without one."""
+    health = _health_with(
+        None, smart_has_temperature=False, tmp_path=tmp_path, runner=cli_runner, factory=production_factory
+    )
+
+    assert health["temperature_c"] is None
+    assert health["power_on_hours"] is not None
+
+
+def test_passthrough_health_with_no_temperature_takes_the_storage_stacks(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    """A drive whose SMART names no temperature still has the one the storage stack offered."""
+    stack = {"temperature_c": 41, "warning_c": 70, "critical_c": 80}
+    health = _health_with(
+        stack, smart_has_temperature=False, tmp_path=tmp_path, runner=cli_runner, factory=production_factory
+    )
+
+    assert (health["temperature_c"], health["temperature_warning_c"], health["temperature_critical_c"]) == (41, 70, 80)
+    assert health["power_on_hours"] is not None, "the SMART figures stay; only the temperature is filled in"
+
+
+def test_a_passthrough_temperature_is_not_replaced_by_the_storage_stacks(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    """The control: the drive's own SMART temperature (31 on this capture) wins over the stack's."""
+    stack = {"temperature_c": 41, "warning_c": 70, "critical_c": 80}
+    health = _health_with(
+        stack, smart_has_temperature=True, tmp_path=tmp_path, runner=cli_runner, factory=production_factory
+    )
+
+    assert health["temperature_c"] == 31, "the capture's own SMART reading"
+    assert (health["temperature_warning_c"], health["temperature_critical_c"]) == (None, None)
+
+
+def test_an_implausible_stack_temperature_fills_nothing_in(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    """The fallback is held to the same bound: -32768 from the stack is no temperature either."""
+    stack = {"temperature_c": -(2**15), "warning_c": 70, "critical_c": 80}
+    health = _health_with(
+        stack, smart_has_temperature=False, tmp_path=tmp_path, runner=cli_runner, factory=production_factory
+    )
+
+    assert (health["temperature_c"], health["temperature_warning_c"], health["temperature_critical_c"]) == (
+        None,
+        None,
+        None,
+    )

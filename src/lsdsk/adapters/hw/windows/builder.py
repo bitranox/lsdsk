@@ -277,24 +277,47 @@ def _health_from(
     bool can only ever say "NVMe or not", so a third transport needing its own
     decode would fall silently into the ATA branch. Takes the NVMe identity the
     caller decoded too, so one blob is decoded once.
-    """
-    if bus is BusType.NVME:
-        log_blob = decode_base64(record.smart_log)
-        if log_blob is not None:
-            try:
-                return decode_smart_log(log_blob, nvme_identity)
-            except ValueError:
-                return None
-    else:
-        data = decode_base64(record.smart_data)
-        if data is not None:
-            try:
-                return decode_health(data, decode_base64(record.smart_thresholds))
-            except ValueError:
-                return None
 
-    # No passthrough, but the storage stack may still have offered a temperature.
-    return _stack_temperature(entry)
+    The storage stack's temperature stands in wherever passthrough gave none:
+    no health at all, or health whose SMART data or log names no temperature.
+    Passthrough's own figures win wherever it has them.
+    """
+    passthrough = _passthrough_health(record, bus=bus, nvme_identity=nvme_identity)
+    stack = _stack_temperature(entry)
+    if passthrough is None:
+        return stack
+    if passthrough.temperature_c is not None or stack is None:
+        return passthrough
+    return passthrough.with_changes(
+        temperature_c=stack.temperature_c,
+        temperature_warning_c=_first_known(passthrough.temperature_warning_c, stack.temperature_warning_c),
+        temperature_critical_c=_first_known(passthrough.temperature_critical_c, stack.temperature_critical_c),
+    )
+
+
+def _passthrough_health(record: HealthBlobs, *, bus: BusType, nvme_identity: NvmeIdentity | None) -> Health | None:
+    """Decode the health passthrough returned, or ``None`` when there is none or it will not decode."""
+    blob = decode_base64(record.smart_log if bus is BusType.NVME else record.smart_data)
+    if blob is None:
+        return None
+    try:
+        if bus is BusType.NVME:
+            return decode_smart_log(blob, nvme_identity)
+        return decode_health(blob, decode_base64(record.smart_thresholds))
+    except ValueError:
+        return None
+
+
+def _first_known(*values: int | None) -> int | None:
+    """The first value that was read, or ``None`` when none was.
+
+    Example:
+        >>> _first_known(None, 70)
+        70
+        >>> _first_known(0, 70)
+        0
+    """
+    return next((value for value in values if value is not None), None)
 
 
 def _celsius_or_none(reading: int | None) -> int | None:

@@ -229,3 +229,56 @@ def test_a_temperature_answer_too_short_for_its_first_sensor_is_no_reading() -> 
 def test_a_temperature_answer_with_no_sensor_is_no_reading() -> None:
     descriptor = api.STORAGE_TEMPERATURE_DATA_DESCRIPTOR()
     assert _temperature_of(bytes(descriptor)) == {}
+
+
+#: What a driver leaves in a sensor it has nothing to report for.
+_NO_READING = -(2**15)
+
+
+def _sensors_answer(*readings: int, info_count: int | None = None, size: int | None = None) -> bytes:
+    """A temperature descriptor carrying one sensor per reading, as a multi-sensor driver sends it.
+
+    Args:
+        readings: Each sensor's temperature, in sensor order.
+        info_count: What the header's ``InfoCount`` claims, when it is not the sensor count.
+        size: Where to cut the answer, when it is not the whole of it.
+    """
+    header = api.STORAGE_TEMPERATURE_DATA_DESCRIPTOR()
+    header.InfoCount = len(readings) if info_count is None else info_count
+    header.WarningTemperature = 70
+    header.CriticalTemperature = 80
+    offset = api.STORAGE_TEMPERATURE_DATA_DESCRIPTOR.TemperatureInfo.offset
+    raw = bytes(header)[:offset]
+    for index, reading in enumerate(readings):
+        sensor = api.STORAGE_TEMPERATURE_INFO()
+        sensor.Index = index
+        sensor.Temperature = reading
+        raw += bytes(sensor)
+    return raw if size is None else raw[:size]
+
+
+def test_the_first_sensor_with_a_plausible_reading_is_the_temperature() -> None:
+    """A drive whose first sensor reports nothing still has a temperature in its second."""
+    reading = _temperature_of(_sensors_answer(_NO_READING, 47))
+    assert reading == {"temperature_c": 47, "warning_c": 70, "critical_c": 80}
+
+
+def test_the_first_sensor_wins_when_it_has_a_plausible_reading() -> None:
+    """The control: a later sensor does not replace a sound first one."""
+    assert _temperature_of(_sensors_answer(45, 47))["temperature_c"] == 45
+
+
+def test_a_sensor_the_header_does_not_count_is_never_read() -> None:
+    """InfoCount bounds the sensors, so a second one past it is not taken for a reading."""
+    assert _temperature_of(_sensors_answer(_NO_READING, 47, info_count=1))["temperature_c"] == _NO_READING
+
+
+def test_a_sensor_the_answer_was_cut_before_is_never_read() -> None:
+    """The size the driver returned bounds the sensors too, whatever InfoCount claims."""
+    answer = _sensors_answer(_NO_READING, 47, size=40 + 8)
+    assert _temperature_of(answer)["temperature_c"] == _NO_READING
+
+
+def test_with_no_plausible_sensor_the_first_one_is_recorded_for_the_builder_to_judge() -> None:
+    """The reader records what the driver said; the builder is what calls -32768 unread."""
+    assert _temperature_of(_sensors_answer(_NO_READING, 2**15 - 1))["temperature_c"] == _NO_READING

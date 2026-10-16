@@ -45,6 +45,7 @@ from ..ata_commands import (
 )
 from ..capture import MAX_DEVICE_TEXT
 from ..decode import pciids, usb
+from ..decode.captured import plausible_celsius
 from ..snapshot import SCHEMA_VERSION
 from . import volumes
 from . import winapi as api
@@ -884,6 +885,21 @@ def _seek_penalty(kernel32: api.WinLibrary, handle: int) -> bool | None:
     return bool(api.DEVICE_SEEK_PENALTY_DESCRIPTOR.from_buffer_copy(raw).IncursSeekPenalty)
 
 
+def _sensor_readings(sensors: bytes, *, count: int) -> list[int]:
+    """Each sensor's temperature, for as many sensors as both the header and the answer hold.
+
+    Args:
+        sensors: The answer from its first sensor on.
+        count: How many sensors the header says follow.
+
+    Returns:
+        The temperatures in sensor order; empty when no whole sensor arrived.
+    """
+    width = ctypes.sizeof(api.STORAGE_TEMPERATURE_INFO)
+    held = min(count, len(sensors) // width)
+    return [api.STORAGE_TEMPERATURE_INFO.from_buffer_copy(sensors, index * width).Temperature for index in range(held)]
+
+
 def _temperature(kernel32: api.WinLibrary, handle: int) -> dict[str, int]:
     """Read the device's temperature and its own thresholds, when offered.
 
@@ -891,6 +907,11 @@ def _temperature(kernel32: api.WinLibrary, handle: int) -> dict[str, int]:
     sends the 24-byte header plus one 16-byte sensor: 40 bytes, the size of
     the structure as declared. The answer is judged at the size the driver
     returned, so a reply too short for its first sensor is no reading.
+
+    A driver with several sensors may leave the first with nothing to report
+    (-32768) while a later one carries the drive's temperature, so the first
+    sensor with a plausible reading is taken. With none plausible the first
+    sensor's value is recorded as it was, and the builder judges it unread.
     """
     raw = query_property(kernel32, handle, api.STORAGE_DEVICE_TEMPERATURE_PROPERTY, 512)
     header = api.STORAGE_TEMPERATURE_DATA_DESCRIPTOR.TemperatureInfo.offset
@@ -899,9 +920,11 @@ def _temperature(kernel32: api.WinLibrary, handle: int) -> dict[str, int]:
     descriptor = api.STORAGE_TEMPERATURE_DATA_DESCRIPTOR.from_buffer_copy(
         raw.ljust(ctypes.sizeof(api.STORAGE_TEMPERATURE_DATA_DESCRIPTOR), b"\x00")
     )
-    if not descriptor.InfoCount or len(raw) < header + ctypes.sizeof(api.STORAGE_TEMPERATURE_INFO):
+    readings = _sensor_readings(raw[header:], count=descriptor.InfoCount)
+    if not readings:
         return {}
-    values: dict[str, int] = {"temperature_c": descriptor.TemperatureInfo[0].Temperature}
+    plausible = [reading for reading in readings if plausible_celsius(reading) is not None]
+    values: dict[str, int] = {"temperature_c": (plausible or readings)[0]}
     if descriptor.WarningTemperature:
         values["warning_c"] = descriptor.WarningTemperature
     if descriptor.CriticalTemperature:
