@@ -28,6 +28,14 @@ On the topology page, `d` switches how much detail the PCI fabric is drawn in,
 the same setting `--tree-density` sets for every view. `,` and `.` scroll the
 WWN where that is needed.
 
+On Windows the view asks for Administrator before it reads anything, because Windows gives a SATA
+drive's link speed and every SMART figure only to an elevated process. If you allow it, lsdsk opens
+elevated in a new window, and the window you started it from waits and hands back its exit code. If
+you refuse, or the relaunch fails, the view opens unelevated: a bold `NOT ELEVATED` line above every
+page says why, the `Not read:` sentence under it names what that cost, and a drive's panel lists
+each reading Windows refused with the reason it gave. `--no-elevate` or `display.auto_elevate =
+false` turns the asking off.
+
 ## 1 Topology
 
 ![Topology](docs/screenshots/1-topology.png)

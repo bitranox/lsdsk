@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.10.0] 2026-10-17 00:28:58
+
 ### Added
 
 - On Windows the interactive view asks for Administrator before it reads anything. Windows gives a

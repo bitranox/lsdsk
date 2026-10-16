@@ -29,6 +29,15 @@ Auf der Topologieseite schaltet `d` um, wie detailliert die PCI-Struktur dargest
 dieselbe Einstellung, die `--tree-density` für jede Ansicht setzt. 
 `,` und `.` scrollen die WWN, wenn nötig.
 
+Unter Windows fragt die Ansicht nach Administratorrechten, bevor sie irgendetwas liest, weil Windows
+die Link-Geschwindigkeit einer SATA-Platte und jeden SMART-Wert nur einem Prozess mit erhöhten
+Rechten gibt. Stimmen Sie zu, öffnet lsdsk sich mit erhöhten Rechten in einem neuen Fenster, und das
+Fenster, aus dem Sie es gestartet haben, wartet und gibt dessen Exit-Code zurück. Lehnen Sie ab oder
+schlägt der Neustart fehl, öffnet sich die Ansicht ohne erhöhte Rechte: Eine fette Zeile
+`NOT ELEVATED` über jeder Seite sagt, warum, der Satz `Not read:` darunter nennt, was das gekostet
+hat, und die Tafel einer Platte führt jeden Wert auf, den Windows verweigert hat, mit dem Grund, den
+es dafür angab. `--no-elevate` oder `display.auto_elevate = false` schaltet die Frage ab.
+
 ## 1 Topologie
 
 ![Topologie](../docs/screenshots/1-topology.png)
