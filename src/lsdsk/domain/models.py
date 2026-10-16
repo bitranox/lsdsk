@@ -1291,13 +1291,6 @@ class Health(DomainModel, frozen=True):
             reason for bit, reason in enumerate(CRITICAL_WARNING_REASONS) if self.critical_warning & (1 << bit)
         )
 
-    @property
-    def spare_below_threshold(self) -> bool:
-        """Whether spare capacity has fallen to the drive's own critical level."""
-        if self.available_spare is None or self.available_spare_threshold is None:
-            return False
-        return self.available_spare <= self.available_spare_threshold
-
 
 class RefusedReading(DomainModel, frozen=True):
     """A reading the machine would not give, and the reason it gave instead.

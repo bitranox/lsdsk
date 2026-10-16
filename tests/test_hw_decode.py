@@ -252,14 +252,6 @@ def test_the_nvme_counters_worth_trending_survive_decoding() -> None:
     assert health.error_log_entries == 608
     assert health.available_spare == 100
     assert health.available_spare_threshold == 5
-    assert health.spare_below_threshold is False
-
-
-@pytest.mark.os_agnostic
-def test_spare_at_or_under_the_drives_own_threshold_is_flagged() -> None:
-    blob = bytearray(512)
-    blob[3], blob[4] = 4, 5
-    assert decode_smart_log(bytes(blob)).spare_below_threshold is True
 
 
 @pytest.mark.os_agnostic
