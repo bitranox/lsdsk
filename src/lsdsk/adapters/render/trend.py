@@ -14,18 +14,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, NamedTuple
 
 from rich.console import Group
-from rich.table import Table
 from rich.text import Text
 
 from ...domain.enums import Align
 from ...domain.history import CounterKind, Trend, TrendVerdict, identity_of, trend_for
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_WEAR_ROW_FLOOR_PERCENT
 from . import theme
-from .layout import Column, fit, natural_widths
+from .layout import Column
+from .tables import render_unmarked
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from ...domain.history import DiskSeries, History
     from ...domain.models import Disk, Inventory
     from .rows import Row
@@ -64,10 +62,17 @@ VERDICT_WORDS: dict[TrendVerdict, str] = {
     TrendVerdict.RESET: "counter reset",
 }
 
+# As the terminal narrows: the verdict's prose is cut first, with the clip mark,
+# down to fourteen characters - a reason cut short still leaves "rising" and
+# "too soon to say" whole, where dropping a column loses the rate a rising
+# counter is read for. Then the rate goes, then the span and the change, then
+# - once even the undroppable columns overrun - the counter's name, and the
+# device is cut to what is left. The total and the verdict never go: a count
+# cut short is a different count, and the verdict is what the table is for.
 TREND_COLUMNS: tuple[Column, ...] = (
     Column("device", "device", priority=0),
     Column("counter", "counter", priority=0),
-    Column("total", "total", align=Align.RIGHT, priority=0),
+    Column("total", "total", align=Align.RIGHT, priority=0, never_dropped=True),
     Column("change", "change", align=Align.RIGHT, priority=1),
     # "span" rather than "over": the figure is the window the change covers,
     # measured per counter, so one drive shows a different one on every row.
@@ -75,7 +80,7 @@ TREND_COLUMNS: tuple[Column, ...] = (
     # three rows for one NVMe drive look like three answers to one question.
     Column("span", "span", align=Align.RIGHT, priority=1),
     Column("rate", "per hour", align=Align.RIGHT, priority=2),
-    Column("verdict", "verdict", priority=0, flexible=True, min_width=14),
+    Column("verdict", "verdict", priority=0, flexible=True, min_width=14, never_dropped=True),
 )
 
 
@@ -254,33 +259,6 @@ def trend_rows(
     return tuple(rows)
 
 
-def _table(rows: Sequence[Row], title: str, width: int) -> Table:
-    """Build the table, keeping only the columns that fit."""
-    plain = [{key: value[0] for key, value in row.items()} for row in rows]
-    widths = natural_widths(TREND_COLUMNS, plain)
-    chosen = fit(TREND_COLUMNS, widths, width)
-    # A Text rather than the string: the title carries the machine's name, which
-    # the capture chose, and a string is parsed as Rich markup (see tables._render).
-    table = Table(
-        title=Text(title),
-        title_justify="left",
-        title_style="bold",
-        box=None,
-        header_style=theme.STYLE_HEADER,
-        pad_edge=False,
-        padding=(0, 1),
-    )
-    for column in chosen:
-        table.add_column(
-            column.title,
-            justify=Align.RIGHT.value if column.align is Align.RIGHT else Align.LEFT.value,
-            no_wrap=not column.flexible,
-        )
-    for row in rows:
-        table.add_row(*(Text(row[column.key][0], style=row[column.key][1]) for column in chosen))
-    return table
-
-
 def render_trend(
     inventory: Inventory,
     history: History,
@@ -308,7 +286,7 @@ def render_trend(
     if not rows:
         return Group(Text(_nothing_yet(inventory, history, store_refusal), style=theme.STYLE_UNKNOWN))
     return Group(
-        _table(rows, f"Counter trends on {inventory.hostname}", width),
+        render_unmarked(f"Counter trends on {inventory.hostname}", TREND_COLUMNS, rows, width),
         Text(""),
         Text(
             "Rates are per power-on hour of the drive itself, so a machine that "

@@ -31,7 +31,10 @@ from lsdsk.adapters.cli import cli
 from lsdsk.adapters.cli.safe_console import ascii_fallback
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import tables
+from lsdsk.adapters.render.layout import ELLIPSIS
+from lsdsk.adapters.render.trend import render_trend, trend_rows, verdict_text
 from lsdsk.domain.diagnostics import diagnose
+from lsdsk.domain.history import History, record
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
@@ -199,3 +202,86 @@ def test_a_filesystem_row_keeps_how_full_and_where_at_every_width() -> None:
             assert filesystem.disks[0][:2] in row.split("%", 1)[1], (
                 f"{filesystem.name}'s disks lost at {width}: {row!r}"
             )
+
+
+#: Two readings of one machine fifteen hours apart: the pair a trend needs, and
+#: the one whose `sdd` total runs to seven digits.
+_EARLIER, _LATER = "2026-08-05T01:23:00+00:00", "2026-08-05T17:03:00+00:00"
+
+
+def _trended_machine() -> tuple[Inventory, History]:
+    """The later capture, with the earlier one recorded as its past."""
+    earlier, _ = _machine("linux-sas-hba")
+    later, _ = _machine("linux-sas-hba-later")
+    history = record(History(hostname="linux-sas-hba"), earlier.disks, _EARLIER)
+    return later, record(history, later.disks, _LATER)
+
+
+def _trend_table_lines(inventory: Inventory, history: History, width: int) -> list[str]:
+    """The trend table alone, as a console of this width draws it: title, header, rows."""
+    table = render_trend(inventory, history, width=width).renderables[0]
+    console = Console(width=width, record=True, color_system=None, file=io.StringIO())
+    console.print(table)
+    return console.export_text().splitlines()
+
+
+def _ends_with_a_prefix_of(row: str, verdict: str) -> bool:
+    """Whether a row ends in its verdict, whole or cut with the ASCII clip mark."""
+    drawn = row.rstrip()
+    if drawn.endswith(verdict):
+        return True
+    cut = drawn.removesuffix(ELLIPSIS)
+    return cut != drawn and any(cut.endswith(verdict[:length]) for length in range(1, len(verdict)))
+
+
+def test_every_trend_row_keeps_its_total_and_its_verdict_on_one_line_at_every_width() -> None:
+    """The trend table is laid out as the other tables are: one line, whole counts, a verdict.
+
+    It used to fit its columns and then hand Rich whatever it had: below about
+    forty-six columns Rich cut a seven-digit total to ``21961`` and an ellipsis
+    and dropped the verdict, the one column the table exists for; and at the
+    piped default a long verdict wrapped onto a second line that read as a row.
+    """
+    inventory, history = _trended_machine()
+    rows = trend_rows(inventory, history)
+    assert any(row.trend.latest is not None and row.trend.latest >= 1_000_000 for row in rows), (
+        "the control: no seven-digit total, so a cut count could not show"
+    )
+    for width in range(20, 201):
+        lines = _trend_table_lines(inventory, history, width)
+        where = f"trend at width {width}"
+        text = "\n".join(lines)
+        assert RICH_ELLIPSIS not in text, f"{where}: Rich cut a cell\n{text}"
+        overlong = [line for line in ascii_fallback(text, "cp437").splitlines() if len(line) > width]
+        assert not overlong, f"{where}: wider than the console on cp437: {overlong}"
+        drawn = lines[-len(rows) :]
+        assert all(line.startswith("/") for line in drawn), f"{where}: a row wrapped\n{text}"
+        assert sum(1 for line in lines if line.startswith("/")) == len(rows), f"{where}: a row wrapped\n{text}"
+        header = lines[-len(rows) - 1].split()
+        assert "total" in header, f"{where}: the totals were dropped\n{text}"
+        assert any(title.startswith("v") for title in header), f"{where}: the verdict was dropped\n{text}"
+        for line, row in zip(drawn, rows, strict=True):
+            assert str(row.trend.latest) in line.split(), f"{where}: total {row.trend.latest} cut in {line!r}"
+            assert _ends_with_a_prefix_of(line, verdict_text(row.trend)), f"{where}: verdict lost in {line!r}"
+
+
+def test_the_trend_command_at_a_narrow_piped_width_keeps_every_total_and_verdict(
+    production_factory: Callable[[], AppServices], tmp_path: Path
+) -> None:
+    """The reported case through the real command: `trend` at a piped width of 34 over a recorded pair."""
+    store = tmp_path / "history.json"
+    runner = CliRunner(charset="cp437")
+
+    def run(command: str, capture: str, *options: str) -> list[str]:
+        argv = ["--history-file", str(store), *options, command, "--replay", str(FIXTURES / f"{capture}.json")]
+        result = runner.invoke(cli, argv, obj=production_factory)
+        assert result.exception is None or isinstance(result.exception, SystemExit), result.output
+        return result.stdout.splitlines()
+
+    run("record", "linux-sas-hba")
+    run("record", "linux-sas-hba-later")
+    assert store.is_file(), "the control: nothing was recorded, so the trend has no past to read"
+    narrow = run("trend", "linux-sas-hba-later", "--no-record", "--set", "display.piped_width=34")
+    assert any("2196127" in line for line in narrow), "\n".join(narrow)
+    assert any("rising" in line for line in narrow), "\n".join(narrow)
+    assert all(len(line) <= 34 for line in narrow), "\n".join(line for line in narrow if len(line) > 34)

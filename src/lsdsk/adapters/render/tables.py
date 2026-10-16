@@ -26,7 +26,7 @@ from ...domain.history import CounterKind, identity_of, trend_for
 from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_WWN_WIDTH
 from . import theme
-from .layout import GUTTER, Column, Layout, clip, clip_keeping
+from .layout import GAP, GUTTER, Column, Layout, clip, clip_keeping
 from .report import disk_row, severity_index, virtual_note
 from .rows import MarkedRow
 
@@ -65,6 +65,10 @@ _MARKER_WIDTH = max(len(marker) for marker in theme.SEVERITY_MARKERS.values())
 #: wide. Used only where a row is cut to one line, so every width at which the
 #: table already fit draws as it did.
 _TABLE_SLACK = len(GUTTER) - _MARKER_WIDTH
+#: The same for a table drawn with no marker column at all: it loses the marker
+#: and the gap after it, so it is that much narrower again than the layout
+#: reckons.
+_UNMARKED_SLACK = len(GUTTER) + len(GAP)
 
 # Width assumed when the output is not going to a terminal.
 DEFAULT_WIDTH = DEFAULT_PIPED_WIDTH
@@ -165,10 +169,15 @@ class TableRows(NamedTuple):
             figure carrying what it is worth.
         plain: The same rows without that detail, or ``None`` where the view has
             no such detail to give up.
+        marked: Whether the rows carry a severity marker at all. A table whose
+            rows judge nothing - the counter trends, whose verdict is a column
+            of its own - draws no marker column rather than an empty one, and
+            is laid out by the same rules otherwise.
     """
 
     rich: Sequence[MarkedRow]
     plain: Sequence[MarkedRow] | None = None
+    marked: bool = True
 
     def texts(self, *, bandwidth: bool) -> list[dict[str, str]]:
         """The text of every cell of one form, which is what a width is measured against."""
@@ -189,7 +198,7 @@ def _fitted(columns: Sequence[Column], rows: TableRows, width: int) -> tuple[Lay
     its severity - and its cells are cut with Rich's own ellipsis, which put
     ``Gen3`` and a mark where a link figure stood.
     """
-    room = width + _TABLE_SLACK
+    room = width + (_TABLE_SLACK if rows.marked else _UNMARKED_SLACK)
     if rows.plain is None:
         return Layout.for_rows(columns, rows.texts(bandwidth=True), width).on_one_line(room), rows.rich
     layout = Layout.preferring(columns, rows.texts(bandwidth=True), rows.texts(bandwidth=False), width)
@@ -245,7 +254,8 @@ def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, 
         pad_edge=False,
         padding=(0, 1),
     )
-    table.add_column("", width=_MARKER_WIDTH, min_width=_MARKER_WIDTH, no_wrap=True)
+    if rows.marked:
+        table.add_column("", width=_MARKER_WIDTH, min_width=_MARKER_WIDTH, no_wrap=True)
     for column in chosen:
         justify = Align.RIGHT.value if column.align is Align.RIGHT else Align.LEFT.value
         table.add_column(
@@ -268,8 +278,29 @@ def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, 
             Text(clip_keeping(text, widths[column.key], row.kept_tails.get(column.key, "")), style=style)
             for column, (text, style) in ((c, row.cells.get(c.key, ("-", theme.STYLE_UNKNOWN))) for c in chosen)
         ]
-        table.add_row(Text(marker_text, style=marker_style), *cells)
+        marker = [Text(marker_text, style=marker_style)] if rows.marked else []
+        table.add_row(*marker, *cells)
     return table
+
+
+def render_unmarked(title: str, columns: Sequence[Column], rows: Sequence[Row], width: int) -> Table:
+    """A table whose rows carry no severity marker, laid out as every table here is.
+
+    One layout for every printed table, so a table without markers cannot fall
+    back to fitting its columns and handing Rich whatever is left: Rich meets a
+    table wider than the console by cutting cells with its own ellipsis, which
+    cut a seven-digit count to five digits and dropped the trend verdict.
+
+    Args:
+        title: The table's heading.
+        columns: Every column this view could show.
+        rows: The rows, keyed by column.
+        width: Terminal width.
+
+    Returns:
+        The table, every row on one line.
+    """
+    return _render(title, columns, TableRows([MarkedRow(("", ""), row) for row in rows], marked=False), width)
 
 
 def _count_cell(value: int | None) -> theme.Cell:
@@ -870,6 +901,7 @@ __all__ = [
     "render_disks",
     "render_filesystems",
     "render_health",
+    "render_unmarked",
     "series_for",
     "trend_of",
 ]
