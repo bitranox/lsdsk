@@ -415,10 +415,13 @@ def _dropped_scrub_entries(text: str) -> list[_DroppedPiece]:
     the piece before ``c)`` is ``b``, which opens nothing, while the group it
     sits in is still open.
 
-    The cut ends at the piece that closes the group. A group that NOTHING
-    closes ends it earlier, at the first piece with an ``=``: the library reads
-    that piece as an entry of its own, so in ``k=a{1,3,token=.+`` only ``3`` is
-    lost and ``token=.+`` is a pattern in use, not one to announce as ignored.
+    The cut ends at the piece that closes the group, or earlier, at the first
+    piece with an ``=`` that does not close it: the library reads that piece as
+    an entry of its own, so in ``k=a{1,3,token=.+`` only ``3`` is lost and in
+    ``k=a{1,token=.+,3}`` only ``3}``, while ``token=.+`` is a pattern in use in
+    both, not one to announce as ignored. The piece that closes the group is
+    part of the cut even with an ``=`` in it (``3=x}`` above): it ends the
+    regex the comma split, whatever the library makes of it.
 
     Args:
         text: The text form, from the section or from the environment.
@@ -439,6 +442,8 @@ def _dropped_scrub_entries(text: str) -> list[_DroppedPiece]:
         [True, True]
         >>> [p.piece for p in _dropped_scrub_entries("k=a{1,3,token=.+")]
         ['3']
+        >>> [p.piece for p in _dropped_scrub_entries("k=a{1,token=.+,3}")]
+        ['3}']
     """
     pieces = [piece for piece in (part.strip() for part in text.split(",")) if piece]
     dropped: list[_DroppedPiece] = []
@@ -462,25 +467,28 @@ def _cut_tail(entry: str, rest: Sequence[str]) -> Sequence[str]:
 
     Returns:
         Nothing when `entry` leaves no bracket open. Otherwise the pieces up to
-        and including the one whose rejoining closes it, or, when no piece ever
-        does, the pieces before the first one with an ``=``, which the library
-        reads as an entry of its own.
+        and including the one whose rejoining closes it, stopping before the
+        first piece with an ``=`` that does not close it, which the library reads
+        as an entry of its own.
 
     Example:
         >>> _cut_tail("k=(a", ["b", "c)", "key=.+"]), _cut_tail("k=a{1", ["3", "token=.+"])
         (['b', 'c)'], ['3'])
         >>> _cut_tail("token=a{1", ["3=x}", "key=.+"]), _cut_tail("k=a{2}", ["key=.+"])
         (['3=x}'], [])
+        >>> _cut_tail("k=a{1", ["token=.+", "3}"])
+        []
     """
     if not _is_left_open(entry):
         return []
     rejoined = entry
-    for count, piece in enumerate(rest, start=1):
+    for count, piece in enumerate(rest):
         rejoined = f"{rejoined},{piece}"
         if not _is_left_open(rejoined):
+            return rest[: count + 1]
+        if "=" in piece:
             return rest[:count]
-    first_entry = next((count for count, piece in enumerate(rest) if "=" in piece), len(rest))
-    return rest[:first_entry]
+    return rest
 
 
 class _ScrubText(NamedTuple):

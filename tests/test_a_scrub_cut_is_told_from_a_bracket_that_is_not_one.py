@@ -164,3 +164,20 @@ def test_a_piece_with_an_equals_sign_after_a_cut_that_never_closes_is_an_entry_o
     assert [line.split("LOG_SCRUB_PATTERNS=", 1)[1].split(":", 1)[0] for line in said] == cut, said
     assert all("continues a cut regex" in line for line in said), said
     assert not any(read in line for line in said), said
+
+
+def test_a_piece_with_an_equals_sign_inside_a_cut_that_closes_later_is_an_entry_of_its_own(
+    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """In ``k=a{1,token=.+,3}`` the library scrubs with ``token=.+``; only ``3}`` is lost.
+
+    The group closes at ``3}``, and rejoining everything up to it announced ``token=.+`` as
+    ignored while the library was reading it as an entry, the same mistake the never-closed
+    case had.
+    """
+    monkeypatch.setenv("LOG_SCRUB_PATTERNS", "k=a{1,token=.+,3}")
+
+    said = [line for line in _said_about_scrubbing(capfd) if "split on every comma" in line]
+
+    assert [line.split("LOG_SCRUB_PATTERNS=", 1)[1].split(":", 1)[0] for line in said] == ["3}"], said
+    assert not any("token=.+" in line for line in said), said
