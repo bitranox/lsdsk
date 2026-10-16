@@ -378,7 +378,7 @@ def _raw_reading() -> dict[str, object]:
         "pci": {},
         "block": {
             "sda": {"dev": "8:0", "holders": [], "partitions": {"sda1": {"dev": "8:1", "holders": ["dm-0"]}}},
-            "loop0": {"dev": "7:0", "holders": [], "virtual": True},
+            "loop0": {"dev": "7:0", "holders": [], "virtual": True, "partitions": {}},
         },
         "stacked": {"dm-0": {"dev": "253:0", "holders": []}},
         "mounts": [

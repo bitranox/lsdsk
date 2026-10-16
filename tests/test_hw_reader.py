@@ -21,13 +21,16 @@ is `os_agnostic`.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from lsdsk.adapters.hw.linux import reader as linux_reader
+from lsdsk.adapters.hw.linux.capture import LinuxCapture
+from lsdsk.adapters.hw.linux.filesystems import build_filesystems
 from lsdsk.adapters.hw.linux.reader import read_block
 from lsdsk.adapters.hw.windows.capture import bus_type_of
-from lsdsk.domain.enums import BusType
+from lsdsk.domain.enums import BusType, Environment
 
 _PCI_BLOCK = "devices/pci0000_00/0000_00_17_0/ata5/host4/block"
 
@@ -339,3 +342,60 @@ def test_the_kernels_placement_decides_even_when_the_names_say_the_opposite(tmp_
     assert block["sdq"]["virtual"] is True
     assert block["loop5"].get("virtual") is not True
     assert block["md0"].get("virtual") is not True
+
+
+def _with_dev(sysfs: Path, device_path: str, node: str, dev: str, partitions: dict[str, str] | None = None) -> None:
+    """Give a block device made by :func:`_make_block_device` its ``dev`` file, and partitions with theirs."""
+    target = sysfs / device_path / node
+    (target / "dev").write_text(f"{dev}\n", encoding="utf-8")
+    for name, partition_dev in (partitions or {}).items():
+        (target / name).mkdir()
+        (target / name / "partition").write_text("1\n", encoding="utf-8")
+        (target / name / "dev").write_text(f"{partition_dev}\n", encoding="utf-8")
+
+
+@pytest.mark.os_posix
+def test_a_pool_on_a_loop_device_or_a_zvol_partition_is_no_untraced_pool_in_the_shape_the_reader_writes(
+    tmp_path: Path,
+) -> None:
+    """A pool whose members are virtual devices has no disk to find, and that is not a refusal.
+
+    Driven from what ``read_block`` really records for a kernel-virtual device,
+    rather than from a hand-built entry that carries a device number the
+    reader never wrote.
+    """
+    root = tmp_path / "sys"
+    _make_block_device(root, _PCI_BLOCK, "sda", physical=True)
+    _with_dev(root, _PCI_BLOCK, "sda", "8:0")
+    _make_block_device(root, "devices/virtual/block", "loop0", physical=False)
+    _with_dev(root, "devices/virtual/block", "loop0", "7:0")
+    _make_block_device(root, "devices/virtual/block", "zd0", physical=False)
+    _with_dev(root, "devices/virtual/block", "zd0", "230:0", {"zd0p1": "230:1"})
+
+    block = read_block(root / "block")
+    reading: dict[str, Any] = {
+        "schema": 2,
+        "platform": "linux",
+        "hostname": "h",
+        "kernel": "6.1",
+        "pci": {},
+        "block": block,
+        "stacked": {},
+        "mounts": [],
+        "swaps": [],
+        "signatures": {},
+        "zfs_pools": {"scratch": {"size": 100, "alloc": 1}, "nested": {"size": 100, "alloc": 1}},
+        "zfs_pool_layouts": {
+            "scratch": {"guid": "1", "vdevs": [{"kind": "disk", "dev": "7:0"}]},
+            "nested": {"guid": "2", "vdevs": [{"kind": "disk", "dev": "230:1"}]},
+        },
+        "filesystem_space": {},
+    }
+
+    rows, refused = build_filesystems(LinuxCapture.model_validate(reading), Environment.BARE_METAL)
+
+    assert block["loop0"]["virtual"] is True  # control: the kernel's placement made both virtual
+    assert block["zd0"]["virtual"] is True
+    assert refused == ()
+    assert rows is not None
+    assert [row.name for row in rows] == []

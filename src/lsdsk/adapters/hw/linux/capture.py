@@ -573,16 +573,16 @@ class BlockEntry(CaptureModel, frozen=True):
         device_path: The resolved sysfs path of that device.
         vpd: The VPD pages the device answered.
         hwmon: The resolved paths of the hardware monitors the device owns.
-        dev: The block device's own ``maj:min``, recorded for a non-virtual
-            device only - a virtual one is already named by ``virtual: True``.
+        dev: The block device's own ``maj:min``. An older capture records it
+            for a non-virtual device only.
         holders: What sits directly on the whole device (never on one of its
             partitions), such as a device-mapper device using the raw disk.
             Never ``None``: an empty tuple carries no not-read case of its
             own, unlike `partitions` below.
         partitions: The device's partitions, keyed by kernel name. ``None``
-            when they were never read - a virtual device, which has none to
-            read, a disk whose sysfs directory could not be listed, or a
-            capture older than this field - a different fact from an empty
+            when they were never read - a virtual device in an older capture,
+            a disk whose sysfs directory could not be listed, or
+            a capture older than this field - a different fact from an empty
             mapping, which means they were read and there are none.
     """
 

@@ -105,7 +105,8 @@ def test_the_udev_lookup_is_asked_about_every_stacked_device_as_well_as_the_disk
     reader.read_system(_readers(recorded))
     assert recorded.stacked == [["dm-0"]]
     # A pool or filesystem on dm-crypt, LVM or md carries its signature on the stacked device, not the partition.
-    assert recorded.signatures == [["8:0", "7:0", "8:1", "8:2", "253:0"]]
+    # The loop's own number is not asked: nothing reads a virtual device's signature, as before it was recorded.
+    assert recorded.signatures == [["8:0", "8:1", "8:2", "253:0"]]
 
 
 def test_the_free_space_walk_is_asked_only_about_filesystems_an_inventoried_disk_carries() -> None:

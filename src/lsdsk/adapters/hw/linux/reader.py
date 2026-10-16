@@ -759,18 +759,17 @@ def read_block(root: Path = Path("/sys/block")) -> dict[str, dict[str, Any]]:
             monitors = sorted(device.glob("hwmon/hwmon*")) + sorted(device.glob("hwmon*"))
             if monitors:
                 entry["hwmon"] = [os.path.realpath(monitor) for monitor in monitors]
-        if not virtual:
-            # Only a real device has partitions and holders worth recording: a
-            # virtual one already says so via `virtual: True`, and what uses it
-            # (loop, zram, zvol) is not something mountinfo or device-mapper
-            # layers the same way a real disk's chain does.
-            entry["dev"] = _read_attribute(node / "dev")
-            entry["holders"] = sorted(p.name for p in _entries(node / "holders"))
-            partitions = mounts.read_partitions(node)
-            # Left out when the disk's directory could not be listed, which the
-            # capture reads as "not read" rather than as "no partitions".
-            if partitions is not None:
-                entry["partitions"] = partitions
+        # A virtual device's numbers are recorded too: a pool or a mount on a
+        # loop, a zram or a zvol (or a partition of one) names them, and only
+        # knowing they are a virtual disk's tells "no disk of its own" apart
+        # from "a disk this scan could not find".
+        entry["dev"] = _read_attribute(node / "dev")
+        entry["holders"] = sorted(p.name for p in _entries(node / "holders"))
+        partitions = mounts.read_partitions(node)
+        # Left out when the disk's directory could not be listed, which the
+        # capture reads as "not read" rather than as "no partitions".
+        if partitions is not None:
+            entry["partitions"] = partitions
         disks[node.name] = entry
     return disks
 
@@ -1211,11 +1210,14 @@ class SystemReaders:
 
 
 def _signature_devnums(block: Mapping[str, Mapping[str, Any]], stacked: Mapping[str, Mapping[str, Any]]) -> list[str]:
-    """Every device number the udev database is looked up for: each disk's, its partitions', and the stacked ones."""
-    devnums = [entry["dev"] for entry in block.values() if entry.get("dev")]
-    devnums += [
-        part["dev"] for entry in block.values() for part in entry.get("partitions", {}).values() if part.get("dev")
-    ]
+    """Every device number the udev database is looked up for: each disk's, its partitions', and the stacked ones.
+
+    A virtual device's own numbers are left out: nothing reads a loop's or a
+    zvol's signature, and a zvol's is a guest's filesystem.
+    """
+    disks = [entry for entry in block.values() if not entry.get("virtual")]
+    devnums = [entry["dev"] for entry in disks if entry.get("dev")]
+    devnums += [part["dev"] for entry in disks for part in entry.get("partitions", {}).values() if part.get("dev")]
     # A ZFS pool on dm-crypt, LVM or md carries its member signature on the
     # stacked device, not on the partition beneath it.
     return devnums + mounts.stacked_device_numbers(stacked)
