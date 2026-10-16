@@ -285,7 +285,18 @@ again to find out which one said no. On Windows, a disk interface whose device
 path could not be read appears as `device: disk interface - <reason>`. It is NOT
 counted as a disk anywhere in `data`, and every human page that lists disks says
 `N disk interface(s) not read: <reason>.`, so a drive the machine has is never
-silently missing from a report that says nothing is wrong.
+silently missing from a report that says nothing is wrong. The same line also
+reports a disk-interface list Windows stopped handing out part-way: its reason
+then reads `the list of disk interfaces ended early at entry N (Win32 error E),
+so whatever followed was not read`, it counts as ONE in that `N disk
+interface(s)` figure, and every drive from entry N on is missing from `data`
+however many there were - nothing can say how many. Another Windows device list
+cut short the same way appears as `<list>: device list - the list of <list>
+ended early at entry N (Win32 error E), so whatever followed was not read`,
+where `<list>` is `PCI devices`, `USB devices` or `USB hubs`: what the devices
+from entry N on would have contributed - a controller, a fabric node, a USB link -
+is missing from `data`, and this entry appears in `skipped` only, never on a
+human page.
 `command` names the command that produced the payload. `data` is that command's
 own result.
 

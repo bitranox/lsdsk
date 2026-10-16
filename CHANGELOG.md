@@ -148,7 +148,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   list.** A cut-short disk-interface list is reported like an unreadable disk interface
   (`device: disk interface - ...` in `skipped`, and the "disk interface not read" note); a cut-short
   PCI-device, USB-device or USB-hub list appears in `skipped` as `<list>: device list - ...`. Either
-  makes `ok` false.
+  makes `ok` false. The skill names both forms and what each leaves out of `data`.
 - CONTRIBUTING.md asks only for the Linux capture of a chipset used as a PCIe switch; the Windows one
   is among the tests.
 
