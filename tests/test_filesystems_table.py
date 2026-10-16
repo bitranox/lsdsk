@@ -443,3 +443,22 @@ async def test_the_interactive_page_names_the_same_refusal_when_no_row_was_drawn
         legend = app.query_one("#filesystem-legend", Static)
         assert legend.display
         assert "Not read: zfs-pools (pool tank: stats refused)." in str(legend.content)
+
+
+def test_a_size_cell_is_written_in_the_figures_its_form_names() -> None:
+    """The figures themselves, not the formatter's own answer, so a swapped form cannot agree with itself."""
+    fs = Filesystem(
+        kind=FilesystemKind.MOUNT, name="/", size_bytes=500_107_862_016, used_bytes=1, free_bytes=1, disks=("sda",)
+    )
+    rich = filesystem_table_row(fs, both_scales=True)["size"][0]
+    plain = filesystem_table_row(fs, both_scales=False)["size"][0]
+
+    assert (rich, plain) == ("500GB/466GiB", "466GiB")
+
+
+def test_the_legend_carries_both_markers_in_one_sentence_when_both_are_drawn() -> None:
+    """A page drawing `-` and `n/a` explains both, `-` first, in the one legend line under the table."""
+    expected = f"{theme.NOT_READ} = not read; {theme.NOT_APPLICABLE} = no fixed inode table on this filesystem"
+
+    assert filesystem_legend_for({"use": {theme.NOT_READ}, "inodes": {theme.NOT_APPLICABLE}}) == expected
+    assert expected in _text(_EXT4, _POOL, _UNREAD)
