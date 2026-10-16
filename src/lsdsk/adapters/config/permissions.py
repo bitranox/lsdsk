@@ -142,8 +142,8 @@ def _why_the_deploy_ignores(key: str, layer: object) -> str | None:
     return None
 
 
-def modes_the_deploy_ignores(config: Config) -> tuple[ModeTheDeployIgnores, ...]:
-    """The configured modes the deploy's own read of its layers leaves out.
+def modes_the_deploy_ignores(config: Config, *, used: Config) -> tuple[ModeTheDeployIgnores, ...]:
+    """The configured modes the deploy's own read of its layers leaves out, where that changes the mode.
 
     The deploy reads ``[lib_layered_config.default_permissions]`` from the shipped defaults,
     the app, host and user files and the environment, and from a user file it takes only the
@@ -152,21 +152,27 @@ def modes_the_deploy_ignores(config: Config) -> tuple[ModeTheDeployIgnores, ...]
     from provenance, so a mode ``--set`` gives - handed to the deploy as an override - and one
     the environment gives are never named.
 
+    A left-out mode is named only where the value in force differs from the one the deploy
+    reads. A deployed user file is a copy of the shipped one and carries the shipped
+    ``app_*``/``host_*`` modes, which the deploy reads from the shipped defaults anyway:
+    naming them told every later deploy about four values nobody configured.
+
     Args:
         config: The configuration of the profile being deployed.
+        used: The configuration the deploy itself reads its modes from.
 
     Returns:
         One entry per mode setting the deploy will not use, in :data:`MODE_KEYS` order.
 
     Example:
-        >>> modes_the_deploy_ignores(Config({}, {}))
+        >>> modes_the_deploy_ignores(Config({}, {}), used=Config({}, {}))
         ()
     """
     ignored: list[ModeTheDeployIgnores] = []
     for key in MODE_KEYS:
         dotted = f"{PERMISSIONS_SECTION}.{key}"
         origin = config.origin(dotted)
-        if origin is None:
+        if origin is None or config.get(dotted) == used.get(dotted):
             continue
         reason = _why_the_deploy_ignores(key, origin.get("layer"))
         if reason is not None:

@@ -17,6 +17,7 @@ is held back until the deploy has run, so a refused deploy answers with its refu
 
 from __future__ import annotations
 
+import os
 import stat
 from typing import TYPE_CHECKING
 
@@ -33,6 +34,9 @@ if TYPE_CHECKING:
 
 SECTION = "lib_layered_config.default_permissions"
 SHIPPED_SECTION_SENTENCE = f"Warning: ignoring {SECTION}=5: not a table. Using the shipped [{SECTION}] section."
+
+#: Windows applies no mode, so its deploy reads none from any layer and names none as unused.
+NAMED_ONCE = 1 if os.name == "posix" else 0
 
 
 def _run(argv: Sequence[str], capsys: pytest.CaptureFixture[str]) -> tuple[int, str]:
@@ -69,9 +73,8 @@ def test_a_mode_a_dotenv_file_gives_is_named_as_unused(
 
     assert code == 0, err
     named = _lines_naming("user_file", err)
-    assert len(named) == 1, err
-    assert str(dotenv) in named[0]
-    assert ".env" in named[0]
+    assert len(named) == NAMED_ONCE, err
+    assert all(str(dotenv) in line and ".env" in line for line in named), err
 
 
 @pytest.mark.os_posix
@@ -119,8 +122,8 @@ def test_an_app_mode_in_a_user_file_is_named_as_unused(
 
     assert code == 0, err
     named = _lines_naming("app_file", err)
-    assert len(named) == 1, err
-    assert str(user_file) in named[0]
+    assert len(named) == NAMED_ONCE, err
+    assert all(str(user_file) in line for line in named), err
     # A user file may set its own layer's modes, so that one is not named.
     assert _lines_naming("user_file", err) == [], err
 

@@ -15,16 +15,19 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import lib_log_rich.runtime
 import rich_click as click
-from lib_layered_config import Config, DeployModeError, redact_mapping
+from lib_layered_config import Config, ConfigError, DeployModeError, redact_mapping
 
 # Below the top-level exports because the library exports the parser only inside
 # DeployMode.from_text, which also judges safety - the deploy's job, not the option's.
 from lib_layered_config.domain.deploy_mode import parse_mode_text
+from lib_layered_config.domain.permissions import modes_apply
 from rich.console import Console
 
 from lsdsk import __init__conf__
-from lsdsk.adapters.config.loader import shipped_table_paths
+from lsdsk.adapters.config.deploy import paths_the_deploy_writes
+from lsdsk.adapters.config.loader import read_config_skipping, shipped_table_paths
 from lsdsk.adapters.config.permissions import (
+    ModeTheDeployIgnores,
     SectionGivenAsAValueError,
     modes_the_deploy_ignores,
     permission_overrides_from,
@@ -514,13 +517,14 @@ def _execute_deploy(
     for rejected in reading.rejected:
         if rejected not in held_back:
             safe_console.echo(rejected.as_sentence(), err=True)
-    for ignored in modes_the_deploy_ignores(config):
-        safe_console.echo(ignored.as_sentence(), err=True)
 
     # CLI --permissions/--no-permissions overrides config enabled setting
     settled = request.with_changes(
         set_permissions=request.set_permissions if request.set_permissions is not None else perm_defaults.enabled
     )
+    # Worked out before the deploy rewrites the files they are read from, and said only after
+    # it: a refused deploy reads no mode, so a sentence about how it would have read one is moot.
+    unused_modes = _modes_the_deploy_ignores(config, settled)
 
     try:
         deployed_paths = cli_ctx.services.deploy_configuration(settled)
@@ -557,10 +561,51 @@ def _execute_deploy(
         _fail_after_output(f"Failed to deploy configuration: {exc}", ExitCode.CONFIG_ERROR, output_format=output_format)
     for rejected in held_back:
         safe_console.echo(rejected.as_sentence(), err=True)
+    for ignored in unused_modes:
+        safe_console.echo(ignored.as_sentence(), err=True)
     # Outside the try on purpose: the files are written by now, and a report that
     # cannot reach a full standard output is a failure to REPORT, which is not the
     # "Failed to deploy configuration" the arms above would have called it.
     _report_deployment_result(deployed_paths, settled.profile, bool(settled.set_permissions), output_format)
+
+
+def _reads_configured_modes(request: DeployRequest) -> bool:
+    """Whether the deploy reads any mode from the configuration at all.
+
+    It does not on Windows, which applies no mode; with ``--no-permissions`` or an ``enabled``
+    that settled to false, which set none; or when ``--dir-mode`` and ``--file-mode`` both
+    give the modes outright.
+
+    Args:
+        request: The deploy, with ``set_permissions`` already settled.
+
+    Returns:
+        ``False`` when every configured mode is unused whatever layer gave it.
+    """
+    explicit = request.dir_mode is not None and request.file_mode is not None
+    return modes_apply() and request.set_permissions is not False and not explicit
+
+
+def _modes_the_deploy_ignores(config: Config, request: DeployRequest) -> tuple[ModeTheDeployIgnores, ...]:
+    """The modes in force that the deploy will not use, read against the deploy's own read.
+
+    Args:
+        config: The configuration of the profile being deployed.
+        request: The deploy, with ``set_permissions`` already settled.
+
+    Returns:
+        Each mode to name; none where the deploy reads no configured mode, and none where its
+        own read fails, because the deploy then refuses with its own sentence.
+    """
+    if not _reads_configured_modes(request):
+        return ()
+    try:
+        used = read_config_skipping(
+            profile=request.profile, skip=paths_the_deploy_writes(request.targets, profile=request.profile)
+        )
+    except (ConfigError, OSError, ValueError):
+        return ()
+    return modes_the_deploy_ignores(config, used=used)
 
 
 def _report_deployment_result(
