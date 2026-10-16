@@ -60,7 +60,7 @@ from ..decode.virtualization import board_name, classify
 from ..fabric import NodeSource, assemble
 from ..linux.builder import controller_kind_of, parse_pcie_running_width, parse_pcie_speed, parse_pcie_width
 from ..refusals import refusals_of
-from .capture import HealthBlobs, is_unread_interface
+from .capture import DISK_INTERFACE_LIST, HealthBlobs, is_unread_interface
 from .filesystems import build_filesystems
 from .usage import resolve_usage
 
@@ -725,17 +725,36 @@ def build_tree(capture: WindowsCapture) -> tuple[PciNode, ...]:
 def build_unread_interfaces(capture: WindowsCapture) -> tuple[RefusedReading, ...]:
     """Name each disk interface the reader listed but could not read a path for.
 
+    A disk-interface list SetupAPI cut short is one more: the drives past the
+    point it stopped were never listed, let alone read.
+
     Args:
         capture: The typed reading, live or replayed.
 
     Returns:
-        One refused ``device`` reading per such interface, in capture order.
+        One refused ``device`` reading per such interface, in capture order,
+        then one for a cut-short list.
     """
-    return tuple(
+    unread = tuple(
         reading
         for path, entry in sorted(capture.disks.items())
         if is_unread_interface(path, entry)
         for reading in refusals_of({"device": entry.error})
+    )
+    return unread + refusals_of({"device": capture.lists_cut_short.get(DISK_INTERFACE_LIST)})
+
+
+def build_unread_device_lists(capture: WindowsCapture) -> tuple[RefusedReading, ...]:
+    """Name each device list other than the disks' that SetupAPI cut short.
+
+    Args:
+        capture: The typed reading, live or replayed.
+
+    Returns:
+        One refused reading per such list, named for the list, in name order.
+    """
+    return refusals_of(
+        {name: reason for name, reason in sorted(capture.lists_cut_short.items()) if name != DISK_INTERFACE_LIST}
     )
 
 
@@ -790,6 +809,7 @@ def build_inventory(capture: WindowsCapture) -> Inventory:
         ),
         disks=disks,
         unread_interfaces=build_unread_interfaces(capture),
+        unread_device_lists=build_unread_device_lists(capture),
         slots=build_slots(capture),
         pci_tree=build_tree(capture),
         privileged=capture.elevated,
@@ -807,6 +827,7 @@ __all__ = [
     "build_disks",
     "build_inventory",
     "build_slots",
+    "build_unread_device_lists",
     "build_unread_interfaces",
     "controller_of",
 ]

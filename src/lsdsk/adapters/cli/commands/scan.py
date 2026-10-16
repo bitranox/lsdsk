@@ -656,6 +656,7 @@ def _refusals_named(inventory: Inventory) -> list[str]:
     ]
     subjects += [(controller.address, controller.readings_refused) for controller in inventory.controllers]
     subjects.append(("disk interface", inventory.unread_interfaces))
+    subjects.append(("device list", inventory.unread_device_lists))
     subjects += [(one.name, one.readings_refused) for one in inventory.filesystems or ()]
     subjects.append(("filesystems", inventory.unread_filesystems))
     return [

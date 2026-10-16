@@ -49,7 +49,7 @@ from ..decode.captured import plausible_celsius
 from ..snapshot import SCHEMA_VERSION
 from . import volumes
 from . import winapi as api
-from .capture import UNREADABLE_INTERFACE_LABEL, bus_type_of
+from .capture import DISK_INTERFACE_LIST, UNREADABLE_INTERFACE_LABEL, bus_type_of
 from .usage import disk_numbers
 
 if TYPE_CHECKING:
@@ -77,6 +77,12 @@ _MAX_TREE_DEPTH = 64
 # low enough that a driver returning a sibling cycle stops rather than filling
 # memory.
 _MAX_SIBLINGS = 4096
+
+# What each device-interface list is called where one cut short is recorded.
+_INTERFACE_LISTS = {
+    api.GUID_DEVINTERFACE_DISK: DISK_INTERFACE_LIST,
+    api.GUID_DEVINTERFACE_USB_HUB: "USB hubs",
+}
 
 # A hub numbers its ports in one byte, and the capture model holds no other.
 _MAX_HUB_PORT = 255
@@ -150,6 +156,7 @@ class _DeviceTree:
         setupapi: api.WinLibrary | None = None,
         cfgmgr32: api.WinLibrary | None = None,
         kernel32: api.WinLibrary | None = None,
+        last_error: Callable[[], int] = api.last_error,
     ) -> None:
         """Bind the DLL entry points this class uses.
 
@@ -162,6 +169,8 @@ class _DeviceTree:
             setupapi: The device-enumeration library, or ``None`` to load it.
             cfgmgr32: The configuration-manager library, or ``None`` to load it.
             kernel32: The core library, or ``None`` to load it.
+            last_error: Answers ``GetLastError`` for the call that just failed;
+                off Windows ``ctypes`` answers 0, which a fake cannot reach.
         """
         if setupapi is None or cfgmgr32 is None or kernel32 is None:
             loaded = api.load_libraries()
@@ -171,6 +180,12 @@ class _DeviceTree:
         self.setupapi = setupapi
         self.cfgmgr32 = cfgmgr32
         self.kernel32 = kernel32
+        self.last_error = last_error
+        # Every list SetupAPI ended with an error other than ERROR_NO_MORE_ITEMS,
+        # keyed by the list's name, with where it stopped and the error. The
+        # entries before that point are kept; the record is what keeps a scan
+        # that read part of a list from passing for one that read all of it.
+        self.lists_cut_short: dict[str, str] = {}
         # Why a DISK interface could not be turned into a path, one text per
         # interface that was dropped; refilled by every :meth:`disk_interfaces`.
         # Only disks are recorded: a hub that cannot be listed is not a disk the
@@ -221,8 +236,29 @@ class _DeviceTree:
                 instance = self._instance_id(info.DevInst)
                 if instance is not None:
                     yield handle, info, instance
+            self._note_list_end(f"{enumerator} devices", stopped_at=index)
         finally:
             self.setupapi.SetupDiDestroyDeviceInfoList(handle)
+
+    def _note_list_end(self, name: str, *, stopped_at: int) -> None:
+        """Record a SetupAPI list that ended on anything but ``ERROR_NO_MORE_ITEMS``.
+
+        Read straight after the enumeration call that failed, before any other
+        call can overwrite the thread's last error. Both enumeration calls end a
+        complete list with that one error (Microsoft Learn,
+        SetupDiEnumDeviceInfo and SetupDiEnumDeviceInterfaces); any other means
+        the entries past this point were never read.
+
+        Args:
+            name: What the list is called in the record.
+            stopped_at: The zero-based index of the call that failed.
+        """
+        code = self.last_error()
+        if code != api.ERROR_NO_MORE_ITEMS:
+            self.lists_cut_short[name] = (
+                f"the list of {name} ended early at entry {stopped_at + 1} (Win32 error {code}), "
+                "so whatever followed was not read"
+            )
 
     def _pci_entry(self, handle: int, info: api.SP_DEVINFO_DATA, instance: str) -> dict[str, Any]:
         """Collect one PCI device's identity, link state and parentage."""
@@ -465,6 +501,7 @@ class _DeviceTree:
                     found.append((path, devinst))
                 elif error is not None and unreadable is not None:
                     unreadable.append(error)
+            self._note_list_end(_INTERFACE_LISTS.get(interface_class, interface_class), stopped_at=index)
             return found
         finally:
             self.setupapi.SetupDiDestroyDeviceInfoList(handle)
@@ -485,7 +522,7 @@ class _DeviceTree:
             handle, ctypes.byref(interface), None, 0, ctypes.byref(required), None
         )
         if required.value == 0:
-            return None, None, f"Win32 error {api.last_error()}"
+            return None, None, f"Win32 error {self.last_error()}"
         buffer = ctypes.create_string_buffer(required.value)
         # SP_DEVICE_INTERFACE_DETAIL_DATA_W begins with its own size, and that
         # size is the BUILD's rather than a constant - see the constant's own
@@ -505,7 +542,7 @@ class _DeviceTree:
             ctypes.byref(info),
         )
         if not ok:
-            return None, None, f"Win32 error {api.last_error()}"
+            return None, None, f"Win32 error {self.last_error()}"
         path = ctypes.wstring_at(ctypes.addressof(buffer) + 4)
         return path, info.DevInst, None
 
@@ -1439,6 +1476,7 @@ def read_system() -> dict[str, Any]:
         "usb_hubs": usb_reading.hubs,
         "volumes": volume_entries,
         "windows_volume": windows_volume,
+        "lists_cut_short": dict(tree.lists_cut_short),
         "volume_bitmaps_read": elevated,
         # Every volume with a path was asked for its space above, so the
         # volumes are read even on a machine where no path came back.

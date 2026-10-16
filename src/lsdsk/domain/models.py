@@ -2048,6 +2048,10 @@ class Inventory(DomainModel, frozen=True):
             path could not be read. They are not drives and are kept out of
             ``disks``; each carries the reason, so a scan that missed one is
             not mistaken for a complete one.
+        unread_device_lists: Device lists the operating system stopped
+            before their end, each named for the list and carrying where it
+            stopped, so a machine read in part is not mistaken for one read
+            whole. Only Windows enumerates this way.
         slots: Every PCIe bridge and root port, for placement advice.
         pci_tree: Every PCI device as one root-down tree, for the topology
             view. Its roots are the machine's root buses, one synthetic node
@@ -2076,6 +2080,7 @@ class Inventory(DomainModel, frozen=True):
     disks: tuple[Disk, ...] = ()
     virtual_disks: tuple[Disk, ...] = ()
     unread_interfaces: tuple[RefusedReading, ...] = ()
+    unread_device_lists: tuple[RefusedReading, ...] = ()
     filesystems: tuple[Filesystem, ...] | None = None
     unread_filesystems: tuple[RefusedReading, ...] = ()
     slots: tuple[PcieSlot, ...] = ()

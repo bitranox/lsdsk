@@ -57,6 +57,10 @@ def _uint_bytes(value: int) -> bytes:
     return struct.pack("<I", value)
 
 
+#: What the fake leaves when a list is cut short; any error but ERROR_NO_MORE_ITEMS would do.
+ERROR_INVALID_DATA = 13
+
+
 class _NoKernel:
     """A ``kernel32`` the tests never call: ``_DeviceTree`` only stores it for other callers."""
 
@@ -70,7 +74,10 @@ class FakeSetupApi:
             the interface class GUID's text form.
         properties: One property's type and raw bytes, keyed by ``(devinst, fmtid text, pid)``.
         fail_enum_at: The index at which an enumeration on a given handle starts failing,
-            although later indices exist - this is backlog [415]'s present behaviour.
+            although later indices exist, the way a transient error would cut a list short.
+        fail_error: The Win32 error such a failure leaves; the end of a list leaves
+            ``ERROR_NO_MORE_ITEMS``, as the SetupAPI documentation says.
+        error: What ``GetLastError`` answers, as the last failing call left it.
         destroyed: Every handle passed to ``SetupDiDestroyDeviceInfoList``.
     """
 
@@ -81,12 +88,15 @@ class FakeSetupApi:
         by_guid: dict[str, list[tuple[str, int]]] | None = None,
         properties: dict[tuple[int, str, int], tuple[int, bytes]] | None = None,
         fail_enum_at: dict[int, int] | None = None,
+        fail_error: int = ERROR_INVALID_DATA,
     ) -> None:
         """Hold the enumeration, property and failure tables this fake answers from."""
         self.by_enumerator = by_enumerator or {}
         self.by_guid = by_guid or {}
         self.properties = properties or {}
         self.fail_enum_at = fail_enum_at or {}
+        self.fail_error = fail_error
+        self.error = 0
         self.destroyed: list[int] = []
         self._next_handle = 1
         self._devices: dict[int, list[int]] = {}
@@ -108,10 +118,24 @@ class FakeSetupApi:
         self._next_handle += 1
         return handle
 
+    def last_error(self) -> int:
+        """The error the last failing call left, as ``GetLastError`` reports it."""
+        return self.error
+
+    def _list_ended(self, handle: int, index: int, length: int) -> bool:
+        """Whether an enumeration call at ``index`` fails, leaving the error it fails with."""
+        fail_at = self.fail_enum_at.get(handle)
+        if fail_at is not None and index >= fail_at:
+            self.error = self.fail_error
+            return True
+        if index >= length:
+            self.error = api.ERROR_NO_MORE_ITEMS
+            return True
+        return False
+
     def SetupDiEnumDeviceInfo(self, handle: int, index: int, info: object) -> int:  # noqa: N802
         devices = self._devices.get(handle, [])
-        fail_at = self.fail_enum_at.get(handle)
-        if (fail_at is not None and index >= fail_at) or index >= len(devices):
+        if self._list_ended(handle, index, len(devices)):
             return 0
         _obj(info).DevInst = devices[index]
         return 1
@@ -150,8 +174,7 @@ class FakeSetupApi:
     ) -> int:
         del device_info, guid
         devices = self._ifaces.get(handle, [])
-        fail_at = self.fail_enum_at.get(handle)
-        if (fail_at is not None and index >= fail_at) or index >= len(devices):
+        if self._list_ended(handle, index, len(devices)):
             return 0
         _obj(interface).Flags = index
         return 1
@@ -249,10 +272,12 @@ def _tree(
     cfgmgr32: FakeCfgmgr32 | None = None,
 ) -> _DeviceTree:
     """Build a ``_DeviceTree`` wired to fakes, through the keyword seam ``__init__`` offers."""
+    setupapi = setupapi or FakeSetupApi()
     return _DeviceTree(
-        setupapi=cast("api.WinLibrary", setupapi or FakeSetupApi()),
+        setupapi=cast("api.WinLibrary", setupapi),
         cfgmgr32=cast("api.WinLibrary", cfgmgr32 or FakeCfgmgr32()),
         kernel32=cast("api.WinLibrary", _NoKernel()),
+        last_error=setupapi.last_error,
     )
 
 
@@ -346,35 +371,71 @@ def test_enumerate_pci_on_invalid_handle_value_yields_nothing_and_destroys_nothi
 
 
 @pytest.mark.os_agnostic
-def test_the_present_devices_loop_pins_current_behavior_of_stopping_on_any_failure() -> None:
-    """Backlog [415]: a mid-list enumeration failure is indistinguishable from end-of-list.
+def test_a_device_list_cut_short_keeps_what_it_read_and_records_where_it_stopped() -> None:
+    """Three devices are present, and the second SetupDiEnumDeviceInfo fails as a transient error would.
 
-    Three devices are present, but the second SetupDiEnumDeviceInfo call is made
-    to fail as a transient error would (not because the list ended). The current
-    code has no way to tell that apart from ERROR_NO_MORE_ITEMS, so it stops
-    there and the third device is silently never read. This test pins that
-    behaviour; it is backlog item [415] and is NOT fixed here.
+    The first device is kept, and the list is recorded as cut short with the
+    error Windows gave, so a scan cannot mistake one device for the whole bus.
     """
-    setupapi = FakeSetupApi(
-        by_enumerator={"PCI": [1, 2, 3]},
-        properties={},
-        fail_enum_at={1: 1},
-    )
+    setupapi = FakeSetupApi(by_enumerator={"PCI": [1, 2, 3]}, fail_enum_at={1: 1})
     cfgmgr32 = FakeCfgmgr32(device_ids={1: "PCI\\A", 2: "PCI\\B", 3: "PCI\\C"})
-    entries = _tree(setupapi=setupapi, cfgmgr32=cfgmgr32).enumerate_pci()
+    tree = _tree(setupapi=setupapi, cfgmgr32=cfgmgr32)
+    entries = tree.enumerate_pci()
     assert set(entries) == {"PCI\\A"}
+    assert tree.lists_cut_short == {
+        "PCI devices": f"the list of PCI devices ended early at entry 2 (Win32 error {ERROR_INVALID_DATA}), "
+        "so whatever followed was not read"
+    }
 
 
 @pytest.mark.os_agnostic
-def test_the_interfaces_loop_pins_current_behavior_of_stopping_on_any_failure() -> None:
-    """The same backlog [415] shape, for the SetupDiEnumDeviceInterfaces loop."""
+def test_a_device_list_that_ends_on_no_more_items_is_complete() -> None:
+    """The control: the same three devices, ending as SetupAPI ends a list, record nothing."""
+    setupapi = FakeSetupApi(by_enumerator={"PCI": [1, 2, 3]})
+    cfgmgr32 = FakeCfgmgr32(device_ids={1: "PCI\\A", 2: "PCI\\B", 3: "PCI\\C"})
+    tree = _tree(setupapi=setupapi, cfgmgr32=cfgmgr32)
+    assert set(tree.enumerate_pci()) == {"PCI\\A", "PCI\\B", "PCI\\C"}
+    assert tree.lists_cut_short == {}
+
+
+@pytest.mark.os_agnostic
+def test_a_usb_device_list_cut_at_its_first_entry_is_recorded_under_its_own_name() -> None:
+    setupapi = FakeSetupApi(by_enumerator={"USB": [1]}, fail_enum_at={1: 0})
+    tree = _tree(setupapi=setupapi, cfgmgr32=FakeCfgmgr32(device_ids={1: "USB\\A"}))
+    assert tree.usb_devices() == {}
+    assert list(tree.lists_cut_short) == ["USB devices"]
+    assert "at entry 1 " in tree.lists_cut_short["USB devices"]
+
+
+@pytest.mark.os_agnostic
+def test_a_disk_interface_list_cut_short_keeps_what_it_read_and_records_where_it_stopped() -> None:
+    """The same shape for the SetupDiEnumDeviceInterfaces loop, where a lost entry is a lost disk."""
     setupapi = FakeSetupApi(
         by_guid={api.GUID_DEVINTERFACE_DISK: [("\\\\?\\disk0", 1), ("\\\\?\\disk1", 2)]},
         fail_enum_at={1: 1},
     )
     cfgmgr32 = FakeCfgmgr32(device_ids={1: "DISK\\A", 2: "DISK\\B"})
-    found = _tree(setupapi=setupapi, cfgmgr32=cfgmgr32).disk_interfaces()
+    tree = _tree(setupapi=setupapi, cfgmgr32=cfgmgr32)
+    found = tree.disk_interfaces()
     assert [path for path, _ in found] == ["\\\\?\\disk0"]
+    assert tree.lists_cut_short == {
+        "disk interfaces": f"the list of disk interfaces ended early at entry 2 (Win32 error {ERROR_INVALID_DATA}), "
+        "so whatever followed was not read"
+    }
+
+
+@pytest.mark.os_agnostic
+def test_a_hub_list_that_ends_on_no_more_items_is_complete_and_one_cut_short_is_not() -> None:
+    hubs = {api.GUID_DEVINTERFACE_USB_HUB: [("\\\\?\\hub0", _HUB)]}
+    complete = _tree(setupapi=FakeSetupApi(by_guid=hubs), cfgmgr32=FakeCfgmgr32(device_ids={_HUB: "USB\\HUB"}))
+    assert complete.usb_hubs() == {"USB\\HUB": "\\\\?\\hub0"}
+    assert complete.lists_cut_short == {}
+    cut = _tree(
+        setupapi=FakeSetupApi(by_guid=hubs, fail_enum_at={1: 0}),
+        cfgmgr32=FakeCfgmgr32(device_ids={_HUB: "USB\\HUB"}),
+    )
+    assert cut.usb_hubs() == {}
+    assert list(cut.lists_cut_short) == ["USB hubs"]
 
 
 # ---------------------------------------------------------------------------

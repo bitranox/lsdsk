@@ -122,3 +122,18 @@ def test_an_ata_disk_opened_without_write_access_says_it_needs_administrator() -
     entry = reader.read_disk(cast("api.WinLibrary", _ReadOnlySataKernel()), "\\\\?\\sata#disk", [])
     assert entry["passthrough"] is False
     assert "Administrator" in entry["ata"]["identify_error"]
+
+
+def test_an_unreadable_interface_names_the_error_the_injected_getter_answers() -> None:
+    """The error number comes through the tree's own getter, which a fake can answer off Windows."""
+    error_not_found = 1168
+    tree = reader._DeviceTree(  # pyright: ignore[reportPrivateUsage] - the seam under test
+        setupapi=cast("api.WinLibrary", _Setupapi()),
+        cfgmgr32=cast("api.WinLibrary", _Cfgmgr32()),
+        kernel32=cast("api.WinLibrary", _ReadOnlySataKernel()),
+        last_error=lambda: error_not_found,
+    )
+    disks = reader.read_disks(tree)
+    assert disks["unreadable disk interface 1"]["error"] == (
+        f"could not read the device interface path, Win32 error {error_not_found}"
+    )

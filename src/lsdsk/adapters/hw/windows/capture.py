@@ -277,6 +277,11 @@ class DiskEntry(CaptureModel, frozen=True):
 # only evidence a capture from then carries.
 UNREADABLE_INTERFACE_LABEL = "unreadable disk interface"
 
+#: The name the reader records the disk-interface list under when SetupAPI cut
+#: it short. A lost entry there is a lost drive, so the builder reports it as an
+#: unread disk interface rather than with the other device lists.
+DISK_INTERFACE_LIST = "disk interfaces"
+
 
 def is_unread_interface(path: str, entry: DiskEntry) -> bool:
     """Whether a disk record is the stand-in for an interface that could not be read.
@@ -449,6 +454,11 @@ class WindowsCapture(CaptureHeader, frozen=True):
             makes the volumes read even when no volume came back with a path.
             ``None`` in a capture taken before this field existed, whose
             volumes are judged read from their own space fields instead.
+        lists_cut_short: Every device list SetupAPI ended with an error
+            other than the end of the list, keyed by the list's name (``PCI
+            devices``, ``USB devices``, ``USB hubs``, ``disk interfaces``),
+            each with where it stopped and the error. Empty for a complete
+            run, and for a capture taken before this field existed.
     """
 
     platform: Literal[Platform.WINDOWS]
@@ -464,9 +474,11 @@ class WindowsCapture(CaptureHeader, frozen=True):
     windows_volume: DeviceText | None = None
     volume_bitmaps_read: bool | None = None
     volume_space_read: bool | None = None
+    lists_cut_short: EntryMap[DeviceText, DeviceText] = Field(default_factory=dict[DeviceText, DeviceText])
 
 
 __all__ = [
+    "DISK_INTERFACE_LIST",
     "UNREADABLE_INTERFACE_LABEL",
     "DiskEntry",
     "DiskTemperature",
