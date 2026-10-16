@@ -370,3 +370,33 @@ def test_a_trend_row_whose_verdict_is_cut_uses_the_full_width() -> None:
             assert cell_len(line.rstrip()) == width, f"width {width}: a cut verdict left room unused: {line!r}"
     assert cut_rows, "the control: no verdict was ever cut, so the width it takes back was never asked"
     assert whole_rows, "the control: no verdict ever fitted whole, so the cut rows had nothing to differ from"
+
+
+def test_the_trend_command_at_the_default_piped_width_keeps_every_verdict_whole(
+    production_factory: Callable[[], AppServices], tmp_path: Path
+) -> None:
+    """At the piped default of 120 columns every verdict fits whole, the long refusal included.
+
+    The refusal for a drive whose own rate predicts less than one error over the
+    span used to say so in seventy characters, which a 120-column table could
+    only carry cut. It now says it as its sibling does, in a count.
+    """
+    store = tmp_path / "history.json"
+    runner = CliRunner(charset="cp437")
+
+    def run(command: str, capture: str, *options: str) -> list[str]:
+        argv = ["--history-file", str(store), *options, command, "--replay", str(FIXTURES / f"{capture}.json")]
+        result = runner.invoke(cli, argv, obj=production_factory)
+        assert result.exception is None or isinstance(result.exception, SystemExit), result.output
+        return result.stdout.splitlines()
+
+    run("record", "linux-sas-hba")
+    run("record", "linux-sas-hba-later")
+    inventory, history = _trended_machine()
+    verdicts = [verdict_text(row.trend) for row in trend_rows(inventory, history)]
+    assert any(verdict.startswith("too soon to say, ") and "were due" not in verdict for verdict in verdicts), (
+        f"the control: no row carries the below-one refusal, so its length was never at stake: {verdicts}"
+    )
+    drawn = run("trend", "linux-sas-hba-later", "--no-record")
+    for verdict in verdicts:
+        assert any(line.rstrip().endswith(verdict) for line in drawn), f"{verdict!r} is not whole:\n" + "\n".join(drawn)

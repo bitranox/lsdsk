@@ -129,13 +129,23 @@ def _why_too_close(expected: float, span_hours: int | None) -> str:
     is usually far below one - a drive with a single lifetime CRC error in 42278
     hours predicts 0.000024 of one across an hour. Printed to a decimal place
     that becomes "only 0.0 were due", which states that none were due and makes
-    "only" contradict its own number. The two cases also differ: no elapsed time
-    is not a statement about the drive's rate at all.
+    "only" contradict its own number. Below one the sentence therefore names
+    the bound rather than the figure: "fewer than 1 was due" is true of every
+    such expectation, says that some fraction of an error was due rather than
+    none, and is short enough to fit whole beside the counts at the piped
+    width. The two cases also differ: no elapsed time is not a statement about
+    the drive's rate at all.
+
+    Example:
+        >>> _why_too_close(0.000024, 16)
+        'fewer than 1 was due'
+        >>> _why_too_close(3.46, 16)
+        'only 3.5 were due'
     """
     if not span_hours:
         return "no power-on hours have passed since this counter last moved"
     if expected < 1:
-        return f"this drive's rate would not have produced even one in {span_hours}h"
+        return "fewer than 1 was due"
     return f"only {expected:.1f} were due"
 
 
