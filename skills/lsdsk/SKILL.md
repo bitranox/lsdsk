@@ -284,13 +284,13 @@ the drive or the PCI address, so a check does not have to interrogate the machin
 again to find out which one said no. On Windows, a disk interface whose device
 path could not be read appears as `device: disk interface - <reason>`. It is NOT
 counted as a disk anywhere in `data`, and every human page that lists disks says
-`N disk interface(s) not read: <reason>.`, so a drive the machine has is never
-silently missing from a report that says nothing is wrong. The same line also
-reports a disk-interface list Windows stopped handing out part-way: its reason
-then reads `the list of disk interfaces ended early at entry N (Win32 error E),
-so whatever followed was not read`, it counts as ONE in that `N disk
-interface(s)` figure, and every drive from entry N on is missing from `data`
-however many there were - nothing can say how many. Another Windows device list
+`N disk interface(s) not read: <reason>.` (several reasons joined by `; `), so
+a drive the machine has is never silently missing from a report that says
+nothing is wrong. A disk-interface list Windows stopped handing out part-way is
+NOT counted in that figure: the same note adds its own sentence, `Not every disk
+interface was listed: the list of disk interfaces ended early at entry N (Win32
+error E), so whatever followed was not read.`, and every drive from entry N on
+is missing from `data` however many there were - nothing can say how many. Another Windows device list
 cut short the same way appears as `<list>: device list - the list of <list>
 ended early at entry N (Win32 error E), so whatever followed was not read`,
 where `<list>` is `PCI devices`, `USB devices` or `USB hubs`: what the devices
@@ -378,10 +378,15 @@ refused stays in the list with that figure `null`. The line reads
 when the refusal belongs to no single filesystem. `zfs-pool-disks` is a pool the ZFS listing names
 that a reading which was not taken could have placed on an inventoried disk (`pool <name>: no member
 was traced to a disk this scan inventoried`); a pool whose members are all files or virtual devices
-(loop, zram) is on no disk, and has neither a row nor this line. `volume` is a Windows volume whose
-paths or disk extents could not be read; the reason names it by its drive letter where it has one,
+(loop, zram, partitions of a zvol) is on no disk, and has neither a row nor this line. `volume` is a
+Windows volume whose paths or disk extents could not be read - except one whose paths alone failed
+while its extents were read and name only disks the scan does not list, which could hide no use of
+an inventoried disk and draws no line; the reason names it by its drive letter where it has one,
 and otherwise by its place in the enumeration, counted from 0, and the disks it reached (`volume 2
-on PhysicalDrive0: ...` is the third volume Windows listed). Such a pool or volume has no row in `data.filesystems`, so its fill is not
+on PhysicalDrive0: ...` is the third volume Windows listed). The same reading also reports a volume
+list Windows could not enumerate at all (`volume: filesystems - could not list the volumes (Win32
+error E)`) or stopped handing out part-way (`... the list of volumes ended early at entry N (Win32
+error E), so none of it was used`); either makes the run incomplete. Such a pool or volume has no row in `data.filesystems`, so its fill is not
 judged and the line is the only trace of it.
 `fragmentation: filesystems - needs Administrator` is an unelevated Windows run:
 no volume's free space was walked, so every volume's `free_space` is `null` for that reason alone.
@@ -553,7 +558,7 @@ nothing, or a truncated report if the crash landed mid-write.
 | `22`  | `lsdsk config --section` named a section that does not exist, a `--profile` was rejected, `snapshot` was given a global `--replay`, or `-o -` together with `--format json` (the capture and the envelope would both be stdout) or while the logging console writes to stdout too, or `--format` was given to `report` or `tui`, which draw a page for a person - `findings --format json` is their machine-readable form - or `tui` was run where stdin, stdout or (on Linux and macOS) stderr is not a terminal, or `config-deploy` refused a permission mode - configured, given with `--set`, or a `--set lib_layered_config.default_permissions` that is not a table - before writing anything. A `--set` that cannot be placed is `2`; a `--set` mode `config-deploy` refuses is `22`                                       |
 | `70`  | An error inside `lsdsk` itself: an exception no command handled. A bug to report and never a statement about the machine, so route it to whoever owns the tool rather than to storage. An unhandled `OSError` keeps its own code instead, because its errno means something - EPERM is itself `1`; a write that fails is `74`, not its errno                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `74`  | A write this tool was asked to make failed for a reason other than permission - a full disk, a path that cannot exist: a `snapshot` destination, the counter-history file `record` writes, the files `config-deploy` or `config-generate-examples` writes, or - for a command whose output IS standard output - standard output refusing it or closed (`lsdsk findings > /full/disk/report.txt`, `lsdsk findings >&-`). `snapshot -o <file>` needs no standard output and succeeds without one; when standard output refuses the line reporting the capture, the run leaves `74` although the capture landed, and that line says so: `wrote the capture to <file>, but standard output refused the line saying so`. Never a verdict about the machine - some output did not arrive. One stderr line names the destination and why |
-| `78`  | A configuration file this tool cannot load, such as malformed TOML in `config.d`; a configuration `config --format json` cannot write because it nests deeper than this platform's JSON writer carries (98 levels on Windows; `--format human` prints it); a file that is not a snapshot this version reads; a counter-history store `record` cannot read, which it keeps untouched and adds nothing to; a damaged installation, whose own shipped configuration is missing, unreadable or corrupt - reinstall the tool; or a platform with no hardware reader                                                                                                                                                                                                                                                                    |
+| `78`  | A configuration file this tool cannot load, such as malformed TOML in `config.d` (except under `config-deploy --force`, which skips a malformed file it is about to rewrite, warns once naming it, replaces it, and exits `0` when nothing else fails); a configuration `config --format json` cannot write because it nests deeper than this platform's JSON writer carries (98 levels on Windows; `--format human` prints it); a file that is not a snapshot this version reads; a counter-history store `record` cannot read, which it keeps untouched and adds nothing to; a damaged installation, whose own shipped configuration is missing, unreadable or corrupt - reinstall the tool; or a platform with no hardware reader                                                                                              |
 | `130` | The run was interrupted (Ctrl-C). Neither a verdict nor a bug: nothing about the machine was concluded, so re-run it rather than paging anybody                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `141` | The process reading the output closed the pipe before the command finished. Neither a verdict nor a refusal; see the ranking below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
@@ -791,7 +796,7 @@ uvx lsdsk trend
 ```
 device        counter           total  change  span  per hour  verdict
 /dev/sdd      interface CRC   2196127  +16642   15h      1109  rising
-/dev/sde      interface CRC       430      +0   15h         -  too soon to say, this drive's rate would not have produced even one in 15h
+/dev/sde      interface CRC       430      +0   15h         -  too soon to say, fewer than 1 was due
 /dev/sdj      interface CRC    462640      +0   16h         -  no new in 16h, 235 were due
 ```
 
@@ -852,9 +857,10 @@ can be fixed now, rank by the rate, not by the total.
 **Read the refusals as refusals.** `too soon to say` is not `no new`. Silence
 counts only where the drive's own lifetime rate says errors were due in that
 span, which is what the `were due` figure is: 235 expected and none seen is
-evidence, while a rate that would not have produced even one is nothing. Below
-one expected the row says exactly that in words instead of a figure, because
-"only 0.0 were due" would contradict its own number. Do not upgrade a `too soon
+evidence, while a rate that predicts less than one is nothing. Below one
+expected the row says `too soon to say, fewer than 1 was due` - a bound rather
+than a rounded figure, because a sibling form `too soon to say, only 0.0 were
+due` would contradict its own number. Do not upgrade a `too soon
 to say` into an all-clear.
 
 There is deliberately no fixed waiting period to quote, because the right one
@@ -955,7 +961,7 @@ marker on the finding in front of you, which is what set the exit code.
 | An attribute under the maker's threshold                            | The drive's own normalised value reached the limit it publishes                                                                   | Treat the drive as failing: check the backup and replace it                                                                                                 |
 | Link never trained                                                  | The link is down, or negotiated to zero lanes                                                                                     | A seating, power or connector fault. Nothing behind it can be read                                                                                          |
 | Reports itself as failing                                           | The drive's own overall SMART self-assessment says FAILED                                                                         | Treat it as failing now: check the backup and replace it                                                                                                    |
-| Above its own temperature threshold                                 | Past the warning or critical limit the drive publishes                                                                            | Airflow and drive spacing. The bands are the drive's, not a fixed rule                                                                                      |
+| At or above its own temperature threshold                           | At or above the warning or critical limit the drive publishes (on Windows, the storage stack's where SMART names none)            | Airflow and drive spacing. The bands are the drive's, not a fixed rule                                                                                      |
 | Controller oversubscribed                                           | Its drives' links add up to more than the uplink figure, which can be a register default                                          | Check that figure before relaying it, and move a drive to a controller already fitted before any HBA. See below                                             |
 | Publishes the PCIe floor as its link                                | An integrated function's register default, so not a ceiling                                                                       | Check the card's or board's specification for the real uplink; replace nothing on this figure. See below                                                    |
 | Any other PCIe card: runs on fewer lanes than both ends support     | Card and port were both read and both support more lanes than trained: a contact, not the card's design                           | Reseat the card, check the slot and any riser. Not a storage finding: no cable, no bay. See below                                                           |
