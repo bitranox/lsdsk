@@ -729,23 +729,33 @@ def build_tree(capture: WindowsCapture) -> tuple[PciNode, ...]:
 def build_unread_interfaces(capture: WindowsCapture) -> tuple[RefusedReading, ...]:
     """Name each disk interface the reader listed but could not read a path for.
 
-    A disk-interface list SetupAPI cut short is one more: the drives past the
-    point it stopped were never listed, let alone read.
-
     Args:
         capture: The typed reading, live or replayed.
 
     Returns:
-        One refused ``device`` reading per such interface, in capture order,
-        then one for a cut-short list.
+        One refused ``device`` reading per such interface, in capture order.
     """
-    unread = tuple(
+    return tuple(
         reading
         for path, entry in sorted(capture.disks.items())
         if is_unread_interface(path, entry)
         for reading in refusals_of({"device": entry.error})
     )
-    return unread + refusals_of({"device": capture.lists_cut_short.get(DISK_INTERFACE_LIST)})
+
+
+def build_unread_interface_list(capture: WindowsCapture) -> tuple[RefusedReading, ...]:
+    """Name the disk-interface list, when SetupAPI cut it short.
+
+    The drives past the point it stopped were never listed, let alone read, so
+    this is not one more unread interface: it is an unknown number of them.
+
+    Args:
+        capture: The typed reading, live or replayed.
+
+    Returns:
+        One refused ``device`` reading carrying where the list stopped, or none.
+    """
+    return refusals_of({"device": capture.lists_cut_short.get(DISK_INTERFACE_LIST)})
 
 
 def build_unread_device_lists(capture: WindowsCapture) -> tuple[RefusedReading, ...]:
@@ -813,6 +823,7 @@ def build_inventory(capture: WindowsCapture) -> Inventory:
         ),
         disks=disks,
         unread_interfaces=build_unread_interfaces(capture),
+        unread_interface_list=build_unread_interface_list(capture),
         unread_device_lists=build_unread_device_lists(capture),
         slots=build_slots(capture),
         pci_tree=build_tree(capture),
@@ -832,6 +843,7 @@ __all__ = [
     "build_inventory",
     "build_slots",
     "build_unread_device_lists",
+    "build_unread_interface_list",
     "build_unread_interfaces",
     "controller_of",
 ]

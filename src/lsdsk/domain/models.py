@@ -2048,6 +2048,12 @@ class Inventory(DomainModel, frozen=True):
             path could not be read. They are not drives and are kept out of
             ``disks``; each carries the reason, so a scan that missed one is
             not mistaken for a complete one.
+        unread_interface_list: The disk-interface list itself, when the
+            operating system stopped it before its end: at most one entry,
+            carrying where it stopped. Kept apart from
+            :attr:`unread_interfaces` because it is not one interface: every
+            interface past that point went unlisted, and nothing can say how
+            many there were.
         unread_device_lists: Device lists the operating system stopped
             before their end, each named for the list and carrying where it
             stopped, so a machine read in part is not mistaken for one read
@@ -2080,6 +2086,7 @@ class Inventory(DomainModel, frozen=True):
     disks: tuple[Disk, ...] = ()
     virtual_disks: tuple[Disk, ...] = ()
     unread_interfaces: tuple[RefusedReading, ...] = ()
+    unread_interface_list: tuple[RefusedReading, ...] = ()
     unread_device_lists: tuple[RefusedReading, ...] = ()
     filesystems: tuple[Filesystem, ...] | None = None
     unread_filesystems: tuple[RefusedReading, ...] = ()

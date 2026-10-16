@@ -269,24 +269,27 @@ def privilege_note(inventory: Inventory) -> str:
 
 
 def unread_interfaces_note(inventory: Inventory) -> str:
-    """Say that a listed disk interface was not read, with the reason Windows gave.
+    """Say that a listed disk interface was not read, or the list was cut short, with the reason Windows gave.
 
     Such an interface is not counted as a disk, so without this line the human
     report and its "No problems found" would be silent about a drive the machine
-    has and nobody read.
+    has and nobody read. A list cut short is said apart and not counted: it is
+    not one interface but every one past the point it stopped, however many.
 
     Args:
         inventory: The machine that was scanned.
 
     Returns:
-        The note, or an empty string when every listed interface was read.
+        The note, or an empty string when every interface was listed and read.
     """
+    sentences: list[str] = []
     unread = inventory.unread_interfaces
-    if not unread:
-        return ""
-    reasons = "; ".join(item.reason for item in unread)
-    noun = "disk interface" if len(unread) == 1 else "disk interfaces"
-    return f"{len(unread)} {noun} not read: {reasons}."
+    if unread:
+        reasons = "; ".join(item.reason for item in unread)
+        noun = "disk interface" if len(unread) == 1 else "disk interfaces"
+        sentences.append(f"{len(unread)} {noun} not read: {reasons}.")
+    sentences.extend(f"Not every disk interface was listed: {item.reason}." for item in inventory.unread_interface_list)
+    return " ".join(sentences)
 
 
 def slot_privilege_note(inventory: Inventory) -> str:

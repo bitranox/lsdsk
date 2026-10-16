@@ -69,12 +69,55 @@ def test_a_disk_interface_list_cut_short_is_an_unread_disk_interface(
     assert envelope["ok"] is False
 
 
+def _human_disks(capture: Path, runner: CliRunner, factory: Callable[[], object]) -> str:
+    from lsdsk.adapters.cli import cli
+
+    return " ".join(runner.invoke(cli, ["disks", "--replay", str(capture)], obj=factory).output.split())
+
+
 def test_the_human_report_says_a_disk_interface_list_was_cut_short(
     tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
 ) -> None:
-    from lsdsk.adapters.cli import cli
-
+    """A cut list is not one interface: nobody can say how many went unlisted, so it is not counted."""
     capture = capture_with(_BASE, _cut_short("disk interfaces"), tmp_path)
-    output = cli_runner.invoke(cli, ["disks", "--replay", str(capture)], obj=production_factory).output
+    output = _human_disks(capture, cli_runner, production_factory)
 
-    assert f"1 disk interface not read: {_reason('disk interfaces')}." in " ".join(output.split())
+    assert f"Not every disk interface was listed: {_reason('disk interfaces')}." in output
+    assert "disk interface not read" not in output
+
+
+#: What the reader records for one interface whose path it could not read.
+_UNREADABLE = "could not read the device interface path, Win32 error 5"
+
+
+def _cut_short_after_an_unreadable_interface(data: dict[str, Any]) -> None:
+    _cut_short("disk interfaces")(data)
+    data["disks"]["unreadable disk interface 1"] = {
+        "path": "unreadable disk interface 1",
+        "ancestors": [],
+        "error": _UNREADABLE,
+        "interface_unreadable": True,
+    }
+
+
+def test_an_unreadable_interface_is_counted_and_a_cut_list_is_said_apart(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    capture = capture_with(_BASE, _cut_short_after_an_unreadable_interface, tmp_path)
+    output = _human_disks(capture, cli_runner, production_factory)
+
+    assert f"1 disk interface not read: {_UNREADABLE}." in output
+    assert f"Not every disk interface was listed: {_reason('disk interfaces')}." in output
+
+
+def test_both_kinds_still_reach_skipped_as_disk_interface_lines(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    """The envelope is unchanged: one line each, the unreadable interface first."""
+    capture = capture_with(_BASE, _cut_short_after_an_unreadable_interface, tmp_path)
+    envelope = envelope_of(capture, cli_runner, production_factory)
+
+    assert envelope["skipped"] == [
+        f"device: disk interface - {_UNREADABLE}",
+        f"device: disk interface - {_reason('disk interfaces')}",
+    ]
