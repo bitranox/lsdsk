@@ -184,6 +184,7 @@ select = [
   "B",           # bugbear
   "A",           # builtins shadowing
   "C4",          # comprehension simplification
+  "C90",         # mccabe: cyclomatic complexity <= 10, the house hard limit
   "SIM",         # simplification
   "TCH",         # type-checking imports
   "RUF",         # ruff-specific

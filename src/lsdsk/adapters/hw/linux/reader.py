@@ -616,37 +616,92 @@ def read_pci(root: Path = Path("/sys/bus/pci/devices")) -> dict[str, dict[str, A
     Returns:
         One entry per device, keyed by its sysfs address.
     """
-    devices: dict[str, dict[str, Any]] = {}
     if not _probe(root, Path.is_dir):
-        return devices
-    for device in _entries(root):
-        entry: dict[str, Any] = dict(_read_attrs(device, PCI_ATTRS))
-        driver = device / "driver"
-        if _probe(driver, Path.is_symlink):
-            entry["driver"] = Path(os.path.realpath(driver)).name
-        entry["path"] = os.path.realpath(device)
-        children = sorted(
-            child.name
-            for child in _entries(device)
-            if _probe(child, Path.is_dir) and child.name.count(":") == _PCI_ADDRESS_COLONS
-        )
-        if children:
-            entry["children"] = children
-        if ahci.holds_ahci_registers(_to_class(entry.get("class")), entry.get("driver")):
-            reading = read_ahci_capabilities(device)
-            if reading.registers is not None:
-                entry["ahci"] = reading.registers
-            elif reading.refused is not None:
-                entry["ahci_error"] = reading.refused
-        capability = parse_pcie_capability(_read_config(device))
-        if capability.port_type is not None:
-            entry["pcie_port_type"] = capability.port_type
-        if capability.slot_implemented is not None:
-            entry["slot_implemented"] = capability.slot_implemented
-        if capability.physical_slot_number is not None:
-            entry["slot_number"] = capability.physical_slot_number
-        devices[device.name] = entry
-    return devices
+        return {}
+    return {device.name: _pci_device_entry(device) for device in _entries(root)}
+
+
+def _pci_device_entry(device: Path) -> dict[str, Any]:
+    """Read one PCI device's attributes, driver, children, AHCI and PCIe fields.
+
+    The keys are inserted in a fixed order (attributes, driver, path, children,
+    AHCI, PCIe capability) so a capture lists them the same way every time.
+
+    Args:
+        device: The device's sysfs directory.
+
+    Returns:
+        The device's entry.
+    """
+    entry: dict[str, Any] = dict(_read_attrs(device, PCI_ATTRS))
+    driver = device / "driver"
+    if _probe(driver, Path.is_symlink):
+        entry["driver"] = Path(os.path.realpath(driver)).name
+    entry["path"] = os.path.realpath(device)
+    children = _pci_children(device)
+    if children:
+        entry["children"] = children
+    entry.update(_ahci_fields(device, entry))
+    entry.update(_pcie_capability_fields(device))
+    return entry
+
+
+def _pci_children(device: Path) -> list[str]:
+    """The PCI devices directly below this one, by sysfs address.
+
+    Args:
+        device: The device's sysfs directory.
+
+    Returns:
+        The child addresses, sorted; empty when it has none.
+    """
+    return sorted(
+        child.name
+        for child in _entries(device)
+        if _probe(child, Path.is_dir) and child.name.count(":") == _PCI_ADDRESS_COLONS
+    )
+
+
+def _ahci_fields(device: Path, entry: Mapping[str, Any]) -> dict[str, Any]:
+    """The AHCI register reading for a controller that holds those registers.
+
+    Args:
+        device: The device's sysfs directory.
+        entry: What was already read for it; its class and driver decide
+            whether there are AHCI registers to read at all.
+
+    Returns:
+        ``ahci`` with the registers, ``ahci_error`` with why they were refused,
+        or nothing for a device without them.
+    """
+    if not ahci.holds_ahci_registers(_to_class(entry.get("class")), entry.get("driver")):
+        return {}
+    reading = read_ahci_capabilities(device)
+    if reading.registers is not None:
+        return {"ahci": reading.registers}
+    if reading.refused is not None:
+        return {"ahci_error": reading.refused}
+    return {}
+
+
+def _pcie_capability_fields(device: Path) -> dict[str, Any]:
+    """The port type and slot fields the device's PCIe capability carries.
+
+    Args:
+        device: The device's sysfs directory.
+
+    Returns:
+        Only the fields the capability actually holds.
+    """
+    capability = parse_pcie_capability(_read_config(device))
+    fields: dict[str, Any] = {}
+    if capability.port_type is not None:
+        fields["pcie_port_type"] = capability.port_type
+    if capability.slot_implemented is not None:
+        fields["slot_implemented"] = capability.slot_implemented
+    if capability.physical_slot_number is not None:
+        fields["slot_number"] = capability.physical_slot_number
+    return fields
 
 
 def read_classes(root: Path = Path("/sys/class")) -> dict[str, dict[str, dict[str, str]]]:
@@ -1041,19 +1096,9 @@ def read_environment(*, proc: Path = _HOST_PROC, root: Path | None = None) -> di
     evidence: dict[str, Any] = {}
     tree = _tree_root(proc, root)
 
-    # PID 1's environment carries container=lxc for LXC and systemd-nspawn.
-    try:
-        entries = (proc / "1" / "environ").read_bytes().split(b"\0")
-    except OSError:
-        entries = []
-    for entry in entries:
-        name, _, value = entry.decode("utf-8", errors="replace").partition("=")
-        if name == "container":
-            # Stored in a field bounded at the capture's device-text limit, so a longer
-            # value reads as "not read" rather than ending the scan at the model.
-            if len(value) <= MAX_DEVICE_TEXT:
-                evidence["container_marker"] = value
-            break
+    marker = _pid1_container_marker(proc)
+    if marker is not None:
+        evidence["container_marker"] = marker
 
     present = [path for path in _CONTAINER_MARKER_FILES if _probe(tree / path, Path.exists)]
     if present:
@@ -1098,6 +1143,31 @@ def read_environment(*, proc: Path = _HOST_PROC, root: Path | None = None) -> di
     cpuinfo = _read_prefix(proc / "cpuinfo", _CPUINFO_PREFIX_CHARS)
     evidence["hypervisor_flag"] = " hypervisor" in cpuinfo or cpuinfo.startswith("hypervisor")
     return evidence
+
+
+def _pid1_container_marker(proc: Path) -> str | None:
+    """The ``container=`` value in PID 1's environment, which LXC and systemd-nspawn set.
+
+    Only the first ``container`` entry is considered.
+
+    Args:
+        proc: The procfs root.
+
+    Returns:
+        The value, or ``None`` when there is none, the environment cannot be
+        read, or the value is longer than a capture stores.
+    """
+    try:
+        entries = (proc / "1" / "environ").read_bytes().split(b"\0")
+    except OSError:
+        return None
+    for entry in entries:
+        name, _, value = entry.decode("utf-8", errors="replace").partition("=")
+        if name == "container":
+            # Stored in a field bounded at the capture's device-text limit, so a longer
+            # value reads as "not read" rather than ending the scan at the model.
+            return value if len(value) <= MAX_DEVICE_TEXT else None
+    return None
 
 
 #: How much of ``/proc/cpuinfo`` is read. The hypervisor flag is a CPU feature

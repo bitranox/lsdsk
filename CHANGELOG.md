@@ -5,6 +5,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- ruff now enforces the cyclomatic complexity limit of 10 (`C90` in the lint select). The three
+  readers over it (`read_pci` and `read_environment` on Linux, the PCI entry builder on Windows)
+  are split into helpers with the same output, key order included.
+
 ## [1.9.2] 2026-10-16 12:30:18
 
 ### Changed

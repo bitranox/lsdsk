@@ -278,33 +278,11 @@ class _DeviceTree:
         if driver:
             entry["driver"] = driver
 
-        base = self._uint_property(handle, info, api.PCI_DEVICE_PROPERTY_FMTID, api.PCI_PROP_BASE_CLASS)
-        sub = self._uint_property(handle, info, api.PCI_DEVICE_PROPERTY_FMTID, api.PCI_PROP_SUB_CLASS)
-        prog = self._uint_property(handle, info, api.PCI_DEVICE_PROPERTY_FMTID, api.PCI_PROP_PROG_IF)
-        if base is not None and sub is not None:
-            entry["class"] = f"0x{base:02x}{sub:02x}{prog or 0:02x}"
+        pci_class = self._pci_class(handle, info)
+        if pci_class is not None:
+            entry["class"] = pci_class
 
-        for key, prop in (
-            ("current_link_speed", api.PCI_PROP_CURRENT_LINK_SPEED),
-            ("max_link_speed", api.PCI_PROP_MAX_LINK_SPEED),
-        ):
-            encoded = self._uint_property(handle, info, api.PCI_DEVICE_PROPERTY_FMTID, prop)
-            gtps = api.LINK_SPEED_GTPS.get(encoded or 0)
-            if gtps is not None:
-                entry[key] = f"{gtps} GT/s PCIe"
-        for key, prop in (
-            ("current_link_width", api.PCI_PROP_CURRENT_LINK_WIDTH),
-            ("max_link_width", api.PCI_PROP_MAX_LINK_WIDTH),
-        ):
-            width = self._uint_property(handle, info, api.PCI_DEVICE_PROPERTY_FMTID, prop)
-            # A width of zero is a reading, not a missing reading: it is a link
-            # that failed to train, which the severity rules call critical. On a
-            # truthiness test it reads as absent, current_width stays None, and
-            # PcieLink.is_dead compares None == 0 and answers False, so the one
-            # finding that matters most can never be raised on Windows. Linux
-            # escapes this only because sysfs hands back the string "0".
-            if width is not None:
-                entry[key] = str(width)
+        entry.update(self._pci_link_fields(handle, info))
 
         slot_number = self._uint_property(handle, info, api.DEVICE_PROPERTY_FMTID, api.DEVICE_PROP_UINUMBER)
         if slot_number is not None:
@@ -318,6 +296,59 @@ class _DeviceTree:
         if children:
             entry["children"] = children
         return entry
+
+    def _pci_class(self, handle: int, info: api.SP_DEVINFO_DATA) -> str | None:
+        """The device's class code as Linux sysfs spells it, ``0xBBSSPP``.
+
+        Args:
+            handle: The device information set the device belongs to.
+            info: The device within that set.
+
+        Returns:
+            The class code, or ``None`` when the base or sub class is missing.
+            A missing programming interface reads as ``00``.
+        """
+        base = self._uint_property(handle, info, api.PCI_DEVICE_PROPERTY_FMTID, api.PCI_PROP_BASE_CLASS)
+        sub = self._uint_property(handle, info, api.PCI_DEVICE_PROPERTY_FMTID, api.PCI_PROP_SUB_CLASS)
+        prog = self._uint_property(handle, info, api.PCI_DEVICE_PROPERTY_FMTID, api.PCI_PROP_PROG_IF)
+        if base is None or sub is None:
+            return None
+        return f"0x{base:02x}{sub:02x}{prog or 0:02x}"
+
+    def _pci_link_fields(self, handle: int, info: api.SP_DEVINFO_DATA) -> dict[str, str]:
+        """The device's current and maximum PCIe link speed and width.
+
+        Args:
+            handle: The device information set the device belongs to.
+            info: The device within that set.
+
+        Returns:
+            Each field Windows reported, speeds as ``"<n> GT/s PCIe"`` and
+            widths as the lane count.
+        """
+        fields: dict[str, str] = {}
+        for key, prop in (
+            ("current_link_speed", api.PCI_PROP_CURRENT_LINK_SPEED),
+            ("max_link_speed", api.PCI_PROP_MAX_LINK_SPEED),
+        ):
+            encoded = self._uint_property(handle, info, api.PCI_DEVICE_PROPERTY_FMTID, prop)
+            gtps = api.LINK_SPEED_GTPS.get(encoded or 0)
+            if gtps is not None:
+                fields[key] = f"{gtps} GT/s PCIe"
+        for key, prop in (
+            ("current_link_width", api.PCI_PROP_CURRENT_LINK_WIDTH),
+            ("max_link_width", api.PCI_PROP_MAX_LINK_WIDTH),
+        ):
+            width = self._uint_property(handle, info, api.PCI_DEVICE_PROPERTY_FMTID, prop)
+            # A width of zero is a reading, not a missing reading: it is a link
+            # that failed to train, which the severity rules call critical. On a
+            # truthiness test it reads as absent, current_width stays None, and
+            # PcieLink.is_dead compares None == 0 and answers False, so the one
+            # finding that matters most can never be raised on Windows. Linux
+            # escapes this only because sysfs hands back the string "0".
+            if width is not None:
+                fields[key] = str(width)
+        return fields
 
     def _pci_address(self, handle: int, info: api.SP_DEVINFO_DATA) -> str:
         """Build the familiar bus:device.function address for a PCI device.
