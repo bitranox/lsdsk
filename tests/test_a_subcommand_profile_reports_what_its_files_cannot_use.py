@@ -110,3 +110,28 @@ def test_an_environment_or_set_value_is_still_reported_only_once(
     err = _stderr_of(argv, capsys)
 
     assert (_times(ENV_REFUSED, err), _times(SET_REFUSED, err)) == (1, 1), err
+
+
+DOTENV_REFUSED = "Warning: ignoring display.summary_limit=never:"
+
+
+@pytest.mark.parametrize("argv", _SPELLINGS)
+def test_a_value_a_dotenv_file_gave_that_fell_back_is_reported_only_once(
+    argv: list[str],
+    tmp_path: Path,
+    user_config_dir: Path,
+    managed_traceback_state: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A ``.env`` file is a file too, and it is not one of profile X's.
+
+    It is read with and without the profile alike, so whichever load reported it, a second
+    report of the same line would be the same warning said twice.
+    """
+    _seed_profile(user_config_dir)
+    dotenv = tmp_path / "chosen.env"
+    dotenv.write_text("DISPLAY__SUMMARY_LIMIT=never\n", encoding="utf-8", newline="\n")
+
+    err = _stderr_of(["--env-file", str(dotenv), *argv], capsys)
+
+    assert _times(DOTENV_REFUSED, err) == 1, err
