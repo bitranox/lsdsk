@@ -31,6 +31,7 @@ import os
 import platform
 import re
 from ctypes import wintypes
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -1469,23 +1470,48 @@ def devices_accessible(disks: Mapping[str, Mapping[str, Any]]) -> bool:
     return any("error" not in record for record in disks.values())
 
 
-def read_system() -> dict[str, Any]:
+@dataclass(frozen=True, kw_only=True)
+class SystemReaders:
+    """Every reading :func:`read_system` composes, each defaulting to the one that reads this machine.
+
+    ``read_system`` decides from the earlier readings what it asks later: which
+    volumes' bitmaps are walked from the disks the run inventoried and whether
+    it is elevated, and what the capture records about a device list cut short
+    or the volumes' space. A test replaces these - a device tree over fake
+    ``setupapi``, ``cfgmgr32`` and ``kernel32`` libraries above all - to drive
+    that wiring without a Windows machine behind it. The USB ports and the
+    volumes are read through the tree's own ``kernel32`` and ``last_error``.
+    """
+
+    tree: Callable[[], _DeviceTree] = _DeviceTree
+    disks: Callable[[_DeviceTree], dict[str, dict[str, Any]]] = read_disks
+    elevated: Callable[[], bool] = is_elevated
+    environment: Callable[[], dict[str, Any]] = read_environment
+    pci_names: Callable[[Mapping[str, Mapping[str, object]]], dict[str, str]] = pciids.resolve_names
+
+
+def read_system(readers: SystemReaders | None = None) -> dict[str, Any]:
     """Read the whole storage subsystem from this Windows machine.
+
+    Args:
+        readers: Where each reading comes from; this machine's own readers by
+            default.
 
     Returns:
         A JSON-serialisable reading, the same shape a snapshot stores.
     """
-    tree = _DeviceTree()
+    read = readers or SystemReaders()
+    tree = read.tree()
     pci = tree.enumerate_pci()
-    disks = read_disks(tree)
+    disks = read.disks(tree)
     usb_reading = read_usb_ports(tree.kernel32, disks, tree.usb_devices(), tree.usb_hubs())
     for path, error in usb_reading.disk_errors.items():
         disks[path]["usb_link_error"] = error
-    elevated = is_elevated()
+    elevated = read.elevated()
     # Only a volume on a disk this run inventoried can be a row, so only those are walked.
     nodes = frozenset(str(record["node"]) for record in disks.values() if "node" in record)
     walk_on = frozenset(disk_numbers(nodes)) if elevated else None
-    volume_entries, windows_volume = read_volumes_section(tree.kernel32, walk_on=walk_on)
+    volume_entries, windows_volume = read_volumes_section(tree.kernel32, last_error=tree.last_error, walk_on=walk_on)
 
     return {
         "schema": SCHEMA_VERSION,
@@ -1495,13 +1521,13 @@ def read_system() -> dict[str, Any]:
         "kernel": platform.version(),
         "euid": 0 if elevated else 1,
         "elevated": elevated,
-        "environment": read_environment(),
+        "environment": read.environment(),
         "devices_accessible": devices_accessible(disks),
         "pci": pci,
         # Resolved HERE and not in the builder: the builder is pure, so a name
         # it looked up itself would come from whichever machine replays the
         # capture rather than from the one that took it.
-        "pci_names": pciids.resolve_names(pci),
+        "pci_names": read.pci_names(pci),
         "disks": disks,
         "usb_ports": usb_reading.ports,
         "usb_hubs": usb_reading.hubs,
@@ -1517,6 +1543,7 @@ def read_system() -> dict[str, Any]:
 
 __all__ = [
     "NvmeRefusal",
+    "SystemReaders",
     "UsbDeviceFacts",
     "UsbReading",
     "ata_passthrough",
