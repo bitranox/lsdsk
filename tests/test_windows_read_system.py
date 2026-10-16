@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, cast
 
+from test_refused_readings import capture_with, envelope_of
 from test_windows_device_tree import ERROR_INVALID_DATA, FakeCfgmgr32, FakeSetupApi
 from test_windows_volume_reader import FakeVolume, FakeVolumeKernel
 
@@ -86,8 +87,10 @@ def _envelope(
     return cast("dict[str, Any]", decoded)
 
 
-def _bitmap_volume(disk: int) -> FakeVolume:
-    return FakeVolume(paths=(f"{'C' if disk == _NUMBER else 'X'}:\\",), disks=(disk,), bitmap=[1, 0, 0, 1])
+def _bitmap_volume(disk: int, *, letter: str | None = None) -> FakeVolume:
+    """A volume on ``disk`` whose bitmap an elevated run can walk, lettered C on the inventoried disk, else X."""
+    name = letter or ("C" if disk == _NUMBER else "X")
+    return FakeVolume(paths=(f"{name}:\\",), disks=(disk,), bitmap=[1, 0, 0, 1])
 
 
 def test_the_volumes_a_run_read_are_rows_on_its_disks(
@@ -145,3 +148,105 @@ def test_an_unelevated_run_walks_no_bitmap() -> None:
 
     assert all("free_extents" not in entry for entry in reading["volumes"].values())
     assert reading["volume_bitmaps_read"] is False
+
+
+#: What the fake's volume enumeration fails with; any error but ERROR_NO_MORE_FILES would do.
+ERROR_ACCESS_DENIED = 5
+ERROR_NOT_READY = 21
+
+
+def _volume_lines(envelope: dict[str, Any]) -> list[str]:
+    return [line for line in envelope["skipped"] if line.startswith("volume: filesystems - ")]
+
+
+def test_a_volume_enumeration_refused_at_its_first_call_makes_the_run_incomplete(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    kernel = FakeVolumeKernel({VOLUME_C: _bitmap_volume(_NUMBER)}, first_error=ERROR_ACCESS_DENIED)
+    reading = _read(kernel=kernel, elevated=True)
+
+    envelope = _envelope(reading, "filesystems", tmp_path, cli_runner, production_factory)
+
+    assert _volume_lines(envelope) == [
+        f"volume: filesystems - could not list the volumes (Win32 error {ERROR_ACCESS_DENIED})"
+    ]
+    assert envelope["ok"] is False
+    assert envelope["data"]["filesystems"] is None
+
+
+def test_a_volume_enumeration_that_fails_part_way_makes_the_run_incomplete(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    kernel = FakeVolumeKernel(
+        {
+            VOLUME_C: _bitmap_volume(_NUMBER),
+            VOLUME_X: _bitmap_volume(_NUMBER, letter="X"),
+        },
+        next_error=ERROR_NOT_READY,
+    )
+    reading = _read(kernel=kernel, elevated=True)
+
+    envelope = _envelope(reading, "disks", tmp_path, cli_runner, production_factory)
+
+    assert _volume_lines(envelope) == [
+        f"volume: filesystems - the list of volumes ended early at entry 2 (Win32 error {ERROR_NOT_READY}), "
+        "so none of it was used"
+    ]
+    assert envelope["ok"] is False
+    (disk,) = envelope["data"]["disks"]
+    assert disk["usage"] is None, "no volume was kept, so what the disk is used by stays undecided"
+
+
+def test_a_volume_enumeration_that_ends_normally_makes_no_volume_line(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    """The control: the same volumes, listed to their end, leave the run complete."""
+    kernel = FakeVolumeKernel(
+        {
+            VOLUME_C: _bitmap_volume(_NUMBER),
+            VOLUME_X: _bitmap_volume(_NUMBER, letter="X"),
+        }
+    )
+    reading = _read(kernel=kernel, elevated=True)
+
+    envelope = _envelope(reading, "disks", tmp_path, cli_runner, production_factory)
+
+    assert _volume_lines(envelope) == []
+    assert envelope["ok"] is True, envelope["skipped"]
+
+
+def _no_volumes(error: str | None) -> Callable[[dict[str, Any]], None]:
+    def plant(data: dict[str, Any]) -> None:
+        data.update(volumes=None, windows_volume=None)
+        data.pop("volumes_error", None)
+        if error is not None:
+            data["volumes_error"] = error
+
+    return plant
+
+
+def test_a_capture_without_the_volumes_record_replays_as_it_always_did(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    """A capture taken before the record existed cannot say why it has no volumes, and claims nothing."""
+    base = envelope_of(
+        capture_with("windows-usb-uas.json", lambda data: None, tmp_path), cli_runner, production_factory
+    )
+    older = envelope_of(
+        capture_with("windows-usb-uas.json", _no_volumes(None), tmp_path), cli_runner, production_factory
+    )
+
+    assert _volume_lines(older) == []
+    assert older["ok"] is base["ok"] is True
+
+
+def test_a_recorded_volume_enumeration_failure_is_replayed(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    reason = "could not list the volumes (Win32 error 5)"
+    capture = capture_with("windows-usb-uas.json", _no_volumes(reason), tmp_path)
+
+    envelope = envelope_of(capture, cli_runner, production_factory)
+
+    assert _volume_lines(envelope) == [f"volume: filesystems - {reason}"]
+    assert envelope["ok"] is False

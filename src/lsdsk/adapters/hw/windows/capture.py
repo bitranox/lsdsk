@@ -468,6 +468,10 @@ class WindowsCapture(CaptureHeader, frozen=True):
             none was found. A capture taken before this field held the
             ordinal keys the GUID path itself; either way the key is opaque
             and only ever looked up, never parsed.
+        volumes_error: Why the volumes could not be enumerated, when
+            :attr:`volumes` is ``None`` because the reader failed rather than
+            because the capture predates them; ``None`` otherwise, and in a
+            capture taken before this field existed.
         windows_volume: The ordinal key, within :attr:`volumes`, of the
             volume the Windows directory lives on, so the builder can mark
             its disk as boot. ``None`` when it could not be resolved.
@@ -496,6 +500,7 @@ class WindowsCapture(CaptureHeader, frozen=True):
     usb_ports: EntryMap[DeviceText, UsbPortEntry] = Field(default_factory=dict[DeviceText, UsbPortEntry])
     usb_hubs: EntryMap[DeviceText, UsbHubEntry] = Field(default_factory=dict[DeviceText, UsbHubEntry])
     volumes: EntryMap[DeviceText, VolumeEntry] | None = None
+    volumes_error: DeviceText | None = None
     windows_volume: DeviceText | None = None
     volume_bitmaps_read: bool | None = None
     volume_space_read: bool | None = None

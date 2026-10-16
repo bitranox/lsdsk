@@ -64,6 +64,20 @@ _FS_NAME_CHARS = 64
 _BITMAP_CHUNK_BYTES = 1 << 20
 
 
+class VolumeEnumeration(NamedTuple):
+    """Every volume Windows listed, or why the list could not be used.
+
+    Attributes:
+        volumes: One entry per volume, keyed by its GUID path; ``None`` when
+            the enumeration failed, since a partial set reads as complete to
+            :mod:`.usage`.
+        error: Why the enumeration failed, ``None`` when it ran to its end.
+    """
+
+    volumes: dict[str, dict[str, Any]] | None
+    error: str | None
+
+
 class _ReadSoFar(NamedTuple):
     """What the walk decision reads of a volume, once its paths, drive type and extents are in."""
 
@@ -377,14 +391,15 @@ def read_volumes(
     last_error: Callable[[], int] = api.last_error,
     walk_on: Container[int] | None = None,
     chunk_bytes: int = _BITMAP_CHUNK_BYTES,
-) -> dict[str, dict[str, Any]] | None:
+) -> VolumeEnumeration:
     r"""Enumerate every volume on this machine and read what it is used for.
 
     Both enumeration calls report the end of the list as a failure carrying
     ``ERROR_NO_MORE_FILES``; any other failure means the set was not read, or
-    not read to its end. That is returned as ``None`` rather than as the
-    volumes seen so far, because :mod:`.usage` reads a mapping as complete
-    and would call every disk on a missing volume "not mounted".
+    not read to its end. That is returned as no volumes at all rather than as
+    the volumes seen so far, because :mod:`.usage` reads a mapping as complete
+    and would call every disk on a missing volume "not mounted"; the reason
+    goes with it, so the run can say it is incomplete.
 
     Args:
         kernel32: The typed facade over the Win32 entry points.
@@ -395,23 +410,43 @@ def read_volumes(
         chunk_bytes: How many bytes of cluster bits one bitmap call asks for.
 
     Returns:
-        One entry per volume, keyed by its ``\\?\Volume{...}\`` GUID path, or
-        ``None`` when the enumeration failed.
+        One entry per volume, keyed by its ``\\?\Volume{...}\`` GUID path,
+        or no volumes and the reason when the enumeration failed.
     """
     volumes: dict[str, dict[str, Any]] = {}
     buffer = ctypes.create_unicode_buffer(_MAX_PATH)
     handle = kernel32.FindFirstVolumeW(buffer, _MAX_PATH)
     if handle == api.INVALID_HANDLE_VALUE:
-        return volumes if last_error() == api.ERROR_NO_MORE_FILES else None
+        code = last_error()
+        if code == api.ERROR_NO_MORE_FILES:
+            return VolumeEnumeration(volumes, None)
+        return VolumeEnumeration(None, f"could not list the volumes (Win32 error {code})")
     try:
         while True:
             volumes[buffer.value] = _read_one_volume(
                 kernel32, buffer.value, last_error=last_error, walk_on=walk_on, chunk_bytes=chunk_bytes
             )
             if not kernel32.FindNextVolumeW(handle, buffer, _MAX_PATH):
-                return volumes if last_error() == api.ERROR_NO_MORE_FILES else None
+                return _list_end(volumes, last_error())
     finally:
         kernel32.FindVolumeClose(handle)
+
+
+def _list_end(volumes: dict[str, dict[str, Any]], code: int) -> VolumeEnumeration:
+    """The volumes listed, when ``FindNextVolumeW`` ended the list; none and why, when it failed.
+
+    Example:
+        >>> _list_end({"a": {}}, api.ERROR_NO_MORE_FILES).error is None
+        True
+        >>> _list_end({"a": {}}, 21).error
+        'the list of volumes ended early at entry 2 (Win32 error 21), so none of it was used'
+    """
+    if code == api.ERROR_NO_MORE_FILES:
+        return VolumeEnumeration(volumes, None)
+    return VolumeEnumeration(
+        None,
+        f"the list of volumes ended early at entry {len(volumes) + 1} (Win32 error {code}), so none of it was used",
+    )
 
 
 def read_windows_volume(kernel32: api.WinLibrary) -> str | None:
@@ -436,4 +471,4 @@ def read_windows_volume(kernel32: api.WinLibrary) -> str | None:
     return volume_guid.value
 
 
-__all__ = ["read_volumes", "read_windows_volume"]
+__all__ = ["VolumeEnumeration", "read_volumes", "read_windows_volume"]

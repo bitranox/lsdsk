@@ -202,13 +202,16 @@ def build_filesystems(
     Returns:
         The rows and the refusals that belong to no single row: one per
         volume that could not be placed on a disk (see
-        :func:`_unplaced_volumes`), and one when an unelevated run could not
-        read the volumes' bitmaps. The rows are ``None`` in a container or when the
+        :func:`_unplaced_volumes`), one when an unelevated run could not
+        read the volumes' bitmaps, and one when the volumes could not be
+        enumerated at all. The rows are ``None`` in a container or when the
         volumes were not read, the same rule as ``used by``, and ``None`` too
         for a capture taken before the volumes' space was read.
     """
-    if environment is Environment.CONTAINER or capture.volumes is None:
+    if environment is Environment.CONTAINER:
         return None, ()
+    if capture.volumes is None:
+        return None, refusals_of({_VOLUME_READING: capture.volumes_error})
     if not _space_was_read(capture):
         return None, ()
     numbered = disk_numbers(frozenset(entry.node for entry in capture.disks.values() if entry.node))

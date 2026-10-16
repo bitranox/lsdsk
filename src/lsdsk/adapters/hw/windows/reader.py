@@ -119,6 +119,22 @@ class UsbDeviceFacts(NamedTuple):
     service: str | None
 
 
+class VolumesSection(NamedTuple):
+    """The capture's volumes, the Windows volume among them, and why they are missing.
+
+    Attributes:
+        volumes: Every volume keyed by its ordinal, ``None`` when they could
+            not be enumerated.
+        windows_volume: The Windows volume's ordinal key, ``None`` when it
+            could not be resolved.
+        error: Why the volumes could not be enumerated, ``None`` when they were.
+    """
+
+    volumes: dict[str, dict[str, Any]] | None
+    windows_volume: str | None
+    error: str | None
+
+
 class UsbReading(NamedTuple):
     """What the hubs said about the ports USB disks hang off.
 
@@ -1387,7 +1403,7 @@ def read_volumes_section(
     *,
     last_error: Callable[[], int] = api.last_error,
     walk_on: Container[int] | None = None,
-) -> tuple[dict[str, dict[str, Any]] | None, str | None]:
+) -> VolumesSection:
     r"""Read every volume and the Windows volume, keyed by a per-capture ordinal.
 
     ``volumes.read_volumes`` and ``volumes.read_windows_volume`` key and name
@@ -1407,18 +1423,18 @@ def read_volumes_section(
             extents, which needs Administrator; ``None`` walks none.
 
     Returns:
-        Every volume keyed by its ordinal, and the Windows volume's ordinal
-        key (``None`` when it could not be resolved); ``(None, None)`` when the
-        volumes could not be enumerated.
+        Every volume keyed by its ordinal and the Windows volume's ordinal key
+        (``None`` when it could not be resolved); no volumes and the reason
+        when they could not be enumerated.
     """
-    by_guid = volumes.read_volumes(kernel32, last_error=last_error, walk_on=walk_on)
+    by_guid, error = volumes.read_volumes(kernel32, last_error=last_error, walk_on=walk_on)
     if by_guid is None:
-        return None, None
+        return VolumesSection(None, None, error)
     windows_guid = volumes.read_windows_volume(kernel32)
     ordinals = {guid: str(index) for index, guid in enumerate(by_guid)}
     by_ordinal = {ordinals[guid]: entry for guid, entry in by_guid.items()}
     windows_ordinal = ordinals.get(windows_guid) if windows_guid is not None else None
-    return by_ordinal, windows_ordinal
+    return VolumesSection(by_ordinal, windows_ordinal, None)
 
 
 def read_disks(tree: _DeviceTree) -> dict[str, dict[str, Any]]:
@@ -1511,7 +1527,7 @@ def read_system(readers: SystemReaders | None = None) -> dict[str, Any]:
     # Only a volume on a disk this run inventoried can be a row, so only those are walked.
     nodes = frozenset(str(record["node"]) for record in disks.values() if "node" in record)
     walk_on = frozenset(disk_numbers(nodes)) if elevated else None
-    volume_entries, windows_volume = read_volumes_section(tree.kernel32, last_error=tree.last_error, walk_on=walk_on)
+    section = read_volumes_section(tree.kernel32, last_error=tree.last_error, walk_on=walk_on)
 
     return {
         "schema": SCHEMA_VERSION,
@@ -1531,8 +1547,9 @@ def read_system(readers: SystemReaders | None = None) -> dict[str, Any]:
         "disks": disks,
         "usb_ports": usb_reading.ports,
         "usb_hubs": usb_reading.hubs,
-        "volumes": volume_entries,
-        "windows_volume": windows_volume,
+        "volumes": section.volumes,
+        "windows_volume": section.windows_volume,
+        "volumes_error": section.error,
         "lists_cut_short": dict(tree.lists_cut_short),
         "volume_bitmaps_read": elevated,
         # Every volume with a path was asked for its space above, so the
@@ -1546,6 +1563,7 @@ __all__ = [
     "SystemReaders",
     "UsbDeviceFacts",
     "UsbReading",
+    "VolumesSection",
     "ata_passthrough",
     "devices_accessible",
     "is_elevated",

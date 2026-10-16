@@ -328,13 +328,14 @@ class FakeVolumeKernel:
 
 
 def _read(fake: FakeVolumeKernel, **options: Any) -> dict[str, dict[str, Any]]:
-    by_guid = volumes.read_volumes(cast("api.WinLibrary", fake), last_error=fake.last_error, **options)
-    assert by_guid is not None
+    by_guid, error = volumes.read_volumes(cast("api.WinLibrary", fake), last_error=fake.last_error, **options)
+    assert by_guid is not None, error
     return by_guid
 
 
 def _section(fake: FakeVolumeKernel) -> tuple[dict[str, dict[str, Any]] | None, str | None]:
-    return read_volumes_section(cast("api.WinLibrary", fake), last_error=fake.last_error)
+    section = read_volumes_section(cast("api.WinLibrary", fake), last_error=fake.last_error)
+    return section.volumes, section.windows_volume
 
 
 def _usage(fake: FakeVolumeKernel, node: str) -> DiskUsage | None:
@@ -838,7 +839,7 @@ def test_the_volume_enumeration_is_closed_however_it_ends(next_error: int | None
 def test_an_enumeration_that_never_started_closes_no_handle() -> None:
     """The control: a refused first call returns no handle, so there is nothing to close."""
     fake = FakeVolumeKernel({VOLUME_C: FakeVolume(paths=("C:\\",))}, first_error=ERROR_ACCESS_DENIED)
-    assert volumes.read_volumes(cast("api.WinLibrary", fake), last_error=fake.last_error) is None
+    assert volumes.read_volumes(cast("api.WinLibrary", fake), last_error=fake.last_error).volumes is None
     assert fake.find_closed == 0
 
 
@@ -894,9 +895,9 @@ def _row_or_not() -> dict[str, FakeVolume]:
 def test_the_reader_walks_exactly_the_volumes_the_builder_makes_rows_of() -> None:
     """One rule decides both: a walked volume is a row, and a row's volume was walked."""
     fake = FakeVolumeKernel(_row_or_not())
-    by_ordinal, _ = read_volumes_section(
+    by_ordinal = read_volumes_section(
         cast("api.WinLibrary", fake), last_error=fake.last_error, walk_on=frozenset({0})
-    )
+    ).volumes
     assert by_ordinal is not None
     capture = WindowsCapture.model_validate(
         {
