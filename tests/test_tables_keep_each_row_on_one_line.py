@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from click.testing import CliRunner
+from rich.cells import cell_len
 from rich.console import Console
 
 from lsdsk.adapters.cli import cli
@@ -285,3 +286,61 @@ def test_the_trend_command_at_a_narrow_piped_width_keeps_every_total_and_verdict
     assert any("2196127" in line for line in narrow), "\n".join(narrow)
     assert any("rising" in line for line in narrow), "\n".join(narrow)
     assert all(len(line) <= 34 for line in narrow), "\n".join(line for line in narrow if len(line) > 34)
+
+
+#: The tables whose first column the layout never narrows by fitting, so a cut
+#: first cell can only be the one-line cut's work. The filesystems table's
+#: first column is flexible and may be narrowed before any cut.
+_CUT_FIRST = ("disks", "controllers", "health")
+
+
+def _table_width(text: str) -> int:
+    """How wide Rich drew the table: every line of it is padded to that width."""
+    return max(cell_len(line) for line in text.splitlines())
+
+
+#: Where a marked row's first data cell starts: the two-cell marker column and
+#: the cell of padding Rich puts on each side of the boundary after it.
+_FIRST_CELL_AFTER_MARKER = 4
+
+
+def _first_cells(rows: list[str], *, marker: bool) -> list[str]:
+    """Each row's first data cell: after the marker column and its padding, where there is one."""
+    offset = _FIRST_CELL_AFTER_MARKER if marker else 0
+    return [row[offset:].split(" ", 1)[0] for row in rows]
+
+
+@pytest.mark.parametrize("capture", CAPTURES)
+def test_the_one_line_cut_takes_no_more_of_a_row_than_the_console_lacks(capture: str) -> None:
+    """Where the cut clips a row's first cell, the table it leaves fills the console exactly.
+
+    A table drawn by Rich is narrower than the layout reckons - its rows carry a
+    two-cell marker where the layout counts a three-cell gutter - and the cut is
+    told so. Told nothing, it took one cell more than the row overran by, and a
+    device name lost a character the console had room for.
+    """
+    inventory, findings = _machine(capture)
+    clipped = 0
+    for name, (render, count) in _tables(inventory, findings).items():
+        if name not in _CUT_FIRST:
+            continue
+        for width in range(14, 81):
+            text = _text(render(width), width)
+            if any(cell.endswith(ELLIPSIS) for cell in _first_cells(_rows(text, count), marker=True)):
+                clipped += 1
+                assert _table_width(text) == width, f"{name} at {width}: the cut left room unused\n{text}"
+    assert clipped, f"the control: no table of {capture} was cut into its first column, so this asserted nothing"
+
+
+def test_the_one_line_cut_of_the_trend_table_takes_no_more_than_the_console_lacks() -> None:
+    """The same for the table that draws no marker column, which has more room still than the layout reckons."""
+    inventory, history = _trended_machine()
+    rows = trend_rows(inventory, history)
+    clipped = 0
+    for width in range(14, 81):
+        text = "\n".join(_trend_table_lines(inventory, history, width))
+        drawn = text.splitlines()[-len(rows) :]
+        if any(cell.endswith(ELLIPSIS) for cell in _first_cells(drawn, marker=False)):
+            clipped += 1
+            assert _table_width(text) == width, f"trend at {width}: the cut left room unused\n{text}"
+    assert clipped, "the control: the trend table was never cut into its first column"
