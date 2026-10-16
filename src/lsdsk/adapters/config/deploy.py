@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from lib_layered_config import DeployPermissionsError, deploy_config, generate_examples
+from lib_layered_config import DeployModeError, DeployPermissionsError, deploy_config, generate_examples
 from lib_layered_config.examples.deploy import DeployAction
 
 from lsdsk import __init__conf__
@@ -28,6 +28,32 @@ _DEPLOY_ANYWAY_HINT = (
     "for user, 0o755 and 0o644 for app and host); --no-permissions also deploys, but leaves every "
     "mode to the umask, which can make a user file that holds secrets readable by other accounts"
 )
+
+#: The library refuses an unsafe explicit mode one line per parameter, ``dir_mode: <reason>``,
+#: naming its own parameters; a reader of ``config-deploy`` passed ``--dir-mode``.
+_OPTION_FOR_PARAMETER = (("dir_mode: ", "--dir-mode: "), ("file_mode: ", "--file-mode: "))
+
+
+def _named_by_option(line: str) -> str:
+    """One refusal line, its leading library parameter replaced by this command's option.
+
+    Args:
+        line: A line of the library's explicit-mode refusal.
+
+    Returns:
+        The line with ``dir_mode: ``/``file_mode: `` at its start named as the option;
+        any other line unchanged.
+
+    Examples:
+        >>> _named_by_option("dir_mode: unsafe directory mode 0o777: world write (0o002)")
+        '--dir-mode: unsafe directory mode 0o777: world write (0o002)'
+        >>> _named_by_option("a line naming dir_mode: elsewhere")
+        'a line naming dir_mode: elsewhere'
+    """
+    for parameter, option in _OPTION_FOR_PARAMETER:
+        if line.startswith(parameter):
+            return option + line.removeprefix(parameter)
+    return line
 
 
 def _refuse_a_directory_at_a_target(destinations: Iterable[Path]) -> None:
@@ -81,6 +107,9 @@ def deploy_configuration(request: DeployRequest) -> list[Path]:
         DeployPermissionsError: A configured or overriding mode was refused by the
             library, which decides every mode; nothing has been written. It is a
             ``ValueError``.
+        DeployModeError: An explicit ``dir_mode``/``file_mode`` was refused as unsafe,
+            each line naming ``--dir-mode``/``--file-mode``; nothing has been written.
+            It is a ``ValueError``.
 
     Side Effects:
         Creates configuration files in platform-specific directories:
@@ -143,6 +172,11 @@ def deploy_configuration(request: DeployRequest) -> list[Path]:
         # and is the one decider of a mode. Only the closing hint is reworded.
         hint = _DEPLOY_ANYWAY_HINT if refused.hint is not None else None
         raise DeployPermissionsError(refused.problems, hint=hint) from refused
+    except DeployModeError as refused:
+        # An unsafe --dir-mode/--file-mode: the library parsed the value and refused it,
+        # which stays exit 22 (the same class); only the parameter names are this command's.
+        named = "\n".join(_named_by_option(line) for line in str(refused).split("\n"))
+        raise DeployModeError(named) from refused
 
     _refuse_a_directory_at_a_target(result.destination for result in results)
     # Extract paths where files were actually created or overwritten
