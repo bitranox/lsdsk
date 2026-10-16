@@ -170,20 +170,22 @@ def test_a_pool_the_config_lists_whose_space_could_not_be_read_keeps_its_row_and
 
 @pytest.mark.parametrize("layouts", [True, False], ids=["with-layouts", "without-layouts"])
 def test_untraced_pools_are_refused_in_name_order_whatever_order_the_kernel_listed_them(layouts: bool) -> None:
-    pools = {"rpool": {"size": 1000, "alloc": 100}, "zulu": {"size": 1, "alloc": 0}, "alpha": {"size": 1, "alloc": 0}}
+    # Eight untraced names, listed backwards: a walk in set or listing order instead of name order comes out sorted
+    # for no hash seed worth counting, where three names did for a fair share of them.
+    untraced = ["zulu", "yankee", "xray", "whiskey", "victor", "golf", "bravo", "alpha"]
+    pools = {"rpool": {"size": 1000, "alloc": 100}, **{name: {"size": 1, "alloc": 0} for name in untraced}}
     reading = _host(
         zfs_pools=pools,
         zfs_pool_layouts={
             "rpool": {"guid": _RPOOL_GUID, "vdevs": [{"kind": "disk", "dev": "8:1"}]},
-            "zulu": {"guid": "1"},
-            "alpha": {"guid": "2"},
+            **{name: {"guid": str(number)} for number, name in enumerate(untraced, start=1)},
         },
     )
     if not layouts:
         reading = _without_layouts(reading)
-    assert list(LinuxCapture.model_validate(reading).zfs_pools or {}) == ["rpool", "zulu", "alpha"]  # control
+    assert list(LinuxCapture.model_validate(reading).zfs_pools or {}) == ["rpool", *untraced]  # control
     _, refused = _built(reading)
-    assert refused == _untraced("alpha", "zulu")
+    assert refused == _untraced(*sorted(untraced))
 
 
 @pytest.mark.parametrize(
