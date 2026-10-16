@@ -152,6 +152,7 @@ only-include = [
     "skills",
     "src",
     "tests",
+    "uv.lock",
 ]
 # The directories above are walked, and in a worktree nothing from .gitignore
 # applies inside them either, so a state file, a secret or a tool's cache

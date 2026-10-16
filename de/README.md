@@ -147,6 +147,16 @@ Darum heißt ein Controller unter Linux und unter Windows gleich,
 lsdsk zitiert die übersetzten Gerätenamen von Windows nicht. Die Lizenz der
 Datenbank steht in `NOTICE`.
 
+### Warum wir uv empfehlen: Schutz der Lieferkette
+
+Dieses Repository enthält eine `uv.lock`, die jede Abhängigkeit, transitive eingeschlossen, auf eine
+genaue Version und auf die Prüfsummen ihrer Dateien festlegt, mit einer Wartezeit, die
+Veröffentlichungen, die jünger sind, aus der Sperrdatei heraushält. CI installiert aus dieser
+Sperrdatei. Ein einfaches `pip install` nimmt dagegen von jeder Abhängigkeit die neueste
+Veröffentlichung, also erreicht einen eine Veröffentlichung, die eine Stunde vorher gekapert wurde.
+[INSTALL.md](INSTALL.md#warum-wir-uv-empfehlen-schutz-der-lieferkette) zeigt, wie man mit einer
+eigenen Wartezeit installiert oder genau den Stand ausführt, den CI testet.
+
 ## Wie lsdsk arbeitet
 
 Unter Linux liest es sysfs und setzt `SG_IO`-ATA-Passthrough- und

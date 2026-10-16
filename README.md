@@ -140,6 +140,15 @@ name. The PCI name database therefore ships with it. That is why a controller
 reads the same on Linux and on Windows; lsdsk does not quote the localised
 device names Windows carries. See `NOTICE` for that database's licence.
 
+### Why we recommend uv: supply-chain protection
+
+This repository commits a `uv.lock` that pins every dependency, transitive ones included, to an
+exact version and to the hashes of its files, with a cooldown that keeps releases younger than it
+out of the lock. CI installs from that lock. A plain `pip install` takes the newest release of every
+dependency instead, so a release hijacked an hour earlier reaches you.
+[INSTALL.md](https://github.com/bitranox/lsdsk/blob/main/INSTALL.md#why-we-recommend-uv-supply-chain-protection)
+shows how to install with a cooldown of your own, or run the exact tree CI tests.
+
 ## How lsdsk works
 
 Linux reads sysfs and issues `SG_IO` ATA passthrough and NVMe admin ioctls

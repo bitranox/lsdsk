@@ -35,6 +35,39 @@ lsdsk --version
 
 Die Installation legt ein Konsolenskript an, `lsdsk`.
 
+## Warum wir uv empfehlen: Schutz der Lieferkette
+
+Dieses Repository enthält eine `uv.lock`. Sie legt jedes Paket, das das Projekt braucht,
+transitive Abhängigkeiten eingeschlossen, auf eine genaue Version und auf die Prüfsummen der
+Dateien dieser Version fest. Die Einstellung `exclude-newer` unter `[tool.uv]` in
+`pyproject.toml` fügt eine Wartezeit hinzu: uv lässt jede Veröffentlichung, die jünger ist, aus
+der Sperrdatei heraus. CI installiert aus der Sperrdatei, also erreicht eine gekaperte
+Veröffentlichung, die innerhalb der Wartezeit wieder zurückgezogen wird, unsere Builds nie, und
+eine Datei mit falscher Prüfsumme wird abgewiesen.
+
+Dieser Schutz bleibt in diesem Repository. Das installierbare Paket gibt für seine Abhängigkeiten
+nur Untergrenzen an (`>=`), also nimmt ein einfaches `pip install` von jeder transitiven
+Abhängigkeit die neueste Veröffentlichung im Moment des Aufrufs. Wurde eine davon eine Stunde
+vorher gekapert, bekommt man die gekaperte Version. `pipx install` und `uv tool install` ohne
+Optionen tun dasselbe.
+
+Um das Kommandozeilenwerkzeug mit einer eigenen Wartezeit zu installieren (uv überspringt dann
+jede Veröffentlichung, die jünger als 7 Tage ist, transitive eingeschlossen), oder um genau den
+Stand auszuführen, den unsere CI testet:
+
+```bash
+uv tool install --exclude-newer "7 days" lsdsk
+git clone https://github.com/bitranox/lsdsk.git && cd lsdsk && uv sync --locked && uv run lsdsk --help
+```
+
+Wer lsdsk im eigenen Projekt als Abhängigkeit nutzt, gibt diesem Projekt dieselbe Wartezeit (hier
+als Beispiel 7 Tage) und committet die `uv.lock`, die `uv add lsdsk` schreibt:
+
+```toml
+[tool.uv]
+exclude-newer = "7 days"
+```
+
 ## Aus einem Checkout
 
 Für die Arbeit an lsdsk selbst, oder um eine Fassung zu fahren, die nicht
