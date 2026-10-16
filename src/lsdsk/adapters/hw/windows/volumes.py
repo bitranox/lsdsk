@@ -76,7 +76,9 @@ class _BitmapRefusedError(Exception):
     """The bitmap walk met an answer it cannot continue from; the message is the reason."""
 
 
-def _volume_paths(kernel32: api.WinLibrary, volume: str) -> tuple[tuple[str, ...], str | None]:
+def _volume_paths(
+    kernel32: api.WinLibrary, volume: str, *, last_error: Callable[[], int]
+) -> tuple[tuple[str, ...], str | None]:
     """Return every mount path a volume answers to, or why they were not read.
 
     ``GetVolumePathNamesForVolumeNameW`` writes a Windows "multi-string": each
@@ -85,6 +87,11 @@ def _volume_paths(kernel32: api.WinLibrary, volume: str) -> tuple[tuple[str, ...
     needs (measured on two real hosts), so one retry at that length follows;
     the call keys on the reported length rather than the error code, which is
     what the length is for.
+
+    Args:
+        kernel32: The typed facade over the Win32 entry points.
+        volume: The volume's GUID path, trailing backslash included.
+        last_error: Answers ``GetLastError`` for the call that just failed.
 
     Returns:
         The paths, and ``None``; or no paths and why they could not be read,
@@ -100,11 +107,18 @@ def _volume_paths(kernel32: api.WinLibrary, volume: str) -> tuple[tuple[str, ...
         if needed.value <= size:
             break
         size = needed.value
-    return (), f"could not read the volume's paths (error {api.last_error()})"
+    return (), f"could not read the volume's paths (error {last_error()})"
 
 
-def _disk_extents(kernel32: api.WinLibrary, handle: int) -> tuple[list[int], str | None]:
+def _disk_extents(
+    kernel32: api.WinLibrary, handle: int, *, last_error: Callable[[], int]
+) -> tuple[list[int], str | None]:
     """Issue the disk-extents ioctl and parse its response.
+
+    Args:
+        kernel32: The typed facade over the Win32 entry points.
+        handle: The volume, opened for its identity.
+        last_error: Answers ``GetLastError`` for the call that just failed.
 
     Returns:
         The disk numbers, and why the ioctl failed when it did (in which case
@@ -123,7 +137,7 @@ def _disk_extents(kernel32: api.WinLibrary, handle: int) -> tuple[list[int], str
         None,
     )
     if not ok:
-        return [], f"could not read the volume's disk extents (error {api.last_error()})"
+        return [], f"could not read the volume's disk extents (error {last_error()})"
     return parse_disk_extents(response.raw[: returned.value]), None
 
 
@@ -302,7 +316,7 @@ def _read_one_volume(
     Args:
         kernel32: The typed facade over the Win32 entry points.
         volume: The volume's GUID path, trailing backslash included.
-        last_error: Answers ``GetLastError`` for the space call that just failed.
+        last_error: Answers ``GetLastError`` for whichever call just failed.
         walk_on: The inventoried disk numbers, when the volume's cluster
             bitmap is to be walked into free extents, which opens it for
             reading and so needs Administrator; ``None`` walks nothing. Only
@@ -314,7 +328,7 @@ def _read_one_volume(
     Returns:
         One volume's reading, shaped for the capture model to type.
     """
-    listed, paths_error = _volume_paths(kernel32, volume)
+    listed, paths_error = _volume_paths(kernel32, volume, last_error=last_error)
     # Letters first before anything is asked of a path, so the drive type, the
     # space and the cluster size are read from the letter the row is named by.
     paths = named_first(listed)
@@ -337,10 +351,10 @@ def _read_one_volume(
         None,
     )
     if handle == api.INVALID_HANDLE_VALUE:
-        entry["error"] = f"could not open the volume (error {api.last_error()})"
+        entry["error"] = f"could not open the volume (error {last_error()})"
         return entry
     try:
-        disks, error = _disk_extents(kernel32, handle)
+        disks, error = _disk_extents(kernel32, handle, last_error=last_error)
         entry["disks"] = disks
         if error is not None:
             entry["error"] = error

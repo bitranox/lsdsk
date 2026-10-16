@@ -46,6 +46,11 @@ def _gpt_partition(type_guid: uuid.UUID) -> bytes:
 
 ERROR_ACCESS_DENIED = 5
 ERROR_NOT_READY = 21
+#: What the fake's three identity calls fail with, each a different number so a
+#: test can tell which call's error a message carries.
+ERROR_INVALID_FUNCTION = 1
+ERROR_SHARING_VIOLATION = 32
+ERROR_INVALID_PARAMETER = 87
 
 
 @dataclass
@@ -179,6 +184,7 @@ class FakeVolumeKernel:
         self.path_calls.append(size)
         paths = self.volumes[volume].paths
         if paths is None:
+            self.error = ERROR_INVALID_PARAMETER
             return 0
         multi = "".join(f"{path}\x00" for path in paths) + "\x00"
         getattr(needed, "_obj").value = len(multi)  # noqa: B009 - a CArgObject's referent
@@ -244,6 +250,7 @@ class FakeVolumeKernel:
         self.opened.append((path, access))
         volume = self.volumes[name]
         if not volume.openable:
+            self.error = ERROR_SHARING_VIOLATION
             return cast("int", api.INVALID_HANDLE_VALUE)
         if access == api.GENERIC_READ and volume.bitmap is None:
             self.error = ERROR_ACCESS_DENIED
@@ -282,6 +289,8 @@ class FakeVolumeKernel:
         else:
             answer = None
         if answer is None:
+            if code == api.IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS:
+                self.error = ERROR_INVALID_FUNCTION
             return 0
         assert len(answer) <= out_size
         ctypes.memmove(out_buffer, answer, len(answer))
@@ -906,3 +915,20 @@ def test_the_reader_walks_exactly_the_volumes_the_builder_makes_rows_of() -> Non
     walked = {entry["paths"][0] for entry in by_ordinal.values() if "free_extents" in entry}
     assert walked == {row.name for row in rows} == {"C:\\", "S:\\"}
     assert all(row.free_space is not None for row in rows)
+
+
+def test_a_path_query_that_fails_names_the_error_windows_gave() -> None:
+    # The injected getter answers what the fake's failing call left (87); a
+    # read of the real api.last_error answers 0 off Windows.
+    entry = _read(FakeVolumeKernel({VOLUME_C: FakeVolume(paths=None)}))[VOLUME_C]
+    assert entry["paths_error"] == f"could not read the volume's paths (error {ERROR_INVALID_PARAMETER})"
+
+
+def test_an_extents_ioctl_that_fails_names_the_error_windows_gave() -> None:
+    entry = _read(FakeVolumeKernel({VOLUME_X: FakeVolume(paths=("X:\\",), disks=None)}))[VOLUME_X]
+    assert entry["error"] == f"could not read the volume's disk extents (error {ERROR_INVALID_FUNCTION})"
+
+
+def test_a_volume_that_refuses_to_open_names_the_error_windows_gave() -> None:
+    entry = _read(FakeVolumeKernel({VOLUME_X: FakeVolume(paths=("X:\\",), openable=False)}))[VOLUME_X]
+    assert entry["error"] == f"could not open the volume (error {ERROR_SHARING_VIOLATION})"
