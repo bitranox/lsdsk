@@ -127,12 +127,12 @@ def disk_numbers(nodes: frozenset[str]) -> dict[int, str]:
     return numbered
 
 
-def _letter_mounts(volumes: dict[str, VolumeEntry], disk_numbers: dict[int, str]) -> dict[str, list[str]]:
+def _letter_mounts(volumes: dict[str, VolumeEntry], numbered: dict[int, str]) -> dict[str, list[str]]:
     """Every volume path reaching each disk, deduplicated and in first-seen order, letters first per volume.
 
     Args:
         volumes: Every volume the reader enumerated.
-        disk_numbers: A disk number's node name.
+        numbered: A disk number's node name, as :func:`disk_numbers` maps it.
 
     Returns:
         Mount paths, keyed by the node of the disk they reach.
@@ -144,16 +144,14 @@ def _letter_mounts(volumes: dict[str, VolumeEntry], disk_numbers: dict[int, str]
         if not entry.paths:
             continue
         for disk_number in entry.disks:
-            node = disk_numbers.get(disk_number)
+            node = numbered.get(disk_number)
             if node is None:
                 continue
             mounts.setdefault(node, {}).update(dict.fromkeys(named_first(entry.paths)))
     return {node: list(bucket) for node, bucket in mounts.items()}
 
 
-def _boot_nodes(
-    capture: WindowsCapture, volumes: dict[str, VolumeEntry], disk_numbers: dict[int, str]
-) -> frozenset[str]:
+def _boot_nodes(capture: WindowsCapture, volumes: dict[str, VolumeEntry], numbered: dict[int, str]) -> frozenset[str]:
     """Every disk node the machine boots from.
 
     Boot is the disk(s) of the Windows directory's own volume, plus the
@@ -162,7 +160,7 @@ def _boot_nodes(
     Args:
         capture: A Windows reading.
         volumes: Every volume the reader enumerated.
-        disk_numbers: A disk number's node name.
+        numbered: A disk number's node name, as :func:`disk_numbers` maps it.
 
     Returns:
         The node names of every boot disk.
@@ -174,7 +172,7 @@ def _boot_nodes(
     for entry in volumes.values():
         if entry.esp:
             boot_disk_numbers.update(entry.disks)
-    return frozenset(disk_numbers[number] for number in boot_disk_numbers if number in disk_numbers)
+    return frozenset(numbered[number] for number in boot_disk_numbers if number in numbered)
 
 
 def blocks_not_mounted(entry: VolumeEntry) -> bool:

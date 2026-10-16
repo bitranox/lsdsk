@@ -71,6 +71,15 @@ def _is_quota(entry: VolumeEntry) -> bool:
 
 
 def _volume_row(entry: VolumeEntry, disks: tuple[str, ...]) -> Filesystem:
+    """One volume as a filesystem row, named by its first path with letters first.
+
+    Args:
+        entry: The volume as the reader recorded it.
+        disks: The inventory disks its extents reach, in disk order.
+
+    Returns:
+        The row, carrying each reading the system refused for the volume.
+    """
     paths = named_first(entry.paths)
     return Filesystem(
         kind=FilesystemKind.VOLUME,
