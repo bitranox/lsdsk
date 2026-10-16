@@ -44,15 +44,17 @@ Before opening a PR, confirm the following:
 
 ## 6. Hardware we cannot test on
 
-Three claims in this tool rest on hardware nobody here has, and the gap is not
+Two claims in this tool rest on hardware nobody here has, and the gap is not
 something more code can close. If you own one of these, a capture is the whole
 contribution:
 
-- **A chipset used as a PCIe switch**, on Linux and on Windows. The reduced tree
-  densities are asserted against four captures and none of them is such a board,
-  and the rule that tells a part behind a switch from a function built into it
-  is measured in the negative direction only. Both would be settled by one
-  capture of each.
+- **A chipset used as a PCIe switch, on Linux.** The rule that tells a part
+  behind a switch from a function built into it reads the switch port's own
+  capability, which only Linux publishes for a bridge, and it is measured there
+  in the negative direction only: nothing here shows that such a chipset's
+  internal ports publish the PCIe floor as their own capability. A Windows
+  capture of such a board is already among the tests; one Linux capture would
+  settle the rest.
 - **A Windows host with more than one PCI segment.** The Windows reader prints a
   leading `0000` as the segment and nothing asks Windows for one, so on such a
   host two devices share an address string and the tree merges them. Dropping

@@ -79,15 +79,18 @@ Vor dem Öffnen eines Pull Requests:
 
 ## 6. Hardware, auf der wir nicht testen können
 
-Drei Aussagen in diesem Werkzeug stützen sich auf Hardware, die hier niemand
+Zwei Aussagen in diesem Werkzeug stützen sich auf Hardware, die hier niemand
 besitzt, und diese Lücke lässt sich nicht durch mehr Code schließen. Wenn Ihnen
 eines dieser Geräte gehört, ist eine Aufzeichnung der ganze Beitrag:
 
-- **Ein Chipsatz, der als PCIe-Switch dient**, unter Linux und unter Windows.
-  Die reduzierten Baumdichten sind gegen vier Aufzeichnungen abgesichert, und
-  keine davon ist eine solche Platine; die Regel, die ein Teil hinter einem
-  Switch von einer im Switch eingebauten Funktion unterscheidet, ist nur in der
-  negativen Richtung gemessen. Je eine Aufzeichnung würde beides klären.
+- **Ein Chipsatz, der als PCIe-Switch dient, unter Linux.** Die Regel, die ein
+  Teil hinter einem Switch von einer im Switch eingebauten Funktion
+  unterscheidet, liest die eigene Fähigkeit des Switch-Ports, die nur Linux für
+  eine Brücke veröffentlicht, und sie ist dort nur in der negativen Richtung
+  gemessen: Nichts hier zeigt, dass die internen Ports eines solchen Chipsatzes
+  die PCIe-Untergrenze als ihre eigene Fähigkeit veröffentlichen. Eine
+  Windows-Aufzeichnung einer solchen Platine gehört bereits zu den Tests; eine
+  Linux-Aufzeichnung würde den Rest klären.
 - **Ein Windows-Rechner mit mehr als einem PCI-Segment.** Der Windows-Leser gibt
   eine führende `0000` als Segment aus, und nichts fragt Windows danach. Auf
   einem solchen Rechner teilen sich zwei Geräte dieselbe Adresszeichenkette, und
