@@ -8,8 +8,10 @@ description: Use when inspecting or diagnosing storage hardware - which disk han
 Groups disks by the controller they hang off, compares every link against what
 both ends of it could do, and reports what is worth acting on. It also names the
 mainboard, from DMI, which is what makes its placement advice actionable. Linux
-and Windows, no subprocesses, and no network unless you enable the optional
-Graylog log sink (`lib_log_rich.enable_graylog`), which is off by default. It runs anywhere `--replay` is all you
+and Windows. It shells out to nothing and has no network unless you enable the optional
+Graylog log sink (`lib_log_rich.enable_graylog`), which is off by default; the one process it
+ever starts is itself, when the interactive view on Windows relaunches elevated (see the
+privilege section). It runs anywhere `--replay` is all you
 need, macOS included; only reading real hardware is the two.
 
 **Bare `lsdsk` gives a PERSON the interactive view and a PROGRAM the printed
@@ -507,9 +509,11 @@ for hardware. Reading a machine needs privileges exactly as the CLI does, and
 `lsdsk <command> --help` for current options rather than trusting a list here.
 
 The global options are `--replay`, `--profile`, `--history-file`,
-`--no-record`, `--expand-virtual`, `--tree-density`, `--traceback` (or
+`--no-record`, `--expand-virtual`, `--tree-density`, `--no-elevate`, `--traceback` (or
 `--no-traceback`), `--env-file`, `--version` and `--set SECTION.KEY=VALUE`, the last being how you move a
-judgement for one run. Four also work after the subcommand: `--replay` on any
+judgement for one run.
+`--elevated-relaunch` is internal: the elevated copy is started with it so it never asks again; a caller uses `--no-elevate`.
+Four also work after the subcommand: `--replay` on any
 command that reads a machine, `--profile` on the `config` commands,
 `--expand-virtual` on `topology`, `disks` and `tui`, and `--tree-density` on
 `topology` alone - given globally it reaches every view that draws the fabric,
@@ -723,21 +727,35 @@ counters simply stop accumulating until somebody acts. To resume recording,
 move the file aside or point `--history-file` somewhere else - a renamed host
 is the common cause, because the default path carries no hostname.
 
-Topology, link speeds, capacity and firmware read unprivileged. It never guesses
-a value it could not read, so anything below shows `-` instead, and the header
-says so.
+Topology, capacity and firmware read unprivileged, and so do link speeds, with one
+exception: a SATA drive's on Windows. It never guesses a value it could not read, so
+anything below shows `-` instead, and the header says so.
 
-Four things need root or Administrator, not one:
+Five things need root or Administrator, not one:
 
 | Needs privilege                         | Because                                   | Costs you                                        |
 |-----------------------------------------|-------------------------------------------|--------------------------------------------------|
 | SMART attributes and wear               | ATA and NVMe passthrough ioctls           | Those columns, and every finding drawn from them |
 | Error counters, so `trend` and `record` | Same passthrough read                     | An unelevated run records nothing at all         |
+| A SATA drive's link, on Windows only    | ATA IDENTIFY, its only source there       | the SATA link (disk and link columns)            |
 | PCIe slot numbers, connector detection  | Config space past the first 64 bytes      | The `slot` column, `FREE`, and any card move     |
 | The AHCI ports-implemented bitmap       | A memory mapping of the controller's BAR5 | A SATA controller's free-port count              |
 
 The last one is refused on some hosts even as root, so a `-` there is not proof
 the run was unprivileged.
+
+**On Windows the interactive view asks for Administrator itself.** A non-elevated
+bare `lsdsk` or `lsdsk tui` shows the Administrator (UAC) prompt before it reads
+anything. If the person allows it, lsdsk opens elevated in a new window and the
+window they typed in waits and returns that copy's exit code. If they refuse, or the
+relaunch fails, the view opens unelevated with a `NOT ELEVATED` line above every
+page saying why, followed by what the missing privilege cost. `--no-elevate` or
+`display.auto_elevate = false` turns the asking off. Nothing is remembered: it asks
+again on every start. It never asks off Windows, when already elevated, for
+`--replay`, or for any subcommand but `tui`. It asks wherever
+the view opens, so a caller handing its child a pseudo-terminal meets the prompt
+too: unattended, say `lsdsk report` or pass `--no-elevate`, and run from an
+elevated shell to get the full reading.
 
 **Root does not always help.** In a container the device nodes do not exist, so
 elevating changes nothing. Check what kind of machine you are on before

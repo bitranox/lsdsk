@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from rich.console import Console
 
     from ..domain.deployment import DeployRequest
+    from ..domain.elevation import Elevation
     from ..domain.enums import OutputFormat
 
 
@@ -109,9 +110,20 @@ class InitLogging(Protocol):
     def __call__(self, config: Config) -> None: ...
 
 
+class ElevateForTheView(Protocol):
+    """Ask for Administrator before the interactive view reads, where that can help.
+
+    A port because both ways into the view cross it and a test has to answer it:
+    the real one shows a Windows prompt and can start a second process.
+    """
+
+    def __call__(self, replay: Path | None, *, wanted: bool) -> Elevation: ...
+
+
 __all__ = [
     "DeployConfiguration",
     "DisplayConfig",
+    "ElevateForTheView",
     "GenerateExamples",
     "GetConfig",
     "InitLogging",

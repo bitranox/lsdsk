@@ -65,6 +65,10 @@ DEFAULT_TREE_DENSITY = TreeDensity.STORAGE_ONLY
 # room it needs and no more.
 DEFAULT_DETAIL_HEIGHT_PERCENT = 33
 
+# Whether the interactive view asks Windows for Administrator before it reads.
+# On by default: without it a SATA drive's link and every SMART figure read "-".
+DEFAULT_AUTO_ELEVATE = True
+
 # Characters of traceback kept in the short and the --traceback forms.
 DEFAULT_TRACEBACK_SUMMARY_LIMIT = 500
 DEFAULT_TRACEBACK_VERBOSE_LIMIT = 10_000
@@ -83,6 +87,8 @@ class DisplaySettings(DomainModel, frozen=True):
         tree_density: How much of the PCI fabric the topology view draws.
         detail_height_percent: Most of the window the interactive view's detail
             panel may take.
+        auto_elevate: Whether the interactive view asks for Administrator on a
+            non-elevated Windows start.
         traceback_summary_limit: Characters kept in a short traceback.
         traceback_verbose_limit: Characters kept under ``--traceback``.
 
@@ -100,6 +106,7 @@ class DisplaySettings(DomainModel, frozen=True):
     wwn_width: int = DEFAULT_WWN_WIDTH
     tree_density: TreeDensity = DEFAULT_TREE_DENSITY
     detail_height_percent: int = DEFAULT_DETAIL_HEIGHT_PERCENT
+    auto_elevate: bool = DEFAULT_AUTO_ELEVATE
     traceback_summary_limit: int = DEFAULT_TRACEBACK_SUMMARY_LIMIT
     traceback_verbose_limit: int = DEFAULT_TRACEBACK_VERBOSE_LIMIT
 
@@ -207,6 +214,7 @@ def read_display_settings(config: Config) -> DisplayReading:
         wwn_width=values.positive_int("wwn_width", DEFAULT_WWN_WIDTH),
         tree_density=values.tree_density("tree_density", DEFAULT_TREE_DENSITY),
         detail_height_percent=values.positive_int("detail_height_percent", DEFAULT_DETAIL_HEIGHT_PERCENT),
+        auto_elevate=values.flag("auto_elevate", default=DEFAULT_AUTO_ELEVATE),
         traceback_summary_limit=values.positive_int("traceback_summary_limit", DEFAULT_TRACEBACK_SUMMARY_LIMIT),
         traceback_verbose_limit=values.positive_int("traceback_verbose_limit", DEFAULT_TRACEBACK_VERBOSE_LIMIT),
     )
@@ -250,6 +258,7 @@ def get_display_settings(config: Config) -> DisplaySettings:
 
 
 __all__ = [
+    "DEFAULT_AUTO_ELEVATE",
     "DEFAULT_DETAIL_HEIGHT_PERCENT",
     "DEFAULT_EXPAND_VIRTUAL",
     "DEFAULT_PIPED_WIDTH",

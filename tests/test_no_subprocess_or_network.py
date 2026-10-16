@@ -1,10 +1,16 @@
 """The claim the whole tool is sold on, pinned so it cannot quietly stop being true.
 
-README, CLAUDE.md and ``skills/lsdsk/SKILL.md`` all state that lsdsk issues no
-subprocesses and makes no network requests. A reader plans around it: it is why
+README, CLAUDE.md and ``skills/lsdsk/SKILL.md`` all state that lsdsk shells out
+to nothing and makes no network requests. A reader plans around it: it is why
 the tool is safe to run on a wedged storage host where shelling out to
 ``smartctl`` would block, and why the skill instructs an agent to look figures up
 itself rather than expect the tool to fetch them.
+
+The one process lsdsk ever starts is itself: on Windows the interactive view
+relaunches elevated through pwshpy's ``ps.elevate`` (the user's decision of
+2026-10-16). pwshpy is reached by NAME through importlib, so the import graph
+below cannot see it, and the second test pins it to the one module allowed to
+start that process.
 
 Nothing checked it. Every one of those documents would have gone on saying it
 after the first ``import subprocess`` landed, so the claim is asserted here
@@ -105,6 +111,22 @@ def test_no_module_shells_out_or_opens_a_socket() -> None:
         "lsdsk documents that it issues no subprocesses and makes no network requests, "
         f"but these modules import otherwise: {offenders}"
     )
+
+
+#: The one module allowed to reach pwshpy, whose ``ps.elevate`` starts the
+#: elevated copy - the only process lsdsk ever starts.
+RELAUNCHES = "adapters/hw/elevation.py"
+
+
+@pytest.mark.os_agnostic
+def test_only_the_elevation_module_reaches_the_library_that_starts_a_process() -> None:
+    """A second module naming pwshpy would be a second way to start a process."""
+    naming = sorted(
+        str(module.relative_to(SRC)).replace("\\", "/")
+        for module in _modules()
+        if "pwshpy" in module.read_text(encoding="utf-8")
+    )
+    assert naming == [RELAUNCHES], f"pwshpy is named outside {RELAUNCHES}: {naming}"
 
 
 # The kernel log is the one plausible SECOND source for the AHCI port bitmap,

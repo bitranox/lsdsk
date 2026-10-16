@@ -17,7 +17,7 @@ from rich.text import Text
 from textual.containers import HorizontalScroll, VerticalScroll
 from textual.widgets import DataTable, OptionList, Static, TabbedContent
 
-from lsdsk.adapters.config.tunables import DEFAULT_WWN_WIDTH, DisplaySettings
+from lsdsk.adapters.config.tunables import DEFAULT_WWN_WIDTH, DisplaySettings, Tunables
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import theme
 from lsdsk.adapters.render.layout import ELLIPSIS, Column, clip, fit, natural_widths, pad
@@ -650,8 +650,9 @@ def test_the_tui_command_hands_the_app_the_recorded_history_and_the_configured_t
     assert result.exit_code == 0, result.output
     assert handed, "`lsdsk tui` never built the app"
     assert isinstance(handed["args"][1], History), "the app is built without the recorded history"
-    passed = handed["kwargs"].get("thresholds")
-    assert passed is not None, "`lsdsk tui` builds the app without thresholds"
+    tunables = handed["kwargs"].get("tunables")
+    assert tunables is not None, "`lsdsk tui` builds the app without its tunables"
+    passed = tunables.thresholds
     assert passed.wear_warning_percent == 7, f"the configured threshold did not reach the app: {passed}"
 
 
@@ -832,7 +833,7 @@ class TestTheDiskPageKeepsALongIdentifierReachable:
         listed = list(machine.disks)
         narrow = DisplaySettings(wwn_width=12)
         assert all(d.wwn and len(d.wwn) > narrow.wwn_width for d in listed[:2]), "both rows must overflow"
-        app = LsdskApp(machine, display=narrow)
+        app = LsdskApp(machine, tunables=Tunables(DEFAULT_THRESHOLDS, narrow))
         async with app.run_test(size=(200, 60)) as pilot:
             await pilot.press("3")
             await pilot.pause()
@@ -858,7 +859,7 @@ class TestTheDiskPageKeepsALongIdentifierReachable:
         listed = list(machine.disks)
         narrow = DisplaySettings(wwn_width=12)
         assert all(d.wwn and len(d.wwn) > narrow.wwn_width for d in listed[:2]), "both rows must overflow"
-        app = LsdskApp(machine, display=narrow)
+        app = LsdskApp(machine, tunables=Tunables(DEFAULT_THRESHOLDS, narrow))
         offsets: list[float] = []
         async with app.run_test(size=(200, 60)) as pilot:
             await pilot.press("3")
@@ -953,7 +954,7 @@ class TestTheDiskPageKeepsALongIdentifierReachable:
         """
         machine = inventory()
         disk = next(d for d in machine.disks if d.wwn and len(d.wwn) > DEFAULT_WWN_WIDTH)
-        app = LsdskApp(machine, display=DisplaySettings(wwn_width=12))
+        app = LsdskApp(machine, tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings(wwn_width=12)))
         async with app.run_test(size=(200, 60)) as pilot:
             await pilot.press("3")
             await pilot.pause()
@@ -1168,7 +1169,7 @@ class TestTheDetailPanelAnswersForTheRowUnderTheCursor:
     @pytest.mark.parametrize("share", [25, 50])
     async def test_the_panel_never_takes_more_of_the_window_than_it_was_given(self, share: int) -> None:
         """A ceiling, not a height, and the configured one rather than a literal."""
-        app = LsdskApp(inventory(), display=DisplaySettings(detail_height_percent=share))
+        app = LsdskApp(inventory(), tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings(detail_height_percent=share)))
         async with app.run_test(size=(140, 45)) as pilot:
             await pilot.press("3")
             await pilot.pause()
@@ -1185,7 +1186,9 @@ class TestTheDetailPanelAnswersForTheRowUnderTheCursor:
         """The control: a ceiling nothing reads would pass the test above."""
         heights: dict[int, int] = {}
         for share in (20, 60):
-            app = LsdskApp(inventory(), display=DisplaySettings(detail_height_percent=share))
+            app = LsdskApp(
+                inventory(), tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings(detail_height_percent=share))
+            )
             async with app.run_test(size=(140, 45)) as pilot:
                 await pilot.press("4")
                 await pilot.pause()
@@ -1217,7 +1220,9 @@ class TestTheDetailPanelAnswersForTheRowUnderTheCursor:
         """The rule the wwn strip's control already follows, at the panel."""
         offered: dict[str, bool] = {}
         for label, share in (("tall", 60), ("short", 10)):
-            app = LsdskApp(inventory(), display=DisplaySettings(detail_height_percent=share))
+            app = LsdskApp(
+                inventory(), tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings(detail_height_percent=share))
+            )
             async with app.run_test(size=(140, 45)) as pilot:
                 await pilot.press("4")
                 await pilot.pause()
@@ -1695,7 +1700,7 @@ def test_the_interactive_view_grades_its_findings_by_the_configured_thresholds()
     # or an app that ignored them entirely would still satisfy the assertion.
     assert diagnose(machine, thresholds=severe) != lenient, "the fixture cannot tell the two gradings apart"
 
-    app = LsdskApp(machine, thresholds=severe)
+    app = LsdskApp(machine, tunables=Tunables(severe, DisplaySettings()))
 
     assert app.findings == diagnose(machine, thresholds=severe), "the view diagnosed against the shipped defaults"
     assert app.findings != lenient, "the view's findings are the default grading"
@@ -1716,7 +1721,7 @@ async def test_a_rescan_keeps_grading_by_the_configured_thresholds() -> None:
     expected = diagnose(machine, thresholds=severe)
     assert expected != diagnose(machine), "the fixture cannot tell the two gradings apart"
 
-    app = LsdskApp(machine, thresholds=severe)
+    app = LsdskApp(machine, tunables=Tunables(severe, DisplaySettings()))
     async with app.run_test(size=(180, 50)) as pilot:
         await pilot.press("f10")
         await pilot.pause()
@@ -1725,7 +1730,7 @@ async def test_a_rescan_keeps_grading_by_the_configured_thresholds() -> None:
 
 async def _topology_wear_style(thresholds: Thresholds) -> str:
     """The style the interactive topology page gives the 59 percent wear cell under `thresholds`."""
-    app = LsdskApp(inventory(), thresholds=thresholds)
+    app = LsdskApp(inventory(), tunables=Tunables(thresholds, DisplaySettings()))
     async with app.run_test(size=(180, 50)) as pilot:
         await pilot.press("1")
         await pilot.pause()

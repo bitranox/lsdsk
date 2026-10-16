@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from rich.console import Console
 
-from lsdsk.adapters.config.tunables import DisplaySettings
+from lsdsk.adapters.config.tunables import DisplaySettings, Tunables
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import detail, report, tables, theme
 from lsdsk.adapters.render.tree import FabricView, render_fabric
@@ -590,7 +590,7 @@ async def _node_panel(machine: Inventory, address: str) -> str:
     """
     from textual.widgets import OptionList, Static
 
-    app = LsdskApp(machine, display=DisplaySettings(tree_density=TreeDensity.FULL))
+    app = LsdskApp(machine, tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings(tree_density=TreeDensity.FULL)))
     async with app.run_test(size=(200, 45)) as pilot:
         await pilot.press("1")
         await pilot.pause()

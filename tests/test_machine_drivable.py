@@ -21,7 +21,8 @@ if TYPE_CHECKING:
     from click.testing import CliRunner
 
     from lsdsk.adapters.config.history import HistorySettings
-    from lsdsk.adapters.config.tunables import DisplaySettings
+    from lsdsk.adapters.config.tunables import DisplaySettings, Tunables
+    from lsdsk.domain.elevation import Elevation
 
 # Commands with no data to structure: an interactive app, and the two template
 # vehicles the traceback and logging tests drive through the real entry point.
@@ -344,6 +345,7 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
     from lsdsk.adapters.cli.commands import scan
     from lsdsk.adapters.cli.commands.history import HistoryRead
     from lsdsk.adapters.cli.commands.scan import Analysis
+    from lsdsk.adapters.memory import elevate_in_memory
     from lsdsk.domain.history import History
     from lsdsk.domain.thresholds import Thresholds
 
@@ -397,13 +399,13 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
             inventory: Inventory,
             history: History | None = None,
             *,
-            display: DisplaySettings | None = None,
+            tunables: Tunables,
             store_refusal: str | None = None,
-            thresholds: Thresholds,
+            elevation: Elevation,
         ) -> None:
-            del inventory, history, display, store_refusal
+            del inventory, history, store_refusal, elevation
             called.append("tui")
-            judged_by.append(thresholds)
+            judged_by.append(tunables.thresholds)
 
         def run(self) -> None:
             """The real one blocks on the terminal; this test is about which ran."""
@@ -421,6 +423,8 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
         report=note_report,
         open_view=StubApp,
         analyse=give_inventory,
+        # The in-memory port: nothing is asked, so the router goes on to the view.
+        elevate=elevate_in_memory,
     )
 
     if expect == "tui":

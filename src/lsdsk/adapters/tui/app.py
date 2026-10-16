@@ -33,7 +33,7 @@ from ...domain.history import History
 # needs the class rather than its name.
 from ...domain.models import Disk, Filesystem, Inventory, PciNode
 from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
-from ..config.tunables import DisplaySettings
+from ..config.tunables import DisplaySettings, Tunables
 from ..render import detail, layout, report, tables, theme
 from ..render.tree import fabric_lines
 from ..render.trend import TREND_COLUMNS, render_trend, trend_rows
@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from rich.console import RenderableType
     from textual import events
 
+    from ...domain.elevation import Elevation
     from ...domain.models import Finding
     from ..render.detail import Detail
     from ..render.layout import Column
@@ -326,9 +327,9 @@ class LsdskApp(App[None]):
         inventory: Inventory,
         history: History | None = None,
         *,
-        display: DisplaySettings | None = None,
+        tunables: Tunables | None = None,
         store_refusal: str | None = None,
-        thresholds: Thresholds = DEFAULT_THRESHOLDS,
+        elevation: Elevation | None = None,
     ) -> None:
         """Build the app around one already-collected inventory.
 
@@ -337,28 +338,31 @@ class LsdskApp(App[None]):
             history: Counter samples recorded on earlier runs. Without them the
                 trend page explains that there is nothing to compare yet, and
                 every other page reads exactly as it did before.
-            display: How the pages are laid out and where their cut-offs
-                sit. One object rather than a keyword per value, because every
-                page must answer from the same settings the printed commands
-                used: a page and the command of the same name are one view
-                under one name, and a second delivery path is how one of them
-                goes deaf.
-            thresholds: What this run judges by, so the wear cell on the disk
-                and health pages is coloured against the same figures the
-                findings beside it were graded with - a page and the printed
-                command of its name are one view.
+            tunables: What this run judges by and how its pages are laid out,
+                as the one value every printed command reads too. The display
+                half is one object rather than a keyword per value, because a
+                page and the command of the same name are one view under one
+                name, and a second delivery path is how one of them goes deaf;
+                the thresholds colour the wear cell on the disk and health pages
+                against the same figures the findings beside it were graded with.
+                The shipped values when not given.
             store_refusal: Why the counter store could not be read, when it
                 could not. There is no stderr behind a full-screen page, so a
                 refusal that is only warned about reaches nobody here and the
                 trend page would report the machine as one nothing has ever
                 been recorded on.
+            elevation: What asking for Administrator came to before this view
+                opened, so a run that stayed unelevated can say why above every
+                page. None where nothing asked.
         """
         super().__init__()
+        self.elevation = elevation
         self.inventory = inventory
         # NOT self.display: Textual's DOMNode already owns that name as the
         # show/hide property, and shadowing it breaks rendering.
-        self.display_settings = display if display is not None else DisplaySettings()
-        self.thresholds = thresholds
+        settled = tunables if tunables is not None else Tunables(DEFAULT_THRESHOLDS, DisplaySettings())
+        self.display_settings = settled.display
+        self.thresholds = settled.thresholds
         self.history: History = history if history is not None else History(hostname=inventory.hostname)
         self.store_refusal = store_refusal
         self.findings: tuple[Finding, ...] = diagnose(inventory, history=history, thresholds=self.thresholds)
@@ -540,19 +544,29 @@ class LsdskApp(App[None]):
         note.display = bool(report.unread_interfaces_note(self.inventory))
 
     def _privilege_note(self) -> Text:
-        """The printed header's own sentence about what a missing privilege cost.
+        """Why this run is not elevated, then what the missing privilege cost.
 
-        Built by :func:`report.privilege_note`, the function the printed header
-        calls, so a dash the reader meets here is explained in the same words.
+        The cost is :func:`report.privilege_note`, the sentence the printed
+        header draws, so a dash the reader meets here is explained in the same
+        words. The reason in front of it is :func:`report.elevation_note`, in
+        the warning style, because a refused or failed prompt is the one thing
+        the reader can change and the user asked for it to be marked clearly.
         """
-        note = report.privilege_note(self.inventory)
-        return Text(note, style=tui_palette.restyle(theme.STYLE_CEILING)) if note else Text("")
+        why = report.elevation_note(self.elevation, self.inventory)
+        cost = report.privilege_note(self.inventory)
+        parts: list[tuple[str, str]] = []
+        if why:
+            parts.append((why, tui_palette.restyle(theme.STYLE_CAVEAT)))
+        if cost:
+            parts.append((f" {cost}" if why else cost, tui_palette.restyle(theme.STYLE_CEILING)))
+        return Text.assemble(*parts)
 
     def _fill_privilege_note(self) -> None:
         """Draw the privilege note, taking no room at all when there is none."""
         note = self.query_one("#privilege-note", Static)
-        note.update(self._privilege_note())
-        note.display = bool(report.privilege_note(self.inventory))
+        text = self._privilege_note()
+        note.update(text)
+        note.display = bool(text.plain)
 
     def _explain_marks(self, legend_id: str, drawn: Iterable[str]) -> None:
         """Put the register-default legend under a table, only when a drawn cell carries the mark.

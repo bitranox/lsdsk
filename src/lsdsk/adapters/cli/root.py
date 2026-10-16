@@ -33,6 +33,7 @@ from lsdsk.adapters.config.loader import (
     require_an_intact_installation,
 )
 from lsdsk.adapters.config.overrides import apply_overrides
+from lsdsk.adapters.hw.elevation import RELAUNCH_MARKER
 from lsdsk.domain.enums import DeployTarget, TreeDensity
 
 from . import safe_console
@@ -419,6 +420,22 @@ class _OptionalFile(NonEmptyPath):
     help="How much of the PCI fabric the topology shows.",
 )
 @option(
+    "--no-elevate",
+    "no_elevate",
+    is_flag=True,
+    default=False,
+    help="Never ask Windows for Administrator before the interactive view opens.",
+)
+@option(
+    # Started on the elevated copy by the relaunch itself (adapters/hw/elevation.py),
+    # so the copy never asks again; not something a person types, so not shown.
+    RELAUNCH_MARKER,
+    "elevated_relaunch",
+    is_flag=True,
+    default=False,
+    hidden=True,
+)
+@option(
     "--env-file",
     "env_file",
     type=NonEmptyPath(exists=True, file_okay=True, dir_okay=False, readable=True),
@@ -440,6 +457,8 @@ def cli(
     no_record: bool,
     expand_virtual: bool,
     tree_density: str | None,
+    no_elevate: bool,
+    elevated_relaunch: bool,
     env_file: str | None,
 ) -> None:
     """Root command storing global flags and syncing shared traceback state.
@@ -507,6 +526,8 @@ def cli(
             no_record=no_record,
             expand_virtual=expand_virtual,
             tree_density=None if tree_density is None else TreeDensity(tree_density.casefold()),
+            no_elevate=no_elevate,
+            elevated_relaunch=elevated_relaunch,
         ),
     )
     # One run, one telling. The set that keeps `health` from printing the same
@@ -531,6 +552,7 @@ def cli(
         resolve_history,
         resolve_tunables,
         run_default_view,
+        the_real_collaborators,
     )
 
     # The tunables have to be resolved here, exactly as every subcommand
@@ -540,7 +562,13 @@ def cli(
     # the view that exists to be the one you run when you do not yet know
     # which section to ask for.
     thresholds, display = resolve_tunables(ctx)
-    run_default_view(replay, settings=resolve_history(ctx), thresholds=thresholds, display=display)
+    run_default_view(
+        replay,
+        settings=resolve_history(ctx),
+        thresholds=thresholds,
+        display=display,
+        seams=the_real_collaborators(services.elevate),
+    )
 
 
 # Deferred import required to break a circular dependency: this module defines

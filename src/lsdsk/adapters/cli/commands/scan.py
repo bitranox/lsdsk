@@ -41,9 +41,11 @@ from lsdsk.adapters.config.tunables import (
     get_thresholds,
 )
 from lsdsk.adapters.hw import snapshot as snapshot_adapter
+from lsdsk.adapters.hw.elevation import elevate_for_the_view
 from lsdsk.adapters.render import report, theme
 from lsdsk.adapters.render.tables import counter_legend
 from lsdsk.domain.diagnostics import count_by_severity, register_default_links
+from lsdsk.domain.elevation import Elevation, ElevationState
 from lsdsk.domain.enums import ActionCommand, CliCommand, Environment, OutputFormat, Severity, TreeDensity
 from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.history import CounterKind, Trend
@@ -61,6 +63,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from lsdsk.adapters.history.store import HistoryRead
+    from lsdsk.application.ports import ElevateForTheView
     from lsdsk.domain.history import History
 
 logger = logging.getLogger(__name__)
@@ -258,11 +261,12 @@ def resolve_tunables(ctx: click.Context) -> Tunables:
         cli_context = get_cli_context(ctx)
     except RuntimeError:
         # Invoked directly in a test, without the root group having run.
-        config, expand_virtual, tree_density = Config({}, {}), False, None
-    else:
-        config, expand_virtual = cli_context.config, cli_context.expand_virtual
-        tree_density = cli_context.tree_density
+        cli_context = None
+    config = cli_context.config if cli_context is not None else Config({}, {})
     display = get_display_settings(config)
+    if cli_context is None:
+        return Tunables(get_thresholds(config), display)
+    expand_virtual, tree_density = cli_context.expand_virtual, cli_context.tree_density
     # A global --expand-virtual lands on the same key the file sets, so one
     # object answers "does this run list them" whichever source said so. The
     # same holds for --tree-density: every view that draws the fabric reads it
@@ -272,6 +276,10 @@ def resolve_tunables(ctx: click.Context) -> Tunables:
         display = display.with_changes(expand_virtual=True)
     if tree_density is not None:
         display = display.with_changes(tree_density=tree_density)
+    # Folded here for the same reason: both ways into the interactive view read
+    # this one flag, and the relaunched copy must never ask a second time.
+    if cli_context.no_elevate or cli_context.elevated_relaunch:
+        display = display.with_changes(auto_elevate=False)
     return Tunables(get_thresholds(config), display)
 
 
@@ -853,8 +861,9 @@ class InteractiveView(Protocol):
 class OpensTheInteractiveView(Protocol):
     """Build the interactive view around one already-collected machine.
 
-    Declared with ``thresholds`` and NO default, which is the whole point of
-    naming this seam: the app's own constructor defaults that argument, so a
+    Declared with ``tunables``, which carries the thresholds, and NO default,
+    which is the whole point of naming this seam: the app's own constructor
+    defaults that argument, so a
     call site that forgets it silently grades its findings and its verdict
     banner against the shipped figures while the panes beside them colour
     against the configured ones, and the exit code from the same invocation can
@@ -868,9 +877,9 @@ class OpensTheInteractiveView(Protocol):
         inventory: Inventory,
         history: History | None,
         *,
-        display: DisplaySettings,
+        tunables: Tunables,
         store_refusal: str | None,
-        thresholds: Thresholds,
+        elevation: Elevation,
     ) -> InteractiveView:
         """Return the view, built but not yet opened."""
         ...
@@ -905,7 +914,7 @@ class ReadsTheMachine(Protocol):
 
 
 class Collaborators(NamedTuple):
-    """The three functions the default view calls, as one named group.
+    """The four functions the default view calls, as one named group.
 
     Bundled rather than threaded separately for two reasons. Passed one by one
     they would take ``run_default_view`` past the width this project holds its
@@ -921,6 +930,31 @@ class Collaborators(NamedTuple):
     report: PrintsThePage
     open_view: OpensTheInteractiveView
     analyse: ReadsTheMachine
+    elevate: ElevateForTheView
+
+
+def ask_before_the_view(elevate: ElevateForTheView, replay: Path | None, display: DisplaySettings) -> Elevation:
+    """Ask for Administrator before the view reads anything, where that can help.
+
+    Asked BEFORE the machine is read: an elevated copy reads it again in its own
+    window, so reading it here first would only double the work and the wait.
+
+    Args:
+        elevate: The elevation port this run resolved.
+        replay: The snapshot being rendered instead of this machine, if any.
+        display: The layout values; ``auto_elevate`` says whether to ask.
+
+    Returns:
+        What asking came to, for the view to explain.
+
+    Raises:
+        SystemExit: With the elevated copy's exit code, when one ran: the view
+            has already been shown there, so nothing is drawn here.
+    """
+    elevation = elevate(replay, wanted=display.auto_elevate)
+    if elevation.state is ElevationState.RELAUNCHED:
+        raise SystemExit(elevation.exit_code if elevation.exit_code is not None else ExitCode.SUCCESS)
+    return elevation
 
 
 def run_default_view(
@@ -976,32 +1010,37 @@ def run_default_view(
         page(replay, settings=settings, thresholds=thresholds, display=display)
         return
 
-    called = seams if seams is not None else _the_real_collaborators()
+    called = seams if seams is not None else the_real_collaborators(elevate_for_the_view)
     resolved = settings if settings is not None else get_history_settings(Config({}, {}))
     laid_out = display if display is not None else DisplaySettings()
+    elevation = ask_before_the_view(called.elevate, replay, laid_out)
     with lib_log_rich.runtime.bind(job_id="cli-tui", extra={"command": "tui"}):
         inventory, findings, read = called.analyse(replay, OutputFormat.HUMAN, resolved, thresholds)
         called.open_view(
             inventory,
             read.history,
-            display=laid_out,
+            tunables=Tunables(thresholds, laid_out),
             store_refusal=read.refusal,
-            thresholds=thresholds,
+            elevation=elevation,
         ).run()
         raise SystemExit(exit_code_for(findings))
 
 
-def _the_real_collaborators() -> Collaborators:
+def the_real_collaborators(elevate: ElevateForTheView) -> Collaborators:
     """Resolve the production functions, deferring both imports as before.
 
+    Args:
+        elevate: The elevation port the run's services carry, so the root
+            group's container decides it rather than this module.
+
     Returns:
-        The three this module reaches for when nothing was substituted.
+        The four this module reaches for when nothing was substituted.
     """
     from lsdsk.adapters.tui import LsdskApp  # noqa: PLC0415 - keeps textual off the fast path
 
     from .history import analyse  # noqa: PLC0415 - deferred: history imports this module
 
-    return Collaborators(report=run_default_report, open_view=LsdskApp, analyse=analyse)
+    return Collaborators(report=run_default_report, open_view=LsdskApp, analyse=analyse, elevate=elevate)
 
 
 def _refuse_a_format_this_command_has_no_form_of(output_format: OutputFormat | None, *, instead: str) -> None:
@@ -1395,9 +1434,18 @@ def cli_tui(
                 output_format=OutputFormat.HUMAN,
                 hint="Run `lsdsk report` for the same page as text.",
             )
+        # The whole section, not one field: a page reads the same settings the
+        # printed command of its name reads, and the subcommand flag lands on
+        # the same key the file sets rather than beside it.
+        thresholds, laid_out = resolve_tunables(ctx)
+        display = laid_out.with_changes(expand_virtual=effective_expand_virtual(ctx, expand_virtual))
+        # Asked before anything is read, as on a bare run: the elevated copy
+        # reads the machine itself.
+        replaying = effective_replay(ctx, replay)
+        elevation = ask_before_the_view(get_cli_context(ctx).services.elevate, replaying, display)
         # The interactive view has no machine-readable mode, so a refusal here is
         # always prose for the person in front of it.
-        inventory = load_inventory(effective_replay(ctx, replay), output_format=OutputFormat.HUMAN)
+        inventory = load_inventory(replaying, output_format=OutputFormat.HUMAN)
         from lsdsk.adapters.tui import LsdskApp  # noqa: PLC0415 - keeps textual off the fast path
 
         # Through the seam rather than the class, so this construction is held
@@ -1413,17 +1461,12 @@ def cli_tui(
         from .history import read_history  # noqa: PLC0415 - deferred: history imports this module
 
         read = read_history(inventory, resolve_history(ctx))
-        # The whole section, not one field: a page reads the same settings the
-        # printed command of its name reads, and the subcommand flag lands on
-        # the same key the file sets rather than beside it.
-        thresholds, laid_out = resolve_tunables(ctx)
-        display = laid_out.with_changes(expand_virtual=effective_expand_virtual(ctx, expand_virtual))
         open_view(
             inventory,
             read.history,
-            display=display,
+            tunables=Tunables(thresholds, display),
             store_refusal=read.refusal,
-            thresholds=thresholds,
+            elevation=elevation,
         ).run()
         raise SystemExit(ExitCode.SUCCESS)
 
@@ -1689,6 +1732,7 @@ __all__ = [
     "PrintsThePage",
     "ReadsTheMachine",
     "TrendEntry",
+    "ask_before_the_view",
     "build_envelope",
     "cli_controllers",
     "cli_disks",
@@ -1717,4 +1761,5 @@ __all__ = [
     "run_default_view",
     "somebody_is_sitting_at_it",
     "streams_that_are_not_terminals",
+    "the_real_collaborators",
 ]

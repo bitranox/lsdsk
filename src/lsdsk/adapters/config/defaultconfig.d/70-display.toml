@@ -124,3 +124,22 @@ tree_density = "storage-only"
 #
 # Environment Variable: LSDSK___DISPLAY__DETAIL_HEIGHT_PERCENT="33"
 detail_height_percent = 33
+
+
+# Whether the interactive view asks Windows for Administrator before it reads.
+#
+# Default: true. On Windows a SATA drive's link speed comes only from ATA
+# IDENTIFY and every SMART figure from a passthrough command, and both need
+# Administrator: without it those columns read "-". Windows cannot raise a
+# running process, so on a non-elevated start the view shows the Administrator
+# prompt; if you allow it, lsdsk opens in a new window and the one you typed in
+# waits for it and hands back its exit code. If you refuse, the view opens here
+# without Administrator and says so above every page.
+#
+# It never asks anywhere else: not off Windows, not when already elevated, not
+# when rendering a snapshot (--replay), and never for the printed page or any
+# subcommand but `tui`. Set false to never be asked; `--no-elevate` does the
+# same for one run.
+#
+# Environment Variable: LSDSK___DISPLAY__AUTO_ELEVATE="true"
+auto_elevate = true

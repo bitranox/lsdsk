@@ -108,6 +108,11 @@ UNOBSERVABLE: dict[str, str] = {
         "caps a panel that exists only in the INTERACTIVE view, which prints nothing this harness can "
         "digest; covered by test_tui, which drives the real app and measures the panel's height"
     ),
+    "auto_elevate": (
+        "decides only whether the INTERACTIVE view asks Windows for Administrator before it reads, and "
+        "this harness drives printed commands; covered by test_elevation_wiring, whose "
+        "--set display.auto_elevate=false arm proves the setting reaches the question"
+    ),
 }
 
 
@@ -314,11 +319,12 @@ async def test_every_display_key_reaches_the_interactive_view(key: str) -> None:
     the same rows of the same machine, so both have to read the same setting,
     and the one that does not is invisible to anyone testing the other.
     """
-    from lsdsk.adapters.config.tunables import DisplaySettings
+    from lsdsk.adapters.config.tunables import DisplaySettings, Tunables
     from lsdsk.adapters.hw.snapshot import load
     from lsdsk.adapters.tui.app import LsdskApp
     from lsdsk.adapters.tui.typed_table import rows_of
     from lsdsk.domain.history import DiskSeries, History, Sample, identity_of
+    from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
     low, high, _ = PROBES[key]
     page, table_id = TUI_ARMS[key]
@@ -342,7 +348,7 @@ async def test_every_display_key_reaches_the_interactive_view(key: str) -> None:
         # so setting a field chosen at runtime stays type-clean, where a
         # ``**{key: ...}`` expansion is checked against EVERY field at once.
         settings = DisplaySettings().with_changes(**{key: int(value)})
-        app = LsdskApp(machine, history, display=settings)
+        app = LsdskApp(machine, history, tunables=Tunables(DEFAULT_THRESHOLDS, settings))
         async with app.run_test(size=(180, 50)) as pilot:
             await pilot.press(page)
             await pilot.pause()

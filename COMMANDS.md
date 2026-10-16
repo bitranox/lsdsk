@@ -61,6 +61,7 @@ how to ask for the rest.
 | `--no-record`                                             | Judge counters against history without adding this reading to it         |
 | `--expand-virtual`                                        | List every kernel-virtual device instead of tallying them in one line    |
 | `--tree-density storage-only\|storage-and-siblings\|full` | How much of the PCI fabric every view draws (default `storage-only`)     |
+| `--no-elevate`                                            | Never ask Windows for Administrator before the interactive view opens    |
 | `--profile NAME`                                          | Load a named configuration profile                                       |
 | `--set S.K=V`                                             | Override one configuration value, repeatable                             |
 | `--env-file FILE`                                         | Read that `.env` rather than searching upward from the working directory |

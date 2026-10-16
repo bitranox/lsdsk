@@ -55,19 +55,20 @@ Ansicht schaltet dieselbe Einstellung mit `d` auf ihrer Topologieseite weiter.
 Jede Ansicht öffnet auf `storage-only` und sagt in einer Zeile über dem Baum,
 was sie zeichnet und wie Sie mehr anfordern.
 
-| Option                                                    | Tut                                                                              |
-|-----------------------------------------------------------|----------------------------------------------------------------------------------|
-| `--replay FILE`                                           | Eine Aufnahme darstellen, statt diese Maschine zu lesen                          |
-| `--history-file F`                                        | Zählerverlauf dort lesen und schreiben statt in der Zustandsdatei des Benutzers  |
-| `--no-record`                                             | Zähler gegen den Verlauf beurteilen, ohne diese Messung aufzunehmen              |
-| `--expand-virtual`                                        | Jedes kernelvirtuelle Gerät auflisten, statt sie in einer Zeile zusammenzuzählen |
-| `--tree-density storage-only\|storage-and-siblings\|full` | Wie viel der PCI-Struktur jede Ansicht zeichnet (Vorgabe `storage-only`)         |
-| `--profile NAME`                                          | Ein benanntes Konfigurationsprofil laden                                         |
-| `--set S.K=V`                                             | Einen Konfigurationswert überschreiben, wiederholbar                             |
-| `--env-file FILE`                                         | Diese `.env` lesen, statt vom Arbeitsverzeichnis aufwärts zu suchen              |
-| `--traceback` / `--no-traceback`                          | Im Fehlerfall den Python-Traceback ausgeben statt einer Zeile                    |
-| `--version`                                               | Die Version ausgeben und beenden                                                 |
-| `--help` / `-h`                                           | Die eigenen Optionen dieses Befehls ausgeben und beenden                         |
+| Option                                                    | Tut                                                                                |
+|-----------------------------------------------------------|------------------------------------------------------------------------------------|
+| `--replay FILE`                                           | Eine Aufnahme darstellen, statt diese Maschine zu lesen                            |
+| `--history-file F`                                        | Zählerverlauf dort lesen und schreiben statt in der Zustandsdatei des Benutzers    |
+| `--no-record`                                             | Zähler gegen den Verlauf beurteilen, ohne diese Messung aufzunehmen                |
+| `--expand-virtual`                                        | Jedes kernelvirtuelle Gerät auflisten, statt sie in einer Zeile zusammenzuzählen   |
+| `--tree-density storage-only\|storage-and-siblings\|full` | Wie viel der PCI-Struktur jede Ansicht zeichnet (Vorgabe `storage-only`)           |
+| `--no-elevate`                                            | Windows nie nach Administratorrechten fragen, bevor die interaktive Ansicht öffnet |
+| `--profile NAME`                                          | Ein benanntes Konfigurationsprofil laden                                           |
+| `--set S.K=V`                                             | Einen Konfigurationswert überschreiben, wiederholbar                               |
+| `--env-file FILE`                                         | Diese `.env` lesen, statt vom Arbeitsverzeichnis aufwärts zu suchen                |
+| `--traceback` / `--no-traceback`                          | Im Fehlerfall den Python-Traceback ausgeben statt einer Zeile                      |
+| `--version`                                               | Die Version ausgeben und beenden                                                   |
+| `--help` / `-h`                                           | Die eigenen Optionen dieses Befehls ausgeben und beenden                           |
 
 `lsdsk disks` hat eine eigene Option. Die Spalte `wwn` ist auf
 `display.wwn_width` Zeichen begrenzt, weil eine NVMe-WWN fünfmal so lang ist wie

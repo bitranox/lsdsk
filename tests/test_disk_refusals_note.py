@@ -28,6 +28,7 @@ from lsdsk.adapters.config.tunables import DisplaySettings, Tunables
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import detail, full, report
 from lsdsk.adapters.tui import LsdskApp
+from lsdsk.domain.elevation import Elevation, ElevationState
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
@@ -136,3 +137,45 @@ async def test_the_interactive_view_names_the_missing_link_on_the_pages_that_dra
 @pytest.mark.asyncio
 async def test_the_interactive_view_draws_no_privilege_note_when_elevated() -> None:
     assert await _privilege_note_on(_windows_machine(elevated=True), "1") == ""
+
+
+async def _privilege_note_after(inventory: Inventory, elevation: Elevation | None) -> str:
+    app = LsdskApp(inventory, elevation=elevation)
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        note = app.query_one("#privilege-note", Static)
+        return str(note.content) if note.display else ""
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("elevation", "says"),
+    [
+        pytest.param(Elevation(state=ElevationState.DECLINED), "declined", id="declined"),
+        pytest.param(Elevation(state=ElevationState.FAILED, detail="Windows error 5"), "Windows error 5", id="failed"),
+        pytest.param(Elevation(state=ElevationState.TURNED_OFF), "--no-elevate", id="turned off"),
+    ],
+)
+async def test_a_run_that_stayed_unelevated_says_so_and_why(elevation: Elevation, says: str) -> None:
+    """The user's decision: a refused prompt runs on unelevated, "but mark that clearly in the TUI"."""
+    note = await _privilege_note_after(_windows_machine(elevated=False), elevation)
+
+    assert note.startswith("NOT ELEVATED"), note
+    assert says in note, note
+    assert LINK_NAMED in note, "the reason was given but not what it cost"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
+async def test_nothing_asked_draws_only_what_the_missing_privilege_cost() -> None:
+    note = await _privilege_note_after(_windows_machine(elevated=False), Elevation(state=ElevationState.NOT_ASKED))
+
+    assert "NOT ELEVATED" not in note
+    assert LINK_NAMED in note
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
+async def test_an_elevated_run_draws_no_note_whatever_it_was_told() -> None:
+    assert await _privilege_note_after(_windows_machine(elevated=True), Elevation(state=ElevationState.DECLINED)) == ""

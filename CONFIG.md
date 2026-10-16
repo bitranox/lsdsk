@@ -84,6 +84,7 @@ These options apply to all commands and go **before** the command name:
 | `--no-record`             | Judge counters against recorded history without adding this reading.                                           |
 | `--expand-virtual`        | List every kernel-virtual device rather than tallying them in one line.                                        |
 | `--tree-density LEVEL`    | How much of the PCI fabric the topology draws: `storage-only` (the default), `storage-and-siblings` or `full`. |
+| `--no-elevate`            | Never ask Windows for Administrator before the interactive view opens (`display.auto_elevate` for one run).    |
 | `--traceback`             | Show full Python traceback on errors (useful for debugging).                                                   |
 | `--no-traceback`          | Hide traceback, show only error message (default).                                                             |
 
@@ -422,17 +423,18 @@ These change what a report looks like. None of them changes severity or the exit
 code: that comes from `[thresholds]` and from the limits a drive publishes about
 itself.
 
-| Key                       | Default        | Effect                                                 |
-|---------------------------|----------------|--------------------------------------------------------|
-| `piped_width`             | `120`          | Width used when output is not a terminal               |
-| `summary_limit`           | `6`            | Findings named in the verdict line before "and N more" |
-| `wear_row_floor_percent`  | `10`           | Wear below this gets no trend row, in either view      |
-| `expand_virtual`          | `false`        | List kernel-virtual devices instead of tallying them   |
-| `tree_density`            | `storage-only` | How much of the PCI fabric every view draws            |
-| `wwn_width`               | `24`           | Most characters the wwn column is given in either view |
-| `detail_height_percent`   | `33`           | Most of the interactive window the detail panel takes  |
-| `traceback_summary_limit` | `500`          | Characters kept in a short traceback                   |
-| `traceback_verbose_limit` | `10000`        | And under `--traceback`                                |
+| Key                       | Default        | Effect                                                      |
+|---------------------------|----------------|-------------------------------------------------------------|
+| `piped_width`             | `120`          | Width used when output is not a terminal                    |
+| `summary_limit`           | `6`            | Findings named in the verdict line before "and N more"      |
+| `wear_row_floor_percent`  | `10`           | Wear below this gets no trend row, in either view           |
+| `expand_virtual`          | `false`        | List kernel-virtual devices instead of tallying them        |
+| `tree_density`            | `storage-only` | How much of the PCI fabric every view draws                 |
+| `wwn_width`               | `24`           | Most characters the wwn column is given in either view      |
+| `detail_height_percent`   | `33`           | Most of the interactive window the detail panel takes       |
+| `auto_elevate`            | `true`         | Whether the interactive view asks Windows for Administrator |
+| `traceback_summary_limit` | `500`          | Characters kept in a short traceback                        |
+| `traceback_verbose_limit` | `10000`        | And under `--traceback`                                     |
 
 A kernel-virtual device is one the kernel provides with no hardware behind it:
 zram, a loop mount, a ZFS zvol, a device-mapper node. It has no controller, no
@@ -464,6 +466,18 @@ reasoning and their remedy. It is a CEILING rather than a height, so a short
 record takes the lines it needs and a long one scrolls inside the panel. Set
 `25` for a quarter of the window. Press `i` to hide it and give the table the
 whole screen. It changes nothing a printed command draws.
+
+`auto_elevate` decides whether the interactive view asks Windows for
+Administrator before it reads anything. Without it a SATA drive's link speed
+and every SMART figure read `-`, because Windows gives them only to an elevated
+process, and a running process cannot be raised: the view shows the
+Administrator prompt and, if you allow it, opens elevated in a new window while
+the one you typed in waits and hands back its exit code. If you refuse, it opens
+here without Administrator and says so above every page. It never asks off
+Windows, when already elevated, for `--replay`, or for any printed command.
+`--no-elevate` turns it off for one run. The elevated copy is started with
+`--elevated-relaunch`, which stops it from asking again; it is not shown in
+`--help` and is not meant to be typed.
 
 Colour is not a key, although this section is named for it. The printed palette
 has to stay readable on a black console and a white one at once, which is a

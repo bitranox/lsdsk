@@ -13,6 +13,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/domain/deployment.py` - What one configuration deployment asks for, as a single value.
 - `src/lsdsk/domain/diagnostics.py` - Pure rules that turn an inventory into findings.
 - `src/lsdsk/domain/disk_name.py` - The order drives are listed in: by the numbers in their names, on both platforms.
+- `src/lsdsk/domain/elevation.py` - What became of asking for Administrator before the interactive view opened.
 - `src/lsdsk/domain/enums.py` - Type-safe domain enums for output formats and deployment targets.
 - `src/lsdsk/domain/errors.py` - Domain-specific exceptions for typed error handling at boundaries.
 - `src/lsdsk/domain/fabric_links.py` - Hints for the PCIe links no storage rule grades: lanes lost, or a slot that caps the card.
@@ -72,6 +73,7 @@ module exists that is not listed here, or a listed path does not exist.
 
 - `src/lsdsk/adapters/hw/ata_commands.py` - The ATA commands both readers issue, and the SAT block that carries one to a drive behind a USB bridge or SAS adapter.
 - `src/lsdsk/adapters/hw/capture.py` - What every capture carries, whichever platform wrote it.
+- `src/lsdsk/adapters/hw/elevation.py` - Decide whether the interactive view asks for Administrator, and relaunch through pwshpy on Windows.
 - `src/lsdsk/adapters/hw/fabric.py` - Assemble the PCI fabric tree both platforms map onto.
 - `src/lsdsk/adapters/hw/free_space.py` - Turn a recorded free-extent summary into the domain's free-space value.
 - `src/lsdsk/adapters/hw/refusals.py` - Turn the error text a reader recorded into domain values.
@@ -149,6 +151,7 @@ module exists that is not listed here, or a listed path does not exist.
 ### Adapters - in-memory, for tests
 
 - `src/lsdsk/adapters/memory/config.py` - In-memory configuration adapters for testing.
+- `src/lsdsk/adapters/memory/elevation.py` - Elevation that never asks and never starts anything, for tests.
 - `src/lsdsk/adapters/memory/info.py` - An in-memory stand-in for printing the package's own metadata.
 - `src/lsdsk/adapters/memory/logging.py` - In-memory logging adapter for testing.
 

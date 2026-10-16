@@ -5,6 +5,18 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Added
+
+- On Windows the interactive view asks for Administrator before it reads anything. Windows gives a
+  SATA drive's link speed and every SMART figure only to an elevated process and cannot raise a
+  running one, so a non-elevated start shows the Administrator prompt; if you allow it, lsdsk opens
+  elevated in a new window, and the window you typed in waits and hands back its exit code. If you
+  refuse, or the relaunch fails, the view opens unelevated with a bold "NOT ELEVATED" line above
+  every page naming why. `--no-elevate` and `display.auto_elevate = false` turn the asking off; it
+  never happens off Windows, when already elevated, for `--replay`, or for a printed command. The
+  relaunch is pwshpy's `ps.elevate`, a Windows-only dependency, so this is the one process lsdsk
+  ever starts: itself.
+
 ### Fixed
 
 - A non-elevated Windows run no longer leaves the SATA link unexplained. Windows reads a SATA drive's

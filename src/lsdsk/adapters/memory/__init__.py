@@ -11,6 +11,7 @@ PATH instead, which every history test already does.
 
 Contents:
     * :mod:`.config` - In-memory configuration adapters
+    * :mod:`.elevation` - Elevation that never asks
     * :mod:`.info` - In-memory metadata printer
     * :mod:`.logging` - In-memory logging adapter
 """
@@ -25,6 +26,7 @@ from .config import (
     generate_examples_in_memory,
     get_config_in_memory,
 )
+from .elevation import elevate_in_memory
 from .info import print_info_in_memory, reset_info_in_memory
 from .logging import init_logging_in_memory
 
@@ -33,6 +35,7 @@ if TYPE_CHECKING:
     from lsdsk.application.ports import (
         DeployConfiguration,
         DisplayConfig,
+        ElevateForTheView,
         GenerateExamples,
         GetConfig,
         InitLogging,
@@ -43,10 +46,12 @@ if TYPE_CHECKING:
     _assert_deploy_configuration: DeployConfiguration = deploy_configuration_in_memory
     _assert_display_config: DisplayConfig = display_config_in_memory
     _assert_init_logging: InitLogging = init_logging_in_memory
+    _assert_elevate: ElevateForTheView = elevate_in_memory
 
 __all__ = [
     "deploy_configuration_in_memory",
     "display_config_in_memory",
+    "elevate_in_memory",
     "generate_examples_in_memory",
     "get_config_in_memory",
     "init_logging_in_memory",

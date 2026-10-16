@@ -53,6 +53,10 @@ class CLIContext:
     no_record: bool = False
     expand_virtual: bool = False
     tree_density: TreeDensity | None = None
+    # Either one keeps the interactive view from asking for Administrator: the
+    # person said so, or this process IS the elevated copy and must not ask again.
+    no_elevate: bool = False
+    elevated_relaunch: bool = False
 
 
 def store_cli_context(ctx: click.Context, context: CLIContext) -> None:

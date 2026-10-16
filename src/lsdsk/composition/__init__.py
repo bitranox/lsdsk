@@ -12,6 +12,9 @@ from ..adapters.config.display import display_config
 # Configuration services
 from ..adapters.config.loader import get_config
 
+# The question asked before the interactive view reads
+from ..adapters.hw.elevation import elevate_for_the_view
+
 # Logging services
 from ..adapters.logging.setup import init_logging
 
@@ -21,6 +24,7 @@ if TYPE_CHECKING:
     from ..application.ports import (
         DeployConfiguration,
         DisplayConfig,
+        ElevateForTheView,
         GenerateExamples,
         GetConfig,
         InitLogging,
@@ -33,6 +37,7 @@ if TYPE_CHECKING:
     _assert_deploy_configuration: DeployConfiguration = deploy_configuration
     _assert_display_config: DisplayConfig = display_config
     _assert_init_logging: InitLogging = init_logging
+    _assert_elevate: ElevateForTheView = elevate_for_the_view
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +50,7 @@ class AppServices:
     display_config: DisplayConfig
     init_logging: InitLogging
     print_info: PrintInfo
+    elevate: ElevateForTheView
 
 
 def build_production() -> AppServices:
@@ -60,6 +66,7 @@ def build_production() -> AppServices:
         display_config=display_config,
         init_logging=init_logging,
         print_info=__init__conf__.print_info,
+        elevate=elevate_for_the_view,
     )
 
 
@@ -72,6 +79,7 @@ def build_testing() -> AppServices:
     from ..adapters.memory import (  # noqa: PLC0415 - deferred: keeps in-memory test doubles out of the production import path
         deploy_configuration_in_memory,
         display_config_in_memory,
+        elevate_in_memory,
         generate_examples_in_memory,
         get_config_in_memory,
         init_logging_in_memory,
@@ -85,6 +93,7 @@ def build_testing() -> AppServices:
         display_config=display_config_in_memory,
         init_logging=init_logging_in_memory,
         print_info=print_info_in_memory,
+        elevate=elevate_in_memory,
     )
 
 

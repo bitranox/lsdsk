@@ -39,10 +39,12 @@ an einer bereits ausgelasteten Anbindung hängt. Ein Speicherserver fällt selte
 Er läuft still über Jahre mit einem leicht behebbaren Defizit, und die Werte, 
 die das erklären würden, liegen verstreut über sysfs, in einer Reihe von Ioctls und im Mainboard-Handbuch.
 
-lsdsk startet keine Unterprozesse und stellt keine Netzwerkanfragen - die einzige Ausnahme ist
-die optionale Graylog-Protokollsenke, die aus bleibt, solange man sie nicht einschaltet. Jeder
-Wert, den es ausgibt, wurde direkt gelesen, unter Linux aus sysfs und über direkte Ioctls,
-unter Windows über SetupAPI und DeviceIoControl.
+lsdsk stellt keine Netzwerkanfragen - die einzige Ausnahme ist die optionale
+Graylog-Protokollsenke, die aus bleibt, solange man sie nicht einschaltet - und der einzige
+Prozess, den es je startet, ist es selbst: unter Windows fragt die interaktive Ansicht nach
+Administratorrechten und öffnet sich, wenn Sie zustimmen, mit erhöhten Rechten in einem neuen
+Fenster (`--no-elevate` schaltet das ab). Jeder Wert, den es ausgibt, wurde direkt gelesen, unter
+Linux aus sysfs und über direkte Ioctls, unter Windows über SetupAPI und DeviceIoControl.
 
 ## SCHNELLSTART
 
@@ -137,8 +139,10 @@ pip install lsdsk      # für Nostalgiker
 ```
 
 Python 3.11 oder neuer, Linux oder Windows. Es ruft nichts auf: kein
-`smartmontools`, kein `nvme-cli`, kein `lspci`, keinerlei Unterprozess, und keinen
-Netzzugriff, solange man die optionale Graylog-Protokollsenke nicht einschaltet. Seine eigenen Python-Abhängigkeiten stehen
+`smartmontools`, kein `nvme-cli`, kein `lspci`, und keinen Netzzugriff, solange man
+die optionale Graylog-Protokollsenke nicht einschaltet. Der einzige Prozess, den es
+startet, ist seine eigene Kopie mit erhöhten Rechten, unter Windows, wenn die
+interaktive Ansicht nach Administratorrechten fragt. Seine eigenen Python-Abhängigkeiten stehen
 in `pyproject.toml`.
 
 Von der Hardware liest `lsdsk` nur die Zahlencodes eines Controllers, nicht seinen

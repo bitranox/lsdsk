@@ -23,6 +23,7 @@ from rich.text import Text
 
 from ... import __init__conf__
 from ...domain.diagnostics import count_by_severity, link_is_register_default, register_default_links
+from ...domain.elevation import Elevation, ElevationState
 from ...domain.enums import Align, BusType, Environment, Severity
 from ...domain.models import IDENTIFY_READING, pcie_bandwidth_gbps, pcie_generation, serial_bandwidth_gbps
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_SUMMARY_LIMIT
@@ -300,6 +301,46 @@ def unread_interfaces_note(inventory: Inventory) -> str:
         sentences.append(f"{len(unread)} {noun} not read: {reasons}.")
     sentences.extend(f"Not every disk interface was listed: {item.reason}." for item in inventory.unread_interface_list)
     return " ".join(sentences)
+
+
+#: Why a run that could have asked for Administrator is not elevated, by outcome.
+#: Only the outcomes a reader can act on are here; NOT_ASKED and RELAUNCHED say nothing.
+_NOT_ELEVATED_BECAUSE = {
+    ElevationState.DECLINED: "NOT ELEVATED: you declined the Administrator prompt.",
+    ElevationState.TURNED_OFF: (
+        "NOT ELEVATED: this run does not ask for Administrator (--no-elevate or display.auto_elevate = false)."
+    ),
+}
+
+
+def elevation_note(elevation: Elevation | None, inventory: Inventory) -> str:
+    """Say why this run is not elevated when it could have been, or nothing.
+
+    The interactive view puts this in front of :func:`privilege_note`: that one
+    says what a missing privilege cost, this one says why it is missing, which
+    is what the person can change.
+
+    Args:
+        elevation: What asking for Administrator came to, or None where nothing
+            asked (every printed view).
+        inventory: The machine that was scanned; an elevated run says nothing.
+
+    Returns:
+        The sentence, or an empty string.
+
+    Example:
+        >>> from ...domain.models import Inventory
+        >>> declined = Elevation(state=ElevationState.DECLINED)
+        >>> elevation_note(declined, Inventory(hostname="h", privileged=False))
+        'NOT ELEVATED: you declined the Administrator prompt.'
+        >>> elevation_note(declined, Inventory(hostname="h", privileged=True))
+        ''
+    """
+    if elevation is None or inventory.privileged:
+        return ""
+    if elevation.state is ElevationState.FAILED:
+        return f"NOT ELEVATED: relaunching as Administrator failed ({elevation.detail})."
+    return _NOT_ELEVATED_BECAUSE.get(elevation.state, "")
 
 
 def slot_privilege_note(inventory: Inventory) -> str:
@@ -1311,6 +1352,7 @@ __all__ = [
     "disk_cell_styles",
     "disk_cells",
     "disk_row",
+    "elevation_note",
     "environment_caveat",
     "findings_for",
     "form_factor_note",

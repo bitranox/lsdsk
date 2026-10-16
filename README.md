@@ -38,10 +38,11 @@ already full. A storage server rarely fails outright. It runs quietly for years 
 shortfall that is easy to fix, and the values that would explain it are spread across sysfs, a
 set of ioctls and the mainboard manual.
 
-lsdsk starts no subprocesses and makes no network requests - the one exception is the optional
-Graylog log sink, which stays off unless you enable it. Every value it prints was read
-directly, from sysfs and direct ioctls on Linux and from SetupAPI and DeviceIoControl on
-Windows.
+lsdsk makes no network requests - the one exception is the optional Graylog log sink, which
+stays off unless you enable it - and the only process it ever starts is itself: on Windows the
+interactive view asks for Administrator and, if you allow it, reopens elevated in a new window
+(`--no-elevate` turns that off). Every value it prints was read directly, from sysfs and direct
+ioctls on Linux and from SetupAPI and DeviceIoControl on Windows.
 
 ## QUICKSTART
 
@@ -131,8 +132,9 @@ pip install lsdsk      # if you prefer the old way
 ```
 
 Python 3.11 or newer, Linux or Windows. It shells out to nothing: no
-`smartmontools`, no `nvme-cli`, no `lspci`, no subprocess of any kind, and no
-network access unless you enable the optional Graylog log sink. Its own Python dependencies are declared in
+`smartmontools`, no `nvme-cli`, no `lspci`, and no network access unless you
+enable the optional Graylog log sink. The one process it starts is its own
+elevated copy, on Windows, when the interactive view asks for Administrator. Its own Python dependencies are declared in
 `pyproject.toml`.
 
 From the hardware `lsdsk` reads only a controller's numeric identifiers, not its
