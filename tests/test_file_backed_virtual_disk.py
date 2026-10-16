@@ -106,3 +106,46 @@ def test_the_same_refusal_on_any_other_transport_is_still_named(
     assert [entry["reading"] for entry in refused] == ["identify", "smart-data", "smart-thresholds"], refused
     assert [entry for entry in envelope["skipped"] if _REFUSED in entry], envelope["skipped"]
     assert envelope["ok"] is False
+
+
+def test_a_mounted_image_file_claims_no_media_kind_from_its_seek_penalty(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+) -> None:
+    """A file has no media, so the seek-penalty answer Windows gives for it decides no kind.
+
+    The planted image reports ``rotating: false``, which on a drive means solid
+    state. On a file it means only that the storage stack had nothing to say,
+    the same default Linux's ``queue/rotational`` gives a loop or zvol device.
+    """
+    capture = capture_with(_BASE, _plant_image("file-backed virtual"), tmp_path)
+    envelope = envelope_of(capture, cli_runner, production_factory)
+
+    assert _image_in(envelope)["kind"] == "unknown"
+
+
+def test_a_hypervisor_disk_keeps_the_media_kind_its_seek_penalty_says(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+) -> None:
+    """The control: plain ``virtual`` (0x0E) is the guest's real storage, and its answer stands."""
+    capture = capture_with(_BASE, _plant_image("virtual"), tmp_path)
+    envelope = envelope_of(capture, cli_runner, production_factory)
+
+    assert _image_in(envelope)["kind"] == "ssd"
+
+
+def test_the_committed_image_file_reads_no_media_kind(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+) -> None:
+    """The 32 MiB VHD mounted on the chipset-switch machine, beside two real SSDs that keep theirs."""
+    capture = capture_with("windows-chipset-switch.json", lambda data: None, tmp_path)
+    envelope = envelope_of(capture, cli_runner, production_factory)
+
+    disks = envelope["data"]["disks"] + envelope["data"]["virtual_disks"]
+    kinds = {disk["node"]: disk["kind"] for disk in disks}
+    assert kinds == {"PhysicalDrive0": "ssd", "PhysicalDrive1": "ssd", "PhysicalDrive2": "unknown"}

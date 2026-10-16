@@ -349,8 +349,22 @@ def _bus_of(bus: BusType, *, identity: AtaIdentity | None, usb: UsbLink | None) 
     return bus
 
 
-def _kind_without_identify(*, rotating: bool | None, is_nvme: bool) -> DiskKind:
-    """The media kind from what the operating system said, when IDENTIFY did not decide it."""
+def _kind_without_identify(*, rotating: bool | None, is_nvme: bool, is_image_file: bool) -> DiskKind:
+    """The media kind from what the operating system said, when IDENTIFY did not decide it.
+
+    A mounted image file has no media for the seek-penalty answer to describe:
+    Windows answers ``false`` for it as a default, the way Linux's
+    ``queue/rotational`` reads 0 for a loop device, and believing it called a
+    VHD solid state. So it claims no kind, like the Linux virtual devices.
+
+    Example:
+        >>> _kind_without_identify(rotating=False, is_nvme=False, is_image_file=True)
+        <DiskKind.UNKNOWN: 'unknown'>
+        >>> _kind_without_identify(rotating=False, is_nvme=False, is_image_file=False)
+        <DiskKind.SSD: 'ssd'>
+    """
+    if is_image_file:
+        return DiskKind.UNKNOWN
     if is_nvme:
         return DiskKind.SSD
     if rotating is None:
@@ -410,7 +424,7 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
         # reading Windows gave.
         kind = identity.kind if identity is not None else DiskKind.UNKNOWN
         if kind is DiskKind.UNKNOWN:
-            kind = _kind_without_identify(rotating=rotating, is_nvme=is_nvme)
+            kind = _kind_without_identify(rotating=rotating, is_nvme=is_nvme, is_image_file=device.is_image_file)
 
         model = first_reported(
             nvme_identity.model if nvme_identity else None,
