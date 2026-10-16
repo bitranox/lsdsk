@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BeforeValidator, Field
+from pydantic import BeforeValidator, Field, field_validator
 
 from ....domain.enums import BusType, Platform
 from ..capture import CaptureHeader, CaptureModel, DeviceText, EncodedPayload, Entries, EntryMap, FreeExtentsEntry
@@ -43,6 +43,31 @@ _BUS_TYPES: dict[str, BusType] = {
     _IMAGE_FILE_TRANSPORT: BusType.VIRTUAL,
     "spaces": BusType.VIRTUAL,
 }
+
+
+def _enumeration_order(key: str) -> tuple[int, int, str]:
+    """Sort a volume's capture key by the place in the enumeration it names.
+
+    The reader keys volumes ``"0"``, ``"1"``, ... in the order Windows listed
+    them, and a snapshot stores its keys sorted as text, which puts ``"10"``
+    before ``"2"``. Ordering by the number gives a live run and the replay of
+    its own snapshot one order. A capture taken before the ordinal keys held
+    GUID paths, which sort after every ordinal and among themselves as text -
+    the order their replay always had.
+
+    Args:
+        key: A volume's key in the capture.
+
+    Returns:
+        A sort key putting ordinals first, by number.
+
+    Example:
+        >>> sorted(["10", "2", "0"], key=_enumeration_order)
+        ['0', '2', '10']
+    """
+    if key.isascii() and key.isdigit():
+        return (0, int(key), "")
+    return (1, 0, key)
 
 
 def bus_type_of(value: object) -> object:
@@ -475,6 +500,19 @@ class WindowsCapture(CaptureHeader, frozen=True):
     volume_bitmaps_read: bool | None = None
     volume_space_read: bool | None = None
     lists_cut_short: EntryMap[DeviceText, DeviceText] = Field(default_factory=dict[DeviceText, DeviceText])
+
+    @field_validator("volumes")
+    @classmethod
+    def _volumes_in_enumeration_order(cls, volumes: dict[str, VolumeEntry] | None) -> dict[str, VolumeEntry] | None:
+        """Hold the volumes in the order Windows listed them, whichever order the file stored them in.
+
+        Everything that walks the volumes - a refused volume's name, the
+        filesystem rows, the drive letters a disk is used by - reads them in
+        this order, so it is settled here once, for a live run and a replay alike.
+        """
+        if volumes is None:
+            return None
+        return dict(sorted(volumes.items(), key=lambda item: _enumeration_order(item[0])))
 
 
 __all__ = [
