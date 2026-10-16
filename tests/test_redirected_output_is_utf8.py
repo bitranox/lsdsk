@@ -197,10 +197,14 @@ def test_a_usage_error_a_terminal_cannot_encode_degrades_rather_than_crashing(
 
 
 class _CannotSay(io.TextIOWrapper):
-    """A stream whose ``isatty`` fails, as one on a closed or detached descriptor can."""
+    """A stream whose ``isatty`` fails, as one whose descriptor has gone does.
+
+    ``ValueError`` rather than ``OSError``: it is what a closed stream raises, and the one
+    rich's own terminal check is written to survive, so only the decision under test meets it.
+    """
 
     def isatty(self) -> bool:
-        raise OSError("isatty refused")
+        raise ValueError("I/O operation on closed file")
 
 
 class _RecordingErrors(io.TextIOWrapper):
