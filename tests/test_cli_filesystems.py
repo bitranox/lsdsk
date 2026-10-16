@@ -275,14 +275,21 @@ def _stale_label(reading: dict[str, Any]) -> None:
     reading["signatures"]["259:2"] = {"fs_type": "zfs_member", "fs_label": "oldpool"}
 
 
-def _disk_uses(
+def _disk_usage(
     cli_runner: CliRunner, production_factory: Callable[[], Any], capture: Path, node: str
-) -> list[tuple[str, str]]:
+) -> dict[str, Any]:
     result = cli_runner.invoke(
         cli_mod.cli, ["disks", "--replay", str(capture), "--format", "json"], obj=production_factory
     )
     disks = json.loads(result.output)["data"]["disks"]
-    usage = next(disk["usage"] for disk in disks if disk["node"] == node)
+    usage: dict[str, Any] = next(disk["usage"] for disk in disks if disk["node"] == node)
+    return usage
+
+
+def _disk_uses(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], capture: Path, node: str
+) -> list[tuple[str, str]]:
+    usage = _disk_usage(cli_runner, production_factory, capture, node)
     return [(use["kind"], use["name"]) for use in usage["uses"]]
 
 
@@ -316,3 +323,28 @@ def test_a_label_beside_a_listing_that_could_not_read_every_pool_keeps_its_unrea
     row = next(row for row in envelope["data"]["filesystems"] if row["name"] == "oldpool")
     assert (row["kind"], row["disks"], row["size_bytes"]) == ("pool", ["nvme0n1"], None)
     assert envelope["skipped"] == ["zfs-pools: filesystems - pool oldpool: Input/output error"]
+
+
+def _rpool_member_behind_luks(reading: dict[str, Any]) -> None:
+    """Put one of the root pool's two members behind a dm-crypt mapping, as a ZFS-on-LUKS root records it."""
+    member = reading["signatures"].pop("8:3")
+    reading["signatures"]["8:3"] = {"fs_type": "crypto_LUKS"}
+    reading["signatures"]["253:0"] = member
+    reading["block"]["sda"]["partitions"]["sda3"]["holders"] = ["dm-0"]
+    reading["stacked"] = {"dm-0": {"dev": "253:0", "dm_name": "cryptroot", "dm_uuid": "CRYPT-", "holders": []}}
+
+
+def test_a_root_pool_member_on_dm_crypt_marks_its_disk_boot(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    plain = FIXTURES / "linux-zfs-filesystems.json"
+    luks = _zfs_fixture_with(tmp_path, "luksroot", _rpool_member_behind_luks)
+
+    # Control: in the committed capture both of the root pool's disks are boot disks.
+    assert _disk_usage(cli_runner, production_factory, plain, "sda")["boot"] is True
+    usage = _disk_usage(cli_runner, production_factory, luks, "sda")
+    assert usage["boot"] is True
+    # used by reads the layer on the disk, as ADR 0004 has it: the mapping, not the pool behind it.
+    assert [(use["kind"], use["name"]) for use in usage["uses"]] == [("crypt", "cryptroot")]
+    # The other member is untouched and still boot.
+    assert _disk_usage(cli_runner, production_factory, luks, "sdb")["boot"] is True

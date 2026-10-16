@@ -336,20 +336,22 @@ def _signatures_of(block: BlockEntry, capture: LinuxCapture) -> list[FilesystemS
     return [whole] if whole is not None else partition_signatures
 
 
-def _is_boot(merged: tuple[DiskUse, ...], boot_pools: frozenset[str]) -> bool:
-    """Whether a disk's merged uses mark it as a boot disk.
+def _is_boot(merged: tuple[DiskUse, ...], pools: frozenset[str], boot_pools: frozenset[str]) -> bool:
+    """Whether a disk's merged uses, or the pools its members belong to, mark it as a boot disk.
 
     Args:
         merged: A disk's merged uses.
+        pools: Every ZFS pool a member on the disk names, through the holder
+            closure as well (see :func:`_member_signatures`), so a root pool
+            behind dm-crypt still marks the disk beneath it.
         boot_pools: ZFS pool names the machine boots from.
 
     Returns:
-        Whether any use is mounted under a boot mountpoint, or is a ZFS
-        member of a boot pool.
+        Whether any use is mounted under a boot mountpoint, or the disk
+        carries a member of a boot pool.
     """
     under_boot_mount = any(mountpoint in BOOT_MOUNTS for use in merged for mountpoint in use.mounts)
-    boot_pool_member = any(use.kind == UseKind.ZFS and use.name in boot_pools for use in merged)
-    return under_boot_mount or boot_pool_member
+    return under_boot_mount or not pools.isdisjoint(boot_pools)
 
 
 def _undecidable(
@@ -414,7 +416,8 @@ def _disk_usage(block: BlockEntry, capture: LinuxCapture, sources: _Sources) -> 
     merged = _merge(uses)
     if not merged and _undecidable(block, capture, [whole_signature, *partition_signatures]):
         return None
-    return DiskUsage(boot=_is_boot(merged, sources.boot_pools), uses=merged)
+    pools = frozenset(signature.fs_label for signature in _member_signatures(block, capture) if signature.fs_label)
+    return DiskUsage(boot=_is_boot(merged, pools, sources.boot_pools), uses=merged)
 
 
 def _leaves(block: BlockEntry) -> list[tuple[str | None, tuple[str, ...]]]:
@@ -477,6 +480,21 @@ def devices_on_virtual_disks(capture: LinuxCapture) -> frozenset[str]:
     return frozenset(found)
 
 
+def _member_signatures(block: BlockEntry, capture: LinuxCapture) -> list[FilesystemSignature]:
+    """Every ZFS member signature on one disk: its own leaves', partition evidence first, then every stacked device's.
+
+    A member on dm-crypt, LVM or md carries its signature on the stacked device
+    rather than on the partition beneath it, so the holder closure
+    ``disks_by_device`` follows counts too.
+    """
+    stacked = [_signature_of(dev, capture) for dev in sorted(_stacked_devs(block, capture.stacked))]
+    return [
+        signature
+        for signature in (*_signatures_of(block, capture), *stacked)
+        if signature is not None and signature.fs_type == _ZFS_MEMBER
+    ]
+
+
 def _disks_by_member(
     capture: LinuxCapture, key: Callable[[FilesystemSignature], str | None]
 ) -> dict[str, frozenset[str]]:
@@ -485,10 +503,7 @@ def _disks_by_member(
     for node, block in capture.block.items():
         if block.virtual:
             continue
-        stacked = [_signature_of(dev, capture) for dev in sorted(_stacked_devs(block, capture.stacked))]
-        for signature in (*_signatures_of(block, capture), *stacked):
-            if signature is None or signature.fs_type != _ZFS_MEMBER:
-                continue
+        for signature in _member_signatures(block, capture):
             group = key(signature)
             if group:
                 found.setdefault(group, set()).add(node)
