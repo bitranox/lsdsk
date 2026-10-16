@@ -566,7 +566,7 @@ def _execute_deploy(
     # Outside the try on purpose: the files are written by now, and a report that
     # cannot reach a full standard output is a failure to REPORT, which is not the
     # "Failed to deploy configuration" the arms above would have called it.
-    _report_deployment_result(deployed_paths, settled.profile, bool(settled.set_permissions), output_format)
+    _report_deployment_result(deployed_paths, settled, output_format)
 
 
 def _reads_configured_modes(request: DeployRequest) -> bool:
@@ -610,18 +610,23 @@ def _modes_the_deploy_ignores(config: Config, request: DeployRequest) -> tuple[M
 
 def _report_deployment_result(
     deployed_paths: list[Path],
-    profile: str | None,
-    set_permissions: bool,
+    request: DeployRequest,
     output_format: OutputFormat = OutputFormat.HUMAN,
 ) -> None:
     """Report deployment results to the user.
 
+    A deploy that wrote nothing says why: without ``--force`` the files already there are kept,
+    and ``--force`` is the way to overwrite them; with it, every file already held exactly what
+    the deploy would have written, which the library skips, so offering ``--force`` again would
+    be advice the reader has just followed.
+
     Args:
         deployed_paths: List of paths where configs were deployed.
-        profile: Optional profile name for display.
-        set_permissions: Whether permissions were set.
+        request: The deploy as it ran, with ``set_permissions`` settled.
         output_format: What the caller asked for, which decides how the result is written.
     """
+    profile = request.profile
+    set_permissions = bool(request.set_permissions)
     if output_format is OutputFormat.JSON:
         emit_action(
             ActionCommand.CONFIG_DEPLOY,
@@ -646,6 +651,8 @@ def _report_deployment_result(
             # UnicodeEncodeError on a legacy Windows console codepage (cp1252) even though the
             # files were already written, so exit 1 misreports a deploy that actually succeeded.
             safe_console.echo(f"  + {path}")
+    elif request.force:
+        safe_console.echo("\nNo files were written: every target file already holds the shipped configuration.")
     else:
         safe_console.echo("\nNo files were created (all target files already exist).")
         safe_console.echo("Use --force to overwrite existing configuration files.")

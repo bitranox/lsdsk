@@ -157,7 +157,9 @@ def deploy_configuration(request: DeployRequest) -> list[Path]:
 
     Returns:
         List of paths where configuration files were created or would be created.
-        Empty list if all target files already exist and force=False.
+        Empty when nothing was written: every target file already existed and
+        ``force`` was off, or every one already held exactly the shipped content,
+        which the library skips even with ``force``.
 
     Raises:
         PermissionError: When deploying to app/host without sufficient privileges.
