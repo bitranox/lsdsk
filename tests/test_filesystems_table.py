@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from rich.cells import cell_len
 from rich.console import Console
+from textual.widgets import Static
 
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import tables, theme
@@ -21,8 +22,9 @@ from lsdsk.adapters.render.tables import (
     filesystem_table_row,
     render_filesystems,
 )
+from lsdsk.adapters.tui import LsdskApp
 from lsdsk.domain.enums import FilesystemKind, Severity
-from lsdsk.domain.models import Filesystem, Finding, FreeSpace, Inventory
+from lsdsk.domain.models import Filesystem, Finding, FreeSpace, Inventory, RefusedReading
 
 
 def _inventory(*rows: Filesystem) -> Inventory:
@@ -408,3 +410,36 @@ def test_a_list_with_no_rows_draws_its_sentence_without_a_column_header(
     assert sentence in text
     assert not _header_drawn(text), text
     assert _header_drawn(_text(_EXT4)), "the control: a listed filesystem keeps its header"
+
+
+_REFUSED = RefusedReading(reading="zfs-pools", reason="pool tank: stats refused")
+
+
+@pytest.mark.parametrize("filesystems", [None, ()], ids=["not-read", "none-found"])
+def test_a_refusal_is_named_on_the_printed_view_when_no_row_was_drawn(
+    filesystems: tuple[Filesystem, ...] | None,
+) -> None:
+    """The refusal note is keyed on the record, never on whether rows were drawn.
+
+    Neither builder records a filesystem refusal without rows beside it today,
+    so the inventory is built by hand: the interactive page draws the note
+    whenever the record holds one, and the printed view returned before it.
+    """
+    inventory = Inventory(hostname="box", filesystems=filesystems, unread_filesystems=(_REFUSED,))
+    assert "Not read: zfs-pools (pool tank: stats refused)." in _text_of(inventory)
+    assert "Not read:" not in _text_of(Inventory(hostname="box", filesystems=filesystems))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("filesystems", [None, ()], ids=["not-read", "none-found"])
+async def test_the_interactive_page_names_the_same_refusal_when_no_row_was_drawn(
+    filesystems: tuple[Filesystem, ...] | None,
+) -> None:
+    """The view the printed one is aligned to: page 9 draws the note under a hidden table."""
+    app = LsdskApp(Inventory(hostname="box", filesystems=filesystems, unread_filesystems=(_REFUSED,)))
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.press("9")
+        await pilot.pause()
+        legend = app.query_one("#filesystem-legend", Static)
+        assert legend.display
+        assert "Not read: zfs-pools (pool tank: stats refused)." in str(legend.content)

@@ -609,7 +609,8 @@ def render_filesystems(inventory: Inventory, findings: Sequence[Finding], width:
 
     Returns:
         A table of filesystems; with no rows, no column header and a sentence
-        saying so when the inventory did not read them or read none.
+        saying so when the inventory did not read them or read none, followed
+        by any recorded refusal.
     """
     title = f"Filesystems on {inventory.hostname}"
     if not inventory.filesystems:
@@ -627,14 +628,17 @@ def render_filesystems(inventory: Inventory, findings: Sequence[Finding], width:
 
 
 def _render_no_filesystems(title: str, inventory: Inventory, width: int) -> Table:
-    """The filesystems view with no row to draw: its title and its sentence.
+    """The filesystems view with no row to draw: its title, its sentence and any refusal.
 
     No column header: a header names the columns of rows, and over a list that
     was not read or read empty it stands for nothing. The trend section's empty
-    state and the interactive page both draw the sentence alone.
+    state and the interactive page both draw the sentence alone. The refusal is
+    keyed on the record, as on a listed page, because the interactive page names
+    it whenever one exists and a reader of the printed view must be told the same.
     """
     sentence = FILESYSTEMS_NOT_READ_SENTENCE if inventory.filesystems is None else FILESYSTEMS_NONE_SENTENCE
-    table = _render(title, FILESYSTEM_COLUMNS, TableRows(()), width, sentence)
+    caption = "\n".join(part for part in (sentence, filesystem_refusals_note(inventory)) if part)
+    table = _render(title, FILESYSTEM_COLUMNS, TableRows(()), width, caption)
     table.show_header = False
     return table
 
