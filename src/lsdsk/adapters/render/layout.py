@@ -448,13 +448,17 @@ def pad(value: str, width: int, align: Align) -> str:
         Text that fills exactly ``width`` terminal cells.
 
     Example:
-        >>> pad("abc", 5, Align.LEFT)
+        The padding IS the answer here, so these examples compare whitespace
+        exactly rather than under the suite's NORMALIZE_WHITESPACE, which
+        would pass a cell padded to any width at all.
+
+        >>> pad("abc", 5, Align.LEFT)  # doctest: -NORMALIZE_WHITESPACE
         'abc  '
-        >>> pad("abc", 5, Align.RIGHT)
+        >>> pad("abc", 5, Align.RIGHT)  # doctest: -NORMALIZE_WHITESPACE
         '  abc'
         >>> pad("abcdefgh", 5, Align.LEFT)
         'abcd>'
-        >>> pad("\u5199\u771f", 6, Align.LEFT)
+        >>> pad("\u5199\u771f", 6, Align.LEFT)  # doctest: -NORMALIZE_WHITESPACE
         '\u5199\u771f  '
     """
     value = clip(value, width)

@@ -7,7 +7,11 @@ ordinary input.
 
 from __future__ import annotations
 
-from lsdsk.adapters.render.layout import clip_keeping
+import pytest
+from rich.cells import cell_len
+
+from lsdsk.adapters.render.layout import clip_keeping, pad
+from lsdsk.domain.enums import Align
 from lsdsk.domain.size_text import format_capacity
 
 PEBIBYTE = 1024**5
@@ -27,3 +31,16 @@ def test_a_count_is_kept_when_the_room_before_it_is_exactly_one_character_and_th
     """Two cells before the count is the least the cut keeps the count for, not the most it refuses."""
     assert clip_keeping("abcdef +2", 5, " +2") == "a> +2"
     assert clip_keeping("abcdef +2", 4, " +2") == "abc>"
+
+
+@pytest.mark.parametrize("align", list(Align))
+@pytest.mark.parametrize("value", ["abc", "\u5199\u771f", "a\u5199b", "\u5199\u771f\u3068\u5199\u771f"])
+def test_a_padded_cell_fills_exactly_its_width_in_terminal_cells(value: str, align: Align) -> None:
+    """A cell holding double-width characters is padded by the room they take, not by their count.
+
+    Padded by character count, two double-width characters in a six-cell column
+    got four spaces and drew eight cells wide, pushing every column after them
+    two cells right on that row alone.
+    """
+    for width in range(1, 12):
+        assert cell_len(pad(value, width, align)) == width, f"{value!r} padded to {width}: {pad(value, width, align)!r}"

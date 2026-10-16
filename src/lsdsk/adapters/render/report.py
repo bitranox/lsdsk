@@ -749,7 +749,7 @@ def virtual_note(disks: Sequence[Disk]) -> str:
 
     Example:
         >>> from lsdsk.domain.models import Disk
-        >>> virtual_note(
+        >>> virtual_note(  # doctest: -NORMALIZE_WHITESPACE
         ...     [
         ...         Disk(node="zram0", path="/dev/zram0", model="zram"),
         ...         Disk(node="loop0", path="/dev/loop0", model="loop"),
