@@ -94,18 +94,23 @@ class CaptureHeader(CaptureModel, frozen=True):
     to report what it did not measure has to refuse the file rather than describe
     it.
 
+    It types only what a builder reads. Both readers also write ``kernel`` - the
+    kernel or Windows build the capture was taken on - and it stays in every
+    capture for the person reading one, since what a Linux capture can hold
+    depends on the kernel version; nothing maps it, so it is one of the keys
+    :class:`CaptureModel` ignores, and a capture without it is not refused for
+    lacking a value no output is built from.
+
     Attributes:
         schema_version: The capture format version. Aliased because Pydantic's
             ``BaseModel`` already has a ``schema`` attribute, and the wire key
             is the contract.
         hostname: The machine the capture was taken on.
-        kernel: The kernel or Windows build it was running.
         captured_at: When it was taken, ISO 8601. Schema 1 captures predate it.
     """
 
     schema_version: int = Field(alias="schema")
     hostname: DeviceText
-    kernel: DeviceText
     captured_at: DeviceText | None = None
 
 

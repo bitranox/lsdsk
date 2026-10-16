@@ -96,7 +96,7 @@ def test_a_reading_composed_from_the_readers_is_a_capture_the_builder_takes() ->
     # Liveness for the tests below: the seam reaches every reader and its result parses as a real capture.
     reading = reader.read_system(_readers(_Recorded()))
     capture = LinuxCapture.model_validate(reading)
-    assert (capture.hostname, capture.kernel, capture.euid) == ("host", "6.12.0", 0)
+    assert (capture.hostname, reading["kernel"], capture.euid) == ("host", "6.12.0", 0)
     assert set(capture.block) == {"sda", "loop0"}
 
 
