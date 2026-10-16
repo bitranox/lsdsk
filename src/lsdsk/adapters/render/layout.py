@@ -227,6 +227,9 @@ class Layout:
             >>> pinned = Layout(tuple(kept), {"a": 8, "b": 6, "c": 9}).on_one_line(16)
             >>> [column.key for column in pinned.columns], pinned.widths["a"], pinned.widths["c"], pinned.required()
             (['a', 'c'], 2, 7, 16)
+            >>> blank = Layout((Column("m", ""), Column("b", "b", never_dropped=True)), {"m": 0, "b": 9})
+            >>> blank.on_one_line(12).widths["m"]
+            0
         """
         if self.required() <= available:
             return self
@@ -239,7 +242,11 @@ class Layout:
         while droppable and _required(columns, widths) > available:
             columns.remove(droppable.pop())
         first = columns[0].key
-        widths[first] = max(widths[first] - max(_required(columns, widths) - available, 0), _CLIPPED)
+        # Never wider than it was: a first column narrower than the clip mark
+        # (an empty marker column) has nothing to clip and must not grow.
+        widths[first] = max(
+            widths[first] - max(_required(columns, widths) - available, 0), min(_CLIPPED, widths[first])
+        )
         for column in reversed(columns[1:]):
             if column.flexible and column.never_dropped:
                 excess = max(_required(columns, widths) - available, 0)

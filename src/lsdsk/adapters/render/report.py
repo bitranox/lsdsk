@@ -27,7 +27,7 @@ from ...domain.enums import Align, BusType, Environment, Severity
 from ...domain.models import pcie_bandwidth_gbps, pcie_generation, serial_bandwidth_gbps
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_SUMMARY_LIMIT
 from . import theme
-from .layout import GAP, GUTTER, TREE_BRANCH, TREE_LAST, Column, Layout, fit, natural_widths, pad
+from .layout import GAP, GUTTER, TREE_BRANCH, TREE_LAST, Column, Layout, pad
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Mapping, Sequence
@@ -697,7 +697,9 @@ def _header_line(columns: Sequence[Column], widths: dict[str, int], *, marker_fi
             the disk tree's do. The slots and SMART rows carry none, and a
             header reserving one sat three cells right of every column it
             named. Required rather than defaulted, so a new table must say
-            which kind of row it heads.
+            which kind of row it heads. Those rows also end at their last
+            value rather than in a gap, and so does their header: the width
+            they are cut to on one line has no room for a trailing gap.
     """
     line = Text()
     line.append(" " * len(GUTTER))
@@ -705,10 +707,18 @@ def _header_line(columns: Sequence[Column], widths: dict[str, int], *, marker_fi
     # one field to the left of the columns it labels.
     if marker_field:
         line.append(" " * (_MARKER_RESERVE + 1))
-    for column in columns:
+    for index, column in enumerate(columns):
         line.append(pad(column.title, widths[column.key], column.align), style=theme.STYLE_HEADER)
-        line.append(GAP)
+        if marker_field or index != len(columns) - 1:
+            line.append(GAP)
     return line
+
+
+#: How much narrower a gutter-led row is than :meth:`Layout.required` reckons:
+#: the layout counts a gap after every column, and the slots and SMART rows end
+#: at their last value. Used only where a row is cut to one line, so every width
+#: at which the table already fit draws as it did.
+_NO_TRAILING_GAP = len(GAP)
 
 
 # What the reader is told when the virtual devices are folded away, in one
@@ -896,6 +906,11 @@ def _disk_lines(
 # Display order for the slot view, and the order columns are given up in as
 # space runs out. The port and its verdict never go: they are what the view is
 # for.
+#: How wide the longest verdict the slots table writes is: an empty port whose
+#: connector could not be read. The text itself stays in the branch that
+#: returns it, where the skill's vocabulary check reads every verdict from.
+_LONGEST_SLOT_VERDICT = len("empty, connector unknown")
+
 SLOT_COLUMNS: tuple[Column, ...] = (
     Column("port", "port", priority=0),
     Column("slot", "slot", priority=3),
@@ -903,7 +918,19 @@ SLOT_COLUMNS: tuple[Column, ...] = (
     Column("running", "running", priority=1),
     Column("occupant", "occupant", priority=0, flexible=True, min_width=14),
     Column("needs", "needs", priority=2),
-    Column("verdict", "verdict", priority=0),
+    # The column the view exists for, so it outlives the one-line cut and is
+    # the last thing narrowed there; the port names the row and is clipped
+    # first. Its smallest useful width is the longest verdict this view writes,
+    # so fitting never narrows it: only the one-line cut does, and only below
+    # the width where every other column is already gone.
+    Column(
+        "verdict",
+        "verdict",
+        priority=0,
+        flexible=True,
+        min_width=_LONGEST_SLOT_VERDICT,
+        never_dropped=True,
+    ),
 )
 
 
@@ -1047,7 +1074,11 @@ def render_slots(inventory: Inventory, width: int = DEFAULT_WIDTH) -> Renderable
     defaults = register_default_links(inventory)
     rows = [slot_table_row(slot, bandwidth=True, register_defaults=defaults) for slot in inventory.slots]
     bare = [slot_table_row(slot, register_defaults=defaults) for slot in inventory.slots]
-    layout = Layout.preferring(SLOT_COLUMNS, _row_texts(rows), _row_texts(bare), width)
+    # Cut to one line like every other table: below the width the undroppable
+    # columns need, a row ran past the console and its tail read as a row.
+    layout = Layout.preferring(SLOT_COLUMNS, _row_texts(rows), _row_texts(bare), width).on_one_line(
+        width + _NO_TRAILING_GAP
+    )
     rows = rows if layout.bandwidth else bare
     widths = layout.widths
     chosen = layout.columns
@@ -1094,8 +1125,10 @@ ATTRIBUTE_COLUMNS: tuple[Column, ...] = (
     # survive a pipe, a log file, NO_COLOR or a colourblind reader, and this
     # table is the one place a manufacturer says the drive is failing.
     Column("mark", "", priority=0),
-    Column("id", "id", align=Align.RIGHT, priority=0),
-    Column("attribute", "attribute", priority=0, flexible=True, min_width=16),
+    # The id and the name say which attribute a row is, so both outlive the
+    # one-line cut; the figures go from the right, and the name is clipped last.
+    Column("id", "id", align=Align.RIGHT, priority=0, never_dropped=True),
+    Column("attribute", "attribute", priority=0, flexible=True, min_width=16, never_dropped=True),
     Column("value", "value", align=Align.RIGHT, priority=0),
     Column("worst", "worst", align=Align.RIGHT, priority=1),
     Column("threshold", "threshold", align=Align.RIGHT, priority=0),
@@ -1165,8 +1198,9 @@ def _disk_attributes(disk: Disk, width: int, *, privileged: bool) -> list[Render
         }
         for attribute in attributes
     ]
-    widths = natural_widths(ATTRIBUTE_COLUMNS, rows)
-    chosen = fit(ATTRIBUTE_COLUMNS, widths, width)
+    layout = Layout.for_rows(ATTRIBUTE_COLUMNS, rows, width).on_one_line(width + _NO_TRAILING_GAP)
+    widths = layout.widths
+    chosen = layout.columns
 
     lines: list[RenderableType] = [heading, _header_line(chosen, widths, marker_field=False)]
     for attribute, row in zip(attributes, rows, strict=True):
