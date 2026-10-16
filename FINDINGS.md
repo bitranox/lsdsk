@@ -84,7 +84,7 @@ not, because it keeps its own record:
 device        counter           total  change  span  per hour  verdict
 /dev/sdc      interface CRC     99361     +16   16h       1.0  rising
 /dev/sdd      interface CRC   2196127  +16642   15h      1109  rising
-/dev/sde      interface CRC       430      +0   15h         -  too soon to say, this drive's rate would not have produced even one in 15h
+/dev/sde      interface CRC       430      +0   15h         -  too soon to say, fewer than 1 was due
 /dev/sdj      interface CRC    462640      +0   16h         -  no new in 16h, 235 were due
 ```
 
