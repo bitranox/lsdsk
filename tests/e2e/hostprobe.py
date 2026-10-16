@@ -308,14 +308,6 @@ def _usage_fact(usage: Any) -> dict[str, Any] | None:
     return {"boot": bool(usage.get("boot")), "uses": [_use_text(u) for u in uses]}
 
 
-#: How far lsdsk's percent may sit from ``zpool list``'s cap: not at all. Both
-#: round DOWN a pool's ``used / (used + free)`` in whole numbers (lsdsk's domain
-#: floors a pool row like ``zpool`` does, where a mount rounds up like ``df``), so
-#: a pool read from the same bytes gives the same figure and any gap is a
-#: different figure, not a rounding.
-POOL_PERCENT_TOLERANCE = 0
-
-
 class ZpoolRow(NamedTuple):
     """One line of ``zpool list -Hp -o name,size,alloc,free,cap,frag``, in exact bytes.
 
@@ -385,7 +377,11 @@ def _pool_verdict(name: str, row: dict[str, Any] | None, pool: ZpoolRow | None) 
         return f"{name}: zpool list shows it (cap {pool.cap}) and lsdsk reports no row", figures
     if percent is None:
         return f"{name}: lsdsk row has no used/free figures, zpool cap {pool.cap}", figures
-    if abs(percent - pool.cap) > POOL_PERCENT_TOLERANCE:
+    # No tolerance: both round DOWN a pool's used / (used + free) in whole numbers
+    # (lsdsk's domain floors a pool row as zpool does, where a mount rounds up as
+    # df does), so the same bytes give the same figure and any gap is a different
+    # figure, not a rounding.
+    if percent != pool.cap:
         return f"{name}: lsdsk {percent}% vs zpool cap {pool.cap}", figures
     if figures["lsdsk_frag"] != pool.frag:
         shown = "none" if figures["lsdsk_frag"] is None else f"{figures['lsdsk_frag']}%"
