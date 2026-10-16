@@ -33,7 +33,6 @@ _PAIR_HEADER = struct.Struct("<ihhii")
 _END_MARKER = 4
 _NATIVE, _LITTLE_ENDIAN = 0, 1
 _UINT64, _STRING, _UINT64_ARRAY, _NVLIST, _NVLIST_ARRAY = 8, 9, 16, 19, 20
-_DECODED_KINDS = frozenset({_UINT64, _STRING, _UINT64_ARRAY, _NVLIST, _NVLIST_ARRAY})
 _VS_ALLOC, _VS_SPACE = 3, 4
 
 NvValue: TypeAlias = int | str | tuple[int, ...] | Mapping[str, "NvValue"] | tuple[Mapping[str, "NvValue"], ...]
@@ -67,7 +66,8 @@ class _Reader:
         """Refuse a read of ``length`` bytes at ``start`` that crosses ``limit`` (default: the buffer end)."""
         bound = len(self.blob) if limit is None else limit
         if length < 0 or start + length > bound:
-            msg = f"{what} runs past {'the end of the buffer' if limit is None else 'its pair'}"
+            crossed = "the end of the buffer" if limit is None else "its pair"
+            msg = f"{what} runs past {crossed}"
             raise ValueError(msg)
 
     def pair_list(self, start: int, depth: int) -> tuple[dict[str, NvValue], int]:
@@ -82,10 +82,11 @@ class _Reader:
             if size == 0:
                 return out, position + _END_MARKER
             name, value, kind, count, end = self._pair_head(position, size)
-            if kind not in _DECODED_KINDS:
+            decoded = self._value(kind, value, count, end, depth)
+            if decoded is None:
                 position = end
                 continue
-            out[name], position = self._value(kind, value, count, end, depth)
+            out[name], position = decoded
 
     def _pair_head(self, position: int, size: int) -> tuple[str, int, int, int, int]:
         self.pairs += 1
@@ -105,7 +106,12 @@ class _Reader:
         value = position + _align(_PAIR_HEADER.size + name_size)
         return name, value, kind, count, position + size
 
-    def _value(self, kind: int, value: int, count: int, end: int, depth: int) -> tuple[NvValue, int]:
+    def _value(self, kind: int, value: int, count: int, end: int, depth: int) -> tuple[NvValue, int] | None:
+        """Decode one pair's value and say where the stream goes on, or None for a kind not read.
+
+        The one place that decides which kinds are decoded: a kind with no
+        branch here is stepped over by its own size, never read as another kind.
+        """
         if kind == _UINT64:
             self.need(value, 8, "a uint64", end)
             return struct.unpack_from("<Q", self.blob, value)[0], end
@@ -116,7 +122,9 @@ class _Reader:
             return struct.unpack_from(f"<{count}Q", self.blob, value), end
         if kind == _NVLIST:
             return self.pair_list(end, depth + 1)
-        return self._list_array(count, end, depth)
+        if kind == _NVLIST_ARRAY:
+            return self._list_array(count, end, depth)
+        return None
 
     def _string(self, value: int, end: int) -> str:
         terminator = self.blob.find(b"\0", value, end)
