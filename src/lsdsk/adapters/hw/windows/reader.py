@@ -938,7 +938,9 @@ def _disk_length(kernel32: api.WinLibrary, handle: int) -> int | None:
     return response.value if returned else None
 
 
-def _device_number(kernel32: api.WinLibrary, handle: int) -> tuple[int | None, str | None]:
+def _device_number(
+    kernel32: api.WinLibrary, handle: int, *, last_error: Callable[[], int]
+) -> tuple[int | None, str | None]:
     """Return the PhysicalDrive number Windows assigned to a disk, or why it was not read.
 
     The number is what every volume's extents name a disk by, so a disk
@@ -958,7 +960,7 @@ def _device_number(kernel32: api.WinLibrary, handle: int) -> tuple[int | None, s
         None,
     )
     if not ok:
-        return None, f"Win32 error {api.last_error()}"
+        return None, f"Win32 error {last_error()}"
     return response.DeviceNumber, None
 
 
@@ -1017,13 +1019,21 @@ def _temperature(kernel32: api.WinLibrary, handle: int) -> dict[str, int]:
     return values
 
 
-def read_disk(kernel32: api.WinLibrary, path: str, ancestors: list[str]) -> dict[str, Any]:
+def read_disk(
+    kernel32: api.WinLibrary,
+    path: str,
+    ancestors: list[str],
+    *,
+    last_error: Callable[[], int] = api.last_error,
+) -> dict[str, Any]:
     """Read one disk: identity, geometry, health blobs and the devices above it.
 
     Args:
         kernel32: The typed facade over the Win32 entry points.
         path: The device path to open.
         ancestors: The device instance ids between this disk and the root.
+        last_error: Answers ``GetLastError`` for the call that just failed;
+            off Windows ``ctypes`` answers 0, which a fake cannot reach.
 
     Returns:
         One disk's reading, shaped for the capture model to type.
@@ -1037,7 +1047,7 @@ def read_disk(kernel32: api.WinLibrary, path: str, ancestors: list[str]) -> dict
         return entry
     entry["passthrough"] = passthrough
     try:
-        number, number_error = _device_number(kernel32, handle)
+        number, number_error = _device_number(kernel32, handle, last_error=last_error)
         if number is not None:
             entry["node"] = f"PhysicalDrive{number}"
         if number_error is not None:
@@ -1189,7 +1199,9 @@ def _read_bos(kernel32: api.WinLibrary, handle: int, port: int) -> bytes | None:
     return None if answer is None else usb.descriptor_payload(answer)
 
 
-def _ask_port(kernel32: api.WinLibrary, handle: int, port: int) -> dict[str, str | None]:
+def _ask_port(
+    kernel32: api.WinLibrary, handle: int, port: int, *, last_error: Callable[[], int]
+) -> dict[str, str | None]:
     """Ask a hub every question about one port, or say why it would not answer the first.
 
     The first question is the one every hub answers for a connected port, so a
@@ -1205,7 +1217,7 @@ def _ask_port(kernel32: api.WinLibrary, handle: int, port: int) -> dict[str, str
         _CONNECTION_ANSWER_BYTES,
     )
     if connection is None:
-        return {"error": f"Win32 error {api.last_error()}"}
+        return {"error": f"Win32 error {last_error()}"}
     if not connection:
         return {"error": "the hub returned no connection information"}
     return {
@@ -1245,10 +1257,16 @@ class _HubPorts:
     """One run's hub handles and port records, so a hub several disks share is opened and asked once."""
 
     def __init__(
-        self, kernel32: api.WinLibrary, devices: Mapping[str, UsbDeviceFacts], hubs: Mapping[str, str]
+        self,
+        kernel32: api.WinLibrary,
+        devices: Mapping[str, UsbDeviceFacts],
+        hubs: Mapping[str, str],
+        *,
+        last_error: Callable[[], int],
     ) -> None:
         """Ask through ``kernel32``, placing devices by ``devices`` and opening hubs by ``hubs``."""
         self.kernel32 = kernel32
+        self.last_error = last_error
         self.devices = devices
         self.hubs = hubs
         self.ports: dict[str, dict[str, Any]] = {}
@@ -1288,7 +1306,9 @@ class _HubPorts:
         hub, port = place
         handle = self._open(hub)
         answers = (
-            {"error": self.hub_entries[hub]["error"]} if handle is None else _ask_port(self.kernel32, handle, port)
+            {"error": self.hub_entries[hub]["error"]}
+            if handle is None
+            else _ask_port(self.kernel32, handle, port, last_error=self.last_error)
         )
         self.ports[instance] = {
             "hub": hub,
@@ -1308,7 +1328,7 @@ class _HubPorts:
         )
         if handle == api.INVALID_HANDLE_VALUE:
             self._handles[hub] = None
-            self.hub_entries[hub] = {"information": None, "error": f"Win32 error {api.last_error()}"}
+            self.hub_entries[hub] = {"information": None, "error": f"Win32 error {self.last_error()}"}
             return None
         self._handles[hub] = handle
         information = _hub_request(
@@ -1340,6 +1360,8 @@ def read_usb_ports(
     disks: Mapping[str, Mapping[str, Any]],
     devices: Mapping[str, UsbDeviceFacts],
     hubs: Mapping[str, str],
+    *,
+    last_error: Callable[[], int] = api.last_error,
 ) -> UsbReading:
     """Ask the hubs about the port every USB disk hangs off, and every port above it.
 
@@ -1349,11 +1371,12 @@ def read_usb_ports(
             ``ancestors`` are read.
         devices: Every present USB device, keyed by instance identifier.
         hubs: Every present hub's interface path, keyed by instance identifier.
+        last_error: Answers ``GetLastError`` for the call that just failed.
 
     Returns:
         The port and hub records, and why any disk's own port could not be read.
     """
-    asked = _HubPorts(kernel32, devices, hubs)
+    asked = _HubPorts(kernel32, devices, hubs, last_error=last_error)
     disk_errors: dict[str, str] = {}
     try:
         for path, record in disks.items():
@@ -1451,7 +1474,7 @@ def read_disks(tree: _DeviceTree) -> dict[str, dict[str, Any]]:
     """
     disks: dict[str, dict[str, Any]] = {}
     for path, ancestors in tree.disk_interfaces():
-        disks[path] = read_disk(tree.kernel32, path, ancestors)
+        disks[path] = read_disk(tree.kernel32, path, ancestors, last_error=tree.last_error)
     for position, reason in enumerate(tree.unreadable_interfaces, start=1):
         label = f"{UNREADABLE_INTERFACE_LABEL} {position}"
         disks[label] = {
@@ -1520,7 +1543,7 @@ def read_system(readers: SystemReaders | None = None) -> dict[str, Any]:
     tree = read.tree()
     pci = tree.enumerate_pci()
     disks = read.disks(tree)
-    usb_reading = read_usb_ports(tree.kernel32, disks, tree.usb_devices(), tree.usb_hubs())
+    usb_reading = read_usb_ports(tree.kernel32, disks, tree.usb_devices(), tree.usb_hubs(), last_error=tree.last_error)
     for path, error in usb_reading.disk_errors.items():
         disks[path]["usb_link_error"] = error
     elevated = read.elevated()

@@ -77,6 +77,8 @@ class FakeSetupApi:
             although later indices exist, the way a transient error would cut a list short.
         fail_error: The Win32 error such a failure leaves; the end of a list leaves
             ``ERROR_NO_MORE_ITEMS``, as the SetupAPI documentation says.
+        refuse_sizing: Whether an interface's path cannot even be sized: the
+            first detail call reports no size and leaves ``fail_error``.
         error: What ``GetLastError`` answers, as the last failing call left it.
         destroyed: Every handle passed to ``SetupDiDestroyDeviceInfoList``.
     """
@@ -89,8 +91,10 @@ class FakeSetupApi:
         properties: dict[tuple[int, str, int], tuple[int, bytes]] | None = None,
         fail_enum_at: dict[int, int] | None = None,
         fail_error: int = ERROR_INVALID_DATA,
+        refuse_sizing: bool = False,
     ) -> None:
         """Hold the enumeration, property and failure tables this fake answers from."""
+        self.refuse_sizing = refuse_sizing
         self.by_enumerator = by_enumerator or {}
         self.by_guid = by_guid or {}
         self.properties = properties or {}
@@ -188,6 +192,9 @@ class FakeSetupApi:
         required: object,
         info: object | None,
     ) -> int:
+        if self.refuse_sizing:
+            self.error = self.fail_error
+            return 0
         devices: list[tuple[str, int]] = self._ifaces.get(handle, [])
         index: int = _obj(interface).Flags
         path, devinst = devices[index]

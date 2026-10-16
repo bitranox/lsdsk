@@ -118,6 +118,8 @@ class FakeVolumeKernel:
 
     volumes: dict[str, FakeVolume]
     windows_volume: str | None = None
+    #: Device paths other than a volume's that refuse to open, each with the error it leaves.
+    refused_opens: dict[str, int] = field(default_factory=dict[str, int])
     first_error: int | None = None
     next_error: int | None = None
     error: int = 0
@@ -246,6 +248,9 @@ class FakeVolumeKernel:
         self, path: str, access: int, share: int, security: object, disposition: int, flags: int, template: object
     ) -> int:
         del share, security, disposition, flags, template
+        if path in self.refused_opens:
+            self.error = self.refused_opens[path]
+            return cast("int", api.INVALID_HANDLE_VALUE)
         name = path + "\\"
         self.opened.append((path, access))
         volume = self.volumes[name]

@@ -56,6 +56,8 @@ class FakeNvmeKernel32:
             own length. Set it to model a driver whose length field disagrees with the byte count.
         data_offset: What the driver writes into ``ProtocolDataOffset``, or ``None`` to leave the offset the
             request asked for. Set it to model a driver that places the data inside the header.
+        number_error: The Win32 error the device-number query fails with, or ``None`` to answer it.
+        error: What ``GetLastError`` answers, as the last failing call left it.
     """
 
     def __init__(
@@ -67,8 +69,11 @@ class FakeNvmeKernel32:
         reports_moved: int | None = None,
         length_field: int | None = None,
         data_offset: int | None = None,
+        number_error: int | None = None,
     ) -> None:
         """Answer protocol queries through ``answer``."""
+        self.number_error = number_error
+        self.error = 0
         self.answer = answer
         self.opens_for_passthrough = opens_for_passthrough
         self.rewrites_length = rewrites_length
@@ -99,6 +104,9 @@ class FakeNvmeKernel32:
     ) -> int:
         del handle, in_size, overlapped
         if code == api.IOCTL_STORAGE_GET_DEVICE_NUMBER:
+            if self.number_error is not None:
+                self.error = self.number_error
+                return 0
             _referent(out_buffer).DeviceNumber = 3
             return 1
         if code == api.IOCTL_DISK_GET_LENGTH_INFO:
