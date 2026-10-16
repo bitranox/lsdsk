@@ -308,6 +308,27 @@ def _strict_prefixes(path: str) -> list[str]:
     return [_ROOT, *("/".join(parts[:end]) for end in range(2, len(parts)))]
 
 
+def _on_a_chroot_directory(ids: Sequence[_MountIds], point: Mapping[str, str]) -> set[str]:
+    """The mounts at ``/`` stacked on a process root that is a plain directory of an unlisted mount.
+
+    Chrooted into a directory that is not itself a mountpoint, the mount the
+    directory belongs to lies outside the root and is not listed, so every
+    mount made inside the chroot names it as an unlisted parent. A mount later
+    placed on the chroot directory is listed at ``/`` under that same parent,
+    while lookup still starts at the directory beneath it. A true root's
+    unlisted parent carries nothing else that is listed, so sharing it with
+    another listed mount is what tells the two apart.
+    """
+    children: dict[str, int] = {}
+    for entry in ids:
+        children[entry.parent] = children.get(entry.parent, 0) + 1
+    return {
+        entry.mount
+        for entry in ids
+        if entry.mountpoint == _ROOT and entry.parent not in point and children[entry.parent] > 1
+    }
+
+
 def _hidden_mount_ids(lines: Iterable[str]) -> set[str]:
     """The IDs of every mount whose mountpoint no path reaches.
 
@@ -325,21 +346,26 @@ def _hidden_mount_ids(lines: Iterable[str]) -> set[str]:
 
     The process root is the exception: lookup starts AT it rather than crossing
     into it, so a mount stacked on ``/`` is the unreachable one, and it hides
-    nothing beneath the root. The walk is linear and stops on a cycle, since the
-    file is read rather than trusted.
+    nothing beneath the root. That holds too for a mount placed on a chroot's
+    own directory (see :func:`_on_a_chroot_directory`), which mountinfo lists
+    at ``/`` beside the chroot's other mounts. The walk is linear and stops on
+    a cycle, since the file is read rather than trusted.
     """
     ids = [entry for entry in map(_mount_ids, lines) if entry is not None]
     point = {entry.mount: entry.mountpoint for entry in ids}
     parent = {entry.mount: entry.parent for entry in ids}
+    on_chroot_directory = _on_a_chroot_directory(ids, point)
     roots = {
         entry.mount
         for entry in ids
-        if entry.mountpoint == _ROOT and (entry.parent not in point or entry.parent == entry.mount)
+        if entry.mountpoint == _ROOT
+        and (entry.parent not in point or entry.parent == entry.mount)
+        and entry.mount not in on_chroot_directory
     }
     stacked = {
         entry.mount for entry in ids if entry.parent != entry.mount and point.get(entry.parent) == entry.mountpoint
     }
-    on_root = {mount for mount in stacked if parent[mount] in roots}
+    on_root = {mount for mount in stacked if parent[mount] in roots} | on_chroot_directory
     covered = {parent[mount] for mount in stacked - on_root}
     # A mount that is its own parent sits on no directory of a parent mount, so
     # it occupies nothing: counting it would cut off every mount below it.

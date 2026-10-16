@@ -380,3 +380,37 @@ def test_a_root_that_is_its_own_parent_hides_nothing_mounted_on_it(tmp_path: Pat
 
 def test_a_mount_stacked_on_a_self_parented_root_hides_neither_the_root_nor_its_mounts(tmp_path: Path) -> None:
     assert _hidden(tmp_path, SELF_PARENTED_ROOT_UNDER_A_TMPFS) == {"/": False, "/data": False}
+
+
+# Chrooted into a PLAIN directory of the host root, then a filesystem mounted on
+# that directory from inside: the host root is outside the chroot and is not
+# listed, so every mount here names it as an unlisted parent, and the one at "/"
+# is stacked on the process root. Lookup starts at the process root, which is
+# the directory beneath it, so /sub is reached and "/" is not - statvfs("/")
+# answers for the host root. The shape was taken from a user and mount
+# namespace on Linux 7.0, where statvfs read the host root's 16449983 blocks at
+# "/" and the 256 of its own tmpfs at /sub.
+CHROOTED_INTO_A_PLAIN_DIRECTORY = (
+    f"30 20 8:17 / /sub rw - ext4 {ABSENT_NODE}2 rw\n"
+    "31 20 0:20 / /proc rw - proc proc rw\n"
+    f"40 20 8:1 / / rw - ext4 {ABSENT_NODE}1 rw\n"
+)
+
+
+def test_a_mount_on_a_plain_chroot_directory_is_the_unreachable_one(tmp_path: Path) -> None:
+    before = "".join(CHROOTED_INTO_A_PLAIN_DIRECTORY.splitlines(keepends=True)[:2])
+
+    # Control: before anything is mounted on the chroot directory, nothing is hidden.
+    assert _hidden(tmp_path, before) == {"/sub": False}
+    assert _hidden(tmp_path, CHROOTED_INTO_A_PLAIN_DIRECTORY) == {"/sub": False, "/": True}
+
+
+def test_a_chroot_s_own_mounts_are_read_with_a_mount_on_the_chroot_directory(tmp_path: Path) -> None:
+    kernel = _Kernel({"/sub": FULL})
+
+    rows = _rows(_read(tmp_path, CHROOTED_INTO_A_PLAIN_DIRECTORY, kernel))
+
+    by_name = {row.name: row for row in rows}
+    assert kernel.asked == ["/sub"]
+    assert (by_name["/sub"].used_percent, by_name["/sub"].readings_refused) == (99, ())
+    assert _refusals(by_name["/"]) == [("statvfs", HIDDEN_REASON)]
