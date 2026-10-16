@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.9.3] 2026-10-16 19:05:09
+
 ### Changed
 
 - ruff now enforces the cyclomatic complexity limit of 10 (`C90` in the lint select). The three
