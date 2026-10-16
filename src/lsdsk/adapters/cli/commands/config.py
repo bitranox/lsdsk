@@ -27,6 +27,7 @@ from lsdsk.adapters.config.loader import invalid_profile_message, shipped_table_
 from lsdsk.adapters.config.overrides import apply_overrides
 from lsdsk.adapters.config.permissions import (
     SectionGivenAsAValueError,
+    modes_the_deploy_ignores,
     permission_overrides_from,
     read_permission_defaults,
 )
@@ -552,12 +553,19 @@ def _execute_deploy(
     Raises:
         SystemExit: On permission or other errors.
     """
-    # What lsdsk decides itself. The modes are not read here: the deploy reads them
+    # What lsdsk decides itself. The modes are not judged here: the deploy reads them
     # from its own layers and is the one place that refuses one it cannot use.
     reading = read_permission_defaults(config)
     perm_defaults = reading.defaults
+    # A section given as one value is said only once the deploy has run: the deploy reads
+    # that section too, and where it does it refuses the run over it, so announcing the
+    # shipped section first contradicted the refusal printed underneath.
+    held_back = [rejected for rejected in reading.rejected if rejected.reason == REASON_SECTION]
     for rejected in reading.rejected:
-        safe_console.echo(rejected.as_sentence(), err=True)
+        if rejected not in held_back:
+            safe_console.echo(rejected.as_sentence(), err=True)
+    for ignored in modes_the_deploy_ignores(config):
+        safe_console.echo(ignored.as_sentence(), err=True)
 
     # CLI --permissions/--no-permissions overrides config enabled setting
     settled = request.with_changes(
@@ -597,6 +605,8 @@ def _execute_deploy(
     except ConfigurationError as exc:
         logger.error("Failed to deploy configuration", extra={"error": str(exc), "error_type": type(exc).__name__})
         _fail_after_output(f"Failed to deploy configuration: {exc}", ExitCode.CONFIG_ERROR, output_format=output_format)
+    for rejected in held_back:
+        safe_console.echo(rejected.as_sentence(), err=True)
     # Outside the try on purpose: the files are written by now, and a report that
     # cannot reach a full standard output is a failure to REPORT, which is not the
     # "Failed to deploy configuration" the arms above would have called it.

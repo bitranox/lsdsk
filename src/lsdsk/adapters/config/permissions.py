@@ -9,7 +9,9 @@ refused by the deploy on the very run that announced it.
 
 What stays here is what lsdsk decides on its own: whether to set modes at all (``enabled``,
 settled before the deploy and handed to it), the startup refusal of an int that could be
-octal digits, and the ``--set`` modes the deploy is given as overrides.
+octal digits, the ``--set`` modes the deploy is given as overrides, and which configured modes
+the deploy's own read leaves out, so ``config-deploy`` can name each one rather than let the
+value ``lsdsk config`` reports as in force decide nothing in silence.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from typing import NamedTuple, cast
 from lib_layered_config import Config
 from pydantic import BaseModel, ConfigDict
 
+from ...domain.base import DomainModel
 from ...domain.text import visible_text
 from .overrides import apply_overrides
 from .values import RejectedValue, SectionValues, rendered
@@ -34,6 +37,23 @@ MODE_KEYS: tuple[str, ...] = tuple(
 
 #: The switch lsdsk settles itself and hands to the deploy as the answer.
 ENABLED_KEY = "enabled"
+
+#: The modes of the system-wide layers, which the deploy never takes from a user file.
+SYSTEM_MODE_KEYS: tuple[str, ...] = tuple(key for key in MODE_KEYS if not key.startswith("user_"))
+
+#: The most characters :func:`~lsdsk.domain.text.visible_text` writes for one, ``\UNNNNNNNN``.
+_LONGEST_ESCAPE = 10
+
+#: Why the deploy leaves a value out, keyed by the provenance layer that gave it.
+_DOTENV_LAYER = "dotenv"
+_USER_LAYER = "user"
+_NOT_FROM_DOTENV = (
+    "config-deploy reads its modes from the configuration files and the environment, never from a .env file"
+)
+_NOT_FROM_A_USER_FILE = (
+    "a user configuration file cannot set an app or host mode, so config-deploy takes it from the shipped "
+    "defaults, the app and host files and the environment"
+)
 
 
 class SectionGivenAsAValueError(ValueError):
@@ -80,6 +100,81 @@ class PermissionReading(NamedTuple):
 
     defaults: PermissionDefaults
     rejected: tuple[RejectedValue, ...]
+
+
+class ModeTheDeployIgnores(DomainModel, frozen=True):
+    """A configured mode the deploy leaves out of its own read, and why.
+
+    Attributes:
+        dotted: The setting, ``lib_layered_config.default_permissions.user_file``.
+        raw: The value configured, as a reader would recognise it.
+        source: The file that gave it.
+        reason: Why the deploy does not use it.
+
+    Example:
+        >>> ModeTheDeployIgnores(
+        ...     dotted="lib_layered_config.default_permissions.user_file", raw="0o604", source="/x/.env", reason="no"
+        ... ).as_sentence()
+        'Warning: ignoring lib_layered_config.default_permissions.user_file=0o604 from /x/.env: no.'
+    """
+
+    dotted: str
+    raw: str
+    source: str
+    reason: str
+
+    def as_sentence(self) -> str:
+        """The warning, with the value and the path quoted as visible text.
+
+        The value is cut as every quoted value is. The path is not, because a reader has to
+        find that file: only its control characters are written as escapes.
+        """
+        source = visible_text(self.source, limit=_LONGEST_ESCAPE * len(self.source))
+        return f"Warning: ignoring {self.dotted}={visible_text(self.raw)} from {source}: {self.reason}."
+
+
+def _why_the_deploy_ignores(key: str, layer: object) -> str | None:
+    """The reason the deploy leaves `key` out when `layer` gave it, or ``None`` when it uses it."""
+    if layer == _DOTENV_LAYER:
+        return _NOT_FROM_DOTENV
+    if layer == _USER_LAYER and key in SYSTEM_MODE_KEYS:
+        return _NOT_FROM_A_USER_FILE
+    return None
+
+
+def modes_the_deploy_ignores(config: Config) -> tuple[ModeTheDeployIgnores, ...]:
+    """The configured modes the deploy's own read of its layers leaves out.
+
+    The deploy reads ``[lib_layered_config.default_permissions]`` from the shipped defaults,
+    the app, host and user files and the environment, and from a user file it takes only the
+    user layer's modes. ``lsdsk config`` shows the merged configuration, which also holds a
+    ``.env`` file and a user file's ``app_*``/``host_*`` modes, as the values in force. Read
+    from provenance, so a mode ``--set`` gives - handed to the deploy as an override - and one
+    the environment gives are never named.
+
+    Args:
+        config: The configuration of the profile being deployed.
+
+    Returns:
+        One entry per mode setting the deploy will not use, in :data:`MODE_KEYS` order.
+
+    Example:
+        >>> modes_the_deploy_ignores(Config({}, {}))
+        ()
+    """
+    ignored: list[ModeTheDeployIgnores] = []
+    for key in MODE_KEYS:
+        dotted = f"{PERMISSIONS_SECTION}.{key}"
+        origin = config.origin(dotted)
+        if origin is None:
+            continue
+        reason = _why_the_deploy_ignores(key, origin.get("layer"))
+        if reason is not None:
+            source = origin.get("path")
+            ignored.append(
+                ModeTheDeployIgnores(dotted=dotted, raw=rendered(config.get(dotted)), source=str(source), reason=reason)
+            )
+    return tuple(ignored)
 
 
 def read_permission_defaults(config: Config) -> PermissionReading:
@@ -152,9 +247,12 @@ __all__ = [
     "ENABLED_KEY",
     "MODE_KEYS",
     "PERMISSIONS_SECTION",
+    "SYSTEM_MODE_KEYS",
+    "ModeTheDeployIgnores",
     "PermissionDefaults",
     "PermissionReading",
     "SectionGivenAsAValueError",
+    "modes_the_deploy_ignores",
     "permission_overrides_from",
     "read_permission_defaults",
 ]
