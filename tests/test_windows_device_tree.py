@@ -398,7 +398,6 @@ def test_a_device_list_that_ends_on_no_more_items_is_complete() -> None:
     assert tree.lists_cut_short == {}
 
 
-@pytest.mark.os_agnostic
 def test_a_usb_device_list_cut_at_its_first_entry_is_recorded_under_its_own_name() -> None:
     setupapi = FakeSetupApi(by_enumerator={"USB": [1]}, fail_enum_at={1: 0})
     tree = _tree(setupapi=setupapi, cfgmgr32=FakeCfgmgr32(device_ids={1: "USB\\A"}))
@@ -407,7 +406,6 @@ def test_a_usb_device_list_cut_at_its_first_entry_is_recorded_under_its_own_name
     assert "at entry 1 " in tree.lists_cut_short["USB devices"]
 
 
-@pytest.mark.os_agnostic
 def test_a_disk_interface_list_cut_short_keeps_what_it_read_and_records_where_it_stopped() -> None:
     """The same shape for the SetupDiEnumDeviceInterfaces loop, where a lost entry is a lost disk."""
     setupapi = FakeSetupApi(
@@ -424,7 +422,6 @@ def test_a_disk_interface_list_cut_short_keeps_what_it_read_and_records_where_it
     }
 
 
-@pytest.mark.os_agnostic
 def test_a_hub_list_that_ends_on_no_more_items_is_complete_and_one_cut_short_is_not() -> None:
     hubs = {api.GUID_DEVINTERFACE_USB_HUB: [("\\\\?\\hub0", _HUB)]}
     complete = _tree(setupapi=FakeSetupApi(by_guid=hubs), cfgmgr32=FakeCfgmgr32(device_ids={_HUB: "USB\\HUB"}))
