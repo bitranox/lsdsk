@@ -348,3 +348,52 @@ def test_a_root_pool_member_on_dm_crypt_marks_its_disk_boot(
     assert [(use["kind"], use["name"]) for use in usage["uses"]] == [("crypt", "cryptroot")]
     # The other member is untouched and still boot.
     assert _disk_usage(cli_runner, production_factory, luks, "sdb")["boot"] is True
+
+
+def _guest_root_pool_on_a_host_volume(reading: dict[str, Any]) -> None:
+    """The fixture with its pool layouts, plus a guest's disk as an LV on nvme0n1p9 whose own root pool is also rpool.
+
+    The guest's pool runs to the end of its disk image, so the host's udev reads its label on the LV.
+    """
+    _with_layouts(reading)
+    for dev in ("8:3", "8:19"):
+        reading["signatures"][dev]["fs_uuid"] = "1"
+    reading["signatures"]["259:1"]["fs_uuid"] = "2"
+    reading["block"]["nvme0n1"]["partitions"]["nvme0n1p9"]["holders"] = ["dm-1"]
+    reading["stacked"] = {"dm-1": {"dev": "253:1", "dm_name": "vmdata-vm--200--disk--0", "dm_uuid": "LVM-"}}
+    reading["signatures"]["253:1"] = {"fs_type": "zfs_member", "fs_label": "rpool", "fs_uuid": "999"}
+
+
+def _boot_nodes(cli_runner: CliRunner, production_factory: Callable[[], Any], capture: Path) -> list[str]:
+    result = cli_runner.invoke(
+        cli_mod.cli, ["disks", "--replay", str(capture), "--format", "json"], obj=production_factory
+    )
+    disks = json.loads(result.output)["data"]["disks"]
+    return sorted(disk["node"] for disk in disks if disk["usage"] is not None and disk["usage"]["boot"])
+
+
+def test_a_guest_root_pool_label_on_a_host_volume_does_not_mark_the_host_disk_boot(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    guest = _zfs_fixture_with(tmp_path, "guest", _guest_root_pool_on_a_host_volume)
+
+    # Control: the committed capture boots from rpool's two SATA disks and nothing else.
+    assert _boot_nodes(cli_runner, production_factory, FIXTURES / "linux-zfs-filesystems.json") == ["sda", "sdb"]
+    # rpool's config names sda3 and sdb3; the guest's label of the same name does not make nvme0n1 a boot disk.
+    assert _boot_nodes(cli_runner, production_factory, guest) == ["sda", "sdb"]
+    # used by still names what nvme0n1 carries: the volume group the guest's disk is an LV of.
+    assert ("lvm", "vmdata") in _disk_uses(cli_runner, production_factory, guest, "nvme0n1")
+
+
+def test_a_root_pool_member_on_dm_crypt_marks_its_disk_boot_from_the_pool_layout(
+    cli_runner: CliRunner, production_factory: Callable[[], Any], tmp_path: Path
+) -> None:
+    def luks_root_with_layouts(reading: dict[str, Any]) -> None:
+        _rpool_member_behind_luks(reading)
+        _with_layouts(reading)
+        # The pool's config names the mapping the member sits on, not the partition beneath it.
+        reading["zfs_pool_layouts"]["rpool"]["vdevs"][0]["dev"] = "253:0"
+
+    luks = _zfs_fixture_with(tmp_path, "luksroot-layouts", luks_root_with_layouts)
+
+    assert _boot_nodes(cli_runner, production_factory, luks) == ["sda", "sdb"]

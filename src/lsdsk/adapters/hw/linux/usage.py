@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from ....domain.enums import Environment, UseKind
 from ....domain.models import DiskUsage, DiskUse
-from .capture import BlockEntry, FilesystemSignature, LinuxCapture, StackedEntry
+from .capture import BlockEntry, FilesystemSignature, LinuxCapture, PoolLayout, StackedEntry
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -49,11 +49,15 @@ class _Sources(NamedTuple):
             resolved source device too).
         swap_devs: Every device active swap runs on.
         boot_pools: ZFS pool names the machine boots from.
+        boot_pool_disks: The disks the boot pools' own configs place their
+            members on, by :func:`pool_disks`. ``None`` for a capture taken
+            before pool layouts were read, which judges by member labels.
     """
 
     mounts_by_dev: Mapping[str, tuple[str, ...]]
     swap_devs: frozenset[str]
     boot_pools: frozenset[str]
+    boot_pool_disks: frozenset[str] | None
 
 
 def _mounts_by_dev(capture: LinuxCapture) -> dict[str, tuple[str, ...]]:
@@ -336,22 +340,35 @@ def _signatures_of(block: BlockEntry, capture: LinuxCapture) -> list[FilesystemS
     return [whole] if whole is not None else partition_signatures
 
 
-def _is_boot(merged: tuple[DiskUse, ...], pools: frozenset[str], boot_pools: frozenset[str]) -> bool:
-    """Whether a disk's merged uses, or the pools its members belong to, mark it as a boot disk.
+def _carries_boot_pool(node: str, block: BlockEntry, capture: LinuxCapture, sources: _Sources) -> bool:
+    """Whether a member of a pool the machine boots from sits on one disk.
+
+    Where the capture carries pool layouts, the boot pools' own configs decide,
+    through the trace the filesystems section draws its pool rows from: a label
+    names a pool by name only, and a guest's root pool on a host volume carries
+    the host root pool's name. A capture taken before the layouts judges by the
+    member labels on the disk, through the holder closure as well (see
+    :func:`_member_signatures`), so a root pool behind dm-crypt still marks the
+    disk beneath it.
 
     Args:
-        merged: A disk's merged uses.
-        pools: Every ZFS pool a member on the disk names, through the holder
-            closure as well (see :func:`_member_signatures`), so a root pool
-            behind dm-crypt still marks the disk beneath it.
-        boot_pools: ZFS pool names the machine boots from.
+        node: The disk's kernel name.
+        block: The disk's block entry.
+        capture: A Linux reading.
+        sources: The capture's cross-referencing tables.
 
     Returns:
-        Whether any use is mounted under a boot mountpoint, or the disk
-        carries a member of a boot pool.
+        Whether the disk carries a member of a boot pool.
     """
-    under_boot_mount = any(mountpoint in BOOT_MOUNTS for use in merged for mountpoint in use.mounts)
-    return under_boot_mount or not pools.isdisjoint(boot_pools)
+    if sources.boot_pool_disks is not None:
+        return node in sources.boot_pool_disks
+    pools = {signature.fs_label for signature in _member_signatures(block, capture) if signature.fs_label}
+    return not sources.boot_pools.isdisjoint(pools)
+
+
+def _under_boot_mount(merged: tuple[DiskUse, ...]) -> bool:
+    """Whether any of a disk's merged uses is mounted under a boot mountpoint."""
+    return any(mountpoint in BOOT_MOUNTS for use in merged for mountpoint in use.mounts)
 
 
 def _undecidable(
@@ -385,7 +402,7 @@ def _undecidable(
     return any(unread) or unjoinable
 
 
-def _disk_usage(block: BlockEntry, capture: LinuxCapture, sources: _Sources) -> DiskUsage | None:
+def _disk_usage(node: str, block: BlockEntry, capture: LinuxCapture, sources: _Sources) -> DiskUsage | None:
     """What one disk is used for.
 
     The whole disk is always a leaf: a holder, mount or swap on the raw device
@@ -397,6 +414,7 @@ def _disk_usage(block: BlockEntry, capture: LinuxCapture, sources: _Sources) -> 
     the whole disk look like a member too.
 
     Args:
+        node: The disk's kernel name.
         block: The disk's block entry.
         capture: A Linux reading.
         sources: The capture's cross-referencing tables.
@@ -416,8 +434,8 @@ def _disk_usage(block: BlockEntry, capture: LinuxCapture, sources: _Sources) -> 
     merged = _merge(uses)
     if not merged and _undecidable(block, capture, [whole_signature, *partition_signatures]):
         return None
-    pools = frozenset(signature.fs_label for signature in _member_signatures(block, capture) if signature.fs_label)
-    return DiskUsage(boot=_is_boot(merged, pools, sources.boot_pools), uses=merged)
+    boot = _under_boot_mount(merged) or _carries_boot_pool(node, block, capture, sources)
+    return DiskUsage(boot=boot, uses=merged)
 
 
 def _leaves(block: BlockEntry) -> list[tuple[str | None, tuple[str, ...]]]:
@@ -545,6 +563,83 @@ def disks_by_pool(capture: LinuxCapture) -> dict[str, frozenset[str]]:
     return _disks_by_member(capture, lambda signature: signature.fs_label)
 
 
+#: The config's type for a vdev that is a file on some filesystem: there is no disk of the pool's own to find.
+_FILE_VDEV = "file"
+
+
+class PoolLookup(NamedTuple):
+    """The capture's device tables a pool layout is resolved against, built once per capture.
+
+    Attributes:
+        by_device: Every ``maj:min`` on a disk to the disks it lives on (:func:`disks_by_device`).
+        virtual: Every ``maj:min`` on a virtual disk (:func:`devices_on_virtual_disks`).
+        by_guid: Pool GUID to the disks carrying a member label of it (:func:`disks_by_pool_guid`).
+    """
+
+    by_device: Mapping[str, frozenset[str]]
+    virtual: frozenset[str]
+    by_guid: Mapping[str, frozenset[str]]
+
+
+def pool_lookup(capture: LinuxCapture) -> PoolLookup:
+    """The device tables :func:`pool_disks` resolves a layout against.
+
+    Args:
+        capture: A Linux reading.
+
+    Returns:
+        The tables, built once for every pool of the capture.
+    """
+    return PoolLookup(disks_by_device(capture), devices_on_virtual_disks(capture), disks_by_pool_guid(capture))
+
+
+def _followed_disks(layout: PoolLayout | None, lookup: PoolLookup) -> tuple[frozenset[str], bool]:
+    """The disks a pool's config places its members on, and whether a member could not be followed."""
+    if layout is None or layout.vdevs is None:
+        return frozenset(), True
+    disks: set[str] = set()
+    unfollowed = False
+    for vdev in layout.vdevs:
+        if vdev.dev is None:
+            unfollowed |= vdev.kind != _FILE_VDEV
+        elif vdev.dev in lookup.by_device:
+            disks |= lookup.by_device[vdev.dev]
+        elif vdev.dev not in lookup.virtual:
+            unfollowed = True
+    return frozenset(disks), unfollowed
+
+
+def pool_disks(layout: PoolLayout | None, lookup: PoolLookup) -> tuple[frozenset[str], bool]:
+    """The disks one listed pool sits on, by its own config, and whether a member could not be followed.
+
+    A member whose path did not resolve is looked for by its pool's GUID, never
+    by its name, because a guest's root pool on a host volume carries a label of
+    the host pool's name. The filesystems section draws its pool rows from this,
+    and ``used by`` marks a boot pool's disks from it, so the two cannot disagree.
+
+    Args:
+        layout: The pool's layout, or ``None`` when the capture holds none for it.
+        lookup: The capture's device tables (:func:`pool_lookup`).
+
+    Returns:
+        The disks, and whether some member was neither followed to a disk or a
+        virtual device nor a file.
+    """
+    disks, unfollowed = _followed_disks(layout, lookup)
+    if unfollowed and layout is not None and layout.guid:
+        disks |= lookup.by_guid.get(layout.guid, frozenset())
+    return disks, unfollowed
+
+
+def _boot_pool_disks(capture: LinuxCapture, boot_pools: frozenset[str]) -> frozenset[str] | None:
+    """The disks the boot pools' configs place their members on; ``None`` for a capture without pool layouts."""
+    layouts = capture.zfs_pool_layouts
+    if layouts is None:
+        return None
+    lookup = pool_lookup(capture)
+    return frozenset(disk for name in boot_pools for disk in pool_disks(layouts.get(name), lookup)[0])
+
+
 def resolve_usage(capture: LinuxCapture, environment: Environment) -> dict[str, DiskUsage | None]:
     """Resolve what every non-virtual disk in a capture is used for.
 
@@ -560,19 +655,26 @@ def resolve_usage(capture: LinuxCapture, environment: Environment) -> dict[str, 
     if environment is Environment.CONTAINER or capture.mounts is None:
         return {node: None for node, block in capture.block.items() if not block.virtual}
 
+    boot_pools = _boot_pools(capture)
     sources = _Sources(
         mounts_by_dev=_mounts_by_dev(capture),
         swap_devs=_swap_devs(capture),
-        boot_pools=_boot_pools(capture),
+        boot_pools=boot_pools,
+        boot_pool_disks=_boot_pool_disks(capture, boot_pools),
     )
-    return {node: _disk_usage(block, capture, sources) for node, block in capture.block.items() if not block.virtual}
+    return {
+        node: _disk_usage(node, block, capture, sources) for node, block in capture.block.items() if not block.virtual
+    }
 
 
 __all__ = [
     "BOOT_MOUNTS",
+    "PoolLookup",
     "devices_on_virtual_disks",
     "disks_by_device",
     "disks_by_pool",
     "disks_by_pool_guid",
+    "pool_disks",
+    "pool_lookup",
     "resolve_usage",
 ]

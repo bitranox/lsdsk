@@ -23,7 +23,7 @@ from ....domain.enums import Environment, FilesystemKind
 from ....domain.models import FIXED_INODE_TABLE_TYPES, Filesystem, FreeSpace, RefusedReading
 from ..free_space import free_space_of
 from ..refusals import refusals_of
-from .usage import devices_on_virtual_disks, disks_by_device, disks_by_pool, disks_by_pool_guid
+from .usage import disks_by_device, disks_by_pool, pool_disks, pool_lookup
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -121,10 +121,6 @@ def _mount_rows(
     return rows
 
 
-#: The config's type for a vdev that is a file on some filesystem: there is no disk of the pool's own to find.
-_FILE_VDEV = "file"
-
-
 class _PoolTrace(NamedTuple):
     """Which disks each pool sits on, and which listed pools a reading that was not taken could have placed.
 
@@ -144,40 +140,13 @@ class _PoolTrace(NamedTuple):
     members_on_disks: bool
 
 
-class _Lookup(NamedTuple):
-    """The capture's device tables a layout is resolved against, built once per capture."""
-
-    by_device: Mapping[str, frozenset[str]]
-    virtual: frozenset[str]
-    by_guid: Mapping[str, frozenset[str]]
-
-
-def _layout_disks(layout: PoolLayout | None, lookup: _Lookup) -> tuple[frozenset[str], bool]:
-    """The disks a pool's config places its members on, and whether a member could not be followed."""
-    if layout is None or layout.vdevs is None:
-        return frozenset(), True
-    disks: set[str] = set()
-    unfollowed = False
-    for vdev in layout.vdevs:
-        if vdev.dev is None:
-            unfollowed |= vdev.kind != _FILE_VDEV
-        elif vdev.dev in lookup.by_device:
-            disks |= lookup.by_device[vdev.dev]
-        elif vdev.dev not in lookup.virtual:
-            unfollowed = True
-    return frozenset(disks), unfollowed
-
-
 def _traced_from_layouts(capture: LinuxCapture, layouts: Mapping[str, PoolLayout]) -> _PoolTrace:
-    lookup = _Lookup(disks_by_device(capture), devices_on_virtual_disks(capture), disks_by_pool_guid(capture))
+    lookup = pool_lookup(capture)
     rows: dict[str, frozenset[str]] = {}
     untraced: list[str] = []
     listed: set[str] = {*(capture.zfs_pools or {}), *layouts}
     for name in sorted(listed):
-        layout = layouts.get(name)
-        disks, unfollowed = _layout_disks(layout, lookup)
-        if unfollowed and layout is not None and layout.guid:
-            disks |= lookup.by_guid.get(layout.guid, frozenset())
+        disks, unfollowed = pool_disks(layouts.get(name), lookup)
         if disks:
             rows[name] = disks
         elif unfollowed:
