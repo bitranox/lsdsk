@@ -895,6 +895,31 @@ def test_temperature_is_graded_against_the_drives_own_limits() -> None:
     assert next(f for f in diagnose_health(critical) if "critical limit" in f.title).severity is Severity.CRITICAL
 
 
+def test_a_drive_exactly_at_its_warning_threshold_is_described_as_at_or_above_it() -> None:
+    """Verify the sentence says what the rule does: it fires AT the threshold, not only past it.
+
+    "above its 82 C warning threshold" on a drive reading 82 C states a
+    comparison the reading contradicts, which is the wording sweep 18 already
+    corrected for the CRC rule.
+    """
+    at = disk(health=Health(temperature_c=82, temperature_warning_c=82, temperature_critical_c=85))
+
+    (finding,) = [f for f in diagnose_health(at) if f.severity is Severity.WARNING]
+
+    assert finding.title == "Test Drive is at 82 C, at or above its 82 C warning threshold"
+    assert finding.detail == "The drive is at or above the temperature its maker declares as the warning point."
+
+
+def test_a_drive_exactly_at_its_critical_limit_is_described_as_at_or_above_it() -> None:
+    """Verify the critical finding's detail matches the >= comparison that raises it."""
+    at = disk(health=Health(temperature_c=85, temperature_warning_c=82, temperature_critical_c=85))
+
+    (finding,) = [f for f in diagnose_health(at) if f.severity is Severity.CRITICAL]
+
+    assert finding.title == "Test Drive is at 85 C, its own critical limit is 85 C"
+    assert finding.detail == "The drive is at or above the temperature its maker declares as critical."
+
+
 @pytest.mark.os_agnostic
 def test_when_a_disk_has_no_health_data_no_health_findings_are_made() -> None:
     """Verify an unprivileged run invents nothing."""

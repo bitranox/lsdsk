@@ -1262,7 +1262,7 @@ def _crc_findings(
 
 
 def _temperature_findings(disk: Disk) -> list[Finding]:
-    """Report a drive above its own vendor-declared temperature thresholds."""
+    """Report a drive at or above its own vendor-declared temperature thresholds."""
     health = disk.health
     if health is None or health.temperature_c is None:
         return []
@@ -1275,7 +1275,7 @@ def _temperature_findings(disk: Disk) -> list[Finding]:
                 severity=Severity.CRITICAL,
                 subject=disk.path,
                 title=f"{disk.model} is at {temperature} C, its own critical limit is {critical} C",
-                detail="The drive is above the temperature its maker declares as critical.",
+                detail="The drive is at or above the temperature its maker declares as critical.",
                 action="Improve airflow now. Sustained overheating shortens life and triggers throttling.",
             )
         ]
@@ -1284,8 +1284,8 @@ def _temperature_findings(disk: Disk) -> list[Finding]:
             Finding(
                 severity=Severity.WARNING,
                 subject=disk.path,
-                title=f"{disk.model} is at {temperature} C, above its {warning} C warning threshold",
-                detail="The drive is above the temperature its maker declares as the warning point.",
+                title=f"{disk.model} is at {temperature} C, at or above its {warning} C warning threshold",
+                detail="The drive is at or above the temperature its maker declares as the warning point.",
                 action="Check airflow and drive spacing.",
             )
         ]
