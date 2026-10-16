@@ -295,7 +295,7 @@ def controller_detail(controller: Controller, inventory: Inventory) -> Detail:
     return Detail(heading, groups, (FindingScope(controller.address),))
 
 
-def node_detail(node: PciNode) -> Detail:
+def node_detail(node: PciNode, inventory: Inventory) -> Detail:
     """The whole record of one device on the PCI fabric.
 
     A finding never names a bare PCI address, only a controller's, so a bridge
@@ -304,21 +304,19 @@ def node_detail(node: PciNode) -> Detail:
 
     Args:
         node: The fabric device to describe.
+        inventory: The machine it sits in, which decides whether the link the
+            device publishes is a chipset function's register default rather
+            than a link - the same evidence the tree and the slots table mark
+            it by, so the panel under the tree row draws what the row draws.
 
     Returns:
         The record, its groups in reading order.
-
-    Note:
-        It takes no ``inventory``, unlike its siblings here: every value it
-        draws is the node's own, so the parameter was forwarded to a private
-        helper that deleted it on its first line. The family shape is a real
-        reason where the machine is READ - ``slot_detail`` needs it for
-        whatever occupies the port - and not where it is only carried.
     """
     heading = ((node.address, theme.STYLE_IDENTIFIER), (node.name, ""))
+    default = node.address in register_default_links(inventory)
     groups = (
         DetailGroup(DEVICE, _node_device_values(node)),
-        DetailGroup(LINK, _node_link_values(node)),
+        DetailGroup(LINK, _node_link_values(node, register_default=default)),
         DetailGroup(PLACE, _node_place_values(node)),
     )
     return Detail(heading, groups, (FindingScope(node.address),))
@@ -820,11 +818,11 @@ def _node_device_values(node: PciNode) -> tuple[tuple[str, Cell], ...]:
     )
 
 
-def _node_link_values(node: PciNode) -> tuple[tuple[str, Cell], ...]:
+def _node_link_values(node: PciNode, *, register_default: bool) -> tuple[tuple[str, Cell], ...]:
     """A device's link, with the reason it has none said rather than left blank."""
     if node.pcie_capability_present is False:
         return (("pcie", (theme.LEGACY, theme.STYLE_UNKNOWN)),)
-    return _pcie_values(node.link)
+    return _pcie_values(node.link, register_default=register_default)
 
 
 def _node_place_values(node: PciNode) -> tuple[tuple[str, Cell], ...]:

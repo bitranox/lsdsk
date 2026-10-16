@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from rich.console import Console
 
+from lsdsk.adapters.config.tunables import DisplaySettings
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import detail, report, tables, theme
 from lsdsk.adapters.render.tree import FabricView, render_fabric
@@ -35,7 +36,7 @@ from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.enums import ControllerKind, Environment, TreeDensity
-from lsdsk.domain.models import Controller, Inventory, PcieLink, PcieSlot
+from lsdsk.domain.models import Controller, Inventory, PcieLink, PcieSlot, PciNode
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
@@ -574,3 +575,65 @@ def test_a_read_port_switch_marks_its_usb_function_and_the_evidence_rules_still_
     real_port = _with_usb_port(machine, link=wide_port)
     assert usb not in register_default_links(real_port)
     assert usb not in register_default_links(_read_port_machine(real_link=False))
+
+
+def _node(machine: Inventory, address: str) -> PciNode:
+    return next(node for node in machine.pci_tree if node.address == address)
+
+
+async def _node_panel(machine: Inventory, address: str) -> str:
+    """What the interactive topology page's detail panel draws for one fabric device.
+
+    Driven through the app itself at ``full`` density, the only one that draws a
+    chipset's USB function, with the cursor put on that device's line - the path
+    a reader takes, so the record the panel shows is the one the app chose.
+    """
+    from textual.widgets import OptionList, Static
+
+    app = LsdskApp(machine, display=DisplaySettings(tree_density=TreeDensity.FULL))
+    async with app.run_test(size=(200, 45)) as pilot:
+        await pilot.press("1")
+        await pilot.pause()
+        index = next(
+            position
+            for position, line in enumerate(app.tree_lines)
+            if isinstance(line.subject, PciNode) and line.subject.address == address
+        )
+        app.query_one("#tree-lines", OptionList).highlighted = index
+        await pilot.pause()
+        return _drawn(app.query_one("#detail-body", Static).content)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("address", USB_FUNCTIONS)
+async def test_the_interactive_node_panel_marks_a_chipset_usb_function_on_a_proven_switch(address: str) -> None:
+    """The panel a reader opens on the tree row draws the mark that row draws, and no worth.
+
+    The tree and the slots table mark these links by the domain's evidence; the
+    panel under the tree priced the same register as a link worth a quarter of a
+    gigabyte a second, so one device read two ways on one screen.
+    """
+    panel = await _node_panel(_machine(), address)
+    link = _line_of(panel, "running")
+    assert FLOOR_WORTH not in panel, f"the node panel priced a register default:\n{panel}"
+    assert MARKED in link, link
+    assert MEANING in panel, f"the panel drew the mark and never explained it:\n{panel}"
+
+
+@pytest.mark.asyncio
+async def test_the_interactive_node_panel_keeps_the_priced_figure_where_the_hint_does_not_excuse_it() -> None:
+    """The control: with no real link on the switch the same device's link is a figure, worth included."""
+    panel = await _node_panel(_without_real_links(_machine()), USB_FUNCTIONS[0])
+    assert f"Gen1x1 ({FLOOR_WORTH})" in _line_of(panel, "running"), panel
+    assert MEANING not in panel, panel
+
+
+@pytest.mark.parametrize("address", USB_FUNCTIONS)
+def test_the_node_record_marks_exactly_the_links_the_domain_found_to_be_register_defaults(address: str) -> None:
+    """The builder reads the same evidence the tree does, and a plain node keeps its figure."""
+    machine = _machine()
+    link = _values(detail.node_detail(_node(machine, address), machine), detail.LINK)
+    assert link["running"] == link["capable"] == MARKED, link
+    plain = _without_real_links(machine)
+    priced = _values(detail.node_detail(_node(plain, address), plain), detail.LINK)
+    assert priced["running"] == priced["capable"] == f"Gen1x1 ({FLOOR_WORTH})", priced

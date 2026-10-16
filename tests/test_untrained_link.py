@@ -106,7 +106,7 @@ def test_both_untrained_ports_draw_one_way_in_the_tree(address: str) -> None:
 def test_the_detail_panel_draws_and_explains_no_link() -> None:
     machine = _machine("linux-usb-ehci")
     node = next(node for node in machine.pci_tree if node.address == EMPTY_ROOT_PORT)
-    panel = _drawn(detail.render_detail(detail.node_detail(node), diagnose(machine)))
+    panel = _drawn(detail.render_detail(detail.node_detail(node, machine), diagnose(machine)))
     assert not ZERO_WIDTH_FIGURE.search(panel), panel
     assert re.search(rf"running {theme.NO_LINK}\b", panel), panel
     assert detail.NO_LINK_LEGEND in panel, panel
