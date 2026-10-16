@@ -687,13 +687,24 @@ def _disk_line(row: dict[str, theme.Cell], glyph: str, layout: Layout, *, severi
     return line
 
 
-def _header_line(columns: Sequence[Column], widths: dict[str, int]) -> Text:
-    """Render the column header row."""
+def _header_line(columns: Sequence[Column], widths: dict[str, int], *, marker_field: bool) -> Text:
+    """Render the column header row.
+
+    Args:
+        columns: The columns the rows draw.
+        widths: The width each was given.
+        marker_field: Whether the rows lead with a severity-marker field, as
+            the disk tree's do. The slots and SMART rows carry none, and a
+            header reserving one sat three cells right of every column it
+            named. Required rather than defaulted, so a new table must say
+            which kind of row it heads.
+    """
     line = Text()
     line.append(" " * len(GUTTER))
-    # Matches the marker field `_disk_line` now leads with, or the header would
-    # sit one field to the left of the columns it labels.
-    line.append(" " * (_MARKER_RESERVE + 1))
+    # Matches the marker field `_disk_line` leads with, or the header would sit
+    # one field to the left of the columns it labels.
+    if marker_field:
+        line.append(" " * (_MARKER_RESERVE + 1))
     for column in columns:
         line.append(pad(column.title, widths[column.key], column.align), style=theme.STYLE_HEADER)
         line.append(GAP)
@@ -833,14 +844,14 @@ def render_controller_disks(
         # twenty lines away from the rows it labels, which is the same as having
         # no header at all.
         if disks:
-            lines.append(_header_line(layout.columns, layout.widths))
+            lines.append(_header_line(layout.columns, layout.widths, marker_field=True))
         lines.extend(_disk_lines(disks, severities, layout, inventory, thresholds))
 
     orphans = [disk for disk in inventory.disks if disk.node not in attached]
     if orphans:
         lines.append(Text(""))
         lines.append(Text("not attached to a known controller", style=theme.STYLE_UNKNOWN))
-        lines.append(_header_line(layout.columns, layout.widths))
+        lines.append(_header_line(layout.columns, layout.widths, marker_field=True))
         lines.extend(_disk_lines(orphans, severities, layout, inventory, thresholds))
     lines.extend(_virtual_lines(inventory, severities, layout, expand_virtual=expand_virtual, thresholds=thresholds))
     return Group(*lines)
@@ -861,7 +872,7 @@ def _virtual_lines(
     if not expand_virtual:
         lines.append(Text(f"   {virtual_note(inventory.virtual_disks)}", style=theme.STYLE_UNKNOWN))
         return lines
-    lines.append(_header_line(layout.columns, layout.widths))
+    lines.append(_header_line(layout.columns, layout.widths, marker_field=True))
     lines.extend(_disk_lines(inventory.virtual_disks, severities, layout, inventory, thresholds))
     return lines
 
@@ -1042,7 +1053,7 @@ def render_slots(inventory: Inventory, width: int = DEFAULT_WIDTH) -> Renderable
     chosen = layout.columns
 
     lines: list[RenderableType] = [_board_line(inventory)]
-    lines.append(_header_line(chosen, widths))
+    lines.append(_header_line(chosen, widths, marker_field=False))
     for row in rows:
         line = Text(GUTTER)
         for index, column in enumerate(chosen):
@@ -1157,7 +1168,7 @@ def _disk_attributes(disk: Disk, width: int, *, privileged: bool) -> list[Render
     widths = natural_widths(ATTRIBUTE_COLUMNS, rows)
     chosen = fit(ATTRIBUTE_COLUMNS, widths, width)
 
-    lines: list[RenderableType] = [heading, _header_line(chosen, widths)]
+    lines: list[RenderableType] = [heading, _header_line(chosen, widths, marker_field=False)]
     for attribute, row in zip(attributes, rows, strict=True):
         style = _attribute_style(attribute)
         line = Text(GUTTER)
@@ -1231,6 +1242,7 @@ def render_findings(findings: Sequence[Finding]) -> RenderableType:
 
 
 __all__ = [
+    "ATTRIBUTE_COLUMNS",
     "DEFAULT_WIDTH",
     "DISK_COLUMNS",
     "HEALTH_NEEDING_SMART",
