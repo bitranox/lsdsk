@@ -92,6 +92,65 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 - The exit-code tables of the skill and the module reference name `config-deploy` refusing a
   permission mode under `22`, and CONFIG.md says a `--set` mode is checked on every `config-deploy`
   run, even one that would not apply it.
+- **Output written to a file or a pipe is UTF-8 on every platform**, whatever the console code page or
+  locale, as RFC 8259 requires for JSON. On Windows `lsdsk ... --format json > out.json` was written in
+  the ANSI code page (cp1252), and on a Linux host with a Latin-1 or C locale in that encoding or
+  ASCII, so a UTF-8 reader misread localised device names and a character outside the code page came
+  out as `?`. A terminal keeps its own encoding, and an encoding named in `PYTHONIOENCODING` is
+  honoured. A usage error quoting a character the terminal cannot encode is printed degraded instead
+  of crashing.
+- **An unsafe `--dir-mode` or `--file-mode` is refused under the option's own name**
+  (`--dir-mode: unsafe directory mode 0o777: ...`); it named the library's `dir_mode`. The exit stays
+  22.
+- **`config-deploy` names each configured permission value it does not use**: a mode given in a
+  `.env` file, which the deploy never reads, and an `app_*` or `host_*` mode in a user configuration
+  file, which the deploy takes only from the shipped defaults, the app and host files and the
+  environment. A permission section given as a single value in a file no longer draws "Using the
+  shipped section" ahead of the deploy refusing the run over that same value.
+- **`config --profile X` and `config-deploy --profile X` warn about an unknown key or an unusable
+  value in profile X's own files**, as `--profile X config` does; environment and `--set` warnings are
+  still printed once.
+- **A capture without a `kernel` line replays.** The line is still written into every capture as
+  provenance, but no output is built from it.
+- **A drive's temperature finding says it is "at or above" its warning threshold**, which is what the
+  rule checks; a drive reading exactly its warning or critical limit was described as above it.
+- **The register-default mark (`Gen1x1*`) also covers a chipset's own USB functions on a switch whose
+  SATA function it already marks.** On a board with two chained chipsets those USB ports no longer
+  show `Gen1x1 (0.25 GB/s)` in the slots table, topology tree, slot panel and interactive slots page,
+  and the JSON `occupant_link_is_register_default` is true for them.
+- **The printed filesystems view draws no column header over "Filesystems were not read." or "No
+  filesystem on the inventoried disks."**, and names a refused filesystem reading even when it lists
+  no filesystem, as the trend section and the interactive page already did.
+- **A capacity that rounds to ten of its unit is written whole** (`10KB`, `10GiB`), as every figure
+  from ten on is, instead of `10.0KB` or `10.0GiB`.
+- **A host whose PID 1 runs in a unit whose name merely contains a container runtime's letters** (for
+  example `associated.service`, which contains "oci") is no longer reported as a container: a runtime
+  is recognised only by a whole word of PID 1's `container=` value or control-group path.
+- **A disk still carrying the ZFS label of a destroyed or exported pool no longer shows up as a pool
+  row of dashes** when an older capture is replayed: a label makes a pool row only for a pool the pool
+  listing holds, unless the listing was not read or could not read some pool. `used by` still names
+  the label.
+- **Inside a chroot into a plain directory, a filesystem mounted on the chroot directory itself is the
+  unreachable mount.** Before, the chroot's own mounts were marked hidden and `/` was given the
+  figures of the filesystem underneath it.
+- **A filesystem whose free-extent walk is refused is walked once**, not again at each of its other
+  mountpoints (up to four million records each time): past the free-extent cap or the record budget,
+  a walk that does not advance, no `FS_IOC_GETFSMAP`, or a space map naming none of its device. A
+  failure to open the mountpoint, or another ioctl error, still tries the next mountpoint.
+- **A disk holding a member of a ZFS root pool on dm-crypt/LUKS is marked `boot`** in used by; the
+  cell still reads `crypt <name>`.
+- **On Windows, a mounted disk-image file (VHD, VHDX or ISO) no longer reads as SSD**: a file has no
+  media, so its kind is unknown, as it already was for Linux loop and zvol devices.
+- **On Windows, a drive whose first temperature sensor reports nothing shows the first sensor that
+  does**, and a drive whose SMART data or NVMe log names no temperature shows the temperature the
+  storage stack offered, with its thresholds where SMART had none.
+- **On Windows, a device list SetupAPI stopped early with an error is no longer taken for the whole
+  list.** A cut-short disk-interface list is reported like an unreadable disk interface
+  (`device: disk interface - ...` in `skipped`, and the "disk interface not read" note); a cut-short
+  PCI-device, USB-device or USB-hub list appears in `skipped` as `<list>: device list - ...`. Either
+  makes `ok` false.
+- CONTRIBUTING.md asks only for the Linux capture of a chipset used as a PCIe switch; the Windows one
+  is among the tests.
 
 ## [1.9.1] 2026-10-15 14:10:52
 

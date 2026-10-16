@@ -53,7 +53,9 @@ mount namespace. A mount stacked on its parent's own mountpoint is such a siblin
 other children are cut off too, and the parent itself is covered. A mount is unreachable when it is
 cut off or its parent is unreachable, and hidden when it is unreachable or covered. The process root
 is the exception: lookup starts at it rather than crossing into it, so a mount stacked on `/` is
-the unreachable one and hides nothing beneath the root. Comparing `st_dev` was rejected because a
+the unreachable one and hides nothing beneath the root. Inside a chroot into a plain directory the
+same holds one level down: a mount listed at `/` whose unlisted parent also holds another listed
+mount sits on the chroot's own directory, and is treated like one stacked on `/`. Comparing `st_dev` was rejected because a
 btrfs subvolume reports an anonymous one that differs from mountinfo's. Such a hidden row carries
 `hidden` in the capture and is never asked; a filesystem reachable at another mountpoint is read
 and named there, and one reachable nowhere keeps its row with no figures and a `statvfs` refusal
@@ -107,7 +109,10 @@ could not follow falls back to the udev labels, matched by the pool's GUID and n
 pool whose members are all files or virtual devices (loop, zram) has no row and no refusal, like any
 other filesystem on no inventoried disk; a listed pool that a reading which was not taken could have
 placed is a refusal of the reading `zfs-pool-disks` and draws no row. A capture taken before the
-configuration was recorded traces members by label name, as it did then. A refused
+configuration was recorded traces members by label name, as it did then; there a label naming a
+pool that a fully read pool listing does not hold (a destroyed or exported pool's, left on a
+reused disk) gives no row, while beside a listing not read, or one that could not read some pool,
+the label keeps its unread row. A refused
 `statvfs` is recorded against its filesystem under `statvfs`, a Windows volume's under
 `volume-space` (the space query) or `volume-info` (the filesystem-information query), and each
 becomes a `skipped` line, so `ok` is `false` on a scan that missed one. A container, or a capture

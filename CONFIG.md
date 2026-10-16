@@ -283,6 +283,11 @@ user_file = "0o600"
 enabled = true
 ```
 
+The deploy never reads a mode from a `.env` file, and reads an `app_*` or `host_*` mode only from the
+shipped defaults, the app and host files, the environment and `--set`, never from a user
+configuration file. `config-deploy` names each such key, and the file it came from, in a warning, so
+it does not read as applied.
+
 ### Generate Example Configuration Files
 
 Create example TOML files showing the layout of a configuration tree, with documentation comments. They carry a generic placeholder section rather than lsdsk's own `[thresholds]`, `[display]` and `[history]` keys, so use them to learn where files go; for the keys themselves see the shipped defaults or the tables below.

@@ -259,13 +259,13 @@ which exits 0, and 95 percent for a warning, which exits 1. The four limits are 
 `inodes_full_warning_percent` keys of `[thresholds]` in [CONFIG.md](CONFIG.md). A filesystem
 mounted read-only is listed and raises no finding, because nothing can fill it.
 
-The percentage is computed the way the `Use%` column of `df` is: used divided by used plus the
-space free to an ordinary user, rounded up (a ZFS pool is rounded down instead, as `zpool list`
-prints it). On ext4 with reserved blocks it can therefore be higher
-than used divided by size, which is what the detail line of the finding prints. The same sum on
-the same mount gives the same figure as `df`. The detail line writes used, size and free the way the
-table beside it does, on both scales and in a unit that keeps a small figure readable, so a nearly
-full 486 MB `/boot` reads `420MB/401MiB of 486MB/463MiB used, 36MB/34MiB free` and never `0 GB free`.
+The percentage is computed the way the `Use%` column of `df` is: used divided by used plus the space
+free to an ordinary user, rounded up (a ZFS pool is rounded down instead, as `zpool list` prints
+it). On ext4 with reserved blocks it can therefore be higher than used divided by size, which is
+what the detail line of the finding prints. The same sum on the same mount gives the same figure as
+`df`. The detail line writes used, size and free the way the table beside it does, on both scales
+and in a unit that keeps a small figure readable, so a nearly full 486 MB `/boot` reads
+`420MB/401MiB of 486MB/463MiB used, 36MB/34MiB free` and never `0 GB free`.
 
 A ZFS pool is one row, whatever datasets it holds, and its size and allocation are read from ZFS
 itself, since asking the filesystem about one dataset answers for that dataset's own data plus the

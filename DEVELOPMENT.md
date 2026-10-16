@@ -113,6 +113,11 @@ decodes every location and fails naming each one whose serial differs from what
 the tool reports for that drive. That is the check to satisfy before committing
 a capture.
 
+A drive's WWN identifies it as surely as its serial. On a Windows capture, keep the
+NAA nibble and the OUI of the IDENTIFY WWN (words 108-111) and zero its
+vendor-specific bits, in every place that carries it; the same test refuses a
+Windows fixture that still publishes a real one.
+
 Assert on bounded ranges rather than exact values for anything that changes on
 its own: power-on hours and wear only climb, and an exact assertion breaks the
 next time a fixture is recaptured.

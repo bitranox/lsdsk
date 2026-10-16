@@ -283,6 +283,11 @@ user_file = "0o600"
 enabled = true
 ```
 
+Einen Modus aus einer `.env`-Datei liest das Ausrollen nie, und einen `app_*`- oder `host_*`-Modus
+liest es nur aus den mitgelieferten Vorgaben, den App- und Host-Dateien, der Umgebung und `--set`,
+nie aus einer Benutzer-Konfigurationsdatei. `config-deploy` nennt jeden solchen Schlüssel und die
+Datei, aus der er kam, in einer Warnung, damit er nicht wie angewendet wirkt.
+
 ### Beispieldateien erzeugen
 
 Erzeugt TOML-Beispieldateien, die den Aufbau eines Konfigurationsbaums zeigen, mit erklärenden Kommentaren. Sie tragen einen allgemeinen Platzhalterabschnitt statt lsdsks eigener Schlüssel `[thresholds]`, `[display]` und `[history]`; nehmen Sie sie also, um zu lernen, wohin die Dateien gehören, und für die Schlüssel selbst die mitgelieferten Vorgaben oder die Tabellen weiter unten.

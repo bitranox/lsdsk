@@ -121,6 +121,12 @@ fehl unter Nennung jeder einzelnen, deren Seriennummer von dem abweicht, was das
 Werkzeug für dieses Laufwerk meldet. Das ist die Prüfung, die vor dem Committen
 einer Aufnahme bestanden sein muss.
 
+Die WWN eines Laufwerks kennzeichnet es so sicher wie seine Seriennummer. In einer
+Windows-Aufnahme behalten Sie das NAA-Nibble und die OUI der IDENTIFY-WWN (Wörter
+108-111) und setzen ihre herstellerspezifischen Bits auf null, an jeder Stelle,
+die sie trägt; derselbe Test weist eine Windows-Fixture zurück, die noch eine
+echte veröffentlicht.
+
 Prüfen Sie auf Bereiche statt auf genaue Werte, wo sich etwas von selbst ändert:
 Betriebsstunden und Verschleiß steigen nur, und eine genaue Zusicherung geht
 beim nächsten Neuaufnehmen einer Fixture kaputt.
