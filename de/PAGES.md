@@ -25,9 +25,8 @@ Bildschirm; `shift+up` und `shift+down` rollen darin und werden nur angeboten,
 wenn der Eintrag höher ist als die Tafel. SMART und Befunde führen keinen
 Cursor, rollen als ganze Seite, und die Tafel liest dort `Nothing selected.`
 
-Auf der Topologieseite schaltet `d` um, wie detailliert die PCI-Struktur dargestellt wird,
-dieselbe Einstellung, die `--tree-density` für jede Ansicht setzt. 
-`,` und `.` scrollen die WWN, wenn nötig.
+Auf der Topologieseite schaltet `d` um, wie detailliert die PCI-Struktur dargestellt wird, dieselbe
+Einstellung, die `--tree-density` für jede Ansicht setzt. `,` und `.` scrollen die WWN, wenn nötig.
 
 Die Ansicht fragt nach erhöhten Rechten, bevor sie irgendetwas liest, weil jeder SMART-Wert, und
 unter Windows auch die Link-Geschwindigkeit einer SATA-Platte, nur einem Prozess mit erhöhten Rechten
@@ -89,9 +88,9 @@ Schnittstelle und Medienfehler.
 
 ![SMART-Attribute](../docs/screenshots/5-smart.png)
 
-Jedes Attribut jedes Laufwerks, mit Wert, schlechtestem Wert und Schwelle neben
-der Rohzahl, denn eine Rohzahl allein hat wenig Aussagekraft. 
-NVMe-Laufwerke veröffentlichen statt einer Attributtabelle ein festes Gesundheitsprotokoll, und die Seite zeigt dieses an.
+Jedes Attribut jedes Laufwerks, mit Wert, schlechtestem Wert und Schwelle neben der Rohzahl, denn
+eine Rohzahl allein hat wenig Aussagekraft. NVMe-Laufwerke veröffentlichen statt einer
+Attributtabelle ein festes Gesundheitsprotokoll, und die Seite zeigt dieses an.
 
 ## 6 Befunde
 
@@ -113,11 +112,10 @@ Restzahl ist die Bandbreite, die derzeit niemand verwendet.
 
 ![Zählerverlauf](../docs/screenshots/8-trend.png)
 
-Die Zähler im Zeitverlauf, statt nur einem Wert: die Änderung seit der
-letzten Messung, die Spanne, über die sie gemessen wurde, eine Rate pro Stunde,
-und ein Urteil. Zwei Laufwerke lesen hier `rising`. Eines liest
-`no new in 16h, 235 were due`, ein Zähler, der zu steigen aufgehört hat. 
-Der Rest sagt `too soon to say`, solange nicht genug Zeit zwischen zwei Messungen vergangen ist.
+Die Zähler im Zeitverlauf, statt nur einem Wert: die Änderung seit der letzten Messung, die Spanne,
+über die sie gemessen wurde, eine Rate pro Stunde, und ein Urteil. Zwei Laufwerke lesen hier
+`rising`. Eines liest `no new in 16h, 235 were due`, ein Zähler, der zu steigen aufgehört hat. Der
+Rest sagt `too soon to say`, solange nicht genug Zeit zwischen zwei Messungen vergangen ist.
 
 ## 9 Dateisysteme
 
@@ -146,8 +144,8 @@ Sie wird nur angezeigt und nie zum Befund.
 
 Der Cursor füllt die Tafel mit dem, wofür die Tabelle keine Spalte hat: jeden weiteren Einhängepunkt
 des Dateisystems mit Namen, wo die Zeile `+N` sagt, die Platten, auf denen es liegt, das
-Schreibschutz-Flag, die rohen Inode-Zahlen, eine Gruppe `free space` (`fragmentation`, `free extents`, `largest` und
-`average`) und jede vom System verweigerte Lesung samt Grund. Eine
+Schreibschutz-Flag, die rohen Inode-Zahlen, eine Gruppe `free space` (`fragmentation`,
+`free extents`, `largest` und `average`) und jede vom System verweigerte Lesung samt Grund. Eine
 Zeile, deren Zahlen nicht gelesen wurden, etwa ein Einhängepunkt, den ein darüber eingehängter
 verdeckt, zeigt `-` und den Grund, nie eine Zahl. Zwei Zeilen können denselben Namen tragen, daher
 folgt die Tafel der Zeile und nicht dem Namen.

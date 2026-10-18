@@ -40,18 +40,18 @@ recomputed. How far the two weightings differ on histograms of real extents was 
 **Which filesystems have a figure.**
 
 - A ZFS pool: the `fragmentation` property through `ZFS_IOC_POOL_GET_PROPS`, on the same read-only
-  `/dev/zfs` handle that reads size and allocation. A pool can publish no figure (`ZFS_FRAG_INVALID`,
-  any value above 100, which `zpool list` prints as `-`); the reader records that as absent and the
-  cell draws `n/a`. A pool carries a score, no extent figures and an empty histogram, because ZFS
-  does not publish its free-space histogram to a caller.
+  `/dev/zfs` handle that reads size and allocation. A pool can publish no figure
+  (`ZFS_FRAG_INVALID`, any value above 100, which `zpool list` prints as `-`); the reader records
+  that as absent and the cell draws `n/a`. A pool carries a score, no extent figures and an empty
+  histogram, because ZFS does not publish its free-space histogram to a caller.
 - ext4 and xfs: the free extents of the mounted filesystem through `FS_IOC_GETFSMAP`.
 - A Windows volume: the volume bitmap through `FSCTL_GET_VOLUME_BITMAP`, folded into free runs. This
   needs an elevated session and opens the volume by its GUID path.
 - A Linux mount of any other type (btrfs, vfat, tmpfs, and the types with no free-space source this
-  tool reads) draws `n/a`. An elevated Windows run walks every volume that can be a row - one
-  with a mount path whose disk extents name an inventoried disk and that is not an optical drive or
-  a RAM disk - and reads those extents first; an unelevated one walks none. The Linux walk likewise
-  reads only filesystems on an inventoried disk, asking the section's own device mapping, since a
+  tool reads) draws `n/a`. An elevated Windows run walks every volume that can be a row - one with a
+  mount path whose disk extents name an inventoried disk and that is not an optical drive or a RAM
+  disk - and reads those extents first; an unelevated one walks none. The Linux walk likewise reads
+  only filesystems on an inventoried disk, asking the section's own device mapping, since a
   filesystem on no such disk is never a row.
 
 **Two bounds, not settings.** A read stops at `MAX_FREE_EXTENTS = 1_000_000` free extents (or free
@@ -59,11 +59,11 @@ runs on Windows) per filesystem and refuses with a reason naming the number, bec
 fragmented large filesystem would otherwise hold the run for as long as it takes to walk it and
 allocate as many records. The Linux walk has a second bound, `MAX_FSMAP_RECORDS = 4_000_000`
 space-map records of any kind, and refuses with a reason naming that number. It exists because
-`FS_IOC_GETFSMAP` returns every record of the filesystem's space map, not only the free ones: a
-xfs filesystem with reverse mapping (`rmapbt=1`), read as root, lists the extent of every file as well, so the free
-extents alone would not bound the walk. Both are module constants and not configuration keys: a
-limit a user can raise is a limit a typo can turn into an unbounded read, and the bounds exist to
-protect the run, not to express a preference.
+`FS_IOC_GETFSMAP` returns every record of the filesystem's space map, not only the free ones: a xfs
+filesystem with reverse mapping (`rmapbt=1`), read as root, lists the extent of every file as well,
+so the free extents alone would not bound the walk. Both are module constants and not configuration
+keys: a limit a user can raise is a limit a typo can turn into an unbounded read, and the bounds
+exist to protect the run, not to express a preference.
 
 **The refusals, by name.** A reading the system refused is recorded and becomes a `skipped` line,
 like every other refusal here: `zfs-fragmentation` (the pool listing, inventory level),
@@ -73,11 +73,12 @@ run-wide line a Windows run without Administrator carries in the JSON envelope's
 field being absent.
 
 **The views name an inventory-level refusal.** The `zfs-pools`, `zfs-fragmentation`,
-`zfs-pool-disks`, `volume` and `fragmentation` refusals belong to no row, so a row cannot carry them. The printed filesystems view,
-the same section on the default page and the interactive filesystems page each add one sentence under
-the table, `Not read: fragmentation (needs Administrator).`, naming every refusal in
-`inventory.unread_filesystems` with its reason. It is keyed on that record and never on the dashes the
-table drew, because a dash is also an ordinary unread cell. Without it an unelevated Windows run
+`zfs-pool-disks`, `volume` and `fragmentation` refusals belong to no row, so a row cannot carry
+them. The printed filesystems view, the same section on the default page and the interactive
+filesystems page each add one sentence under the table,
+`Not read: fragmentation (needs Administrator).`, naming every refusal in
+`inventory.unread_filesystems` with its reason. It is keyed on that record and never on the dashes
+the table drew, because a dash is also an ordinary unread cell. Without it an unelevated Windows run
 showed `-` in every `frag` cell and named no cause anywhere but the JSON.
 
 **`n/a` and `-` are different claims.** `n/a` in the `frag` cell means no figure can exist: the type
@@ -87,11 +88,12 @@ carries a per-column meaning there, because the inodes column draws it too.
 
 **Shape of the output.** The table column is `frag`, right-aligned, and drops first as the terminal
 narrows (priority 7, so it drops before `inodes%`). The panel gains a `free space` group with
-`fragmentation`, `free extents`, `largest` and `average`. The JSON entry gains `free_space`: `null`, or
-`{fragmentation_percent, free_extent_count, free_extent_bytes, largest_free_extent_bytes,
-histogram}`, and `histogram` is the 21 buckets of free bytes. A filesystem with no free extent at all
-scores no figure and has no average free run, so its `fragmentation` and `average` draw `n/a` in the
-panel, while `largest` and the free extent count draw `0`, because no free space is itself a reading.
+`fragmentation`, `free extents`, `largest` and `average`. The JSON entry gains `free_space`: `null`,
+or `{fragmentation_percent, free_extent_count, free_extent_bytes, largest_free_extent_bytes,
+histogram}`, and `histogram` is the 21 buckets of free bytes. A filesystem with no free extent at
+all scores no figure and has no average free run, so its `fragmentation` and `average` draw `n/a`
+in the panel, while `largest` and the free extent count draw `0`, because no free space is itself a
+reading.
 
 ## What was measured
 
@@ -100,47 +102,48 @@ All of it on 2026-10-13 with this change.
 - **Pool fragmentation as an ordinary user.** `ZFS_IOC_POOL_GET_PROPS` on a read-only `/dev/zfs`
   handle, run unprivileged on OpenZFS 2.4.4, answered on every pool tried. On the real-hardware run,
   13 of 13 pools on five ZFS hosts read the same figure as `zpool list`, with values from 2 to 41.
-- **ext4 and xfs, root and unprivileged.** On a throwaway Ubuntu VM (kernel 6.8, xfsprogs
-  6.6), `lsdsk filesystems --format json` read three 2 GiB filesystems - ext4, xfs, and xfs with
-  `rmapbt=1` - once empty and once after writing at least 1,400 MiB of 1-8 MiB files and deleting every other
-  one. On every root reading the free extent count and free bytes equal what `e2freefrag` and
-  `xfs_spaceman -c 'freesp -s'` report, and on ext4 the largest free extent equals `e2freefrag`'s
-  maximum. An ordinary user read the same extent counts and scores as root on all three, with free
-  bytes equal on ext4. On xfs the unprivileged reading was one 4 KiB block higher in free bytes in all four
-  readings (xfs and xfs with `rmapbt=1`, empty and scattered), and in the largest free extent on the two
-  scattered ones. Scores were 1 to 2 empty and 15 to 17 scattered. The empty ext4 reported a 938 MB
-  free extent across 128 MiB block groups, so ext4's free extents are not cut at block-group
-  boundaries there.
+- **ext4 and xfs, root and unprivileged.** On a throwaway Ubuntu VM (kernel 6.8, xfsprogs 6.6),
+  `lsdsk filesystems --format json` read three 2 GiB filesystems - ext4, xfs, and xfs with
+  `rmapbt=1` - once empty and once after writing at least 1,400 MiB of 1-8 MiB files and deleting
+  every other one. On every root reading the free extent count and free bytes equal what
+  `e2freefrag` and `xfs_spaceman -c 'freesp -s'` report, and on ext4 the largest free extent equals
+  `e2freefrag`'s maximum. An ordinary user read the same extent counts and scores as root on all
+  three, with free bytes equal on ext4. On xfs the unprivileged reading was one 4 KiB block higher
+  in free bytes in all four readings (xfs and xfs with `rmapbt=1`, empty and scattered), and in the
+  largest free extent on the two scattered ones. Scores were 1 to 2 empty and 15 to 17 scattered.
+  The empty ext4 reported a 938 MB free extent across 128 MiB block groups, so ext4's free extents
+  are not cut at block-group boundaries there.
 - **Why xfs as root reads one block less.** It is the kernel, and the unprivileged figure is the
-  right one. On an xfs with reverse mapping, `xfs_getfsmap` answers a caller holding
-  `CAP_SYS_ADMIN` from the reverse-mapping btree and everyone else from the free-space btree
-  (`use_rmap`, `fs/xfs/xfs_fsmap.c` line 901 in v6.8). The reverse-mapping path lists free space as
-  the gaps between mappings and closes the last gap at the high key, which it sets to the START of
-  the data device's last block (`end_fsb` from `eofs - 1`, line 604, becomes
-  `info->high.rm_startblock`, line 651, and is handed to the gap helper on the final query, line
-  730, which measures the gap up to it, line 329), so that block is never listed. Upstream fixed it
-  in a440a28ddbdc, "xfs: fix off-by-one error in fsmap's end_daddr usage", first in v6.13. The
-  `mkfs.xfs` of xfsprogs 6.6.0 on that VM image gives `rmapbt=1` when no `-m` option says otherwise
-  (measured on 2026-10-18), so the plain xfs of that run had reverse mapping too, which is why all
-  four readings differed; and `xfs_spaceman -c 'freesp -s'` walks the same ioctl, so as
-  root it misses the same block and was no independent check. Re-measured on 2026-10-18 on kernel
-  6.8.0-147 and xfsprogs 6.6.0 with 2 GiB loop filesystems, dumping every record of a root walk and
-  an unprivileged one: on `rmapbt=0` the records were identical, empty and scattered. On `rmapbt=1`
-  every free record matched except the one ending the device, 131,058 blocks as root against
-  131,059 unprivileged empty and 88,946 against 88,947 scattered, and `xfs_db` read that AG's last
-  free-space btree record as 131,059 and 88,947 blocks. `read_free_extents` returned exactly the
-  scattered figures in each arm, and a walk of seven records per call, resumed up to 41 times, read the same
-  free records as a single call, so lsdsk's record handling plays no part.
-- **Windows, elevated.** One `lsdsk filesystems --format json` run on a Windows 11 VM took 2.9 s warm
-  and 5.4 s cold with a 499 GiB NTFS system volume 13% full (41,897 free extents, score 1), read
-  through the volume GUID path. A temporary 4 GiB NTFS volume filled to 95% read score 3 in 2.9 s.
+  right one. On an xfs with reverse mapping, `xfs_getfsmap` answers a caller holding `CAP_SYS_ADMIN`
+  from the reverse-mapping btree and everyone else from the free-space btree (`use_rmap`,
+  `fs/xfs/xfs_fsmap.c` line 901 in v6.8). The reverse-mapping path lists free space as the gaps
+  between mappings and closes the last gap at the high key, which it sets to the START of the data
+  device's last block (`end_fsb` from `eofs - 1`, line 604, becomes `info->high.rm_startblock`, line
+  651, and is handed to the gap helper on the final query, line 730, which measures the gap up to
+  it, line 329), so that block is never listed. Upstream fixed it in a440a28ddbdc, "xfs: fix
+  off-by-one error in fsmap's end_daddr usage", first in v6.13. The `mkfs.xfs` of xfsprogs 6.6.0 on
+  that VM image gives `rmapbt=1` when no `-m` option says otherwise (measured on 2026-10-18), so the
+  plain xfs of that run had reverse mapping too, which is why all four readings differed; and
+  `xfs_spaceman -c 'freesp -s'` walks the same ioctl, so as root it misses the same block and was no
+  independent check. Re-measured on 2026-10-18 on kernel 6.8.0-147 and xfsprogs 6.6.0 with 2 GiB
+  loop filesystems, dumping every record of a root walk and an unprivileged one: on `rmapbt=0` the
+  records were identical, empty and scattered. On `rmapbt=1` every free record matched except the
+  one ending the device, 131,058 blocks as root against 131,059 unprivileged empty and 88,946
+  against 88,947 scattered, and `xfs_db` read that AG's last free-space btree record as 131,059 and
+  88,947 blocks. `read_free_extents` returned exactly the scattered figures in each arm, and a walk
+  of seven records per call, resumed up to 41 times, read the same free records as a single call, so
+  lsdsk's record handling plays no part.
+- **Windows, elevated.** One `lsdsk filesystems --format json` run on a Windows 11 VM took 2.9 s
+  warm and 5.4 s cold with a 499 GiB NTFS system volume 13% full (41,897 free extents, score 1),
+  read through the volume GUID path. A temporary 4 GiB NTFS volume filled to 95% read score 3 in 2.9
+  s.
 - **Windows, not elevated.** A probe found that opening the volume fails with error 5, which is why
   the run does not attempt it: every `frag` cell draws `-`, the filesystems views say
-  `Not read: fragmentation (needs Administrator).` under the table, and the JSON envelope's `skipped`
-  carries the `fragmentation: filesystems - needs Administrator` line.
-- **Cost on a large, nearly full volume is not measured end to end.** The bitmap expansion runs about
-  1.8 s per TiB of all-used clusters in a unit benchmark; no such volume was read through the whole
-  path.
+  `Not read: fragmentation (needs Administrator).` under the table, and the JSON envelope's
+  `skipped` carries the `fragmentation: filesystems - needs Administrator` line.
+- **Cost on a large, nearly full volume is not measured end to end.** The bitmap expansion runs
+  about 1.8 s per TiB of all-used clusters in a unit benchmark; no such volume was read through the
+  whole path.
 - **ReFS was not run.** The Windows edition available would not format a ReFS volume, so neither
   outcome is claimed.
 
@@ -165,9 +168,9 @@ defragmenter, which would mean running a subprocess. This tool runs none.
 
 Captures gain optional fields (`SCHEMA_VERSION` stays 2): a pool's fragmentation, a mount's free
 extents, a Windows volume's `free_extents` entry and a Windows run's `volume_bitmaps_read` (with
-`volume_space_read` and a disk's `device_number_error` beside them), so every
-committed fixture still parses and an older one replays with no figure. The `frag` cell of a row with
-no reading draws `-`, which the three legend tests written before the column existed had to be told
-about; their fixtures now carry a `FreeSpace` so they still test what they were written for.
+`volume_space_read` and a disk's `device_number_error` beside them), so every committed fixture
+still parses and an older one replays with no figure. The `frag` cell of a row with no reading draws
+`-`, which the three legend tests written before the column existed had to be told about; their
+fixtures now carry a `FreeSpace` so they still test what they were written for.
 
 Fragmentation is a snapshot of the moment of the run. It is not trended and does not feed a finding.
