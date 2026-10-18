@@ -112,6 +112,11 @@ def _pack(bits: list[int]) -> bytes:
     return value.to_bytes((len(bits) + 7) // 8, "little")
 
 
+def _referent(proxy: object) -> Any:
+    """The object a ``ctypes.byref()`` proxy wraps, which a fake reads and writes in place of the caller's."""
+    return getattr(proxy, "_obj")  # noqa: B009 - a CArgObject's referent is reached by name alone
+
+
 @dataclass
 class FakeVolumeKernel:
     """``kernel32`` as the volume reader sees it."""
@@ -189,7 +194,7 @@ class FakeVolumeKernel:
             self.error = ERROR_INVALID_PARAMETER
             return 0
         multi = "".join(f"{path}\x00" for path in paths) + "\x00"
-        getattr(needed, "_obj").value = len(multi)  # noqa: B009 - a CArgObject's referent
+        _referent(needed).value = len(multi)
         if len(multi) > size:
             return 0
         for index, char in enumerate(multi):
@@ -211,17 +216,17 @@ class FakeVolumeKernel:
         if space is None:
             self.error = ERROR_NOT_READY
             return 0
-        getattr(total, "_obj").value = space[0]  # noqa: B009 - a CArgObject's referent
-        getattr(free, "_obj").value = space[1]  # noqa: B009 - a CArgObject's referent
-        getattr(available, "_obj").value = space[2]  # noqa: B009 - a CArgObject's referent
+        _referent(total).value = space[0]
+        _referent(free).value = space[1]
+        _referent(available).value = space[2]
         return 1
 
     def GetDiskFreeSpaceW(  # noqa: N802 - the Win32 entry point's own name
         self, root: str, sectors: object, sector_bytes: object, free: object, total: object
     ) -> int:
         del free, total
-        getattr(sectors, "_obj").value = self._volume_at(root).cluster_bytes // 512  # noqa: B009 - a CArgObject's referent
-        getattr(sector_bytes, "_obj").value = 512  # noqa: B009 - a CArgObject's referent
+        _referent(sectors).value = self._volume_at(root).cluster_bytes // 512
+        _referent(sector_bytes).value = 512
         return 1
 
     def GetVolumeInformationW(  # noqa: N802 - the Win32 entry point's own name
@@ -241,7 +246,7 @@ class FakeVolumeKernel:
             self.error = ERROR_ACCESS_DENIED
             return 0
         fs_name.value = volume.fs_type
-        getattr(flags, "_obj").value = volume.flags  # noqa: B009 - a CArgObject's referent
+        _referent(flags).value = volume.flags
         return 1
 
     def CreateFileW(  # noqa: N802 - the Win32 entry point's own name
@@ -299,7 +304,7 @@ class FakeVolumeKernel:
             return 0
         assert len(answer) <= out_size
         ctypes.memmove(out_buffer, answer, len(answer))
-        getattr(returned, "_obj").value = len(answer)  # noqa: B009 - a CArgObject's referent
+        _referent(returned).value = len(answer)
         return 1
 
     def _bitmap_answer(
@@ -318,14 +323,14 @@ class FakeVolumeKernel:
         if volume.bitmap_error is not None:
             self.error = volume.bitmap_error
             return 0
-        asked = getattr(in_buffer, "_obj").value  # noqa: B009 - a CArgObject's referent
+        asked = _referent(in_buffer).value
         start = asked - asked % volume.bitmap_rounding + volume.bitmap_lcn_ahead
         room_bits = 0 if volume.bitmap_stalls else (out_size - 16) * 8
         bits = volume.bitmap[start:]
         header = start.to_bytes(8, "little", signed=True) + len(bits).to_bytes(8, "little", signed=True)
         payload = header + _pack(bits[:room_bits])
         ctypes.memmove(out_buffer, payload, len(payload))
-        getattr(returned, "_obj").value = len(payload)  # noqa: B009 - a CArgObject's referent
+        _referent(returned).value = len(payload)
         if len(bits) > room_bits:
             self.error = api.ERROR_MORE_DATA
             return 0
