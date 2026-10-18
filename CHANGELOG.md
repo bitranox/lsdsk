@@ -63,6 +63,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   print became `...` or `'`, and a box rule cp437 can draw became `|`. A character with no ASCII
   form is now spelled out (`\u4e2d`) on standard error, which escapes what it cannot encode, and
   still becomes `?` on a standard output that refuses it.
+- A `.env` file no longer changes what `config-deploy` writes behind `lsdsk config`'s back. Logging
+  copied every line of the nearest `.env` into the environment, so a line such as
+  `LSDSK___LIB_LAYERED_CONFIG__DEFAULT_PERMISSIONS__USER_FILE=0o604` in the directory you ran lsdsk
+  from deployed the user configuration with mode 0604, while `lsdsk config` did not show that
+  value at all. Logging now takes only the `LOG_*` lines, never over a variable that is already
+  set. It also reads them from the file `--env-file` names, which it used to ignore in favour of
+  the working directory, and stops looking upward at a project root (a `pyproject.toml` or `.git`).
+- `click`, `pydantic-core` and `python-dotenv` are declared dependencies. lsdsk imports each of
+  them itself and only received them through other packages.
 
 ## [1.10.0] 2026-10-17 00:28:58
 

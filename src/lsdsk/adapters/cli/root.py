@@ -511,7 +511,7 @@ def cli(
     # both surfaces have to be read once the two are merged.
     _refuse_an_ambiguous_mode(ctx, config)
     report_values_nothing_uses(config, history_file=history_file)
-    services.init_logging(config)
+    services.init_logging(config, dotenv_path=env_file)
     store_cli_context(
         ctx,
         CLIContext(

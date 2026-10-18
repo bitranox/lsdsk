@@ -77,9 +77,9 @@ def _slow_console(appearance: ConsoleAppearance) -> ConsolePort:
     )
 
 
-def _init_slow_logging(config: Config) -> None:
+def _init_slow_logging(config: Config, *, dotenv_path: str | None = None) -> None:
     """Start the logging runtime on a queue whose console is slow, as ``init_logging`` would."""
-    del config
+    del config, dotenv_path
     lib_log_rich.runtime.init(
         lib_log_rich.runtime.RuntimeConfig(
             service="lsdsk-test",

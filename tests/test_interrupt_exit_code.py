@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 def _services_interrupted_while_starting_logging() -> AppServices:
     """The production services whose logging start meets a Ctrl-C."""
 
-    def _interrupted(config: object) -> None:
+    def _interrupted(config: object, *, dotenv_path: str | None = None) -> None:
         raise KeyboardInterrupt
 
     return replace(build_production(), init_logging=_interrupted)

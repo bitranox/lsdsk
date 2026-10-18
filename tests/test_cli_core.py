@@ -173,7 +173,7 @@ def test_traceback_flag_displays_full_exception_traceback(
 def _services_whose_logging_breaks() -> Any:
     """The production services with a logging start that fails the way a library fault would."""
 
-    def _logging_that_breaks(config: object) -> None:
+    def _logging_that_breaks(config: object, *, dotenv_path: str | None = None) -> None:
         raise OverflowError("logging could not start")
 
     return replace(build_production(), init_logging=_logging_that_breaks)

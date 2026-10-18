@@ -6,6 +6,7 @@ eliminating duplication between module entry (__main__.py) and console script
 
 Contents:
     * :func:`init_logging` - idempotent logging initialization with layered config.
+    * :func:`load_log_variables` - the ``LOG_*`` lines of a ``.env``, and no other, into the environment.
     * :func:`run_log_demo` - one line per severity, on the same guarded console.
     * :func:`with_documented_forms` - the documented one-line text forms turned into the shapes the library validates.
     * :func:`_build_runtime_config` - constructs RuntimeConfig from a ``[lib_log_rich]`` table.
@@ -23,10 +24,11 @@ import os
 from collections.abc import Mapping
 from contextlib import contextmanager
 from functools import partial
+from pathlib import Path
 from typing import TYPE_CHECKING, Final, NamedTuple, cast
 
-import lib_log_rich.config
 import lib_log_rich.runtime
+from dotenv import dotenv_values
 from lib_log_rich.domain import ConsoleStream, LogLevel
 from lib_log_rich.domain.palettes import CONSOLE_STYLE_THEMES
 from lib_log_rich.runtime import RichConsoleAdapter
@@ -211,12 +213,79 @@ def _report_once(notes: Sequence[str]) -> None:
             safe_console.echo(note, err=True)
 
 
-def init_logging(config: Config) -> None:
+#: The variables lib_log_rich reads itself; the only lines of a ``.env`` logging takes.
+_LOG_VARIABLE_PREFIX: Final = "LOG_"
+#: A directory holding one of these is a project root: the upward ``.env`` search stops there.
+_PROJECT_MARKERS: Final = ("pyproject.toml", ".git")
+
+
+def _dotenv_in(directory: Path) -> tuple[Path | None, bool]:
+    """The ``.env`` in ``directory``, and whether the search stops there.
+
+    A directory that cannot be read is passed over: before Python 3.14 a path
+    behind a directory without search permission raises rather than answering
+    False.
+    """
+    try:
+        candidate = directory / ".env"
+        if candidate.is_file():
+            return candidate, True
+        return None, any((directory / marker).exists() for marker in _PROJECT_MARKERS)
+    except OSError:
+        return None, False
+
+
+def _nearest_dotenv() -> Path | None:
+    """The ``.env`` in the working directory or the nearest parent, up to the project root.
+
+    Walks by path alone, with no ``chdir``.
+    """
+    try:
+        start = Path.cwd()
+    except OSError:
+        return None
+    for directory in (start, *start.parents):
+        found, stop = _dotenv_in(directory)
+        if found is not None or stop:
+            return found
+    return None
+
+
+def load_log_variables(dotenv_path: str | None) -> None:
+    """Copy the ``LOG_*`` lines of a ``.env`` into the environment, never over a set variable.
+
+    Only ``LOG_*``: lib_log_rich reads those itself, and any other line copied
+    into the environment is read by every later configuration load as the
+    ENVIRONMENT layer - the deploy's permission read among them, which takes a
+    mode from the environment and never from a ``.env``. A file that cannot be
+    read or decoded is passed over: the configuration loader reports it.
+
+    Args:
+        dotenv_path: The ``.env`` the configuration was loaded from
+            (``--env-file``), or ``None`` for the nearest one from the working
+            directory up to the project root.
+
+    Example:
+        >>> load_log_variables(None)  # doctest: +SKIP
+    """
+    path = Path(dotenv_path) if dotenv_path is not None else _nearest_dotenv()
+    if path is None:
+        return
+    try:
+        values = dotenv_values(path, encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return
+    for name, value in values.items():
+        if name.startswith(_LOG_VARIABLE_PREFIX) and value is not None:
+            os.environ.setdefault(name, value)
+
+
+def init_logging(config: Config, *, dotenv_path: str | None = None) -> None:
     """Initialize lib_log_rich runtime with the provided configuration.
 
     All entry points need logging configured, but the runtime should only
     be initialized once regardless of how many times this function is called.
-    Loads .env files (to make LOG_* variables available), checks if lib_log_rich
+    Copies the ``LOG_*`` lines of a .env into the environment, checks if lib_log_rich
     is already initialized, and configures it with settings from the provided
     Config object. Bridges standard Python logging to lib_log_rich for domain
     code compatibility.
@@ -224,20 +293,23 @@ def init_logging(config: Config) -> None:
     Args:
         config: Already-loaded layered configuration object containing logging
             settings in the [lib_log_rich] section.
+        dotenv_path: The ``.env`` the configuration was loaded from (``--env-file``),
+            or ``None`` for the nearest one from the working directory up to the
+            project root.
 
     Side Effects:
-        Loads .env files into the process environment on first invocation.
+        Copies the ``LOG_*`` lines of that .env into the process environment on first
+        invocation; no other line, and no variable that is already set.
         May initialize the global lib_log_rich runtime on first invocation.
         Subsequent calls have no effect.
 
     Note:
-        This function is safe to call multiple times. The first call loads .env
+        This function is safe to call multiple times. The first call reads the .env
         and initializes the runtime; subsequent calls check the initialization
         state and return immediately if already initialized.
 
-        The .env loading enables lib_log_rich to read LOG_* environment variables
-        from .env files in the current directory or parent directories. This
-        provides the highest precedence override mechanism for logging configuration.
+        The .env reading lets lib_log_rich take its LOG_* variables from a .env file:
+        the highest precedence override for logging configuration.
 
     Example:
         >>> from lib_layered_config import Config
@@ -247,7 +319,7 @@ def init_logging(config: Config) -> None:
     if lib_log_rich.runtime.is_initialised():
         return
     _REPORTED.clear()
-    lib_log_rich.config.enable_dotenv()
+    load_log_variables(dotenv_path)
     configured, notes = _configured_section(config)
     notes.extend(start_runtime(configured, shipped_section(_SECTION)))
     _report_once(notes)
@@ -754,6 +826,7 @@ def run_log_demo(theme: str) -> str:
 __all__ = [
     "LoggingConfigModel",
     "init_logging",
+    "load_log_variables",
     "run_log_demo",
     "start_runtime",
     "with_documented_forms",
