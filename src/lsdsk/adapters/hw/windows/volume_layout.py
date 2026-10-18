@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING, Final, NamedTuple
 from . import winapi as api
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from ..decode.free_extents import FreeExtentTally
 
 #: The EFI System Partition's GPT partition type GUID.
@@ -110,6 +112,11 @@ def parse_is_esp(raw: bytes) -> bool | None:
 BITMAP_HEADER_BYTES: Final = 16
 _BITMAP_HEADER: Final = struct.Struct("<qq")  # StartingLcn, BitmapSize
 _FREE_RUN: Final = re.compile("0+")
+#: Whole bytes of used clusters, enough of them in a row that skipping them beats
+#: expanding them: a full volume is mostly these, and they hold no free run. A
+#: shorter stretch is expanded with its neighbours, so a bitmap of scattered bits
+#: is not cut into thousands of pieces.
+_USED_STRETCH: Final = re.compile(rb"\xff{64,}")
 
 
 class BitmapHeader(NamedTuple):
@@ -183,15 +190,10 @@ class FreeRunFolder:
         """
         if nbits - skip <= 0:
             return
-        value = (int.from_bytes(data[: (nbits + 7) // 8], "little") & ((1 << nbits) - 1)) >> skip
-        nbits -= skip
-        # Binary text is most significant first; reversed, cluster 0 comes first.
-        clusters = format(value, f"0{nbits}b")[::-1]
         carried, self._open = self._open, 0
-        for run in _FREE_RUN.finditer(clusters):
-            start, end = run.span()
+        for start, end in _free_runs(_window(data, nbits, skip)):
             length = end - start
-            if start == 0:
+            if start == skip:
                 length, carried = length + carried, 0
             if end == nbits:
                 self._open = length
@@ -205,6 +207,56 @@ class FreeRunFolder:
         if self._open:
             self._tally.add(self._open * self._cluster)
             self._open = 0
+
+
+def _window(data: bytes, nbits: int, skip: int) -> bytearray:
+    r"""The bytes holding clusters ``skip`` to ``nbits``, every bit outside them marked in use.
+
+    A cluster folded from an earlier chunk and a bit past the last cluster
+    must not join a free run, and marked in use neither can.
+
+    Example:
+        >>> bytes(_window(b"\x00", 4, 1))
+        b'\xf1'
+    """
+    size = (nbits + 7) // 8
+    window = bytearray(data[:size].ljust(size, b"\x00"))
+    whole, part = divmod(skip, 8)
+    window[:whole] = b"\xff" * whole
+    if part:
+        window[whole] |= (1 << part) - 1
+    if nbits % 8:
+        window[-1] |= (0xFF << nbits % 8) & 0xFF
+    return window
+
+
+def _free_runs(window: bytearray) -> Iterator[tuple[int, int]]:
+    r"""The start and end cluster of every free run in ``window``, skipping long stretches in use.
+
+    A free run cannot cross a byte whose every cluster is used, so the bytes
+    between two such stretches are expanded on their own.
+
+    Example:
+        >>> list(_free_runs(bytearray(b"\x0f" + b"\xff" * 64 + b"\xf0")))
+        [(4, 8), (520, 524)]
+    """
+    position = 0
+    for stretch in _USED_STRETCH.finditer(window):
+        yield from _runs_between(window, position, stretch.start())
+        position = stretch.end()
+    yield from _runs_between(window, position, len(window))
+
+
+def _runs_between(window: bytearray, first: int, last: int) -> Iterator[tuple[int, int]]:
+    """The free runs in bytes ``first`` to ``last`` of ``window``, as cluster spans of the whole window."""
+    if first == last:
+        return
+    width = (last - first) * 8
+    # Binary text is most significant first; reversed, the first cluster comes first.
+    clusters = format(int.from_bytes(window[first:last], "little"), f"0{width}b")[::-1]
+    offset = first * 8
+    for run in _FREE_RUN.finditer(clusters):
+        yield offset + run.start(), offset + run.end()
 
 
 __all__ = [

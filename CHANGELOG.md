@@ -40,6 +40,10 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   on a current kernel is served by the ext4 driver, which can list its free extents. ext2 still has
   none, because a kernel built with the separate ext2 driver cannot list them, and asking would
   report a refusal for a filesystem that has nothing to read.
+- Windows: reading the fragmentation of a nearly full volume no longer expands every used cluster
+  of its bitmap. Long stretches of used clusters are skipped, which measured about 300 times faster
+  on an all-used bitmap (0.2 ms instead of 60 ms per MiB, so about 1.8 s per TiB of a full volume
+  saved); a bitmap of scattered clusters costs what it did.
 
 ### Fixed
 

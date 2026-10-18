@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import struct
+import tracemalloc
 import uuid
 
 import pytest
@@ -169,6 +170,69 @@ def test_free_runs_match_a_per_bit_count_across_chunk_edges(seed: int) -> None:
     summary = tally.summary()
     assert (summary["count"], summary["total"]) == (len(expected), 4096 * sum(expected))
     assert summary["largest"] == 4096 * max(expected, default=0)
+
+
+def _stretches(seed: int) -> list[int]:
+    """A bitmap of alternating used and free stretches, some long enough to span many whole bytes.
+
+    Real volumes hold files laid out contiguously, so a used stretch of
+    hundreds of clusters is the common case; uniform random bits never make one.
+    """
+    drawn = _stream(seed, 600)
+    bits: list[int] = []
+    for index, value in enumerate(drawn[:300]):
+        scale = (1, 37, 700)[value % 3]
+        bits += [index % 2] * (1 + (drawn[300 + index] % 4) * scale)
+    return bits
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_long_stretches_match_a_per_bit_count_across_chunk_edges_and_rounded_starts(seed: int) -> None:
+    """Chunks of 1-300 bytes, each starting at a cluster rounded down as the filesystem may round it."""
+    bits = _stretches(seed)
+    rounding = (1, 8, 64)[seed % 3]
+    sizes = iter(8 * (rounding // 8 + 1 + value % 300) for value in _stream(seed + 1000, 5000))
+    tally = FreeExtentTally()
+    folder = FreeRunFolder(4096, tally)
+    position = 0
+    while position < len(bits):
+        lcn = position - position % rounding
+        size = min(next(sizes), len(bits) - lcn)
+        folder.feed(_pack(bits[lcn : lcn + size]), size, skip=position - lcn)
+        position = lcn + size
+    folder.finish()
+    expected = _naive_runs(bits)
+    summary = tally.summary()
+    assert max(_naive_runs([1 - bit for bit in bits])) >= 8 * 64  # control: a used stretch of 64 whole bytes
+    assert (summary["count"], summary["total"]) == (len(expected), 4096 * sum(expected))
+    assert summary["largest"] == 4096 * max(expected, default=0)
+
+
+def _peak_bytes_to_fold(chunk: bytes) -> int:
+    """The most memory folding one chunk held at once, which an expansion to one character per cluster shows."""
+    folder = FreeRunFolder(4096, FreeExtentTally())
+    tracemalloc.start()
+    try:
+        folder.feed(chunk, len(chunk) * 8)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    return peak
+
+
+def test_an_all_used_chunk_is_folded_without_expanding_a_character_per_cluster() -> None:
+    """A full volume is mostly whole bytes of used clusters, and those hold no free run to look for.
+
+    Expanding one of them into a string of one character per cluster cost
+    about 55 ms per MiB of bitmap, 1.8 s per TiB of a full volume. Memory is
+    the deterministic witness: the expansion holds eight bytes per bitmap
+    byte at once, which no clock on a loaded runner has to be trusted for.
+    """
+    size = 1 << 20
+    assert _peak_bytes_to_fold(b"\xff" * size) < 4 * size
+    # The control: the same probe does see the expansion where one is needed,
+    # used stretches one byte too short to skip with a free byte after each.
+    assert _peak_bytes_to_fold((b"\xff" * 63 + b"\x00") * (size // 64)) >= 8 * size
 
 
 def test_a_bitmap_header_is_the_starting_cluster_and_the_bit_count() -> None:
