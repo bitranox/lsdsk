@@ -41,6 +41,14 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   none, because a kernel built with the separate ext2 driver cannot list them, and asking would
   report a refusal for a filesystem that has nothing to read.
 
+### Fixed
+
+- Windows: a volume bitmap answer that cannot be the whole volume is recorded as a refused
+  fragmentation reading instead of being scored. That covers an answer reporting success with fewer
+  clusters than its own header promised, an answer shorter than its header (which used to read as
+  an empty volume), and a driver whose answers describe a volume of a different size from one call
+  to the next, which used to keep the walk asking forever.
+
 ## [1.10.0] 2026-10-17 00:28:58
 
 ### Added

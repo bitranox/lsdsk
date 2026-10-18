@@ -225,6 +225,92 @@ def _cluster_bytes(kernel32: api.WinLibrary, path: str, *, last_error: Callable[
     return sectors.value * sector_bytes.value
 
 
+class _BitmapAnswer(NamedTuple):
+    """One ``FSCTL_GET_VOLUME_BITMAP`` answer, its header read and its byte count checked.
+
+    Attributes:
+        more: Whether the call answered ``ERROR_MORE_DATA``, clusters being left over.
+        lcn: The first cluster its bits describe.
+        remaining: How many clusters the volume has from ``lcn`` on.
+        data: The cluster bits it returned, header excluded.
+    """
+
+    more: bool
+    lcn: int
+    remaining: int
+    data: bytes
+
+
+def _ask_bitmap(
+    kernel32: api.WinLibrary,
+    handle: int,
+    output: ctypes.Array[ctypes.c_char],
+    start: int,
+    *,
+    last_error: Callable[[], int],
+) -> _BitmapAnswer:
+    """Ask for the cluster bits from ``start`` on, and read back what the call returned.
+
+    Raises:
+        _BitmapRefusedError: The call failed other than with ``ERROR_MORE_DATA``,
+            or returned less than its own header, which would otherwise be read
+            from whatever the buffer held.
+        ValueError: A header field is negative.
+    """
+    starting, returned = ctypes.c_int64(start), api.DWORD()
+    done = kernel32.DeviceIoControl(
+        handle,
+        api.FSCTL_GET_VOLUME_BITMAP,
+        ctypes.byref(starting),
+        ctypes.sizeof(starting),
+        output,
+        len(output),
+        ctypes.byref(returned),
+        None,
+    )
+    code = 0 if done else last_error()
+    if code not in (0, api.ERROR_MORE_DATA):
+        message = f"could not read the volume bitmap (error {code})"
+        raise _BitmapRefusedError(message)
+    raw = output.raw[: returned.value]
+    if len(raw) < BITMAP_HEADER_BYTES:
+        message = f"the volume bitmap answer is {len(raw)} bytes, shorter than its {BITMAP_HEADER_BYTES}-byte header"
+        raise _BitmapRefusedError(message)
+    lcn, remaining = parse_bitmap_header(raw)
+    return _BitmapAnswer(code == api.ERROR_MORE_DATA, lcn, remaining, raw[BITMAP_HEADER_BYTES:])
+
+
+def _check_answer(answer: _BitmapAnswer, start: int, clusters: int) -> int:
+    """How many clusters ``answer`` carries, once it is known to continue the walk at ``start``.
+
+    Args:
+        answer: The call's answer.
+        start: The cluster the call asked from.
+        clusters: How many clusters the volume has, from its first answer.
+
+    Returns:
+        The clusters to fold, counted from ``answer.lcn``.
+
+    Raises:
+        _BitmapRefusedError: The answer starts past ``start``, describes a
+            volume of another size, ends early, or does not advance.
+    """
+    if answer.lcn > start:
+        message = f"the volume bitmap restarted at cluster {answer.lcn}, past {start}"
+        raise _BitmapRefusedError(message)
+    if answer.lcn + answer.remaining != clusters:
+        message = f"the volume bitmap changed from {clusters} to {answer.lcn + answer.remaining} clusters mid-walk"
+        raise _BitmapRefusedError(message)
+    nbits = min(len(answer.data) * 8, answer.remaining)
+    if not answer.more and nbits < answer.remaining:
+        message = f"the volume bitmap ended after {answer.lcn + nbits} of {clusters} clusters"
+        raise _BitmapRefusedError(message)
+    if answer.more and answer.lcn + nbits <= start:
+        message = "the volume bitmap did not advance"
+        raise _BitmapRefusedError(message)
+    return nbits
+
+
 def _walk_bitmap(
     kernel32: api.WinLibrary, handle: int, folder: FreeRunFolder, *, last_error: Callable[[], int], chunk_bytes: int
 ) -> None:
@@ -238,40 +324,28 @@ def _walk_bitmap(
     before the cluster asked for is folded from that cluster on; one starting
     after it would leave clusters unread, and is refused.
 
+    The first answer's starting cluster plus its ``BitmapSize`` is the
+    volume's cluster count, and every later answer must name the same one.
+    That is the walk's ceiling: each call advances at least one cluster and
+    none goes past the count, so a driver answering ``ERROR_MORE_DATA``
+    forever cannot keep it walking.
+
     Raises:
-        _BitmapRefusedError: A call failed another way, or the walk could not advance.
+        _BitmapRefusedError: A call failed another way, or an answer could not
+            be continued from (see :func:`_check_answer`).
     """
     output = ctypes.create_string_buffer(BITMAP_HEADER_BYTES + chunk_bytes)
     start = 0
+    clusters: int | None = None
     while True:
-        starting, returned = ctypes.c_int64(start), api.DWORD()
-        done = kernel32.DeviceIoControl(
-            handle,
-            api.FSCTL_GET_VOLUME_BITMAP,
-            ctypes.byref(starting),
-            ctypes.sizeof(starting),
-            output,
-            len(output),
-            ctypes.byref(returned),
-            None,
-        )
-        code = 0 if done else last_error()
-        if code not in (0, api.ERROR_MORE_DATA):
-            message = f"could not read the volume bitmap (error {code})"
-            raise _BitmapRefusedError(message)
-        lcn, remaining = parse_bitmap_header(output.raw[:BITMAP_HEADER_BYTES])
-        if lcn > start:
-            message = f"the volume bitmap restarted at cluster {lcn}, past {start}"
-            raise _BitmapRefusedError(message)
-        data = output.raw[BITMAP_HEADER_BYTES : max(returned.value, BITMAP_HEADER_BYTES)]
-        nbits = min(len(data) * 8, remaining)
-        folder.feed(data, nbits, skip=start - lcn)
-        if code == 0:
+        answer = _ask_bitmap(kernel32, handle, output, start, last_error=last_error)
+        if clusters is None:
+            clusters = answer.lcn + answer.remaining
+        nbits = _check_answer(answer, start, clusters)
+        folder.feed(answer.data, nbits, skip=start - answer.lcn)
+        if not answer.more:
             return
-        if lcn + nbits <= start:
-            message = "the volume bitmap did not advance"
-            raise _BitmapRefusedError(message)
-        start = lcn + nbits
+        start = answer.lcn + nbits
 
 
 def _free_extents(
@@ -310,7 +384,8 @@ def _free_extents(
     try:
         _walk_bitmap(kernel32, handle, folder, last_error=last_error, chunk_bytes=chunk_bytes)
         folder.finish()
-    except (_BitmapRefusedError, ValueError) as refused:  # a cap breach and a bad header are ValueErrors
+    # The tally's cap and total bounds and a negative header field are ValueErrors.
+    except (_BitmapRefusedError, ValueError) as refused:
         return {"error": str(refused)}
     finally:
         kernel32.CloseHandle(handle)

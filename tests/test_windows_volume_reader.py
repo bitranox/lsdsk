@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
+from lsdsk.adapters.hw.decode.free_extents import MAX_FREE_EXTENTS
 from lsdsk.adapters.hw.windows import volumes
 from lsdsk.adapters.hw.windows import winapi as api
 from lsdsk.adapters.hw.windows.capture import VolumeEntry, WindowsCapture
@@ -77,6 +78,13 @@ class FakeVolume:
             the one asked for, which no documented answer does.
         bitmap_error: The error the bitmap call fails with, or ``None``.
         bitmap_stalls: Answer ``ERROR_MORE_DATA`` with no cluster bits at all.
+        bitmap_short: Answer the last call with success and only half the
+            cluster bits its header says are left.
+        bitmap_returned: The byte count every bitmap answer reports, whatever
+            it wrote, or ``None`` for the length it wrote.
+        bitmap_grows: How many clusters larger each answer reports the volume
+            than the answer before it.
+        cluster_error: The error ``GetDiskFreeSpaceW`` fails with, or ``None``.
         ioctl_raises: Raise from the identity ioctls rather than answer, the way
             a ctypes call raises on an argument it cannot convert.
     """
@@ -95,6 +103,10 @@ class FakeVolume:
     bitmap_lcn_ahead: int = 0
     bitmap_error: int | None = None
     bitmap_stalls: bool = False
+    bitmap_short: bool = False
+    bitmap_returned: int | None = None
+    bitmap_grows: int = 0
+    cluster_error: int | None = None
     ioctl_raises: bool = False
 
 
@@ -108,7 +120,8 @@ BITMAP_CALL_LIMIT = 200
 
 def _pack(bits: list[int]) -> bytes:
     """Cluster bits, least significant bit first, as a ``VOLUME_BITMAP_BUFFER`` carries them."""
-    value = sum(bit << index for index, bit in enumerate(bits))
+    # Reversed so the last cluster is the most significant digit; linear, unlike summing shifted bits.
+    value = int("".join(map(str, reversed(bits))) or "0", 2)
     return value.to_bytes((len(bits) + 7) // 8, "little")
 
 
@@ -225,7 +238,11 @@ class FakeVolumeKernel:
         self, root: str, sectors: object, sector_bytes: object, free: object, total: object
     ) -> int:
         del free, total
-        _referent(sectors).value = self._volume_at(root).cluster_bytes // 512
+        volume = self._volume_at(root)
+        if volume.cluster_error is not None:
+            self.error = volume.cluster_error
+            return 0
+        _referent(sectors).value = volume.cluster_bytes // 512
         _referent(sector_bytes).value = 512
         return 1
 
@@ -326,11 +343,14 @@ class FakeVolumeKernel:
         asked = _referent(in_buffer).value
         start = asked - asked % volume.bitmap_rounding + volume.bitmap_lcn_ahead
         room_bits = 0 if volume.bitmap_stalls else (out_size - 16) * 8
-        bits = volume.bitmap[start:]
-        header = start.to_bytes(8, "little", signed=True) + len(bits).to_bytes(8, "little", signed=True)
-        payload = header + _pack(bits[:room_bits])
+        size = len(volume.bitmap) - start + volume.bitmap_grows * (self.bitmap_calls - 1)
+        # Past the bitmap's own end a growing volume reads as in use, so only its size is wrong.
+        bits = (volume.bitmap[start:] + [1] * size)[:size]
+        header = start.to_bytes(8, "little", signed=True) + size.to_bytes(8, "little", signed=True)
+        sent = bits[: len(bits) // 2] if volume.bitmap_short and len(bits) <= room_bits else bits[:room_bits]
+        payload = header + _pack(sent)
         ctypes.memmove(out_buffer, payload, len(payload))
-        _referent(returned).value = len(payload)
+        _referent(returned).value = len(payload) if volume.bitmap_returned is None else volume.bitmap_returned
         if len(bits) > room_bits:
             self.error = api.ERROR_MORE_DATA
             return 0
@@ -776,6 +796,50 @@ def test_a_failing_bitmap_call_is_refused_with_its_error() -> None:
     entry, fake = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, bitmap_error=ERROR_ACCESS_DENIED))
     assert entry["free_extents"] == {"error": "could not read the volume bitmap (error 5)"}
     assert fake.bitmap_calls == 1
+
+
+def test_a_cluster_size_call_that_fails_is_refused_with_its_error_before_the_volume_is_opened() -> None:
+    entry, fake = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, cluster_error=ERROR_NOT_READY))
+    assert entry["free_extents"] == {"error": f"could not read the cluster size (error {ERROR_NOT_READY})"}
+    assert _bitmap_handles(fake) == []
+
+
+def test_a_bitmap_answer_that_ends_before_the_clusters_its_header_promised_is_refused() -> None:
+    """Success with half the bits left would fold half a volume and call it the whole one."""
+    entry, fake = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, bitmap_short=True), chunk_bytes=64)
+    # 53 bits arrive as 7 whole bytes, so the answer carries 56 clusters' worth.
+    assert entry["free_extents"] == {"error": "the volume bitmap ended after 56 of 107 clusters"}
+    assert fake.bitmap_calls == 1
+
+
+def test_a_bitmap_answer_shorter_than_its_own_header_is_refused() -> None:
+    """A header the call did not return is whatever the buffer held, which reads as an empty volume."""
+    entry, _ = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, bitmap_returned=8), chunk_bytes=64)
+    assert entry["free_extents"] == {"error": "the volume bitmap answer is 8 bytes, shorter than its 16-byte header"}
+
+
+def test_a_bitmap_whose_volume_grows_between_answers_is_refused_rather_than_walked_on() -> None:
+    """Every answer must describe the volume the first one did; one that keeps growing would be walked forever."""
+    entry, fake = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP, bitmap_grows=8))
+    assert entry["free_extents"] == {"error": "the volume bitmap changed from 107 to 115 clusters mid-walk"}
+    assert fake.bitmap_calls == 2
+
+
+def test_a_walk_over_answers_that_do_describe_one_volume_is_not_refused() -> None:
+    """The control for the four refusals above: the same bitmap, answered plainly, chunk by chunk."""
+    entry, fake = _walked(FakeVolume(paths=("C:\\",), bitmap=_RUNS_BITMAP))
+    assert "error" not in entry["free_extents"]
+    assert fake.bitmap_calls > 2
+    assert (entry["free_extents"]["count"], entry["free_extents"]["largest"]) == (25, 10 * 4096)
+
+
+def test_a_volume_with_more_free_runs_than_the_cap_is_refused_rather_than_failing_the_run() -> None:
+    """The tally refuses past its cap by raising; the walk must turn that into this volume's refusal."""
+    bitmap = [0, 1] * (MAX_FREE_EXTENTS + 1)
+    entry, fake = _walked(FakeVolume(paths=("C:\\",), bitmap=bitmap), chunk_bytes=1 << 20)
+    refusal = f"more than {MAX_FREE_EXTENTS:,} free extents; stopped counting at the cap"
+    assert entry["free_extents"] == {"error": refusal}
+    assert _bitmap_handles(fake)[0] in fake.closed
 
 
 def test_a_cluster_size_of_zero_is_refused_before_the_volume_is_opened_for_reading() -> None:
