@@ -53,10 +53,15 @@ class FakeFsmap:
     - A low key whose length is zero starts from the beginning, and a non-zero one continues
       (xfs_fsmap.c, the comment before ``info.next_daddr``: "identified by a non-zero length in the low key").
     - A low key naming a special owner (free space, metadata) resumes at physical plus length, because no other
-      mapping can share those blocks (xfs_fsmap.c ~L505-510, ``rmap_not_shareable``: start_fsb += blockcount).
-    - A low key naming file data resumes inside the same physical block at the next offset of the same owner
-      (xfs_fsmap.c ~L511-514: ``rm_offset += rm_blockcount``), so records sharing one physical address are
-      continued by (owner, offset), which is why two batches can end at one physical address.
+      mapping can share those blocks (xfs_fsmap.c ``rmap_not_shareable``, then ``start_fsb += rm_blockcount`` in
+      ``__xfs_getfsmap_datadev``). ext4 resumes every record that way, having no shared blocks (fs/ext4/fsmap.c
+      ``ext4_getfsmap``: "there can be no other mapping for the same physical block range").
+    - A low key naming file data is resumed by (owner, offset) instead (``rm_offset += rm_blockcount``), so the
+      records sharing one physical address are continued inside it, which is why two batches can end at one
+      physical address. The kernel does this ONLY for a written data-fork extent of an inode on a reflink xfs:
+      ``rmap_not_shareable`` sends an xfs without reflink, an attribute-fork or bmbt block and an unwritten extent
+      to the physical-plus-length rule. This fake applies the (owner, offset) rule to every non-special record,
+      which answers the same as the kernel wherever one physical block has one record - every case but reflink.
     - The all-ones high key is a contract this fake imposes on the walk (it matches what xfs_io sends); the
       kernels only require low < high. A non-zero reserved byte is the kernels' own EINVAL.
     """
