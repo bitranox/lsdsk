@@ -91,6 +91,10 @@ def test_no_row_of_a_numberless_machine_runs_past_the_page(
     table = output.split("\n\n", 1)[0].splitlines()
     assert len(table) == 5, "the title, the header and three disks"
     assert max(len(line.rstrip()) for line in table) <= width
+    # The prose under the table is laid out by the same console, so it wraps at the same width.
+    assert "not on this page" in " ".join(output.split()), "the left-out findings line is not drawn, so it is not held"
+    too_long = [line for line in output.splitlines() if len(line.rstrip()) > width]
+    assert not too_long, f"lines past {width} columns: {too_long}"
 
 
 def test_the_whole_interface_path_stays_in_the_json(
