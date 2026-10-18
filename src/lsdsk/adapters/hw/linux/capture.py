@@ -29,6 +29,8 @@ from pydantic import BeforeValidator, Field, ValidationInfo, field_validator
 from ....domain.enums import Platform
 from ..capture import (
     MAX_DEVICE_TEXT,
+    UINT32_MAX,
+    UINT64_MAX,
     CaptureHeader,
     CaptureModel,
     DeviceText,
@@ -77,8 +79,6 @@ def is_fuse(fstype: str) -> bool:
 # reached figures the tool then stated - a ports bitmap of 14,000 bits was
 # counted into "14000 ports, 13999 free", and a capacity past what a float
 # holds ended `lsdsk disks` in a bare OverflowError.
-_UINT32_MAX = 0xFFFFFFFF  # an AHCI register, and uid_t
-_UINT64_MAX = 2**64 - 1  # a ZFS pool's size and allocation, as the kernel counts them
 _FragmentationPercent = Annotated[int, Field(ge=0, le=100)]  # a ZFS pool's FRAG
 _PCIE_PORT_TYPE_MAX = 0xF  # the PCIe capability's Device/Port Type, 4 bits
 _PCIE_SLOT_NUMBER_MAX = 0x1FFF  # Slot Capabilities' Physical Slot Number, 13 bits
@@ -220,8 +220,8 @@ class AhciRegisters(CaptureModel, frozen=True):
         ports_implemented: The ports-implemented bitmap.
     """
 
-    capability: int = Field(ge=0, le=_UINT32_MAX)
-    ports_implemented: int = Field(ge=0, le=_UINT32_MAX)
+    capability: int = Field(ge=0, le=UINT32_MAX)
+    ports_implemented: int = Field(ge=0, le=UINT32_MAX)
 
 
 class PciEntry(CaptureModel, frozen=True):
@@ -457,12 +457,12 @@ class SpaceEntry(CaptureModel, frozen=True):
         error: Why the reading was refused; the figures are then ``None``.
     """
 
-    frsize: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
-    blocks: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
-    bfree: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
-    bavail: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
-    files: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
-    ffree: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    frsize: int | None = Field(default=None, ge=0, le=UINT64_MAX)
+    blocks: int | None = Field(default=None, ge=0, le=UINT64_MAX)
+    bfree: int | None = Field(default=None, ge=0, le=UINT64_MAX)
+    bavail: int | None = Field(default=None, ge=0, le=UINT64_MAX)
+    files: int | None = Field(default=None, ge=0, le=UINT64_MAX)
+    ffree: int | None = Field(default=None, ge=0, le=UINT64_MAX)
     error: DeviceText | None = None
 
 
@@ -554,8 +554,8 @@ class PoolEntry(CaptureModel, frozen=True):
         alloc: Bytes allocated on it.
     """
 
-    size: int = Field(ge=0, le=_UINT64_MAX)
-    alloc: int = Field(ge=0, le=_UINT64_MAX)
+    size: int = Field(ge=0, le=UINT64_MAX)
+    alloc: int = Field(ge=0, le=UINT64_MAX)
 
 
 class VdevEntry(CaptureModel, frozen=True):
@@ -769,7 +769,7 @@ class LinuxCapture(CaptureHeader, frozen=True):
     """
 
     platform: Literal[Platform.LINUX]
-    euid: int | None = Field(default=None, ge=0, le=_UINT32_MAX)
+    euid: int | None = Field(default=None, ge=0, le=UINT32_MAX)
     devices_accessible: bool = True
     environment: VirtualizationEvidence = VirtualizationEvidence()
     pci: EntryMap[DeviceText, PciEntry]

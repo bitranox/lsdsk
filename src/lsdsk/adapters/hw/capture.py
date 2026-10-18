@@ -135,8 +135,14 @@ class CaptureEnvelope(CaptureHeader, frozen=True):
     platform: Platform
 
 
-_UINT64_MAX = 2**64 - 1
-_FreeBytes = Annotated[int, Field(ge=0, le=_UINT64_MAX)]
+#: The largest value an unsigned 32-bit field holds, which bounds every capture figure the
+#: platform publishes in one (an AHCI register, a uid, a DEVPKEY UINT32).
+UINT32_MAX = 2**32 - 1
+#: The largest value an unsigned 64-bit field holds, which bounds every byte figure a capture
+#: records - a ZFS pool's size, a filesystem's statvfs counts, a Windows volume's free bytes, a
+#: free-extent total - so a reader that refuses past it and the model that refuses past it agree.
+UINT64_MAX = 2**64 - 1
+_FreeBytes = Annotated[int, Field(ge=0, le=UINT64_MAX)]
 
 
 class FreeExtentsEntry(CaptureModel, frozen=True):
@@ -151,9 +157,9 @@ class FreeExtentsEntry(CaptureModel, frozen=True):
         error: Why the walk was refused or stopped; the figures are then ``None``.
     """
 
-    count: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
-    total: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
-    largest: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    count: int | None = Field(default=None, ge=0, le=UINT64_MAX)
+    total: int | None = Field(default=None, ge=0, le=UINT64_MAX)
+    largest: int | None = Field(default=None, ge=0, le=UINT64_MAX)
     histogram: Entries[_FreeBytes] = ()
     error: DeviceText | None = None
 
@@ -170,6 +176,8 @@ __all__ = [
     "MAX_DEVICE_TEXT",
     "MAX_ENCODED_PAYLOAD",
     "MAX_PAYLOAD_BYTES",
+    "UINT32_MAX",
+    "UINT64_MAX",
     "CaptureEnvelope",
     "CaptureHeader",
     "CaptureModel",

@@ -14,13 +14,12 @@ from __future__ import annotations
 from typing import Final
 
 from ....domain.fragmentation import FREE_SPACE_BUCKETS, bucket_of
+from ..capture import UINT64_MAX
 
 #: How many free extents one filesystem may contribute before the reading
 #: stops. A reading budget, not a judged figure: a filesystem past it is
 #: refused with this number in the reason rather than walked for minutes.
 MAX_FREE_EXTENTS: Final = 1_000_000
-#: The largest total a capture records: its byte figures are unsigned 64-bit.
-_MAX_TOTAL: Final = 2**64 - 1
 
 
 class FreeExtentCapError(ValueError):
@@ -62,8 +61,8 @@ class FreeExtentTally:
             return
         if self._count >= self._cap:
             raise FreeExtentCapError(self._cap)
-        if self._total + length > _MAX_TOTAL:
-            message = f"the free extents add up to more than {_MAX_TOTAL:,} bytes; stopped counting"
+        if self._total + length > UINT64_MAX:
+            message = f"the free extents add up to more than {UINT64_MAX:,} bytes; stopped counting"
             raise ValueError(message)
         self._count += 1
         self._total += length

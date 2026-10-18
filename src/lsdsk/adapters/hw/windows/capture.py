@@ -22,7 +22,17 @@ from typing import Annotated, Literal
 from pydantic import BeforeValidator, Field, field_validator
 
 from ....domain.enums import BusType, Platform
-from ..capture import CaptureHeader, CaptureModel, DeviceText, EncodedPayload, Entries, EntryMap, FreeExtentsEntry
+from ..capture import (
+    UINT32_MAX,
+    UINT64_MAX,
+    CaptureHeader,
+    CaptureModel,
+    DeviceText,
+    EncodedPayload,
+    Entries,
+    EntryMap,
+    FreeExtentsEntry,
+)
 from ..decode.virtualization import VirtualizationEvidence
 
 # The transport names the reader takes from STORAGE_DEVICE_DESCRIPTOR.BusType,
@@ -99,8 +109,6 @@ def bus_type_of(value: object) -> object:
 # own source was never read from a disk. A length past a signed 64-bit one
 # did not print oddly, it pushed four columns off the disks table, so the
 # drive's serial and firmware disappeared rather than the number looking wrong.
-_UINT32_MAX = 0xFFFFFFFF  # DEVPKEY UINumber, read as a UINT32
-_UINT64_MAX = 2**64 - 1  # GetDiskFreeSpaceExW answers in ULARGE_INTEGER
 _PCIE_SLOT_NUMBER_MAX = 0x1FFF  # the 13-bit Physical Slot Number the domain's slot number means
 _LARGE_INTEGER_MAX = 2**63 - 1  # IOCTL_DISK_GET_LENGTH_INFO answers in one
 _SHORT_MIN = -(2**15)  # the temperature fields are each a ctypes.c_short
@@ -162,7 +170,7 @@ class PciEntry(CaptureModel, frozen=True):
     current_link_width: DeviceText | None = None
     max_link_speed: DeviceText | None = None
     max_link_width: DeviceText | None = None
-    slot_number: Annotated[int | None, BeforeValidator(slot_number_of)] = Field(default=None, ge=0, le=_UINT32_MAX)
+    slot_number: Annotated[int | None, BeforeValidator(slot_number_of)] = Field(default=None, ge=0, le=UINT32_MAX)
     address: DeviceText | None = None
     parent: DeviceText | None = None
     children: Entries[DeviceText] = ()
@@ -426,14 +434,14 @@ class VolumeEntry(CaptureModel, frozen=True):
     """
 
     paths: Entries[DeviceText] = ()
-    disks: Entries[Annotated[int, Field(ge=0, le=_UINT32_MAX)]] = ()
+    disks: Entries[Annotated[int, Field(ge=0, le=UINT32_MAX)]] = ()
     esp: bool | None = None
     error: DeviceText | None = None
     paths_error: DeviceText | None = None
-    drive_type: int | None = Field(default=None, ge=0, le=_UINT32_MAX)
-    total_bytes: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
-    free_bytes: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
-    available_bytes: int | None = Field(default=None, ge=0, le=_UINT64_MAX)
+    drive_type: int | None = Field(default=None, ge=0, le=UINT32_MAX)
+    total_bytes: int | None = Field(default=None, ge=0, le=UINT64_MAX)
+    free_bytes: int | None = Field(default=None, ge=0, le=UINT64_MAX)
+    available_bytes: int | None = Field(default=None, ge=0, le=UINT64_MAX)
     fs_type: DeviceText | None = None
     read_only: bool | None = None
     space_error: DeviceText | None = None
