@@ -274,6 +274,12 @@ def test_a_capture_carries_each_pool_s_fragmentation() -> None:
     assert capture.zfs_fragmentation == {"rpool": 22, "tank": None}
 
 
+@pytest.mark.parametrize("value", [0, 100])
+def test_a_fragmentation_at_either_end_of_0_to_100_is_kept(value: int) -> None:
+    capture = LinuxCapture.model_validate({**_MINIMAL, "zfs_fragmentation": {"rpool": value}})
+    assert capture.zfs_fragmentation == {"rpool": value}
+
+
 @pytest.mark.parametrize("value", [-1, 101])
 def test_a_fragmentation_outside_0_to_100_is_refused(value: int) -> None:
     with pytest.raises(ValidationError, match="zfs_fragmentation"):
@@ -331,11 +337,13 @@ _LISTED = {(zfs.ZFS_IOC_POOL_CONFIGS, ""): pool_names(["tank"])}
             FakeDevice({**_LISTED, (zfs.ZFS_IOC_POOL_GET_PROPS, "tank"): pool_props(fragmentation=3)}),
         ),
         (zfs.read_pools, FakeDevice({}, fail=errno.EPERM)),  # the listing itself refused
+        (zfs.read_pool_layouts, FakeDevice(_LISTED)),
+        (zfs.read_pool_layouts, FakeDevice({}, fail=errno.EPERM)),
     ],
-    ids=["pools", "fragmentation", "listing-refused"],
+    ids=["pools", "fragmentation", "listing-refused", "layouts", "layouts-refused"],
 )
 def test_the_control_device_is_opened_read_only_and_closed(
-    tmp_path: Path, read: Callable[..., tuple[object, str | None]], fake: FakeDevice
+    tmp_path: Path, read: Callable[..., object], fake: FakeDevice
 ) -> None:
     device = _ControlDevice()
     read(_device(tmp_path), ioctl=fake, opener=device)

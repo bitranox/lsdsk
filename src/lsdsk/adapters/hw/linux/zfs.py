@@ -52,8 +52,9 @@ _READ_FAILURES = (OSError, ValueError, IndexError, struct.error)
 _T = TypeVar("_T")
 
 Ioctl = Callable[[int, int, bytearray], int]
-#: Opens a path with the given flags. ``read_pools`` closes the descriptor it returns with
-#: ``os.close``, so a substitute must return a real descriptor or raise.
+#: Opens a path with the given flags. Every reader taking one - ``read_pools``,
+#: ``read_pool_fragmentation`` and ``read_pool_layouts`` - closes the descriptor it returns
+#: with ``os.close`` on every way out, so a substitute must return a real descriptor or raise.
 Opener = Callable[[Path, int], int]
 
 
