@@ -1,7 +1,8 @@
 """In-memory adapter implementations for testing.
 
 Provides lightweight implementations of all application ports that operate
-entirely in memory: no filesystem, no logging framework.
+entirely in memory: no filesystem, and a quiet logging runtime that writes
+to no system log.
 
 There is no in-memory counter history here, and its absence is deliberate. Two
 doubles stood in this package for ports nothing resolved through the container,

@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import logging
 import os
 import re
 import sys
@@ -35,6 +36,11 @@ if TYPE_CHECKING:
 
 
 from lsdsk.adapters.cli import safe_console
+
+# The service fixtures below log through the testing composition's quiet runtime:
+# production init_logging queues INFO lines onto standard error from a worker
+# thread, so a test reading what a command printed would depend on timing.
+from lsdsk.adapters.memory import init_logging_in_memory
 from lsdsk.composition import AppServices, build_production
 
 # Which platforms each os_* marker declares its test valid on. A marker that is
@@ -220,7 +226,7 @@ def _no_configuration_layer_reaches_in(state: Path, monkeypatch: pytest.MonkeyPa
 
 
 @pytest.fixture(autouse=True)
-def no_logging_runtime_outlives_its_test() -> Iterator[None]:
+def no_logging_runtime_outlives_its_test() -> Iterator[Callable[[], None]]:
     """Put the process-wide logging runtime back down after every test.
 
     ``init_logging`` initialises lib_log_rich once per process and then keeps it,
@@ -233,10 +239,26 @@ def no_logging_runtime_outlives_its_test() -> Iterator[None]:
     runtime at level 10 set by the DEBUG test, and passed wherever an earlier
     test happened to take the runtime down first - so it passed under
     ``make test`` and failed under CI's marker expression.
+
+    The root logger is put back too, because ``runtime.shutdown()`` leaves the
+    stdlib handler and the INFO level that ``attach_std_logging`` gave it: a later
+    test's stdlib records then went to a handler whose runtime was gone.
+
+    Yields:
+        The same restore step, so a test can apply it mid-test and assert its effect.
     """
-    yield
-    if lib_log_rich.runtime.is_initialised():
-        lib_log_rich.runtime.shutdown()
+    root = logging.getLogger()
+    handlers, level, propagate = list(root.handlers), root.level, root.propagate
+
+    def _restore() -> None:
+        if lib_log_rich.runtime.is_initialised():
+            lib_log_rich.runtime.shutdown()
+        root.handlers[:] = handlers
+        root.setLevel(level)
+        root.propagate = propagate
+
+    yield _restore
+    _restore()
 
 
 @pytest.fixture(autouse=True)
@@ -542,7 +564,7 @@ def inject_config(
             return config
 
         prod = build_production()
-        test_services = replace(prod, get_config=_fake_get_config)
+        test_services = replace(prod, get_config=_fake_get_config, init_logging=init_logging_in_memory)
         return lambda: test_services
 
     return _inject
@@ -584,7 +606,7 @@ def inject_config_with_profile_capture(
             return config
 
         prod = build_production()
-        test_services = replace(prod, get_config=_capturing_get_config)
+        test_services = replace(prod, get_config=_capturing_get_config, init_logging=init_logging_in_memory)
         return lambda: test_services
 
     return _inject
@@ -626,7 +648,7 @@ def inject_deploy_with_profile_capture(
             return [deployed_path]
 
         prod = build_production()
-        test_services = replace(prod, deploy_configuration=_capturing_deploy)
+        test_services = replace(prod, deploy_configuration=_capturing_deploy, init_logging=init_logging_in_memory)
         return lambda: test_services
 
     return _inject
@@ -662,7 +684,7 @@ def inject_generate_examples() -> Callable[[Callable[..., list[Path]]], Callable
 
     def _inject(generate_fn: Callable[..., list[Path]]) -> Callable[[], AppServices]:
         prod = build_production()
-        test_services = replace(prod, generate_examples=generate_fn)
+        test_services = replace(prod, generate_examples=generate_fn, init_logging=init_logging_in_memory)
         return lambda: test_services
 
     return _inject
@@ -696,7 +718,7 @@ def inject_deploy_configuration() -> Callable[[Callable[..., list[Path]]], Calla
 
     def _inject(deploy_fn: Callable[..., list[Path]]) -> Callable[[], AppServices]:
         prod = build_production()
-        test_services = replace(prod, deploy_configuration=deploy_fn)
+        test_services = replace(prod, deploy_configuration=deploy_fn, init_logging=init_logging_in_memory)
         return lambda: test_services
 
     return _inject
@@ -735,7 +757,7 @@ def config_cli_context(
         def _fake_get_config(**_kwargs: Any) -> Config:
             return config
 
-        test_services = replace(prod, get_config=_fake_get_config)
+        test_services = replace(prod, get_config=_fake_get_config, init_logging=init_logging_in_memory)
         return lambda: test_services
 
     return _create
