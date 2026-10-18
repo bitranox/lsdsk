@@ -209,6 +209,13 @@ class FreeRunFolder:
             self._open = 0
 
 
+class _ClusterSpan(NamedTuple):
+    """One free run, as clusters ``start`` (first free) to ``end`` (first past it) of the window."""
+
+    start: int
+    end: int
+
+
 def _window(data: bytes, nbits: int, skip: int) -> bytearray:
     r"""The bytes holding clusters ``skip`` to ``nbits``, every bit outside them marked in use.
 
@@ -230,7 +237,7 @@ def _window(data: bytes, nbits: int, skip: int) -> bytearray:
     return window
 
 
-def _free_runs(window: bytearray) -> Iterator[tuple[int, int]]:
+def _free_runs(window: bytearray) -> Iterator[_ClusterSpan]:
     r"""The start and end cluster of every free run in ``window``, skipping long stretches in use.
 
     A free run cannot cross a byte whose every cluster is used, so the bytes
@@ -238,7 +245,7 @@ def _free_runs(window: bytearray) -> Iterator[tuple[int, int]]:
 
     Example:
         >>> list(_free_runs(bytearray(b"\x0f" + b"\xff" * 64 + b"\xf0")))
-        [(4, 8), (520, 524)]
+        [_ClusterSpan(start=4, end=8), _ClusterSpan(start=520, end=524)]
     """
     position = 0
     for stretch in _USED_STRETCH.finditer(window):
@@ -247,7 +254,7 @@ def _free_runs(window: bytearray) -> Iterator[tuple[int, int]]:
     yield from _runs_between(window, position, len(window))
 
 
-def _runs_between(window: bytearray, first: int, last: int) -> Iterator[tuple[int, int]]:
+def _runs_between(window: bytearray, first: int, last: int) -> Iterator[_ClusterSpan]:
     """The free runs in bytes ``first`` to ``last`` of ``window``, as cluster spans of the whole window."""
     if first == last:
         return
@@ -256,7 +263,7 @@ def _runs_between(window: bytearray, first: int, last: int) -> Iterator[tuple[in
     clusters = format(int.from_bytes(window[first:last], "little"), f"0{width}b")[::-1]
     offset = first * 8
     for run in _FREE_RUN.finditer(clusters):
-        yield offset + run.start(), offset + run.end()
+        yield _ClusterSpan(offset + run.start(), offset + run.end())
 
 
 __all__ = [
