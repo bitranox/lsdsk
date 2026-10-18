@@ -109,6 +109,71 @@ class TestTheDefaultTargetFollowsTheStreamEchoWritesTo:
         assert "[OK]" in _read_back(stream)
 
 
+def _bytes_written(stream: io.TextIOWrapper) -> bytes:
+    stream.flush()
+    buffer = stream.buffer
+    assert isinstance(buffer, io.BytesIO)
+    return buffer.getvalue()
+
+
+class TestOnlyTheUnencodableCharacterDegrades:
+    """The fallback replaces what the stream cannot take, never the rest of the text."""
+
+    def test_a_glyph_cp1252_has_survives_beside_one_it_lacks(self) -> None:
+        """The check mark forces the fallback; the ellipsis and the apostrophe must not be rewritten."""
+        assert safe_console.encode_safe("\u2713 done\u2026 it\u2019s", "cp1252") == "[OK] done\u2026 it\u2019s"
+
+    def test_a_tree_rule_cp437_has_is_kept_beside_a_glyph_it_lacks(self) -> None:
+        """cp437 draws box rules itself, so a check mark beside one is no reason to flatten it."""
+        assert safe_console.ascii_fallback("\u251c\u2500 \u2713", "cp437") == "\u251c\u2500 [OK]"
+
+    def test_rich_output_keeps_what_cp1252_can_print(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stream = _cp1252_stream()
+        monkeypatch.setattr(sys, "stdout", stream)
+        Console(file=safe_console.safe_stream(), legacy_windows=False, width=80).print("\u2713 done\u2026 ok")
+        assert "[OK] done\u2026 ok" in _read_back(stream)
+
+
+class TestTheStreamsOwnErrorHandlerIsHonoured:
+    """What the fallback table does not cover goes to the stream's own error handler.
+
+    stderr always uses ``backslashreplace``, so a character a legacy codepage lacks and the
+    table has no ASCII form for is spelled out there rather than lost; only a ``strict``
+    stream gets ``?`` for it. A lone surrogate on a UTF stream keeps this module's own
+    escape, which does not depend on the handler.
+    """
+
+    def test_a_backslashreplace_stream_escapes_what_the_table_lacks(self) -> None:
+        stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="backslashreplace", newline="")
+
+        safe_console.echo("\u2713 \u4e2d", file=stream)
+
+        assert _bytes_written(stream) == b"[OK] \\u4e2d\n"
+
+    def test_a_strict_stream_still_gets_a_question_mark(self) -> None:
+        stream = _cp1252_stream()
+
+        safe_console.echo("\u2713 \u4e2d", file=stream)
+
+        assert _bytes_written(stream) == b"[OK] ?\n"
+
+    def test_rich_output_honours_the_handler_too(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="backslashreplace", newline="")
+        monkeypatch.setattr(sys, "stdout", stream)
+
+        Console(file=safe_console.safe_stream(), legacy_windows=False, width=80).print("\u4e2d")
+
+        assert b"\\u4e2d" in _bytes_written(stream)
+
+    def test_encode_safe_takes_the_handler(self) -> None:
+        assert safe_console.encode_safe("\u4e2d", "cp1252", errors="backslashreplace") == "\\u4e2d"
+        assert safe_console.encode_safe("\u4e2d", "cp1252") == "?"
+
+    def test_a_lone_surrogate_on_a_utf_stream_keeps_its_escape_whatever_the_handler(self) -> None:
+        for errors in (None, "strict", "surrogateescape", "backslashreplace"):
+            assert safe_console.encode_safe("ex\udcff", "utf-8", errors=errors) == "ex\\udcff", errors
+
+
 class TestSafeStreamProtectsRich:
     """Rich raises on a legacy codepage too; it renders through its own writer."""
 

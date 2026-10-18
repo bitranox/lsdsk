@@ -55,6 +55,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 - The README's animation and screenshots show `lsdsk` in the title bar with no version beside it,
   so they no longer read one release behind after every version bump.
 
+### Fixed
+
+- On a console that cannot print every character, such as cp1252 or cp437 on Windows, lsdsk now
+  replaces only the characters that console lacks. Before, one check mark in a line made it rewrite
+  every other symbol in that line too, so an ellipsis or a typographic apostrophe the console could
+  print became `...` or `'`, and a box rule cp437 can draw became `|`. A character with no ASCII
+  form is now spelled out (`\u4e2d`) on standard error, which escapes what it cannot encode, and
+  still becomes `?` on a standard output that refuses it.
+
 ## [1.10.0] 2026-10-17 00:28:58
 
 ### Added

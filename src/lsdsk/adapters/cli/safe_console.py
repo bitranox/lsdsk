@@ -99,6 +99,85 @@ ASCII_FALLBACKS: Final[dict[str, str]] = {
 #: Encodings that represent every code point, so the check can be skipped.
 _UNIVERSAL_ENCODINGS: Final[frozenset[str]] = frozenset({"utf-8", "utf8", "utf-16", "utf16", "utf-32", "utf32"})
 
+#: The prefix of the codec error handlers :func:`ascii_fallback` encodes with, one per
+#: stream error handler (``<prefix>+strict``, ``<prefix>+backslashreplace``, ...). A codec
+#: calls it only for the characters it cannot encode, so everything the stream can print
+#: stays as written.
+_FALLBACK_ERROR_HANDLER: Final = "lsdsk.safe_console.ascii_fallback"
+
+#: The stream error handlers a fallback handler has been registered for, by handler name.
+_REGISTERED_FALLBACKS: Final[dict[str, str]] = {}
+
+
+def _streams_own_replacement(error: UnicodeEncodeError, stream_errors: str) -> str | bytes:
+    """What the stream's own error handler writes for the first rejected character, else ``?``.
+
+    ``backslashreplace`` - which every stderr uses - spells the character out; a ``strict``
+    stream, or a handler that cannot take this character, gets ``?``.
+
+    Args:
+        error: The codec's report of the characters it rejected.
+        stream_errors: The name of the stream's own error handler.
+
+    Returns:
+        The replacement for the first rejected character.
+    """
+    if stream_errors == "strict":
+        return "?"
+    single = UnicodeEncodeError(error.encoding, error.object, error.start, error.start + 1, error.reason)
+    try:
+        replacement, _ = codecs.lookup_error(stream_errors)(single)
+    except (UnicodeError, LookupError):
+        return "?"
+    return replacement
+
+
+def _replacing_unencodable(stream_errors: str) -> Callable[[UnicodeError], tuple[str | bytes, int]]:
+    """Build the codec error handler for a stream that uses `stream_errors`.
+
+    It handles one rejected character per call: its ASCII form from :data:`ASCII_FALLBACKS`
+    when the table has one, otherwise whatever the stream's own handler would write.
+
+    Args:
+        stream_errors: The name of the stream's own error handler.
+
+    Returns:
+        A function :func:`codecs.register_error` accepts.
+    """
+
+    def _replace(error: UnicodeError) -> tuple[str | bytes, int]:
+        if not isinstance(error, UnicodeEncodeError):
+            raise error
+        ascii_form = ASCII_FALLBACKS.get(error.object[error.start])
+        if ascii_form is not None:
+            return ascii_form, error.start + 1
+        return _streams_own_replacement(error, stream_errors), error.start + 1
+
+    return _replace
+
+
+def _fallback_handler(stream_errors: str) -> str:
+    """The name of the fallback codec error handler for `stream_errors`, registered once.
+
+    Args:
+        stream_errors: The name of the stream's own error handler.
+
+    Returns:
+        The name to pass as ``errors=`` to :meth:`str.encode`.
+    """
+    name = _REGISTERED_FALLBACKS.get(stream_errors)
+    if name is None:
+        name = f"{_FALLBACK_ERROR_HANDLER}+{stream_errors}"
+        codecs.register_error(name, _replacing_unencodable(stream_errors))
+        _REGISTERED_FALLBACKS[stream_errors] = name
+    return name
+
+
+def _stream_errors(stream: object) -> str | None:
+    """The stream's own encoding error handler (``strict``, ``backslashreplace``, ...), or None."""
+    errors = getattr(stream, "errors", None)
+    return errors if isinstance(errors, str) else None
+
 
 def _stream_encoding(file: IO[Any] | None, *, err: bool = False) -> str | None:
     """Return the target stream's encoding, or None when it cannot be determined.
@@ -825,22 +904,38 @@ def flush_streams_or_leave(code: int) -> int:
     return int(ExitCode.BROKEN_PIPE)
 
 
-def ascii_fallback(text: str, encoding: str) -> str:
-    """Rewrite `text` so it survives `encoding`.
+def ascii_fallback(text: str, encoding: str, errors: str | None = None) -> str:
+    r"""Rewrite `text` so it survives `encoding`.
 
-    Known glyphs become their ASCII equivalent from :data:`ASCII_FALLBACKS`;
-    anything else the codec still cannot represent becomes ``?``. Text the
-    encoding already accepts is returned unchanged.
+    Only the characters `encoding` cannot represent are replaced: a known glyph by
+    its ASCII equivalent from :data:`ASCII_FALLBACKS`, anything else by what the
+    stream's own error handler writes for it (`errors`), or ``?`` on a ``strict``
+    stream. Every other character is kept, so a glyph the stream can print - an
+    ellipsis on cp1252, a box rule on cp437 - is never rewritten because another
+    one in the same text could not be.
 
     Args:
         text: The message as the caller wrote it.
         encoding: The target stream's encoding, e.g. ``"cp1252"``.
+        errors: The target stream's error handler, e.g. ``"backslashreplace"``;
+            None means ``strict``.
 
     Returns:
-        A string that :meth:`str.encode` accepts for `encoding`.
+        A string the stream writes without raising.
+
+    Example:
+        >>> ascii_fallback("\u2713 done\u2026", "cp1252") == "[OK] done\u2026"
+        True
+        >>> ascii_fallback("\u4e2d", "cp1252"), ascii_fallback("\u4e2d", "cp1252", "backslashreplace")
+        ('?', '\\u4e2d')
     """
-    mapped = "".join(ASCII_FALLBACKS.get(character, character) for character in text)
-    return mapped.encode(encoding, errors="replace").decode(encoding)
+    stream_errors = errors or "strict"
+    try:
+        return text.encode(encoding, errors=_fallback_handler(stream_errors)).decode(encoding, errors=stream_errors)
+    except UnicodeError:
+        # The stream's own handler produced something this codec cannot carry back;
+        # degrade those characters as for a strict stream.
+        return text.encode(encoding, errors=_fallback_handler("strict")).decode(encoding)
 
 
 def escape_lone_surrogates(text: str) -> str:
@@ -866,19 +961,23 @@ def escape_lone_surrogates(text: str) -> str:
     return text.encode("utf-8", errors="backslashreplace").decode("utf-8")
 
 
-def encode_safe(text: str, encoding: str | None) -> str:
-    """Return `text` if `encoding` accepts it, else its ASCII fallback.
+def encode_safe(text: str, encoding: str | None, errors: str | None = None) -> str:
+    """Return `text` if `encoding` accepts it, else its fallback for a stream using `errors`.
 
     The check runs BEFORE the write on purpose. Writing first and catching
     ``UnicodeEncodeError`` would leave the already-encoded prefix on the stream,
-    so the retry would duplicate it.
+    so the retry would duplicate it. The check itself is strict, so a known glyph
+    still gets its ASCII form on a stream whose own handler would have escaped it.
+    A lone surrogate on a UTF stream is escaped whatever the handler, which is
+    the one character such a stream cannot take.
 
     Args:
         text: The message as the caller wrote it.
         encoding: The target stream's encoding, or ``None`` when it has none.
+        errors: The target stream's error handler, or ``None`` when it has none.
 
     Returns:
-        The text unchanged, or its ASCII fallback.
+        The text unchanged, or its fallback.
     """
     if encoding is None:
         return text
@@ -887,7 +986,7 @@ def encode_safe(text: str, encoding: str | None) -> str:
     try:
         text.encode(encoding)
     except UnicodeEncodeError:
-        return ascii_fallback(text, encoding)
+        return ascii_fallback(text, encoding, errors)
     return text
 
 
@@ -942,7 +1041,9 @@ def echo(message: object = "", *, file: IO[Any] | None = None, err: bool = False
     if target is sys.stderr:
         deliver_pending_log_lines()
     try:
-        click.echo(encode_safe(text, _stream_encoding(file, err=err)), file=file, err=err, nl=nl)
+        click.echo(
+            encode_safe(text, _stream_encoding(file, err=err), _stream_errors(target)), file=file, err=err, nl=nl
+        )
     except OSError as exc:
         if target is sys.stderr:
             # A stderr that cannot be written is not a reason to stop, whether
@@ -1014,7 +1115,9 @@ class _SafeWriter:
         target = self._target()
         encoding = getattr(target, "encoding", None)
         try:
-            return target.write(encode_safe(text, encoding if isinstance(encoding, str) else None))
+            return target.write(
+                encode_safe(text, encoding if isinstance(encoding, str) else None, _stream_errors(target))
+            )
         except OSError as exc:
             if self._err:
                 _lose_the_diagnostic()
