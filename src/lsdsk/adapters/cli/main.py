@@ -139,15 +139,17 @@ def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppSe
     args = list(argv) if argv is not None else sys.argv[1:]
 
     try:
-        cli.main(
+        # Under standalone_mode=False click catches the Exit that ctx.exit() raises and
+        # RETURNS its code, as it returns a callback's plain return value, so the code
+        # arrives here as a value and never as an Exit. Answering 0 regardless turned a
+        # command that left through its context with a refusal into a success.
+        exit_code = cli.main(
             args=args,
             prog_name=__init__conf__.shell_command,
             obj=services_factory,
             standalone_mode=False,
         )
-        return 0
-    except click.exceptions.Exit as exc:
-        return exc.exit_code
+        return exit_code if isinstance(exit_code, int) else 0
     except click.ClickException as exc:
         # click prints this itself rather than through safe_console.echo, so the
         # log lines it follows are delivered here first.
