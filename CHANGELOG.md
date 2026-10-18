@@ -52,6 +52,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   clusters than its own header promised, an answer shorter than its header (which used to read as
   an empty volume), and a driver whose answers describe a volume of a different size from one call
   to the next, which used to keep the walk asking forever.
+- The README's animation and screenshots show `lsdsk` in the title bar with no version beside it,
+  so they no longer read one release behind after every version bump.
 
 ## [1.10.0] 2026-10-17 00:28:58
 

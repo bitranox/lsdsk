@@ -75,6 +75,9 @@ DEFAULT_FONT_PX = 12
 #: resolved to a real family before agg sees it.
 FONT_ALIAS = "Monospace"
 
+#: The title bar of every picture: the tool's name, with no version beside it.
+DEMO_TITLE = "lsdsk"
+
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
 
 #: Where this script says what it is doing. A Console rather than ``print``,
@@ -173,6 +176,19 @@ def filesystems_storyboard() -> tuple[Step, ...]:
     return (Step((KEY_OF["filesystems"],), 3.2, "9 Filesystems: pool rows from a second machine", settle=3),)
 
 
+def demo_app(inventory: Inventory, history: History | None = None) -> LsdskApp:
+    """The app one segment of the demo drives, titled with the tool's name alone.
+
+    The interactive view's title bar carries the running version. The pictures
+    are committed and rebuilt only when what they show changes, so a version in
+    them reads one release behind after every bump although nothing on the page
+    moved.
+    """
+    app = LsdskApp(inventory, history)
+    app.title = DEMO_TITLE
+    return app
+
+
 def export_ansi(app: LsdskApp) -> str:
     """Export the live screen as ANSI, the way a screenshot is exported as SVG.
 
@@ -243,7 +259,7 @@ class Cast:
             "height": ROWS,
             "timestamp": 0,
             "idle_time_limit": 5,
-            "title": "lsdsk",
+            "title": DEMO_TITLE,
             "env": {"TERM": "xterm-256color"},
         }
         with path.open("w", encoding="utf-8") as handle:
@@ -308,10 +324,10 @@ async def record_cast(cast_path: Path) -> list[str]:
     with_filesystems: Inventory = load(fixtures / "linux-zfs-filesystems.json")
 
     cast_file = Cast()
-    tour = LsdskApp(machine, history_for(machine.disks, later.disks, machine.hostname))
+    tour = demo_app(machine, history_for(machine.disks, later.disks, machine.hostname))
     frames = await drive(tour, storyboard(), cast_file, 0)
     # No history: this capture holds a single reading, and the page shown needs none.
-    pools = LsdskApp(with_filesystems)
+    pools = demo_app(with_filesystems)
     frames += await drive(pools, filesystems_storyboard(), cast_file, len(frames))
 
     cast_file.write(cast_path)
