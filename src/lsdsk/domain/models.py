@@ -15,9 +15,9 @@ from __future__ import annotations
 from bisect import bisect_left, bisect_right
 from functools import cached_property
 from math import inf, isnan
-from typing import TYPE_CHECKING, NamedTuple, Self
+from typing import TYPE_CHECKING, Annotated, NamedTuple, Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from .base import DomainModel
 from .enums import (
@@ -33,6 +33,7 @@ from .enums import (
     UsbTransport,
     UseKind,
 )
+from .fragmentation import FREE_SPACE_BUCKETS
 from .pci_address import pci_address_order
 from .text import DeviceText, OptionalDeviceText
 
@@ -1883,9 +1884,10 @@ class FreeSpace(DomainModel, frozen=True):
         free_extent_count: How many separate free runs there are.
         free_extent_bytes: Their total size in bytes.
         largest_free_extent_bytes: The longest run, in bytes.
-        histogram: Free bytes per power-of-two size bucket (see
-            :data:`lsdsk.domain.fragmentation.FREE_SPACE_BUCKETS`); empty where
-            only the score was read, as for a ZFS pool.
+        histogram: Free bytes per power-of-two size bucket, exactly
+            :data:`lsdsk.domain.fragmentation.FREE_SPACE_BUCKETS` of them and
+            none negative; empty where only the score was read, as for a ZFS
+            pool.
 
     Example:
         >>> FreeSpace(fragmentation_percent=22).free_extent_count is None
@@ -1896,7 +1898,16 @@ class FreeSpace(DomainModel, frozen=True):
     free_extent_count: int | None = Field(default=None, ge=0)
     free_extent_bytes: int | None = Field(default=None, ge=0)
     largest_free_extent_bytes: int | None = Field(default=None, ge=0)
-    histogram: tuple[int, ...] = ()
+    histogram: tuple[Annotated[int, Field(ge=0)], ...] = ()
+
+    @field_validator("histogram")
+    @classmethod
+    def _one_bucket_per_score(cls, value: tuple[int, ...]) -> tuple[int, ...]:
+        """Refuse a histogram that is neither empty nor one entry per score in the ZFS table."""
+        if value and len(value) != FREE_SPACE_BUCKETS:
+            message = f"a free-space histogram has {FREE_SPACE_BUCKETS} buckets, not {len(value)}"
+            raise ValueError(message)
+        return value
 
     @property
     def average_free_extent_bytes(self) -> int | None:

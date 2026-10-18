@@ -102,3 +102,27 @@ def test_a_percent_outside_0_to_100_is_refused() -> None:
 
 def test_no_free_extents_have_no_average_rather_than_a_division_by_zero() -> None:
     assert FreeSpace(free_extent_count=0, free_extent_bytes=0).average_free_extent_bytes is None
+
+
+def test_an_unequal_mixture_is_weighted_by_free_space_not_by_bucket() -> None:
+    # Three parts in 4 KiB pieces to one part in 512 MiB pieces: (3 * 93 + 0) / 4 = 69.75, floored to 69. An
+    # unweighted mean of the two occupied buckets would say 46, which the equal-weight mixture cannot tell apart.
+    histogram = _only(bucket_of(4 * _KIB), 3 * 512 * _MIB)
+    histogram[20] = 512 * _MIB
+    assert fragmentation_from_histogram(histogram) == 69
+
+
+@pytest.mark.parametrize("histogram", [(1, 2, 3), (0,) * (FREE_SPACE_BUCKETS + 1)])
+def test_a_free_space_value_refuses_a_histogram_of_another_length(histogram: tuple[int, ...]) -> None:
+    with pytest.raises(ValueError, match=f"{FREE_SPACE_BUCKETS} buckets, not {len(histogram)}"):
+        FreeSpace(histogram=histogram)
+
+
+def test_a_free_space_value_refuses_a_negative_bucket() -> None:
+    with pytest.raises(ValueError, match="greater than or equal to 0"):
+        FreeSpace(histogram=(-1,) + (0,) * (FREE_SPACE_BUCKETS - 1))
+
+
+@pytest.mark.parametrize("histogram", [(), (0,) * FREE_SPACE_BUCKETS, (4096,) + (0,) * (FREE_SPACE_BUCKETS - 1)])
+def test_a_free_space_value_keeps_an_empty_or_a_full_length_histogram(histogram: tuple[int, ...]) -> None:
+    assert FreeSpace(histogram=histogram).histogram == histogram

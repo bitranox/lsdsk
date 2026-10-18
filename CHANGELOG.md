@@ -32,6 +32,10 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   refusal.
 - An elevated copy killed by a signal hands back the shell's exit status, 128 plus the signal
   number, instead of a negative code no process can exit with.
+- `--replay` refuses a capture whose free-extent summary contradicts itself as a bad file, where it
+  used to draw it: a count without its total or largest, figures beside a refusal, a histogram that
+  does not add up to the total, or a total the counted extents could not hold. lsdsk never writes
+  such a summary, so only an edited capture is affected.
 
 ## [1.10.0] 2026-10-17 00:28:58
 

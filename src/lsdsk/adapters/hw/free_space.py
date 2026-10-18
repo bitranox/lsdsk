@@ -30,13 +30,12 @@ def free_space_of(entry: FreeExtentsEntry | None) -> FreeSpace | None:
     """
     if entry is None or entry.error is not None or entry.count is None:
         return None
-    histogram = tuple(entry.histogram)
     return FreeSpace(
-        fragmentation_percent=fragmentation_from_histogram(histogram) if histogram else None,
+        fragmentation_percent=fragmentation_from_histogram(entry.histogram) if entry.histogram else None,
         free_extent_count=entry.count,
         free_extent_bytes=entry.total,
         largest_free_extent_bytes=entry.largest,
-        histogram=histogram,
+        histogram=entry.histogram,
     )
 
 

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from lsdsk.adapters.hw.decode.free_extents import FreeExtentTally
 from lsdsk.adapters.hw.windows.capture import WindowsCapture
 from lsdsk.adapters.hw.windows.filesystems import build_filesystems
 from lsdsk.adapters.hw.windows.usage import blocks_not_mounted, resolve_usage
@@ -472,8 +473,11 @@ def test_a_replayed_run_whose_only_pathed_volume_failed_is_incomplete(
 
 def _panel_free_space(*, free_bytes: int, available_bytes: int) -> dict[str, str]:
     """The free-space group of one volume's detail panel, drawn from a capture through the builder."""
-    histogram = [0] * 18 + [1, 1, 1]
-    extents = {"count": 3, "total": 150 * _GIB, "largest": 120 * _GIB, "histogram": histogram}
+    # Built by the tally a reader folds into, so the summary agrees with itself as a real one does.
+    tally = FreeExtentTally()
+    for length in (120 * _GIB, 15 * _GIB, 15 * _GIB):
+        tally.add(length)
+    extents = tally.summary()
     volume = _volume(
         paths=("D:\\",),
         disks=(0,),

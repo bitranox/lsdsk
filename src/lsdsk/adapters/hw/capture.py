@@ -13,9 +13,9 @@ System Role:
 
 from __future__ import annotations
 
-from typing import Annotated, TypeVar
+from typing import Annotated, Self, TypeVar
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ...domain.enums import Platform
 from ...domain.fragmentation import FREE_SPACE_BUCKETS
@@ -155,6 +155,12 @@ class FreeExtentsEntry(CaptureModel, frozen=True):
         histogram: Free bytes per power-of-two bucket, empty or exactly
             ``FREE_SPACE_BUCKETS`` long.
         error: Why the walk was refused or stopped; the figures are then ``None``.
+
+    The figures are refused unless they agree the way a walk writes them -
+    count, total and largest together or not at all, none beside an error,
+    a histogram that sums to the total, and a total that the counted extents,
+    each at least a byte and at most the largest, could hold - so an edited
+    replay is refused as a bad file rather than drawn as a reading.
     """
 
     count: int | None = Field(default=None, ge=0, le=UINT64_MAX)
@@ -170,6 +176,44 @@ class FreeExtentsEntry(CaptureModel, frozen=True):
             message = f"a free-space histogram has {FREE_SPACE_BUCKETS} buckets, not {len(value)}"
             raise ValueError(message)
         return value
+
+    @model_validator(mode="after")
+    def _figures_agree(self) -> Self:
+        figures = (self.count, self.total, self.largest)
+        if self.error is not None and (any(figure is not None for figure in figures) or self.histogram):
+            message = "a refused reading carries no figures"
+            raise ValueError(message)
+        if self.count is None or self.total is None or self.largest is None:
+            _refuse_partial_figures(figures, histogram=self.histogram)
+            return self
+        _refuse_disagreeing_figures(self.count, self.total, self.largest)
+        if self.histogram and sum(self.histogram) != self.total:
+            message = f"the histogram sums to {sum(self.histogram)}, not the total {self.total}"
+            raise ValueError(message)
+        return self
+
+
+def _refuse_partial_figures(figures: tuple[int | None, ...], *, histogram: tuple[int, ...]) -> None:
+    """Refuse a summary carrying some of its figures, or a histogram with none of them."""
+    if any(figure is not None for figure in figures):
+        message = "count, total and largest are read together, not one without the others"
+        raise ValueError(message)
+    if histogram:
+        message = "a histogram without the figures it sums"
+        raise ValueError(message)
+
+
+def _refuse_disagreeing_figures(count: int, total: int, largest: int) -> None:
+    """Refuse a count, total and largest no walk could have written: each extent is 1 to ``largest`` bytes."""
+    if largest > total:
+        message = f"the largest extent {largest} is more than the total {total}"
+        raise ValueError(message)
+    if total > count * largest:
+        message = f"{count} extents of at most {largest} bytes cannot hold {total}"
+        raise ValueError(message)
+    if count > total:
+        message = f"{count} extents cannot fit in {total} bytes"
+        raise ValueError(message)
 
 
 __all__ = [
