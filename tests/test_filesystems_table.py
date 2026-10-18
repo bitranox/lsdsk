@@ -158,6 +158,7 @@ def test_a_finding_on_a_filesystem_marks_its_row() -> None:
 
 def test_filesystem_use_and_disks_survive_every_width() -> None:
     dropped = False
+    frag_drawn_at: list[int] = []
     for width in range(200, 39, -1):
         rendered = _text(_EXT4, _POOL, width=width)
         for heading in ("filesystem", "use%", "disks"):
@@ -166,7 +167,11 @@ def test_filesystem_use_and_disks_survive_every_width() -> None:
         assert not (dropped and present), f"inodes% came back at width {width}"
         header = rendered.splitlines()[1]
         assert not ("frag" in header and "inodes%" not in header), f"frag outlived inodes% at width {width}"
+        if "frag" in header.split():
+            frag_drawn_at.append(width)
         dropped = dropped or not present
+    # The control: a table that never drew frag would pass the outlived check at every width.
+    assert 200 in frag_drawn_at, "frag was not drawn even at width 200, so its drop order went unchecked"
 
 
 def test_a_read_but_empty_list_says_none_was_found_and_not_that_it_was_unread() -> None:
@@ -228,6 +233,51 @@ def test_the_n_a_legend_names_each_column_that_drew_it() -> None:
 
 def test_one_column_drawing_n_a_keeps_the_plain_sentence() -> None:
     assert filesystem_legend_for({"inodes": {theme.NOT_APPLICABLE}}) == FILESYSTEM_NOT_APPLICABLE_LEGEND
+
+
+# A fixed inode table and a filesystem lsdsk counts no free extents of: frag is its only n/a cell.
+_EXT2 = Filesystem(
+    kind=FilesystemKind.MOUNT,
+    name="/old",
+    fs_type="ext2",
+    disks=("sde",),
+    size_bytes=100,
+    used_bytes=50,
+    free_bytes=50,
+    inodes_total=10,
+    inodes_free=5,
+)
+_FRAG_ONLY_LEGEND = f"{theme.NOT_APPLICABLE} = {FILESYSTEM_FRAG_NOT_APPLICABLE}"
+_MIXED_LEGEND = (
+    f"{tables.FILESYSTEM_NOT_READ_LEGEND}; {theme.NOT_APPLICABLE} = "
+    f"{tables.FILESYSTEM_INODES_NOT_APPLICABLE} (inodes%), {FILESYSTEM_FRAG_NOT_APPLICABLE} (frag)"
+)
+
+
+def test_frag_alone_drawing_n_a_says_what_n_a_means_in_frag() -> None:
+    """With one column drawing it, `n/a` means that column's sentence, whichever column it is."""
+    assert filesystem_legend_for({"frag": {theme.NOT_APPLICABLE}}) == _FRAG_ONLY_LEGEND
+
+
+def test_a_printed_table_whose_only_n_a_is_frag_names_frag_s_meaning_and_not_the_inodes_one() -> None:
+    text = _text(_EXT4, _EXT2)
+    assert filesystem_table_row(_EXT2, both_scales=False)["frag"][0] == theme.NOT_APPLICABLE  # control
+    assert filesystem_table_row(_EXT2, both_scales=False)["inodes"][0] == "50%"  # control
+    assert _FRAG_ONLY_LEGEND in text
+    assert tables.FILESYSTEM_INODES_NOT_APPLICABLE not in text
+    assert tables.FILESYSTEM_NOT_READ_LEGEND not in text
+
+
+def test_a_legend_mixing_a_dash_with_n_a_in_two_columns_names_each() -> None:
+    legend = filesystem_legend_for(
+        {"inodes": {theme.NOT_APPLICABLE, theme.NOT_READ}, "frag": {theme.NOT_APPLICABLE, "10%"}}
+    )
+    assert legend == _MIXED_LEGEND
+
+
+def test_a_printed_table_mixing_a_dash_with_n_a_in_two_columns_names_each() -> None:
+    """The pool draws n/a in inodes%, the ext2 mount in frag, the unread mount a dash in both."""
+    assert _MIXED_LEGEND in " ".join(_text(_POOL, _EXT2, _UNREAD, width=200).split())
 
 
 def test_frag_is_the_first_column_to_drop() -> None:
