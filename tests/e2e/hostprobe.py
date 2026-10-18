@@ -375,18 +375,22 @@ def _pool_verdict(name: str, row: dict[str, Any] | None, pool: ZpoolRow | None) 
         return f"{name}: lsdsk reports a pool zpool list does not show", figures
     if row is None:
         return f"{name}: zpool list shows it (cap {pool.cap}) and lsdsk reports no row", figures
-    if percent is None:
-        return f"{name}: lsdsk row has no used/free figures, zpool cap {pool.cap}", figures
+    # Every disagreement is collected rather than the first returned: a pool
+    # wrong on both figures once reported only its percent, so the frag defect
+    # surfaced a run later, after the percent one had been fixed.
+    reasons: list[str] = []
     # No tolerance: both round DOWN a pool's used / (used + free) in whole numbers
     # (lsdsk's domain floors a pool row as zpool does, where a mount rounds up as
     # df does), so the same bytes give the same figure and any gap is a different
     # figure, not a rounding.
-    if percent != pool.cap:
-        return f"{name}: lsdsk {percent}% vs zpool cap {pool.cap}", figures
+    if percent is None:
+        reasons.append(f"lsdsk row has no used/free figures, zpool cap {pool.cap}")
+    elif percent != pool.cap:
+        reasons.append(f"lsdsk {percent}% vs zpool cap {pool.cap}")
     if figures["lsdsk_frag"] != pool.frag:
         shown = "none" if figures["lsdsk_frag"] is None else f"{figures['lsdsk_frag']}%"
-        return f"{name}: lsdsk frag {shown} vs zpool frag {pool.frag}", figures
-    return None, figures
+        reasons.append(f"lsdsk frag {shown} vs zpool frag {pool.frag}")
+    return (f"{name}: {', '.join(reasons)}" if reasons else None), figures
 
 
 def judge_pools(rows: list[dict[str, Any]], zpool_text: str | None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -474,27 +478,43 @@ def _refused_readings(row: dict[str, Any]) -> set[str]:
 
 def judge_windows_fragmentation(
     rows: list[dict[str, Any]], skipped: list[str] | tuple[str, ...]
-) -> list[dict[str, Any]]:
-    """Whether an elevated Windows run tried every NTFS volume's bitmap.
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Whether an elevated Windows run tried every NTFS volume's bitmap, and read one.
 
     The e2e session is elevated, so the run-wide ``needs Administrator`` line
     means the walk was never attempted. Otherwise every NTFS volume must carry a
-    reading or a recorded ``volume-bitmap`` refusal: silence is neither.
+    reading or a recorded ``volume-bitmap`` refusal: silence is neither. And a
+    refusal proves only that the walk was TRIED, so at least one NTFS volume
+    must carry a reading: an elevated run whose every bitmap was refused read
+    nothing, however correctly it recorded that.
+
+    The facts count the volumes either way, so the coverage file shows whether
+    this check had anything to judge rather than only that it was absent.
     """
     name = "filesystems:fragmentation-read"
     ntfs = [row for row in rows if str(row.get("fs_type") or "").upper() == "NTFS"]
+    read = [row for row in ntfs if row.get("free_space") is not None]
+    refused = [row for row in ntfs if "volume-bitmap" in _refused_readings(row)]
+    facts: dict[str, Any] = {
+        "ntfs_volumes": len(ntfs),
+        "ntfs_volumes_read": len(read),
+        "ntfs_volumes_refused": len(refused),
+    }
     if not ntfs:
-        return []
+        return [], facts
     needs_admin = [line for line in skipped if line.startswith("fragmentation:") and "needs Administrator" in line]
     if needs_admin:
-        return [check(name, False, f"elevated session, yet the run says: {needs_admin[0]}")]
+        return [check(name, False, f"elevated session, yet the run says: {needs_admin[0]}")], facts
     silent = [
         str(row.get("name"))
         for row in ntfs
         if row.get("free_space") is None and "volume-bitmap" not in _refused_readings(row)
     ]
-    detail = f"no reading and no refusal on {', '.join(silent)}" if silent else f"{len(ntfs)} NTFS volume(s) tried"
-    return [check(name, not silent, detail)]
+    if silent:
+        return [check(name, False, f"no reading and no refusal on {', '.join(silent)}")], facts
+    if not read:
+        return [check(name, False, f"none of {len(ntfs)} NTFS volume(s) was read: every bitmap was refused")], facts
+    return [check(name, True, f"{len(read)} of {len(ntfs)} NTFS volume(s) read, {len(refused)} refused")], facts
 
 
 def judge_filesystems(
@@ -512,7 +532,10 @@ def judge_filesystems(
     results, root_row = judge_root_row(rows, data.get("environment"), system, root_fstype)
     pool_results, facts = judge_pools(rows or [], zpool_text)
     facts["root_row"] = root_row
-    windows = judge_windows_fragmentation(rows or [], skipped) if system == "Windows" else []
+    windows: list[dict[str, Any]] = []
+    if system == "Windows":
+        windows, windows_facts = judge_windows_fragmentation(rows or [], skipped)
+        facts.update(windows_facts)
     return [*results, *pool_results, *windows], facts
 
 
@@ -532,18 +555,43 @@ def read_zpool_list() -> str | None:
     return done.stdout if done.returncode == 0 else None
 
 
-def filesystems_agree_with_the_host(invocation: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Drive ``filesystems`` here and judge it against the host's own ``zpool list``."""
+class HostView(NamedTuple):
+    """What the filesystems judge needs to know about the host, read once.
+
+    A value rather than three reads inside the check, so a test can hand the
+    judge a Windows host without being one.
+    """
+
+    system: str
+    root_fstype: str | None
+    zpool_text: str | None
+
+
+def read_host_view() -> HostView:
+    """This host's platform, root filesystem type and ``zpool list`` output."""
+    return HostView(system=platform.system(), root_fstype=read_root_fstype(), zpool_text=read_zpool_list())
+
+
+def filesystems_agree_with_the_host(
+    invocation: list[str], *, host: HostView | None = None
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Drive ``filesystems`` here and judge it against the host's own ``zpool list``.
+
+    Args:
+        invocation: How to start lsdsk on this host.
+        host: The host's own readings; read here when not given.
+    """
     code, out, _ = run(invocation, ["filesystems", "--format", "json"])
     if code not in DOCUMENTED_EXITS:
         return [check("filesystems:ran", False, f"exit {code}")], {}
+    seen = read_host_view() if host is None else host
     try:
         envelope = json.loads(out)
         return judge_filesystems(
             envelope["data"],
-            read_zpool_list(),
-            system=platform.system(),
-            root_fstype=read_root_fstype(),
+            seen.zpool_text,
+            system=seen.system,
+            root_fstype=seen.root_fstype,
             skipped=envelope.get("skipped") or [],
         )
     except Exception as error:

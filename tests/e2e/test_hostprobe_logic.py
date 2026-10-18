@@ -504,8 +504,9 @@ def test_an_ntfs_volume_with_a_reading_passes_the_windows_fragmentation_check() 
     assert found["passed"], found["detail"]
 
 
-def test_an_ntfs_volume_that_records_a_bitmap_refusal_passes_because_it_was_tried() -> None:
-    found = _windows([_volume("NTFS", refused=("volume-bitmap",))])["filesystems:fragmentation-read"]
+def test_an_ntfs_volume_that_records_a_bitmap_refusal_passes_beside_one_that_was_read() -> None:
+    rows = [_volume("NTFS", free_space=True), _volume("NTFS", refused=("volume-bitmap",))]
+    found = _windows(rows)["filesystems:fragmentation-read"]
     assert found["passed"], found["detail"]
 
 
@@ -527,3 +528,52 @@ def test_a_host_with_no_ntfs_volume_makes_no_windows_fragmentation_claim() -> No
 def test_linux_makes_no_windows_fragmentation_claim() -> None:
     checks, _ = _judged([_root()], None)
     assert "filesystems:fragmentation-read" not in checks
+
+
+def test_a_pool_that_disagrees_on_both_percent_and_frag_names_both() -> None:
+    """A second disagreement must not hide behind the first one the judge met."""
+    rows = [_root(), _framed("tank", 21, used=52 * _GIB, free=48 * _GIB)]
+    found = _judged(rows, _ZPOOL_HALF)[0]["filesystems:pools-agree-with-zpool"]
+    assert not found["passed"]
+    assert "lsdsk 52% vs zpool cap 50" in found["detail"]
+    assert "frag 21% vs zpool frag 22" in found["detail"]
+
+
+def test_ntfs_volumes_that_all_record_a_bitmap_refusal_fail_because_none_was_read() -> None:
+    """Tried is not succeeded: an elevated run must read at least one NTFS bitmap."""
+    rows = [_volume("NTFS", refused=("volume-bitmap",)), _volume("NTFS", refused=("volume-bitmap",))]
+    found = _windows(rows)["filesystems:fragmentation-read"]
+    assert not found["passed"]
+    assert "none of 2 NTFS volume(s) was read" in found["detail"]
+
+
+def test_the_windows_fragmentation_facts_count_what_was_read_and_refused() -> None:
+    rows = [_volume("NTFS", free_space=True), _volume("NTFS", refused=("volume-bitmap",)), _volume("FAT32")]
+    data: dict[str, Any] = {"filesystems": rows, "environment": "bare-metal"}
+    _, facts = judge_filesystems(data, None, system="Windows", root_fstype=None)
+    assert (facts["ntfs_volumes"], facts["ntfs_volumes_read"], facts["ntfs_volumes_refused"]) == (2, 1, 1)
+
+
+def test_the_live_filesystems_check_forwards_the_envelope_s_skipped_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The needs-Administrator line reaches the judge only if the live path passes it on."""
+    import json
+
+    import hostprobe
+
+    envelope = {
+        "ok": True,
+        "command": "filesystems",
+        "data": {"filesystems": [_volume("NTFS", free_space=True)], "environment": "bare-metal"},
+        "skipped": [_NEEDS_ADMIN],
+    }
+
+    def run(_invocation: list[str], _args: list[str]) -> tuple[int, str, str]:
+        return 0, json.dumps(envelope), ""
+
+    monkeypatch.setattr(hostprobe, "run", run)
+    results, _ = hostprobe.filesystems_agree_with_the_host(
+        ["lsdsk"], host=hostprobe.HostView(system="Windows", root_fstype=None, zpool_text=None)
+    )
+    found = {item["name"]: item for item in results}["filesystems:fragmentation-read"]
+    assert not found["passed"]
+    assert "needs Administrator" in found["detail"]
