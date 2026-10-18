@@ -67,6 +67,18 @@ _POOL = Filesystem(
     free_space=FreeSpace(fragmentation_percent=30),
 )
 _UNREAD = Filesystem(kind=FilesystemKind.MOUNT, name="/data", fs_type="ext4", disks=("sdd",))
+# A fixed inode table on a filesystem lsdsk counts no free extents of: frag is its only n/a cell.
+_EXT2 = Filesystem(
+    kind=FilesystemKind.MOUNT,
+    name="/old",
+    fs_type="ext2",
+    disks=("sde",),
+    size_bytes=1000,
+    used_bytes=500,
+    free_bytes=500,
+    inodes_total=10,
+    inodes_free=5,
+)
 
 
 def machine(*rows: Filesystem) -> Inventory:
@@ -160,6 +172,48 @@ async def test_the_legend_names_only_the_markers_drawn() -> None:
     assert tables.FILESYSTEM_NOT_APPLICABLE_LEGEND in all_drawn
     assert tables.FILESYSTEM_NOT_READ_LEGEND not in na_only
     assert tables.FILESYSTEM_NOT_APPLICABLE_LEGEND in na_only
+
+
+def _frag_page(app: LsdskApp) -> tuple[dict[str, str], str, bool]:
+    """Each row's frag cell by name, the legend, and whether the legend takes room on screen."""
+    frag = {one.name: cells_of(app, one.name)["frag"] for one in app.inventory.filesystems or ()}
+    return frag, legend_text(app), app.query_one("#filesystem-legend", Static).region.height > 0
+
+
+@pytest.mark.asyncio
+async def test_the_page_draws_each_frag_cell_and_names_what_its_markers_mean_on_both_fills() -> None:
+    """A figure, a dash and an n/a in frag, with the legend naming frag's own meaning of n/a.
+
+    Read at mount and again after a rescan, because the page is filled from
+    both and a check of one fill can only catch the copy that is right.
+    """
+    expected_legend = (
+        f"{tables.FILESYSTEM_NOT_READ_LEGEND}; {theme.NOT_APPLICABLE} = {tables.FILESYSTEM_FRAG_NOT_APPLICABLE}"
+    )
+    app = LsdskApp(machine(_EXT4, _EXT2, _UNREAD))
+    pages: list[tuple[dict[str, str], str, bool]] = []
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.press("9")
+        await pilot.pause()
+        assert app.query_one(TabbedContent).active == "filesystems"
+        pages.append(_frag_page(app))
+        await pilot.press("f10")
+        await pilot.pause()
+        pages.append(_frag_page(app))
+
+    for frag, legend, legend_on_screen in pages:
+        assert frag == {"/var": "10%", "/old": theme.NOT_APPLICABLE, "/data": theme.NOT_READ}
+        assert legend == expected_legend
+        assert legend_on_screen, "the legend was set but takes no room on the page"
+
+
+@pytest.mark.asyncio
+async def test_the_page_names_n_a_per_column_when_inodes_and_frag_both_draw_it() -> None:
+    legend = await legend_for(_POOL, _EXT2)
+    assert legend == (
+        f"{theme.NOT_APPLICABLE} = {tables.FILESYSTEM_INODES_NOT_APPLICABLE} (inodes%), "
+        f"{tables.FILESYSTEM_FRAG_NOT_APPLICABLE} (frag)"
+    )
 
 
 @pytest.mark.asyncio
