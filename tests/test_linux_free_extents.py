@@ -531,6 +531,21 @@ def test_a_device_count_is_summed_over_every_batch_not_taken_from_the_last(tmp_p
     assert FreeExtentsEntry.model_validate(reading["8:1"]).count == 4096
 
 
+def test_a_walk_continued_on_a_later_device_at_a_lower_address_is_not_refused(tmp_path: Path) -> None:
+    # The data device's records sit high and fill the first batch; the realtime device's start at 0 and need two
+    # more. The second batch therefore ends at a LOWER physical address than the first, on a later device, and the
+    # third continues inside the realtime device. Only the (device, physical) order says the walk advanced.
+    realtime = _new_encode_dev(8, 17)
+    data = [_free((1 << 40) + 4096 * 2 * n, 4096) for n in range(4096)]
+    fake = FakeFsmap(data, later=((realtime, [_free(4096 * 2 * n, 512) for n in range(5000)]),))
+    rows = [{"dev": "8:1", "mountpoint": "/data", "fstype": "xfs"}]
+    reading = freespace.read_free_extents(rows, ioctl=fake, opener=_opener(tmp_path))
+    assert "error" not in reading["8:1"], reading["8:1"]
+    entry = FreeExtentsEntry.model_validate(reading["8:1"])
+    assert (entry.count, entry.total, entry.largest) == (4096, 4096 * 4096, 4096)
+    assert fake.calls == 3  # control: the walk took a batch on the data device and two on the realtime one
+
+
 def test_section_cookies_in_place_of_device_numbers_are_all_the_mounted_device_s(tmp_path: Path) -> None:
     # An xfs whose realtime section lives inside its data device (zoned, mkfs -r rtstart) answers with section
     # cookies and clears FMH_OF_DEV_T: the data section is 1 and the realtime section 3, both on the mounted device.
