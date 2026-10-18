@@ -254,3 +254,19 @@ def test_the_skill_states_the_sas_port_count_the_sample_capture_gives() -> None:
     assert re.search(rf"\b{hba.port_count} host phys\b", paragraph.group(0)), (
         f"the paragraph does not state the {hba.port_count} host phys the capture gives: {paragraph.group(0)[:300]}"
     )
+
+
+@pytest.mark.os_agnostic
+def test_the_skill_names_exactly_the_mount_types_that_carry_free_extent_figures() -> None:
+    """The free_space paragraph says which mounts carry all five figures, so it must be the set the code reads.
+
+    A type the code reads and the sentence omits reads as "no figure here", which is the
+    opposite of what the reader gets.
+    """
+    from lsdsk.domain.models import FREE_EXTENT_MOUNT_TYPES
+
+    text = " ".join(SKILL.read_text(encoding="utf-8").split())
+    sentence = re.search(r"; ([a-z0-9][a-z0-9, ]*?) mounts and Windows volumes carry all five", text)
+    assert sentence is not None, "the sentence naming which mounts carry all five figures is gone"
+    named = {word for word in re.split(r", | and ", sentence.group(1)) if word}
+    assert named == set(FREE_EXTENT_MOUNT_TYPES), f"the skill names {sorted(named)}"

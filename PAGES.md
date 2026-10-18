@@ -124,7 +124,7 @@ fill level becomes a finding.
 
 The `frag` column says how scattered the free space is, on the scale `zpool list` uses for
 its `FRAG` column: 0% is free space in large pieces and 100% is free space in small ones. A ZFS
-pool reports ZFS's own figure, ext4 and xfs are scored from their free extents, and a Windows
+pool reports ZFS's own figure, ext3, ext4 and xfs are scored from their free extents, and a Windows
 volume from its volume bitmap, which needs an elevated session; an unelevated Windows run shows `-`
 in every `frag` cell, with the legend `- = not read`, and a sentence under the table says why:
 `Not read: fragmentation (needs Administrator).` Any other filesystem reading the system refused

@@ -44,7 +44,9 @@ recomputed. How far the two weightings differ on histograms of real extents was 
   (`ZFS_FRAG_INVALID`, any value above 100, which `zpool list` prints as `-`); the reader records
   that as absent and the cell draws `n/a`. A pool carries a score, no extent figures and an empty
   histogram, because ZFS does not publish its free-space histogram to a caller.
-- ext4 and xfs: the free extents of the mounted filesystem through `FS_IOC_GETFSMAP`.
+- ext3, ext4 and xfs: the free extents of the mounted filesystem through `FS_IOC_GETFSMAP`. An
+  ext3 mount is the ext4 driver's (the ext3 driver was removed in Linux 4.3). ext2 is not read:
+  where the separate ext2 driver is built, its ioctl answers `ENOTTY`.
 - A Windows volume: the volume bitmap through `FSCTL_GET_VOLUME_BITMAP`, folded into free runs. This
   needs an elevated session and opens the volume by its GUID path.
 - A Linux mount of any other type (btrfs, vfat, tmpfs, and the types with no free-space source this

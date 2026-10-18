@@ -29,18 +29,18 @@ Auf der Topologieseite schaltet `d` um, wie detailliert die PCI-Struktur dargest
 Einstellung, die `--tree-density` für jede Ansicht setzt. `,` und `.` scrollen die WWN, wenn nötig.
 
 Die Ansicht fragt nach erhöhten Rechten, bevor sie irgendetwas liest, weil jeder SMART-Wert, und
-unter Windows auch die Link-Geschwindigkeit einer SATA-Platte, nur einem Prozess mit erhöhten Rechten
-gegeben wird. Unter Windows fragt sie nach Administratorrechten: Stimmen Sie zu, öffnet lsdsk sich mit
-erhöhten Rechten in einem neuen Fenster, und das Fenster, aus dem Sie es gestartet haben, wartet und
-gibt dessen Exit-Code zurück. Unter Linux und macOS fragt sie über sudo nach Root-Rechten: Gewährt
-sudo sie, startet lsdsk als root im selben Terminal neu und gibt dessen Exit-Code ebenso zurück.
-Lehnen Sie ab, gewährt sudo keine Root-Rechte oder schlägt der Neustart fehl, öffnet sich die Ansicht
-ohne erhöhte Rechte: Eine fette Zeile `NOT ELEVATED` über jeder Seite sagt, warum, der Satz
-`Not read:` darunter nennt, was das gekostet hat, und unter Windows führt die Tafel einer Platte
-jeden Wert auf, den Windows verweigert hat, mit dem Grund, den es dafür angab. Sie fragt nicht auf
-einem Linux-Rechner, dessen Platten keinen Geräteknoten zum Öffnen haben, etwa in einem Container,
-wo auch root sie nicht lesen könnte. `--no-elevate` oder `display.auto_elevate = false` schaltet die
-Frage ab.
+unter Windows auch die Link-Geschwindigkeit einer SATA-Platte, nur einem Prozess mit erhöhten
+Rechten gegeben wird. Unter Windows fragt sie nach Administratorrechten: Stimmen Sie zu, öffnet
+lsdsk sich mit erhöhten Rechten in einem neuen Fenster, und das Fenster, aus dem Sie es gestartet
+haben, wartet und gibt dessen Exit-Code zurück. Unter Linux und macOS fragt sie über sudo nach
+Root-Rechten: Gewährt sudo sie, startet lsdsk als root im selben Terminal neu und gibt dessen
+Exit-Code ebenso zurück. Lehnen Sie ab, gewährt sudo keine Root-Rechte oder schlägt der Neustart
+fehl, öffnet sich die Ansicht ohne erhöhte Rechte: Eine fette Zeile `NOT ELEVATED` über jeder Seite
+sagt, warum, der Satz `Not read:` darunter nennt, was das gekostet hat, und unter Windows führt die
+Tafel einer Platte jeden Wert auf, den Windows verweigert hat, mit dem Grund, den es dafür angab.
+Sie fragt nicht auf einem Linux-Rechner, dessen Platten keinen Geräteknoten zum Öffnen haben, etwa
+in einem Container, wo auch root sie nicht lesen könnte. `--no-elevate` oder
+`display.auto_elevate = false` schaltet die Frage ab.
 
 ## 1 Topologie
 
@@ -130,11 +130,11 @@ nennt, welches von beiden die Tabelle gezeichnet hat. Eine Zeile, auf die ein Be
 die Markierung dieses Befunds. Siehe [FINDINGS.md](FINDINGS.md#wie-voll-ein-dateisystem-ist), wann
 ein Füllstand zum Befund wird.
 
-Die Spalte `frag` sagt, wie zerstückelt der freie Platz ist, auf der Skala, die `zpool list`
-in seiner Spalte `FRAG` verwendet: 0 % ist freier Platz in großen Stücken, 100 % freier Platz in
-kleinen. Ein ZFS-Pool meldet die Zahl von ZFS selbst, ext4 und xfs werden aus ihren freien Extents
-bewertet und ein Windows-Volume aus seiner Volume-Bitmap, wofür eine Sitzung mit erhöhten Rechten
-nötig ist; ein Windows-Lauf ohne diese zeigt in jeder `frag`-Zelle `-`, mit der Legende
+Die Spalte `frag` sagt, wie zerstückelt der freie Platz ist, auf der Skala, die `zpool list` in
+seiner Spalte `FRAG` verwendet: 0 % ist freier Platz in großen Stücken, 100 % freier Platz in
+kleinen. Ein ZFS-Pool meldet die Zahl von ZFS selbst, ext3, ext4 und xfs werden aus ihren freien
+Extents bewertet und ein Windows-Volume aus seiner Volume-Bitmap, wofür eine Sitzung mit erhöhten
+Rechten nötig ist; ein Windows-Lauf ohne diese zeigt in jeder `frag`-Zelle `-`, mit der Legende
 `- = not read`, und ein Satz unter der Tabelle nennt den Grund:
 `Not read: fragmentation (needs Administrator).` Jede andere Dateisystem-Lesung, die das System für
 die ganze Maschine verweigert hat, etwa die Liste der ZFS-Pools, wird auf dieselbe Weise genannt.

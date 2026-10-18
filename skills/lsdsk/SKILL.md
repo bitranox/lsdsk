@@ -370,7 +370,7 @@ filesystem type has no source for it. Otherwise it carries `fragmentation_percen
 long runs, to 100, in tiny pieces - the scale of `zpool list` FRAG, for every kind; `null` where no
 figure exists), `free_extent_count`, `free_extent_bytes`, `largest_free_extent_bytes` and `histogram`
 (free bytes in 21 power-of-two extent-size buckets). A ZFS pool carries the score alone, its other
-keys `null` and `histogram` `[]`; ext4 and xfs mounts and Windows volumes carry all five, and
+keys `null` and `histogram` `[]`; ext3, ext4 and xfs mounts and Windows volumes carry all five, and
 Windows reads them only in an elevated run. It is shown only: no finding is ever raised from it.
 A refused reading appears as a `skipped` line, which makes `ok` false; a row whose reading was
 refused stays in the list with that figure `null`. The line reads
