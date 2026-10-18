@@ -108,10 +108,29 @@ All of it on 2026-10-13 with this change.
   maximum. An ordinary user read the same extent counts and scores as root on all three, with free
   bytes equal on ext4. On xfs the unprivileged reading was one 4 KiB block higher in free bytes in all four
   readings (xfs and xfs with `rmapbt=1`, empty and scattered), and in the largest free extent on the two
-  scattered ones; `xfs_spaceman` run afterwards as root agreed with the root reading, and the cause was not
-  established. Scores
-  were 1 to 2 empty and 15 to 17 scattered. The empty ext4 reported a 938 MB free extent across
-  128 MiB block groups, so ext4's free extents are not cut at block-group boundaries there.
+  scattered ones. Scores were 1 to 2 empty and 15 to 17 scattered. The empty ext4 reported a 938 MB
+  free extent across 128 MiB block groups, so ext4's free extents are not cut at block-group
+  boundaries there.
+- **Why xfs as root reads one block less.** It is the kernel, and the unprivileged figure is the
+  right one. On an xfs with reverse mapping, `xfs_getfsmap` answers a caller holding
+  `CAP_SYS_ADMIN` from the reverse-mapping btree and everyone else from the free-space btree
+  (`use_rmap`, `fs/xfs/xfs_fsmap.c` line 901 in v6.8). The reverse-mapping path lists free space as
+  the gaps between mappings and closes the last gap at the high key, which it sets to the START of
+  the data device's last block (`end_fsb` from `eofs - 1`, line 604, becomes
+  `info->high.rm_startblock`, line 651, and is handed to the gap helper on the final query, line
+  730, which measures the gap up to it, line 329), so that block is never listed. Upstream fixed it
+  in a440a28ddbdc, "xfs: fix off-by-one error in fsmap's end_daddr usage", first in v6.13. The
+  `mkfs.xfs` of xfsprogs 6.6.0 on that VM image gives `rmapbt=1` when no `-m` option says otherwise
+  (measured on 2026-10-18), so the plain xfs of that run had reverse mapping too, which is why all
+  four readings differed; and `xfs_spaceman -c 'freesp -s'` walks the same ioctl, so as
+  root it misses the same block and was no independent check. Re-measured on 2026-10-18 on kernel
+  6.8.0-147 and xfsprogs 6.6.0 with 2 GiB loop filesystems, dumping every record of a root walk and
+  an unprivileged one: on `rmapbt=0` the records were identical, empty and scattered. On `rmapbt=1`
+  every free record matched except the one ending the device, 131,058 blocks as root against
+  131,059 unprivileged empty and 88,946 against 88,947 scattered, and `xfs_db` read that AG's last
+  free-space btree record as 131,059 and 88,947 blocks. `read_free_extents` returned exactly the
+  scattered figures in each arm, and a walk of seven records per call, resumed up to 41 times, read the same
+  free records as a single call, so lsdsk's record handling plays no part.
 - **Windows, elevated.** One `lsdsk filesystems --format json` run on a Windows 11 VM took 2.9 s warm
   and 5.4 s cold with a 499 GiB NTFS system volume 13% full (41,897 free extents, score 1), read
   through the volume GUID path. A temporary 4 GiB NTFS volume filled to 95% read score 3 in 2.9 s.
