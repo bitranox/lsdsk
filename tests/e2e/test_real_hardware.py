@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pytest
 from conftest import PROBED, record_probe, record_skip
+from fleet import first_uv_path, windows_fragmentation_gaps, windows_uv_lookup_command
 
 REPO = Path(__file__).parent.parent.parent
 PROBE = Path(__file__).parent / "hostprobe.py"
@@ -117,18 +118,32 @@ def wheel() -> Path:
 KEEP = "LSDSK_E2E_KEEP"
 
 
-def _uv_pythons(user: str, host: str, family: str) -> str:
+def _uv(user: str, host: str, family: str) -> str:
+    """How to start uv on this host, as the command line's first word.
+
+    Found on the host rather than written down: a Windows host can carry uv
+    from the standalone installer, from winget (machine-wide or per user) or a
+    per-user install, and one fixed path is right for only one of them.
+    """
+    if family != "windows":
+        return "uv"
+    found = first_uv_path(_ssh(user, host, windows_uv_lookup_command()).stdout)
+    if found is None:
+        pytest.fail(f"{host} has no uv.exe on its PATH or in any known location, so nothing can run there")
+    return f'"{found}"'
+
+
+def _uv_pythons(user: str, host: str, uv: str) -> str:
     """What uv already manages on this host, so the run only removes its own.
 
     Asked BEFORE provisioning. Uninstalling unconditionally would take away an
     interpreter somebody else installed, which is somebody else's tooling and
     not this suite's to remove.
     """
-    uv = '"C:\\Program Files\\uv\\uv.exe"' if family == "windows" else "uv"
     return _ssh(user, host, f"{uv} python list --only-installed").stdout
 
 
-def _tidy(user: str, host: str, family: str, wheel_name: str, *, had_python: bool) -> None:
+def _tidy(user: str, host: str, family: str, wheel_name: str, *, uv: str, had_python: bool) -> None:
     """Remove what this run put on the host, and nothing else.
 
     Runs from a ``finally``, so a failed probe still cleans up; and it never
@@ -143,7 +158,7 @@ def _tidy(user: str, host: str, family: str, wheel_name: str, *, had_python: boo
         if not had_python:
             # Fetched by `uv run --python 3.12` for this run alone. Left behind
             # it is a 21 MB interpreter nobody asked for.
-            _ssh(user, host, '"C:\\Program Files\\uv\\uv.exe" python uninstall 3.12')
+            _ssh(user, host, f"{uv} python uninstall 3.12")
     else:
         _ssh(user, host, f"rm -f /tmp/{wheel_name} /tmp/hostprobe.py")
 
@@ -168,19 +183,20 @@ def test_the_contract_holds_on_real_hardware(wheel: Path, host: str, user: str, 
         record_skip(host, "not reachable from here")
         pytest.skip(f"{host} is not reachable from here")
 
-    had_python = "cpython-3.12" in _uv_pythons(user, host, family)
+    uv = _uv(user, host, family)
+    had_python = "cpython-3.12" in _uv_pythons(user, host, uv)
 
     if family == "windows":
         home = f"C:\\Users\\{user}"
         destination = f"{user}@{host}:{home}\\"
         command = (
-            f'"C:\\Program Files\\uv\\uv.exe" run --no-cache --no-project --python 3.12 --reinstall '
+            f"{uv} run --no-cache --no-project --python 3.12 --reinstall "
             f"--with {home}\\{wheel.name} python {home}\\hostprobe.py lsdsk"
         )
     else:
         destination = f"{user}@{host}:/tmp/"
         command = (
-            f"cd /tmp && uv run --no-cache --no-project --python 3.13 --reinstall "
+            f"cd /tmp && {uv} run --no-cache --no-project --python 3.13 --reinstall "
             f"--with /tmp/{wheel.name} python /tmp/hostprobe.py lsdsk"
         )
 
@@ -203,7 +219,7 @@ def test_the_contract_holds_on_real_hardware(wheel: Path, host: str, user: str, 
     try:
         result = _ssh(user, host, command)
     finally:
-        _tidy(user, host, family, wheel.name, had_python=had_python)
+        _tidy(user, host, family, wheel.name, uv=uv, had_python=had_python)
 
     start = result.stdout.find("{")
     assert start >= 0, f"{host} returned no envelope. stderr: {result.stderr[-400:]}"
@@ -212,6 +228,10 @@ def test_the_contract_holds_on_real_hardware(wheel: Path, host: str, user: str, 
     facts = dict(envelope["facts"])
     facts["host"] = envelope["host"]
     facts["checks"] = len(envelope["checks"])
+    # The names, not only the count: a check that emits nothing on some hosts
+    # (the NTFS bitmap walk on a host with no NTFS row) cannot be told from one
+    # that ran by a total, and the coverage file is where a run is audited later.
+    facts["check_names"] = sorted(str(item["name"]) for item in envelope["checks"])
     # Recorded BEFORE the assertions, and printed from pytest_terminal_summary
     # rather than here: a print inside a passing test is swallowed by capture,
     # so the evidence would appear only on the runs that already tell you
@@ -246,6 +266,8 @@ def test_a_windows_host_was_actually_probed() -> None:
         f"host tests did not run first. Probed: {[f.get('host') for f in PROBED] or 'nothing'}"
     )
     assert windows[0].get("blind_buses") == [], f"a transport read nothing: {windows[0].get('blind_buses')}"
+    gaps = windows_fragmentation_gaps(windows)
+    assert not gaps, "the NTFS bitmap walk was not judged on every Windows host:\n  " + "\n  ".join(gaps)
 
 
 @pytest.mark.local_only
