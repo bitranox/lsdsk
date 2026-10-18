@@ -39,9 +39,10 @@ shortfall that is easy to fix, and the values that would explain it are spread a
 set of ioctls and the mainboard manual.
 
 lsdsk makes no network requests - the one exception is the optional Graylog log sink, which
-stays off unless you enable it - and the only process it ever starts is itself: on Windows the
-interactive view asks for Administrator and, if you allow it, reopens elevated in a new window
-(`--no-elevate` turns that off). Every value it prints was read directly, from sysfs and direct
+stays off unless you enable it - and the only process it ever starts is itself: the interactive
+view asks for Administrator on Windows, where it reopens elevated in a new window, and for root
+through sudo on Linux and macOS, where it restarts as root in the same terminal (`--no-elevate`
+turns that off). Every value it prints was read directly, from sysfs and direct
 ioctls on Linux and from SetupAPI and DeviceIoControl on Windows.
 
 ## QUICKSTART
@@ -134,7 +135,8 @@ pip install lsdsk      # if you prefer the old way
 Python 3.11 or newer, Linux or Windows. It shells out to nothing: no
 `smartmontools`, no `nvme-cli`, no `lspci`, and no network access unless you
 enable the optional Graylog log sink. The one process it starts is its own
-elevated copy, on Windows, when the interactive view asks for Administrator. Its own Python dependencies are declared in
+elevated copy, when the interactive view asks for Administrator on Windows or for root through
+sudo on Linux. Its own Python dependencies are declared in
 `pyproject.toml`.
 
 From the hardware `lsdsk` reads only a controller's numeric identifiers, not its

@@ -21,7 +21,7 @@ from lib_layered_config import Config
 from lsdsk.adapters.cli import cli
 from lsdsk.adapters.config.tunables import DisplaySettings, get_display_settings
 from lsdsk.composition import build_production
-from lsdsk.domain.elevation import Elevation, ElevationState
+from lsdsk.domain.elevation import Elevation, ElevationPrompt, ElevationState
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -31,8 +31,8 @@ if TYPE_CHECKING:
     from lsdsk.composition import AppServices
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
-RELAUNCHED = Elevation(state=ElevationState.RELAUNCHED, exit_code=5)
-DECLINED = Elevation(state=ElevationState.DECLINED)
+RELAUNCHED = Elevation(state=ElevationState.RELAUNCHED, prompt=ElevationPrompt.UAC, exit_code=5)
+DECLINED = Elevation(state=ElevationState.DECLINED, prompt=ElevationPrompt.UAC)
 
 
 class AskRecorder:

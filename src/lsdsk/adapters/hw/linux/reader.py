@@ -60,7 +60,7 @@ from .filesystems import builds_filesystems
 from .usage import disks_by_device
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
 # ioctl numbers. SG_IO is the generic SCSI passthrough; the NVMe admin command
 # code is _IOWR('N', 0x41, struct nvme_passthru_cmd) evaluated for a 72-byte
@@ -1195,14 +1195,58 @@ def _read_prefix(path: Path, chars: int) -> str:
         return ""
 
 
-def _devices_accessible(nodes: list[str]) -> bool:
+def _devices_accessible(nodes: list[str], dev: Path = Path("/dev")) -> bool:
     """Whether the device nodes needed to interrogate a disk exist.
 
     In most containers ``/sys/block`` lists the host's disks while ``/dev`` has
     no matching nodes at all. Elevating changes nothing there, so the difference
     decides which advice is honest.
     """
-    return any(_probe(Path(f"/dev/{node}"), Path.exists) for node in nodes) if nodes else True
+    return any(_probe(dev / node, Path.exists) for node in nodes) if nodes else True
+
+
+class InterrogatedNodes(NamedTuple):
+    """The block devices lsdsk opens to read a drive, by the path each is read through.
+
+    Named because both halves are lists of node names: swapped, every SCSI disk
+    would be sent NVMe admin commands and nothing would say so.
+
+    Attributes:
+        scsi: SCSI and SATA disks (``sd*``), read through SG_IO.
+        nvme: NVMe namespaces (``nvme*``), read through the NVMe admin ioctl.
+    """
+
+    scsi: list[str]
+    nvme: list[str]
+
+
+def _interrogated(names: Iterable[str]) -> InterrogatedNodes:
+    """The block devices lsdsk opens to read a drive: SCSI/SATA disks, then NVMe namespaces."""
+    listed = list(names)
+    return InterrogatedNodes(
+        scsi=[node for node in listed if node.startswith("sd")],
+        nvme=[node for node in listed if node.startswith("nvme")],
+    )
+
+
+def disk_nodes_reachable(sys_block: Path = Path("/sys/block"), dev: Path = Path("/dev")) -> bool:
+    """Whether root could open the disks ``/sys/block`` lists, decided before anything is read.
+
+    The interactive view asks for a sudo password only where root would read
+    more, and in a container root cannot open the host's disks either. This is
+    the scan's own ``devices_accessible`` rule over a bare directory listing, so
+    the question is settled without reading a single attribute.
+
+    Args:
+        sys_block: The sysfs block directory, overridable for a test.
+        dev: The device directory, overridable for a test.
+
+    Returns:
+        False only where drives are listed and none of their nodes exists.
+    """
+    names = [entry.name for entry in _entries(sys_block)] if _probe(sys_block, Path.is_dir) else []
+    nodes = _interrogated(names)
+    return _devices_accessible([*nodes.scsi, *nodes.nvme], dev)
 
 
 def free_extent_devices(reading: Mapping[str, Any]) -> frozenset[str]:
@@ -1306,8 +1350,8 @@ def read_system(readers: SystemReaders | None = None) -> dict[str, Any]:
     """
     read = readers or SystemReaders()
     block = read.block()
-    scsi_nodes = [node for node in block if node.startswith("sd")]
-    nvme_nodes = [node for node in block if node.startswith("nvme")]
+    nodes = _interrogated(block)
+    scsi_nodes, nvme_nodes = nodes.scsi, nodes.nvme
     pci = read.pci()
 
     # What device-mapper sits on a disk's own block node or on any of its
@@ -1359,11 +1403,13 @@ __all__ = [
     "SG_IO",
     "AhciReading",
     "HostIdentity",
+    "InterrogatedNodes",
     "NvmePassthruCommand",
     "SgIoHeader",
     "SystemReaders",
     "ata_passthrough",
     "ata_passthrough_nodes",
+    "disk_nodes_reachable",
     "free_extent_devices",
     "nvme_admin",
     "parse_pcie_capability",

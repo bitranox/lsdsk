@@ -73,20 +73,20 @@ Die Konfiguration wird in dieser Reihenfolge geladen und zusammengeführt (vom n
 
 Diese Optionen gelten für alle Befehle und stehen **vor** dem Befehlsnamen:
 
-| Option                    | Beschreibung                                                                                                                |
-|---------------------------|-----------------------------------------------------------------------------------------------------------------------------|
-| `--version`               | Version ausgeben und beenden.                                                                                               |
-| `--profile NAME`          | Konfiguration aus einem benannten Profil laden (etwa `production`, `test`).                                                 |
-| `--set SECTION.KEY=VALUE` | Eine Einstellung überschreiben. Für mehrere Überschreibungen wiederholbar.                                                  |
-| `--env-file PATH`         | Ausdrücklicher Pfad zu einer `.env`. Überspringt die Suche nach oben im Verzeichnisbaum.                                    |
-| `--replay FILE`           | Eine früher angelegte Aufnahme darstellen, statt diese Maschine zu lesen.                                                   |
-| `--history-file FILE`     | Zählerverlauf dort lesen und schreiben statt in der Zustandsdatei des Benutzers.                                            |
-| `--no-record`             | Zähler gegen den aufgezeichneten Verlauf beurteilen, ohne diese Messung aufzunehmen.                                        |
-| `--expand-virtual`        | Jedes kernelvirtuelle Gerät auflisten, statt sie in einer Zeile zusammenzuzählen.                                           |
-| `--tree-density LEVEL`    | Wie viel der PCI-Struktur die Topologie zeichnet: `storage-only` (die Vorgabe), `storage-and-siblings` oder `full`.         |
-| `--no-elevate`            | Windows nie nach Administratorrechten fragen, bevor die interaktive Ansicht öffnet (`display.auto_elevate` für einen Lauf). |
-| `--traceback`             | Bei Fehlern den vollständigen Python-Traceback zeigen (nützlich zur Fehlersuche).                                           |
-| `--no-traceback`          | Keinen Traceback zeigen, nur die Fehlermeldung (Vorgabe).                                                                   |
+| Option                    | Beschreibung                                                                                                                    |
+|---------------------------|---------------------------------------------------------------------------------------------------------------------------------|
+| `--version`               | Version ausgeben und beenden.                                                                                                   |
+| `--profile NAME`          | Konfiguration aus einem benannten Profil laden (etwa `production`, `test`).                                                     |
+| `--set SECTION.KEY=VALUE` | Eine Einstellung überschreiben. Für mehrere Überschreibungen wiederholbar.                                                      |
+| `--env-file PATH`         | Ausdrücklicher Pfad zu einer `.env`. Überspringt die Suche nach oben im Verzeichnisbaum.                                        |
+| `--replay FILE`           | Eine früher angelegte Aufnahme darstellen, statt diese Maschine zu lesen.                                                       |
+| `--history-file FILE`     | Zählerverlauf dort lesen und schreiben statt in der Zustandsdatei des Benutzers.                                                |
+| `--no-record`             | Zähler gegen den aufgezeichneten Verlauf beurteilen, ohne diese Messung aufzunehmen.                                            |
+| `--expand-virtual`        | Jedes kernelvirtuelle Gerät auflisten, statt sie in einer Zeile zusammenzuzählen.                                               |
+| `--tree-density LEVEL`    | Wie viel der PCI-Struktur die Topologie zeichnet: `storage-only` (die Vorgabe), `storage-and-siblings` oder `full`.             |
+| `--no-elevate`            | Nie nach Administrator- oder Root-Rechten fragen, bevor die interaktive Ansicht öffnet (`display.auto_elevate` für einen Lauf). |
+| `--traceback`             | Bei Fehlern den vollständigen Python-Traceback zeigen (nützlich zur Fehlersuche).                                               |
+| `--no-traceback`          | Keinen Traceback zeigen, nur die Fehlermeldung (Vorgabe).                                                                       |
 
 `--replay`, `--expand-virtual`, `--tree-density` und `--profile` werden auch
 **nach** einem Befehl angenommen, der sie beachtet, und der Wert des Befehls
@@ -425,18 +425,18 @@ Diese ändern, wie ein Bericht aussieht. Keiner davon ändert den Schweregrad od
 den Exit-Code: der kommt aus `[thresholds]` und aus den Grenzen, die ein
 Laufwerk über sich selbst veröffentlicht.
 
-| Schlüssel                 | Vorgabe        | Wirkung                                                             |
-|---------------------------|----------------|---------------------------------------------------------------------|
-| `piped_width`             | `120`          | Breite, wenn die Ausgabe kein Terminal ist                          |
-| `summary_limit`           | `6`            | Befunde in der Urteilszeile, bevor "and N more" folgt               |
-| `wear_row_floor_percent`  | `10`           | Verschleiß darunter bekommt in beiden Ansichten keine Verlaufszeile |
-| `expand_virtual`          | `false`        | Kernelvirtuelle Geräte auflisten, statt sie zusammenzuzählen        |
-| `tree_density`            | `storage-only` | Wie viel der PCI-Struktur jede Ansicht zeichnet                     |
-| `wwn_width`               | `24`           | Höchstzahl Zeichen für die Spalte wwn in beiden Ansichten           |
-| `detail_height_percent`   | `33`           | Höchstanteil des interaktiven Fensters für die Detailtafel          |
-| `auto_elevate`            | `true`         | Ob die interaktive Ansicht Windows nach Administratorrechten fragt  |
-| `traceback_summary_limit` | `500`          | Zeichen, die ein kurzer Traceback behält                            |
-| `traceback_verbose_limit` | `10000`        | Und unter `--traceback`                                             |
+| Schlüssel                 | Vorgabe        | Wirkung                                                                |
+|---------------------------|----------------|------------------------------------------------------------------------|
+| `piped_width`             | `120`          | Breite, wenn die Ausgabe kein Terminal ist                             |
+| `summary_limit`           | `6`            | Befunde in der Urteilszeile, bevor "and N more" folgt                  |
+| `wear_row_floor_percent`  | `10`           | Verschleiß darunter bekommt in beiden Ansichten keine Verlaufszeile    |
+| `expand_virtual`          | `false`        | Kernelvirtuelle Geräte auflisten, statt sie zusammenzuzählen           |
+| `tree_density`            | `storage-only` | Wie viel der PCI-Struktur jede Ansicht zeichnet                        |
+| `wwn_width`               | `24`           | Höchstzahl Zeichen für die Spalte wwn in beiden Ansichten              |
+| `detail_height_percent`   | `33`           | Höchstanteil des interaktiven Fensters für die Detailtafel             |
+| `auto_elevate`            | `true`         | Ob die interaktive Ansicht nach Administrator- oder Root-Rechten fragt |
+| `traceback_summary_limit` | `500`          | Zeichen, die ein kurzer Traceback behält                               |
+| `traceback_verbose_limit` | `10000`        | Und unter `--traceback`                                                |
 
 Ein kernelvirtuelles Gerät ist eines, das der Kernel ohne Hardware dahinter
 bereitstellt: zram, ein Loop-Mount, ein ZFS-zvol, ein Device-Mapper-Knoten. Es
@@ -473,17 +473,20 @@ Setzen Sie `25` für ein Viertel des Fensters. `i` blendet sie aus und gibt der
 Tabelle den ganzen Bildschirm. An dem, was ein druckender Befehl zeichnet,
 ändert es nichts.
 
-`auto_elevate` entscheidet, ob die interaktive Ansicht Windows nach
-Administratorrechten fragt, bevor sie etwas liest. Ohne sie zeigen die
-Verbindungsgeschwindigkeit einer SATA-Platte und jeder SMART-Wert `-`, weil
-Windows sie nur einem Prozess mit erhöhten Rechten gibt, und einem laufenden
-Prozess lassen sich keine Rechte nachreichen: die Ansicht zeigt die
-Administratorabfrage und öffnet sich, wenn Sie zustimmen, mit erhöhten Rechten in
-einem neuen Fenster, während das Fenster, in dem Sie getippt haben, wartet und
-dessen Rückgabewert übernimmt. Lehnen Sie ab, öffnet sie sich hier ohne
-Administratorrechte und sagt das über jeder Seite. Sie fragt nie außerhalb von
-Windows, nie mit bereits erhöhten Rechten, nie bei `--replay` und nie für einen
-druckenden Befehl. `--no-elevate` schaltet es für einen Lauf ab. Die Kopie mit
+`auto_elevate` entscheidet, ob die interaktive Ansicht nach Administratorrechten
+(Windows) oder Root-Rechten (Linux, macOS) fragt, bevor sie etwas liest. Ohne sie
+zeigt jeder SMART-Wert `-`, unter Windows auch die Verbindungsgeschwindigkeit
+einer SATA-Platte, weil sie nur einem Prozess mit erhöhten Rechten gegeben werden,
+und einem laufenden Prozess lassen sich keine Rechte nachreichen. Unter Windows
+zeigt die Ansicht die Administratorabfrage und öffnet sich, wenn Sie zustimmen,
+mit erhöhten Rechten in einem neuen Fenster, während das Fenster, in dem Sie
+getippt haben, wartet und dessen Rückgabewert übernimmt. Unter Linux und macOS
+fragt sudo nach Ihrem Passwort, und gewährt es Root-Rechte, startet lsdsk als
+root im selben Terminal neu. Lehnen Sie ab oder gewährt sudo keine Root-Rechte,
+öffnet sie sich hier ohne erhöhte Rechte und sagt das über jeder Seite. Sie fragt
+nie auf einer anderen Plattform, nie mit bereits erhöhten Rechten, nie auf einem
+Linux-Rechner, dessen Platten keinen Geräteknoten zum Öffnen haben (ein
+Container), nie bei `--replay` und nie für einen druckenden Befehl. `--no-elevate` schaltet es für einen Lauf ab. Die Kopie mit
 erhöhten Rechten wird mit `--elevated-relaunch` gestartet, damit sie nicht noch
 einmal fragt; die Option erscheint nicht in `--help` und ist nicht zum Eintippen
 gedacht.

@@ -6,9 +6,10 @@ the tool is safe to run on a wedged storage host where shelling out to
 ``smartctl`` would block, and why the skill instructs an agent to look figures up
 itself rather than expect the tool to fetch them.
 
-The one process lsdsk ever starts is itself: on Windows the interactive view
-relaunches elevated through pwshpy's ``ps.elevate`` (the user's decision of
-2026-10-16). pwshpy is reached by NAME through importlib, so the import graph
+The one process lsdsk ever starts is itself: the interactive view relaunches
+elevated through pwshpy's ``ps.elevate`` - a UAC prompt on Windows (the user's
+decision of 2026-10-16), ``sudo`` on Linux and macOS (2026-10-17), which
+pwshpy starts. pwshpy is reached by NAME through importlib, so the import graph
 below cannot see it, and the second test pins it to the one module allowed to
 start that process.
 

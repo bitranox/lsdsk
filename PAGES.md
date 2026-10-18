@@ -28,13 +28,17 @@ On the topology page, `d` switches how much detail the PCI fabric is drawn in,
 the same setting `--tree-density` sets for every view. `,` and `.` scroll the
 WWN where that is needed.
 
-On Windows the view asks for Administrator before it reads anything, because Windows gives a SATA
-drive's link speed and every SMART figure only to an elevated process. If you allow it, lsdsk opens
-elevated in a new window, and the window you started it from waits and hands back its exit code. If
-you refuse, or the relaunch fails, the view opens unelevated: a bold `NOT ELEVATED` line above every
-page says why, the `Not read:` sentence under it names what that cost, and a drive's panel lists
-each reading Windows refused with the reason it gave. `--no-elevate` or `display.auto_elevate =
-false` turns the asking off.
+The view asks for elevation before it reads anything, because every SMART figure, and on Windows a
+SATA drive's link speed too, is given only to an elevated process. On Windows it asks for
+Administrator: if you allow it, lsdsk opens elevated in a new window, and the window you started it
+from waits and hands back its exit code. On Linux and macOS it asks for root through sudo: if sudo
+grants it, lsdsk restarts as root in the same terminal and hands back its exit code the same way. If
+you refuse, sudo does not grant root, or the relaunch fails, the view opens unelevated: a bold
+`NOT ELEVATED` line above every page says why, the `Not read:` sentence under it names what that
+cost, and on Windows a drive's panel lists each reading Windows refused with the reason it gave. It
+does not ask on a Linux machine whose disks have no device node to open, such as a container, where
+root could not read them either. `--no-elevate` or `display.auto_elevate = false` turns the asking
+off.
 
 ## 1 Topology
 

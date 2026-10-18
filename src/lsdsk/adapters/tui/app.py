@@ -351,7 +351,7 @@ class LsdskApp(App[None]):
                 refusal that is only warned about reaches nobody here and the
                 trend page would report the machine as one nothing has ever
                 been recorded on.
-            elevation: What asking for Administrator came to before this view
+            elevation: What asking for elevation came to before this view
                 opened, so a run that stayed unelevated can say why above every
                 page. None where nothing asked.
         """

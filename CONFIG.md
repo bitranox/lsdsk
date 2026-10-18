@@ -84,7 +84,7 @@ These options apply to all commands and go **before** the command name:
 | `--no-record`             | Judge counters against recorded history without adding this reading.                                           |
 | `--expand-virtual`        | List every kernel-virtual device rather than tallying them in one line.                                        |
 | `--tree-density LEVEL`    | How much of the PCI fabric the topology draws: `storage-only` (the default), `storage-and-siblings` or `full`. |
-| `--no-elevate`            | Never ask Windows for Administrator before the interactive view opens (`display.auto_elevate` for one run).    |
+| `--no-elevate`            | Never ask for Administrator or root before the interactive view opens (`display.auto_elevate` for one run).    |
 | `--traceback`             | Show full Python traceback on errors (useful for debugging).                                                   |
 | `--no-traceback`          | Hide traceback, show only error message (default).                                                             |
 
@@ -432,7 +432,7 @@ itself.
 | `tree_density`            | `storage-only` | How much of the PCI fabric every view draws                 |
 | `wwn_width`               | `24`           | Most characters the wwn column is given in either view      |
 | `detail_height_percent`   | `33`           | Most of the interactive window the detail panel takes       |
-| `auto_elevate`            | `true`         | Whether the interactive view asks Windows for Administrator |
+| `auto_elevate`            | `true`         | Whether the interactive view asks for Administrator or root |
 | `traceback_summary_limit` | `500`          | Characters kept in a short traceback                        |
 | `traceback_verbose_limit` | `10000`        | And under `--traceback`                                     |
 
@@ -467,14 +467,18 @@ record takes the lines it needs and a long one scrolls inside the panel. Set
 `25` for a quarter of the window. Press `i` to hide it and give the table the
 whole screen. It changes nothing a printed command draws.
 
-`auto_elevate` decides whether the interactive view asks Windows for
-Administrator before it reads anything. Without it a SATA drive's link speed
-and every SMART figure read `-`, because Windows gives them only to an elevated
-process, and a running process cannot be raised: the view shows the
-Administrator prompt and, if you allow it, opens elevated in a new window while
-the one you typed in waits and hands back its exit code. If you refuse, it opens
-here without Administrator and says so above every page. It never asks off
-Windows, when already elevated, for `--replay`, or for any printed command.
+`auto_elevate` decides whether the interactive view asks for Administrator
+(Windows) or root (Linux, macOS) before it reads anything. Without it every SMART
+figure reads `-`, and on Windows a SATA drive's link speed too, because they are
+given only to an elevated process, and a running process cannot be raised. On
+Windows the view shows the Administrator prompt and, if you allow it, opens
+elevated in a new window while the one you typed in waits and hands back its
+exit code. On Linux and macOS sudo asks for your password and, if it grants
+root, lsdsk restarts as root in the same terminal. If you refuse, or sudo does
+not grant root, it opens here unelevated and says so above every page. It never
+asks on another platform, when already elevated, on a Linux machine whose disks
+have no device node to open (a container), for `--replay`, or for any printed
+command.
 `--no-elevate` turns it off for one run. The elevated copy is started with
 `--elevated-relaunch`, which stops it from asking again; it is not shown in
 `--help` and is not meant to be typed.

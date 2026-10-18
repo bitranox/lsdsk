@@ -29,14 +29,19 @@ Auf der Topologieseite schaltet `d` um, wie detailliert die PCI-Struktur dargest
 dieselbe Einstellung, die `--tree-density` für jede Ansicht setzt. 
 `,` und `.` scrollen die WWN, wenn nötig.
 
-Unter Windows fragt die Ansicht nach Administratorrechten, bevor sie irgendetwas liest, weil Windows
-die Link-Geschwindigkeit einer SATA-Platte und jeden SMART-Wert nur einem Prozess mit erhöhten
-Rechten gibt. Stimmen Sie zu, öffnet lsdsk sich mit erhöhten Rechten in einem neuen Fenster, und das
-Fenster, aus dem Sie es gestartet haben, wartet und gibt dessen Exit-Code zurück. Lehnen Sie ab oder
-schlägt der Neustart fehl, öffnet sich die Ansicht ohne erhöhte Rechte: Eine fette Zeile
-`NOT ELEVATED` über jeder Seite sagt, warum, der Satz `Not read:` darunter nennt, was das gekostet
-hat, und die Tafel einer Platte führt jeden Wert auf, den Windows verweigert hat, mit dem Grund, den
-es dafür angab. `--no-elevate` oder `display.auto_elevate = false` schaltet die Frage ab.
+Die Ansicht fragt nach erhöhten Rechten, bevor sie irgendetwas liest, weil jeder SMART-Wert, und
+unter Windows auch die Link-Geschwindigkeit einer SATA-Platte, nur einem Prozess mit erhöhten Rechten
+gegeben wird. Unter Windows fragt sie nach Administratorrechten: Stimmen Sie zu, öffnet lsdsk sich mit
+erhöhten Rechten in einem neuen Fenster, und das Fenster, aus dem Sie es gestartet haben, wartet und
+gibt dessen Exit-Code zurück. Unter Linux und macOS fragt sie über sudo nach Root-Rechten: Gewährt
+sudo sie, startet lsdsk als root im selben Terminal neu und gibt dessen Exit-Code ebenso zurück.
+Lehnen Sie ab, gewährt sudo keine Root-Rechte oder schlägt der Neustart fehl, öffnet sich die Ansicht
+ohne erhöhte Rechte: Eine fette Zeile `NOT ELEVATED` über jeder Seite sagt, warum, der Satz
+`Not read:` darunter nennt, was das gekostet hat, und unter Windows führt die Tafel einer Platte
+jeden Wert auf, den Windows verweigert hat, mit dem Grund, den es dafür angab. Sie fragt nicht auf
+einem Linux-Rechner, dessen Platten keinen Geräteknoten zum Öffnen haben, etwa in einem Container,
+wo auch root sie nicht lesen könnte. `--no-elevate` oder `display.auto_elevate = false` schaltet die
+Frage ab.
 
 ## 1 Topologie
 

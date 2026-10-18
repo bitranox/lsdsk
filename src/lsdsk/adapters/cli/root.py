@@ -424,7 +424,7 @@ class _OptionalFile(NonEmptyPath):
     "no_elevate",
     is_flag=True,
     default=False,
-    help="Never ask Windows for Administrator before the interactive view opens.",
+    help="Never ask for Administrator or root before the interactive view opens.",
 )
 @option(
     # Started on the elevated copy by the relaunch itself (adapters/hw/elevation.py),

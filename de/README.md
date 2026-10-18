@@ -41,9 +41,10 @@ die das erklären würden, liegen verstreut über sysfs, in einer Reihe von Ioct
 
 lsdsk stellt keine Netzwerkanfragen - die einzige Ausnahme ist die optionale
 Graylog-Protokollsenke, die aus bleibt, solange man sie nicht einschaltet - und der einzige
-Prozess, den es je startet, ist es selbst: unter Windows fragt die interaktive Ansicht nach
-Administratorrechten und öffnet sich, wenn Sie zustimmen, mit erhöhten Rechten in einem neuen
-Fenster (`--no-elevate` schaltet das ab). Jeder Wert, den es ausgibt, wurde direkt gelesen, unter
+Prozess, den es je startet, ist es selbst: Die interaktive Ansicht fragt unter Windows nach
+Administratorrechten und öffnet sich dann mit erhöhten Rechten in einem neuen Fenster, unter Linux
+und macOS über sudo nach Root-Rechten und startet dann als root im selben Terminal neu
+(`--no-elevate` schaltet das ab). Jeder Wert, den es ausgibt, wurde direkt gelesen, unter
 Linux aus sysfs und über direkte Ioctls, unter Windows über SetupAPI und DeviceIoControl.
 
 ## SCHNELLSTART
@@ -141,8 +142,8 @@ pip install lsdsk      # für Nostalgiker
 Python 3.11 oder neuer, Linux oder Windows. Es ruft nichts auf: kein
 `smartmontools`, kein `nvme-cli`, kein `lspci`, und keinen Netzzugriff, solange man
 die optionale Graylog-Protokollsenke nicht einschaltet. Der einzige Prozess, den es
-startet, ist seine eigene Kopie mit erhöhten Rechten, unter Windows, wenn die
-interaktive Ansicht nach Administratorrechten fragt. Seine eigenen Python-Abhängigkeiten stehen
+startet, ist seine eigene Kopie mit erhöhten Rechten, wenn die interaktive Ansicht
+unter Windows nach Administratorrechten oder unter Linux über sudo nach Root-Rechten fragt. Seine eigenen Python-Abhängigkeiten stehen
 in `pyproject.toml`.
 
 Von der Hardware liest `lsdsk` nur die Zahlencodes eines Controllers, nicht seinen

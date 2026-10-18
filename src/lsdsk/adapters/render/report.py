@@ -23,7 +23,7 @@ from rich.text import Text
 
 from ... import __init__conf__
 from ...domain.diagnostics import count_by_severity, link_is_register_default, register_default_links
-from ...domain.elevation import Elevation, ElevationState
+from ...domain.elevation import Elevation, ElevationPrompt, ElevationState
 from ...domain.enums import Align, BusType, Environment, Severity
 from ...domain.models import IDENTIFY_READING, pcie_bandwidth_gbps, pcie_generation, serial_bandwidth_gbps
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_SUMMARY_LIMIT
@@ -303,13 +303,27 @@ def unread_interfaces_note(inventory: Inventory) -> str:
     return " ".join(sentences)
 
 
-#: Why a run that could have asked for Administrator is not elevated, by outcome.
+#: Why a run that could have asked for elevation is not elevated, by outcome and prompt.
 #: Only the outcomes a reader can act on are here; NOT_ASKED and RELAUNCHED say nothing.
+#: A refused sudo is not "you declined": sudo exits the same way for a refused prompt, a
+#: wrong password and a user it does not allow, so the line names all three.
 _NOT_ELEVATED_BECAUSE = {
-    ElevationState.DECLINED: "NOT ELEVATED: you declined the Administrator prompt.",
-    ElevationState.TURNED_OFF: (
+    (ElevationState.DECLINED, ElevationPrompt.UAC): "NOT ELEVATED: you declined the Administrator prompt.",
+    (ElevationState.DECLINED, ElevationPrompt.SUDO): (
+        "NOT ELEVATED: sudo did not grant root (refused, a wrong password, or not allowed)."
+    ),
+    (ElevationState.TURNED_OFF, ElevationPrompt.UAC): (
         "NOT ELEVATED: this run does not ask for Administrator (--no-elevate or display.auto_elevate = false)."
     ),
+    (ElevationState.TURNED_OFF, ElevationPrompt.SUDO): (
+        "NOT ELEVATED: this run does not ask for root (--no-elevate or display.auto_elevate = false)."
+    ),
+}
+
+#: What a failed relaunch was trying to become, in the prompt's own words.
+_RELAUNCHING_AS = {
+    ElevationPrompt.UAC: "relaunching as Administrator",
+    ElevationPrompt.SUDO: "relaunching as root through sudo",
 }
 
 
@@ -318,10 +332,11 @@ def elevation_note(elevation: Elevation | None, inventory: Inventory) -> str:
 
     The interactive view puts this in front of :func:`privilege_note`: that one
     says what a missing privilege cost, this one says why it is missing, which
-    is what the person can change.
+    is what the person can change. It names the prompt the run went through, so
+    a refused sudo password is never explained as an Administrator prompt.
 
     Args:
-        elevation: What asking for Administrator came to, or None where nothing
+        elevation: What asking for elevation came to, or None where nothing
             asked (every printed view).
         inventory: The machine that was scanned; an elevated run says nothing.
 
@@ -330,17 +345,17 @@ def elevation_note(elevation: Elevation | None, inventory: Inventory) -> str:
 
     Example:
         >>> from ...domain.models import Inventory
-        >>> declined = Elevation(state=ElevationState.DECLINED)
+        >>> declined = Elevation(state=ElevationState.DECLINED, prompt=ElevationPrompt.UAC)
         >>> elevation_note(declined, Inventory(hostname="h", privileged=False))
         'NOT ELEVATED: you declined the Administrator prompt.'
         >>> elevation_note(declined, Inventory(hostname="h", privileged=True))
         ''
     """
-    if elevation is None or inventory.privileged:
+    if elevation is None or elevation.prompt is None or inventory.privileged:
         return ""
     if elevation.state is ElevationState.FAILED:
-        return f"NOT ELEVATED: relaunching as Administrator failed ({elevation.detail})."
-    return _NOT_ELEVATED_BECAUSE.get(elevation.state, "")
+        return f"NOT ELEVATED: {_RELAUNCHING_AS[elevation.prompt]} failed ({elevation.detail})."
+    return _NOT_ELEVATED_BECAUSE.get((elevation.state, elevation.prompt), "")
 
 
 def slot_privilege_note(inventory: Inventory) -> str:

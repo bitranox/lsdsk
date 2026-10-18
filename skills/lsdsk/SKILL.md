@@ -10,8 +10,8 @@ both ends of it could do, and reports what is worth acting on. It also names the
 mainboard, from DMI, which is what makes its placement advice actionable. Linux
 and Windows. It shells out to nothing and has no network unless you enable the optional
 Graylog log sink (`lib_log_rich.enable_graylog`), which is off by default; the one process it
-ever starts is itself, when the interactive view on Windows relaunches elevated (see the
-privilege section). It runs anywhere `--replay` is all you
+ever starts is itself, when the interactive view relaunches elevated - through UAC on Windows,
+through sudo on Linux and macOS (see the privilege section). It runs anywhere `--replay` is all you
 need, macOS included; only reading real hardware is the two.
 
 **Bare `lsdsk` gives a PERSON the interactive view and a PROGRAM the printed
@@ -744,17 +744,27 @@ Five things need root or Administrator, not one:
 The last one is refused on some hosts even as root, so a `-` there is not proof
 the run was unprivileged.
 
-**On Windows the interactive view asks for Administrator itself.** A non-elevated
-bare `lsdsk` or `lsdsk tui` shows the Administrator (UAC) prompt before it reads
-anything. If the person allows it, lsdsk opens elevated in a new window and the
-window they typed in waits and returns that copy's exit code. If they refuse, or the
-relaunch fails, the view opens unelevated with a `NOT ELEVATED` line above every
-page saying why, followed by what the missing privilege cost. `--no-elevate` or
-`display.auto_elevate = false` turns the asking off. Nothing is remembered: it asks
-again on every start. It never asks off Windows, when already elevated, for
-`--replay`, or for any subcommand but `tui`. It asks wherever
-the view opens, so a caller handing its child a pseudo-terminal meets the prompt
-too: unattended, say `lsdsk report` or pass `--no-elevate`, and run from an
+**The interactive view asks for elevation itself.** A non-elevated bare `lsdsk` or
+`lsdsk tui` asks before it reads anything. On Windows that is the Administrator
+(UAC) prompt: if the person allows it, lsdsk opens elevated in a new window and the
+window they typed in waits and returns that copy's exit code. On Linux and macOS it
+is sudo's password prompt: if sudo grants root, lsdsk restarts as root in the same
+terminal and returns that copy's exit code. If they refuse (Ctrl+C at the password
+prompt included), sudo does not grant root, or the relaunch fails, the view opens
+unelevated with a `NOT ELEVATED` line above every page saying why, followed by what
+the missing privilege cost. A refused prompt, a wrong password and a user sudo does
+not allow all give the same line, because sudo answers them alike. `--no-elevate` or
+`display.auto_elevate = false` turns the asking off, and the `NOT ELEVATED` line then
+says the run does not ask, again followed by what that cost. Nothing is remembered: it
+asks again on every start. It never asks, and draws no such line, when already
+elevated, on a Linux machine whose `/sys/block` lists `sd*` or `nvme*` disks and
+none of them has a node in `/dev` (a container, where root reads nothing more; one
+node is enough to ask, and a machine listing no `sd*` or `nvme*` disk is asked), for
+`--replay`, or for any subcommand but `tui`. On macOS it asks deliberately, although
+the root copy still stops at "cannot read hardware" until lsdsk reads Mac hardware:
+only Linux and Windows hardware is read today. It asks
+wherever the view opens, so a caller handing its child a pseudo-terminal meets the
+prompt too: unattended, say `lsdsk report` or pass `--no-elevate`, and run from an
 elevated shell to get the full reading.
 
 **Root does not always help.** In a container the device nodes do not exist, so

@@ -87,8 +87,8 @@ class DisplaySettings(DomainModel, frozen=True):
         tree_density: How much of the PCI fabric the topology view draws.
         detail_height_percent: Most of the window the interactive view's detail
             panel may take.
-        auto_elevate: Whether the interactive view asks for Administrator on a
-            non-elevated Windows start.
+        auto_elevate: Whether the interactive view asks for Administrator
+            (Windows) or root through sudo (Linux, macOS) on a non-elevated start.
         traceback_summary_limit: Characters kept in a short traceback.
         traceback_verbose_limit: Characters kept under ``--traceback``.
 

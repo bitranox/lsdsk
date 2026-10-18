@@ -5,6 +5,34 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Added
+
+- On Linux and macOS the interactive view asks for root through sudo before it reads anything, as it
+  asks for Administrator on Windows. Every SMART figure needs root there, so a non-elevated start
+  says why a password prompt is coming and, if sudo grants root, restarts as root in the same
+  terminal and hands back its exit code. If you refuse, mistype the password or are not allowed,
+  the view opens unelevated with a bold "NOT ELEVATED" line that says sudo did not grant root (sudo
+  answers all three the same way, so the line names all three). It does not ask on a Linux machine
+  whose disks have no device node to open, such as a container, where root could not read them
+  either. On macOS the root copy still ends at "cannot read hardware on 'darwin'", since lsdsk has
+  no macOS reader yet. `--no-elevate` and `display.auto_elevate = false` turn the asking off on
+  every platform.
+
+### Security
+
+- The elevated copy no longer imports Python code from the directory lsdsk was started in. It ran
+  as `python -m lsdsk`, which puts the working directory first on the module search path, so a
+  file such as `rich.py` or a folder named `lsdsk` lying there was imported with Administrator or
+  root rights. It now runs as `python -P -m lsdsk`. This applied to the Windows relaunch since 1.10.0.
+
+### Changed
+
+- pwshpy is a dependency on every platform now, with 1.5.0 as the floor: before that release a
+  refused sudo password came back as exit code 1, which is lsdsk's own "findings" code, instead of a
+  refusal.
+- An elevated copy killed by a signal hands back the shell's exit status, 128 plus the signal
+  number, instead of a negative code no process can exit with.
+
 ## [1.10.0] 2026-10-17 00:28:58
 
 ### Added
