@@ -227,6 +227,22 @@ def test_a_batch_that_goes_backwards_is_refused(tmp_path: Path) -> None:
     assert "did not advance" in reading["8:1"]["error"]
 
 
+def test_a_batch_claiming_more_records_than_the_room_it_was_given_is_refused(tmp_path: Path) -> None:
+    # The buffer holds fmh_count records; an fmh_entries above that would read past it, so it cannot be trusted.
+    class Overfull(FakeFsmap):
+        def __call__(self, _fd: int, _request: int, head: bytearray) -> int:
+            self.calls += 1
+            room = _HEAD.unpack_from(head, 0)[2]
+            _RECORD.pack_into(head, _RECORDS, 0, _SPECIAL, 0, _FREE, 0, 512)
+            struct.pack_into("<I", head, 12, room + 1)
+            return 0
+
+    fake = Overfull([])
+    reading = freespace.read_free_extents(ROWS, ioctl=fake, opener=_opener(tmp_path))
+    assert reading == {"8:1": {"error": "the kernel reported 4097 records for room of 4096"}}
+    assert fake.calls == 1
+
+
 def test_a_kernel_that_does_not_advance_is_refused_not_looped(tmp_path: Path) -> None:
     class Stuck(FakeFsmap):
         def __call__(self, _fd: int, _request: int, head: bytearray) -> int:
