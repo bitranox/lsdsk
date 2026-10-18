@@ -255,6 +255,21 @@ def _folded(*chunks: tuple[bytes, int]) -> dict[str, int | list[int]]:
     return tally.summary()
 
 
+def test_a_restart_rounded_down_inside_a_byte_folds_the_overlap_once() -> None:
+    """Clusters 0-15 free, then an answer from cluster 12 (rounded down from 16) over 12-27, all free: one run of 28.
+
+    The rounded-starts sweep above only ever skips whole bytes, which never
+    reaches the mask for a skip that ends inside a byte.
+    """
+    tally = FreeExtentTally()
+    folder = FreeRunFolder(4096, tally)
+    folder.feed(b"\x00\x00", 16)
+    folder.feed(b"\x00\x00", 16, skip=4)
+    folder.finish()
+    summary = tally.summary()
+    assert (summary["count"], summary["total"], summary["largest"]) == (1, 28 * 4096, 28 * 4096)
+
+
 def test_bits_past_nbits_in_the_last_byte_are_not_clusters() -> None:
     """0xA0 is clusters 0-4 free, 5 used, 6 free, 7 used; only the first four are the volume's."""
     summary = _folded((b"\xa0", 4))
