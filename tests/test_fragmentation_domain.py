@@ -83,6 +83,8 @@ def test_the_average_free_extent_is_the_total_over_the_count() -> None:
     [
         (FilesystemKind.MOUNT, "ext4", True),
         (FilesystemKind.MOUNT, "xfs", True),
+        (FilesystemKind.MOUNT, "ext3", True),  # always served by the ext4 driver, which has GETFSMAP
+        (FilesystemKind.MOUNT, "ext2", False),  # served by fs/ext2, which has none, wherever that driver is built
         (FilesystemKind.MOUNT, "vfat", False),
         (FilesystemKind.MOUNT, "btrfs", False),
         (FilesystemKind.POOL, "zfs", True),

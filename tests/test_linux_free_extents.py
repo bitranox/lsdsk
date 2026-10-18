@@ -169,6 +169,19 @@ def test_only_free_records_are_folded_across_continued_calls(tmp_path: Path) -> 
     assert fake.calls > 1  # the walk needed a continuation
 
 
+def test_an_ext3_mount_is_walked_and_an_ext2_mount_is_not(tmp_path: Path) -> None:
+    # "ext3" in mountinfo is the ext4 driver's own registration (fs/ext4/super.c ext3_fs_type, the ext3 driver
+    # being gone since Linux 4.3), whose ioctl answers GETFSMAP; "ext2" is fs/ext2's wherever CONFIG_EXT2_FS is
+    # built, and its ext2_ioctl answers ENOTTY, which would read as a refusal of a filesystem with no source.
+    rows = [
+        {"dev": "8:1", "mountpoint": "/old", "fstype": "ext3"},
+        {"dev": "8:2", "mountpoint": "/older", "fstype": "ext2"},
+    ]
+    reading = freespace.read_free_extents(rows, ioctl=FakeFsmap([_free(0, 4096)]), opener=_opener(tmp_path))
+    assert set(reading) == {"8:1"}
+    assert reading["8:1"]["count"] == 1
+
+
 def test_a_refused_ioctl_is_recorded_with_its_reason(tmp_path: Path) -> None:
     reading = freespace.read_free_extents(ROWS, ioctl=FakeFsmap([], fail=errno.EPERM), opener=_opener(tmp_path))
     assert reading == {"8:1": {"error": os.strerror(errno.EPERM)}}

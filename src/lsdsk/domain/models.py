@@ -1872,7 +1872,14 @@ def _floor_percent(part: int, whole: int) -> int | None:
 
 #: The mount types whose free extents lsdsk can count (through FS_IOC_GETFSMAP).
 #: A pool and a Windows volume always have a source; other mount types have none.
-FREE_EXTENT_MOUNT_TYPES: frozenset[str] = frozenset({"ext4", "xfs"})
+#: ``ext3`` is here because mountinfo names the file_system_type a mount used,
+#: and every "ext3" mount since Linux 4.3 removed the ext3 driver is the ext4
+#: driver's own ``ext3_fs_type`` (fs/ext4/super.c), whose ``ext4_ioctl`` answers
+#: GETFSMAP. ``ext2`` is not: the ext4 driver registers "ext2" only when the
+#: ext2 driver is not built (CONFIG_EXT2_FS unset), and fs/ext2's ``ext2_ioctl``
+#: answers GETFSMAP with ENOTTY, so a host with that driver would report a
+#: refusal for a filesystem that has no source to read.
+FREE_EXTENT_MOUNT_TYPES: frozenset[str] = frozenset({"ext3", "ext4", "xfs"})
 
 
 class FreeSpace(DomainModel, frozen=True):

@@ -1,4 +1,4 @@
-"""Read how scattered each ext4 or xfs filesystem's free space is, through FS_IOC_GETFSMAP.
+"""Read how scattered each ext3, ext4 or xfs filesystem's free space is, through FS_IOC_GETFSMAP.
 
 The kernel lists a filesystem's space as records - free, metadata, owned by a
 file - in physical order, a batch per call, each call resuming after the last
@@ -311,7 +311,7 @@ def read_free_extents(
     cap: int = MAX_FREE_EXTENTS,
     max_records: int = MAX_FSMAP_RECORDS,
 ) -> dict[str, dict[str, Any]]:
-    """Read the free extents of every ext4 and xfs filesystem once.
+    """Read the free extents of every filesystem whose type is in ``FREE_EXTENT_MOUNT_TYPES``, once.
 
     Args:
         rows: What ``mounts.read_mounts`` returned.

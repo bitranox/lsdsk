@@ -763,7 +763,7 @@ class LinuxCapture(CaptureHeader, frozen=True):
             mountinfo, so ``None`` marks a capture taken before this field
             existed (or one whose mountinfo was not read); an empty map is a
             reading with nothing to stat.
-        free_extents: Each ext4 and xfs filesystem's free-extent summary, keyed
+        free_extents: Each ext3, ext4 and xfs filesystem's free-extent summary, keyed
             by its ``maj:min``. ``None`` in a capture taken before this field
             existed (or one whose mountinfo was not read).
     """
