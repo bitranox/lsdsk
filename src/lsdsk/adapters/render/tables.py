@@ -15,6 +15,7 @@ System Role:
 from __future__ import annotations
 
 from dataclasses import replace
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Final, NamedTuple
 
 from rich.table import Table
@@ -126,11 +127,11 @@ HEALTH_COLUMNS: tuple[Column, ...] = (
 )
 
 
-# The approved drop order as the terminal narrows: frag, then inodes%, then
-# type, then size, then used, then free. `filesystem`, `use%` and `disks` never drop -
-# how full, and where - because a row without them answers nothing. Nor is `filesystem` or `disks`
-# CUT while any droppable column still stands (`shrinks_last`): a cut list hides a
-# disk, and two names sharing a long prefix, cut, read as one filesystem.
+# The approved drop order as the terminal narrows: frag, then inodes%, then type, then size,
+# then used, then free. `filesystem`, `use%` and `disks` never drop - how full, and where -
+# because a row without them answers nothing. Nor is `filesystem` or `disks` CUT while any
+# droppable column still stands (`shrinks_last`): a cut list hides a disk, and two names
+# sharing a long prefix, cut, read as one filesystem.
 FILESYSTEM_COLUMNS: tuple[Column, ...] = (
     Column("filesystem", "filesystem", priority=0, flexible=True, min_width=10, shrinks_last=True),
     Column("type", "type", priority=5),
@@ -148,11 +149,13 @@ FILESYSTEM_NOT_READ_LEGEND = f"{theme.NOT_READ} = not read"
 FILESYSTEM_INODES_NOT_APPLICABLE = "no fixed inode table on this filesystem"
 FILESYSTEM_FRAG_NOT_APPLICABLE = "no fragmentation figure for this filesystem"
 FILESYSTEM_NOT_APPLICABLE_LEGEND = f"{theme.NOT_APPLICABLE} = {FILESYSTEM_INODES_NOT_APPLICABLE}"
-# What `n/a` means in each column that can draw it.
-_NOT_APPLICABLE_MEANINGS: Final[dict[str, str]] = {
-    "inodes": FILESYSTEM_INODES_NOT_APPLICABLE,
-    "frag": FILESYSTEM_FRAG_NOT_APPLICABLE,
-}
+# What `n/a` means in each column that can draw it; read-only, since every legend reads it.
+_NOT_APPLICABLE_MEANINGS: Final[Mapping[str, str]] = MappingProxyType(
+    {
+        "inodes": FILESYSTEM_INODES_NOT_APPLICABLE,
+        "frag": FILESYSTEM_FRAG_NOT_APPLICABLE,
+    }
+)
 FILESYSTEMS_NOT_READ_SENTENCE = "Filesystems were not read."
 FILESYSTEMS_NONE_SENTENCE = "No filesystem on the inventoried disks."
 
