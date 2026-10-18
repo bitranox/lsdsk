@@ -137,7 +137,7 @@ def _sector_for(command: int) -> bytes:
 
 
 def _read(fake: FakeKernel32) -> dict[str, str]:
-    return reader.read_ata(cast("api.WinLibrary", fake), handle=1)
+    return reader.read_ata(reader.Win32Calls(library=cast("api.WinLibrary", fake), last_error=api.last_error), handle=1)
 
 
 @pytest.mark.os_agnostic

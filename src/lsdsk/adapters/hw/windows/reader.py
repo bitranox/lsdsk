@@ -711,13 +711,30 @@ def _shortfall(moved: int) -> str | None:
     return f"{moved} of {_SECTOR_BYTES} bytes returned"
 
 
+class Win32Calls(NamedTuple):
+    """One Win32 library together with the getter that says why its last call failed.
+
+    Every refusal the passthrough helpers record carries ``GetLastError``. Read
+    from ``ctypes`` directly, that answers 0 off Windows whatever a fake left,
+    so the getter travels WITH the library: a helper handed one cannot name an
+    error from another, and no signature has to grow a parameter for it.
+
+    Attributes:
+        library: The typed facade over the Win32 entry points.
+        last_error: Answers ``GetLastError`` for the call that just failed.
+    """
+
+    library: api.WinLibrary
+    last_error: Callable[[], int]
+
+
 def ata_passthrough(
-    kernel32: api.WinLibrary, handle: int, *, command: int, feature: int = 0, lba: int = 0
+    calls: Win32Calls, handle: int, *, command: int, feature: int = 0, lba: int = 0
 ) -> tuple[bytes, str | None]:
     """Issue one read-only ATA command through the Windows passthrough ioctl.
 
     Args:
-        kernel32: The typed facade over the Win32 entry points.
+        calls: The Win32 entry points and the getter naming why one failed.
         handle: An open handle to the device.
         command: The ATA command code.
         feature: The feature register, where the command takes one.
@@ -752,7 +769,7 @@ def ata_passthrough(
     request.CurrentTaskFile = task
 
     returned = wintypes.DWORD()
-    ok = kernel32.DeviceIoControl(
+    ok = calls.library.DeviceIoControl(
         handle,
         api.IOCTL_ATA_PASS_THROUGH_DIRECT,
         ctypes.byref(request),
@@ -763,7 +780,7 @@ def ata_passthrough(
         None,
     )
     if not ok:
-        return b"", f"Win32 error {api.last_error()}"
+        return b"", f"Win32 error {calls.last_error()}"
     shortfall = _shortfall(request.DataTransferLength)
     if shortfall:
         return b"", shortfall
@@ -791,7 +808,7 @@ class _SatRequest(ctypes.Structure):
 
 
 def sat_passthrough(
-    kernel32: api.WinLibrary, handle: int, *, command: int, feature: int = 0, lba: int = 0
+    calls: Win32Calls, handle: int, *, command: int, feature: int = 0, lba: int = 0
 ) -> tuple[bytes, str | None]:
     """Issue one read-only ATA command wrapped in SAT, for a drive the ATA ioctl cannot reach.
 
@@ -803,7 +820,7 @@ def sat_passthrough(
     way.
 
     Args:
-        kernel32: The typed facade over the Win32 entry points.
+        calls: The Win32 entry points and the getter naming why one failed.
         handle: A handle opened for passthrough.
         command: The ATA command code.
         feature: The features register.
@@ -828,7 +845,7 @@ def sat_passthrough(
     ctypes.memmove(request.request.Cdb, block, len(block))
 
     returned = wintypes.DWORD()
-    ok = kernel32.DeviceIoControl(
+    ok = calls.library.DeviceIoControl(
         handle,
         api.IOCTL_SCSI_PASS_THROUGH,
         ctypes.byref(request),
@@ -839,7 +856,7 @@ def sat_passthrough(
         None,
     )
     if not ok:
-        return b"", f"Win32 error {api.last_error()}"
+        return b"", f"Win32 error {calls.last_error()}"
     if request.request.ScsiStatus:
         return b"", f"SCSI status 0x{request.request.ScsiStatus:02X}"
     shortfall = _shortfall(request.request.DataTransferLength)
@@ -861,12 +878,12 @@ class NvmeRefusal(NamedTuple):
 
 
 def nvme_protocol_data(
-    kernel32: api.WinLibrary, handle: int, *, data_type: int, request_value: int, length: int
+    calls: Win32Calls, handle: int, *, data_type: int, request_value: int, length: int
 ) -> bytes | NvmeRefusal:
     """Fetch an NVMe identify structure or log page through the storage stack.
 
     Args:
-        kernel32: The typed facade over the Win32 entry points.
+        calls: The Win32 entry points and the getter naming why one failed.
         handle: An open handle to the device.
         data_type: Which NVMe protocol structure to ask for.
         request_value: Which identify page or log page within that type.
@@ -903,7 +920,7 @@ def nvme_protocol_data(
     protocol.ProtocolDataLength = length
 
     returned = wintypes.DWORD()
-    ok = kernel32.DeviceIoControl(
+    ok = calls.library.DeviceIoControl(
         handle,
         api.IOCTL_STORAGE_QUERY_PROPERTY,
         buffer,
@@ -914,7 +931,7 @@ def nvme_protocol_data(
         None,
     )
     if not ok:
-        return NvmeRefusal(f"Win32 error {api.last_error()}")
+        return NvmeRefusal(f"Win32 error {calls.last_error()}")
     # The offset is the driver's word, measured from the start of the protocol
     # structure. One inside that structure puts the "page" over the header the
     # driver just wrote, which would decode as a drive's health.
@@ -1067,10 +1084,11 @@ def read_disk(
         # through on replay, so this decision and a replayed one can never read
         # a transport name two different ways.
         bus = bus_type_of(entry["device"].get("bus_type", ""))
+        calls = Win32Calls(library=kernel32, last_error=last_error)
         if bus is BusType.NVME:
-            entry["nvme"] = _read_nvme(kernel32, handle, passthrough=passthrough)
+            entry["nvme"] = _read_nvme(calls, handle, passthrough=passthrough)
         elif passthrough:
-            entry["ata"] = read_ata(kernel32, handle)
+            entry["ata"] = read_ata(calls, handle)
         else:
             entry["ata"] = {"identify_error": _NEEDS_ADMINISTRATOR}
     finally:
@@ -1078,7 +1096,7 @@ def read_disk(
     return entry
 
 
-def _read_nvme(kernel32: api.WinLibrary, handle: int, *, passthrough: bool) -> dict[str, str]:
+def _read_nvme(calls: Win32Calls, handle: int, *, passthrough: bool) -> dict[str, str]:
     """Read the NVMe identify structure and health log.
 
     Each structure is recorded under its label, or the reason it was refused
@@ -1086,7 +1104,7 @@ def _read_nvme(kernel32: api.WinLibrary, handle: int, *, passthrough: bool) -> d
     trace would read as a drive with nothing to report.
 
     Args:
-        kernel32: The typed facade over the Win32 entry points.
+        calls: The Win32 entry points and the getter naming why one failed.
         handle: An open handle to the device.
         passthrough: Whether the handle carries write access. Without it a
             refusal is named for what the person can change, not for the
@@ -1100,7 +1118,7 @@ def _read_nvme(kernel32: api.WinLibrary, handle: int, *, passthrough: bool) -> d
         ("identify_controller", "identify_controller_error", api.NVME_DATA_TYPE_IDENTIFY, 1, _NVME_IDENTIFY_LENGTH),
         ("smart_log", "smart_log_error", api.NVME_DATA_TYPE_LOG_PAGE, _NVME_SMART_LOG_ID, _NVME_SMART_LOG_LENGTH),
     ):
-        answer = nvme_protocol_data(kernel32, handle, data_type=data_type, request_value=request_value, length=length)
+        answer = nvme_protocol_data(calls, handle, data_type=data_type, request_value=request_value, length=length)
         if isinstance(answer, NvmeRefusal):
             record[error_label] = _refusal_text(answer, passthrough=passthrough)
         else:
@@ -1127,7 +1145,7 @@ def _refusal_text(refusal: NvmeRefusal, *, passthrough: bool) -> str:
     return refusal.reason
 
 
-def read_ata(kernel32: api.WinLibrary, handle: int) -> dict[str, str]:
+def read_ata(calls: Win32Calls, handle: int) -> dict[str, str]:
     """Read the ATA identity and SMART structures.
 
     The ATA ioctl is asked first, because it is how the storage stack reaches a
@@ -1136,7 +1154,7 @@ def read_ata(kernel32: api.WinLibrary, handle: int) -> dict[str, str]:
     a reading refused both ways records both reasons.
 
     Args:
-        kernel32: The typed facade over the Win32 entry points.
+        calls: The Win32 entry points and the getter naming why one failed.
         handle: A handle opened for passthrough.
 
     Returns:
@@ -1150,10 +1168,10 @@ def read_ata(kernel32: api.WinLibrary, handle: int) -> dict[str, str]:
         ("smart_thresholds", ATA_SMART, SMART_READ_THRESHOLDS),
     ):
         lba = SMART_LBA_SIGNATURE if command == ATA_SMART else 0
-        payload, ata_refusal = ata_passthrough(kernel32, handle, command=command, feature=feature, lba=lba)
+        payload, ata_refusal = ata_passthrough(calls, handle, command=command, feature=feature, lba=lba)
         refused = f"passthrough refused, {ata_refusal}"
         if not payload:
-            payload, sat_refusal = sat_passthrough(kernel32, handle, command=command, feature=feature, lba=lba)
+            payload, sat_refusal = sat_passthrough(calls, handle, command=command, feature=feature, lba=lba)
             refused = f"{refused}; SAT refused, {sat_refusal}"
         if payload:
             record[label] = base64.b64encode(payload).decode("ascii")
@@ -1587,6 +1605,7 @@ __all__ = [
     "UsbDeviceFacts",
     "UsbReading",
     "VolumesSection",
+    "Win32Calls",
     "ata_passthrough",
     "devices_accessible",
     "is_elevated",
