@@ -12,6 +12,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   `core.read_config_for_deploy` and a copy of its destination chooser. What the command does is
   unchanged: a forced deploy still reads past a broken file it rewrites, and the warning about modes
   set in a file the deploy rewrites names the same files. Requires lib_layered_config 7.2.0.
+- A configuration file holding an integer outside -2**63 to 2**64-1 (a YAML drop-in can write one
+  as a long hex literal) is now refused when it loads, as a configuration error: exit 78, naming
+  the file and the key, the same as a file that does not parse. It used to load, and the one
+  unusable key was ignored with a warning. Requires lib_layered_config 7.3.0, which refuses such a
+  number because JSON cannot carry it.
 
 ### Fixed
 

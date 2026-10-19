@@ -979,7 +979,7 @@ wheels = [
 
 [[package]]
 name = "lib-layered-config"
-version = "7.2.0"
+version = "7.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lib-cli-exit-tools" },
@@ -987,9 +987,9 @@ dependencies = [
     { name = "rich-click" },
     { name = "rtoml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/59/71/9f45f1a5e56d0517e1a37d5f2fccbb1b56698da87cb83b4eb25fc4f245dc/lib_layered_config-7.2.0.tar.gz", hash = "sha256:aa970b5f32c7edcc94a9de87b0541e955dd2fdc5468ff8cd38abb5cea878877e", size = 470315, upload-time = "2026-10-19T16:54:42.097Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/50/b3/d3ad3223b5277b9927affe657bec2a9de13988910abf0750c55a331250a9/lib_layered_config-7.3.0.tar.gz", hash = "sha256:ce23c6b34d45d8909b3775978f9ee3cd06b41ae910d7897268bb27760b9b93aa", size = 473446, upload-time = "2026-10-19T21:06:30.203Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ce/de/4279a01648ceb1099ace8cacfec772938ccd7f308a3f24a733be0f00b396/lib_layered_config-7.2.0-py3-none-any.whl", hash = "sha256:7451dcda683a70bccc70677fe2135c1000625175273c79ade15a01abc6a63d59", size = 145721, upload-time = "2026-10-19T16:54:40.704Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/5b/40addb64bb1d784f9985b6df56dd33470026fb2fb90f097b6fbf75e29031/lib_layered_config-7.3.0-py3-none-any.whl", hash = "sha256:f881ebfd0022334119c06f4b545bc15c9d20b8c9e1c3605531ba72ff885eb8f2", size = 146743, upload-time = "2026-10-19T21:06:28.521Z" },
 ]
 
 [[package]]
@@ -1097,7 +1097,7 @@ requires-dist = [
     { name = "import-linter", marker = "extra == 'dev'", specifier = ">=2.15" },
     { name = "jaraco-context", marker = "extra == 'dev'", specifier = ">=6.1.2" },
     { name = "lib-cli-exit-tools", specifier = ">=2.4.1" },
-    { name = "lib-layered-config", specifier = ">=7.2.0" },
+    { name = "lib-layered-config", specifier = ">=7.3.0" },
     { name = "lib-log-rich", specifier = ">=6.5.5" },
     { name = "orjson", specifier = ">=3.13.0" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.10.1" },
