@@ -305,6 +305,15 @@ class DiskEntry(CaptureModel, frozen=True):
             interface was listed but its path could not be read. It is a
             skipped reading, not a drive, so the builder keeps it out of the
             disks and reports its ``error`` instead.
+        instance: The disk's own device instance identifier. A Storage Space's
+            is the node its pooled drives name among their removal relations.
+        hidden: True for a disk listed under ``GUID_DEVINTERFACE_HIDDEN_DISK``,
+            which is what a drive in a Storage Spaces pool publishes instead of
+            the disk class (ADR 0007).
+        removal_relations: The instance identifiers Windows lists as removed
+            with a hidden disk, as it published them; which of them is a Space
+            is the builder's decision. All three are absent from a capture
+            taken before they existed, which then links no drive to a Space.
     """
 
     parent: DeviceText | None = None
@@ -320,6 +329,9 @@ class DiskEntry(CaptureModel, frozen=True):
     usb_link_error: DeviceText | None = None
     device_number_error: DeviceText | None = None
     interface_unreadable: bool = False
+    instance: DeviceText | None = None
+    hidden: bool = False
+    removal_relations: Entries[DeviceText] = ()
 
 
 # What the reader names the stand-in for a disk interface whose path it could not

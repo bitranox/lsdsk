@@ -63,7 +63,7 @@ from ..linux.builder import controller_kind_of, parse_pcie_running_width, parse_
 from ..refusals import refusals_of
 from .capture import DISK_INTERFACE_LIST, HealthBlobs, is_unread_interface
 from .filesystems import build_filesystems
-from .usage import resolve_usage
+from .usage import resolve_usage, space_of_each_member
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -411,6 +411,7 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
     """
     pci = capture.pci
     disks: list[Disk] = []
+    spaces_read = frozenset(space_of_each_member(capture).values())
 
     for path, entry in sorted(capture.disks.items()):
         if is_unread_interface(path, entry):
@@ -488,7 +489,7 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
                 pcie=_pcie_link(endpoint) if is_nvme and endpoint is not None else None,
                 usb=usb,
                 health=_health_from(record, entry, bus=bus, nvme_identity=nvme_identity),
-                readings_refused=_refusals_for(entry, record),
+                readings_refused=_refusals_for(entry, record, pool_read=entry.node in spaces_read),
             )
         )
     return tuple(sorted(disks, key=lambda disk: disk_name_order(disk.node)))
@@ -631,7 +632,7 @@ def _usb_link(chain: Sequence[UsbPortEntry], capture: WindowsCapture) -> UsbLink
     )
 
 
-def _refusals_for(entry: DiskEntry, record: HealthBlobs) -> tuple[RefusedReading, ...]:
+def _refusals_for(entry: DiskEntry, record: HealthBlobs, *, pool_read: bool) -> tuple[RefusedReading, ...]:
     """Name the readings this disk refused, with the reason Windows gave.
 
     The whole-device refusal is kept beside the per-command ones because it is
@@ -643,14 +644,17 @@ def _refusals_for(entry: DiskEntry, record: HealthBlobs) -> tuple[RefusedReading
     keeps what it answered, but it has no identity or SMART to withhold: like an
     AHCI controller with no register region, the scan is not incomplete for it,
     so its health refusals are not named. A Storage Space names one
-    ``pool-members`` refusal in their place, because the drives it is built
-    from were never asked. Both are keyed on the transport Windows named
-    rather than on the error text, which a real drive behind a controller that
-    blocks passthrough also gives.
+    ``pool-members`` refusal in their place when the drives it is built from
+    were never asked, and none when at least one of them was read and linked to
+    it (ADR 0007): each pooled drive then reports its own refusals. Both are
+    keyed on the transport Windows named rather than on the error text, which a
+    real drive behind a controller that blocks passthrough also gives.
 
     Args:
         entry: The disk as the capture holds it.
         record: Its health blobs, ATA or NVMe.
+        pool_read: Whether a drive of this disk's pool was read and linked to
+            it, which only a Storage Space can have.
 
     Returns:
         One value per refused reading, empty when the disk answered everything.
@@ -667,7 +671,7 @@ def _refusals_for(entry: DiskEntry, record: HealthBlobs) -> tuple[RefusedReading
             "device": entry.error,
             "usb-link": entry.usb_link_error,
             "device-number": entry.device_number_error,
-            **_health_refusals(entry, health),
+            **_health_refusals(entry, health, pool_read=pool_read),
         }
     )
 
@@ -677,18 +681,20 @@ def _refusals_for(entry: DiskEntry, record: HealthBlobs) -> tuple[RefusedReading
 _STORAGE_SPACE_MEMBERS_REASON = "Windows hides the drives in a Storage Spaces pool, so their health was not read"
 
 
-def _health_refusals(entry: DiskEntry, health: dict[str, str | None]) -> dict[str, str | None]:
+def _health_refusals(entry: DiskEntry, health: dict[str, str | None], *, pool_read: bool) -> dict[str, str | None]:
     """The health refusals a disk is reported with, by the transport Windows named.
 
     A mounted image file has no health to withhold, so it reports none. A
-    Storage Space reports one ``pool-members`` refusal in place of its own: the
-    scan stays incomplete, because none of the pool's drives was read, but the
-    reason names that gap rather than the virtual disk's refusal.
+    Storage Space has none of its own either - it is a virtual disk, and its
+    drives carry the health - so it reports nothing once one of its drives was
+    read, and one ``pool-members`` refusal when none was: the scan is then
+    incomplete, and the reason names that gap rather than the virtual disk's
+    refusal.
     """
     if entry.device.is_image_file:
         return {}
     if entry.device.is_storage_space:
-        return {"pool-members": _STORAGE_SPACE_MEMBERS_REASON}
+        return {} if pool_read else {"pool-members": _STORAGE_SPACE_MEMBERS_REASON}
     return health
 
 

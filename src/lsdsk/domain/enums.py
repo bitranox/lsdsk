@@ -181,6 +181,8 @@ class UseKind(StrEnum):
         MD: A member of a Linux software RAID array, named by its node.
         CRYPT: Under a dm-crypt mapping, named by the mapping.
         STACK: Under any other device-mapper device, named by it.
+        SPACE: A drive in a Windows Storage Spaces pool, named by the Space it
+            backs, with the Space's volume paths as its mounts.
 
     Example:
         >>> UseKind.ZFS.value
@@ -195,6 +197,7 @@ class UseKind(StrEnum):
     MD = "md"
     CRYPT = "crypt"
     STACK = "stack"
+    SPACE = "space"
 
 
 class FilesystemKind(StrEnum):

@@ -1506,8 +1506,8 @@ class DiskUse(DomainModel, frozen=True):
 
     Attributes:
         kind: What the use is.
-        name: The pool, volume group, array or mapping it belongs to; empty for
-            a mount, a letter or swap, which the mounts already name.
+        name: The pool, volume group, array, mapping or Storage Space it belongs
+            to; empty for a mount, a letter or swap, which the mounts already name.
         mounts: Where it is mounted: mountpoints on Linux, volume paths on
             Windows. A ZFS use carries none, because a pool's datasets are
             unbounded in number and say nothing about the disk.

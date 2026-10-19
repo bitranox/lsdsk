@@ -127,6 +127,38 @@ def disk_numbers(nodes: frozenset[str]) -> dict[int, str]:
     return numbered
 
 
+def space_of_each_member(capture: WindowsCapture) -> dict[str, str]:
+    """Map each drive in a Storage Spaces pool to the Space it backs (ADR 0007).
+
+    A pooled drive is listed under the hidden disk class and names the Space's
+    instance identifier among its removal relations. Only a disk Windows names
+    a Space by its transport counts as one, so a relation naming a volume or any
+    other device links nothing. Instance identifiers are compared without regard
+    to case, as Windows compares them: the Space names itself in upper case and
+    its drives name it with a lower-case GUID, measured on one guest.
+
+    Args:
+        capture: A Windows reading, live or replayed.
+
+    Returns:
+        The node of the Space each linked drive backs, keyed by the drive's node.
+        A capture taken before these readings existed links nothing.
+    """
+    spaces = {
+        entry.instance.upper(): entry.node
+        for entry in capture.disks.values()
+        if entry.device.is_storage_space and entry.instance and entry.node
+    }
+    linked: dict[str, str] = {}
+    for entry in capture.disks.values():
+        if not (entry.hidden and entry.node):
+            continue
+        backed = [spaces[name.upper()] for name in entry.removal_relations if name.upper() in spaces]
+        if backed:
+            linked[entry.node] = backed[0]
+    return linked
+
+
 def _letter_mounts(volumes: dict[str, VolumeEntry], numbered: dict[int, str]) -> dict[str, list[str]]:
     """Every volume path reaching each disk, deduplicated and in first-seen order, letters first per volume.
 
@@ -234,11 +266,16 @@ def resolve_usage(capture: WindowsCapture, environment: Environment) -> dict[str
     boot_nodes = _boot_nodes(capture, volumes, numbered)
     any_volume_blocks = any(blocks_not_mounted(entry, numbered) for entry in volumes.values())
 
+    members = space_of_each_member(capture)
+
     result: dict[str, DiskUsage | None] = {}
     for node in nodes:
         node_mounts = tuple(mounts.get(node, ()))
         boot = node in boot_nodes
         uses = (DiskUse(kind=UseKind.LETTER, mounts=node_mounts),) if node_mounts else ()
+        space = members.get(node)
+        if space is not None:
+            uses = (*uses, DiskUse(kind=UseKind.SPACE, name=space, mounts=tuple(mounts.get(space, ()))))
         if not uses and not boot and any_volume_blocks:
             result[node] = None
         else:
@@ -254,4 +291,5 @@ __all__ = [
     "disk_numbers",
     "named_first",
     "resolve_usage",
+    "space_of_each_member",
 ]
