@@ -436,6 +436,39 @@ def test_the_rotational_flag_is_parsed_at_the_capture_boundary_not_guessed_in_th
 
 @pytest.mark.os_agnostic
 @pytest.mark.parametrize(
+    ("scsi_type", "rotational", "expected"),
+    [
+        pytest.param("5", "1", DiskKind.OPTICAL, id="an optical drive the kernel calls rotational"),
+        pytest.param("5", "0", DiskKind.OPTICAL, id="an optical drive the kernel calls non-rotational"),
+        pytest.param("0", "1", DiskKind.HDD, id="a disk keeps the rotational answer"),
+    ],
+)
+def test_an_optical_drive_is_named_by_its_scsi_peripheral_type_not_its_rotational_flag(
+    scsi_type: str, rotational: str, expected: DiskKind
+) -> None:
+    """SCSI peripheral device type 5 is a CD/DVD device (SPC); ``queue/rotational`` reads 1 for one.
+
+    Measured on a QEMU DVD-ROM: the kernel reports rotational 1, which used to make
+    the drive an HDD in the disk table.
+    """
+    capture = _linux_capture_with_rotational(rotational)
+    capture["block"]["sda"]["device"] = {"type": scsi_type, "model": "DVD-ROM"}
+
+    assert build_from(capture).disks[0].kind is expected
+
+
+@pytest.mark.os_agnostic
+def test_the_captured_dvd_drive_is_optical_and_its_disks_are_not() -> None:
+    """The real sr0 the production reader recorded, beside the disks of the same machine."""
+    payload = json.loads((FIXTURE_DIR / "linux-btrfs-raid1-zoned-xfs.json").read_text(encoding="utf-8"))
+    kinds = {disk.node: disk.kind for disk in build_from(payload).disks}
+
+    assert kinds["sr0"] is DiskKind.OPTICAL
+    assert {kinds[node] for node in ("sda", "sdb", "sdc", "sdd")} == {DiskKind.HDD}
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
     ("text", "expected"),
     [("8.0 GT/s PCIe", 8.0), ("16.0 GT/s PCIe", 16.0), ("Unknown", None), ("", None), (None, None)],
 )

@@ -126,6 +126,9 @@ _MAX_SYSFS_SECTORS = 2**64 - 1
 _PCIE_SPEED = re.compile(r"(\d+(?:\.\d+)?)\s*GT/s", re.ASCII)
 _LINK_RATE = re.compile(r"(\d+(?:\.\d+)?)\s*Gb", re.ASCII)
 
+#: SCSI peripheral device type 5 (SPC, "CD/DVD device"), as sysfs writes it in ``device/type``.
+_SCSI_TYPE_OPTICAL = "5"
+
 
 def parse_pcie_speed(text: str | None) -> float | None:
     """Parse a sysfs PCIe link speed such as ``8.0 GT/s PCIe``.
@@ -1015,7 +1018,10 @@ def _build_ata_disk(node: str, block: BlockEntry, indexed: _IndexedCapture) -> D
     # An IDENTIFY page that names no nominal rotation rate decodes to UNKNOWN,
     # which says nothing and so must not replace the kernel's own reading.
     kind = identity.kind if identity is not None else DiskKind.UNKNOWN
-    if kind is DiskKind.UNKNOWN and rotating is not None:
+    if device.type == _SCSI_TYPE_OPTICAL:
+        # queue/rotational reads 1 for an optical drive, which made a DVD drive an HDD.
+        kind = DiskKind.OPTICAL
+    elif kind is DiskKind.UNKNOWN and rotating is not None:
         kind = DiskKind.HDD if rotating else DiskKind.SSD
 
     return Disk(

@@ -149,11 +149,13 @@ class UsbTransport(StrEnum):
 
 
 class DiskKind(StrEnum):
-    """Whether a disk has spinning platters.
+    """What medium a disk records on.
 
     Attributes:
         SSD: Solid state, reported as a rotation rate of 1.
         HDD: Rotating media, reported as its RPM.
+        OPTICAL: A CD, DVD or Blu-ray drive, named by its SCSI peripheral device
+            type rather than by a rotation flag, which reads "rotating" for one.
         UNKNOWN: The device did not report a rotation rate.
 
     Example:
@@ -163,6 +165,7 @@ class DiskKind(StrEnum):
 
     SSD = "ssd"
     HDD = "hdd"
+    OPTICAL = "optical"
     UNKNOWN = "unknown"
 
 

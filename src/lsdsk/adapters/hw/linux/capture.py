@@ -389,11 +389,15 @@ class DeviceAttributes(CaptureModel, frozen=True):
         model: The model string.
         rev: The firmware revision.
         wwid: The world-wide identifier.
+        type: The SCSI peripheral device type as sysfs writes it (SPC: ``0`` a
+            direct-access block device, ``5`` a CD/DVD device), left as text
+            for the builder to decode tolerantly.
     """
 
     model: DeviceText | None = None
     rev: DeviceText | None = None
     wwid: DeviceText | None = None
+    type: DeviceText | None = None
 
 
 class VpdPages(CaptureModel, frozen=True):

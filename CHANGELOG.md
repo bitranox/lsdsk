@@ -15,6 +15,10 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- On Linux, a CD, DVD or Blu-ray drive is now kind `optical` (`OPTICAL` in the tables) instead of
+  `HDD`. The kernel reports such a drive as rotational, and that flag used to decide its kind; the
+  SCSI peripheral device type the reader already records now does. The JSON `kind` field gains
+  the value `optical`.
 - On Windows, a Storage Spaces virtual disk now names the gap it really leaves. Windows hides the
   drives in a pool from the disk list, so none of them is asked for its health, and the scan
   used to report that only as the virtual disk refusing IDENTIFY and SMART, three lines that blamed
