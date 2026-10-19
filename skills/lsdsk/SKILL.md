@@ -323,12 +323,12 @@ an `IndentationError`, which exits `1` - the same code these checks use for
 **A disk, inside `data.disks`, carries `node`, `path`, `model`, `serial`,
 `firmware`, `wwn`, `size_bytes`, `kind`, `bus`, `controller_address`, `link`,
 `pcie`, `usb`, `usage`, `health` and `readings_refused`.** Every one but `node`, `path`,
-`model`, `bus` and `readings_refused` may be `null`, which means it was not read
+`model`, `kind`, `bus`, `link` and `readings_refused` may be `null`, which means it was not read
 rather than that it is zero. `readings_refused` is a list, empty on a drive that
 answered everything, and each entry is an object of `reading` and `reason`: what
 was asked for, and what the operating system said when it would not give it. `bus` is one of
-`sata`, `sas`, `nvme`, `usb`, `virtual`, `unknown`; `kind` is `ssd`, `hdd` or
-`unknown`. `link` is an object of `negotiated_gbps`, `drive_max_gbps` and
+`sata`, `sas`, `nvme`, `usb`, `virtual`, `unknown`; `kind` is `ssd`, `hdd`, `optical` (a CD,
+DVD or Blu-ray drive, which only Linux lists) or `unknown`. `link` is an object of `negotiated_gbps`, `drive_max_gbps` and
 `port_max_gbps`, and a speed rule only fires when both ends are known. On a disk
 reached over USB, `link` stays the drive's own link behind the bridge in its
 enclosure, and `usb` is the USB link from the machine to that bridge: an object of
@@ -343,7 +343,10 @@ table's `used by` column, which prints one of three things: `-` when the disk
 was not read, `not mounted` when it was read and nothing uses it, or the boot
 and use text otherwise, such as `boot zfs:rpool` or `lvm:vg0 -> /var`.
 `not mounted` does not mean the disk is safe to wipe: a disk passed through to a
-virtual machine, a Storage Spaces member or an exported ZFS pool shows it too.
+virtual machine or an exported ZFS pool shows it too. A drive in a Windows Storage Spaces
+pool is not listed at all, because Windows hides it while it is pooled; the pool's virtual
+disk is, with a `pool-members` entry in its `readings_refused` saying the pool's drives went
+unread, so such a scan is never `ok`.
 
 **A controller, inside `data.controllers`, carries `kind`**, which is one of
 `ahci`, `sas`, `nvme`, `raid`, `ide` or `other` - read from the PCI class code,

@@ -270,3 +270,20 @@ def test_the_skill_names_exactly_the_mount_types_that_carry_free_extent_figures(
     assert sentence is not None, "the sentence naming which mounts carry all five figures is gone"
     named = {word for word in re.split(r", | and ", sentence.group(1)) if word}
     assert named == set(FREE_EXTENT_MOUNT_TYPES), f"the skill names {sorted(named)}"
+
+
+@pytest.mark.os_agnostic
+def test_the_skill_names_exactly_the_bus_and_kind_values_a_disk_can_carry() -> None:
+    """The disk paragraph reads as the whole set of `bus` and `kind` values, so it must be the enums'.
+
+    A value the enum gained and the sentence omits is one a script switching on the field
+    has no branch for: `optical` reached the JSON in a commit that left this sentence at three.
+    """
+    from lsdsk.domain.enums import BusType, DiskKind
+
+    text = " ".join(SKILL.read_text(encoding="utf-8").split())
+    sentence = re.search(r"`bus` is one of (.+?); `kind` is (.+?)\.", text)
+    assert sentence is not None, "the sentence naming the bus and kind values is gone"
+    buses, kinds = (set(re.findall(r"`([a-z]+)`", group)) for group in sentence.groups())
+    assert buses == {bus.value for bus in BusType}, f"the skill names buses {sorted(buses)}"
+    assert kinds == {kind.value for kind in DiskKind}, f"the skill names kinds {sorted(kinds)}"
