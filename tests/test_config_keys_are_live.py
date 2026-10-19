@@ -392,6 +392,50 @@ def test_a_shipped_default_is_the_same_figure_the_model_falls_back_to(section: s
         )
 
 
+#: Every variable rich, rich-click and click read to decide colour or the console's size. The
+#: child imports both libraries afresh, so a value left here is read at its import too.
+_COLOUR_AND_SIZE_VARIABLES = (
+    "FORCE_COLOR",
+    "NO_COLOR",
+    "PY_COLORS",
+    "CLICOLOR",
+    "CLICOLOR_FORCE",
+    "TTY_COMPATIBLE",
+    "TTY_INTERACTIVE",
+    "GITHUB_ACTIONS",
+    "TERM",
+    "COLORTERM",
+    "COLUMNS",
+    "LINES",
+    "TERMINAL_WIDTH",
+    "JUPYTER_COLUMNS",
+    "JUPYTER_LINES",
+)
+
+
+def _coloured_environment() -> dict[str, str]:
+    """The child's environment, with colour and width chosen here rather than inherited.
+
+    FORCE_COLOR alone does not force colour: rich still draws none for a terminal
+    whose TERM is `dumb` or `unknown`, so these tests passed or failed by the
+    terminal pytest was started from. Every variable that takes part is removed,
+    then the three these tests need are set.
+    """
+    environment = {name: value for name, value in os.environ.items() if name not in _COLOUR_AND_SIZE_VARIABLES}
+    return {**environment, "FORCE_COLOR": "1", "TERM": "xterm-256color", "COLUMNS": "200"}
+
+
+def _coloured_output(argv: list[str]) -> str:
+    """A real run's stdout, with the colour left in."""
+    result = subprocess.run(  # noqa: S603 - argv list, no shell, all values from this file
+        [sys.executable, "-m", "lsdsk", *argv],
+        capture_output=True,
+        check=False,
+        env=_coloured_environment(),
+    )
+    return result.stdout.decode(errors="replace")
+
+
 def _coloured_row(argv: list[str], device: str) -> str:
     """One device's row from a real run, with the colour left in.
 
@@ -400,14 +444,9 @@ def _coloured_row(argv: list[str], device: str) -> str:
     against. Colour is forced, and the comparison is scoped to one row so a
     changed finding count in a line below cannot answer for the table.
     """
-    result = subprocess.run(  # noqa: S603 - argv list, no shell, all values from this file
-        [sys.executable, "-m", "lsdsk", *argv],
-        capture_output=True,
-        check=False,
-        env={**os.environ, "FORCE_COLOR": "1", "COLUMNS": "200"},
-    )
-    rows = [line for line in result.stdout.decode(errors="replace").splitlines() if device in line]
-    assert rows, f"no row for {device} in:\n{result.stdout.decode(errors='replace')}"
+    output = _coloured_output(argv)
+    rows = [line for line in output.splitlines() if device in line]
+    assert rows, f"no row for {device} in:\n{output}"
     return rows[0]
 
 
@@ -473,13 +512,7 @@ def test_a_configured_wear_threshold_colours_the_topology_of_a_capture_without_p
 
 def _coloured_wear_row(argv: list[str], device: str) -> str:
     """The coloured disk row naming `device`: the one that also carries its size and its wear."""
-    result = subprocess.run(  # noqa: S603 - argv list, no shell, all values from this file
-        [sys.executable, "-m", "lsdsk", *argv],
-        capture_output=True,
-        check=False,
-        env={**os.environ, "FORCE_COLOR": "1", "COLUMNS": "200"},
-    )
-    output = result.stdout.decode(errors="replace")
+    output = _coloured_output(argv)
     rows = [line for line in output.splitlines() if device in line and "477GiB" in line and "59%" in line]
     assert len(rows) == 1, f"expected one wear row for {device}, found {len(rows)} in:\n{output}"
     return rows[0]
