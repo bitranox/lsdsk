@@ -178,3 +178,59 @@ def test_a_hidden_drive_naming_another_space_links_to_nothing(
     assert [entry["reading"] for entry in _disk_in(envelope, _SPACE_NODE)["readings_refused"]] == ["pool-members"]
     uses = _disk_in(envelope, _POOLED_NODE)["usage"]["uses"]
     assert all(use["kind"] != "space" for use in uses), uses
+
+
+# ---------------------------------------------------------------------------
+# The committed capture: a Windows 11 guest with three SATA drives in one
+# two-way mirror Space holding D:, read elevated by the reader that lists the
+# hidden disk class.
+# ---------------------------------------------------------------------------
+
+_REAL = "windows-storage-spaces.json"
+_REAL_SPACE = "PhysicalDrive4"
+_REAL_POOLED = ("PhysicalDrive1", "PhysicalDrive2", "PhysicalDrive3")
+
+
+@pytest.mark.os_agnostic
+def test_every_pooled_drive_in_the_real_capture_is_read_and_used_by_its_space(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+) -> None:
+    envelope = envelope_of(capture_with(_REAL, lambda _data: None, tmp_path), cli_runner, production_factory)
+
+    for node in _REAL_POOLED:
+        pooled = _disk_in(envelope, node)
+        assert pooled["usage"]["uses"] == [{"kind": "space", "name": _REAL_SPACE, "mounts": ["D:\\"]}], node
+        assert pooled["health"]["power_on_hours"] is not None, f"{node}'s SMART was not read"
+        assert pooled["readings_refused"] == [], node
+
+
+@pytest.mark.os_agnostic
+def test_the_real_capture_leaves_no_pool_member_unread(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+) -> None:
+    """The one skipped line left is the run-wide one every virtual machine carries."""
+    envelope = envelope_of(capture_with(_REAL, lambda _data: None, tmp_path), cli_runner, production_factory)
+
+    assert _disk_in(envelope, _REAL_SPACE)["readings_refused"] == []
+    assert envelope["skipped"] == ["physical-link-rules: suppressed, the hypervisor invents these values"]
+
+
+@pytest.mark.os_agnostic
+def test_the_real_capture_without_its_pooled_drives_names_the_gap_again(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+) -> None:
+    """The control: what a reader that never listed the hidden class would have produced."""
+
+    def drop_hidden(data: dict[str, Any]) -> None:
+        data["disks"] = {path: entry for path, entry in data["disks"].items() if not entry.get("hidden")}
+
+    envelope = envelope_of(capture_with(_REAL, drop_hidden, tmp_path), cli_runner, production_factory)
+
+    assert [entry["reading"] for entry in _disk_in(envelope, _REAL_SPACE)["readings_refused"]] == ["pool-members"]
+    assert envelope["ok"] is False

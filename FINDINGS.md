@@ -238,10 +238,12 @@ the mounts reached through it: the device is seen, what sits on its unread parti
 
 `not mounted` is not a verdict that a disk is unused, only that nothing this tool reads found a
 use. A disk passed through to a virtual machine, an exported ZFS pool, or a disk in use by
-something outside what lsdsk reads can all show it. A drive in a Windows Storage Spaces pool is not
-listed at all, because Windows hides it from the disk list while it is pooled; the pool's virtual
-disk is, with a `pool-members` refusal saying the pool's drives went unread, so such a scan is
-never complete.
+something outside what lsdsk reads can all show it. A drive in a Windows Storage Spaces pool is
+read like any other drive and shows the pool's virtual disk it backs, such as
+`space:PhysicalDrive4 -> F:\`: Windows hides a pooled drive from the ordinary disk list, and lsdsk
+reads it from the list Windows keeps such drives in. The virtual disk itself carries a
+`pool-members` refusal only when none of its drives could be found and linked to it, and such a
+scan is then incomplete.
 
 A snapshot keeps only what resolving usage needs: mountpoints and filesystem types, a ZFS
 pool's name (never its datasets), and a device-mapper mapping's type prefix (`LVM-`, `CRYPT-`)

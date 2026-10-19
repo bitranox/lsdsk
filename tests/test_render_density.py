@@ -70,6 +70,11 @@ DENSITY_COUNTS: dict[str, dict[TreeDensity, int]] = {
         TreeDensity.FULL: 29,
     },
     "windows-ahci": {TreeDensity.STORAGE_ONLY: 4, TreeDensity.STORAGE_AND_SIBLINGS: 7, TreeDensity.FULL: 27},
+    "windows-storage-spaces": {
+        TreeDensity.STORAGE_ONLY: 4,
+        TreeDensity.STORAGE_AND_SIBLINGS: 7,
+        TreeDensity.FULL: 27,
+    },
     "windows-usb-uas": {TreeDensity.STORAGE_ONLY: 5, TreeDensity.STORAGE_AND_SIBLINGS: 5, TreeDensity.FULL: 25},
     "windows-chipset-switch": {
         TreeDensity.STORAGE_ONLY: 10,

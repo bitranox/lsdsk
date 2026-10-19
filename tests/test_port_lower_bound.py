@@ -186,6 +186,7 @@ _NO_BOUND_CAPTURES = frozenset(
         "linux-minimal",
         "linux-zfs-filesystems",
         "windows-ahci",
+        "windows-storage-spaces",
     }
 )
 

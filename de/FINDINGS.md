@@ -273,10 +273,12 @@ was auf seinen ungelesenen Partitionen liegt, nicht.
 `not mounted` ist kein Urteil, dass eine Platte ungenutzt ist, nur dass nichts, was dieses
 Werkzeug liest, eine Nutzung fand. Eine an eine virtuelle Maschine durchgereichte Platte, ein
 exportierter ZFS-Pool oder eine Platte, die von etwas genutzt wird, das lsdsk nicht liest, können
-das alle ebenso zeigen. Ein Laufwerk in einem Windows-Storage-Spaces-Pool erscheint gar nicht,
-weil Windows es aus der Plattenliste ausblendet, solange es im Pool ist; die virtuelle Platte des
-Pools erscheint, mit einer Verweigerung `pool-members`, die sagt, dass die Laufwerke des Pools
-ungelesen blieben, sodass ein solcher Scan nie vollständig ist.
+das alle ebenso zeigen. Ein Laufwerk in einem Windows-Storage-Spaces-Pool wird gelesen wie jedes
+andere Laufwerk und zeigt die virtuelle Platte des Pools, die es trägt, etwa
+`space:PhysicalDrive4 -> F:\`: Windows blendet ein Laufwerk im Pool aus der gewöhnlichen
+Plattenliste aus, und lsdsk liest es aus der Liste, in der Windows solche Laufwerke führt. Die
+virtuelle Platte selbst trägt eine Verweigerung `pool-members` nur dann, wenn keines ihrer
+Laufwerke gefunden und ihr zugeordnet werden konnte; ein solcher Scan ist dann unvollständig.
 
 Eine Momentaufnahme behält nur, was die Auflösung der Nutzung braucht: Einhängepunkte und
 Dateisystemtypen, den Namen eines ZFS-Pools (nie seine Datasets), und das Typpräfix einer

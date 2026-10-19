@@ -344,9 +344,12 @@ was not read, `not mounted` when it was read and nothing uses it, or the boot
 and use text otherwise, such as `boot zfs:rpool` or `lvm:vg0 -> /var`.
 `not mounted` does not mean the disk is safe to wipe: a disk passed through to a
 virtual machine or an exported ZFS pool shows it too. A drive in a Windows Storage Spaces
-pool is not listed at all, because Windows hides it while it is pooled; the pool's virtual
-disk is, with a `pool-members` entry in its `readings_refused` saying the pool's drives went
-unread, so such a scan is never `ok`.
+pool is in `data.disks` and read like any other drive, and its `used by` names the pool's
+virtual disk it backs, such as `space:PhysicalDrive4 -> F:\` (a use of `kind` `space`, whose
+`name` is the virtual disk's node and whose `mounts` are that disk's volume paths). The virtual
+disk is in `data.disks` too, with bus `virtual` and its own volume paths. It carries a
+`pool-members` entry in its `readings_refused` only when none of the pool's drives could be
+found and linked to it; the envelope's `ok` is then false.
 
 **A controller, inside `data.controllers`, carries `kind`**, which is one of
 `ahci`, `sas`, `nvme`, `raid`, `ide` or `other` - read from the PCI class code,

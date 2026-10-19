@@ -5,6 +5,23 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Added
+
+- On Windows, the drives in a Storage Spaces pool are now read like any other drive: health,
+  SMART, wear, link and every finding. Windows takes a pooled drive out of the ordinary disk list
+  and keeps it in a list of its own, which lsdsk now reads as well. Each such drive's `used by`
+  names the pool's virtual disk it backs, such as `space:PhysicalDrive4 -> F:\`, where it would
+  otherwise have read `not mounted`. The JSON `kind` of a use gains the value `space`, and a
+  Windows snapshot records each disk's instance identifier and, for a pooled drive, the devices
+  Windows lists as removed with it.
+
+### Changed
+
+- On Windows, a Storage Spaces virtual disk no longer carries the `pool-members` refusal once one
+  of its drives was read, so a scan of such a machine can now be complete. It keeps the refusal
+  when none of its drives could be found and linked to it, which is also how a snapshot taken by
+  an earlier version replays.
+
 ## [1.13.0] 2026-10-19 23:27:52
 
 ### Changed

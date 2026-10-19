@@ -70,7 +70,7 @@ where that was not read, `not mounted` where it was read and nothing uses the di
 boot mark and the mounts, pool or stack it belongs to, such as `boot zfs:rpool` or
 `lvm:vg0 -> /var`. `not mounted` does not mean the disk is safe to wipe: a disk passed through to
 a virtual machine or an exported ZFS pool can show it too. A drive in a Windows Storage Spaces pool
-is not listed at all while it is pooled. See
+names the pool's virtual disk it backs, such as `space:PhysicalDrive4 -> F:\`. See
 [FINDINGS.md](FINDINGS.md#what-uses-a-disk-and-what-not-mounted-means) for exactly when `not
 mounted` can be claimed and when it falls back to `-`.
 
