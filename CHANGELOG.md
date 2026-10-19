@@ -28,6 +28,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   never reads a file it is about to replace, so such a value decided nothing, while `lsdsk config`
   still reported it as in force and nothing mentioned it - an invalid one like `"nonsense"` included.
 
+### Tests
+
+- A new committed capture, `linux-ext4-xfs-filesystems`, taken by the production reader as root on a
+  virtual machine with an ext4 and an xfs disk mounted. Its filesystem figures are held against what
+  `df -B1`, `e2freefrag` and `xfs_spaceman -c freesp` reported on that machine, so the Linux
+  `statvfs` and `FS_IOC_GETFSMAP` paths are checked against a real kernel's answer rather than only
+  against hand-built captures. The capture-wide refusal check now requires every refusal to be one
+  the capture recorded, since this guest's virtual disks genuinely reject ATA passthrough.
+
 ## [1.11.0] 2026-10-19 00:06:20
 
 ### Added

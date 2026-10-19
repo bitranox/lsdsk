@@ -156,9 +156,12 @@ All of it on 2026-10-13 with this change.
 - That a reflinked xfs filesystem lists a shared block as several records, so a free-space walk must
   not assume every record is distinct, is from the same reading.
 
-The run above was a one-off: the suite still covers the Linux free-extent path with hand-built
-captures and unit tests, and a committed capture of an ext4 or xfs host and an end-to-end host that
-has one remain needed, as they already were for the `statvfs` path in ADR 0005.
+The suite covers the Linux free-extent path with hand-built captures, unit tests and one real
+capture, `linux-ext4-xfs-filesystems`: `tests/test_ext4_xfs_capture.py` holds its free-extent counts,
+totals and largest extents against what `e2freefrag` and `xfs_spaceman -c freesp` reported on the
+machine it was taken from. On that xfs filesystem the free-extent total is about 109 MiB above what
+`statvfs` calls free, the space xfs reserves, while on ext4 the two agree. No end-to-end host has an
+ext4 or xfs mount yet, as for the `statvfs` path in ADR 0005.
 
 ## Left out
 

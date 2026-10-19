@@ -402,33 +402,67 @@ def test_a_complete_privileged_run_reports_ok_on_every_committed_capture(
     cli_runner: CliRunner,
     production_factory: Callable[[], object],
 ) -> None:
-    """The direction the reverted attempt broke: healthy hardware stays complete.
+    """The direction the reverted attempt broke: no capture grows a refusal it never recorded.
 
-    Every committed capture was taken as root and recorded no refusal, so none
-    may grow a refusal entry. Asserted two ways rather than on ``skipped == []``,
-    which windows-ahci legitimately fails: it is a QEMU guest, so the
-    hypervisor-suppression line is there for a reason that has nothing to do with
-    this rule. A refusal entry is recognised by naming its SUBJECT, which the
+    Every committed capture was taken as root, and a refusal the reader met there is in the
+    capture as the reason text it gave (an ``*_error`` field). Most recorded none. One did:
+    linux-ext4-xfs-filesystems is a QEMU guest whose virtual disks reject ATA passthrough, and
+    that is a real refusal, not a missing privilege. So the claim is not ``carried == []`` but
+    that every refusal the envelope carries is one of the reasons the capture holds - a null
+    field read as a refusal, which is what the reverted attempt did, has no such reason.
+    Asserted two ways rather than on ``skipped == []``, which windows-ahci legitimately fails:
+    it is a QEMU guest, so the hypervisor-suppression line is there for a reason that has
+    nothing to do with this rule. A refusal line is recognised by naming its SUBJECT, which the
     privilege and hypervisor lines never do and every refusal line always does.
 
-    Keyed on the captures themselves rather than a list, so a capture added later
-    is covered.
+    Keyed on the captures themselves rather than a list, so a capture added later is covered.
     """
+    recorded = _recorded_refusals(json.loads((FIXTURES / fixture).read_text(encoding="utf-8")))
     envelope = envelope_of(FIXTURES / fixture, cli_runner, production_factory)
     data = envelope["data"]
 
     carried = [
-        device["path"] or device["node"]
+        (device["path"] or device["node"], refusal["reason"])
         for device in (*data["disks"], *data["virtual_disks"])
-        if device.get("readings_refused")
+        for refusal in device.get("readings_refused") or ()
     ]
-    carried += [controller["address"] for controller in data["controllers"] if controller.get("readings_refused")]
-    assert not carried, f"{fixture} carries a refusal it never recorded: {carried}"
+    carried += [
+        (controller["address"], refusal["reason"])
+        for controller in data["controllers"]
+        for refusal in controller.get("readings_refused") or ()
+    ]
+    unrecorded = [(subject, reason) for subject, reason in carried if reason not in recorded]
+    assert not unrecorded, f"{fixture} carries a refusal it never recorded: {unrecorded}"
 
     subjects = [device["path"] for device in data["disks"]]
     subjects += [controller["address"] for controller in data["controllers"]]
     named = [entry for entry in envelope["skipped"] if any(subject in entry for subject in subjects)]
-    assert not named, f"{fixture} names a device in skipped without a recorded refusal: {named}"
+    stray = [entry for entry in named if not any(entry.endswith(f" - {reason}") for reason in recorded)]
+    assert not stray, f"{fixture} names a device in skipped without a recorded refusal: {stray}"
+
+
+def _recorded_refusals(capture: object) -> frozenset[str]:
+    """Every reason text a capture holds in an ``*_error`` field, wherever it sits."""
+    found: set[str] = set()
+    pending: list[object] = [capture]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, dict):
+            for key, value in cast("dict[str, object]", node).items():
+                if key.endswith("_error") and isinstance(value, str) and value:
+                    found.add(value)
+                else:
+                    pending.append(value)
+        elif isinstance(node, list):
+            pending.extend(cast("list[object]", node))
+    return frozenset(found)
+
+
+def test_the_recorded_refusals_of_a_capture_are_found_wherever_they_sit() -> None:
+    """The control for the helper: a planted reason is found, and a capture with none yields none."""
+    assert _recorded_refusals({"ata": {"sda": {"identify_error": "planted", "identify": "AAA"}}}) == {"planted"}
+    assert _recorded_refusals({"disks": [{"health": {"smart_error": "deep"}}]}) == {"deep"}
+    assert _recorded_refusals({"ata": {"sda": {"identify_error": None}}}) == frozenset()
 
 
 @pytest.mark.os_linux

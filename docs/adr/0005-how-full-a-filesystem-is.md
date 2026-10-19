@@ -186,10 +186,12 @@ Proxmox node: two imported ZFS pools, and mounts that are all ZFS datasets, so i
 `filesystem_space` is the empty map. The serial invariant runs over it, and a pool's configuration
 is absent from it by construction.
 
-The Linux `statvfs` arm is therefore covered by hand-built captures only. No committed capture
-carries a mount that was stat-ed, and no end-to-end host exercises it, since every reachable node
-boots from ZFS and leaves its EFI system partition unmounted. A capture of a machine with an ext4 or
-xfs filesystem on a listed disk, and an end-to-end host that has one, are still needed.
+The Linux `statvfs` arm is covered by `linux-ext4-xfs-filesystems`, taken by the production reader
+as root on a virtual machine with an ext4 and an xfs disk mounted: `tests/test_ext4_xfs_capture.py`
+holds its size, used and free figures against what `df -B1` reported on that machine. No end-to-end
+host exercises the arm, since every reachable node boots from ZFS and leaves its EFI system
+partition unmounted, so a host with an ext4 or xfs filesystem on a listed disk is still needed for
+`make testintegration`.
 
 `f10` no longer quits; it rescans. A machine with a nearly full
 filesystem that used to exit 0 can now exit 1, which is the point of the section and the reason the

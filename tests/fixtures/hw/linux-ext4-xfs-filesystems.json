@@ -1,0 +1,716 @@
+{
+  "ata": {
+    "sda": {
+      "identify_error": "SG_IO transport failure: host=0 driver=8",
+      "smart_data_error": "SG_IO transport failure: host=0 driver=8",
+      "smart_thresholds_error": "SG_IO transport failure: host=0 driver=8"
+    },
+    "sdb": {
+      "identify_error": "SG_IO transport failure: host=0 driver=8",
+      "smart_data_error": "SG_IO transport failure: host=0 driver=8",
+      "smart_thresholds_error": "SG_IO transport failure: host=0 driver=8"
+    },
+    "sdc": {
+      "identify_error": "SG_IO transport failure: host=0 driver=8",
+      "smart_data_error": "SG_IO transport failure: host=0 driver=8",
+      "smart_thresholds_error": "SG_IO transport failure: host=0 driver=8"
+    }
+  },
+  "block": {
+    "loop0": {
+      "dev": "7:0",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "4096",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop1": {
+      "dev": "7:1",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "512",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop2": {
+      "dev": "7:2",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "512",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop3": {
+      "dev": "7:3",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "512",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop4": {
+      "dev": "7:4",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "512",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop5": {
+      "dev": "7:5",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "512",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop6": {
+      "dev": "7:6",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "512",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop7": {
+      "dev": "7:7",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "512",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "sda": {
+      "dev": "8:0",
+      "device": {
+        "model": "QEMU HARDDISK",
+        "queue_depth": "128",
+        "rev": "2.5+",
+        "state": "running",
+        "type": "0",
+        "vendor": "QEMU"
+      },
+      "device_path": "/sys/devices/pci0000:00/0000:00:05.0/0000:01:01.0/virtio3/host0/target0:0:0/0:0:0:0",
+      "holders": [],
+      "partitions": {
+        "sda1": {
+          "dev": "8:1",
+          "holders": []
+        },
+        "sda14": {
+          "dev": "8:14",
+          "holders": []
+        },
+        "sda15": {
+          "dev": "8:15",
+          "holders": []
+        },
+        "sda16": {
+          "dev": "259:0",
+          "holders": []
+        }
+      },
+      "queue": {
+        "discard_granularity": "4096",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "19922944",
+      "vpd": {
+        "inquiry": "AAAFEh8AABJRRU1VICAgIFFFTVUgSEFSRERJU0sgICAyLjUr",
+        "vpd_pg83": "AIMADwIAAAtkcml2ZS1zY3NpMA==",
+        "vpd_pgb1": "ALEAPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "sdb": {
+      "dev": "8:16",
+      "device": {
+        "model": "QEMU HARDDISK",
+        "queue_depth": "128",
+        "rev": "2.5+",
+        "state": "running",
+        "type": "0",
+        "vendor": "QEMU"
+      },
+      "device_path": "/sys/devices/pci0000:00/0000:00:05.0/0000:01:02.0/virtio4/host1/target1:0:0/1:0:0:1",
+      "holders": [],
+      "partitions": {
+        "sdb1": {
+          "dev": "8:17",
+          "holders": []
+        }
+      },
+      "queue": {
+        "discard_granularity": "4096",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "8388608",
+      "vpd": {
+        "inquiry": "AAAFEh8AABJRRU1VICAgIFFFTVUgSEFSRERJU0sgICAyLjUr",
+        "vpd_pg83": "AIMADwIAAAtkcml2ZS1zY3NpMQ==",
+        "vpd_pgb1": "ALEAPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "sdc": {
+      "dev": "8:32",
+      "device": {
+        "model": "QEMU HARDDISK",
+        "queue_depth": "128",
+        "rev": "2.5+",
+        "state": "running",
+        "type": "0",
+        "vendor": "QEMU"
+      },
+      "device_path": "/sys/devices/pci0000:00/0000:00:05.0/0000:01:03.0/virtio5/host2/target2:0:0/2:0:0:2",
+      "holders": [],
+      "partitions": {
+        "sdc1": {
+          "dev": "8:33",
+          "holders": []
+        }
+      },
+      "queue": {
+        "discard_granularity": "4096",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "8388608",
+      "vpd": {
+        "inquiry": "AAAFEh8AABJRRU1VICAgIFFFTVUgSEFSRERJU0sgICAyLjUr",
+        "vpd_pg83": "AIMADwIAAAtkcml2ZS1zY3NpMg==",
+        "vpd_pgb1": "ALEAPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "sr0": {
+      "dev": "11:0",
+      "device": {
+        "model": "QEMU DVD-ROM",
+        "queue_depth": "1",
+        "rev": "2.5+",
+        "state": "running",
+        "type": "5",
+        "vendor": "QEMU"
+      },
+      "device_path": "/sys/devices/pci0000:00/0000:00:01.1/ata2/host4/target4:0:0/4:0:0:0",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "2048",
+        "logical_block_size": "2048",
+        "physical_block_size": "2048",
+        "rotational": "1"
+      },
+      "size": "8192",
+      "vpd": {
+        "inquiry": "BYAFMh8AAABRRU1VICAgIFFFTVUgRFZELVJPTSAgICAyLjUr"
+      }
+    }
+  },
+  "captured_at": "2026-10-19T13:28:48.645766+00:00",
+  "classes": {
+    "ata_link": {
+      "link1": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:01.1/ata1/link1/ata_link/link1",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link2": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:01.1/ata2/link2/ata_link/link2",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      }
+    },
+    "ata_port": {
+      "ata1": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:01.1/ata1/ata_port/ata1",
+        "port_no": "1"
+      },
+      "ata2": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:01.1/ata2/ata_port/ata2",
+        "port_no": "2"
+      }
+    },
+    "hwmon": {},
+    "scsi_host": {
+      "host0": {
+        "path": "/sys/devices/pci0000:00/0000:00:05.0/0000:01:01.0/virtio3/host0/scsi_host/host0",
+        "proc_name": "virtio_scsi",
+        "unique_id": "0"
+      },
+      "host1": {
+        "path": "/sys/devices/pci0000:00/0000:00:05.0/0000:01:02.0/virtio4/host1/scsi_host/host1",
+        "proc_name": "virtio_scsi",
+        "unique_id": "0"
+      },
+      "host2": {
+        "path": "/sys/devices/pci0000:00/0000:00:05.0/0000:01:03.0/virtio5/host2/scsi_host/host2",
+        "proc_name": "virtio_scsi",
+        "unique_id": "0"
+      },
+      "host3": {
+        "path": "/sys/devices/pci0000:00/0000:00:01.1/ata1/host3/scsi_host/host3",
+        "proc_name": "ata_piix",
+        "unique_id": "1"
+      },
+      "host4": {
+        "path": "/sys/devices/pci0000:00/0000:00:01.1/ata2/host4/scsi_host/host4",
+        "proc_name": "ata_piix",
+        "unique_id": "2"
+      }
+    }
+  },
+  "devices_accessible": true,
+  "environment": {
+    "cgroup": "0::/init.scope",
+    "dmi_product": "Standard PC (i440FX + PIIX, 1996)",
+    "dmi_vendor": "QEMU",
+    "hypervisor_flag": true
+  },
+  "euid": 0,
+  "filesystem_space": {
+    "259:0": {
+      "bavail": 179752,
+      "bfree": 195534,
+      "blocks": 225380,
+      "ffree": 57892,
+      "files": 58496,
+      "frsize": 4096
+    },
+    "8:1": {
+      "bavail": 1518168,
+      "bfree": 1522264,
+      "blocks": 2139498,
+      "ffree": 994024,
+      "files": 1114112,
+      "frsize": 4096
+    },
+    "8:15": {
+      "bavail": 201164,
+      "bfree": 201164,
+      "blocks": 213663,
+      "ffree": 0,
+      "files": 0,
+      "frsize": 512
+    },
+    "8:17": {
+      "bavail": 916510,
+      "bfree": 973009,
+      "blocks": 1011128,
+      "ffree": 262032,
+      "files": 262144,
+      "frsize": 4096
+    },
+    "8:33": {
+      "bavail": 965510,
+      "bfree": 965510,
+      "blocks": 1031680,
+      "ffree": 2096024,
+      "files": 2096128,
+      "frsize": 4096
+    }
+  },
+  "free_extents": {
+    "259:0": {
+      "count": 23,
+      "histogram": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        49152,
+        585728,
+        0,
+        0,
+        536576,
+        10674176,
+        2506752,
+        0,
+        0,
+        75010048,
+        52817920,
+        118636544,
+        535920640,
+        0,
+        0
+      ],
+      "largest": 267960320,
+      "total": 796737536
+    },
+    "8:1": {
+      "count": 1647,
+      "histogram": [
+        0,
+        0,
+        0,
+        1597440,
+        2375680,
+        5181440,
+        11333632,
+        18104320,
+        15753216,
+        23060480,
+        49881088,
+        59248640,
+        51347456,
+        40271872,
+        116740096,
+        169287680,
+        209346560,
+        0,
+        267382784,
+        518991872,
+        4695846912
+      ],
+      "largest": 2013597696,
+      "total": 6255751168
+    },
+    "8:17": {
+      "count": 83,
+      "histogram": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        131072,
+        1179648,
+        7602176,
+        32636928,
+        77201408,
+        39059456,
+        0,
+        0,
+        35651584,
+        198934528,
+        1532997632,
+        0,
+        2060050432
+      ],
+      "largest": 724172800,
+      "total": 3985444864
+    },
+    "8:33": {
+      "count": 103,
+      "histogram": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        20480,
+        0,
+        0,
+        262144,
+        3670016,
+        17825792,
+        46792704,
+        73531392,
+        13762560,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3913433088
+      ],
+      "largest": 1073164288,
+      "total": 4069298176
+    }
+  },
+  "hostname": "linux-ext4-xfs-filesystems",
+  "kernel": "6.8.0-124-generic",
+  "mounts": [
+    {
+      "dev": "8:1",
+      "fstype": "ext4",
+      "mountpoint": "/",
+      "read_only": false,
+      "source_dev": "8:1"
+    },
+    {
+      "dev": "259:0",
+      "fstype": "ext4",
+      "mountpoint": "/boot",
+      "read_only": false,
+      "source_dev": "259:0"
+    },
+    {
+      "dev": "8:15",
+      "fstype": "vfat",
+      "mountpoint": "/boot/efi",
+      "read_only": false,
+      "source_dev": "8:15"
+    },
+    {
+      "dev": "8:17",
+      "fstype": "ext4",
+      "mountpoint": "/mnt/ext4",
+      "read_only": false,
+      "source_dev": "8:17"
+    },
+    {
+      "dev": "8:33",
+      "fstype": "xfs",
+      "mountpoint": "/mnt/xfs",
+      "read_only": false,
+      "source_dev": "8:33"
+    }
+  ],
+  "nvme": {},
+  "pci": {
+    "0000:00:00.0": {
+      "class": "0x060000",
+      "device": "0x1237",
+      "path": "/sys/devices/pci0000:00/0000:00:00.0",
+      "revision": "0x02",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:01.0": {
+      "class": "0x060100",
+      "device": "0x7000",
+      "path": "/sys/devices/pci0000:00/0000:00:01.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:01.1": {
+      "class": "0x010180",
+      "device": "0x7010",
+      "driver": "ata_piix",
+      "path": "/sys/devices/pci0000:00/0000:00:01.1",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:01.2": {
+      "class": "0x0c0300",
+      "device": "0x7020",
+      "driver": "uhci_hcd",
+      "path": "/sys/devices/pci0000:00/0000:00:01.2",
+      "revision": "0x01",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:01.3": {
+      "class": "0x068000",
+      "device": "0x7113",
+      "path": "/sys/devices/pci0000:00/0000:00:01.3",
+      "revision": "0x03",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:03.0": {
+      "class": "0x00ff00",
+      "device": "0x1002",
+      "driver": "virtio-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:03.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0005",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x1af4"
+    },
+    "0000:00:05.0": {
+      "children": [
+        "0000:01:01.0",
+        "0000:01:02.0",
+        "0000:01:03.0"
+      ],
+      "class": "0x060400",
+      "device": "0x0001",
+      "path": "/sys/devices/pci0000:00/0000:00:05.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x0000",
+      "vendor": "0x1b36"
+    },
+    "0000:00:08.0": {
+      "class": "0x078000",
+      "device": "0x1003",
+      "driver": "virtio-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:08.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0003",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x1af4"
+    },
+    "0000:00:12.0": {
+      "class": "0x020000",
+      "device": "0x1000",
+      "driver": "virtio-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:12.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0001",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x1af4"
+    },
+    "0000:00:1e.0": {
+      "class": "0x060400",
+      "device": "0x0001",
+      "path": "/sys/devices/pci0000:00/0000:00:1e.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x0000",
+      "vendor": "0x1b36"
+    },
+    "0000:00:1f.0": {
+      "class": "0x060400",
+      "device": "0x0001",
+      "path": "/sys/devices/pci0000:00/0000:00:1f.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x0000",
+      "vendor": "0x1b36"
+    },
+    "0000:01:01.0": {
+      "class": "0x010000",
+      "device": "0x1004",
+      "driver": "virtio-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:05.0/0000:01:01.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0008",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x1af4"
+    },
+    "0000:01:02.0": {
+      "class": "0x010000",
+      "device": "0x1004",
+      "driver": "virtio-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:05.0/0000:01:02.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0008",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x1af4"
+    },
+    "0000:01:03.0": {
+      "class": "0x010000",
+      "device": "0x1004",
+      "driver": "virtio-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:05.0/0000:01:03.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0008",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x1af4"
+    }
+  },
+  "pci_names": {
+    "1af4:1000": "Red Hat, Inc. Virtio network device",
+    "1af4:1002": "Red Hat, Inc. Virtio memory balloon",
+    "1af4:1003": "Red Hat, Inc. Virtio console",
+    "1af4:1004": "Red Hat, Inc. Virtio SCSI",
+    "1b36:0001": "Red Hat, Inc. QEMU PCI-PCI bridge",
+    "8086:1237": "Intel Corporation 440FX - 82441FX PMC [Natoma]",
+    "8086:7000": "Intel Corporation 82371SB PIIX3 ISA [Natoma/Triton II]",
+    "8086:7010": "Intel Corporation 82371SB PIIX3 IDE [Natoma/Triton II]",
+    "8086:7020": "Intel Corporation 82371SB PIIX3 USB [Natoma/Triton II]",
+    "8086:7113": "Intel Corporation 82371AB/EB/MB PIIX4 ACPI"
+  },
+  "platform": "linux",
+  "schema": 2,
+  "signatures": {
+    "11:0": {
+      "fs_label": "cidata",
+      "fs_type": "iso9660"
+    },
+    "259:0": {
+      "fs_label": "BOOT",
+      "fs_type": "ext4"
+    },
+    "8:1": {
+      "fs_label": "cloudimg-rootfs",
+      "fs_type": "ext4"
+    },
+    "8:15": {
+      "fs_label": "UEFI",
+      "fs_type": "vfat"
+    },
+    "8:17": {
+      "fs_label": "lsdsk-ext4",
+      "fs_type": "ext4"
+    },
+    "8:33": {
+      "fs_label": "lsdsk-xfs",
+      "fs_type": "xfs"
+    }
+  },
+  "stacked": {},
+  "swaps": [],
+  "usb": {},
+  "zfs_fragmentation": {},
+  "zfs_pool_layouts": {},
+  "zfs_pools": {}
+}

@@ -30,6 +30,7 @@ ALL_HOSTS = (
     "linux-nvme-board",
     "linux-usb-ehci",
     "linux-zfs-filesystems",
+    "linux-ext4-xfs-filesystems",
     "windows-ahci",
     "windows-usb-uas",
     "windows-chipset-switch",

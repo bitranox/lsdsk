@@ -179,7 +179,7 @@ class _NoFloor(InterfaceLink, frozen=True):
 
 #: The captures with no drive in the bounded position, so the parametrized
 #: control above is not vacuous for the others.
-_NO_BOUND_CAPTURES = frozenset({"linux-minimal", "linux-zfs-filesystems", "windows-ahci"})
+_NO_BOUND_CAPTURES = frozenset({"linux-ext4-xfs-filesystems", "linux-minimal", "linux-zfs-filesystems", "windows-ahci"})
 
 
 @pytest.mark.os_agnostic
