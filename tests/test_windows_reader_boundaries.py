@@ -37,7 +37,11 @@ class _Setupapi:
         self.unreadable_at = unreadable_at
         self.total = len(paths) + len(unreadable_at)
 
-    def SetupDiGetClassDevsW(self, *_args: object) -> int:  # noqa: N802 - the Win32 name
+    def SetupDiGetClassDevsW(self, guid: object, *_args: object) -> int:  # noqa: N802 - the Win32 name
+        """List interfaces for the disk class only: a real drive publishes one class, never both."""
+        asked = bytes(getattr(guid, "_obj"))  # noqa: B009 - the documented way to reach a byref's referent
+        if asked != bytes(api.parse_guid(api.GUID_DEVINTERFACE_DISK)):
+            return cast("int", api.INVALID_HANDLE_VALUE)
         return 1
 
     def SetupDiEnumDeviceInterfaces(  # noqa: N802 - the Win32 name

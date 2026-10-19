@@ -36,6 +36,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from ....domain.enums import BusType, Platform
+from ...validation import MAX_ENTRIES
 from ..ata_commands import (
     ATA_IDENTIFY_DEVICE,
     ATA_SMART,
@@ -83,8 +84,33 @@ _MAX_SIBLINGS = 4096
 # What each device-interface list is called where one cut short is recorded.
 _INTERFACE_LISTS = {
     api.GUID_DEVINTERFACE_DISK: DISK_INTERFACE_LIST,
+    api.GUID_DEVINTERFACE_HIDDEN_DISK: "hidden disk interfaces",
     api.GUID_DEVINTERFACE_USB_HUB: "USB hubs",
 }
+
+
+@dataclass(frozen=True, kw_only=True)
+class DiskInterface:
+    """One disk the device tree lists, and what the builder needs to place it.
+
+    Attributes:
+        path: The interface path the disk is opened by.
+        ancestors: The instance identifiers above it, nearest first.
+        instance: Its own instance identifier, or ``None`` where Windows would
+            not name it; a Storage Space's is its node under the ``STORAGE``
+            enumerator, which each of its pooled drives names.
+        hidden: Whether it came from ``GUID_DEVINTERFACE_HIDDEN_DISK``, which a
+            drive in a Storage Spaces pool publishes instead of the disk class.
+        removal_relations: The devices Windows removes with it, read for a
+            hidden disk only: a pooled drive names the Space it backs there.
+    """
+
+    path: str
+    ancestors: tuple[str, ...]
+    instance: str | None
+    hidden: bool
+    removal_relations: tuple[str, ...]
+
 
 # A hub numbers its ports in one byte, and the capture model holds no other.
 _MAX_HUB_PORT = 255
@@ -514,21 +540,75 @@ class _DeviceTree:
         text = raw.decode("utf-16-le", errors="replace").rstrip("\x00").strip()
         return text if 0 < len(text) <= MAX_DEVICE_TEXT else None
 
-    def disk_interfaces(self) -> list[tuple[str, list[str]]]:
-        """Return every disk's interface path and the instances above it, nearest first."""
+    def _string_list_property(self, handle: int, info: api.SP_DEVINFO_DATA, fmtid: str, pid: int) -> tuple[str, ...]:
+        """Read one string-list device property, empty when it is absent or of another type.
+
+        Each item is held to :data:`MAX_DEVICE_TEXT` and the list to
+        :data:`MAX_ENTRIES`, for the same reason :meth:`_string_property` bounds
+        its one string: stored past either, the capture model would refuse the
+        whole scan over it. An item past the bound is left out rather than cut,
+        because a cut instance identifier would name a device that is not there.
+        """
+        result = self._property(handle, info, fmtid, pid)
+        if result is None:
+            return ()
+        prop_type, raw = result
+        if prop_type != api.DEVPROP_TYPE_STRING_LIST:
+            return ()
+        items = raw.decode("utf-16-le", errors="replace").split("\x00")
+        kept = (item for item in items if 0 < len(item) <= MAX_DEVICE_TEXT)
+        return tuple(kept)[:MAX_ENTRIES]
+
+    def disk_interfaces(self) -> list[DiskInterface]:
+        """Return every disk the tree lists, the ordinary disk class first and the hidden one after it.
+
+        A drive in a Storage Spaces pool publishes only the hidden class, so
+        listing the disk class alone leaves every pooled drive out (ADR 0007).
+        """
         self.unreadable_interfaces = []
-        return [
-            (path, [] if devinst is None else self._ancestor_instances(devinst))
+        found = [
+            self._disk_interface(path, devinst, hidden=False, relations=())
             for path, devinst in self._interfaces(api.GUID_DEVINTERFACE_DISK, unreadable=self.unreadable_interfaces)
         ]
+        relations: dict[str, tuple[str, ...]] = {}
+        hidden = self._interfaces(
+            api.GUID_DEVINTERFACE_HIDDEN_DISK, unreadable=self.unreadable_interfaces, removal_relations=relations
+        )
+        found.extend(
+            self._disk_interface(path, devinst, hidden=True, relations=relations.get(path, ()))
+            for path, devinst in hidden
+        )
+        return found
 
-    def _interfaces(self, interface_class: str, *, unreadable: list[str] | None = None) -> list[tuple[str, int | None]]:
+    def _disk_interface(
+        self, path: str, devinst: int | None, *, hidden: bool, relations: tuple[str, ...]
+    ) -> DiskInterface:
+        """Name one listed disk's place in the tree."""
+        return DiskInterface(
+            path=path,
+            ancestors=() if devinst is None else tuple(self._ancestor_instances(devinst)),
+            instance=None if devinst is None else self._instance_id(devinst),
+            hidden=hidden,
+            removal_relations=relations,
+        )
+
+    def _interfaces(
+        self,
+        interface_class: str,
+        *,
+        unreadable: list[str] | None = None,
+        removal_relations: dict[str, tuple[str, ...]] | None = None,
+    ) -> list[tuple[str, int | None]]:
         """Return the path and device instance of every present interface of one class.
 
         Args:
             interface_class: The interface class GUID, as text.
             unreadable: Where to record why an interface was dropped, or ``None``
                 to drop it without a record.
+            removal_relations: Where to record each interface's removal
+                relations by path, or ``None`` not to read them. They are read
+                here because the property is reached through the enumeration's
+                own handle, which is closed when this returns.
         """
         guid = api.parse_guid(interface_class)
         handle = self.setupapi.SetupDiGetClassDevsW(
@@ -545,9 +625,13 @@ class _DeviceTree:
                 handle, None, ctypes.byref(guid), index, ctypes.byref(interface)
             ):
                 index += 1
-                path, devinst, error = self._interface_detail(handle, interface)
+                path, devinst, error, info = self._interface_detail(handle, interface)
                 if path:
                     found.append((path, devinst))
+                    if removal_relations is not None and info is not None:
+                        removal_relations[path] = self._string_list_property(
+                            handle, info, api.DEVICE_RELATIONS_FMTID, api.DEVICE_PROP_REMOVAL_RELATIONS
+                        )
                 elif error is not None and unreadable is not None:
                     unreadable.append(error)
             self._note_list_end(_INTERFACE_LISTS.get(interface_class, interface_class), stopped_at=index)
@@ -557,8 +641,11 @@ class _DeviceTree:
 
     def _interface_detail(
         self, handle: int, interface: api.SP_DEVICE_INTERFACE_DATA
-    ) -> tuple[str | None, int | None, str | None]:
-        """Return one interface's device path, its device instance and why neither was had.
+    ) -> tuple[str | None, int | None, str | None, api.SP_DEVINFO_DATA | None]:
+        """Return one interface's device path, its device instance, why neither was had, and its device.
+
+        The device (``SP_DEVINFO_DATA``) is what a property of it is read through,
+        valid only while the enumeration's handle is open.
 
         A path is the only handle the reader has on a disk, so an interface whose
         path could not be read cannot be opened or asked anything. Dropping it
@@ -571,7 +658,7 @@ class _DeviceTree:
             handle, ctypes.byref(interface), None, 0, ctypes.byref(required), None
         )
         if required.value == 0:
-            return None, None, f"Win32 error {self.last_error()}"
+            return None, None, f"Win32 error {self.last_error()}", None
         buffer = ctypes.create_string_buffer(required.value)
         # SP_DEVICE_INTERFACE_DETAIL_DATA_W begins with its own size, and that
         # size is the BUILD's rather than a constant - see the constant's own
@@ -591,9 +678,9 @@ class _DeviceTree:
             ctypes.byref(info),
         )
         if not ok:
-            return None, None, f"Win32 error {self.last_error()}"
+            return None, None, f"Win32 error {self.last_error()}", None
         path = ctypes.wstring_at(ctypes.addressof(buffer) + 4)
-        return path, info.DevInst, None
+        return path, info.DevInst, None, info
 
 
 def _open_device(kernel32: api.WinLibrary, path: str) -> tuple[int | None, bool]:
@@ -1497,8 +1584,15 @@ def read_disks(tree: _DeviceTree) -> dict[str, dict[str, Any]]:
         refused ``device`` reading.
     """
     disks: dict[str, dict[str, Any]] = {}
-    for path, ancestors in tree.disk_interfaces():
-        disks[path] = read_disk(tree.kernel32, path, ancestors, last_error=tree.last_error)
+    for interface in tree.disk_interfaces():
+        entry = read_disk(tree.kernel32, interface.path, list(interface.ancestors), last_error=tree.last_error)
+        if interface.instance is not None:
+            entry["instance"] = interface.instance
+        if interface.hidden:
+            entry["hidden"] = True
+            entry["removal_relations"] = list(interface.removal_relations)
+        disks[interface.path] = entry
+    disks = without_doubles(disks)
     for position, reason in enumerate(tree.unreadable_interfaces, start=1):
         label = f"{UNREADABLE_INTERFACE_LABEL} {position}"
         disks[label] = {
@@ -1509,6 +1603,32 @@ def read_disks(tree: _DeviceTree) -> dict[str, dict[str, Any]]:
             "interface_unreadable": True,
         }
     return disks
+
+
+def without_doubles(disks: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Drop a hidden disk whose drive number an ordinary disk already carries.
+
+    A drive is expected to publish one of the two interface classes; if one ever
+    publishes both, it would be read twice and listed as two drives. The drive
+    number is what says two interfaces are one drive. A hidden disk whose number
+    was not read is kept, since nothing then says it is a drive already listed.
+
+    Args:
+        disks: The readings, keyed by interface path, in the order they were read.
+
+    Returns:
+        The same readings without the doubles, in the same order.
+
+    Example:
+        >>> list(without_doubles({"a": {"node": "PhysicalDrive1"}, "b": {"node": "PhysicalDrive1", "hidden": True}}))
+        ['a']
+    """
+    listed = {record["node"] for record in disks.values() if not record.get("hidden") and "node" in record}
+    return {
+        path: dict(record)
+        for path, record in disks.items()
+        if not (record.get("hidden") and record.get("node") in listed)
+    }
 
 
 def devices_accessible(disks: Mapping[str, Mapping[str, Any]]) -> bool:
@@ -1606,6 +1726,7 @@ def read_system(readers: SystemReaders | None = None) -> dict[str, Any]:
 
 
 __all__ = [
+    "DiskInterface",
     "NvmeRefusal",
     "SystemReaders",
     "UsbDeviceFacts",
@@ -1625,4 +1746,5 @@ __all__ = [
     "read_usb_ports",
     "read_volumes_section",
     "sat_passthrough",
+    "without_doubles",
 ]

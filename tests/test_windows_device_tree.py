@@ -31,6 +31,7 @@ from lsdsk.adapters.hw.windows import winapi as api
 from lsdsk.adapters.hw.windows.reader import (
     _MAX_SIBLINGS,  # pyright: ignore[reportPrivateUsage] - this is the seam under test
     _MAX_TREE_DEPTH,  # pyright: ignore[reportPrivateUsage] - this is the seam under test
+    DiskInterface,
     _DeviceTree,  # pyright: ignore[reportPrivateUsage] - this is the seam under test
 )
 from lsdsk.domain.text import MAX_DEVICE_TEXT
@@ -422,7 +423,7 @@ def test_a_disk_interface_list_cut_short_keeps_what_it_read_and_records_where_it
     cfgmgr32 = FakeCfgmgr32(device_ids={1: "DISK\\A", 2: "DISK\\B"})
     tree = _tree(setupapi=setupapi, cfgmgr32=cfgmgr32)
     found = tree.disk_interfaces()
-    assert [path for path, _ in found] == ["\\\\?\\disk0"]
+    assert [interface.path for interface in found] == ["\\\\?\\disk0"]
     assert tree.lists_cut_short == {
         "disk interfaces": f"the list of disk interfaces ended early at entry 2 (Win32 error {ERROR_INVALID_DATA}), "
         "so whatever followed was not read"
@@ -683,7 +684,11 @@ def test_disk_interfaces_pairs_a_path_with_its_ancestor_chain() -> None:
         parents={_DISK: _HUB},
     )
     found = _tree(setupapi=setupapi, cfgmgr32=cfgmgr32).disk_interfaces()
-    assert found == [("\\\\?\\disk0", ["USB\\HUB"])]
+    assert found == [
+        DiskInterface(
+            path="\\\\?\\disk0", ancestors=("USB\\HUB",), instance="DISK\\1", hidden=False, removal_relations=()
+        )
+    ]
 
 
 @pytest.mark.os_agnostic

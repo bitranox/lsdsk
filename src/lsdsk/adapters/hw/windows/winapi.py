@@ -141,6 +141,11 @@ ATA_FLAGS_DATA_IN = 0x02
 # The device interface class for disks, GUID_DEVINTERFACE_DISK.
 GUID_DEVINTERFACE_DISK = "{53f56307-b6bf-11d0-94f2-00a0c91efb8b}"
 
+# The device interface class for disks "not reported through conventional APIs",
+# GUID_DEVINTERFACE_HIDDEN_DISK, from ntddstor.h. A drive in a Storage Spaces pool
+# publishes this one instead of GUID_DEVINTERFACE_DISK (ADR 0007).
+GUID_DEVINTERFACE_HIDDEN_DISK = "{7fccc86c-228a-40ad-8a58-f590af7bfdce}"
+
 # The device interface class for USB hubs, root hubs included, GUID_DEVINTERFACE_USB_HUB.
 GUID_DEVINTERFACE_USB_HUB = "{f18a0e88-c30c-11d0-8815-00a0c906bed8}"
 
@@ -177,9 +182,17 @@ DEVICE_PROP_UINUMBER = 18
 DEVICE_PROP_BUSNUMBER = 23
 DEVICE_PROP_ADDRESS = 30
 
+# The DEVPKEY_Device_*Relations category, from devpkey.h. RemovalRelations lists
+# the devices that go when this one goes: a pooled drive names the Storage Space
+# it backs there.
+DEVICE_RELATIONS_FMTID = "{4340a6c5-93fa-4706-972c-7b648008a5a7}"
+DEVICE_PROP_REMOVAL_RELATIONS = 5
+
 # DEVPROP_TYPE values we handle.
 DEVPROP_TYPE_UINT32 = 0x00000007
 DEVPROP_TYPE_STRING = 0x00000012
+# DEVPROP_TYPE_STRING | DEVPROP_TYPEMOD_LIST (0x2000): a NUL-separated string list.
+DEVPROP_TYPE_STRING_LIST = 0x00002012
 
 
 class GUID(ctypes.Structure):
@@ -716,11 +729,14 @@ __all__ = [
     "DEVICE_PROP_DRIVER",
     "DEVICE_PROP_FRIENDLYNAME",
     "DEVICE_PROP_LOCATION_INFO",
+    "DEVICE_PROP_REMOVAL_RELATIONS",
     "DEVICE_PROP_SERVICE",
     "DEVICE_PROP_UINUMBER",
+    "DEVICE_RELATIONS_FMTID",
     "DEVICE_SEEK_PENALTY_DESCRIPTOR",
     "DEVPROPKEY",
     "DEVPROP_TYPE_STRING",
+    "DEVPROP_TYPE_STRING_LIST",
     "DEVPROP_TYPE_UINT32",
     "DIGCF_ALLCLASSES",
     "DIGCF_DEVICEINTERFACE",
@@ -739,6 +755,7 @@ __all__ = [
     "GENERIC_WRITE",
     "GUID",
     "GUID_DEVINTERFACE_DISK",
+    "GUID_DEVINTERFACE_HIDDEN_DISK",
     "GUID_DEVINTERFACE_USB_HUB",
     "HKEY_LOCAL_MACHINE",
     "INVALID_HANDLE_VALUE",
