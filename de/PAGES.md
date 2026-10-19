@@ -64,7 +64,10 @@ ziehen würden.
 Eine Zeile je Laufwerk, mit der Kennung, die Sie für eine Ersatzbestellung
 brauchen: Modell, WWN, Seriennummer und Firmware, dann Größe, Bus und die drei
 Geschwindigkeiten. `port` ist, was der Steckplatz hergibt, `disk`, was das
-Laufwerk kann, `link`, worauf die beiden sich geeinigt haben. 
+Laufwerk kann, `link`, worauf die beiden sich geeinigt haben. In einem schmalen Fenster gibt die
+Seite Spalten auf wie `lsdsk disks`, zuerst die Kennungsspalten, und behält `device`, `port`,
+`disk` und `link`; sie passt sich neu an, wenn sich das Fenster ändert, und das Detailfeld zeigt
+weiter jedes Feld des Laufwerks unter dem Cursor.
 `size` zeigt die Größe in Dezimal und in Zweierpotenzen.
 Die letzte Spalte, `used by`, zeigt, ob das System von der Platte startet und was sie nutzt: `-`,
 wo das nicht gelesen wurde, `not mounted`, wo gelesen wurde und nichts die Platte nutzt, sonst die

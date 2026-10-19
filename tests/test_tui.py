@@ -706,14 +706,16 @@ class TestTheDiskPageIdentifiesADrive:
     the other two, so it could not answer the question its own finding raises.
     """
 
-    async def _cells(self, node: str) -> list[str]:
-        """Press the key a reader presses, then read the row that appeared."""
+    async def _cells(self, node: str) -> dict[str, str]:
+        """Press the key a reader presses, then read the row that appeared, by the headings drawn."""
         machine = inventory()
         app = LsdskApp(machine)
-        async with app.run_test(size=(200, 60)) as pilot:
+        async with app.run_test(size=(260, 60)) as pilot:
             await pilot.press("3")
             await pilot.pause()
-            return [str(cell) for cell in rows_of(app.query_one("#disk-table")).get_row(node)]
+            table = rows_of(app.query_one("#disk-table"))
+            headings = [str(column.label) for column in table.ordered_columns]
+            return dict(zip(headings, (str(cell) for cell in table.get_row(node)), strict=True))
 
     async def test_the_firmware_revision_is_under_the_firmware_column(self) -> None:
         """Under its own heading, not merely somewhere on the row.
@@ -724,12 +726,12 @@ class TestTheDiskPageIdentifiesADrive:
         """
         disk = next(d for d in inventory().disks if d.firmware)
         cells = await self._cells(disk.node)
-        assert cells[TUI_DISK_COLUMNS.index("firmware")] == disk.firmware
+        assert cells["firmware"] == disk.firmware
 
     async def test_the_serial_is_under_the_serial_column(self) -> None:
         disk = next(d for d in inventory().disks if d.serial)
         cells = await self._cells(disk.node)
-        assert cells[TUI_DISK_COLUMNS.index("serial")] == disk.serial
+        assert cells["serial"] == disk.serial
 
 
 @pytest.mark.os_agnostic
@@ -762,9 +764,17 @@ class TestTheDiskPageKeepsALongIdentifierReachable:
 
     @staticmethod
     def _wwn_cell(app: LsdskApp, node: str) -> str:
-        """The wwn cell of one row, read under its own heading."""
-        row = rows_of(app.query_one("#disk-table")).get_row(node)
-        return str(row[TUI_DISK_COLUMNS.index("wwn")])
+        """The wwn cell of one row, read under its own heading.
+
+        The tests that measure the cut run at 260 columns: the page narrows a
+        flexible column below its ceiling where it is short of room, and the
+        claim here is the ceiling itself.
+        """
+        table = rows_of(app.query_one("#disk-table"))
+        # By the heading the page drew, not by position: the page gives columns
+        # up to fit its width, so a position in the full list names nothing.
+        headings = [str(column.label) for column in table.ordered_columns]
+        return str(table.get_row(node)[headings.index("wwn")])
 
     @staticmethod
     def _strip(app: LsdskApp) -> HorizontalScroll:
@@ -784,7 +794,7 @@ class TestTheDiskPageKeepsALongIdentifierReachable:
         disk = next(d for d in machine.disks if d.wwn and len(d.wwn) > DEFAULT_WWN_WIDTH)
         assert disk.wwn is not None
         app = LsdskApp(machine)
-        async with app.run_test(size=(200, 60)) as pilot:
+        async with app.run_test(size=(260, 60)) as pilot:
             await pilot.press("3")
             await pilot.pause()
             cell = self._wwn_cell(app, disk.node)
@@ -974,7 +984,7 @@ class TestTheDiskPageKeepsALongIdentifierReachable:
         Console(file=buffer, width=400, no_color=True).print(render_disks(machine, (), width=400))
         printed = buffer.getvalue()
         app = LsdskApp(machine)
-        async with app.run_test(size=(200, 60)) as pilot:
+        async with app.run_test(size=(260, 60)) as pilot:
             await pilot.press("3")
             await pilot.pause()
             cell = self._wwn_cell(app, disk.node)

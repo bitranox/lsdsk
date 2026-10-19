@@ -111,18 +111,16 @@ def _marked(row: MarkedRow, columns: Sequence[Column]) -> list[Text]:
     return [_cell(*row.marker), *(_cell(*row.cells[column.key]) for column in columns)]
 
 
-def _disk_cell(cells: Row, column: Column) -> Text:
-    """One disk-page cell, cut to its column's ceiling when it has one.
+def _disk_cell(cells: Row, column: Column, width: int) -> Text:
+    """One disk-page cell, cut to the width the fit gave its column.
 
-    The wwn column is the only one with a ceiling today, but nothing here names
-    it: a value is clipped because its own column carries a ``max_width``, not
-    because of which key it happens to be, so a second column gaining a ceiling
-    would be cut here without this function changing at all.
+    The fit already holds a column to its own ceiling (the wwn column's
+    ``max_width``) and narrows a flexible one where the page is short of room,
+    so the cell is cut to that one figure, with the marked clip the printed
+    table uses: a DataTable column cuts with no mark at all.
     """
     text, style = cells.get(column.key, ("-", theme.STYLE_UNKNOWN))
-    if column.max_width is not None:
-        text = layout.clip(text, column.max_width)
-    return _cell(text, style)
+    return _cell(layout.clip(text, width), style)
 
 
 def fabric_view_for(display: DisplaySettings) -> FabricView:
@@ -243,6 +241,65 @@ class FabricList(OptionList):
         self.post_message(self.Resized(self.scrollable_content_region.width))
 
 
+class DiskTable(DataTable[str]):
+    """The disk page's table, which says when it has a width.
+
+    The page gives columns up to fit, as ``lsdsk disks`` does, so it has to be
+    laid out at the width this widget offers its rows - known only once the
+    layout has run, and again on every resize. The same reason
+    :class:`FabricList` reports its own width.
+    """
+
+    class Resized(Message):
+        """This table has been placed, and its columns can be fitted to it."""
+
+        def __init__(self, width: int) -> None:
+            """Carry the WIDTH rather than the widget, for :class:`FabricList.Resized`'s reason."""
+            super().__init__()
+            self.width = width
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Tell the app to fit the columns again at the width now known."""
+        del event
+        self.post_message(self.Resized(self.scrollable_content_region.width))
+
+
+#: The widest severity marker, which the page draws as its own leading column.
+_DISK_MARKER_WIDTH: Final = max(len(marker) for marker in theme.SEVERITY_MARKERS.values())
+
+
+def disk_page_room(width: int, *, cell_padding: int) -> int:
+    """The width a disk row's columns may take on a page ``width`` cells wide.
+
+    A DataTable pads every column by ``cell_padding`` on each side, where the
+    printed layout counts one :data:`~lsdsk.adapters.render.layout.GAP` between
+    columns. With the two equal, a row of n columns costs the page
+    ``marker + 2p + sum(w) + 2p*n`` against the layout's ``sum(w) + gap*(n - 1)``,
+    so the difference is the marker column, its padding and one gap, whatever
+    n the fit settles on. Any other padding makes that difference depend on n,
+    which is decided by this very figure, so it is refused rather than guessed.
+
+    Args:
+        width: The cells the table offers its rows.
+        cell_padding: The table's padding on each side of a column.
+
+    Returns:
+        The ``room`` to fit the columns to, never below zero.
+
+    Raises:
+        ValueError: The padding is not half the gap the layout counts.
+
+    Example:
+        >>> disk_page_room(100, cell_padding=1)
+        94
+    """
+    gap = len(layout.GAP)
+    if 2 * cell_padding != gap:
+        msg = f"a cell padding of {cell_padding} does not match the layout's {gap}-cell gap"
+        raise ValueError(msg)
+    return max(width - (_DISK_MARKER_WIDTH + 2 * cell_padding + gap), 0)
+
+
 class LsdskApp(App[None]):
     """The lsdsk terminal application."""
 
@@ -277,6 +334,10 @@ class LsdskApp(App[None]):
        the width the fill is drawn at, whether the bar is needed or not. */
     #tree-lines { height: 1fr; width: 1fr; padding: 0; border: none; background: $surface; }
     #tree-lines { scrollbar-gutter: stable; }
+    /* The disk page fits its columns to the width the table offers, so that
+       width must not change when enough drives bring a scrollbar: stable for
+       the reason #tree-lines is. */
+    #disk-table { scrollbar-gutter: stable; }
     #tree-fallback { height: 1fr; width: 1fr; }
     /* Nothing in this view is dimmed. A repeated column header is an option the
        cursor must skip, so it is disabled, and Textual draws a disabled option
@@ -395,6 +456,7 @@ class LsdskApp(App[None]):
         #: The width the lines in hand were laid out at, so a resize that did
         #: not actually change it costs nothing and cannot loop.
         self._tree_width_used = 0
+        self._disk_width_used = 0
         #: Where the topology cursor was left, for the same reason every table's
         #: row is remembered: coming back to the page raises no highlight.
         self._tree_highlighted: int | None = None
@@ -424,7 +486,7 @@ class LsdskApp(App[None]):
                 yield DataTable[str](id="controller-table", zebra_stripes=True, cursor_type="row")
                 yield Static(id="controller-legend")
             with TabPane("Disks", id=CliCommand.DISKS.value), Vertical():
-                yield DataTable[str](id="disk-table", zebra_stripes=True, cursor_type="row")
+                yield DiskTable(id="disk-table", zebra_stripes=True, cursor_type="row")
                 # A clipped cell has to stay reachable, and a DataTable cell
                 # cannot hold a widget, so the whole identifier of the drive
                 # under the cursor lives here. The strip is exactly as wide as
@@ -647,46 +709,81 @@ class LsdskApp(App[None]):
         legend.display = bool(text)
 
     def _fill_disks(self) -> None:
-        """Populate the disk page."""
-        table = rows_of(self.query_one("#disk-table"))
-        table.add_columns(*DISK_COLUMNS)
+        """Populate the disk page, with the columns that fit the width it offers.
+
+        Fitted by the printed table's own step (:func:`tables.fit_rows`) over the
+        printed table's own rows, so the page and ``lsdsk disks`` give columns up
+        in one order: the link figures' bandwidth first, then the identity
+        columns by priority, while ``device``, ``port``, ``disk`` and ``link`` -
+        what the page is for - stay. Nothing a dropped column held is lost: the
+        detail panel carries every identity field of the drive under the cursor.
+        Refilled from :meth:`on_disk_table_resized` when the width changes.
+        """
+        widget = self.query_one("#disk-table", DiskTable)
+        table = rows_of(widget)
+        cursor = table.cursor_row
+        table.clear(columns=True)
         # Sized here rather than in the stylesheet so the strip and the clip read
         # one number. A literal in the CSS would be a second copy, free to drift
         # from the width the cell was cut to and quietly turn "the control
         # appears when something was hidden" into a near-miss either way.
-        width = self.display_settings.wwn_width
-        self.query_one("#wwn-strip", HorizontalScroll).styles.width = width
+        wwn_width = self.display_settings.wwn_width
+        self.query_one("#wwn-strip", HorizontalScroll).styles.width = wwn_width
         self._wwn_of = {}
         self._disk_of = {}
+        expand = self.display_settings.expand_virtual
+        listed = (*self.inventory.disks, *self.inventory.virtual_disks) if expand else self.inventory.disks
+        rows = tables.disk_table_rows(self.inventory, self.findings, expand_virtual=expand)
+        self._disk_width_used = self._disk_table_width()
+        room = disk_page_room(self._disk_width_used, cell_padding=widget.cell_padding)
         # The wwn ceiling lives on the column, exactly as the printed table
         # reads it, so the two views cannot cut a wwn in two different places.
-        columns = tables.disk_columns(width)
-        listed = (
-            (*self.inventory.disks, *self.inventory.virtual_disks)
-            if self.display_settings.expand_virtual
-            else self.inventory.disks
-        )
-        # Graded once for the page, never per row: a lookup per row walks every
-        # finding for every drive, so the page cost its drives times its findings.
-        severities = report.severity_index(self.findings)
-        drawn: list[str] = []
-        for disk in listed:
-            port = self.inventory.port_link_for(disk)
-            cells = tables.disk_table_row(disk, port, bandwidth=True)
-            drawn.extend(cells[column.key][0] for column in columns)
-            severity = severities.get(disk.path)
+        fitted = tables.fit_rows(tables.disk_columns(wwn_width), rows, room, room=room)
+        drawn = rows.rich if fitted.bandwidth or rows.plain is None else rows.plain
+        table.add_column("")
+        for column in fitted.columns:
+            table.add_column(layout.clip(column.title, fitted.widths[column.key]))
+        texts: list[str] = []
+        for disk, row in zip(listed, drawn, strict=True):
+            texts.extend(row.cells[column.key][0] for column in fitted.columns if column.key in row.cells)
             table.add_row(
-                _cell(theme.marker_for(severity), theme.style_for(severity)),
-                *(_disk_cell(cells, column) for column in columns),
+                _cell(*row.marker),
+                *(_disk_cell(row.cells, column, fitted.widths[column.key]) for column in fitted.columns),
                 key=disk.node,
             )
             self._wwn_of[disk.node] = disk.wwn
             self._disk_of[disk.node] = disk
-        self._explain_marks("#disk-legend", drawn)
-        # The cursor starts on the first row without raising anything a handler
-        # would see on a rescan, so the strip is set from here rather than left
-        # holding the previous scan's answer.
-        self._show_wwn(next(iter(self._wwn_of.values()), None))
+        self._explain_marks("#disk-legend", texts)
+        # The cursor stays on the drive it was on through a refit; the first fill
+        # starts on the first row without raising anything a handler would see on
+        # a rescan, so the strip is set from here rather than left holding the
+        # previous scan's answer.
+        if listed and cursor:
+            table.move_cursor(row=min(cursor, len(listed) - 1))
+        shown = listed[min(cursor, len(listed) - 1)] if listed else None
+        self._show_wwn(None if shown is None else shown.wwn)
+
+    def _disk_table_width(self) -> int:
+        """Cells the disk table offers its rows, or the window's width before the first layout.
+
+        ``scrollable_content_region`` for :meth:`_tree_width`'s reason, and the
+        same fallback: before the layout runs the region is empty, and the
+        resize that follows fits the page again.
+        """
+        width = self.query_one("#disk-table", DiskTable).scrollable_content_region.width
+        return width if width > 0 else self.size.width
+
+    def on_disk_table_resized(self, event: DiskTable.Resized) -> None:
+        """Fit the disk page again for the width the table now offers.
+
+        Terminates as :meth:`on_fabric_list_resized` does: the second fill
+        changes no width, because the gutter is reserved whether or not the bar
+        is shown. Looked for rather than demanded, because this can arrive after
+        the screen has been torn down.
+        """
+        if not self.query("#disk-table") or event.width == self._disk_width_used:
+            return
+        self._fill_disks()
 
     def _show_wwn(self, value: str | None) -> None:
         """Put one drive's whole identifier in the strip, wound back to its start.

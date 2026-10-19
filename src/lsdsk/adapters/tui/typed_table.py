@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, cast
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from rich.text import Text
     from textual.widget import Widget
@@ -41,7 +41,20 @@ class RowTable(Protocol):
     @property
     def columns(self) -> Mapping[object, ColumnLike]: ...
 
+    # Left to right as drawn. The disk page draws only the columns that fit, so a
+    # cell is found by the heading above it rather than by a position in a list.
+    @property
+    def ordered_columns(self) -> Sequence[ColumnLike]: ...
+
     def add_columns(self, *labels: str) -> object: ...
+
+    def add_column(self, label: str) -> object: ...
+
+    # The disk page refits on every resize, and a refit keeps the reader's row.
+    @property
+    def cursor_row(self) -> int: ...
+
+    def move_cursor(self, *, row: int) -> object: ...
 
     def add_row(self, *cells: Text, key: str | None = None) -> object: ...
 

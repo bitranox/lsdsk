@@ -5,6 +5,13 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- The interactive disk page fits its columns to the window as `lsdsk disks` fits them to a terminal,
+  through the same fitting code: the link figures' bandwidth goes first, then the identity columns
+  by priority, while `device`, `port`, `disk` and `link` stay. It fits again when the window
+  changes. Below about 130 columns `disk` and `link` used to sit off the right edge.
+
 ### Added
 
 - A SATA or SAS drive whose port capability was not read, but whose link runs at the drive's own

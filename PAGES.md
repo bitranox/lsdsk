@@ -60,7 +60,10 @@ how many are free, and what the drives on it would pull together.
 
 One row per drive, with the identity you need to order a replacement: model, WWN, serial and
 firmware, then size, bus and the three speeds. `port` is what the seat can give, `disk` what the
-drive can do, `link` what the two of them agreed on.
+drive can do, `link` what the two of them agreed on. In a narrow window the page gives columns up
+as `lsdsk disks` does, the identity columns first, and keeps `device`, `port`, `disk` and `link`; it
+fits again when the window changes, and the detail panel still carries every field of the drive
+under the cursor.
 `size` gives the capacity in decimal and in powers of two.
 The last column, `used by`, says whether the machine boots from the disk and what uses it: `-`
 where that was not read, `not mounted` where it was read and nothing uses the disk, otherwise the

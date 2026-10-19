@@ -203,10 +203,32 @@ def _fitted(columns: Sequence[Column], rows: TableRows, width: int) -> tuple[Lay
     ``Gen3`` and a mark where a link figure stood.
     """
     room = width + (_TABLE_SLACK if rows.marked else _UNMARKED_SLACK)
+    layout = fit_rows(columns, rows, width, room=room)
+    return layout, rows.rich if layout.bandwidth or rows.plain is None else rows.plain
+
+
+def fit_rows(columns: Sequence[Column], rows: TableRows, width: int, *, room: int) -> Layout:
+    """The columns a table keeps at a width, and whether its link figures keep their bandwidth.
+
+    The one fitting step every view of a table takes, the printed table and the
+    interactive page alike, so a page and the command of one name give columns
+    up in one order: the bandwidth first, then whole columns by priority, then
+    the cut to one line.
+
+    Args:
+        columns: Every column the table could show.
+        rows: The rows, in one or both forms.
+        width: The width the columns are fitted to.
+        room: The width one row may take once fitted, which differs from
+            ``width`` by whatever the view draws around the columns.
+
+    Returns:
+        The layout, whose ``bandwidth`` says which form of the rows it measured.
+    """
     if rows.plain is None:
-        return Layout.for_rows(columns, rows.texts(bandwidth=True), width).on_one_line(room), rows.rich
+        return Layout.for_rows(columns, rows.texts(bandwidth=True), width).on_one_line(room)
     layout = Layout.preferring(columns, rows.texts(bandwidth=True), rows.texts(bandwidth=False), width)
-    return layout.on_one_line(room), rows.rich if layout.bandwidth else rows.plain
+    return layout.on_one_line(room)
 
 
 def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, caption: str = "") -> Table:
@@ -472,6 +494,25 @@ def render_disks(
     Returns:
         A table of disks.
     """
+    caption = "" if expand_virtual else virtual_note(inventory.virtual_disks)
+    rows = disk_table_rows(inventory, findings, expand_virtual=expand_virtual)
+    return _render(f"Disks on {inventory.hostname}", disk_columns(wwn_width), rows, width, caption)
+
+
+def disk_table_rows(inventory: Inventory, findings: Sequence[Finding], *, expand_virtual: bool) -> TableRows:
+    """Every listed disk's row, marked by its severity, in both forms.
+
+    Built here for the printed table and the interactive page alike, so the two
+    measure and draw the same rows.
+
+    Args:
+        inventory: The machine.
+        findings: The findings, used to mark affected rows.
+        expand_virtual: Give every kernel-virtual device a row of its own.
+
+    Returns:
+        The rows with their link figures' bandwidth, and the same rows without it.
+    """
     rows: list[MarkedRow] = []
     plain: list[MarkedRow] = []
     listed = (*inventory.disks, *inventory.virtual_disks) if expand_virtual else inventory.disks
@@ -485,8 +526,7 @@ def render_disks(
         marker = (theme.marker_for(severity), theme.style_for(severity))
         rows.append(MarkedRow(marker=marker, cells=disk_table_row(disk, port, bandwidth=True)))
         plain.append(MarkedRow(marker=marker, cells=disk_table_row(disk, port)))
-    caption = "" if expand_virtual else virtual_note(inventory.virtual_disks)
-    return _render(f"Disks on {inventory.hostname}", disk_columns(wwn_width), TableRows(rows, plain), width, caption)
+    return TableRows(rows, plain)
 
 
 def _filesystem_cell(text: str | None, *, marker: str = theme.NOT_READ) -> theme.Cell:
@@ -897,10 +937,12 @@ __all__ = [
     "counter_text",
     "disk_columns",
     "disk_table_row",
+    "disk_table_rows",
     "filesystem_legend_for",
     "filesystem_marked_row",
     "filesystem_refusals_note",
     "filesystem_table_row",
+    "fit_rows",
     "health_table_row",
     "render_controllers",
     "render_disks",
