@@ -41,6 +41,8 @@ from ..decode.virtualization import VirtualizationEvidence
 # they are real readings of a machine this tool simply has nothing to say about.
 # STORAGE_BUS_TYPE 0x0F: a mounted VHD, VHDX or ISO file rather than a drive.
 _IMAGE_FILE_TRANSPORT = "file-backed virtual"
+# STORAGE_BUS_TYPE 0x10: a Storage Spaces virtual disk, built from drives Windows hides.
+_STORAGE_SPACE_TRANSPORT = "spaces"
 _BUS_TYPES: dict[str, BusType] = {
     "sata": BusType.SATA,
     "ata": BusType.SATA,
@@ -51,7 +53,7 @@ _BUS_TYPES: dict[str, BusType] = {
     "usb": BusType.USB,
     "virtual": BusType.VIRTUAL,
     _IMAGE_FILE_TRANSPORT: BusType.VIRTUAL,
-    "spaces": BusType.VIRTUAL,
+    _STORAGE_SPACE_TRANSPORT: BusType.VIRTUAL,
 }
 
 
@@ -210,6 +212,22 @@ class StorageDescriptor(CaptureModel, frozen=True):
             False
         """
         return self.transport == _IMAGE_FILE_TRANSPORT
+
+    @property
+    def is_storage_space(self) -> bool:
+        """Whether Windows names this disk a Storage Spaces virtual disk: STORAGE_BUS_TYPE 0x10.
+
+        The pool's own drives leave the disk enumeration while pooled, so none
+        of them is asked for its health; the Space itself refuses a drive's
+        commands, having none of its own to answer.
+
+        Example:
+            >>> StorageDescriptor.model_validate({"bus_type": "spaces"}).is_storage_space
+            True
+            >>> StorageDescriptor.model_validate({"bus_type": "virtual"}).is_storage_space
+            False
+        """
+        return self.transport == _STORAGE_SPACE_TRANSPORT
 
 
 class DiskTemperature(CaptureModel, frozen=True):

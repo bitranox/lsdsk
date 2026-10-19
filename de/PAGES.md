@@ -73,8 +73,9 @@ Die letzte Spalte, `used by`, zeigt, ob das System von der Platte startet und wa
 wo das nicht gelesen wurde, `not mounted`, wo gelesen wurde und nichts die Platte nutzt, sonst die
 Startmarkierung und die Einhängepunkte, den Pool oder die Struktur, zu der sie gehört, etwa
 `boot zfs:rpool` oder `lvm:vg0 -> /var`. `not mounted` heißt nicht, dass die Platte gefahrlos
-gelöscht werden kann: Eine an eine virtuelle Maschine durchgereichte Platte, ein Mitglied von
-Speicherplätzen (Storage Spaces) oder ein exportierter ZFS-Pool kann es ebenso zeigen. Siehe
+gelöscht werden kann: Eine an eine virtuelle Maschine durchgereichte Platte oder ein exportierter
+ZFS-Pool kann es ebenso zeigen. Ein Laufwerk in einem Windows-Storage-Spaces-Pool (Speicherplätze)
+erscheint gar nicht, solange es im Pool ist. Siehe
 [FINDINGS.md](FINDINGS.md#was-eine-platte-nutzt-und-was-not-mounted-bedeutet) für die genauen
 Bedingungen, unter denen `not mounted` gilt und wann stattdessen `-` steht.
 

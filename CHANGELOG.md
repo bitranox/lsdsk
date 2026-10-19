@@ -15,6 +15,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- On Windows, a Storage Spaces virtual disk now names the gap it really leaves. Windows hides the
+  drives in a pool from the disk list, so none of them is asked for its health, and the scan
+  used to report that only as the virtual disk refusing IDENTIFY and SMART, three lines that blamed
+  the wrong device. It now carries one `pool-members` refusal saying the pool's drives went unread.
+  The scan still reports incomplete, because it is.
 - On Linux, every member of a btrfs filesystem spanning several disks now shows its mount under
   `used by`, and the filesystems section lists all of its disks. mountinfo names only one member,
   so the others used to read `-` and were missing from the filesystem's row. The members are read

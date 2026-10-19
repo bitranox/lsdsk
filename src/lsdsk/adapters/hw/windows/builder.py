@@ -642,7 +642,9 @@ def _refusals_for(entry: DiskEntry, record: HealthBlobs) -> tuple[RefusedReading
     A mounted image file is asked for its health like any disk, and the capture
     keeps what it answered, but it has no identity or SMART to withhold: like an
     AHCI controller with no register region, the scan is not incomplete for it,
-    so its health refusals are not named. Keyed on the transport Windows named
+    so its health refusals are not named. A Storage Space names one
+    ``pool-members`` refusal in their place, because the drives it is built
+    from were never asked. Both are keyed on the transport Windows named
     rather than on the error text, which a real drive behind a controller that
     blocks passthrough also gives.
 
@@ -665,9 +667,29 @@ def _refusals_for(entry: DiskEntry, record: HealthBlobs) -> tuple[RefusedReading
             "device": entry.error,
             "usb-link": entry.usb_link_error,
             "device-number": entry.device_number_error,
-            **({} if entry.device.is_image_file else health),
+            **_health_refusals(entry, health),
         }
     )
+
+
+#: Why a Storage Spaces disk leaves the scan incomplete. Its own refusals say only that a
+#: virtual disk declined a drive's commands; what went unread is the pool's drives.
+_STORAGE_SPACE_MEMBERS_REASON = "Windows hides the drives in a Storage Spaces pool, so their health was not read"
+
+
+def _health_refusals(entry: DiskEntry, health: dict[str, str | None]) -> dict[str, str | None]:
+    """The health refusals a disk is reported with, by the transport Windows named.
+
+    A mounted image file has no health to withhold, so it reports none. A
+    Storage Space reports one ``pool-members`` refusal in place of its own: the
+    scan stays incomplete, because none of the pool's drives was read, but the
+    reason names that gap rather than the virtual disk's refusal.
+    """
+    if entry.device.is_image_file:
+        return {}
+    if entry.device.is_storage_space:
+        return {"pool-members": _STORAGE_SPACE_MEMBERS_REASON}
+    return health
 
 
 def _node_name(entry: DiskEntry, path: str) -> str:
