@@ -994,7 +994,7 @@ wheels = [
 
 [[package]]
 name = "lib-log-rich"
-version = "6.5.4"
+version = "6.5.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lib-cli-exit-tools" },
@@ -1004,9 +1004,9 @@ dependencies = [
     { name = "rich" },
     { name = "rich-click" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/de/b6/5249a89d4267e1205a94e8df3ff1b2cced95f0ac1f85b8260d6995e547b1/lib_log_rich-6.5.4.tar.gz", hash = "sha256:059146334194e52f839d0111ed18006011988ffe94c68198a80369c5e3961a60", size = 324309, upload-time = "2026-10-19T15:31:18.302Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fc/bb/4479b5021694a6624c03e2d139e61fdda2490f341ea4a09888bfafe5084b/lib_log_rich-6.5.5.tar.gz", hash = "sha256:eb1d5a38d7491b5ed4ec90d34144a849c00d8abe52ffff2d996e66620c54120f", size = 324768, upload-time = "2026-10-19T17:55:35.758Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/48/8f/ad6e21df9b37d9d7fa5f4ef7fcd31213808e094bee45b221cf50c83b80e8/lib_log_rich-6.5.4-py3-none-any.whl", hash = "sha256:3fb9c7f4990416a2e2f7e5eaf56dcf490c0985ab5a06c0bca6d778a26f2db2d9", size = 208062, upload-time = "2026-10-19T15:31:16.694Z" },
+    { url = "https://files.pythonhosted.org/packages/27/44/49e4066b7b5ee6d1c13ccdae5f7d8dde7b06d10f1bf5ec3985eef6efa3ab/lib_log_rich-6.5.5-py3-none-any.whl", hash = "sha256:2e76a41306ea0b10940a525673313fc74b8c22b6cf8df78d5b3ddbecf079bb5f", size = 208110, upload-time = "2026-10-19T17:55:34.43Z" },
 ]
 
 [[package]]
@@ -1098,7 +1098,7 @@ requires-dist = [
     { name = "jaraco-context", marker = "extra == 'dev'", specifier = ">=6.1.2" },
     { name = "lib-cli-exit-tools", specifier = ">=2.4.1" },
     { name = "lib-layered-config", specifier = ">=7.2.0" },
-    { name = "lib-log-rich", specifier = ">=6.5.4" },
+    { name = "lib-log-rich", specifier = ">=6.5.5" },
     { name = "orjson", specifier = ">=3.13.0" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.10.1" },
     { name = "pwshpy", specifier = ">=1.5.0" },
