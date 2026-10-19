@@ -134,7 +134,7 @@ linux-sas-hba   2 root complexes (0000:00, 0000:ff)   root ports to PCIe Gen3x8 
      ├─┬── 0000:00:03.0  Gen3x8 (7.88 GB/s)     Gen3x8 (7.88 GB/s)     Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 >
 ~    │ └── 0000:03:00.0  Gen4x8 (15.75 GB/s)    Gen3x8 (7.88 GB/s)     Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS>
      │     device        model                         size  kind  bus   port    disk    link    temp  worn
-~    │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  -       6G      6G       36C    1%
+~    │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  >= 6G   6G      6G       36C    1%
 ```
 
 **The first line is the BOARD, not a bus.** It names the board where DMI gave a
@@ -955,7 +955,13 @@ splits them by transport: a SATA or SAS drive carries `link.negotiated_gbps`,
 an NVMe drive leaves that triple null and carries `pcie` instead, whose
 `current_speed_gtps` and `max_speed_gtps` are GT/s where 2.5=Gen1, 5=Gen2,
 8=Gen3, 16=Gen4, 32=Gen5, 64=Gen6. Reading a SATA 6.0 as GT/s yields a
-generation that does not exist. Compare them to find the constraint. An orange `disk` means the drive cannot use its port, a placement
+generation that does not exist. Compare them to find the constraint. A `port`
+reading `>= 6G` was not read, but the link runs at the drive's own maximum, so
+the seat supports at least that and is not what holds the drive back; the line
+`>= at least: proven by the running link` under the table says so. The JSON
+keeps `link.port_max_gbps` null there, so a JSON reader infers the same bound
+from `negotiated_gbps` equal to `drive_max_gbps`. No finding rests on the bound:
+it cannot say whether a faster seat exists. An orange `disk` means the drive cannot use its port, a placement
 question rather than a fault; a red `link` means both ends could have gone
 faster, which is a real one. A **yellow `link`** is a shortfall with only ONE end
 measured: real, but not yet attributable, so establish what the port can carry

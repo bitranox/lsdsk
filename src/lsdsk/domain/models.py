@@ -1010,6 +1010,32 @@ class InterfaceLink(DomainModel, frozen=True):
         return min(self.drive_max_gbps, self.port_max_gbps)
 
     @property
+    def port_floor_gbps(self) -> float | None:
+        """What the unread port provably supports, being the drive's maximum it runs at.
+
+        A link that trained at the drive's own maximum sits in a port that
+        supports at least that rate, so where the port end was never read half
+        of it is still known. Only that case: a link running below the drive's
+        maximum may be held back by the port, so it bounds the port by nothing
+        the running figure does not already say.
+
+        For DRAWING only. No rule reads it, because the rules ask whether a
+        better rate was available and a floor cannot answer that - rule 3 keeps
+        :attr:`achievable_gbps` and :attr:`port_max_gbps` two-ended.
+
+        Example:
+            >>> InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0).port_floor_gbps
+            6.0
+            >>> InterfaceLink(negotiated_gbps=3.0, drive_max_gbps=6.0).port_floor_gbps is None
+            True
+            >>> InterfaceLink(negotiated_gbps=6.0, drive_max_gbps=6.0, port_max_gbps=6.0).port_floor_gbps is None
+            True
+        """
+        if self.port_max_gbps is not None or self.negotiated_gbps is None or self.drive_max_gbps is None:
+            return None
+        return self.negotiated_gbps if self.negotiated_gbps == self.drive_max_gbps else None
+
+    @property
     def is_underperforming(self) -> bool:
         """Whether the link provably runs below what both ends could manage.
 

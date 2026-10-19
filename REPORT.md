@@ -36,8 +36,8 @@ linux-sas-hba   2 root complexes (0000:00, 0000:ff)   root ports to PCIe Gen3x8 
      ├─┬── 0000:00:03.0  Gen3x8 (7.88 GB/s)     Gen3x8 (7.88 GB/s)     Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 PCI Express Ro>
 ~    │ └── 0000:03:00.0  Gen4x8 (15.75 GB/s)    Gen3x8 (7.88 GB/s)     Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS38xx
      │     device        model                         size  kind  bus   port    disk    link    temp  worn
-~    │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  -       6G      6G       36C    1%
-~    │     /dev/sdb      Samsung SSD 870 EVO 500GB   466GiB  SSD   SATA  -       6G      6G       30C    2%
+~    │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  >= 6G   6G      6G       36C    1%
+~    │     /dev/sdb      Samsung SSD 870 EVO 500GB   466GiB  SSD   SATA  >= 6G   6G      6G       30C    2%
      │     ...
 
 Controllers on linux-sas-hba        ...
@@ -58,7 +58,10 @@ Three speeds per drive, because they answer different questions. `port` is what
 the seat can give, `disk` is what the drive can do, and `link` is what the two
 of them actually agreed on. An orange `disk` means the drive cannot use the port
 it occupies, which is a placement question. A red `link` means both ends could
-have gone faster and did not, which is a fault.
+have gone faster and did not, which is a fault. Where nobody could read what the
+port can give, but the link runs at the drive's own maximum, `port` reads
+`>= 6G`: the running link proves the port can do at least that much, and a line
+under the table says so. It is never used to judge the link.
 
 The filesystems section follows the disks and says how full each filesystem on those disks is and how
 scattered its free space is (`frag`); `lsdsk filesystems` prints it alone.

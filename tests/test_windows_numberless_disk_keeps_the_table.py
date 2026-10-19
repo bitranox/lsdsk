@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
+from lsdsk.adapters.render import theme
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -88,7 +90,9 @@ def test_no_row_of_a_numberless_machine_runs_past_the_page(
 
     output = _disks(capture, cli_runner, production_factory, width=width)
 
-    table = output.split("\n\n", 1)[0].splitlines()
+    # The caption under the rows explains the `>= 6G` floor this capture's SATA drive carries;
+    # it is a line of prose, not a row, so it is set aside before the rows are counted.
+    table = [line for line in output.split("\n\n", 1)[0].splitlines() if line.strip() != theme.AT_LEAST_LEGEND]
     assert len(table) == 5, "the title, the header and three disks"
     assert max(len(line.rstrip()) for line in table) <= width
     # The prose under the table is laid out by the same console, so it wraps at the same width.

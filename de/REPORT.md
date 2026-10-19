@@ -36,8 +36,8 @@ linux-sas-hba   2 root complexes (0000:00, 0000:ff)   root ports to PCIe Gen3x8 
      ├─┬── 0000:00:03.0  Gen3x8 (7.88 GB/s)     Gen3x8 (7.88 GB/s)     Intel Corporation Xeon E7 v2/Xeon E5 v2/Core i7 PCI Express Ro>
 ~    │ └── 0000:03:00.0  Gen4x8 (15.75 GB/s)    Gen3x8 (7.88 GB/s)     Broadcom / LSI Fusion-MPT 12GSAS/PCIe Secure SAS38xx
      │     device        model                         size  kind  bus   port    disk    link    temp  worn
-~    │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  -       6G      6G       36C    1%
-~    │     /dev/sdb      Samsung SSD 870 EVO 500GB   466GiB  SSD   SATA  -       6G      6G       30C    2%
+~    │     /dev/sda      Samsung SSD 870 EVO 4TB     3.6TiB  SSD   SATA  >= 6G   6G      6G       36C    1%
+~    │     /dev/sdb      Samsung SSD 870 EVO 500GB   466GiB  SSD   SATA  >= 6G   6G      6G       30C    2%
      │     ...
 
 Controllers on linux-sas-hba        ...
@@ -59,7 +59,11 @@ Drei Geschwindigkeiten pro Laufwerk, weil sie verschiedene Fragen beantworten.
 `link`, worauf die beiden sich tatsächlich geeinigt haben. Ein oranges `disk`
 heißt, dass das Laufwerk den Anschluss nicht ausnutzen kann, den es belegt: eine
 Frage der Bestückung. Ein rotes `link` heißt, dass beide Enden schneller
-gekonnt hätten und es nicht getan haben: ein Fehler.
+gekonnt hätten und es nicht getan haben: ein Fehler. Wo niemand lesen konnte,
+was der Anschluss hergibt, der Link aber mit dem Höchstwert des Laufwerks läuft,
+steht in `port` `>= 6G`: Der laufende Link beweist, dass der Anschluss mindestens
+so viel kann, und eine Zeile unter der Tabelle sagt das. Bewertet wird der Link
+damit nie.
 
 Der Abschnitt Filesystems folgt auf die Laufwerke und sagt, wie voll jedes Dateisystem auf diesen
 Laufwerken ist und wie zerstückelt sein freier Platz ist (`frag`); `lsdsk filesystems` gibt ihn allein aus.

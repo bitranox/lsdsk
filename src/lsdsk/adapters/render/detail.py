@@ -59,6 +59,7 @@ if TYPE_CHECKING:
         Finding,
         FreeSpace,
         Health,
+        InterfaceLink,
         Inventory,
         PcieLink,
         PcieSlot,
@@ -151,6 +152,7 @@ _MARKER_MEANINGS: Final[dict[str, str]] = {
     theme.NOT_READ: UNREAD_LEGEND,
     theme.NOT_APPLICABLE: NOT_APPLICABLE_LEGEND,
     theme.AT_MOST: AT_MOST_LEGEND,
+    theme.AT_LEAST: theme.AT_LEAST_LEGEND,
     theme.NO_LINK: NO_LINK_LEGEND,
     theme.REGISTER_DEFAULT: REGISTER_DEFAULT_LEGEND,
 }
@@ -159,7 +161,7 @@ _MARKER_MEANINGS: Final[dict[str, str]] = {
 #: the front of a cell instead of being the whole of it. Kept as a set of the
 #: tokens themselves: a fourth marker of either kind is one edit, and putting a
 #: qualifier in the wrong set makes its legend silently stop appearing.
-_PREFIX_MARKERS: Final[frozenset[str]] = frozenset({theme.AT_MOST})
+_PREFIX_MARKERS: Final[frozenset[str]] = frozenset({theme.AT_MOST, theme.AT_LEAST})
 
 #: The counters an ATA drive publishes as numbered SMART attributes. NVMe has no
 #: attribute table at all - it publishes one fixed log page - so no reading of
@@ -604,9 +606,20 @@ def _disk_link_values(disk: Disk, row: dict[str, Cell], port: PcieLink | None) -
     elif disk.usb is not None:
         achievable = (usb_speed_text(disk.usb.achievable, bandwidth=True), "")
     else:
-        achievable = (serial_speed(disk.link.achievable_gbps, bandwidth=True), "")
+        achievable = (serial_speed(_serial_achievable(disk.link), bandwidth=True), "")
     shared = (("port", row["port"]), ("drive", row["disk"]), ("negotiated", row["link"]), ("achievable", achievable))
     return (*shared, *_usb_values(disk))
+
+
+def _serial_achievable(link: InterfaceLink) -> float | None:
+    """What the pairing manages: both ends' minimum, or the drive's maximum the link proves.
+
+    Where the link runs at the drive's own maximum the port supports at least
+    that, so the lower of the two ends IS the drive's figure - an exact value,
+    drawn plain rather than as a bound, because the drive caps it from above.
+    """
+    achievable = link.achievable_gbps
+    return link.port_floor_gbps if achievable is None else achievable
 
 
 def _usb_values(disk: Disk) -> tuple[tuple[str, Cell], ...]:

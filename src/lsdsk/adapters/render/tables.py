@@ -225,18 +225,19 @@ def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, 
         columns: Every column this view could show.
         rows: The rows, in one or both forms.
         width: Terminal width.
-        caption: A note under the table. The legend for a register-default
-            mark is added to it here, where the columns that survived the
-            width are known.
+        caption: A note under the table. The legend for a qualifying mark is
+            added to it here, where the columns that survived the width are
+            known.
     """
     layout, drawn = _fitted(columns, rows, width)
     widths = layout.widths
     chosen = layout.columns
-    # A register-default mark is explained under the table that drew it, and
-    # only when a column holding one survived the width: a legend for a mark
-    # nobody has on screen is noise. Nothing else is added, so the dash these
-    # tables have always drawn does not grow a legend on every machine's page.
-    marked = theme.register_default_legend(
+    # A qualifying mark - a register default, a floor - is explained under the
+    # table that drew it, and only when a column holding one survived the
+    # width: a legend for a mark nobody has on screen is noise. Nothing else is
+    # added, so the dash these tables have always drawn does not grow a legend
+    # on every machine's page.
+    marked = theme.mark_legends(
         row.cells[column.key][0] for row in drawn for column in chosen if column.key in row.cells
     )
     caption = "\n".join(part for part in (caption, marked) if part)

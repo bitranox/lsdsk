@@ -61,6 +61,7 @@ from .report import (
     VIRTUAL_HEADING,
     disk_cells,
     disk_row,
+    mark_legend_of,
     render_controller_disks,
     severity_index,
     virtual_note,
@@ -947,7 +948,25 @@ def fabric_lines(
         FabricLine(line, None)
         for line in _virtual_block(fabric, inventory, severities, layout, expand_virtual=view.expand_virtual)
     ]
+    out += _disk_mark_legend(fabric, inventory, layout, expand_virtual=view.expand_virtual)
     return tuple(out)
+
+
+def _disk_mark_legend(
+    fabric: Fabric, inventory: Inventory, layout: Layout, *, expand_virtual: bool
+) -> list[FabricLine]:
+    """The legend for a qualifying mark a disk row drew, under the section, or nothing.
+
+    The hop legend at the top explains the DEVICE columns; a disk's port cell
+    is a column of the disk rows, so its mark is explained where those rows end.
+    """
+    listed = (*inventory.disks, *inventory.virtual_disks) if expand_virtual else inventory.disks
+    rows = [
+        disk_cells(disk, inventory.port_link_for(disk), bandwidth=layout.bandwidth, thresholds=fabric.thresholds)
+        for disk in listed
+    ]
+    legend = mark_legend_of(rows, layout)
+    return [FabricLine(Text(""), None), FabricLine(Text(legend, style=theme.STYLE_UNKNOWN), None)] if legend else []
 
 
 def _fabric_head(inventory: Inventory, fabric: Fabric, view: FabricView) -> list[FabricLine]:

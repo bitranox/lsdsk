@@ -894,6 +894,17 @@ NOT_APPLICABLE = "n/a"
 #: needs a fallback for it. Whichever markers a panel drew are named under it.
 AT_MOST = "<="
 
+#: What a figure carries when it is a FLOOR rather than a measurement: the
+#: port end of a serial link was never read, but the link runs at the drive's
+#: own maximum, so the port provably supports at least that. The mirror of
+#: :data:`AT_MOST`, and drawn rather than left a dash because the dash says
+#: nothing is known when half of it is - while the figure itself stays out of
+#: every rule, which still requires both ends (rule 3). ASCII, as its mirror is.
+AT_LEAST = ">="
+
+#: What :data:`AT_LEAST` means, in the one wording every view's legend uses.
+AT_LEAST_LEGEND: Final = f"{AT_LEAST} at least: proven by the running link"
+
 #: What a link figure carries when the register behind it holds a DEFAULT
 #: rather than describing a link: the PCIe floor, published by a function built
 #: into a chipset used as a PCIe switch whatever its real uplink is. A FOURTH
@@ -991,6 +1002,64 @@ def register_default_legend(drawn: Iterable[str]) -> str:
     """
     marked = any(marks_register_default(text) for text in drawn)
     return f"{REGISTER_DEFAULT} = {REGISTER_DEFAULT_MEANING}" if marked else ""
+
+
+def at_least_figure(figure: str) -> str:
+    """Mark a figure as the floor it is, a placeholder unchanged.
+
+    Args:
+        figure: The figure, already formatted, bandwidth included.
+
+    Returns:
+        The figure behind :data:`AT_LEAST`, or a placeholder unchanged: a bound
+        on a value nobody read is not a bound.
+
+    Example:
+        >>> at_least_figure("6G (0.60 GB/s)")
+        '>= 6G (0.60 GB/s)'
+        >>> at_least_figure(NOT_READ)
+        '-'
+    """
+    return figure if figure in _NO_BANDWIDTH else f"{AT_LEAST} {figure}"
+
+
+def marks_at_least(text: str) -> bool:
+    """Whether a drawn cell is a figure carrying :data:`AT_LEAST`.
+
+    Args:
+        text: One drawn cell's text.
+
+    Returns:
+        True for a figure behind the mark.
+
+    Example:
+        >>> marks_at_least(">= 6G")
+        True
+        >>> marks_at_least("6G")
+        False
+    """
+    return text.startswith(f"{AT_LEAST} ")
+
+
+def mark_legends(drawn: Iterable[str]) -> str:
+    """Spell out every qualifying mark a table drew, one per line, and nothing else.
+
+    Args:
+        drawn: Every text the view put in a cell.
+
+    Returns:
+        The legends of :data:`REGISTER_DEFAULT` and :data:`AT_LEAST` that a cell
+        carries, joined by newlines, or an empty string.
+
+    Example:
+        >>> mark_legends([">= 6G", "Gen3x4"])
+        '>= at least: proven by the running link'
+        >>> mark_legends(["6G"])
+        ''
+    """
+    seen = tuple(drawn)
+    floor = AT_LEAST_LEGEND if any(marks_at_least(text) for text in seen) else ""
+    return "\n".join(part for part in (register_default_legend(seen), floor) if part)
 
 
 def _register_default_cell(figure: str) -> Cell:
@@ -1112,6 +1181,8 @@ def style_for(severity: Severity | None) -> str:
 
 
 __all__ = [
+    "AT_LEAST",
+    "AT_LEAST_LEGEND",
     "AT_MOST",
     "LEGACY",
     "NOT_APPLICABLE",
@@ -1140,6 +1211,7 @@ __all__ = [
     "HopPair",
     "LinkPair",
     "Palette",
+    "at_least_figure",
     "disk_style",
     "format_bandwidth",
     "format_bus",
@@ -1155,7 +1227,9 @@ __all__ = [
     "hop_link_cells",
     "link_pair_cells",
     "link_style",
+    "mark_legends",
     "marker_for",
+    "marks_at_least",
     "marks_register_default",
     "pci_tag",
     "port_style",

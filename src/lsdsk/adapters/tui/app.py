@@ -250,7 +250,7 @@ class LsdskApp(App[None]):
     Screen { layout: vertical; }
     #verdict { height: auto; padding: 0 1; }
     #unread-note, #privilege-note { height: auto; padding: 0 1; }
-    #controller-legend, #slot-legend, #filesystem-legend, #filesystem-note { height: auto; padding: 0 1; }
+    #controller-legend, #disk-legend, #slot-legend, #filesystem-legend, #filesystem-note { height: auto; padding: 0 1; }
     TabbedContent { height: 1fr; }
     DataTable { height: 1fr; width: 1fr; }
     #wwn-row { height: 2; padding: 0 1; }
@@ -434,6 +434,7 @@ class LsdskApp(App[None]):
                     yield Static("wwn", id="wwn-label")
                     with HorizontalScroll(id="wwn-strip"):
                         yield Static(id="wwn-full")
+                yield Static(id="disk-legend")
             with TabPane("Health", id=CliCommand.HEALTH.value):
                 yield DataTable[str](id="health-table", zebra_stripes=True, cursor_type="row")
             # Each a page that grows with the machine, so each is laid out once
@@ -569,14 +570,14 @@ class LsdskApp(App[None]):
         note.display = bool(text.plain)
 
     def _explain_marks(self, legend_id: str, drawn: Iterable[str]) -> None:
-        """Put the register-default legend under a table, only when a drawn cell carries the mark.
+        """Put the legend for a qualifying mark under a table, only when a drawn cell carries one.
 
         Decided from the cells the table actually drew rather than from the
         selected row, so it reads the same with the detail panel hidden or the
         cursor on an unmarked row.
         """
         legend = self.query_one(legend_id, Static)
-        text = theme.register_default_legend(drawn)
+        text = theme.mark_legends(drawn)
         legend.update(Text(text, style=tui_palette.restyle(theme.STYLE_UNKNOWN)) if text else Text(""))
         legend.display = bool(text)
 
@@ -668,9 +669,11 @@ class LsdskApp(App[None]):
         # Graded once for the page, never per row: a lookup per row walks every
         # finding for every drive, so the page cost its drives times its findings.
         severities = report.severity_index(self.findings)
+        drawn: list[str] = []
         for disk in listed:
             port = self.inventory.port_link_for(disk)
             cells = tables.disk_table_row(disk, port, bandwidth=True)
+            drawn.extend(cells[column.key][0] for column in columns)
             severity = severities.get(disk.path)
             table.add_row(
                 _cell(theme.marker_for(severity), theme.style_for(severity)),
@@ -679,6 +682,7 @@ class LsdskApp(App[None]):
             )
             self._wwn_of[disk.node] = disk.wwn
             self._disk_of[disk.node] = disk
+        self._explain_marks("#disk-legend", drawn)
         # The cursor starts on the first row without raising anything a handler
         # would see on a rescan, so the strip is set from here rather than left
         # holding the previous scan's answer.

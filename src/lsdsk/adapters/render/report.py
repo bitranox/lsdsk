@@ -48,6 +48,7 @@ if TYPE_CHECKING:
         Controller,
         Disk,
         Finding,
+        InterfaceLink,
         Inventory,
         PcieLink,
         PcieSlot,
@@ -482,6 +483,20 @@ def serial_speed(gbps: float | None, *, bandwidth: bool = False) -> str:
     return theme.with_bandwidth(figure, serial_bandwidth_gbps(gbps)) if bandwidth else figure
 
 
+def _serial_port_text(link: InterfaceLink, *, bandwidth: bool) -> str:
+    """The port end of a serial link: its own figure, the floor the link proves, or the dash.
+
+    The floor is what is known of an unread port whose link runs at the drive's
+    own maximum, so a reader is not told nothing about a port the link has
+    already answered half of. It comes from the model, decided once, and is
+    marked so it is never read as the port's own capability.
+    """
+    floor = link.port_floor_gbps
+    if floor is None:
+        return serial_speed(link.port_max_gbps, bandwidth=bandwidth)
+    return theme.at_least_figure(serial_speed(floor, bandwidth=bandwidth))
+
+
 def usb_speed_text(speed: UsbSpeed | None, *, bandwidth: bool = False) -> str:
     """Render one end of a USB link, as every column and the panel spell it.
 
@@ -563,7 +578,7 @@ def disk_cells(
         drive_text = usb_speed_text(disk.usb.device_max, bandwidth=bandwidth)
         link_text = usb_speed_text(disk.usb.running, bandwidth=bandwidth)
     else:
-        port_text = serial_speed(disk.link.port_max_gbps, bandwidth=bandwidth)
+        port_text = _serial_port_text(disk.link, bandwidth=bandwidth)
         drive_text = serial_speed(disk.link.drive_max_gbps, bandwidth=bandwidth)
         link_text = serial_speed(disk.link.negotiated_gbps, bandwidth=bandwidth)
 
@@ -943,7 +958,30 @@ def render_controller_disks(
         lines.append(_header_line(layout.columns, layout.widths, marker_field=True))
         lines.extend(_disk_lines(orphans, severities, layout, inventory, thresholds))
     lines.extend(_virtual_lines(inventory, severities, layout, expand_virtual=expand_virtual, thresholds=thresholds))
+    lines.extend(_mark_legend_lines(rows if layout.bandwidth else plain, layout))
     return Group(*lines)
+
+
+def mark_legend_of(rows: Iterable[Mapping[str, str]], layout: Layout) -> str:
+    """The legend for the qualifying marks the drawn columns of these rows carry.
+
+    Read from the cells in the columns that survived the width, so a mark in a
+    column the fit dropped summons no legend for something nobody can see.
+
+    Args:
+        rows: The disk rows' texts, in the form the layout chose to draw.
+        layout: What survived the width.
+
+    Returns:
+        The legend lines, or an empty string.
+    """
+    return theme.mark_legends(row[column.key] for row in rows for column in layout.columns if column.key in row)
+
+
+def _mark_legend_lines(rows: Iterable[Mapping[str, str]], layout: Layout) -> list[RenderableType]:
+    """The legend under a disk tree, as a blank line and the legend, or nothing."""
+    legend = mark_legend_of(rows, layout)
+    return [Text(""), Text(legend, style=theme.STYLE_UNKNOWN)] if legend else []
 
 
 def _virtual_lines(
@@ -1371,6 +1409,7 @@ __all__ = [
     "environment_caveat",
     "findings_for",
     "form_factor_note",
+    "mark_legend_of",
     "pcie_capability",
     "privilege_note",
     "render_controller_disks",

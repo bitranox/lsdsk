@@ -5,6 +5,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Added
+
+- A SATA or SAS drive whose port capability was not read, but whose link runs at the drive's own
+  maximum, now shows `>= 6G` under `port` instead of `-`, because the running link proves the port
+  supports at least that rate. The disks table, both trees, the interactive disk page and the
+  detail panel draw it with the legend `>= at least: proven by the running link`, and the detail
+  panel's `achievable` shows the drive's figure, which the bound makes exact. No finding reads
+  it: `link.port_max_gbps` stays null in the JSON, and every rule still needs both ends.
+
 ## [1.11.0] 2026-10-19 00:06:20
 
 ### Added
