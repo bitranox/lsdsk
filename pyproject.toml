@@ -427,5 +427,5 @@ max-line-length = 120
 ignores = ["E003"]
 
 [tool.uv]
-exclude-newer = "1 day"
-exclude-newer-package = {lib-cli-exit-tools = false, lib-layered-config = false, lib-log-rich = false, pwshpy = false, fake-winreg = false, lib-registry = false}
+exclude-newer = "7 days"
+exclude-newer-package = {lib-cli-exit-tools = false, lib-layered-config = false, lib-log-rich = false, pwshpy = false, fake-winreg = false, lib-registry = false, httpcore2 = "2026-10-18T16:29:22Z", httpx2 = "2026-10-18T16:29:23Z", hypothesis = "2026-10-16T16:46:42Z", ruff = "2026-10-15T15:23:19Z", virtualenv = "2026-10-18T07:06:35Z"}
