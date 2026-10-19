@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.13.0] 2026-10-19 23:27:52
+
 ### Changed
 
 - `config-deploy` reads what the deploy reads through lib_layered_config 7.2.0's public
