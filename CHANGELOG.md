@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.12.0] 2026-10-19 16:30:06
+
 ### Added
 
 - A SATA or SAS drive whose port capability was not read, but whose link runs at the drive's own
