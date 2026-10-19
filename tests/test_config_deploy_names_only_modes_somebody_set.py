@@ -111,3 +111,53 @@ def test_a_refused_deploy_names_no_mode_first(
 
     assert code == ExitCode.INVALID_ARGUMENT, err
     assert _ignored(err) == [], err
+
+
+@pytest.mark.parametrize("value", ["nonsense", "0o640"])
+def test_a_mode_in_a_file_the_deploy_rewrites_is_named_once(
+    value: str,
+    user_config_dir: Path,
+    managed_traceback_state: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A user-file ``user_file`` cannot decide the mode of its own replacement, so it is named.
+
+    The deploy skips every file it writes when it reads its modes, which is right - a file is
+    about to be replaced by the shipped copy - and it means a ``user_file`` written into the very
+    copy ``--target user`` rewrites decides nothing. ``lsdsk config`` still reports it as in force,
+    so the deploy says it went unused, valid or not: an invalid one is the case that matters,
+    because nothing else ever mentions it.
+    """
+    copy = _deploy_once(user_config_dir, capsys)
+    text = copy.read_text(encoding="utf-8")
+    assert 'user_file = "0o600"' in text, "the premise: the copy carries the shipped user_file"
+    copy.write_text(text.replace('user_file = "0o600"', f'user_file = "{value}"'), encoding="utf-8", newline="\n")
+
+    code, err = _run(["config-deploy", "--target", "user", "--force"], capsys)
+
+    assert code == 0, err
+    named = _ignored(err)
+    assert len(named) == NAMED_ONCE, err
+    assert all(line.startswith(f"{IGNORED}user_file={value} from ") for line in named), err
+    assert all("rewrites" in line for line in named), err
+
+
+@pytest.mark.os_posix
+def test_an_invalid_mode_in_a_file_the_deploy_reads_is_refused_by_name(
+    user_config_dir: Path,
+    managed_traceback_state: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The control: where the user file is NOT rewritten, the deploy reads its value and refuses it.
+
+    POSIX only: Windows applies no mode, so its deploy reads none and has nothing to refuse.
+    """
+    copy = _deploy_once(user_config_dir, capsys)
+    text = copy.read_text(encoding="utf-8")
+    copy.write_text(text.replace('user_file = "0o600"', 'user_file = "nonsense"'), encoding="utf-8", newline="\n")
+
+    code, err = _run(["config-deploy", "--target", "app"], capsys)
+
+    assert code == ExitCode.INVALID_ARGUMENT, err
+    assert "user_file" in err, err
+    assert _ignored(err) == [], err

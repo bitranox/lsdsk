@@ -600,12 +600,11 @@ def _modes_the_deploy_ignores(config: Config, request: DeployRequest) -> tuple[M
     if not _reads_configured_modes(request):
         return ()
     try:
-        used = read_config_skipping(
-            profile=request.profile, skip=paths_the_deploy_writes(request.targets, profile=request.profile)
-        )
+        written = paths_the_deploy_writes(request.targets, profile=request.profile)
+        used = read_config_skipping(profile=request.profile, skip=written)
     except (ConfigError, OSError, ValueError):
         return ()
-    return modes_the_deploy_ignores(config, used=used)
+    return modes_the_deploy_ignores(config, used=used, written=written)
 
 
 def _report_deployment_result(

@@ -286,7 +286,9 @@ enabled = true
 
 Einen Modus aus einer `.env`-Datei liest das Ausrollen nie, und einen `app_*`- oder `host_*`-Modus
 liest es nur aus den mitgelieferten Vorgaben, den App- und Host-Dateien, der Umgebung und `--set`,
-nie aus einer Benutzer-Konfigurationsdatei. Wo ein solcher Schlüssel etwas entschieden hätte - sein Wert weicht von dem
+nie aus einer Benutzer-Konfigurationsdatei. Auch aus einer Datei, die es gleich neu schreibt, liest es
+keinen Modus: Ein `user_file` in der Kopie, die `--target user` ersetzt, entscheidet nichts, ob
+gültig oder nicht. Wo ein solcher Schlüssel etwas entschieden hätte - sein Wert weicht von dem
 ab, den das Ausrollen liest -, nennt `config-deploy` ihn und die Datei, aus der er kam, in einer
 Warnung, nachdem das Ausrollen gelaufen ist, damit er nicht wie angewendet wirkt. Eine
 Benutzerdatei, die `config-deploy` selbst geschrieben hat, trägt die ausgelieferten Modi und löst

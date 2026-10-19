@@ -17,6 +17,7 @@ value ``lsdsk config`` reports as in force decide nothing in silence.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import NamedTuple, cast
 
 from lib_layered_config import Config
@@ -53,6 +54,10 @@ _NOT_FROM_DOTENV = (
 _NOT_FROM_A_USER_FILE = (
     "a user configuration file cannot set an app or host mode, so config-deploy takes it from the shipped "
     "defaults, the app and host files and the environment"
+)
+_NOT_FROM_A_FILE_IT_REWRITES = (
+    "config-deploy rewrites that file, and a file never decides the mode of its own replacement, so it takes "
+    "the mode from the shipped defaults, the files it does not write and the environment"
 )
 
 
@@ -133,16 +138,22 @@ class ModeTheDeployIgnores(DomainModel, frozen=True):
         return f"Warning: ignoring {self.dotted}={visible_text(self.raw)} from {source}: {self.reason}."
 
 
-def _why_the_deploy_ignores(key: str, layer: object) -> str | None:
-    """The reason the deploy leaves `key` out when `layer` gave it, or ``None`` when it uses it."""
+def _why_the_deploy_ignores(key: str, origin: Mapping[str, object], written: frozenset[Path]) -> str | None:
+    """The reason the deploy leaves `key` out when `origin` gave it, or ``None`` when it uses it."""
+    layer = origin.get("layer")
     if layer == _DOTENV_LAYER:
         return _NOT_FROM_DOTENV
     if layer == _USER_LAYER and key in _SYSTEM_MODE_KEYS:
         return _NOT_FROM_A_USER_FILE
+    path = origin.get("path")
+    if path is not None and Path(str(path)).resolve() in written:
+        return _NOT_FROM_A_FILE_IT_REWRITES
     return None
 
 
-def modes_the_deploy_ignores(config: Config, *, used: Config) -> tuple[ModeTheDeployIgnores, ...]:
+def modes_the_deploy_ignores(
+    config: Config, *, used: Config, written: frozenset[Path]
+) -> tuple[ModeTheDeployIgnores, ...]:
     """The configured modes the deploy's own read of its layers leaves out, where that changes the mode.
 
     The deploy reads ``[lib_layered_config.default_permissions]`` from the shipped defaults,
@@ -157,15 +168,21 @@ def modes_the_deploy_ignores(config: Config, *, used: Config) -> tuple[ModeTheDe
     ``app_*``/``host_*`` modes, which the deploy reads from the shipped defaults anyway:
     naming them told every later deploy about four values nobody configured.
 
+    The files the deploy writes are skipped by its read, so a mode set in one of them - a
+    ``user_file`` in the copy ``--target user`` rewrites - decides nothing either. Valid or not,
+    that value is in force as far as ``lsdsk config`` says, and nothing else ever mentions it.
+
     Args:
         config: The configuration of the profile being deployed.
         used: The configuration the deploy itself reads its modes from.
+        written: The resolved files the deploy writes, which its read skips. Required, because
+            without it a mode in a rewritten file is the one case named nowhere.
 
     Returns:
         One entry per mode setting the deploy will not use, in :data:`MODE_KEYS` order.
 
     Example:
-        >>> modes_the_deploy_ignores(Config({}, {}), used=Config({}, {}))
+        >>> modes_the_deploy_ignores(Config({}, {}), used=Config({}, {}), written=frozenset())
         ()
     """
     ignored: list[ModeTheDeployIgnores] = []
@@ -174,7 +191,7 @@ def modes_the_deploy_ignores(config: Config, *, used: Config) -> tuple[ModeTheDe
         origin = config.origin(dotted)
         if origin is None or config.get(dotted) == used.get(dotted):
             continue
-        reason = _why_the_deploy_ignores(key, origin.get("layer"))
+        reason = _why_the_deploy_ignores(key, origin, written)
         if reason is not None:
             source = origin.get("path")
             ignored.append(

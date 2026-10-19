@@ -286,7 +286,8 @@ enabled = true
 
 The deploy never reads a mode from a `.env` file, and reads an `app_*` or `host_*` mode only from the
 shipped defaults, the app and host files, the environment and `--set`, never from a user
-configuration file. Where such a key would have decided something - its value differs from the one
+configuration file. Nor does it read any mode from a file it is about to rewrite: a `user_file` in the
+copy `--target user` replaces decides nothing, valid or not. Where such a key would have decided something - its value differs from the one
 the deploy reads - `config-deploy` names it, and the file it came from, in a warning after the deploy has run,
 so it does not read as applied. A user file `config-deploy` wrote itself carries the shipped modes and draws
 no warning, and a refused deploy answers with its refusal alone. Nothing is named where the deploy reads no

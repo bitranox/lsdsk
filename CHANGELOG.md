@@ -5,13 +5,6 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
-### Changed
-
-- The interactive disk page fits its columns to the window as `lsdsk disks` fits them to a terminal,
-  through the same fitting code: the link figures' bandwidth goes first, then the identity columns
-  by priority, while `device`, `port`, `disk` and `link` stay. It fits again when the window
-  changes. Below about 130 columns `disk` and `link` used to sit off the right edge.
-
 ### Added
 
 - A SATA or SAS drive whose port capability was not read, but whose link runs at the drive's own
@@ -20,6 +13,20 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   detail panel draw it with the legend `>= at least: proven by the running link`, and the detail
   panel's `achievable` shows the drive's figure, which the bound makes exact. No finding reads
   it: `link.port_max_gbps` stays null in the JSON, and every rule still needs both ends.
+
+### Changed
+
+- The interactive disk page fits its columns to the window as `lsdsk disks` fits them to a terminal,
+  through the same fitting code: the link figures' bandwidth goes first, then the identity columns
+  by priority, while `device`, `port`, `disk` and `link` stay. It fits again when the window
+  changes. Below about 130 columns `disk` and `link` used to sit off the right edge.
+
+### Fixed
+
+- `config-deploy` now names a permission mode set in a file it rewrites, such as a `user_file` in the
+  user copy that `--target user` replaces, as it already named a mode from a `.env` file. The deploy
+  never reads a file it is about to replace, so such a value decided nothing, while `lsdsk config`
+  still reported it as in force and nothing mentioned it - an invalid one like `"nonsense"` included.
 
 ## [1.11.0] 2026-10-19 00:06:20
 
