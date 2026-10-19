@@ -47,6 +47,7 @@ from ..ata_commands import (
 from ..capture import MAX_DEVICE_TEXT
 from ..decode import pciids, usb
 from ..decode.captured import plausible_celsius
+from ..decode.scsi_sense import describe_sense
 from ..snapshot import SCHEMA_VERSION
 from . import volumes
 from . import winapi as api
@@ -829,7 +830,8 @@ def sat_passthrough(
     Returns:
         The sector the drive returned and ``None``, or empty bytes and why it
         was refused: the Win32 error when the ioctl failed, the SCSI status
-        when the translator rejected the command, the byte count when it
+        (with the sense key and ASC/ASCQ when the translator returned sense
+        data) when it rejected the command, the byte count when it
         accepted the command without moving a sector.
     """
     block = ata_pass_through_16(command=command, feature=feature, lba=lba)
@@ -858,7 +860,11 @@ def sat_passthrough(
     if not ok:
         return b"", f"Win32 error {calls.last_error()}"
     if request.request.ScsiStatus:
-        return b"", f"SCSI status 0x{request.request.ScsiStatus:02X}"
+        status = f"SCSI status 0x{request.request.ScsiStatus:02X}"
+        # The port driver writes back how many sense bytes it returned; the key in
+        # them says WHY the translator refused, which the status alone does not.
+        why = describe_sense(bytes(request.sense[: request.request.SenseInfoLength]))
+        return b"", f"{status}: {why}" if why else status
     shortfall = _shortfall(request.request.DataTransferLength)
     if shortfall:
         return b"", shortfall

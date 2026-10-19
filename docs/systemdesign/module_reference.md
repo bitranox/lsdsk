@@ -43,6 +43,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/hw/decode/nvlist.py` - Decode the native nvlist the ZFS control device answers in, and read a pool's size and allocation from it.
 - `src/lsdsk/adapters/hw/decode/nvme.py` - Decode NVMe Identify Controller and the SMART/Health log page.
 - `src/lsdsk/adapters/hw/decode/pciids.py` - Resolve numeric PCI vendor and device identifiers to readable names.
+- `src/lsdsk/adapters/hw/decode/scsi_sense.py` - Say why a SCSI device refused a command, from the sense data it returned.
 - `src/lsdsk/adapters/hw/decode/usb.py` - Decode what USB devices and Windows USB hubs say about link speed.
 - `src/lsdsk/adapters/hw/decode/virtualization.py` - Decide whether this machine is bare metal, a virtual machine, or a container.
 

@@ -86,8 +86,9 @@ class FakeKernel32:
 
     The ATA ioctl answers per ``ata_answers`` with ``ata_sector``; the SCSI
     passthrough answers per ``sat_answers``, keyed by the ATA command inside the
-    SAT block, with the bytes moved, a SCSI status, or ``None`` for an ioctl
-    failure. Whatever bytes it answers with, it writes their count back into
+    SAT block, with the bytes moved, a SCSI status, a SCSI status with the sense
+    bytes the translator returned, or ``None`` for an ioctl failure. Whatever
+    bytes it answers with, it writes their count back into
     ``DataTransferLength``, because that is what the kernel does: an empty or
     short answer is a transfer that moved less than the sector asked for.
     """
@@ -96,7 +97,7 @@ class FakeKernel32:
         self,
         *,
         ata_answers: bool,
-        sat_answers: Callable[[int], bytes | int | None],
+        sat_answers: Callable[[int], bytes | int | tuple[int, bytes] | None],
         ata_sector: bytes = ATA_SECTOR,
     ) -> None:
         """Answer the ATA ioctl or refuse it, and the SAT one through ``sat_answers``."""
@@ -125,6 +126,13 @@ class FakeKernel32:
                 return 0
             if isinstance(answer, int):
                 holder.request.ScsiStatus = answer
+                return 1
+            if isinstance(answer, tuple):
+                status, sense = answer
+                holder.request.ScsiStatus = status
+                # The port driver writes the sense bytes and their count back, as for data.
+                ctypes.memmove(holder.sense, sense, len(sense))
+                holder.request.SenseInfoLength = len(sense)
                 return 1
             ctypes.memmove(holder.data, answer, len(answer))
             holder.request.DataTransferLength = len(answer)
@@ -169,9 +177,14 @@ def test_a_drive_the_ata_ioctl_reaches_is_never_asked_through_sat() -> None:
     [
         pytest.param(None, "SAT refused, Win32 error", id="the SCSI ioctl fails"),
         pytest.param(0x02, "SAT refused, SCSI status 0x02", id="the translator rejects the command"),
+        pytest.param(
+            (0x02, bytes([0x70, 0, 0x05, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0x20, 0x00])),
+            "SAT refused, SCSI status 0x02: sense key 0x5 ILLEGAL REQUEST, ASC/ASCQ 0x20/0x00",
+            id="the translator rejects the command and says why",
+        ),
     ],
 )
-def test_a_reading_refused_both_ways_records_both_reasons(answer: int | None, named: str) -> None:
+def test_a_reading_refused_both_ways_records_both_reasons(answer: int | tuple[int, bytes] | None, named: str) -> None:
     fake = FakeKernel32(ata_answers=False, sat_answers=lambda _command: answer)
 
     record = _read(fake)

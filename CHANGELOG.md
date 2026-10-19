@@ -13,6 +13,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   unchanged: a forced deploy still reads past a broken file it rewrites, and the warning about modes
   set in a file the deploy rewrites names the same files. Requires lib_layered_config 7.2.0.
 
+### Fixed
+
+- On Linux, a drive that refused an ATA passthrough command with sense data, such as a virtual SCSI
+  disk with no ATA translation, was recorded as `SG_IO transport failure: host=0 driver=8`. The
+  kernel's DRIVER_SENSE code means the device answered, so the refusal now reads
+  `SG_IO SCSI status 0x02: sense key 0x5 ILLEGAL REQUEST, ASC/ASCQ 0x20/0x00`, with the sense key
+  and the additional sense code the device returned. A refused SCSI passthrough on Windows names
+  them the same way. The scan still reports the reading as refused either way.
+
 ## [1.12.0] 2026-10-19 16:30:06
 
 ### Added

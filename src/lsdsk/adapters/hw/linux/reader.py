@@ -52,6 +52,7 @@ from ..ata_commands import (
 from ..capture import MAX_DEVICE_TEXT, MAX_PAYLOAD_BYTES
 from ..decode import ahci, pciids
 from ..decode.captured import parse_int
+from ..decode.scsi_sense import describe_sense
 from ..decode.virtualization import classify, container_markers_in_mounts
 from ..snapshot import SCHEMA_VERSION
 from . import freespace, mounts, usbfs, zfs
@@ -77,6 +78,11 @@ NVME_ALL_NAMESPACES = 0xFFFFFFFF
 
 _SECTOR_BYTES = 512
 _IOCTL_TIMEOUT_MS = 10_000
+
+# sg_io_hdr_t driver_status: the low nibble is the driver byte (include/scsi/sg.h),
+# the high nibble a retry suggestion; DRIVER_SENSE says sense data was returned.
+_DRIVER_STATUS_MASK = 0x0F
+_DRIVER_SENSE = 0x08
 
 # A sysfs child directory named like a PCI address, "0000:03:00.0", carries two colons.
 _PCI_ADDRESS_COLONS = 2
@@ -151,8 +157,9 @@ def ata_passthrough(fd: int, *, command: int, feature: int = 0, lba: int = 0, co
 
     Raises:
         OSError: If the ioctl fails, the transport reports an error, the
-            command ends in a SCSI status other than GOOD, or the device moved
-            less than the whole transfer.
+            command ends in a SCSI status other than GOOD (named with the
+            sense key and ASC/ASCQ when the device returned sense data), or
+            the device moved less than the whole transfer.
     """
     buffer = ctypes.create_string_buffer(_SECTOR_BYTES * max(count, 1))
     sense = ctypes.create_string_buffer(32)
@@ -176,7 +183,11 @@ def ata_passthrough(fd: int, *, command: int, feature: int = 0, lba: int = 0, co
     import fcntl  # noqa: PLC0415 - platform-only dependency
 
     fcntl.ioctl(fd, SG_IO, header)
-    if header.host_status or header.driver_status & 0x0F:
+    # DRIVER_SENSE is not a failure of the transport: the kernel sets it whenever
+    # the device returned sense data, which is the device ANSWERING - a translator
+    # refusing ATA PASS-THROUGH does exactly that. Counting it here once worded every
+    # such refusal "transport failure" and hid the sense key that says why.
+    if header.host_status or (header.driver_status & _DRIVER_STATUS_MASK) not in (0, _DRIVER_SENSE):
         message = f"SG_IO transport failure: host={header.host_status} driver={header.driver_status}"
         raise OSError(message)
     # A clean transport says nothing about the command: a translator that refused
@@ -186,7 +197,8 @@ def ata_passthrough(fd: int, *, command: int, feature: int = 0, lba: int = 0, co
     # a refusal into a reading of an all-zero sector.
     if header.status:
         message = f"SG_IO SCSI status 0x{header.status:02x}"
-        raise OSError(message)
+        why = describe_sense(sense.raw[: header.sb_len_wr])
+        raise OSError(f"{message}: {why}" if why else message)
     moved = header.dxfer_len - header.resid
     if moved != header.dxfer_len:
         message = f"SG_IO returned {moved} of {header.dxfer_len} bytes"
