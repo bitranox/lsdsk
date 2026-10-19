@@ -342,8 +342,25 @@ class _PipeRun(NamedTuple):
     stderr_bytes: int
 
 
+def _child_env(*, unbuffered: bool) -> dict[str, str]:
+    """The child's environment, with its buffering set by the test rather than inherited."""
+    import os
+
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONUNBUFFERED"}
+    env["TERM"] = "dumb"
+    if unbuffered:
+        env["PYTHONUNBUFFERED"] = "1"
+    return env
+
+
 def _run_and_take_the_output_away(
-    *, capture: Path, history: Path, argv: list[str], leaves: bool, stderr_leaves: bool = False
+    *,
+    capture: Path,
+    history: Path,
+    argv: list[str],
+    leaves: bool,
+    stderr_leaves: bool = False,
+    unbuffered: bool = False,
 ) -> _PipeRun:
     """Run a real lsdsk process and either read each stream out or walk away from it.
 
@@ -368,12 +385,16 @@ def _run_and_take_the_output_away(
         stderr_leaves: Whether it closes the stderr pipe too, which is the shape
             ``lsdsk ... 2>&1 | head`` has - one pipe carrying both streams, so the
             reader leaving breaks both at once.
+        unbuffered: Run the child with ``PYTHONUNBUFFERED=1``, as a Docker image
+            or a CI job often does, so every write reaches the pipe at once. Set
+            explicitly either way and never inherited: a case named for one
+            buffering mode must not run the other because the suite was started
+            with the variable set.
 
     Returns:
         The exit code and how many bytes each stream delivered; a stream whose
         reader left reports 0, since nothing was taken from it.
     """
-    import os
     import subprocess
     import sys
     from pathlib import Path
@@ -393,7 +414,7 @@ def _run_and_take_the_output_away(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         cwd=str(Path(__file__).parent.parent),
-        env={**os.environ, "TERM": "dumb"},
+        env=_child_env(unbuffered=unbuffered),
     )
     # The context manager closes BOTH pipes and reaps the child on every exit, which the
     # reader that leaves only did for the stream it walked away from: the other was left
@@ -443,7 +464,13 @@ def _run_and_take_the_output_away(
         pytest.param(["--help"], id="help, buffered below the block size"),
     ],
 )
-def test_a_reader_that_leaves_early_gets_the_broken_pipe_code_not_the_findings_code(argv: list[str]) -> None:
+# Write-through as well: under PYTHONUNBUFFERED rich-click's help printer met the
+# departed reader INSIDE the click callback, where rich-click's own main() turned
+# the EPIPE into sys.exit(1) - the --version mechanism again, for help.
+@pytest.mark.parametrize("unbuffered", [False, True], ids=["buffered", "unbuffered"])
+def test_a_reader_that_leaves_early_gets_the_broken_pipe_code_not_the_findings_code(
+    argv: list[str], *, unbuffered: bool
+) -> None:
     """`lsdsk ... | head` must not report the code that means a failing drive.
 
     Click catches the EPIPE itself (``click/core.py``, ``except OSError`` on
@@ -463,11 +490,15 @@ def test_a_reader_that_leaves_early_gets_the_broken_pipe_code_not_the_findings_c
     capture = Path(__file__).parent / "fixtures" / "hw" / "linux-minimal.json"
     history = Path(__file__).parent / "fixtures" / "hw" / "does-not-exist-history.json"
 
-    control = _run_and_take_the_output_away(capture=capture, history=history, argv=argv, leaves=False)
+    control = _run_and_take_the_output_away(
+        capture=capture, history=history, argv=argv, leaves=False, unbuffered=unbuffered
+    )
     assert control.code == ExitCode.SUCCESS, "the control: this capture must exit 0 when its output is read"
     assert control.stdout_bytes > 0, "the control wrote nothing, so the arm below would pass with no pipe to break"
 
-    abandoned = _run_and_take_the_output_away(capture=capture, history=history, argv=argv, leaves=True).code
+    abandoned = _run_and_take_the_output_away(
+        capture=capture, history=history, argv=argv, leaves=True, unbuffered=unbuffered
+    ).code
     assert abandoned == ExitCode.BROKEN_PIPE, (
         f"a reader that left early got {abandoned}, "
         f"and {int(ExitCode.GENERAL_ERROR)} is what an actionable finding leaves"

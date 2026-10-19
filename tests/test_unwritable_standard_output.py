@@ -76,6 +76,17 @@ class _Run(NamedTuple):
     read_the_machine: bool
 
 
+def _child_env(*, log_stream: str | None, unbuffered: bool) -> dict[str, str]:
+    """The child's environment, with its buffering set by the test rather than inherited."""
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONUNBUFFERED"}
+    env["TERM"] = "dumb"
+    if log_stream is not None:
+        env["LOG_CONSOLE_STREAM"] = log_stream
+    if unbuffered:
+        env["PYTHONUNBUFFERED"] = "1"
+    return env
+
+
 def _launch(
     argv: list[str],
     *,
@@ -83,6 +94,7 @@ def _launch(
     tmp_path: Path,
     close_stdout: bool = False,
     log_stream: str | None = None,
+    unbuffered: bool = False,
 ) -> _Run:
     """Run lsdsk in a child process with `stdout` as its standard output.
 
@@ -94,6 +106,8 @@ def _launch(
             ``>&-`` does and what a detached launch leaves.
         log_stream: What ``LOG_CONSOLE_STREAM`` names, or None to leave the
             logging console where the environment already puts it.
+        unbuffered: Run the child with ``PYTHONUNBUFFERED=1``. Set either way and
+            never inherited, so a case named for one buffering mode runs that one.
 
     Returns:
         The exit code, what stdout carried when it was a pipe, stderr, and
@@ -105,7 +119,7 @@ def _launch(
         stdout=stdout,
         stderr=subprocess.PIPE,
         cwd=str(Path(__file__).parent.parent),
-        env={**os.environ, "TERM": "dumb", **({} if log_stream is None else {"LOG_CONSOLE_STREAM": log_stream})},
+        env=_child_env(log_stream=log_stream, unbuffered=unbuffered),
         # The only way to hand a child a CLOSED descriptor 1: a redirect cannot
         # express it, and Popen reopens anything it is given.
         preexec_fn=(lambda: os.close(1)) if close_stdout else None,
@@ -154,7 +168,13 @@ def _argv(case: _Case, tmp_path: Path) -> list[str]:
 
 @pytest.mark.os_linux
 @pytest.mark.parametrize("case", list(_CASES.values()), ids=list(_CASES))
-def test_output_that_cannot_be_written_is_said_once_and_leaves_io_error(case: _Case, tmp_path: Path) -> None:
+# Write-through as well, the way a Docker image or a CI job often runs: there the
+# help printer met the full disk inside the click callback, where rich-click
+# re-raised a plain OSError past the one sentence this test requires.
+@pytest.mark.parametrize("unbuffered", [False, True], ids=["buffered", "unbuffered"])
+def test_output_that_cannot_be_written_is_said_once_and_leaves_io_error(
+    case: _Case, tmp_path: Path, *, unbuffered: bool
+) -> None:
     """One sentence on stderr naming stdout and the errno, no traceback, and exit 74.
 
     74 is what the exit-code table gives a ``snapshot`` whose write failed for a
@@ -164,7 +184,7 @@ def test_output_that_cannot_be_written_is_said_once_and_leaves_io_error(case: _C
     disk filled up would then page somebody about a drive fault.
     """
     argv = _argv(case, tmp_path)
-    control = _launch(argv, stdout=subprocess.PIPE, tmp_path=tmp_path)
+    control = _launch(argv, stdout=subprocess.PIPE, tmp_path=tmp_path, unbuffered=unbuffered)
     assert control.stdout, "the control wrote nothing, so there was nothing to fail to write"
     assert (len(control.stdout) > BLOCK_BUFFER) is case.past_the_buffer, (
         f"{len(control.stdout)} bytes do not take the path this case claims to exercise"
@@ -172,7 +192,7 @@ def test_output_that_cannot_be_written_is_said_once_and_leaves_io_error(case: _C
     assert not _lines_about_standard_output(control.stderr), control.stderr
 
     with Path("/dev/full").open("wb") as full:
-        run = _launch(argv, stdout=full, tmp_path=tmp_path)
+        run = _launch(argv, stdout=full, tmp_path=tmp_path, unbuffered=unbuffered)
 
     assert "Traceback" not in run.stderr, run.stderr
     assert "Exception ignored" not in run.stderr, run.stderr

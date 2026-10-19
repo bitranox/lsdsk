@@ -23,6 +23,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- Under `PYTHONUNBUFFERED=1`, which Docker images and CI jobs often set, `lsdsk --help | head`
+  exited 1, the code for an actionable finding, and help written to a full disk exited 28 with a raw
+  `OSError` line. Every command's help now goes through the same guarded writer as `--version`, so
+  these exit 141 and 74 with the usual one-line message. The help text is byte for byte what it was,
+  colour included.
 - `config-deploy` now names a permission mode set in a file it rewrites, such as a `user_file` in the
   user copy that `--target user` replaces, as it already named a mode from a `.env` file. The deploy
   never reads a file it is about to replace, so such a value decided nothing, while `lsdsk config`

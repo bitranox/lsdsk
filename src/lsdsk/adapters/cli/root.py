@@ -7,6 +7,8 @@ Contents:
     * :func:`cli` - Root command group with global options.
     * :func:`_refuse_an_ambiguous_mode` - refuse an int permission mode that could be octal digits.
     * :func:`_print_version` - the version line, written through the guarded sink.
+    * :func:`show_help` - every command's help page, written through the guarded sink.
+    * :func:`own_the_help_printer` - give every command in a tree :func:`show_help`.
     * :class:`_RootGroup` - the group's class, keeping the subcommand's arguments for the callback.
     * :func:`_read_subcommand_request` - what ``config``/``config-deploy`` ask of the configuration.
 
@@ -87,6 +89,56 @@ def _print_version(ctx: click.Context, param: click.Parameter, value: bool) -> N
         return
     safe_console.echo(f"{__init__conf__.shell_command} version {__init__conf__.version}")
     ctx.exit()
+
+
+def show_help(ctx: click.Context, param: click.Parameter, value: bool) -> None:
+    """Write the help page through the guarded sink and stop.
+
+    Our own printer for the reason :func:`_print_version` is. rich-click's
+    ``show_help`` ``print()``s the page straight to ``sys.stdout``, which works only
+    while the page fits Python's block buffer: then the failure surfaces in
+    ``main()``'s final flush, which answers it. Under ``PYTHONUNBUFFERED`` - common
+    in a Docker image or a CI job - the write reaches the OS inside this callback,
+    and rich-click's own ``main()`` turned a departed reader into ``sys.exit(1)``,
+    this tool's code for an actionable finding, and a full disk into a plain
+    ``OSError`` printed as a traceback line and exit 28. Measured on 1.11.0. Written
+    through :func:`safe_console.safe_stream` instead, the page keeps its bytes and its
+    colour (``print`` does not strip ANSI, where ``click.echo`` would in a pipe) and
+    a failure is answered with 141 or 74 wherever it surfaces.
+
+    Args:
+        ctx: The Click context of the command whose help was asked for.
+        param: The option Click is processing. Unused; part of the callback shape.
+        value: Whether the flag was given.
+
+    Side Effects:
+        Writes the help page to stdout (or stderr, where the context asks) and ends the run.
+    """
+    if not value or ctx.resilient_parsing:
+        return
+    print(ctx.get_help(), file=safe_console.safe_stream(err=bool(getattr(ctx, "help_to_stderr", False))))
+    ctx.exit()
+
+
+def own_the_help_printer(command: click.Command, name: str) -> None:
+    """Give `command` and every command below it :func:`show_help` as its help callback.
+
+    One pass over the assembled tree rather than a ``cls=`` on each command, so a
+    command added later is covered without anybody remembering to. The option is
+    the one rich-click caches on the command, so replacing its callback here is
+    what every later parse of that command uses.
+
+    Args:
+        command: The root of the tree.
+        name: The name the command is invoked under, for its context.
+    """
+    # The command's own settings, or a bare context names only --help and -h is missed.
+    help_option = command.get_help_option(click.Context(command, info_name=name, **command.context_settings))
+    if help_option is not None:
+        help_option.callback = show_help
+    if isinstance(command, click.Group):
+        for child_name, child in command.commands.items():
+            own_the_help_printer(child, child_name)
 
 
 def _load_or_refuse(
@@ -619,9 +671,10 @@ def _register_commands() -> None:
         cli_logdemo,
     ):
         cli.add_command(cmd)
+    own_the_help_printer(cli, __init__conf__.shell_command)
 
 
 _register_commands()
 
 
-__all__ = ["cli"]
+__all__ = ["cli", "own_the_help_printer", "show_help"]
