@@ -1,0 +1,1002 @@
+{
+  "ata": {
+    "sda": {
+      "identify_error": "SG_IO SCSI status 0x02: sense key 0x5 ILLEGAL REQUEST, ASC/ASCQ 0x20/0x00",
+      "smart_data_error": "SG_IO SCSI status 0x02: sense key 0x5 ILLEGAL REQUEST, ASC/ASCQ 0x20/0x00",
+      "smart_thresholds_error": "SG_IO SCSI status 0x02: sense key 0x5 ILLEGAL REQUEST, ASC/ASCQ 0x20/0x00"
+    },
+    "sdb": {
+      "identify_error": "SG_IO SCSI status 0x02: sense key 0x5 ILLEGAL REQUEST, ASC/ASCQ 0x20/0x00",
+      "smart_data_error": "SG_IO SCSI status 0x02: sense key 0x5 ILLEGAL REQUEST, ASC/ASCQ 0x20/0x00",
+      "smart_thresholds_error": "SG_IO SCSI status 0x02: sense key 0x5 ILLEGAL REQUEST, ASC/ASCQ 0x20/0x00"
+    },
+    "sdc": {
+      "identify_error": "SG_IO SCSI status 0x02: sense key 0x5 ILLEGAL REQUEST, ASC/ASCQ 0x20/0x00",
+      "smart_data_error": "SG_IO SCSI status 0x02: sense key 0x5 ILLEGAL REQUEST, ASC/ASCQ 0x20/0x00",
+      "smart_thresholds_error": "SG_IO SCSI status 0x02: sense key 0x5 ILLEGAL REQUEST, ASC/ASCQ 0x20/0x00"
+    },
+    "sdd": {
+      "identify_error": "SG_IO SCSI status 0x02: sense key 0x5 ILLEGAL REQUEST, ASC/ASCQ 0x20/0x00",
+      "smart_data_error": "SG_IO SCSI status 0x02: sense key 0x5 ILLEGAL REQUEST, ASC/ASCQ 0x20/0x00",
+      "smart_thresholds_error": "SG_IO SCSI status 0x02: sense key 0x5 ILLEGAL REQUEST, ASC/ASCQ 0x20/0x00"
+    }
+  },
+  "block": {
+    "loop0": {
+      "dev": "7:0",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "4096",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop1": {
+      "dev": "7:1",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop2": {
+      "dev": "7:2",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop3": {
+      "dev": "7:3",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop4": {
+      "dev": "7:4",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop5": {
+      "dev": "7:5",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop6": {
+      "dev": "7:6",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "loop7": {
+      "dev": "7:7",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "0"
+      },
+      "size": "0",
+      "virtual": true
+    },
+    "sda": {
+      "dev": "8:0",
+      "device": {
+        "model": "QEMU HARDDISK",
+        "queue_depth": "128",
+        "rev": "2.5+",
+        "state": "running",
+        "type": "0",
+        "vendor": "QEMU"
+      },
+      "device_path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:04.0/0000:09:01.0/virtio3/host0/target0:0:0/0:0:0:0",
+      "holders": [],
+      "partitions": {
+        "sda1": {
+          "dev": "8:1",
+          "holders": []
+        },
+        "sda13": {
+          "dev": "8:13",
+          "holders": []
+        },
+        "sda14": {
+          "dev": "8:14",
+          "holders": []
+        },
+        "sda15": {
+          "dev": "8:15",
+          "holders": []
+        }
+      },
+      "queue": {
+        "discard_granularity": "4096",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "19922944",
+      "vpd": {
+        "inquiry": "AAAFEh8AABJRRU1VICAgIFFFTVUgSEFSRERJU0sgICAyLjUr",
+        "vpd_pg83": "AIMADwIAAAtkcml2ZS1zY3NpMA==",
+        "vpd_pgb1": "ALEAPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "sdb": {
+      "dev": "8:16",
+      "device": {
+        "model": "QEMU HARDDISK",
+        "queue_depth": "128",
+        "rev": "2.5+",
+        "state": "running",
+        "type": "0",
+        "vendor": "QEMU"
+      },
+      "device_path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:04.0/0000:09:02.0/virtio4/host1/target1:0:0/1:0:0:1",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "4096",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "16777216",
+      "vpd": {
+        "inquiry": "AAAFEh8AABJRRU1VICAgIFFFTVUgSEFSRERJU0sgICAyLjUr",
+        "vpd_pg83": "AIMADwIAAAtkcml2ZS1zY3NpMQ==",
+        "vpd_pgb1": "ALEAPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "sdc": {
+      "dev": "8:32",
+      "device": {
+        "model": "QEMU HARDDISK",
+        "queue_depth": "128",
+        "rev": "2.5+",
+        "state": "running",
+        "type": "0",
+        "vendor": "QEMU"
+      },
+      "device_path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:04.0/0000:09:03.0/virtio5/host2/target2:0:0/2:0:0:2",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "4096",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "16777216",
+      "vpd": {
+        "inquiry": "AAAFEh8AABJRRU1VICAgIFFFTVUgSEFSRERJU0sgICAyLjUr",
+        "vpd_pg83": "AIMADwIAAAtkcml2ZS1zY3NpMg==",
+        "vpd_pgb1": "ALEAPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "sdd": {
+      "dev": "8:48",
+      "device": {
+        "model": "QEMU HARDDISK",
+        "queue_depth": "128",
+        "rev": "2.5+",
+        "state": "running",
+        "type": "0",
+        "vendor": "QEMU"
+      },
+      "device_path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:04.0/0000:09:04.0/virtio6/host3/target3:0:0/3:0:0:3",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "4096",
+        "logical_block_size": "512",
+        "physical_block_size": "512",
+        "rotational": "1"
+      },
+      "size": "33554432",
+      "vpd": {
+        "inquiry": "AAAFEh8AABJRRU1VICAgIFFFTVUgSEFSRERJU0sgICAyLjUr",
+        "vpd_pg83": "AIMADwIAAAtkcml2ZS1zY3NpMw==",
+        "vpd_pgb1": "ALEAPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "sr0": {
+      "dev": "11:0",
+      "device": {
+        "model": "QEMU DVD-ROM",
+        "queue_depth": "1",
+        "rev": "2.5+",
+        "state": "running",
+        "type": "5",
+        "vendor": "QEMU"
+      },
+      "device_path": "/sys/devices/pci0000:00/0000:00:1f.2/ata2/host5/target5:0:0/5:0:0:0",
+      "holders": [],
+      "partitions": {},
+      "queue": {
+        "discard_granularity": "0",
+        "logical_block_size": "2048",
+        "physical_block_size": "2048",
+        "rotational": "1"
+      },
+      "size": "8192",
+      "vpd": {
+        "inquiry": "BYAFMh8AAABRRU1VICAgIFFFTVUgRFZELVJPTSAgICAyLjUr"
+      }
+    }
+  },
+  "btrfs_devices": [
+    [
+      "8:16",
+      "8:32"
+    ]
+  ],
+  "captured_at": "2026-10-19T17:24:08.898740+00:00",
+  "classes": {
+    "ata_link": {
+      "link1": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata1/link1/ata_link/link1",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link2": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata2/link2/ata_link/link2",
+        "sata_spd": "1.5 Gbps",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link3": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata3/link3/ata_link/link3",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link4": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata4/link4/ata_link/link4",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link5": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata5/link5/ata_link/link5",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      },
+      "link6": {
+        "hw_sata_spd_limit": "<unknown>",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata6/link6/ata_link/link6",
+        "sata_spd": "<unknown>",
+        "sata_spd_limit": "<unknown>"
+      }
+    },
+    "ata_port": {
+      "ata1": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata1/ata_port/ata1",
+        "port_no": "1"
+      },
+      "ata2": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata2/ata_port/ata2",
+        "port_no": "2"
+      },
+      "ata3": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata3/ata_port/ata3",
+        "port_no": "3"
+      },
+      "ata4": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata4/ata_port/ata4",
+        "port_no": "4"
+      },
+      "ata5": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata5/ata_port/ata5",
+        "port_no": "5"
+      },
+      "ata6": {
+        "nr_pmp_links": "0",
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata6/ata_port/ata6",
+        "port_no": "6"
+      }
+    },
+    "hwmon": {},
+    "scsi_host": {
+      "host0": {
+        "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:04.0/0000:09:01.0/virtio3/host0/scsi_host/host0",
+        "proc_name": "virtio_scsi",
+        "unique_id": "0"
+      },
+      "host1": {
+        "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:04.0/0000:09:02.0/virtio4/host1/scsi_host/host1",
+        "proc_name": "virtio_scsi",
+        "unique_id": "0"
+      },
+      "host2": {
+        "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:04.0/0000:09:03.0/virtio5/host2/scsi_host/host2",
+        "proc_name": "virtio_scsi",
+        "unique_id": "0"
+      },
+      "host3": {
+        "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:04.0/0000:09:04.0/virtio6/host3/scsi_host/host3",
+        "proc_name": "virtio_scsi",
+        "unique_id": "0"
+      },
+      "host4": {
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata1/host4/scsi_host/host4",
+        "proc_name": "ahci",
+        "unique_id": "1"
+      },
+      "host5": {
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata2/host5/scsi_host/host5",
+        "proc_name": "ahci",
+        "unique_id": "2"
+      },
+      "host6": {
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata3/host6/scsi_host/host6",
+        "proc_name": "ahci",
+        "unique_id": "3"
+      },
+      "host7": {
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata4/host7/scsi_host/host7",
+        "proc_name": "ahci",
+        "unique_id": "4"
+      },
+      "host8": {
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata5/host8/scsi_host/host8",
+        "proc_name": "ahci",
+        "unique_id": "5"
+      },
+      "host9": {
+        "path": "/sys/devices/pci0000:00/0000:00:1f.2/ata6/host9/scsi_host/host9",
+        "proc_name": "ahci",
+        "unique_id": "6"
+      }
+    }
+  },
+  "devices_accessible": true,
+  "environment": {
+    "cgroup": "0::/init.scope",
+    "dmi_product": "Standard PC (Q35 + ICH9, 2009)",
+    "dmi_vendor": "QEMU",
+    "hypervisor_flag": true
+  },
+  "euid": 0,
+  "filesystem_space": {
+    "0:55": {
+      "bavail": 1978112,
+      "bfree": 2044456,
+      "blocks": 2097152,
+      "ffree": 0,
+      "files": 0,
+      "frsize": 4096
+    },
+    "8:1": {
+      "bavail": 1343631,
+      "bfree": 1347727,
+      "blocks": 2114330,
+      "ffree": 917865,
+      "files": 1066240,
+      "frsize": 4096
+    },
+    "8:13": {
+      "bavail": 197410,
+      "bfree": 214600,
+      "blocks": 253035,
+      "ffree": 64886,
+      "files": 65536,
+      "frsize": 4096
+    },
+    "8:15": {
+      "bavail": 200836,
+      "bfree": 200836,
+      "blocks": 213663,
+      "ffree": 0,
+      "files": 0,
+      "frsize": 512
+    },
+    "8:48": {
+      "bavail": 3749888,
+      "bfree": 3749888,
+      "blocks": 3801088,
+      "ffree": 262078,
+      "files": 262144,
+      "frsize": 4096
+    }
+  },
+  "free_extents": {
+    "8:1": {
+      "count": 1661,
+      "histogram": [
+        0,
+        0,
+        0,
+        1544192,
+        3051520,
+        5480448,
+        11382784,
+        12734464,
+        15343616,
+        21794816,
+        49119232,
+        54919168,
+        61083648,
+        44138496,
+        214634496,
+        115306496,
+        163119104,
+        191496192,
+        240848896,
+        386564096,
+        3922382848
+      ],
+      "largest": 2012213248,
+      "total": 5514944512
+    },
+    "8:13": {
+      "count": 23,
+      "histogram": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        16384,
+        167936,
+        290816,
+        0,
+        0,
+        1007616,
+        6000640,
+        6172672,
+        23072768,
+        0,
+        0,
+        0,
+        317259776,
+        519565312,
+        0,
+        0
+      ],
+      "largest": 267907072,
+      "total": 873553920
+    },
+    "8:48": {
+      "count": 8,
+      "histogram": [
+        0,
+        0,
+        0,
+        0,
+        12288,
+        16384,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        67010560,
+        402456576,
+        0,
+        268435456,
+        15627976704
+      ],
+      "largest": 15627976704,
+      "total": 16365907968
+    }
+  },
+  "hostname": "linux-btrfs-raid1-zoned-xfs",
+  "kernel": "7.0.0-22-generic",
+  "mounts": [
+    {
+      "dev": "8:1",
+      "fstype": "ext4",
+      "mountpoint": "/",
+      "read_only": false,
+      "source_dev": "8:1"
+    },
+    {
+      "dev": "8:13",
+      "fstype": "ext4",
+      "mountpoint": "/boot",
+      "read_only": false,
+      "source_dev": "8:13"
+    },
+    {
+      "dev": "8:15",
+      "fstype": "vfat",
+      "mountpoint": "/boot/efi",
+      "read_only": false,
+      "source_dev": "8:15"
+    },
+    {
+      "dev": "8:48",
+      "fstype": "xfs",
+      "mountpoint": "/mnt/zx",
+      "read_only": false,
+      "source_dev": "8:48"
+    },
+    {
+      "dev": "0:55",
+      "fstype": "btrfs",
+      "mountpoint": "/mnt/b",
+      "read_only": false,
+      "source_dev": "8:16"
+    }
+  ],
+  "nvme": {},
+  "pci": {
+    "0000:00:00.0": {
+      "class": "0x060000",
+      "device": "0x29c0",
+      "path": "/sys/devices/pci0000:00/0000:00:00.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:1a.0": {
+      "class": "0x0c0300",
+      "device": "0x2937",
+      "driver": "uhci_hcd",
+      "path": "/sys/devices/pci0000:00/0000:00:1a.0",
+      "revision": "0x03",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:1a.1": {
+      "class": "0x0c0300",
+      "device": "0x2938",
+      "driver": "uhci_hcd",
+      "path": "/sys/devices/pci0000:00/0000:00:1a.1",
+      "revision": "0x03",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:1a.2": {
+      "class": "0x0c0300",
+      "device": "0x2939",
+      "driver": "uhci_hcd",
+      "path": "/sys/devices/pci0000:00/0000:00:1a.2",
+      "revision": "0x03",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:1a.7": {
+      "class": "0x0c0320",
+      "device": "0x293c",
+      "driver": "ehci-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:1a.7",
+      "revision": "0x03",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:1b.0": {
+      "class": "0x040300",
+      "device": "0x293e",
+      "driver": "snd_hda_intel",
+      "path": "/sys/devices/pci0000:00/0000:00:1b.0",
+      "revision": "0x03",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:1c.0": {
+      "class": "0x060400",
+      "current_link_speed": "16.0 GT/s PCIe",
+      "current_link_width": "32",
+      "device": "0x000c",
+      "driver": "pcieport",
+      "max_link_speed": "16.0 GT/s PCIe",
+      "max_link_width": "32",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.0",
+      "pcie_port_type": 4,
+      "revision": "0x00",
+      "slot_implemented": true,
+      "slot_number": 0,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x1b36",
+      "vendor": "0x1b36"
+    },
+    "0000:00:1c.1": {
+      "class": "0x060400",
+      "current_link_speed": "16.0 GT/s PCIe",
+      "current_link_width": "32",
+      "device": "0x000c",
+      "driver": "pcieport",
+      "max_link_speed": "16.0 GT/s PCIe",
+      "max_link_width": "32",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.1",
+      "pcie_port_type": 4,
+      "revision": "0x00",
+      "slot_implemented": true,
+      "slot_number": 0,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x1b36",
+      "vendor": "0x1b36"
+    },
+    "0000:00:1c.2": {
+      "class": "0x060400",
+      "current_link_speed": "16.0 GT/s PCIe",
+      "current_link_width": "32",
+      "device": "0x000c",
+      "driver": "pcieport",
+      "max_link_speed": "16.0 GT/s PCIe",
+      "max_link_width": "32",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.2",
+      "pcie_port_type": 4,
+      "revision": "0x00",
+      "slot_implemented": true,
+      "slot_number": 0,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x1b36",
+      "vendor": "0x1b36"
+    },
+    "0000:00:1c.3": {
+      "class": "0x060400",
+      "current_link_speed": "16.0 GT/s PCIe",
+      "current_link_width": "32",
+      "device": "0x000c",
+      "driver": "pcieport",
+      "max_link_speed": "16.0 GT/s PCIe",
+      "max_link_width": "32",
+      "path": "/sys/devices/pci0000:00/0000:00:1c.3",
+      "pcie_port_type": 4,
+      "revision": "0x00",
+      "slot_implemented": true,
+      "slot_number": 0,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x1b36",
+      "vendor": "0x1b36"
+    },
+    "0000:00:1d.0": {
+      "class": "0x0c0300",
+      "device": "0x2934",
+      "driver": "uhci_hcd",
+      "path": "/sys/devices/pci0000:00/0000:00:1d.0",
+      "revision": "0x03",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:1d.1": {
+      "class": "0x0c0300",
+      "device": "0x2935",
+      "driver": "uhci_hcd",
+      "path": "/sys/devices/pci0000:00/0000:00:1d.1",
+      "revision": "0x03",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:1d.2": {
+      "class": "0x0c0300",
+      "device": "0x2936",
+      "driver": "uhci_hcd",
+      "path": "/sys/devices/pci0000:00/0000:00:1d.2",
+      "revision": "0x03",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:1d.7": {
+      "class": "0x0c0320",
+      "device": "0x293a",
+      "driver": "ehci-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:1d.7",
+      "revision": "0x03",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:1e.0": {
+      "children": [
+        "0000:05:01.0",
+        "0000:05:02.0",
+        "0000:05:03.0",
+        "0000:05:04.0"
+      ],
+      "class": "0x060401",
+      "device": "0x244e",
+      "path": "/sys/devices/pci0000:00/0000:00:1e.0",
+      "revision": "0x92",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x0000",
+      "vendor": "0x8086"
+    },
+    "0000:00:1f.0": {
+      "class": "0x060100",
+      "device": "0x2918",
+      "driver": "lpc_ich",
+      "path": "/sys/devices/pci0000:00/0000:00:1f.0",
+      "revision": "0x02",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:1f.2": {
+      "ahci": {
+        "capability": 3222544133,
+        "ports_implemented": 63
+      },
+      "class": "0x010601",
+      "device": "0x2922",
+      "driver": "ahci",
+      "path": "/sys/devices/pci0000:00/0000:00:1f.2",
+      "revision": "0x02",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:00:1f.3": {
+      "class": "0x0c0500",
+      "device": "0x2930",
+      "driver": "i801_smbus",
+      "path": "/sys/devices/pci0000:00/0000:00:1f.3",
+      "revision": "0x02",
+      "slot_implemented": false,
+      "subsystem_device": "0x1100",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x8086"
+    },
+    "0000:05:01.0": {
+      "children": [
+        "0000:06:03.0",
+        "0000:06:08.0",
+        "0000:06:12.0"
+      ],
+      "class": "0x060400",
+      "device": "0x0001",
+      "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:01.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x0000",
+      "vendor": "0x1b36"
+    },
+    "0000:05:02.0": {
+      "class": "0x060400",
+      "device": "0x0001",
+      "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:02.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x0000",
+      "vendor": "0x1b36"
+    },
+    "0000:05:03.0": {
+      "class": "0x060400",
+      "device": "0x0001",
+      "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:03.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x0000",
+      "vendor": "0x1b36"
+    },
+    "0000:05:04.0": {
+      "children": [
+        "0000:09:01.0",
+        "0000:09:02.0",
+        "0000:09:03.0",
+        "0000:09:04.0"
+      ],
+      "class": "0x060400",
+      "device": "0x0001",
+      "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:04.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0000",
+      "subsystem_vendor": "0x0000",
+      "vendor": "0x1b36"
+    },
+    "0000:06:03.0": {
+      "class": "0x00ff00",
+      "device": "0x1002",
+      "driver": "virtio-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:01.0/0000:06:03.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0005",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x1af4"
+    },
+    "0000:06:08.0": {
+      "class": "0x078000",
+      "device": "0x1003",
+      "driver": "virtio-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:01.0/0000:06:08.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0003",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x1af4"
+    },
+    "0000:06:12.0": {
+      "class": "0x020000",
+      "device": "0x1000",
+      "driver": "virtio-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:01.0/0000:06:12.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0001",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x1af4"
+    },
+    "0000:09:01.0": {
+      "class": "0x010000",
+      "device": "0x1004",
+      "driver": "virtio-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:04.0/0000:09:01.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0008",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x1af4"
+    },
+    "0000:09:02.0": {
+      "class": "0x010000",
+      "device": "0x1004",
+      "driver": "virtio-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:04.0/0000:09:02.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0008",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x1af4"
+    },
+    "0000:09:03.0": {
+      "class": "0x010000",
+      "device": "0x1004",
+      "driver": "virtio-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:04.0/0000:09:03.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0008",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x1af4"
+    },
+    "0000:09:04.0": {
+      "class": "0x010000",
+      "device": "0x1004",
+      "driver": "virtio-pci",
+      "path": "/sys/devices/pci0000:00/0000:00:1e.0/0000:05:04.0/0000:09:04.0",
+      "revision": "0x00",
+      "slot_implemented": false,
+      "subsystem_device": "0x0008",
+      "subsystem_vendor": "0x1af4",
+      "vendor": "0x1af4"
+    }
+  },
+  "pci_names": {
+    "1af4:1000": "Red Hat, Inc. Virtio network device",
+    "1af4:1002": "Red Hat, Inc. Virtio memory balloon",
+    "1af4:1003": "Red Hat, Inc. Virtio console",
+    "1af4:1004": "Red Hat, Inc. Virtio SCSI",
+    "1b36:0001": "Red Hat, Inc. QEMU PCI-PCI bridge",
+    "1b36:000c": "Red Hat, Inc. QEMU PCIe Root port",
+    "8086:244e": "Intel Corporation 82801 PCI Bridge",
+    "8086:2918": "Intel Corporation 82801IB (ICH9) LPC Interface Controller",
+    "8086:2922": "Intel Corporation 82801IR/IO/IH (ICH9R/DO/DH) 6 port SATA Controller [AHCI mode]",
+    "8086:2930": "Intel Corporation 82801I (ICH9 Family) SMBus Controller",
+    "8086:2934": "Intel Corporation 82801I (ICH9 Family) USB UHCI Controller #1",
+    "8086:2935": "Intel Corporation 82801I (ICH9 Family) USB UHCI Controller #2",
+    "8086:2936": "Intel Corporation 82801I (ICH9 Family) USB UHCI Controller #3",
+    "8086:2937": "Intel Corporation 82801I (ICH9 Family) USB UHCI Controller #4",
+    "8086:2938": "Intel Corporation 82801I (ICH9 Family) USB UHCI Controller #5",
+    "8086:2939": "Intel Corporation 82801I (ICH9 Family) USB UHCI Controller #6",
+    "8086:293a": "Intel Corporation 82801I (ICH9 Family) USB2 EHCI Controller #1",
+    "8086:293c": "Intel Corporation 82801I (ICH9 Family) USB2 EHCI Controller #2",
+    "8086:293e": "Intel Corporation 82801I (ICH9 Family) HD Audio Controller",
+    "8086:29c0": "Intel Corporation 82G33/G31/P35/P31 Express DRAM Controller"
+  },
+  "platform": "linux",
+  "schema": 2,
+  "signatures": {
+    "11:0": {
+      "fs_label": "cidata",
+      "fs_type": "iso9660"
+    },
+    "8:1": {
+      "fs_label": "cloudimg-rootfs",
+      "fs_type": "ext4"
+    },
+    "8:13": {
+      "fs_label": "BOOT",
+      "fs_type": "ext4"
+    },
+    "8:15": {
+      "fs_label": "UEFI",
+      "fs_type": "vfat"
+    },
+    "8:16": {
+      "fs_label": "probe-raid1",
+      "fs_type": "btrfs"
+    },
+    "8:32": {
+      "fs_label": "probe-raid1",
+      "fs_type": "btrfs"
+    },
+    "8:48": {
+      "fs_type": "xfs"
+    }
+  },
+  "stacked": {},
+  "swaps": [],
+  "usb": {},
+  "zfs_fragmentation": {},
+  "zfs_pool_layouts": {},
+  "zfs_pools": {}
+}

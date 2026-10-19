@@ -15,6 +15,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Fixed
 
+- On Linux, every member of a btrfs filesystem spanning several disks now shows its mount under
+  `used by`, and the filesystems section lists all of its disks. mountinfo names only one member,
+  so the others used to read `-` and were missing from the filesystem's row. The members are read
+  from the kernel's list under `/sys/fs/btrfs`; a snapshot records their device numbers, never the
+  filesystem's UUID. A btrfs member of no mounted filesystem now reads `not mounted`. A snapshot
+  taken by an earlier version replays as before.
 - On Linux, a drive that refused an ATA passthrough command with sense data, such as a virtual SCSI
   disk with no ATA translation, was recorded as `SG_IO transport failure: host=0 driver=8`. The
   kernel's DRIVER_SENSE code means the device answered, so the refusal now reads

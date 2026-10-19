@@ -766,6 +766,12 @@ class LinuxCapture(CaptureHeader, frozen=True):
         free_extents: Each ext3, ext4 and xfs filesystem's free-extent summary, keyed
             by its ``maj:min``. ``None`` in a capture taken before this field
             existed (or one whose mountinfo was not read).
+        btrfs_devices: Each mounted btrfs filesystem's member devices by
+            ``maj:min``, one list per filesystem, from ``/sys/fs/btrfs``;
+            the filesystem's UUID is not recorded. An empty list is a reading
+            with no btrfs mounted. ``None`` when the list could not be read
+            whole, and in a capture taken before this field existed: either
+            way a btrfs member mountinfo does not name stays undecided.
     """
 
     platform: Literal[Platform.LINUX]
@@ -790,6 +796,7 @@ class LinuxCapture(CaptureHeader, frozen=True):
     zfs_fragmentation_error: DeviceText | None = None
     filesystem_space: EntryMap[DeviceText, SpaceEntry] | None = None
     free_extents: EntryMap[DeviceText, FreeExtentsEntry] | None = None
+    btrfs_devices: Entries[Entries[DeviceText]] | None = None
 
 
 __all__ = [

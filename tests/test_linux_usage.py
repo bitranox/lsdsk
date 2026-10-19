@@ -534,6 +534,49 @@ def test_a_btrfs_member_that_resolved_nothing_is_not_read_rather_than_not_mounte
     assert usage["sdc"] is None
 
 
+def _btrfs_pair(**extra: Any) -> LinuxCapture:
+    """Two disks each carrying one member of a btrfs filesystem, sdb1 named by mountinfo, sdc1 not."""
+    reading: dict[str, Any] = {
+        "block": {
+            "sdb": _disk("8:16", partitions={"sdb1": {"dev": "8:17", "holders": []}}),
+            "sdc": _disk("8:32", partitions={"sdc1": {"dev": "8:33", "holders": []}}),
+        },
+        "mounts": [{"dev": "0:40", "mountpoint": "/", "fstype": "btrfs", "source_dev": "8:17"}],
+        "signatures": {"8:17": {"fs_type": "btrfs"}, "8:33": {"fs_type": "btrfs"}},
+    }
+    reading.update(extra)
+    return _capture(**reading)
+
+
+@pytest.mark.os_agnostic
+def test_every_member_of_a_mounted_btrfs_carries_its_mount() -> None:
+    """The kernel's member list joins the device mountinfo never names to the mount."""
+    usage = resolve_usage(_btrfs_pair(btrfs_devices=[["8:17", "8:33"]]), BARE_METAL)
+
+    sdc = usage["sdc"]
+    assert sdc is not None
+    assert sdc.boot is True
+    assert sdc.uses == (DiskUse(kind=UseKind.MOUNT, name="", mounts=("/",)),)
+
+
+@pytest.mark.os_agnostic
+def test_a_btrfs_member_of_no_mounted_filesystem_is_not_mounted() -> None:
+    """A filesystem has a member list only while mounted, so a member in none of them is not mounted."""
+    usage = resolve_usage(_btrfs_pair(btrfs_devices=[["8:17"]]), BARE_METAL)
+
+    sdc = usage["sdc"]
+    assert sdc is not None
+    assert sdc.uses == ()
+
+
+@pytest.mark.os_agnostic
+def test_a_member_of_a_mounted_btrfs_whose_mount_is_not_visible_is_not_read() -> None:
+    """Mounted in another mount namespace: the member list says mounted, mountinfo shows nothing."""
+    usage = resolve_usage(_btrfs_pair(mounts=[], btrfs_devices=[["8:17", "8:33"]]), BARE_METAL)
+
+    assert usage["sdc"] is None
+
+
 @pytest.mark.os_agnostic
 def test_lvm_without_a_mapping_name_falls_back_to_the_kernel_name() -> None:
     capture = _capture(

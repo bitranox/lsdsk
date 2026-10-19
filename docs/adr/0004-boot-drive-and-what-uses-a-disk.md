@@ -84,9 +84,12 @@ nothing reads `-` when any source that could have named it went unread: on Linux
 database, the swap list, the disk's or a partition's device number, or its partition list; on
 Windows a volume whose paths could not be read, unless its disk extents were read and name only
 disks the scan does not list, or one with a path that failed to open or to name its disk, unless it
-is an optical drive or a RAM disk. A Linux disk carrying a btrfs signature
-that resolved nothing reads `-` too: mountinfo names only one member of a multi-device btrfs
-filesystem, and joining the others would mean recording the filesystem's UUID. `not mounted`
+is an optical drive or a RAM disk. mountinfo names only one member of a multi-device btrfs
+filesystem, so the others are joined to its mount by the kernel's member list under
+`/sys/fs/btrfs` (device numbers only, no UUID). A Linux disk carrying a btrfs signature that
+resolved nothing reads `-` when that list was not read, or when it names the disk while no mount
+of the filesystem is visible; a btrfs member in no list belongs to no mounted filesystem and reads
+`not mounted`. `not mounted`
 itself does not mean a disk is safe to wipe: a disk passed through to a virtual machine, a Storage
 Spaces member or an exported ZFS pool shows it too.
 

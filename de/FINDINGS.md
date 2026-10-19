@@ -258,12 +258,17 @@ Platte: ZFS hält zwei seiner Labels am Ende eines Vdevs, sodass eine Pool-Parti
 bis zum Ende ihrer Platte läuft, auch die ganze Platte als Mitglied erscheinen lassen kann, und
 die eigene Signatur der Partition ist es, die das aufhebt.
 
-Zwei ehrliche Lücken. Ein btrfs-Dateisystem, das sich über mehrere Platten spannt, wird in
-mountinfo nur von einer davon genannt, sodass seine übrigen Mitglieder `-` zeigen: Sie
-zusammenzuführen würde bedeuten, die eigene UUID des Dateisystems zu lesen, was dieses
-Werkzeug nicht tut. Eine Platte, deren Partitionen auf einem Holder sich nicht auflisten ließen,
-nennt diesen Holder, aber nicht die Einhängepunkte dahinter, aus demselben Grund - das Gerät
-wird gesehen, was auf seinen ungelesenen Partitionen liegt, nicht.
+Ein btrfs-Dateisystem, das sich über mehrere Platten spannt, wird in mountinfo nur von einer
+davon genannt. Die übrigen werden über die Mitgliederliste des Kernels unter `/sys/fs/btrfs`
+seinem Einhängepunkt zugeordnet, die jedes Mitglied eines eingehängten btrfs mit seiner
+Gerätenummer nennt; die UUID des Dateisystems wird nicht aufgezeichnet. Ein Mitglied, das die
+Liste nennt, dessen Einhängepunkt mountinfo aber nicht zeigt, etwa bei einem Dateisystem, das
+in einem anderen Mount-Namespace eingehängt ist, zeigt `-`, ebenso jedes Mitglied in einer
+Aufnahme, die vor dem Lesen dieser Liste entstand.
+
+Eine ehrliche Lücke. Eine Platte, deren Partitionen auf einem Holder sich nicht auflisten
+ließen, nennt diesen Holder, aber nicht die Einhängepunkte dahinter: Das Gerät wird gesehen,
+was auf seinen ungelesenen Partitionen liegt, nicht.
 
 `not mounted` ist kein Urteil, dass eine Platte ungenutzt ist, nur dass nichts, was dieses
 Werkzeug liest, eine Nutzung fand. Eine an eine virtuelle Maschine durchgereichte Platte, ein
@@ -273,7 +278,9 @@ genutzt wird, das lsdsk nicht liest, können das alle ebenso zeigen.
 Eine Momentaufnahme behält nur, was die Auflösung der Nutzung braucht: Einhängepunkte und
 Dateisystemtypen, den Namen eines ZFS-Pools (nie seine Datasets), und das Typpräfix einer
 Device-Mapper-Zuordnung (`LVM-`, `CRYPT-`) statt ihrer vollen UUID. Sie lässt die Quelle eines
-Netzwerk- oder tmpfs-Einhängepunkts weg, ebenso jede Dateisystem-UUID. Ein geräte-gestützter
+Netzwerk- oder tmpfs-Einhängepunkts weg, ebenso jede Dateisystem-UUID; die Mitglieder eines
+eingehängten btrfs bleiben als Gerätenummern erhalten, ohne die UUID, die sie in sysfs benennt.
+Ein geräte-gestützter
 Swap behält seinen Pfad; eine Swap-Datei nicht, weil nichts nachgelagert ihn liest und er einen
 Benutzer oder ein Projekt nennen könnte. Ein Windows-Volume wird über eine Ordnungszahl pro
 Momentaufnahme referenziert statt über seinen GUID-Pfad, und ein Fedora-typischer

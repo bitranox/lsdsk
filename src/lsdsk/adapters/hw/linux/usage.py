@@ -26,8 +26,9 @@ BOOT_MOUNTS = frozenset({"/", "/boot", "/boot/efi", "/efi"})
 _ZFS_MEMBER = "zfs_member"
 
 # Filesystems that span several devices while mountinfo names only one of them
-# as the mount's source. The other members cannot be joined to the mount from
-# what the reader records, so one that resolved nothing is undecided rather
+# as the mount's source. The kernel's member list (``btrfs_devices``) joins the
+# others to the mount; without it, or for a member of a mounted filesystem whose
+# mount this namespace cannot see, one that resolved nothing is undecided rather
 # than unused.
 _UNJOINABLE_MEMBER_TYPES = frozenset({"btrfs"})
 
@@ -77,7 +78,26 @@ def _mounts_by_dev(capture: LinuxCapture) -> dict[str, tuple[str, ...]]:
         for dev in (mount.dev, mount.source_dev):
             if dev:
                 ordered.setdefault(dev, {})[mount.mountpoint] = None
+    # Every member of a multi-device btrfs carries the mount mountinfo gave one of them.
+    for members in capture.btrfs_devices or ():
+        joined = {mountpoint: None for dev in members for mountpoint in ordered.get(dev, {})}
+        if joined:
+            for dev in members:
+                ordered[dev] = dict(joined)
     return {dev: tuple(mountpoints) for dev, mountpoints in ordered.items()}
+
+
+def btrfs_siblings(capture: LinuxCapture) -> dict[str, frozenset[str]]:
+    """Each member device of a mounted btrfs to every member of the same filesystem, itself included.
+
+    Args:
+        capture: A Linux reading.
+
+    Returns:
+        ``maj:min`` to its filesystem's members; empty for a capture that
+        carries no member list.
+    """
+    return {dev: frozenset(members) for members in capture.btrfs_devices or () for dev in members}
 
 
 def _swap_devs(capture: LinuxCapture) -> frozenset[str]:
@@ -398,7 +418,9 @@ def _undecidable(
         partitions is None,
         partitions is not None and any(partition.dev is None for partition in partitions.values()),
     )
-    unjoinable = any(sig is not None and sig.fs_type in _UNJOINABLE_MEMBER_TYPES for sig in signatures)
+    unjoinable = any(sig is not None and sig.fs_type in _UNJOINABLE_MEMBER_TYPES for sig in signatures) and (
+        capture.btrfs_devices is None or not _member_devs(block, capture.stacked).isdisjoint(btrfs_siblings(capture))
+    )
     return any(unread) or unjoinable
 
 
@@ -702,6 +724,7 @@ def resolve_usage(capture: LinuxCapture, environment: Environment) -> dict[str, 
 __all__ = [
     "BOOT_MOUNTS",
     "PoolLookup",
+    "btrfs_siblings",
     "devices_on_virtual_disks",
     "disks_by_device",
     "disks_by_pool",

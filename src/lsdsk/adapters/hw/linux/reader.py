@@ -1329,6 +1329,7 @@ class SystemReaders:
     pool_layouts: Callable[[], dict[str, dict[str, Any]] | None] = zfs.read_pool_layouts
     mount_table: Callable[[], list[dict[str, str | bool]] | None] = mounts.read_mounts
     swaps: Callable[[], list[dict[str, str]] | None] = mounts.read_swaps
+    btrfs_devices: Callable[[], list[list[str]] | None] = mounts.read_btrfs_devices
     space: Callable[[Sequence[Mapping[str, str | bool]]], dict[str, dict[str, int | str]]] = mounts.read_space
     free_extents: Callable[[Sequence[Mapping[str, str | bool]]], dict[str, dict[str, Any]]] = (
         freespace.read_free_extents
@@ -1396,6 +1397,7 @@ def read_system(readers: SystemReaders | None = None) -> dict[str, Any]:
         "usb": read.usb(block),
         "mounts": mount_rows,
         "swaps": read.swaps(),
+        "btrfs_devices": read.btrfs_devices(),
         "stacked": stacked,
         "signatures": read.signatures(_signature_devnums(block, stacked)),
         **zfs.capture_fields(pools, pools_error),

@@ -227,11 +227,14 @@ labels at the end of a vdev, so a pool partition running to the end of its disk 
 probe of the whole disk find a member too, and the partition's own signature is what overrides
 that.
 
-Two honest gaps. A btrfs filesystem spanning several disks is named in mountinfo by only one of
-them, so its other members read `-`: joining them would mean reading the filesystem's own UUID,
-which this tool does not do. A disk whose holder's partitions could not be listed names that
-holder but not the mounts reached through it, for the same reason - the device is seen, what
-sits on its unread partitions is not.
+A btrfs filesystem spanning several disks is named in mountinfo by only one of them. The others
+are joined to its mount through the kernel's member list under `/sys/fs/btrfs`, which names every
+member of a mounted btrfs by device number; the filesystem's UUID is not recorded. A member the
+list names whose mount mountinfo does not show, such as a filesystem mounted in another mount
+namespace, reads `-`, and so does every member in a capture taken before the list was read.
+
+One honest gap. A disk whose holder's partitions could not be listed names that holder but not
+the mounts reached through it: the device is seen, what sits on its unread partitions is not.
 
 `not mounted` is not a verdict that a disk is unused, only that nothing this tool reads found a
 use. A disk passed through to a virtual machine, a member of a Storage Spaces pool, an exported
@@ -239,7 +242,8 @@ ZFS pool, or a disk in use by something outside what lsdsk reads can all show it
 
 A snapshot keeps only what resolving usage needs: mountpoints and filesystem types, a ZFS
 pool's name (never its datasets), and a device-mapper mapping's type prefix (`LVM-`, `CRYPT-`)
-rather than its full UUID. It drops a network or tmpfs mount's source and any filesystem UUID.
+rather than its full UUID. It drops a network or tmpfs mount's source and any filesystem UUID; a
+mounted btrfs's members are kept as device numbers, without the UUID that names them in sysfs.
 A device-backed swap keeps its path; a swap file does not, because nothing downstream reads it
 and it can name a user or a project. A Windows volume is keyed by a per-capture ordinal rather
 than its GUID path, and a Fedora-style `luks-<UUID>` mapping name is recorded as the literal

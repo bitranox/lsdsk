@@ -91,7 +91,7 @@ are. Models, firmware revisions and every measurement are as captured.
 Each is named for what it holds rather than where it came from, so a test
 naming one says what it is testing: `linux-sas-hba`, `linux-nvme-board`,
 `linux-minimal`, `linux-usb-ehci`, `linux-zfs-filesystems`, `linux-ext4-xfs-filesystems`,
-`windows-ahci`, `windows-usb-uas`, `windows-chipset-switch`. `linux-sas-hba-later` is the same capture
+`linux-btrfs-raid1-zoned-xfs`, `windows-ahci`, `windows-usb-uas`, `windows-chipset-switch`. `linux-sas-hba-later` is the same capture
 taken later, and the two deliberately share a hostname because the history
 tests need it - the store refuses to mix two machines.
 

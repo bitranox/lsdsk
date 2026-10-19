@@ -31,6 +31,7 @@ ALL_HOSTS = (
     "linux-usb-ehci",
     "linux-zfs-filesystems",
     "linux-ext4-xfs-filesystems",
+    "linux-btrfs-raid1-zoned-xfs",
     "windows-ahci",
     "windows-usb-uas",
     "windows-chipset-switch",

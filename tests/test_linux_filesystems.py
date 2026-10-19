@@ -310,6 +310,22 @@ def test_a_mount_whose_device_is_unknown_is_found_through_its_source_device() ->
     assert [(row.name, row.disks) for row in rows] == [("/data", ("sda",))]
 
 
+def test_a_btrfs_over_two_disks_names_both_from_the_kernel_member_list() -> None:
+    """The mount names sda1 alone; the kernel member list is what puts sdb on the row too."""
+    mount = {**_mount("0:99", "/data", "btrfs"), "source_dev": "8:1"}
+    block = {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}}), "sdb": _disk("8:16", {"sdb1": {"dev": "8:17"}})}
+
+    joined, _ = build_filesystems(
+        _capture(block, mounts=[mount], filesystem_space={}, btrfs_devices=[["8:1", "8:17"]]), BARE_METAL
+    )
+    unjoined, _ = build_filesystems(_capture(block, mounts=[mount], filesystem_space={}), BARE_METAL)
+
+    assert joined is not None
+    assert [(row.name, row.disks) for row in joined] == [("/data", ("sda", "sdb"))]
+    assert unjoined is not None
+    assert [(row.name, row.disks) for row in unjoined] == [("/data", ("sda",))], "a capture without the list"
+
+
 def test_a_pool_with_no_member_disk_makes_no_row() -> None:
     capture = _capture(
         {"sda": _disk("8:0", {"sda1": {"dev": "8:1"}})},

@@ -778,3 +778,50 @@ def test_the_mountinfo_bound_counts_encoded_bytes_not_characters(tmp_path: Path)
 
     assert mounts.read_mounts(path, limit=size - 1) is None
     assert mounts.read_mounts(path, limit=size) is not None
+
+
+def _btrfs_tree(root: Path, filesystems: dict[str, dict[str, str]]) -> Path:
+    """A fake /sys/fs/btrfs: one directory per filesystem, each member a directory carrying ``dev``."""
+    (root / "features").mkdir(parents=True)
+    for fsid, members in filesystems.items():
+        for name, dev in members.items():
+            member = root / fsid / "devices" / name
+            member.mkdir(parents=True)
+            (member / "dev").write_text(f"{dev}\n", encoding="utf-8")
+    return root
+
+
+@pytest.mark.os_agnostic
+def test_read_btrfs_devices_lists_each_mounted_filesystem_s_members_without_its_uuid(tmp_path: Path) -> None:
+    root = _btrfs_tree(
+        tmp_path / "btrfs",
+        {"c23d60c1-aaaa": {"sdc": "8:32", "sdb": "8:16"}, "0f1e2d3c-bbbb": {"nvme0n1p3": "259:3"}},
+    )
+
+    devices = mounts.read_btrfs_devices(root)
+
+    assert devices == [["259:3"], ["8:16", "8:32"]]
+    assert "c23d60c1" not in json.dumps(devices)
+
+
+@pytest.mark.os_agnostic
+def test_read_btrfs_devices_with_no_btrfs_directory_is_no_mounted_btrfs(tmp_path: Path) -> None:
+    """The directory exists only once the btrfs module is loaded, and nothing is mounted without it."""
+    assert mounts.read_btrfs_devices(tmp_path / "absent") == []
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize("dev", [pytest.param("", id="empty"), pytest.param("sdb", id="not a device number")])
+def test_read_btrfs_devices_with_one_member_unread_is_no_reading(tmp_path: Path, dev: str) -> None:
+    """A member left out would read as not mounted, so a partial list is refused whole."""
+    root = _btrfs_tree(tmp_path / "btrfs", {"c23d60c1-aaaa": {"sdb": "8:16", "sdc": dev}})
+
+    assert mounts.read_btrfs_devices(root) is None
+
+
+@pytest.mark.os_agnostic
+def test_read_btrfs_devices_with_a_member_missing_its_dev_file_is_no_reading(tmp_path: Path) -> None:
+    root = _btrfs_tree(tmp_path / "btrfs", {"c23d60c1-aaaa": {"sdb": "8:16"}})
+    (root / "c23d60c1-aaaa" / "devices" / "sdc").mkdir()
+
+    assert mounts.read_btrfs_devices(root) is None

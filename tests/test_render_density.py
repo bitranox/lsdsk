@@ -64,6 +64,11 @@ DENSITY_COUNTS: dict[str, dict[TreeDensity, int]] = {
         TreeDensity.STORAGE_AND_SIBLINGS: 5,
         TreeDensity.FULL: 14,
     },
+    "linux-btrfs-raid1-zoned-xfs": {
+        TreeDensity.STORAGE_ONLY: 7,
+        TreeDensity.STORAGE_AND_SIBLINGS: 7,
+        TreeDensity.FULL: 29,
+    },
     "windows-ahci": {TreeDensity.STORAGE_ONLY: 4, TreeDensity.STORAGE_AND_SIBLINGS: 7, TreeDensity.FULL: 27},
     "windows-usb-uas": {TreeDensity.STORAGE_ONLY: 5, TreeDensity.STORAGE_AND_SIBLINGS: 5, TreeDensity.FULL: 25},
     "windows-chipset-switch": {

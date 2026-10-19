@@ -20,6 +20,7 @@ Contents:
     * :func:`read_stacked` - a device-mapper device's mapping and its holders.
     * :func:`stacked_device_numbers` - every device number a stacked reading names.
     * :func:`read_signatures` - the udev database's filesystem type and label.
+    * :func:`read_btrfs_devices` - the member devices of each mounted btrfs.
 """
 
 from __future__ import annotations
@@ -812,6 +813,69 @@ def _holder_names(node: Path) -> list[str]:
         return []
 
 
+#: A sysfs ``dev`` attribute: the block device's ``maj:min``.
+_DEVICE_NUMBER = re.compile(r"[0-9]{1,10}:[0-9]{1,10}")
+
+
+def read_btrfs_devices(root: Path = Path("/sys/fs/btrfs")) -> list[list[str]] | None:
+    """Read which devices each mounted btrfs filesystem spans.
+
+    mountinfo names ONE device as a multi-device btrfs's source, so the other
+    members cannot be joined to the mount from it. The kernel lists every
+    member under ``<root>/<fsid>/devices/``, one entry per member linking to
+    its block device, and creates that directory when the filesystem is
+    mounted - so a member in no list is a member of no mounted filesystem.
+    The fsid names the directory and is not recorded: nothing downstream
+    needs it, and it identifies the filesystem.
+
+    Args:
+        root: The ``/sys/fs/btrfs`` directory, overridable for a test.
+
+    Returns:
+        Each mounted filesystem's member device numbers, sorted, the lists in
+        sorted order. Empty when `root` does not exist, which is the btrfs
+        module not loaded and so nothing mounted. ``None`` when any part could
+        not be read: a member left out would read as not mounted, so a partial
+        list is no reading at all.
+
+    Example:
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as empty:
+        ...     read_btrfs_devices(Path(empty) / "btrfs")
+        []
+    """
+    try:
+        filesystems = sorted(root.iterdir())
+    except FileNotFoundError:
+        return []
+    except OSError:
+        return None
+    groups: list[list[str]] = []
+    for filesystem in filesystems:
+        # ``features`` (and anything else that is not a filesystem) has no ``devices``.
+        devices = filesystem / "devices"
+        if not devices.is_dir():
+            continue
+        members = _btrfs_members(devices)
+        if members is None:
+            return None
+        if members:
+            groups.append(members)
+    return sorted(groups)
+
+
+def _btrfs_members(devices: Path) -> list[str] | None:
+    """The device numbers under one filesystem's ``devices`` directory, or ``None`` if any is unread."""
+    try:
+        entries = sorted(devices.iterdir())
+    except OSError:
+        return None
+    numbers = [_read_short_text(entry / "dev") for entry in entries]
+    if not all(number is not None and _DEVICE_NUMBER.fullmatch(number) for number in numbers):
+        return None
+    return sorted(number for number in numbers if number is not None)
+
+
 def _read_short_text(path: Path, *, limit: int = MAX_ATTRIBUTE_CHARS) -> str | None:
     """Read one short sysfs attribute's stripped text, or ``None``.
 
@@ -839,6 +903,7 @@ __all__ = [
     "StatvfsResult",
     "device_number_of",
     "kernel_path",
+    "read_btrfs_devices",
     "read_mounts",
     "read_partitions",
     "read_signatures",
