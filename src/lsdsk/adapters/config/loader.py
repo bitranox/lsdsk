@@ -14,18 +14,16 @@ from lib_layered_config import (
     DEFAULT_MAX_PROFILE_LENGTH,
     Config,
     read_config,
+    read_deploy_config,
     validate_profile_name,
 )
 from lib_layered_config import (
     ValidationError as _LibValidationError,
 )
 
-# Below the top-level exports, as profiles.py and deploy.py reach the library where it keeps a
-# name. The library's public read has no way to leave one file out, and the read it uses for the
-# deploy's own modes - which skips the files the deploy writes - is the one a forced deploy needs.
+# Below the top-level exports, as profiles.py reaches the library where it keeps a name: the
+# per-file parse that tells a broken file from a missing one has no top-level export.
 from lib_layered_config.adapters.file_loaders.structured import TOMLFileLoader
-from lib_layered_config.adapters.path_resolvers.default import DefaultPathResolver
-from lib_layered_config.core import read_config_for_deploy
 from lib_layered_config.domain.errors import InvalidFormatError, NotFoundError
 
 from lsdsk import __init__conf__
@@ -334,14 +332,14 @@ def read_config_skipping(*, profile: str | None, skip: frozenset[Path]) -> Confi
     """The configuration as the deploy itself reads it, with `skip` left out.
 
     lib_layered_config's ``read_config`` has no way to leave a file out, so a file a forced
-    deploy is about to replace stopped the read that runs before it. This is the library's read
-    for the deploy's own modes: the shipped defaults, the app, host and user files not in
-    `skip`, and the environment. It reads no ``.env`` file, and a user file's ``app_*`` and
-    ``host_*`` modes are left out, as the deploy leaves them out.
+    deploy is about to replace would stop the read that runs before it. This is the library's
+    ``read_deploy_config`` for this package: the shipped defaults, the app, host and user files
+    not in `skip`, and the environment. It reads no ``.env`` file, and a user file's ``app_*``
+    and ``host_*`` modes are left out, as the deploy leaves them out.
 
     Args:
         profile: The profile deployed into, or ``None``.
-        skip: Resolved paths to leave out.
+        skip: Paths to leave out.
 
     Returns:
         The merged configuration, with provenance.
@@ -349,16 +347,18 @@ def read_config_skipping(*, profile: str | None, skip: frozenset[Path]) -> Confi
     Raises:
         LayerLoadError: A file not in `skip` is not valid TOML, or could not be read; then its
             ``__cause__`` chain holds the ``OSError``.
+        FileNotFoundError: The shipped default configuration is missing.
         ValueError: `profile` is not a valid profile name, or the environment gives a key both
             as a value and as a table.
     """
-    resolver = DefaultPathResolver(
+    return read_deploy_config(
+        get_default_config_path(),
         vendor=__init__conf__.LAYEREDCONF_VENDOR,
         app=__init__conf__.LAYEREDCONF_APP,
         slug=__init__conf__.LAYEREDCONF_SLUG,
         profile=profile,
+        skip=skip,
     )
-    return read_config_for_deploy(resolver=resolver, default_file=get_default_config_path(), skip=skip)
 
 
 def _deep_merge(base: dict[str, object], update: Mapping[str, object]) -> None:

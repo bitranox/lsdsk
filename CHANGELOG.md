@@ -5,6 +5,14 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- `config-deploy` reads what the deploy reads through lib_layered_config 7.2.0's public
+  `read_deploy_config` and `deploy_config_paths`, instead of the library's private
+  `core.read_config_for_deploy` and a copy of its destination chooser. What the command does is
+  unchanged: a forced deploy still reads past a broken file it rewrites, and the warning about modes
+  set in a file the deploy rewrites names the same files. Requires lib_layered_config 7.2.0.
+
 ## [1.12.0] 2026-10-19 16:30:06
 
 ### Added
