@@ -130,7 +130,16 @@ def _at_a_terminal(argv: list[str], *, stderr: str, tmp_path: Path, press_q: boo
             stdin=slave,
             stdout=slave,
             stderr={"terminal": slave, "file": file}.get(stderr),
-            env={**os.environ, "TERM": "xterm-256color", "COLUMNS": "180", "LINES": "50"},
+            # The desktop-shortcut offer fires before the view on a real terminal;
+            # it has its own tests (including that it precedes elevation), so it is
+            # turned off here to keep these runs about the view and the streams.
+            env={
+                **os.environ,
+                "TERM": "xterm-256color",
+                "COLUMNS": "180",
+                "LINES": "50",
+                "LSDSK___DISPLAY__OFFER_DESKTOP_SHORTCUT": "false",
+            },
         )
     os.close(slave)
     drain = _Drain(master)
