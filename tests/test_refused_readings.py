@@ -441,6 +441,44 @@ def test_a_complete_privileged_run_reports_ok_on_every_committed_capture(
     assert not stray, f"{fixture} names a device in skipped without a recorded refusal: {stray}"
 
 
+@pytest.mark.os_agnostic
+def test_a_ram_disk_whose_extents_failed_leaves_no_disk_undecided(
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+    tmp_path: Path,
+) -> None:
+    """The RAM-disk arm of the diskless-drive rule, proven through a full replay.
+
+    The CD-ROM arm has a committed capture - windows-chipset-switch carries a
+    real ``DRIVE_CDROM`` volume whose extents query failed, and the test above
+    replays it. No reachable machine produces the RAM-disk arm: every RAM-disk
+    driver reports ``DRIVE_FIXED``, and ``GetDriveTypeW``'s 6 is a driver's
+    declared ``FILE_DEVICE`` type rather than RAM backing, so the volume is
+    planted into a real capture rather than captured. A RAM disk whose extents
+    could not be read names no disk and says nothing about one, so a disk this
+    run cannot otherwise place stays "not mounted" rather than becoming
+    "undecided", and no skipped line names it. Drop ``DRIVE_RAMDISK`` from
+    ``DISKLESS_DRIVE_TYPES`` and disk 0's usage goes ``null`` here. The
+    ``resolve_usage`` arm of this rule is pinned at module level in
+    ``test_windows_usage``; this is its end-to-end twin.
+    """
+
+    def plant(data: dict[str, Any]) -> None:
+        data["volumes"] = {
+            "\\\\?\\Volume{ram}\\": {
+                "paths": ["R:\\"],
+                "drive_type": 6,
+                "disks": [],
+                "error": "could not read the volume's disk extents (error 1)",
+            }
+        }
+
+    envelope = envelope_of(capture_with("windows-ahci.json", plant, tmp_path), cli_runner, production_factory)
+    disk = next(entry for entry in envelope["data"]["disks"] if entry["node"] == "PhysicalDrive0")
+    assert disk["usage"] is not None, f"the RAM disk's failure left disk 0 undecided: {envelope['data']['disks']}"
+    assert not [line for line in envelope["skipped"] if "R:\\" in line], envelope["skipped"]
+
+
 def _recorded_refusals(capture: object) -> frozenset[str]:
     """Every reason text a capture holds in an ``*_error`` field, wherever it sits."""
     found: set[str] = set()
