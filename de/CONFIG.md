@@ -437,6 +437,7 @@ Laufwerk über sich selbst veröffentlicht.
 | `wwn_width`               | `24`           | Höchstzahl Zeichen für die Spalte wwn in beiden Ansichten              |
 | `detail_height_percent`   | `33`           | Höchstanteil des interaktiven Fensters für die Detailtafel             |
 | `auto_elevate`            | `true`         | Ob die interaktive Ansicht nach Administrator- oder Root-Rechten fragt |
+| `offer_desktop_shortcut`  | `true`         | Bei einem geeigneten interaktiven Start eine Verknüpfung anbieten      |
 | `traceback_summary_limit` | `500`          | Zeichen, die ein kurzer Traceback behält                               |
 | `traceback_verbose_limit` | `10000`        | Und unter `--traceback`                                                |
 
@@ -492,6 +493,15 @@ Container), nie bei `--replay` und nie für einen druckenden Befehl. `--no-eleva
 erhöhten Rechten wird mit `--elevated-relaunch` gestartet, damit sie nicht noch
 einmal fragt; die Option erscheint nicht in `--help` und ist nicht zum Eintippen
 gedacht.
+
+`offer_desktop_shortcut` entscheidet, ob ein geeigneter interaktiver Start
+anbietet, eine Desktop-Verknüpfung anzulegen, die lsdsk startet, damit man sich
+den Befehl nicht merken muss. Das Angebot erscheint einmal, als einzeilige Frage
+mit drei Antworten: anlegen, nicht jetzt (beim nächsten Mal wieder gefragt), oder
+nie, was diesen Schlüssel auf `false` setzt. Es bleibt still, wenn die
+Ausgabe umgeleitet oder durch eine Pipe geht, wenn die Verknüpfung schon besteht,
+oder wenn dieser Schlüssel `false` ist. `lsdsk install-shortcut` legt die
+Verknüpfung ohne Weiteres an, wie dieser Schlüssel auch gesetzt ist.
 
 Farbe ist kein Schlüssel, obwohl dieser Abschnitt nach ihr benannt ist. Die
 gedruckte Palette muss auf einer schwarzen und einer weißen Konsole zugleich

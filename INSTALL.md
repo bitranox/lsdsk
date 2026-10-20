@@ -130,6 +130,44 @@ lsdsk --help                        # lists every command
 lsdsk                               # reads this machine
 ```
 
+## Desktop shortcut
+
+lsdsk can create a desktop shortcut that launches it, so you need not type the
+command each time. The interactive view offers one the first time you run it at
+a terminal, and you can also ask for it outright:
+
+```bash
+lsdsk install-shortcut              # write the shortcut for this platform
+lsdsk install-shortcut --install-uv # and install uv first if none is present
+```
+
+On Linux it writes a `.desktop` entry and on macOS a `.command` file. Where
+`uvx` is available the shortcut launches lsdsk through it, with the same 7-day
+cooldown the project pins, so a start from the desktop gets the supply-chain
+protection a plain `uvx` run would. (If only a plainly installed `lsdsk` is on
+your PATH, it launches that instead.) The `uvx` launch looks like:
+
+```bash
+uvx --exclude-newer "7 days" --exclude-newer-package <owned-package>=false lsdsk@latest
+```
+
+with one `--exclude-newer-package <name>=false` for each package lsdsk owns in
+its dependency closure, which exempts those from the cooldown so a new lsdsk
+release is not held back by it.
+
+If the machine has no uv, there is nothing for the shortcut to launch yet. With
+`--install-uv`, or when you accept the interactive offer, lsdsk runs the
+official astral.sh installer, only after you confirm:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh                                       # Linux and macOS
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"    # Windows
+```
+
+lsdsk pins that installer to a known uv version rather than fetching whatever is
+newest. Set `display.offer_desktop_shortcut = false` to turn the interactive
+offer off (see [CONFIG.md](https://github.com/bitranox/lsdsk/blob/main/CONFIG.md)).
+
 ## Uninstalling
 
 ```bash

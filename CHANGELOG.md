@@ -5,6 +5,25 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Added
+
+- A desktop-shortcut feature. `lsdsk install-shortcut` writes a desktop launcher for the tool, so
+  you need not remember the command; `--install-uv` lets it install uv first when none is present.
+  On a qualifying interactive start lsdsk also offers the shortcut once, with a three-way answer:
+  create it, not now (asked again next time), or never. The offer fires before the elevation
+  relaunch, while there is still a terminal to answer it. Linux gets a `.desktop` entry and macOS a
+  `.command` file, each carrying a disk-and-pulse icon.
+- `display.offer_desktop_shortcut` (default `true`), which turns that interactive offer off when
+  set to `false`. Answering "never" at the prompt writes exactly this.
+- A consent-gated uv bootstrap: when the shortcut is accepted on a machine with no uv, lsdsk can
+  run the official, version-pinned astral.sh installer, only after you confirm.
+
+### Changed
+
+- The "starts no subprocess, makes no network request" posture now carries one consent-gated
+  exception, the uv install above. It is confined to the single module `adapters/uv_bootstrap.py`
+  and enforced by `tests/test_no_subprocess_or_network.py`.
+
 ## [1.14.1] 2026-10-20 15:28:53
 
 ### Tests

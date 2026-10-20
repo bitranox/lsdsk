@@ -39,13 +39,16 @@ an einer bereits ausgelasteten Anbindung hängt. Ein Speicherserver fällt selte
 Er läuft still über Jahre mit einem leicht behebbaren Defizit, und die Werte, 
 die das erklären würden, liegen verstreut über sysfs, in einer Reihe von Ioctls und im Mainboard-Handbuch.
 
-lsdsk stellt keine Netzwerkanfragen - die einzige Ausnahme ist die optionale
-Graylog-Protokollsenke, die aus bleibt, solange man sie nicht einschaltet - und der einzige
-Prozess, den es je startet, ist es selbst: Die interaktive Ansicht fragt unter Windows nach
-Administratorrechten und öffnet sich dann mit erhöhten Rechten in einem neuen Fenster, unter Linux
-und macOS über sudo nach Root-Rechten und startet dann als root im selben Terminal neu
-(`--no-elevate` schaltet das ab). Jeder Wert, den es ausgibt, wurde direkt gelesen, unter
-Linux aus sysfs und über direkte Ioctls, unter Windows über SetupAPI und DeviceIoControl.
+lsdsk stellt keine Netzwerkanfragen, mit zwei Ausnahmen, die beide aus bleiben, bis man sie
+anfordert. Die optionale Graylog-Protokollsenke öffnet eine Verbindung erst, wenn man sie
+einschaltet. Und nimmt man das Angebot an, auf einer Maschine ohne installiertes uv eine
+Desktop-Verknüpfung anzulegen, kann lsdsk uv vom offiziellen astral.sh-Installer einrichten, aber
+erst nach ausdrücklicher Bestätigung. Der einzige Prozess, den es je startet, ist es
+selbst: Die interaktive Ansicht fragt unter Windows nach Administratorrechten und öffnet sich dann
+mit erhöhten Rechten in einem neuen Fenster, unter Linux und macOS über sudo nach Root-Rechten und
+startet dann als root im selben Terminal neu (`--no-elevate` schaltet das ab). Jeder Wert, den es
+ausgibt, wurde direkt gelesen, unter Linux aus sysfs und über direkte Ioctls, unter Windows über
+SetupAPI und DeviceIoControl.
 
 ## SCHNELLSTART
 
@@ -139,9 +142,12 @@ uv tool install lsdsk  # für den wiederholten Gebrauch installieren - in einem 
 pip install lsdsk      # für Nostalgiker
 ```
 
-Python 3.11 oder neuer, Linux oder Windows. Es ruft nichts auf: kein
-`smartmontools`, kein `nvme-cli`, kein `lspci`, und keinen Netzzugriff, solange man
-die optionale Graylog-Protokollsenke nicht einschaltet. Der einzige Prozess, den es
+Python 3.11 oder neuer, Linux oder Windows. Es ruft nichts auf - kein
+`smartmontools`, kein `nvme-cli`, kein `lspci` - und greift nicht aufs Netz zu, mit
+zwei Ausnahmen, die man einschalten muss: die optionale Graylog-Protokollsenke,
+und, nimmt man das Desktop-Verknüpfungs-Angebot auf einer Maschine ohne uv an,
+das Einrichten von uv vom offiziellen astral.sh-Installer nach ausdrücklicher
+Bestätigung. Der einzige Prozess, den es
 startet, ist seine eigene Kopie mit erhöhten Rechten, wenn die interaktive Ansicht
 unter Windows nach Administratorrechten oder unter Linux über sudo nach Root-Rechten fragt. Seine eigenen Python-Abhängigkeiten stehen
 in `pyproject.toml`.

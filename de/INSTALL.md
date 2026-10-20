@@ -135,6 +135,46 @@ lsdsk --help                        # listet jeden Befehl
 lsdsk                               # liest diese Maschine
 ```
 
+## Desktop-Verknüpfung
+
+lsdsk kann eine Desktop-Verknüpfung anlegen, die es startet, damit man den
+Befehl nicht jedes Mal eintippen muss. Die interaktive Ansicht bietet eine an,
+wenn man lsdsk das erste Mal an einem Terminal ausführt, und man kann sie auch
+ausdrücklich anfordern:
+
+```bash
+lsdsk install-shortcut              # die Verknüpfung für diese Plattform schreiben
+lsdsk install-shortcut --install-uv # und uv zuerst einrichten, wenn keines da ist
+```
+
+Unter Linux schreibt es einen `.desktop`-Eintrag, unter macOS eine
+`.command`-Datei. Wo `uvx` vorhanden ist, startet die Verknüpfung lsdsk darüber,
+mit derselben 7-Tage-Wartezeit, die das Projekt festlegt, so bekommt ein Start
+vom Desktop den Lieferkettenschutz, den ein einfacher `uvx`-Lauf hätte. (Ist nur
+ein ganz normal installiertes `lsdsk` im PATH, startet sie dieses stattdessen.)
+Der `uvx`-Aufruf sieht so aus:
+
+```bash
+uvx --exclude-newer "7 days" --exclude-newer-package <owned-package>=false lsdsk@latest
+```
+
+mit einem `--exclude-newer-package <name>=false` je Paket, das lsdsk in seiner
+Abhängigkeits-Hülle besitzt, was diese von der Wartezeit ausnimmt, damit eine
+neue lsdsk-Veröffentlichung nicht zurückgehalten wird.
+
+Hat die Maschine kein uv, gibt es noch nichts, was die Verknüpfung starten
+könnte. Mit `--install-uv`, oder wenn man das interaktive Angebot annimmt, führt
+lsdsk den offiziellen astral.sh-Installer aus, erst nach ausdrücklicher Bestätigung:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh                                       # Linux und macOS
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"    # Windows
+```
+
+lsdsk legt diesen Installer auf eine bekannte uv-Version fest, statt die jeweils
+neueste zu holen. Setzen Sie `display.offer_desktop_shortcut = false`, um das
+interaktive Angebot abzuschalten (siehe [CONFIG.md](CONFIG.md)).
+
 ## Deinstallieren
 
 ```bash

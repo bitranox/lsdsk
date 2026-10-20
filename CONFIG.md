@@ -434,6 +434,7 @@ itself.
 | `wwn_width`               | `24`           | Most characters the wwn column is given in either view      |
 | `detail_height_percent`   | `33`           | Most of the interactive window the detail panel takes       |
 | `auto_elevate`            | `true`         | Whether the interactive view asks for Administrator or root |
+| `offer_desktop_shortcut`  | `true`         | Offer a desktop shortcut on a qualifying interactive start  |
 | `traceback_summary_limit` | `500`          | Characters kept in a short traceback                        |
 | `traceback_verbose_limit` | `10000`        | And under `--traceback`                                     |
 
@@ -483,6 +484,14 @@ command.
 `--no-elevate` turns it off for one run. The elevated copy is started with
 `--elevated-relaunch`, which stops it from asking again; it is not shown in
 `--help` and is not meant to be typed.
+
+`offer_desktop_shortcut` decides whether a qualifying interactive start offers to
+create a desktop shortcut that launches lsdsk, so you need not remember the
+command. The offer appears once, as a one-line question with three answers:
+create it, not now (asked again next time), or never, which writes this key
+`false` for you. It stays silent when output is piped or redirected, when the
+shortcut already exists, or when this key is `false`. `lsdsk install-shortcut`
+creates the shortcut outright whatever this is set to.
 
 Colour is not a key, although this section is named for it. The printed palette
 has to stay readable on a black console and a white one at once, which is a
