@@ -44,9 +44,9 @@ Before opening a PR, confirm the following:
 
 ## 6. Hardware we cannot test on
 
-Two claims in this tool rest on hardware nobody here has, and the gap is not
-something more code can close. If you own one of these, a capture is the whole
-contribution:
+Some of this tool's behaviour waits on hardware nobody here has, and the gap is
+not something more code can close. If you own one of these, a capture is the
+whole contribution:
 
 - **A chipset used as a PCIe switch, on Linux.** The rule that tells a part
   behind a switch from a function built into it reads the switch port's own
@@ -61,6 +61,17 @@ contribution:
   the field would change a format every existing Windows capture uses, and an
   untested segment read would ship a new path to the users least able to report
   what it did, so it waits for a machine that can show which is right.
+- **A SAS controller with an expander behind it, on Linux.** lsdsk reads a
+  drive's link from the one host phy the kernel maps to it, and treats an
+  expander's phys (`phy-6:0:5`, which carries a third component the HBA's own
+  `phy-6:3` does not) as the expander's ports, not the controller's. No
+  committed capture has an expander, so that split, and the wide-port case it
+  guards, run against none.
+- **A hardware RAID controller.** lsdsk reads the drives a controller shows the
+  operating system. A RAID HBA that presents a logical volume and keeps its
+  member drives behind its own firmware is covered by no capture here, so what
+  lsdsk reports for the volume, and whether it reaches the members at all, is
+  unverified.
 
 Take one with `lsdsk snapshot -o capture.json`. It records what the kernel or
 Windows published about your controllers and drives, including model and serial

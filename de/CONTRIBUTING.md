@@ -79,7 +79,7 @@ Vor dem Öffnen eines Pull Requests:
 
 ## 6. Hardware, auf der wir nicht testen können
 
-Zwei Aussagen in diesem Werkzeug stützen sich auf Hardware, die hier niemand
+Einiges am Verhalten dieses Werkzeugs wartet auf Hardware, die hier niemand
 besitzt, und diese Lücke lässt sich nicht durch mehr Code schließen. Wenn Ihnen
 eines dieser Geräte gehört, ist eine Aufzeichnung der ganze Beitrag:
 
@@ -99,6 +99,18 @@ eines dieser Geräte gehört, ist eine Aufzeichnung der ganze Beitrag:
   des Segments würde einen neuen Pfad an genau die Anwender ausliefern, die am
   wenigsten berichten können, was er getan hat. Deshalb wartet es auf eine
   Maschine, die zeigen kann, was richtig ist.
+- **Ein SAS-Controller mit einem Expander dahinter, unter Linux.** lsdsk liest
+  den Link eines Laufwerks aus dem einen Host-Phy, den der Kernel ihm zuordnet,
+  und behandelt die Phys eines Expanders (`phy-6:0:5`, mit einer dritten
+  Komponente, die der eigene `phy-6:3` des HBAs nicht hat) als die Ports des
+  Expanders, nicht des Controllers. Keine mitgelieferte Aufzeichnung enthält
+  einen Expander, also werden diese Unterscheidung und der von ihr abgesicherte
+  Weitport-Fall an keiner erprobt.
+- **Ein Hardware-RAID-Controller.** lsdsk liest die Laufwerke, die ein
+  Controller dem Betriebssystem zeigt. Ein RAID-HBA, der ein logisches Volume
+  darstellt und seine Mitgliedslaufwerke hinter der eigenen Firmware verbirgt,
+  ist von keiner Aufzeichnung hier abgedeckt; was lsdsk für das Volume meldet,
+  und ob es die Mitglieder überhaupt erreicht, ist ungeprüft.
 
 Erstellen Sie eine Aufzeichnung mit `lsdsk snapshot -o capture.json`. Sie hält
 fest, was der Kernel oder Windows über Ihre Controller und Laufwerke
