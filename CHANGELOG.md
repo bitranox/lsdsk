@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.14.0] 2026-10-20 12:30:22
+
 ### Added
 
 - On Windows, the drives in a Storage Spaces pool are now read like any other drive: health,
