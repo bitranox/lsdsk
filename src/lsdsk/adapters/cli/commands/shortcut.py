@@ -27,12 +27,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import rich_click as click
+from rich.prompt import Confirm, Prompt
 
+from lsdsk.adapters.config.offer import disable_offer
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
 from lsdsk.adapters.uv_bootstrap import install_uv as run_uv_installer
 from lsdsk.adapters.uv_bootstrap import uvx_path
-from lsdsk.domain.enums import ActionCommand, OutputFormat
-from lsdsk.domain.shortcut import consent_text, plan_launch
+from lsdsk.domain.enums import ActionCommand, OutputFormat, ShortcutChoice
+from lsdsk.domain.shortcut import consent_text, plan_launch, should_offer
 
 from .. import safe_console
 from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION
@@ -43,7 +45,13 @@ from ..typed_click import option
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from lsdsk.adapters.config.tunables import DisplaySettings
     from lsdsk.application.ports import DesktopShortcuts
+
+
+#: Said when an install reports success but uvx is still not resolvable in this
+#: shell - a PATH that a new shell will pick up, shared by the command and the offer.
+_UVX_STILL_MISSING = "uv was installed but uvx is still not on PATH; open a new shell and run 'lsdsk install-shortcut'."
 
 
 class InstallShortcutResult(ActionResult):
@@ -117,11 +125,7 @@ def _resolve_launch(seams: ShortcutSeams, *, install_uv: bool, output_format: Ou
         )
     replan = plan_launch(uvx=seams.install_uv(), installed_lsdsk=seams.installed_lsdsk())
     if replan.needs_uv:
-        fail(
-            "uv was installed but uvx is still not on PATH; open a new shell and run install-shortcut again.",
-            ExitCode.CONFIG_ERROR,
-            output_format=output_format,
-        )
+        fail(_UVX_STILL_MISSING, ExitCode.CONFIG_ERROR, output_format=output_format)
     return replan.argv
 
 
@@ -168,6 +172,85 @@ def install_shortcut(
     _report(written, launch, output_format)
 
 
+#: The three-way offer prompt, mapping the reader's letter to a choice.
+_OFFER_ANSWERS = {"y": ShortcutChoice.CREATE, "n": ShortcutChoice.NOT_NOW, "d": ShortcutChoice.NEVER}
+
+
+def _ask_choice_prompt() -> ShortcutChoice:
+    """Ask whether to create the shortcut: yes, not now, or never again."""
+    answer = Prompt.ask(
+        "Create a desktop shortcut that launches lsdsk? "
+        "[y] yes, [n] not now, [d] do not ask again (sets display.offer_desktop_shortcut = false)",
+        choices=list(_OFFER_ANSWERS),
+        default="n",
+    )
+    return _OFFER_ANSWERS[answer]
+
+
+def _ask_install_prompt() -> bool:
+    """Ask whether to install uv now, defaulting to no (a blank Enter does not install)."""
+    return Confirm.ask("Install uv automatically now?", default=False)
+
+
+def offer_shortcut(
+    display: DisplaySettings,
+    *,
+    ask_choice: Callable[[], ShortcutChoice] | None = None,
+    ask_install: Callable[[], bool] | None = None,
+    seams: ShortcutSeams | None = None,
+    disable: Callable[[], object] = disable_offer,
+) -> None:
+    """At a terminal, offer to create the desktop shortcut and act on the answer.
+
+    Called only on the interactive path, before elevation, so the reader can
+    answer. It stays silent when the config key is off, when the shortcut already
+    exists, or on a platform whose adapter is not built yet; otherwise it asks the
+    three-way question and creates, waits until next time, or writes the opt-out.
+
+    Args:
+        display: The layout settings; ``offer_desktop_shortcut`` gates the offer.
+        ask_choice: Returns the reader's three-way answer; the real prompt by default.
+        ask_install: Returns whether to install uv; the real prompt by default.
+        seams: The collaborators; the real ones for this platform by default.
+        disable: Writes the opt-out; ``disable_offer`` by default.
+    """
+    if seams is None:
+        shortcuts = shortcuts_for(sys.platform)
+        if shortcuts is None:
+            return
+        seams = ShortcutSeams(
+            shortcuts=shortcuts, uvx=uvx_path, installed_lsdsk=_installed_lsdsk, install_uv=run_uv_installer
+        )
+    # at_terminal is True here: this is reached only on the interactive path.
+    if not should_offer(
+        at_terminal=True, offer_enabled=display.offer_desktop_shortcut, shortcut_present=seams.shortcuts.exists()
+    ):
+        return
+    choice = (ask_choice or _ask_choice_prompt)()
+    if choice is ShortcutChoice.NEVER:
+        disable()
+        safe_console.echo("lsdsk will not offer the shortcut again; run 'lsdsk install-shortcut' to create it later.")
+        return
+    if choice is ShortcutChoice.NOT_NOW:
+        return
+    _offer_create(seams, ask_install=ask_install or _ask_install_prompt)
+
+
+def _offer_create(seams: ShortcutSeams, *, ask_install: Callable[[], bool]) -> None:
+    """Resolve a launcher (installing uv on consent), then create the shortcut."""
+    plan = plan_launch(uvx=seams.uvx(), installed_lsdsk=seams.installed_lsdsk())
+    if plan.needs_uv:
+        safe_console.echo(consent_text(sys.platform))
+        if not ask_install():
+            return
+        plan = plan_launch(uvx=seams.install_uv(), installed_lsdsk=seams.installed_lsdsk())
+        if plan.needs_uv:
+            safe_console.echo(_UVX_STILL_MISSING)
+            return
+    written = seams.shortcuts.create(launch=plan.argv, icon=None)
+    safe_console.echo(f"Shortcut created at {written}.")
+
+
 @click.command("install-shortcut", context_settings=CLICK_CONTEXT_SETTINGS)
 @FORMAT_OPTION
 @option(
@@ -187,4 +270,11 @@ def cli_install_shortcut(*, output_format: OutputFormat = OutputFormat.HUMAN, in
     install_shortcut(output_format=output_format, install_uv=install_uv)
 
 
-__all__ = ["InstallShortcutResult", "ShortcutSeams", "cli_install_shortcut", "install_shortcut", "shortcuts_for"]
+__all__ = [
+    "InstallShortcutResult",
+    "ShortcutSeams",
+    "cli_install_shortcut",
+    "install_shortcut",
+    "offer_shortcut",
+    "shortcuts_for",
+]
