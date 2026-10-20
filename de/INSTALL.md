@@ -163,17 +163,21 @@ Abhängigkeits-Hülle besitzt, was diese von der Wartezeit ausnimmt, damit eine
 neue lsdsk-Veröffentlichung nicht zurückgehalten wird.
 
 Hat die Maschine kein uv, gibt es noch nichts, was die Verknüpfung starten
-könnte. Mit `--install-uv`, oder wenn man das interaktive Angebot annimmt, führt
-lsdsk den offiziellen astral.sh-Installer aus, erst nach ausdrücklicher Bestätigung:
+könnte. Um uv selbst einzurichten (neueste Version), führen Sie den offiziellen
+astral.sh-Installer aus:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh                                       # Linux und macOS
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"    # Windows
 ```
 
-lsdsk legt diesen Installer auf eine bekannte uv-Version fest, statt die jeweils
-neueste zu holen. Setzen Sie `display.offer_desktop_shortcut = false`, um das
-interaktive Angebot abzuschalten (siehe [CONFIG.md](CONFIG.md)).
+Mit `--install-uv`, oder wenn man das interaktive Angebot annimmt, richtet lsdsk
+uv aus demselben offiziellen Installer für Sie ein, erst nach ausdrücklicher
+Bestätigung. Die eigene Einrichtung von lsdsk legt eine bekannte uv-Version fest,
+statt die jeweils neueste zu holen, der Befehl, den lsdsk ausführt, nennt also
+eine feste Version, während die Zeile oben der neuesten folgt. Setzen Sie
+`display.offer_desktop_shortcut = false`, um das interaktive Angebot abzuschalten
+(siehe [CONFIG.md](CONFIG.md)).
 
 ## Deinstallieren
 

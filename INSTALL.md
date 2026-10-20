@@ -155,18 +155,20 @@ with one `--exclude-newer-package <name>=false` for each package lsdsk owns in
 its dependency closure, which exempts those from the cooldown so a new lsdsk
 release is not held back by it.
 
-If the machine has no uv, there is nothing for the shortcut to launch yet. With
-`--install-uv`, or when you accept the interactive offer, lsdsk runs the
-official astral.sh installer, only after you confirm:
+If the machine has no uv, there is nothing for the shortcut to launch yet. To
+install uv yourself (latest), run the official astral.sh installer:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh                                       # Linux and macOS
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"    # Windows
 ```
 
-lsdsk pins that installer to a known uv version rather than fetching whatever is
-newest. Set `display.offer_desktop_shortcut = false` to turn the interactive
-offer off (see [CONFIG.md](https://github.com/bitranox/lsdsk/blob/main/CONFIG.md)).
+With `--install-uv`, or when you accept the interactive offer, lsdsk installs uv
+for you from that same official installer, only after you confirm. Its own
+install pins a known uv version rather than fetching whatever is newest, so the
+command lsdsk runs names a fixed release while the line above tracks the latest.
+Set `display.offer_desktop_shortcut = false` to turn the interactive offer off
+(see [CONFIG.md](https://github.com/bitranox/lsdsk/blob/main/CONFIG.md)).
 
 ## Uninstalling
 
