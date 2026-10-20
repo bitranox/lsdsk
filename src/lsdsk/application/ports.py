@@ -25,6 +25,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from lib_layered_config import Config
@@ -124,8 +125,34 @@ class ElevateForTheView(Protocol):
     def __call__(self, replay: Path | None, *, wanted: bool) -> Elevation: ...
 
 
+class DesktopShortcuts(Protocol):
+    """Create and find the desktop shortcut that launches lsdsk, per platform.
+
+    A port because the three platforms do genuinely different things - a Windows
+    ``.lnk`` through pwshpy, a Linux ``.desktop`` file, a macOS bundle - and a
+    test cannot run the real one off its own platform, so it injects a fake at
+    this seam and the orchestration above is driven on every runner.
+    """
+
+    def exists(self) -> bool:
+        """Whether the shortcut this platform would create is already there."""
+        ...
+
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+        """Create (or refresh) the shortcut to run ``launch``, with ``icon`` if given.
+
+        Returns the path written.
+        """
+        ...
+
+    def desktop_dir(self) -> Path:
+        """The directory the shortcut is placed in, for a message that names it."""
+        ...
+
+
 __all__ = [
     "DeployConfiguration",
+    "DesktopShortcuts",
     "DisplayConfig",
     "ElevateForTheView",
     "GenerateExamples",

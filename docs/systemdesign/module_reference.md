@@ -147,6 +147,10 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/uv_bootstrap.py` - Detect uvx and, on the reader's consent, run the pinned official uv installer.
 - `src/lsdsk/adapters/validation.py` - Pydantic's refusal as this tool's own sentences, shared by both JSON-backed stores.
 
+### Adapters - desktop shortcut
+
+- `src/lsdsk/adapters/shortcut/linux.py` - The Linux desktop shortcut: an executable .desktop that runs lsdsk in a terminal.
+
 ### Adapters - logging
 
 - `src/lsdsk/adapters/logging/setup.py` - Centralized logging initialization for all entry points.
