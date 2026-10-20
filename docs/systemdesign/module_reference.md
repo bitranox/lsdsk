@@ -144,6 +144,7 @@ module exists that is not listed here, or a listed path does not exist.
 
 - `src/lsdsk/adapters/atomicfile.py` - Replacing a file this tool owns, so that a failed write leaves the old one intact.
 - `src/lsdsk/adapters/textfile.py` - Reading a JSON file that came from somewhere else, without trusting its size.
+- `src/lsdsk/adapters/uv_bootstrap.py` - Detect uvx and, on the reader's consent, run the pinned official uv installer.
 - `src/lsdsk/adapters/validation.py` - Pydantic's refusal as this tool's own sentences, shared by both JSON-backed stores.
 
 ### Adapters - logging
