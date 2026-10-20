@@ -22,11 +22,13 @@ from __future__ import annotations
 import shlex
 import shutil
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import rich_click as click
+import tomlkit.exceptions
 from rich.prompt import Confirm, Prompt
 
 from lsdsk.adapters.config.offer import disable_offer
@@ -250,11 +252,16 @@ def _disable_for_the_offer(disable: Callable[[], object]) -> None:
     """Write the opt-out best-effort; a write that fails warns once and returns.
 
     The offer precedes the interactive view, so a read-only or full config
-    directory must not abort it: the opt-out is a courtesy, not the run's work.
+    directory must not abort it, and neither must a reader-hand-edited, malformed
+    ``config.toml`` that the opt-out cannot safely edit in place: the opt-out is a
+    courtesy, not the run's work. The default ``disable`` (``disable_offer``)
+    raises ``OSError`` for the unwritable directory and a ``tomlkit``/``tomllib``
+    parse error for the malformed file, and both degrade the same way. A
+    programming error (any other exception) still propagates.
     """
     try:
         disable()
-    except OSError as exc:
+    except (OSError, tomlkit.exceptions.ParseError, tomllib.TOMLDecodeError) as exc:
         safe_console.echo(f"Could not save the do-not-offer setting: {exc}", err=True)
         return
     safe_console.echo("lsdsk will not offer the shortcut again; run 'lsdsk install-shortcut' to create it later.")

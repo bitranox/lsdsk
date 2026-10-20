@@ -85,8 +85,11 @@ def disable_offer() -> Path:
         OSError: The file could not be written - a full disk, a permission wall,
             or a destination that is not a regular file. The previous file, if
             any, is untouched.
-        tomllib.TOMLDecodeError: The file exists but is not valid TOML, so there
-            is nothing safe to edit in place; nothing is written.
+        tomlkit.exceptions.ParseError: The file exists but is not valid TOML
+            (a reader hand-edited it), so there is nothing safe to edit in place;
+            nothing is written.
+        tomllib.TOMLDecodeError: The written file did not round-trip back to valid
+            TOML, caught here at the write rather than later as an unreadable layer.
     """
     path = user_config_path()
     document = _load_or_new(path)

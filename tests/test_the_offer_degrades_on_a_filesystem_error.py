@@ -1,11 +1,14 @@
 """The pre-view offer is best-effort: a filesystem error never aborts the view.
 
-``offer_shortcut`` is called bare, before the interactive view opens, so an
-``OSError`` from the icon copy, from ``create()`` or from the opt-out write must
-not propagate out of it and take the whole view down with it. These drive the
-real seam with a shortcut double and an icon copier that raise ``OSError`` and
-assert the offer degrades - an iconless shortcut, or one warning and a return -
-while the explicit ``install-shortcut`` command still surfaces a create failure.
+``offer_shortcut`` is called bare, before the interactive view opens, so a
+filesystem error from the icon copy, from ``create()`` or from the opt-out write
+must not propagate out of it and take the whole view down with it. That error is
+an ``OSError`` for a full or read-only directory, and a ``tomlkit`` parse error
+for an opt-out write onto a reader-hand-edited, malformed ``config.toml``. These
+drive the real seam with a shortcut double, an icon copier and a ``disable`` that
+raise those errors and assert the offer degrades - an iconless shortcut, or one
+warning and a return - while the explicit ``install-shortcut`` command still
+surfaces a create failure.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
 
 import pytest
+import tomlkit
 
 from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, install_shortcut, offer_shortcut
 from lsdsk.adapters.config.tunables import DisplaySettings
@@ -60,6 +64,18 @@ class _RecordingShortcuts:
 def _raise_oserror() -> NoReturn:
     """An icon copier that cannot write - a full or read-only config directory."""
     raise OSError("no space left on device")
+
+
+def _raise_toml_parse_error() -> NoReturn:
+    """Fail exactly as ``disable_offer`` does on a malformed existing ``config.toml``.
+
+    ``disable_offer`` reads the reader's file through ``tomlkit.parse``; a
+    hand-edited, malformed file makes that raise ``tomlkit.exceptions.ParseError``
+    - a ``ValueError``, never an ``OSError`` - which the real parser reproduces here.
+    """
+    tomlkit.parse("this is = = not valid toml")
+    msg = "tomlkit.parse should have raised on malformed input"
+    raise AssertionError(msg)
 
 
 def _seams(
@@ -115,6 +131,28 @@ def test_the_offer_does_not_abort_the_view_when_the_opt_out_write_fails(
 
     err = capsys.readouterr().err
     assert "could not save" in err.lower(), "the failed opt-out write should be noted on stderr"
+
+
+@pytest.mark.os_agnostic
+def test_the_offer_does_not_abort_the_view_when_the_opt_out_write_hits_a_malformed_config(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A 'never again' onto a malformed config.toml warns once and returns, not a crash.
+
+    A reader-hand-edited ``config.toml`` makes ``disable_offer`` raise a
+    ``tomlkit.exceptions.ParseError`` (a ``ValueError``, not an ``OSError``), which
+    must degrade just as a write ``OSError`` does so the interactive view still opens.
+    """
+    offer_shortcut(
+        DisplaySettings(),
+        ask_choice=lambda: ShortcutChoice.NEVER,
+        ask_install=lambda: False,
+        seams=_seams(_RecordingShortcuts(), uvx=Path("/usr/bin/uvx")),
+        disable=_raise_toml_parse_error,
+    )
+
+    err = capsys.readouterr().err
+    assert "could not save" in err.lower(), "the malformed-config opt-out write should be noted on stderr"
 
 
 @pytest.mark.os_agnostic
