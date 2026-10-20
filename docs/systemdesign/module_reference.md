@@ -119,6 +119,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/cli/commands/info.py` - Basic CLI commands: resolved metadata, and a deliberate failure testing.
 - `src/lsdsk/adapters/cli/commands/logging.py` - Logging demonstration CLI command.
 - `src/lsdsk/adapters/cli/commands/scan.py` - The commands that look at storage: the report, the tables and the snapshot.
+- `src/lsdsk/adapters/cli/commands/shortcut.py` - The install-shortcut command: create the desktop launcher deliberately.
 
 ### Adapters - configuration
 
@@ -221,6 +222,7 @@ machine-readable form is `lsdsk snapshot`; `tui`, `fail` and `logdemo` have no d
 | `findings`                 | Explain every problem and improvement in full.                               |
 | `health`                   | Show wear, temperature, hours and error counters for every disk.             |
 | `info`                     | Print resolved metadata so users can inspect installation details.           |
+| `install-shortcut`         | Create a desktop shortcut that launches lsdsk, installing uv on request.     |
 | `logdemo`                  | Run a logging demonstration to preview log output.                           |
 | `record`                   | Record this machine's error counters, printing only with `--format json`.    |
 | `report`                   | The whole machine on one page, which every section above is part of.         |

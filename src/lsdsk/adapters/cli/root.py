@@ -638,6 +638,7 @@ def _register_commands() -> None:
         cli_findings,
         cli_health,
         cli_info,
+        cli_install_shortcut,
         cli_logdemo,
         cli_record,
         cli_report,
@@ -668,6 +669,7 @@ def _register_commands() -> None:
         cli_config,
         cli_config_deploy,
         cli_config_generate_examples,
+        cli_install_shortcut,
         cli_logdemo,
     ):
         cli.add_command(cmd)

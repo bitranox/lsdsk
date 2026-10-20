@@ -431,6 +431,7 @@ class ActionCommand(StrEnum):
     CONFIG_DEPLOY = "config-deploy"
     CONFIG_GENERATE_EXAMPLES = "config-generate-examples"
     INFO = "info"
+    INSTALL_SHORTCUT = "install-shortcut"
     RECORD = "record"
     SNAPSHOT = "snapshot"
 

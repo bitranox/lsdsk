@@ -29,6 +29,7 @@ from .scan import (
     cli_topology,
     cli_tui,
 )
+from .shortcut import cli_install_shortcut
 
 __all__ = [
     "cli_config",
@@ -41,6 +42,7 @@ __all__ = [
     "cli_findings",
     "cli_health",
     "cli_info",
+    "cli_install_shortcut",
     "cli_logdemo",
     "cli_record",
     "cli_report",

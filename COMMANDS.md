@@ -28,6 +28,7 @@ Back to the [README](README.md).
 | `lsdsk config`                   | The merged configuration, and which layer each value came from                                     |
 | `lsdsk config-deploy`            | Write the shipped defaults where you can edit them                                                 |
 | `lsdsk config-generate-examples` | Write commented example files without touching live config                                         |
+| `lsdsk install-shortcut`         | Drop a desktop shortcut that launches lsdsk; `--install-uv` installs uv first if it is missing     |
 | `lsdsk info`                     | Version, homepage and the metadata a bug report needs                                              |
 | `lsdsk logdemo`                  | One line at each log level, to preview how logging is configured                                   |
 | `lsdsk fail`                     | Raises on purpose, so a caller can see what this tool does when it breaks                          |

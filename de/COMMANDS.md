@@ -7,30 +7,31 @@ zur [README](README.md).
 
 ## Befehle
 
-| Befehl                           | Zeigt                                                                                                 |
-|----------------------------------|-------------------------------------------------------------------------------------------------------|
-| `lsdsk`                          | Am Terminal die interaktive Ansicht, sonst die Seite darunter                                         |
-| `lsdsk report`                   | Alles auf einer Seite. Jeder Befehl darunter ist ein Abschnitt davon                                  |
-| `lsdsk topology`                 | Die Problemübersicht, dann die gesamte PCI-Struktur von der Wurzel her, mit den Platten je Controller |
-| `lsdsk controllers`              | Controller, PCIe-Platzierung, freie Anschlüsse, Last                                                  |
-| `lsdsk disks`                    | Eine Zeile je Platte                                                                                  |
-| `lsdsk health`                   | Verschleiß, Temperatur, Betriebsstunden und Fehlerzähler                                              |
-| `lsdsk smart`                    | Die SMART-Attribute jeder Platte, gegen ihre eigenen Schwellen                                        |
-| `lsdsk findings`                 | Jeden Befund mit seiner Begründung und seiner Abhilfe                                                 |
-| `lsdsk slots`                    | Jeden PCIe-Anschluss: Fähigkeit, Bestückung, was frei ist                                             |
-| `lsdsk filesystems`              | Wie voll jedes Dateisystem, jeder Pool und jedes Volume ist und wie zerstückelt sein freier Platz ist |
-| `lsdsk trend`                    | Was jeder Fehlerzähler über die Zeit tut, nicht nur seinen Stand                                      |
-| `lsdsk record`                   | Eine Messung ablegen und nichts ausgeben, für einen Timer                                             |
-| `lsdsk tui`                      | Eine interaktive Seite je Frage, in der Art der `*top`-Werkzeuge                                      |
-| `lsdsk snapshot -o f.json`       | Die rohe Messung aufnehmen                                                                            |
-| `lsdsk snapshot -o -`            | Auf die Standardausgabe aufnehmen: `ssh host lsdsk snapshot -o - > f.json`                            |
-| `lsdsk --replay f.json`          | Eine Aufnahme von einer beliebigen Maschine darstellen                                                |
-| `lsdsk config`                   | Die zusammengeführte Konfiguration, und aus welcher Schicht jeder Wert stammt                         |
-| `lsdsk config-deploy`            | Die mitgelieferten Vorgaben dorthin schreiben, wo Sie sie bearbeiten können                           |
-| `lsdsk config-generate-examples` | Kommentierte Beispieldateien schreiben, ohne die laufende Konfiguration anzufassen                    |
-| `lsdsk info`                     | Version, Projektseite und die Angaben, die ein Fehlerbericht braucht                                  |
-| `lsdsk logdemo`                  | Eine Zeile je Protokollstufe, um die Protokollkonfiguration vorzuführen                               |
-| `lsdsk fail`                     | Bricht absichtlich ab, damit ein Aufrufer sieht, was dieses Werkzeug tut, wenn es scheitert           |
+| Befehl                           | Zeigt                                                                                                    |
+|----------------------------------|----------------------------------------------------------------------------------------------------------|
+| `lsdsk`                          | Am Terminal die interaktive Ansicht, sonst die Seite darunter                                            |
+| `lsdsk report`                   | Alles auf einer Seite. Jeder Befehl darunter ist ein Abschnitt davon                                     |
+| `lsdsk topology`                 | Die Problemübersicht, dann die gesamte PCI-Struktur von der Wurzel her, mit den Platten je Controller    |
+| `lsdsk controllers`              | Controller, PCIe-Platzierung, freie Anschlüsse, Last                                                     |
+| `lsdsk disks`                    | Eine Zeile je Platte                                                                                     |
+| `lsdsk health`                   | Verschleiß, Temperatur, Betriebsstunden und Fehlerzähler                                                 |
+| `lsdsk smart`                    | Die SMART-Attribute jeder Platte, gegen ihre eigenen Schwellen                                           |
+| `lsdsk findings`                 | Jeden Befund mit seiner Begründung und seiner Abhilfe                                                    |
+| `lsdsk slots`                    | Jeden PCIe-Anschluss: Fähigkeit, Bestückung, was frei ist                                                |
+| `lsdsk filesystems`              | Wie voll jedes Dateisystem, jeder Pool und jedes Volume ist und wie zerstückelt sein freier Platz ist    |
+| `lsdsk trend`                    | Was jeder Fehlerzähler über die Zeit tut, nicht nur seinen Stand                                         |
+| `lsdsk record`                   | Eine Messung ablegen und nichts ausgeben, für einen Timer                                                |
+| `lsdsk tui`                      | Eine interaktive Seite je Frage, in der Art der `*top`-Werkzeuge                                         |
+| `lsdsk snapshot -o f.json`       | Die rohe Messung aufnehmen                                                                               |
+| `lsdsk snapshot -o -`            | Auf die Standardausgabe aufnehmen: `ssh host lsdsk snapshot -o - > f.json`                               |
+| `lsdsk --replay f.json`          | Eine Aufnahme von einer beliebigen Maschine darstellen                                                   |
+| `lsdsk config`                   | Die zusammengeführte Konfiguration, und aus welcher Schicht jeder Wert stammt                            |
+| `lsdsk config-deploy`            | Die mitgelieferten Vorgaben dorthin schreiben, wo Sie sie bearbeiten können                              |
+| `lsdsk config-generate-examples` | Kommentierte Beispieldateien schreiben, ohne die laufende Konfiguration anzufassen                       |
+| `lsdsk install-shortcut`         | Eine Desktop-Verknüpfung anlegen, die lsdsk startet; `--install-uv` installiert uv zuvor, falls es fehlt |
+| `lsdsk info`                     | Version, Projektseite und die Angaben, die ein Fehlerbericht braucht                                     |
+| `lsdsk logdemo`                  | Eine Zeile je Protokollstufe, um die Protokollkonfiguration vorzuführen                                  |
+| `lsdsk fail`                     | Bricht absichtlich ab, damit ein Aufrufer sieht, was dieses Werkzeug tut, wenn es scheitert              |
 
 Die letzten beiden beantworten nichts über Ihre Platten. `logdemo` führt die
 Protokollkonfiguration vor, und `fail` gibt es, damit der Fehlerpfad über den
