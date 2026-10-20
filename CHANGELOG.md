@@ -5,6 +5,16 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.14.1] 2026-10-20 15:28:53
+
+### Tests
+
+- Added an end-to-end test for the RAM-disk arm of the Windows "diskless drive" rule. A RAM disk
+  sits on no disk this tool lists, so a failed extents query on one blocks nothing and the disk it
+  could name stays `not mounted` rather than `undecided`. The CD-ROM arm has a committed capture;
+  no reachable machine reports `DRIVE_RAMDISK` (every RAM-disk driver reports `DRIVE_FIXED`), so the
+  RAM-disk arm is pinned by replaying a capture that carries such a volume. No behaviour change.
+
 ## [1.14.0] 2026-10-20 12:30:22
 
 ### Added
