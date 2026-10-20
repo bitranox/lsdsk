@@ -8,10 +8,13 @@ description: Use when inspecting or diagnosing storage hardware - which disk han
 Groups disks by the controller they hang off, compares every link against what
 both ends of it could do, and reports what is worth acting on. It also names the
 mainboard, from DMI, which is what makes its placement advice actionable. Linux
-and Windows. It shells out to nothing and has no network unless you enable the optional
-Graylog log sink (`lib_log_rich.enable_graylog`), which is off by default; the one process it
-ever starts is itself, when the interactive view relaunches elevated - through UAC on Windows,
-through sudo on Linux and macOS (see the privilege section). It runs anywhere `--replay` is all you
+and Windows. It shells out to nothing and makes no network request, bar two opt-in
+paths: the optional Graylog log sink (`lib_log_rich.enable_graylog`, off by default) can open a
+connection, and, where a reader accepts the desktop-shortcut offer with no `uvx` installed,
+`adapters/uv_bootstrap.py` runs the official uv installer after a consent prompt - the one module
+allowed a subprocess, held to that by the guard in `tests/test_no_subprocess_or_network.py`. Apart
+from that installer, the one process it ever starts is itself, when the interactive view relaunches
+elevated - through UAC on Windows, through sudo on Linux and macOS (see the privilege section). It runs anywhere `--replay` is all you
 need, macOS included; only reading real hardware is the two.
 
 **Bare `lsdsk` gives a PERSON the interactive view and a PROGRAM the printed
