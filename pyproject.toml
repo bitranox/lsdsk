@@ -85,7 +85,8 @@ dev = [
   "wheel>=0.48.0",               # CVE-2025-24049
   "pynacl>=1.6.2",               # CVE-2025-69277
   "urllib3>=2.8.0",              # CVE-2025-66471, CVE-2025-66418
-  "virtualenv>=21.14.11",         # CVE-2025-22702
+  "virtualenv>=21.14.11",        # CVE-2025-22702
+  "certifi>=2026.10.19",         # GHSA-6q48-6c7w-9gw2, via requests (pip-audit, twine)
 ]
 
 [project.scripts]
@@ -439,4 +440,4 @@ ignores = ["E003"]
 
 [tool.uv]
 exclude-newer = "7 days"
-exclude-newer-package = {lib-cli-exit-tools = false, lib-layered-config = false, lib-log-rich = false, pwshpy = false, fake-winreg = false, lib-registry = false, httpcore2 = "2026-10-18T16:29:22Z", httpx2 = "2026-10-18T16:29:23Z", hypothesis = "2026-10-16T16:46:42Z", ruff = "2026-10-15T15:23:19Z", virtualenv = "2026-10-18T07:06:35Z"}
+exclude-newer-package = {lib-cli-exit-tools = false, lib-layered-config = false, lib-log-rich = false, pwshpy = false, fake-winreg = false, lib-registry = false, httpcore2 = "2026-10-18T16:29:22Z", httpx2 = "2026-10-18T16:29:23Z", hypothesis = "2026-10-16T16:46:42Z", ruff = "2026-10-15T15:23:19Z", virtualenv = "2026-10-18T07:06:35Z", certifi = "2026-10-20T02:24:17Z"}
