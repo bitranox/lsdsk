@@ -20,6 +20,7 @@ from lsdsk.adapters.cli.commands.shortcut import (
 )
 from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
+from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
 from lsdsk.domain.enums import OutputFormat
 from lsdsk.domain.shortcut import uvx_launch_args
 
@@ -108,9 +109,9 @@ def test_an_install_that_still_yields_no_uvx_fails_without_writing(capsys: pytes
 
 
 @pytest.mark.os_agnostic
-def test_the_platform_dispatch_has_linux_and_leaves_the_rest_pending() -> None:
+def test_the_platform_dispatch_has_linux_and_macos_and_leaves_windows_pending() -> None:
     assert isinstance(shortcuts_for("linux"), LinuxDesktopShortcut)
-    assert shortcuts_for("darwin") is None
+    assert isinstance(shortcuts_for("darwin"), MacosDesktopShortcut)
     assert shortcuts_for("win32") is None
 
 

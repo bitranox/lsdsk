@@ -31,6 +31,7 @@ from rich.prompt import Confirm, Prompt
 
 from lsdsk.adapters.config.offer import disable_offer
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
+from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
 from lsdsk.adapters.uv_bootstrap import install_uv as run_uv_installer
 from lsdsk.adapters.uv_bootstrap import uvx_path
 from lsdsk.domain.enums import ActionCommand, OutputFormat, ShortcutChoice
@@ -92,8 +93,9 @@ def _installed_lsdsk() -> Path | None:
 def shortcuts_for(platform: str) -> DesktopShortcuts | None:
     """The shortcut adapter for ``platform``, or ``None`` where none exists yet.
 
-    Only Linux is wired so far; macOS and Windows adapters arrive with their own
-    steps, and until then the command refuses cleanly rather than crashing.
+    Linux and macOS are wired; the Windows adapter arrives with its own step
+    (it needs pwshpy's shortcut API), and until then the command refuses cleanly
+    rather than crashing.
 
     Args:
         platform: ``sys.platform`` of the running machine.
@@ -103,6 +105,8 @@ def shortcuts_for(platform: str) -> DesktopShortcuts | None:
     """
     if platform.startswith("linux"):
         return LinuxDesktopShortcut()
+    if platform == "darwin":
+        return MacosDesktopShortcut()
     return None
 
 
