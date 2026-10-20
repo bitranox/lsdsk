@@ -108,9 +108,16 @@ include = [
     # is every Windows one - falls back to the operating system's own device
     # description, and Windows localises that.
     "src/lsdsk/adapters/hw/decode/pci.ids.gz",
-    "src/lsdsk/assets/icon/lsdsk.svg",
     "src/lsdsk/assets/icon/lsdsk-256.png",
     "src/lsdsk/assets/icon/lsdsk.ico",
+]
+
+# `packages` above ships the whole src/lsdsk tree, data files included, so the
+# editable icon master is dropped from the WHEEL here while it stays in the sdist
+# (it has no runtime consumer; only lsdsk-256.png and lsdsk.ico do). See the
+# lsdsk.ico acceptance in CLAUDE.md.
+exclude = [
+    "src/lsdsk/assets/icon/lsdsk.svg",
 ]
 
 [tool.hatch.build.targets.sdist]
