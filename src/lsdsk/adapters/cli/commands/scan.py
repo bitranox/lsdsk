@@ -913,8 +913,21 @@ class ReadsTheMachine(Protocol):
         ...
 
 
+class OffersTheShortcut(Protocol):
+    """Offer, at a terminal and before elevation, to create the desktop shortcut.
+
+    A seam rather than a direct call so a test can drive the router without a
+    real prompt or a real config write, and so the offer is skipped entirely off
+    the interactive path.
+    """
+
+    def __call__(self, display: DisplaySettings) -> None:
+        """Ask and act; ``display`` carries whether the offer is enabled."""
+        ...
+
+
 class Collaborators(NamedTuple):
-    """The four functions the default view calls, as one named group.
+    """The functions the default view calls, as one named group.
 
     Bundled rather than threaded separately for two reasons. Passed one by one
     they would take ``run_default_view`` past the width this project holds its
@@ -931,6 +944,7 @@ class Collaborators(NamedTuple):
     open_view: OpensTheInteractiveView
     analyse: ReadsTheMachine
     elevate: ElevateForTheView
+    offer: OffersTheShortcut
 
 
 def ask_before_the_view(elevate: ElevateForTheView, replay: Path | None, display: DisplaySettings) -> Elevation:
@@ -1013,6 +1027,9 @@ def run_default_view(
     called = seams if seams is not None else the_real_collaborators(elevate_for_the_view)
     resolved = settings if settings is not None else get_history_settings(Config({}, {}))
     laid_out = display if display is not None else DisplaySettings()
+    # Offer the desktop shortcut before elevation: an elevated relaunch opens in
+    # its own window on Windows, so asking after it would ask where nobody waits.
+    called.offer(laid_out)
     elevation = ask_before_the_view(called.elevate, replay, laid_out)
     with lib_log_rich.runtime.bind(job_id="cli-tui", extra={"command": "tui"}):
         inventory, findings, read = called.analyse(replay, OutputFormat.HUMAN, resolved, thresholds)
@@ -1039,8 +1056,11 @@ def the_real_collaborators(elevate: ElevateForTheView) -> Collaborators:
     from lsdsk.adapters.tui import LsdskApp  # noqa: PLC0415 - keeps textual off the fast path
 
     from .history import analyse  # noqa: PLC0415 - deferred: history imports this module
+    from .shortcut import offer_shortcut  # noqa: PLC0415 - deferred: keeps rich.prompt and tomlkit off the fast path
 
-    return Collaborators(report=run_default_report, open_view=LsdskApp, analyse=analyse, elevate=elevate)
+    return Collaborators(
+        report=run_default_report, open_view=LsdskApp, analyse=analyse, elevate=elevate, offer=offer_shortcut
+    )
 
 
 def _refuse_a_format_this_command_has_no_form_of(output_format: OutputFormat | None, *, instead: str) -> None:
@@ -1728,6 +1748,7 @@ __all__ = [
     "Analysis",
     "Collaborators",
     "InteractiveView",
+    "OffersTheShortcut",
     "OpensTheInteractiveView",
     "PrintsThePage",
     "ReadsTheMachine",

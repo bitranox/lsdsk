@@ -419,12 +419,25 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
     # same question on every runner.
     monkeypatch.setattr(_sys, "platform", platform)
 
+    order: list[str] = []
+
+    def note_elevate(replay: Path | None, *, wanted: bool) -> Elevation:
+        order.append("elevate")
+        return elevate_in_memory(replay, wanted=wanted)
+
+    def note_offer(display: DisplaySettings) -> None:
+        del display
+        order.append("offer")
+
     seams = scan.Collaborators(
         report=note_report,
         open_view=StubApp,
         analyse=give_inventory,
         # The in-memory port: nothing is asked, so the router goes on to the view.
-        elevate=elevate_in_memory,
+        elevate=note_elevate,
+        # The offer runs before elevation on the interactive path and not at all
+        # where the page is printed; `order` below pins both.
+        offer=note_offer,
     )
 
     if expect == "tui":
@@ -442,6 +455,8 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
     # findings page and the verdict banner grade against the shipped defaults
     # while the panes beside them colour against the file.
     assert judged_by == [configured], f"the {expect} path was handed {judged_by}, not the configured thresholds"
+    # The interactive path offers the shortcut, before elevation; the printed path does neither.
+    assert order == (["offer", "elevate"] if expect == "tui" else []), f"the {expect} path recorded {order}"
 
 
 @pytest.mark.os_agnostic
