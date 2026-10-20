@@ -108,6 +108,9 @@ include = [
     # is every Windows one - falls back to the operating system's own device
     # description, and Windows localises that.
     "src/lsdsk/adapters/hw/decode/pci.ids.gz",
+    "src/lsdsk/assets/icon/lsdsk.svg",
+    "src/lsdsk/assets/icon/lsdsk-256.png",
+    "src/lsdsk/assets/icon/lsdsk.ico",
 ]
 
 [tool.hatch.build.targets.sdist]

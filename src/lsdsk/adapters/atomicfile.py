@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-def write_through(descriptor: int, body: str, *, sync: bool) -> None:
+def write_through(descriptor: int, body: str | bytes, *, sync: bool) -> None:
     """Write the body through a raw descriptor and close it however that ends.
 
     ``os.fdopen`` takes ownership of the descriptor only once it RETURNS, so a
@@ -41,7 +41,8 @@ def write_through(descriptor: int, body: str, *, sync: bool) -> None:
 
     Args:
         descriptor: A descriptor nothing else owns yet.
-        body: The whole file.
+        body: The whole file. Text is written UTF-8; ``bytes`` are written as
+            they are, for a binary file such as the shipped icon.
         sync: Whether to force the bytes out before the descriptor is closed.
             The atomic path does, because the rename that follows must not be
             able to publish an empty file after a crash. An in-place write to a
@@ -56,12 +57,13 @@ def write_through(descriptor: int, body: str, *, sync: bool) -> None:
             Both callers let it through: :func:`replace_atomically` removes its
             temporary file first, and the snapshot writer's in-place path
             reports it as the failed write it is.
-        UnicodeEncodeError: If ``body`` holds a character UTF-8 cannot encode,
-            which is a lone surrogate. Neither caller can produce one - both
-            bodies are JSON a serialiser wrote, and ``json.dumps`` and pydantic
-            each escape or refuse a surrogate - so this is a contract for a new
-            caller rather than a path anything takes today. The descriptor is
-            closed here too.
+        UnicodeEncodeError: If a ``str`` ``body`` holds a character UTF-8 cannot
+            encode, which is a lone surrogate. The text callers cannot produce
+            one - their bodies are JSON a serialiser wrote, and ``json.dumps``
+            and pydantic each escape or refuse a surrogate - so this is a
+            contract for a new caller rather than a path anything takes today. A
+            ``bytes`` body is written as-is and never raises this. The descriptor
+            is closed here too.
 
     Example:
         >>> import tempfile
@@ -72,8 +74,9 @@ def write_through(descriptor: int, body: str, *, sync: bool) -> None:
         ...     target.read_text(encoding="utf-8")
         'hi'
     """
+    binary = isinstance(body, bytes)
     try:
-        stream = os.fdopen(descriptor, "w", encoding="utf-8")
+        stream = os.fdopen(descriptor, "wb" if binary else "w", encoding=None if binary else "utf-8")
     except BaseException:
         os.close(descriptor)
         raise
@@ -245,4 +248,52 @@ def replace_atomically(
         raise
 
 
-__all__ = ["replace_atomically", "write_through"]
+def replace_bytes_atomically(path: Path, body: bytes, *, mode: int) -> None:
+    """Replace a regular file with binary ``body`` so a failure leaves the old one intact.
+
+    The binary sibling of :func:`replace_atomically`, for a file that is not
+    text - the shipped icon copied beside the user configuration. The same
+    sequence, so the descriptor-closing guarantee is not copied: a temporary
+    file in the destination's own directory (a rename is atomic only within one
+    filesystem), written and forced out, narrowed to ``mode``, then renamed over
+    the destination. The destination is expected to be a regular file or absent,
+    which is all an icon copy ever writes; the stream and symlink handling
+    :func:`replace_atomically` carries for ``/dev/stdout`` is not needed here.
+
+    Args:
+        path: The destination. Its directory must already exist.
+        body: The whole file, as bytes.
+        mode: The permission bits the file ends with.
+
+    Raises:
+        OSError: If no temporary file can be created in the destination's
+            directory, or the write, the sync or the rename fails. The original
+            exception propagates, so a ``PermissionError`` stays one. The
+            temporary file is removed and any previous file at ``path`` is
+            untouched.
+
+    Example:
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as directory:
+        ...     target = Path(directory) / "icon.png"
+        ...     replace_bytes_atomically(target, b"icon-bytes", mode=0o644)
+        ...     target.read_bytes()
+        b'icon-bytes'
+    """
+    handle, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    temporary = Path(temporary_name)
+    try:
+        write_through(handle, body, sync=True)
+        # mkstemp already creates at 0600; setting mode explicitly means the
+        # result does not rest on that, and a umask cannot widen it. A
+        # filesystem that does not carry modes is not a failure to write.
+        with contextlib.suppress(OSError):
+            temporary.chmod(mode)
+        temporary.replace(path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            temporary.unlink()
+        raise
+
+
+__all__ = ["replace_atomically", "replace_bytes_atomically", "write_through"]

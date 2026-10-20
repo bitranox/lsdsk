@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="lsdsk">
+  <!-- disk + pulse: a hard-disk platter crossed by a heartbeat line, on a -->
+  <!-- filled rounded-square badge so it reads on light and dark desktops. -->
+  <!-- Flat colours only, no external fonts. -->
+  <rect x="12" y="12" width="232" height="232" rx="46" ry="46" fill="#15324F"/>
+  <!-- platter -->
+  <circle cx="128" cy="128" r="82" fill="#DCE3EC" stroke="#AEB9C7" stroke-width="3"/>
+  <!-- track ring -->
+  <circle cx="128" cy="128" r="58" fill="none" stroke="#93A2B5" stroke-width="4"/>
+  <!-- spindle hole -->
+  <circle cx="128" cy="128" r="15" fill="#15324F" stroke="#93A2B5" stroke-width="3"/>
+  <!-- heartbeat pulse across the platter -->
+  <polyline points="44,130 98,130 108,112 118,130 128,64 139,190 149,130 212,130"
+            fill="none" stroke="#27C083" stroke-width="9"
+            stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

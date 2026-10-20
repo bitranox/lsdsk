@@ -150,6 +150,7 @@ module exists that is not listed here, or a listed path does not exist.
 
 ### Adapters - desktop shortcut
 
+- `src/lsdsk/adapters/shortcut/icon.py` - Copy the shipped icon into the stable per-user directory the shortcut names.
 - `src/lsdsk/adapters/shortcut/linux.py` - The Linux desktop shortcut: an executable .desktop that runs lsdsk in a terminal.
 - `src/lsdsk/adapters/shortcut/macos.py` - The macOS desktop shortcut: an executable .command that runs lsdsk in Terminal.
 

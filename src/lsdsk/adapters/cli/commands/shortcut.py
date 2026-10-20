@@ -30,6 +30,7 @@ import rich_click as click
 from rich.prompt import Confirm, Prompt
 
 from lsdsk.adapters.config.offer import disable_offer
+from lsdsk.adapters.shortcut.icon import copy_shipped_icon
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
 from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
 from lsdsk.adapters.uv_bootstrap import install_uv as run_uv_installer
@@ -172,7 +173,7 @@ def install_shortcut(
             shortcuts=shortcuts, uvx=uvx_path, installed_lsdsk=_installed_lsdsk, install_uv=run_uv_installer
         )
     launch = _resolve_launch(seams, install_uv=install_uv, output_format=output_format)
-    written = seams.shortcuts.create(launch=launch, icon=None)
+    written = seams.shortcuts.create(launch=launch, icon=copy_shipped_icon())
     _report(written, launch, output_format)
 
 
@@ -251,7 +252,7 @@ def _offer_create(seams: ShortcutSeams, *, ask_install: Callable[[], bool]) -> N
         if plan.needs_uv:
             safe_console.echo(_UVX_STILL_MISSING)
             return
-    written = seams.shortcuts.create(launch=plan.argv, icon=None)
+    written = seams.shortcuts.create(launch=plan.argv, icon=copy_shipped_icon())
     safe_console.echo(f"Shortcut created at {written}.")
 
 
