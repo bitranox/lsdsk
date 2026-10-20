@@ -69,6 +69,12 @@ DEFAULT_DETAIL_HEIGHT_PERCENT = 33
 # On by default: without it a SATA drive's link and every SMART figure read "-".
 DEFAULT_AUTO_ELEVATE = True
 
+# Whether a qualifying interactive start offers to drop a desktop shortcut that
+# launches lsdsk. On by default: the offer appears once, is declined for this
+# run with "not now" or for good with "never" (which writes this key false), and
+# never appears off a terminal, when the shortcut already exists, or when false.
+DEFAULT_OFFER_DESKTOP_SHORTCUT = True
+
 # Characters of traceback kept in the short and the --traceback forms.
 DEFAULT_TRACEBACK_SUMMARY_LIMIT = 500
 DEFAULT_TRACEBACK_VERBOSE_LIMIT = 10_000
@@ -89,6 +95,8 @@ class DisplaySettings(DomainModel, frozen=True):
             panel may take.
         auto_elevate: Whether the interactive view asks for Administrator
             (Windows) or root through sudo (Linux, macOS) on a non-elevated start.
+        offer_desktop_shortcut: Whether a qualifying interactive start offers to
+            create a desktop shortcut that launches lsdsk.
         traceback_summary_limit: Characters kept in a short traceback.
         traceback_verbose_limit: Characters kept under ``--traceback``.
 
@@ -107,6 +115,7 @@ class DisplaySettings(DomainModel, frozen=True):
     tree_density: TreeDensity = DEFAULT_TREE_DENSITY
     detail_height_percent: int = DEFAULT_DETAIL_HEIGHT_PERCENT
     auto_elevate: bool = DEFAULT_AUTO_ELEVATE
+    offer_desktop_shortcut: bool = DEFAULT_OFFER_DESKTOP_SHORTCUT
     traceback_summary_limit: int = DEFAULT_TRACEBACK_SUMMARY_LIMIT
     traceback_verbose_limit: int = DEFAULT_TRACEBACK_VERBOSE_LIMIT
 
@@ -215,6 +224,7 @@ def read_display_settings(config: Config) -> DisplayReading:
         tree_density=values.tree_density("tree_density", DEFAULT_TREE_DENSITY),
         detail_height_percent=values.positive_int("detail_height_percent", DEFAULT_DETAIL_HEIGHT_PERCENT),
         auto_elevate=values.flag("auto_elevate", default=DEFAULT_AUTO_ELEVATE),
+        offer_desktop_shortcut=values.flag("offer_desktop_shortcut", default=DEFAULT_OFFER_DESKTOP_SHORTCUT),
         traceback_summary_limit=values.positive_int("traceback_summary_limit", DEFAULT_TRACEBACK_SUMMARY_LIMIT),
         traceback_verbose_limit=values.positive_int("traceback_verbose_limit", DEFAULT_TRACEBACK_VERBOSE_LIMIT),
     )
@@ -261,6 +271,7 @@ __all__ = [
     "DEFAULT_AUTO_ELEVATE",
     "DEFAULT_DETAIL_HEIGHT_PERCENT",
     "DEFAULT_EXPAND_VIRTUAL",
+    "DEFAULT_OFFER_DESKTOP_SHORTCUT",
     "DEFAULT_PIPED_WIDTH",
     "DEFAULT_SUMMARY_LIMIT",
     "DEFAULT_TRACEBACK_SUMMARY_LIMIT",

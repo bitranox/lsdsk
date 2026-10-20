@@ -21,6 +21,7 @@ dependencies = [
     "click>=8.5.0", # Imported directly (adapters/cli/main.py, exit_codes.py), not only through rich-click.
     "pydantic-core>=2.50.1", # Imported directly (validation.py, cli/envelope.py, history/store.py); pydantic pins its version.
     "python-dotenv>=1.2.4", # adapters/logging/setup.py reads the LOG_* lines of a .env itself.
+    "tomlkit>=0.15.1", # adapters/config/offer.py round-trips the user config.toml to flip one key, comments intact.
 ]
 license = { text = "MIT" }
 authors = [{ name = "bitranox", email = "bitranox@gmail.com" }]

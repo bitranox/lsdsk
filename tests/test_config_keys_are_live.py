@@ -113,6 +113,11 @@ UNOBSERVABLE: dict[str, str] = {
         "this harness drives printed commands; covered by test_elevation_wiring, whose "
         "--set display.auto_elevate=false arm proves the setting reaches the question"
     ),
+    "offer_desktop_shortcut": (
+        "decides only whether a qualifying INTERACTIVE start offers to create a desktop shortcut, and "
+        "this harness drives printed commands, which never reach the pre-view offer; its wiring is "
+        "covered where the offer path is tested (the interactive pre-view flow)"
+    ),
 }
 
 

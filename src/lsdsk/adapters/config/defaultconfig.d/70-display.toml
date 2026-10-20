@@ -148,3 +148,20 @@ detail_height_percent = 33
 #
 # Environment Variable: LSDSK___DISPLAY__AUTO_ELEVATE="true"
 auto_elevate = true
+
+
+# Whether lsdsk offers, on a qualifying interactive start, to drop a desktop
+# shortcut that launches it.
+#
+# Default: true. The first time you run lsdsk at a terminal and no shortcut
+# exists yet, it offers to create one on your desktop so you need not remember
+# the command. The offer is a one-line prompt with three answers: create it, not
+# now (asked again next time), or never (which sets this key false for you). It
+# never appears when output is piped or redirected, when the shortcut already
+# exists, or when this key is false.
+#
+# When to change: set false to never be offered the shortcut. Answering "never"
+# at the prompt writes exactly this.
+#
+# Environment Variable: LSDSK___DISPLAY__OFFER_DESKTOP_SHORTCUT="true"
+offer_desktop_shortcut = true

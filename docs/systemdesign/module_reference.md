@@ -25,6 +25,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/domain/pcie_text.py` - How a finding writes a PCIe figure and a bandwidth in a sentence.
 - `src/lsdsk/domain/rate_text.py` - How a counter's rate is written, in the trend table and in a finding's sentence alike.
 - `src/lsdsk/domain/placement.py` - The one search for a better seat, shared by storage controllers and every other card.
+- `src/lsdsk/domain/shortcut.py` - Whether to offer a desktop shortcut, as a pure decision shared by every platform.
 - `src/lsdsk/domain/size_text.py` - How a capacity is written, on the scale it names, in a table column and a finding's sentence alike.
 - `src/lsdsk/domain/thresholds.py` - Every number the rules judge by, in one place and overridable.
 - `src/lsdsk/domain/text.py` - Text the hardware chose, cleaned on the field that carries it.
@@ -127,6 +128,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/config/known_keys.py` - Which configuration keys this tool actually reads, so a mistyped one is refused rather than left inert.
 - `src/lsdsk/adapters/config/loader.py` - Configuration loader with caching and profile/override support.
 - `src/lsdsk/adapters/config/log_stream.py` - Where the logging console writes, decided the way lib_log_rich decides it.
+- `src/lsdsk/adapters/config/offer.py` - Turn the desktop-shortcut offer off in the reader's own config.toml.
 - `src/lsdsk/adapters/config/overrides.py` - Parse and apply ``--set SECTION.KEY=VALUE`` CLI overrides to Config.
 - `src/lsdsk/adapters/config/permissions.py` - Permission settings loader for config deployment.
 - `src/lsdsk/adapters/config/profiles.py` - Whether a named profile answered, and which ones exist to be named.
