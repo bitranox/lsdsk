@@ -70,19 +70,23 @@ class InstallShortcutResult(ActionResult):
 
 @dataclass(frozen=True)
 class ShortcutSeams:
-    """The collaborators :func:`install_shortcut` drives, as one injectable value.
+    """The collaborators :func:`install_shortcut` and :func:`offer_shortcut` drive, as one injectable value.
 
     Attributes:
         shortcuts: The platform's shortcut writer.
         uvx: Resolves the ``uvx`` path, or ``None``.
         installed_lsdsk: Resolves a plain ``lsdsk`` launcher on PATH, or ``None``.
         install_uv: Installs uv and returns the ``uvx`` path if it is now resolvable.
+        copy_icon: Copies the shipped icon into place and returns its path; the real
+            copier by default, so a test can inject one that raises to drive the
+            offer's degrade-to-iconless path without touching the module.
     """
 
     shortcuts: DesktopShortcuts
     uvx: Callable[[], Path | None]
     installed_lsdsk: Callable[[], Path | None]
     install_uv: Callable[[], Path | None]
+    copy_icon: Callable[[], Path] = copy_shipped_icon
 
 
 def _installed_lsdsk() -> Path | None:
@@ -173,7 +177,9 @@ def install_shortcut(
             shortcuts=shortcuts, uvx=uvx_path, installed_lsdsk=_installed_lsdsk, install_uv=run_uv_installer
         )
     launch = _resolve_launch(seams, install_uv=install_uv, output_format=output_format)
-    written = seams.shortcuts.create(launch=launch, icon=copy_shipped_icon())
+    # The explicit command does NOT degrade: a reader who asked for the shortcut
+    # is told when the icon or the write fails, unlike the best-effort offer.
+    written = seams.shortcuts.create(launch=launch, icon=seams.copy_icon())
     _report(written, launch, output_format)
 
 
@@ -233,16 +239,35 @@ def offer_shortcut(
         return
     choice = (ask_choice or _ask_choice_prompt)()
     if choice is ShortcutChoice.NEVER:
-        disable()
-        safe_console.echo("lsdsk will not offer the shortcut again; run 'lsdsk install-shortcut' to create it later.")
+        _disable_for_the_offer(disable)
         return
     if choice is ShortcutChoice.NOT_NOW:
         return
     _offer_create(seams, ask_install=ask_install or _ask_install_prompt)
 
 
+def _disable_for_the_offer(disable: Callable[[], object]) -> None:
+    """Write the opt-out best-effort; a write that fails warns once and returns.
+
+    The offer precedes the interactive view, so a read-only or full config
+    directory must not abort it: the opt-out is a courtesy, not the run's work.
+    """
+    try:
+        disable()
+    except OSError as exc:
+        safe_console.echo(f"Could not save the do-not-offer setting: {exc}", err=True)
+        return
+    safe_console.echo("lsdsk will not offer the shortcut again; run 'lsdsk install-shortcut' to create it later.")
+
+
 def _offer_create(seams: ShortcutSeams, *, ask_install: Callable[[], bool]) -> None:
-    """Resolve a launcher (installing uv on consent), then create the shortcut."""
+    """Resolve a launcher (installing uv on consent), then create the shortcut.
+
+    Best-effort, unlike the explicit command: this runs before the interactive
+    view opens, so an unwritable config directory must not abort the view. An
+    icon that will not copy degrades to an iconless shortcut, and a create that
+    fails warns once and returns.
+    """
     plan = plan_launch(uvx=seams.uvx(), installed_lsdsk=seams.installed_lsdsk())
     if plan.needs_uv:
         safe_console.echo(consent_text(sys.platform))
@@ -252,8 +277,25 @@ def _offer_create(seams: ShortcutSeams, *, ask_install: Callable[[], bool]) -> N
         if plan.needs_uv:
             safe_console.echo(_UVX_STILL_MISSING)
             return
-    written = seams.shortcuts.create(launch=plan.argv, icon=copy_shipped_icon())
+    _create_for_the_offer(seams, launch=plan.argv)
+
+
+def _create_for_the_offer(seams: ShortcutSeams, *, launch: tuple[str, ...]) -> None:
+    """Create the shortcut best-effort, never letting a filesystem error abort the view."""
+    try:
+        written = seams.shortcuts.create(launch=launch, icon=_icon_or_none(seams.copy_icon))
+    except OSError as exc:
+        safe_console.echo(f"Could not create the desktop shortcut: {exc}", err=True)
+        return
     safe_console.echo(f"Shortcut created at {written}.")
+
+
+def _icon_or_none(copy_icon: Callable[[], Path]) -> Path | None:
+    """The copied icon, or ``None`` when the copy fails - an iconless shortcut still launches lsdsk."""
+    try:
+        return copy_icon()
+    except OSError:
+        return None
 
 
 @click.command("install-shortcut", context_settings=CLICK_CONTEXT_SETTINGS)
