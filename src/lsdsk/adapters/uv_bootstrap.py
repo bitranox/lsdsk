@@ -22,7 +22,9 @@ Contents:
 from __future__ import annotations
 
 import shutil
-import subprocess  # the one allow-listed shell-out; see the module docstring and the guard test
+
+# subprocess is the one allow-listed shell-out here; see the module docstring and the guard test.
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -60,7 +62,9 @@ def _installer_command(platform: str) -> list[str]:
 
 def _subprocess_run(command: Sequence[str]) -> int:
     """Run ``command`` to completion and return its exit code."""
-    completed = subprocess.run(list(command), check=False)  # noqa: S603 - fixed argv, pinned-constant URL, no user input
+    # Fixed argv built from pinned-constant installer URLs, no user input reaches it;
+    # subprocess here is the one allow-listed shell-out (see the module docstring).
+    completed = subprocess.run(list(command), check=False)  # noqa: S603  # nosec B603
     return completed.returncode
 
 
