@@ -1,14 +1,19 @@
-"""Whether to offer a desktop shortcut, as a pure decision.
+"""The desktop-shortcut feature's pure decisions, shared by every platform.
 
-The interactive launch path asks this before it draws anything, and every
-platform's shortcut adapter shares the one answer. It reads nothing itself: the
-three facts are passed in, so the rule is testable without a terminal, a config
-file or a filesystem behind it.
+Everything here reads nothing and starts nothing: the facts are passed in, so
+each rule is testable without a terminal, a config file, a filesystem or a
+subprocess behind it. It covers whether to offer at all, the command the
+shortcut runs, which launcher to target, and the consent text shown when uv must
+be installed first; the adapters that read PATH, write files or shell out take
+these answers and act on them.
 """
 
 from __future__ import annotations
 
-from typing import Final
+from typing import TYPE_CHECKING, Final, NamedTuple
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 #: The cooldown the desktop launcher pins, the same figure as lsdsk's own
 #: ``[tool.uv].exclude-newer``. uv holds back every release younger than this
@@ -31,6 +36,88 @@ OWNED_CLOSURE: Final = (
     "fake-winreg",
     "lib-registry",
 )
+
+#: The uv release lsdsk's installer is pinned to, so a reader runs a known
+#: installer rather than whatever is newest. Bump it deliberately as uv releases,
+#: the way a dependency floor is bumped; both the automatic install and the
+#: manual line in the consent text are built from it, so they cannot diverge.
+UV_INSTALLER_VERSION: Final = "0.13.0"
+
+#: The official astral installer URLs for the pinned release, one per platform.
+UV_INSTALLER_URL_POSIX: Final = f"https://astral.sh/uv/{UV_INSTALLER_VERSION}/install.sh"
+UV_INSTALLER_URL_WINDOWS: Final = f"https://astral.sh/uv/{UV_INSTALLER_VERSION}/install.ps1"
+
+
+class LaunchPlan(NamedTuple):
+    """The command a shortcut should run, or the signal that uv must come first.
+
+    Attributes:
+        argv: The whole command, empty when ``needs_uv`` is set.
+        needs_uv: Whether no launcher was found and uv must be installed before a
+            shortcut can be made.
+    """
+
+    argv: tuple[str, ...]
+    needs_uv: bool
+
+
+def plan_launch(*, uvx: Path | None, installed_lsdsk: Path | None) -> LaunchPlan:
+    """Decide what a shortcut should launch, given what is on the machine.
+
+    ``uvx`` is preferred because it carries the cooldown; a plainly installed
+    lsdsk already on PATH is the fallback for a reader who installed it another
+    way; with neither, uv has to be installed before there is anything to run.
+
+    Args:
+        uvx: The resolved ``uvx`` path, or ``None``.
+        installed_lsdsk: A resolved plain ``lsdsk`` launcher on PATH, or ``None``.
+
+    Returns:
+        The launch plan.
+
+    Example:
+        >>> plan_launch(uvx=None, installed_lsdsk=None).needs_uv
+        True
+    """
+    if uvx is not None:
+        return LaunchPlan(uvx_launch_args(str(uvx)), needs_uv=False)
+    if installed_lsdsk is not None:
+        return LaunchPlan((str(installed_lsdsk),), needs_uv=False)
+    return LaunchPlan((), needs_uv=True)
+
+
+def _manual_install_line(platform: str) -> str:
+    """The one install command this platform's reader can run by hand."""
+    if platform == "win32":
+        return f'powershell -ExecutionPolicy ByPass -c "irm {UV_INSTALLER_URL_WINDOWS} | iex"'
+    return f"curl -LsSf {UV_INSTALLER_URL_POSIX} | sh"
+
+
+def consent_text(platform: str) -> str:
+    """The explanation shown once, when the shortcut is accepted and uv is missing.
+
+    It carries the supply-chain rationale (the cooldown) and the single manual
+    install command for THIS platform, so a reader who would rather install uv
+    themselves already has the line. The yes/no question is asked separately, so
+    it is not part of this text.
+
+    Args:
+        platform: ``sys.platform`` of the running machine.
+
+    Returns:
+        The consent explanation, ending with the manual install command.
+    """
+    return (
+        "lsdsk runs through uv, which pins a 7-day cooldown on new releases. uv holds back any\n"
+        "release younger than the cooldown across the whole dependency tree, the transitive\n"
+        "dependencies you never named included, so a package compromised today cannot reach your\n"
+        "machine for 7 days. That is the supply-chain protection behind this shortcut.\n"
+        "\n"
+        "uv is not installed yet. lsdsk can install it for you now from the official installer at\n"
+        "astral.sh, or you can install it yourself first:\n"
+        "\n"
+        f"  {_manual_install_line(platform)}"
+    )
 
 
 def uvx_launch_args(uvx: str) -> tuple[str, ...]:
@@ -88,4 +175,15 @@ def should_offer(
     return at_terminal and offer_enabled and not shortcut_present
 
 
-__all__ = ["OWNED_CLOSURE", "UVX_COOLDOWN", "should_offer", "uvx_launch_args"]
+__all__ = [
+    "OWNED_CLOSURE",
+    "UVX_COOLDOWN",
+    "UV_INSTALLER_URL_POSIX",
+    "UV_INSTALLER_URL_WINDOWS",
+    "UV_INSTALLER_VERSION",
+    "LaunchPlan",
+    "consent_text",
+    "plan_launch",
+    "should_offer",
+    "uvx_launch_args",
+]

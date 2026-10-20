@@ -14,7 +14,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lsdsk.adapters.uv_bootstrap import UV_INSTALLER_VERSION, install_uv, uvx_path
+from lsdsk.adapters.uv_bootstrap import install_uv, uvx_path
+from lsdsk.domain.shortcut import UV_INSTALLER_VERSION
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

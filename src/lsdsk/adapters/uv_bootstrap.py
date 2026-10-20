@@ -25,18 +25,12 @@ import shutil
 import subprocess  # the one allow-listed shell-out; see the module docstring and the guard test
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
+
+from lsdsk.domain.shortcut import UV_INSTALLER_URL_POSIX, UV_INSTALLER_URL_WINDOWS
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
-
-#: The uv release the official installer is pinned to. Pinned so a reader runs a
-#: known installer rather than the newest one unseen; bump it deliberately as uv
-#: releases, the way a dependency floor is bumped.
-UV_INSTALLER_VERSION: Final = "0.13.0"
-
-_POSIX_INSTALLER: Final = f"https://astral.sh/uv/{UV_INSTALLER_VERSION}/install.sh"
-_WINDOWS_INSTALLER: Final = f"https://astral.sh/uv/{UV_INSTALLER_VERSION}/install.ps1"
 
 
 def uvx_path(*, which: Callable[[str], str | None] = shutil.which) -> Path | None:
@@ -60,8 +54,8 @@ def _installer_command(platform: str) -> list[str]:
     the shell.
     """
     if platform == "win32":
-        return ["powershell", "-ExecutionPolicy", "ByPass", "-c", f"irm {_WINDOWS_INSTALLER} | iex"]
-    return ["sh", "-c", f"curl -LsSf {_POSIX_INSTALLER} | sh"]
+        return ["powershell", "-ExecutionPolicy", "ByPass", "-c", f"irm {UV_INSTALLER_URL_WINDOWS} | iex"]
+    return ["sh", "-c", f"curl -LsSf {UV_INSTALLER_URL_POSIX} | sh"]
 
 
 def _subprocess_run(command: Sequence[str]) -> int:
@@ -96,4 +90,4 @@ def install_uv(
     return uvx_path(which=which)
 
 
-__all__ = ["UV_INSTALLER_VERSION", "install_uv", "uvx_path"]
+__all__ = ["install_uv", "uvx_path"]

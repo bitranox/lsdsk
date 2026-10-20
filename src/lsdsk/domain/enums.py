@@ -435,6 +435,23 @@ class ActionCommand(StrEnum):
     SNAPSHOT = "snapshot"
 
 
+class ShortcutChoice(StrEnum):
+    """What a reader answered to the desktop-shortcut offer.
+
+    Three answers, each wired to one outcome: create it now, not this time (the
+    offer returns next launch), or never (which writes
+    ``display.offer_desktop_shortcut = false`` so it does not return).
+
+    Example:
+        >>> f"{ShortcutChoice.NEVER}"
+        'never'
+    """
+
+    CREATE = "create"
+    NOT_NOW = "not-now"
+    NEVER = "never"
+
+
 class WriteOutcome(StrEnum):
     """What a command that writes configuration files did about them.
 
@@ -462,6 +479,7 @@ __all__ = [
     "PciPortKind",
     "Platform",
     "Severity",
+    "ShortcutChoice",
     "TreeDensity",
     "UsbLaneRate",
     "UsbTransport",
