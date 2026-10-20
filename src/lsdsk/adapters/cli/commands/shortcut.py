@@ -86,6 +86,12 @@ def shortcuts_for(platform: str) -> DesktopShortcuts | None:
 
     Only Linux is wired so far; macOS and Windows adapters arrive with their own
     steps, and until then the command refuses cleanly rather than crashing.
+
+    Args:
+        platform: ``sys.platform`` of the running machine.
+
+    Returns:
+        The platform's shortcut adapter, or ``None`` when none is available yet.
     """
     if platform.startswith("linux"):
         return LinuxDesktopShortcut()
@@ -113,7 +119,7 @@ def _resolve_launch(seams: ShortcutSeams, *, install_uv: bool, output_format: Ou
     if replan.needs_uv:
         fail(
             "uv was installed but uvx is still not on PATH; open a new shell and run install-shortcut again.",
-            ExitCode.SOFTWARE_ERROR,
+            ExitCode.CONFIG_ERROR,
             output_format=output_format,
         )
     return replan.argv

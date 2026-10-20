@@ -102,7 +102,7 @@ def test_an_install_that_still_yields_no_uvx_fails_without_writing(capsys: pytes
     with pytest.raises(SystemExit) as leaving:
         install_shortcut(seams=_seams(recording, uvx=None, lsdsk=None, installed=None), install_uv=True)
 
-    assert leaving.value.code == ExitCode.SOFTWARE_ERROR
+    assert leaving.value.code == ExitCode.CONFIG_ERROR
     assert recording.created is None
     _ = capsys.readouterr()
 

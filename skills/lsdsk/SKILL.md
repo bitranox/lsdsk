@@ -89,6 +89,7 @@ uvx lsdsk info                # version, homepage and the shell command name
 uvx lsdsk config              # show effective configuration (--section thresholds for one)
 uvx lsdsk config-deploy --target user   # write ~/.config/lsdsk so it can be edited (app|host need root)
 uvx lsdsk config-generate-examples --destination DIR   # scaffold examples
+uvx lsdsk install-shortcut    # drop a desktop shortcut that launches lsdsk; --install-uv installs uv first if it is missing
 uvx lsdsk --replay m.json     # render a capture from any machine
 ```
 
