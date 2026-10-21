@@ -60,17 +60,20 @@ def _seams(
 @pytest.mark.os_agnostic
 def test_a_present_uvx_is_what_the_shortcut_is_told_to_run() -> None:
     recording = _RecordingShortcuts()
-    install_shortcut(seams=_seams(recording, uvx=Path("/usr/bin/uvx")))
+    uvx = Path("/usr/bin/uvx")
+    install_shortcut(seams=_seams(recording, uvx=uvx))
     assert recording.created is not None
-    assert recording.created[0] == uvx_launch_args("/usr/bin/uvx")
+    # The launch carries the path as this platform renders it: on Windows the same Path reads \usr\bin\uvx.
+    assert recording.created[0] == uvx_launch_args(str(uvx))
 
 
 @pytest.mark.os_agnostic
 def test_a_plainly_installed_lsdsk_is_the_fallback_launcher() -> None:
     recording = _RecordingShortcuts()
-    install_shortcut(seams=_seams(recording, uvx=None, lsdsk=Path("/usr/local/bin/lsdsk")))
+    lsdsk = Path("/usr/local/bin/lsdsk")
+    install_shortcut(seams=_seams(recording, uvx=None, lsdsk=lsdsk))
     assert recording.created is not None
-    assert recording.created[0] == ("/usr/local/bin/lsdsk",)
+    assert recording.created[0] == (str(lsdsk),)
 
 
 @pytest.mark.os_agnostic
@@ -89,12 +92,13 @@ def test_without_a_launcher_and_without_install_uv_it_refuses_and_guides(capsys:
 @pytest.mark.os_agnostic
 def test_install_uv_installs_then_creates_with_the_new_uvx() -> None:
     recording = _RecordingShortcuts()
+    installed = Path("/root/.local/bin/uvx")
     install_shortcut(
-        seams=_seams(recording, uvx=None, lsdsk=None, installed=Path("/root/.local/bin/uvx")),
+        seams=_seams(recording, uvx=None, lsdsk=None, installed=installed),
         install_uv=True,
     )
     assert recording.created is not None
-    assert recording.created[0] == uvx_launch_args("/root/.local/bin/uvx")
+    assert recording.created[0] == uvx_launch_args(str(installed))
 
 
 @pytest.mark.os_agnostic

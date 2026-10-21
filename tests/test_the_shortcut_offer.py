@@ -117,15 +117,17 @@ def test_an_existing_shortcut_means_no_offer() -> None:
 def test_create_writes_the_uvx_launch_when_uvx_is_present() -> None:
     shortcuts = _RecordingShortcuts()
     ask_choice, ask_install = _answers(ShortcutChoice.CREATE)
+    uvx = Path("/usr/bin/uvx")
     offer_shortcut(
         DisplaySettings(),
         ask_choice=ask_choice,
         ask_install=ask_install,
-        seams=_seams(shortcuts, uvx=Path("/usr/bin/uvx")),
+        seams=_seams(shortcuts, uvx=uvx),
         disable=_DisableRecorder(),
     )
     assert shortcuts.created is not None
-    assert shortcuts.created[0] == uvx_launch_args("/usr/bin/uvx")
+    # The launch carries the path as this platform renders it: on Windows the same Path reads \usr\bin\uvx.
+    assert shortcuts.created[0] == uvx_launch_args(str(uvx))
 
 
 @pytest.mark.os_agnostic
@@ -164,15 +166,16 @@ def test_never_writes_the_opt_out_and_creates_nothing() -> None:
 def test_create_with_no_uvx_installs_on_consent_then_creates() -> None:
     shortcuts = _RecordingShortcuts()
     ask_choice, ask_install = _answers(ShortcutChoice.CREATE, install=True)
+    installed = Path("/root/.local/bin/uvx")
     offer_shortcut(
         DisplaySettings(),
         ask_choice=ask_choice,
         ask_install=ask_install,
-        seams=_seams(shortcuts, uvx=None, lsdsk=None, installed=Path("/root/.local/bin/uvx")),
+        seams=_seams(shortcuts, uvx=None, lsdsk=None, installed=installed),
         disable=_DisableRecorder(),
     )
     assert shortcuts.created is not None
-    assert shortcuts.created[0] == uvx_launch_args("/root/.local/bin/uvx")
+    assert shortcuts.created[0] == uvx_launch_args(str(installed))
 
 
 @pytest.mark.os_agnostic

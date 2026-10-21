@@ -32,19 +32,22 @@ def test_the_three_way_choice_has_a_wire_form_for_each_answer() -> None:
 @pytest.mark.os_agnostic
 def test_a_present_uvx_is_the_preferred_launch_target() -> None:
     """With uvx on the machine, the plan is the cooldown-protected uvx command."""
-    plan = plan_launch(uvx=Path("/usr/bin/uvx"), installed_lsdsk=Path("/usr/bin/lsdsk"))
+    uvx = Path("/usr/bin/uvx")
+    plan = plan_launch(uvx=uvx, installed_lsdsk=Path("/usr/bin/lsdsk"))
 
     assert plan.needs_uv is False
-    assert plan.argv == uvx_launch_args("/usr/bin/uvx")
+    # The plan carries the path as this platform renders it: on Windows the same Path reads \usr\bin\uvx.
+    assert plan.argv == uvx_launch_args(str(uvx))
 
 
 @pytest.mark.os_agnostic
 def test_a_plain_lsdsk_launcher_is_used_when_uvx_is_absent() -> None:
     """A pip/pipx/uv-tool install already on PATH is the fallback target."""
-    plan = plan_launch(uvx=None, installed_lsdsk=Path("/usr/local/bin/lsdsk"))
+    lsdsk = Path("/usr/local/bin/lsdsk")
+    plan = plan_launch(uvx=None, installed_lsdsk=lsdsk)
 
     assert plan.needs_uv is False
-    assert plan.argv == ("/usr/local/bin/lsdsk",)
+    assert plan.argv == (str(lsdsk),)
 
 
 @pytest.mark.os_agnostic
