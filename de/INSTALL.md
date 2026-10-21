@@ -148,7 +148,10 @@ lsdsk install-shortcut --install-uv # und uv zuerst einrichten, wenn keines da i
 ```
 
 Unter Linux schreibt es einen `.desktop`-Eintrag, unter macOS eine
-`.command`-Datei. Wo `uvx` vorhanden ist, startet die Verknüpfung lsdsk darüber,
+`.command`-Datei. Windows wird noch nicht unterstützt: Dort bietet die
+interaktive Ansicht keine Verknüpfung an, und `lsdsk install-shortcut` lehnt mit
+dem Hinweis ab, dass sie in diesem Build noch nicht verfügbar ist. Wo `uvx`
+vorhanden ist, startet die Verknüpfung lsdsk darüber,
 mit derselben 7-Tage-Wartezeit, die das Projekt festlegt, so bekommt ein Start
 vom Desktop den Lieferkettenschutz, den ein einfacher `uvx`-Lauf hätte. (Ist nur
 ein ganz normal installiertes `lsdsk` im PATH, startet sie dieses stattdessen.)

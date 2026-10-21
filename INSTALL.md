@@ -141,7 +141,9 @@ lsdsk install-shortcut              # write the shortcut for this platform
 lsdsk install-shortcut --install-uv # and install uv first if none is present
 ```
 
-On Linux it writes a `.desktop` entry and on macOS a `.command` file. Where
+On Linux it writes a `.desktop` entry and on macOS a `.command` file. Windows
+is not supported yet: there the interactive view offers no shortcut, and
+`lsdsk install-shortcut` refuses, saying it is not available in this build. Where
 `uvx` is available the shortcut launches lsdsk through it, with the same 7-day
 cooldown the project pins, so a start from the desktop gets the supply-chain
 protection a plain `uvx` run would. (If only a plainly installed `lsdsk` is on

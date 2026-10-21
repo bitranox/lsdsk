@@ -14,7 +14,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   On a qualifying interactive start lsdsk also offers the shortcut once, with a three-way answer:
   create it, not now (asked again next time), or never. The offer fires before the elevation
   relaunch, while there is still a terminal to answer it. Linux gets a `.desktop` entry and macOS a
-  `.command` file, each carrying a disk-and-pulse icon.
+  `.command` file, each carrying a disk-and-pulse icon. Windows is not supported yet: there the offer
+  stays silent and `lsdsk install-shortcut` refuses.
 - `display.offer_desktop_shortcut` (default `true`), which turns that interactive offer off when
   set to `false`. Answering "never" at the prompt writes exactly this.
 - A consent-gated uv bootstrap: when the shortcut is accepted on a machine with no uv, lsdsk can
