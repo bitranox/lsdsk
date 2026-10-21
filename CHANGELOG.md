@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.15.0] 2026-10-21 02:06:33
+
 ### Added
 
 - A desktop-shortcut feature. `lsdsk install-shortcut` writes a desktop launcher for the tool, so
