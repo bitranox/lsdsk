@@ -18,7 +18,9 @@ from lsdsk.domain.enums import ShortcutChoice
 from lsdsk.domain.shortcut import uvx_launch_args
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
+
+    from lsdsk.application.ports import DesktopShortcuts
 
 
 class _RecordingShortcuts:
@@ -31,8 +33,8 @@ class _RecordingShortcuts:
     def exists(self) -> bool:
         return self.present
 
-    def create(self, *, launch: object, icon: Path | None) -> Path:
-        self.created = (tuple(launch), icon)  # type: ignore[arg-type]
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+        self.created = (tuple(launch), icon)
         return Path("/desktop/lsdsk.desktop")
 
     def desktop_dir(self) -> Path:
@@ -40,7 +42,7 @@ class _RecordingShortcuts:
 
 
 def _seams(
-    shortcuts: _RecordingShortcuts,
+    shortcuts: DesktopShortcuts,
     *,
     uvx: Path | None = None,
     lsdsk: Path | None = None,

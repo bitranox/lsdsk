@@ -13,6 +13,7 @@ surfaces a create failure.
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
 
@@ -24,7 +25,9 @@ from lsdsk.adapters.config.tunables import DisplaySettings
 from lsdsk.domain.enums import ShortcutChoice
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
+
+    from lsdsk.application.ports import DesktopShortcuts
 
 
 class _ShortcutsThatFailToCreate:
@@ -36,7 +39,7 @@ class _ShortcutsThatFailToCreate:
     def exists(self) -> bool:
         return False
 
-    def create(self, *, launch: object, icon: Path | None) -> Path:
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
         self.create_calls += 1
         raise OSError("read-only config directory")
 
@@ -53,8 +56,8 @@ class _RecordingShortcuts:
     def exists(self) -> bool:
         return False
 
-    def create(self, *, launch: object, icon: Path | None) -> Path:
-        self.created = (tuple(launch), icon)  # type: ignore[arg-type]
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+        self.created = (tuple(launch), icon)
         return Path("/desktop/lsdsk.desktop")
 
     def desktop_dir(self) -> Path:
@@ -79,20 +82,19 @@ def _raise_toml_parse_error() -> NoReturn:
 
 
 def _seams(
-    shortcuts: object,
+    shortcuts: DesktopShortcuts,
     *,
     uvx: Path | None = None,
     copy_icon: Callable[[], Path] | None = None,
 ) -> ShortcutSeams:
-    kwargs: dict[str, object] = {
-        "shortcuts": shortcuts,
-        "uvx": lambda: uvx,
-        "installed_lsdsk": lambda: None,
-        "install_uv": lambda: None,
-    }
-    if copy_icon is not None:
-        kwargs["copy_icon"] = copy_icon
-    return ShortcutSeams(**kwargs)  # type: ignore[arg-type]
+    seams = ShortcutSeams(
+        shortcuts=shortcuts,
+        uvx=lambda: uvx,
+        installed_lsdsk=lambda: None,
+        install_uv=lambda: None,
+    )
+    # With no copier given, the dataclass's default - the real icon copier - stays in place.
+    return seams if copy_icon is None else dataclasses.replace(seams, copy_icon=copy_icon)
 
 
 @pytest.mark.os_agnostic

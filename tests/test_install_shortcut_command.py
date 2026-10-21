@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -24,6 +25,11 @@ from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
 from lsdsk.domain.enums import OutputFormat
 from lsdsk.domain.shortcut import uvx_launch_args
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from lsdsk.application.ports import DesktopShortcuts
+
 
 class _RecordingShortcuts:
     """A DesktopShortcuts double that records what it was told to create."""
@@ -34,8 +40,8 @@ class _RecordingShortcuts:
     def exists(self) -> bool:
         return False
 
-    def create(self, *, launch: object, icon: Path | None) -> Path:
-        self.created = (tuple(launch), icon)  # type: ignore[arg-type]
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+        self.created = (tuple(launch), icon)
         return Path("/desktop/lsdsk.desktop")
 
     def desktop_dir(self) -> Path:
@@ -43,7 +49,7 @@ class _RecordingShortcuts:
 
 
 def _seams(
-    shortcuts: _RecordingShortcuts,
+    shortcuts: DesktopShortcuts,
     *,
     uvx: Path | None = None,
     lsdsk: Path | None = None,
@@ -128,7 +134,7 @@ def test_the_real_linux_adapter_writes_a_desktop_file_and_reports_it_as_json(
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     (tmp_path / "Desktop").mkdir()
 
-    seams = _seams(LinuxDesktopShortcut(), uvx=Path("/usr/bin/uvx"))  # type: ignore[arg-type]
+    seams = _seams(LinuxDesktopShortcut(), uvx=Path("/usr/bin/uvx"))
     install_shortcut(output_format=OutputFormat.JSON, seams=seams)
 
     written = tmp_path / "Desktop" / "lsdsk.desktop"
