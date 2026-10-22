@@ -150,29 +150,35 @@ def should_offer(
     *,
     at_terminal: bool,
     offer_enabled: bool,
+    desktop_present: bool,
     shortcut_present: bool,
 ) -> bool:
     """Decide whether to offer to create a desktop shortcut.
 
     The offer fires only when someone can answer it, the configuration still
-    permits it, and it has not already been done. Any one of those being false
-    is reason enough to stay silent.
+    permits it, the account has a desktop to put a shortcut on, and it has not
+    already been done. Any one of those being false is reason enough to stay
+    silent. ``desktop_present`` has no default on purpose: a headless server is
+    exactly the case where every other fact says yes.
 
     Args:
         at_terminal: Whether an interactive terminal is attached to answer.
         offer_enabled: Whether ``display.offer_desktop_shortcut`` still permits it.
+        desktop_present: Whether the account has a desktop folder at all.
         shortcut_present: Whether the platform's shortcut already exists.
 
     Returns:
         ``True`` when the offer should be shown, ``False`` otherwise.
 
     Example:
-        >>> should_offer(at_terminal=True, offer_enabled=True, shortcut_present=False)
+        >>> should_offer(at_terminal=True, offer_enabled=True, desktop_present=True, shortcut_present=False)
         True
-        >>> should_offer(at_terminal=True, offer_enabled=True, shortcut_present=True)
+        >>> should_offer(at_terminal=True, offer_enabled=True, desktop_present=True, shortcut_present=True)
+        False
+        >>> should_offer(at_terminal=True, offer_enabled=True, desktop_present=False, shortcut_present=False)
         False
     """
-    return at_terminal and offer_enabled and not shortcut_present
+    return at_terminal and offer_enabled and desktop_present and not shortcut_present
 
 
 __all__ = [

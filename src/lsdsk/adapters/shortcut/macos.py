@@ -31,6 +31,10 @@ class MacosDesktopShortcut:
         """The Desktop directory (macOS has no XDG override)."""
         return Path.home() / "Desktop"
 
+    def has_desktop(self) -> bool:
+        """Whether the Desktop folder exists; it is never created here."""
+        return self.desktop_dir().is_dir()
+
     def exists(self) -> bool:
         """Whether the Desktop already carries the launcher."""
         return (self.desktop_dir() / _FILENAME).is_file()
@@ -45,10 +49,13 @@ class MacosDesktopShortcut:
 
         Returns:
             The path of the ``.command`` file.
+
+        Raises:
+            FileNotFoundError: When the Desktop folder does not exist; it is
+                never created here.
         """
         del icon
         path = self.desktop_dir() / _FILENAME
-        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"#!/bin/sh\nexec {shlex.join(launch)}\n", encoding="utf-8")
         path.chmod(path.stat().st_mode | _EXECUTABLE_BITS)
         return path

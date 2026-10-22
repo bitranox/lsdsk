@@ -24,6 +24,7 @@ Contents:
     * :func:`prompt_for` - which prompt a platform asks through, if any.
     * :func:`announcement_for` - the line printed before that prompt.
     * :func:`elevate_for_the_view` - ask where it helps, report what happened.
+    * :func:`announce_on_stderr` - print that line, set off from what came before.
     * :func:`relaunch_through_pwshpy` - the relaunch, as an outcome.
 """
 
@@ -160,7 +161,7 @@ def _the_real_seams() -> ElevationSeams:
         is_elevated=_is_elevated_here,
         devices_readable=_devices_readable_here,
         relaunch=partial(relaunch_through_pwshpy, prompt=prompt) if prompt is not None else _relaunch_nowhere,
-        announce=_to_stderr,
+        announce=announce_on_stderr,
         argv=tuple(sys.argv[1:]),
         cwd=str(Path.cwd()),
     )
@@ -276,14 +277,24 @@ def _installed_pwshpy() -> PwshpyModule:
     return cast("PwshpyModule", importlib.import_module("pwshpy"))
 
 
-def _to_stderr(line: str) -> None:
-    print(line, file=sys.stderr, flush=True)  # noqa: T201 - the one line before a prompt, printed before any view exists
+def announce_on_stderr(line: str) -> None:
+    """Print the line before the prompt on standard error, after a blank line.
+
+    The blank line keeps it from running on from whatever question came first
+    (the desktop-shortcut offer), so the reader sees where one ends and sudo's
+    or UAC's begins.
+
+    Args:
+        line: The announcement, from :func:`announcement_for`.
+    """
+    print(f"\n{line}", file=sys.stderr, flush=True)  # noqa: T201 - the one line before a prompt, printed before any view exists
 
 
 __all__ = [
     "RELAUNCH_MARKER",
     "ElevationSeams",
     "PwshpyModule",
+    "announce_on_stderr",
     "announcement_for",
     "elevate_for_the_view",
     "prompt_for",

@@ -7,6 +7,7 @@ platform and nothing writes to the developer's own machine.
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,14 +25,18 @@ if TYPE_CHECKING:
 
 
 class _RecordingShortcuts:
-    """A DesktopShortcuts double: a settable ``exists`` and a recorded ``create``."""
+    """A DesktopShortcuts double: settable ``exists`` and ``has_desktop``, a recorded ``create``."""
 
-    def __init__(self, *, present: bool = False) -> None:
+    def __init__(self, *, present: bool = False, desktop: bool = True) -> None:
         self.present = present
+        self.desktop = desktop
         self.created: tuple[tuple[str, ...], Path | None] | None = None
 
     def exists(self) -> bool:
         return self.present
+
+    def has_desktop(self) -> bool:
+        return self.desktop
 
     def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
         self.created = (tuple(launch), icon)
@@ -116,6 +121,30 @@ def test_an_existing_shortcut_means_no_offer() -> None:
 
 
 @pytest.mark.os_agnostic
+def test_an_account_with_no_desktop_is_never_asked() -> None:
+    """A headless server has no desktop to put a shortcut on, so the question is not put."""
+    shortcuts = _RecordingShortcuts(desktop=False)
+    disable = _DisableRecorder()
+    asked = False
+
+    def ask_choice() -> ShortcutChoice:
+        nonlocal asked
+        asked = True
+        return ShortcutChoice.CREATE
+
+    offer_shortcut(
+        DisplaySettings(),
+        ask_choice=ask_choice,
+        ask_install=lambda: False,
+        seams=_seams(shortcuts, uvx=Path("/usr/bin/uvx")),
+        disable=disable,
+    )
+    assert asked is False
+    assert shortcuts.created is None
+    assert disable.called is False
+
+
+@pytest.mark.os_agnostic
 def test_create_writes_the_uvx_launch_when_uvx_is_present() -> None:
     shortcuts = _RecordingShortcuts()
     ask_choice, ask_install = _answers(ShortcutChoice.CREATE)
@@ -192,3 +221,44 @@ def test_create_with_no_uvx_and_declined_install_creates_nothing() -> None:
         disable=_DisableRecorder(),
     )
     assert shortcuts.created is None
+
+
+@pytest.mark.os_agnostic
+def test_the_real_question_shows_the_letter_each_answer_is_typed_as(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Rich reads ``[y]`` as a markup tag; unescaped, the letters vanish and the reader is left guessing."""
+    monkeypatch.setattr("sys.stdin", io.StringIO("n\n"))
+    shortcuts = _RecordingShortcuts()
+
+    offer_shortcut(DisplaySettings(), seams=_seams(shortcuts, uvx=Path("/usr/bin/uvx")), disable=_DisableRecorder())
+
+    shown = " ".join(capsys.readouterr().out.split())
+    assert "[y] yes" in shown
+    assert "[n] not now" in shown
+    assert "[d] do not ask again" in shown
+    assert shortcuts.created is None, "the scripted 'n' must have been read as not now"
+
+
+@pytest.mark.os_agnostic
+def test_each_step_of_the_offer_is_set_off_by_a_blank_line(capsys: pytest.CaptureFixture[str]) -> None:
+    """The consent text, the install question and the result each start a paragraph of their own."""
+    shortcuts = _RecordingShortcuts()
+    asked_install_after: list[str] = []
+
+    def ask_install() -> bool:
+        asked_install_after.append(capsys.readouterr().out)
+        return True
+
+    offer_shortcut(
+        DisplaySettings(),
+        ask_choice=lambda: ShortcutChoice.CREATE,
+        ask_install=ask_install,
+        seams=_seams(shortcuts, uvx=None, lsdsk=None, installed=Path("/root/.local/bin/uvx")),
+        disable=_DisableRecorder(),
+    )
+
+    before_install = asked_install_after[0]
+    assert before_install.startswith("\nlsdsk runs through uv")
+    assert before_install.endswith("\n\n"), "the install question needs a blank line above it"
+    assert capsys.readouterr().out.startswith("\nShortcut created at")

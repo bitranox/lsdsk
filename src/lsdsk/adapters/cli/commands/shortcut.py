@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 
 import rich_click as click
 import tomlkit.exceptions
+from rich.markup import escape
 from rich.prompt import Confirm, Prompt
 
 from lsdsk.adapters.config.offer import disable_offer
@@ -164,8 +165,9 @@ def install_shortcut(
             not given.
 
     Raises:
-        SystemExit: On any refusal (unsupported platform, no launcher without
-            ``--install-uv``, a failed install), carrying the matching exit code.
+        SystemExit: On any refusal (unsupported platform, an account with no
+            desktop folder, no launcher without ``--install-uv``, a failed
+            install), carrying the matching exit code.
     """
     if seams is None:
         shortcuts = shortcuts_for(sys.platform)
@@ -177,6 +179,13 @@ def install_shortcut(
             )
         seams = ShortcutSeams(
             shortcuts=shortcuts, uvx=uvx_path, installed_lsdsk=_installed_lsdsk, install_uv=run_uv_installer
+        )
+    # Refused before uv could be installed for it: a headless server gains nothing from either.
+    if not seams.shortcuts.has_desktop():
+        fail(
+            f"no desktop folder at {seams.shortcuts.desktop_dir()}, so there is nowhere to put a shortcut",
+            ExitCode.CONFIG_ERROR,
+            output_format=output_format,
         )
     launch = _resolve_launch(seams, install_uv=install_uv, output_format=output_format)
     # The explicit command does NOT degrade: a reader who asked for the shortcut
@@ -191,9 +200,13 @@ _OFFER_ANSWERS = {"y": ShortcutChoice.CREATE, "n": ShortcutChoice.NOT_NOW, "d": 
 
 def _ask_choice_prompt() -> ShortcutChoice:
     """Ask whether to create the shortcut: yes, not now, or never again."""
+    # Escaped because Rich reads "[y]" as a markup tag and drops it, which left the
+    # reader a list of answers with no letter to type for any of them.
     answer = Prompt.ask(
-        "Create a desktop shortcut that launches lsdsk? "
-        "[y] yes, [n] not now, [d] do not ask again (sets display.offer_desktop_shortcut = false)",
+        escape(
+            "Create a desktop shortcut that launches lsdsk? "
+            "[y] yes, [n] not now, [d] do not ask again (sets display.offer_desktop_shortcut = false)"
+        ),
         choices=list(_OFFER_ANSWERS),
         default="n",
     )
@@ -216,9 +229,12 @@ def offer_shortcut(
     """At a terminal, offer to create the desktop shortcut and act on the answer.
 
     Called only on the interactive path, before elevation, so the reader can
-    answer. It stays silent when the config key is off, when the shortcut already
-    exists, or on a platform whose adapter is not built yet; otherwise it asks the
-    three-way question and creates, waits until next time, or writes the opt-out.
+    answer. It stays silent when the config key is off, when the account has no
+    desktop folder (a headless server), when the shortcut already exists, or on a
+    platform whose adapter is not built yet; otherwise it asks the three-way
+    question and creates, waits until next time, or writes the opt-out. Each line
+    it prints after the question starts a paragraph of its own, so the questions
+    that follow (uv's install, then sudo's) do not run on from it.
 
     Args:
         display: The layout settings; ``offer_desktop_shortcut`` gates the offer.
@@ -236,7 +252,10 @@ def offer_shortcut(
         )
     # at_terminal is True here: this is reached only on the interactive path.
     if not should_offer(
-        at_terminal=True, offer_enabled=display.offer_desktop_shortcut, shortcut_present=seams.shortcuts.exists()
+        at_terminal=True,
+        offer_enabled=display.offer_desktop_shortcut,
+        desktop_present=seams.shortcuts.has_desktop(),
+        shortcut_present=seams.shortcuts.exists(),
     ):
         return
     choice = (ask_choice or _ask_choice_prompt)()
@@ -262,9 +281,9 @@ def _disable_for_the_offer(disable: Callable[[], object]) -> None:
     try:
         disable()
     except (OSError, tomlkit.exceptions.ParseError, tomllib.TOMLDecodeError) as exc:
-        safe_console.echo(f"Could not save the do-not-offer setting: {exc}", err=True)
+        safe_console.echo(f"\nCould not save the do-not-offer setting: {exc}", err=True)
         return
-    safe_console.echo("lsdsk will not offer the shortcut again; run 'lsdsk install-shortcut' to create it later.")
+    safe_console.echo("\nlsdsk will not offer the shortcut again; run 'lsdsk install-shortcut' to create it later.")
 
 
 def _offer_create(seams: ShortcutSeams, *, ask_install: Callable[[], bool]) -> None:
@@ -277,12 +296,12 @@ def _offer_create(seams: ShortcutSeams, *, ask_install: Callable[[], bool]) -> N
     """
     plan = plan_launch(uvx=seams.uvx(), installed_lsdsk=seams.installed_lsdsk())
     if plan.needs_uv:
-        safe_console.echo(consent_text(sys.platform))
+        safe_console.echo(f"\n{consent_text(sys.platform)}\n")
         if not ask_install():
             return
         plan = plan_launch(uvx=seams.install_uv(), installed_lsdsk=seams.installed_lsdsk())
         if plan.needs_uv:
-            safe_console.echo(_UVX_STILL_MISSING)
+            safe_console.echo(f"\n{_UVX_STILL_MISSING}")
             return
     _create_for_the_offer(seams, launch=plan.argv)
 
@@ -292,9 +311,9 @@ def _create_for_the_offer(seams: ShortcutSeams, *, launch: tuple[str, ...]) -> N
     try:
         written = seams.shortcuts.create(launch=launch, icon=_icon_or_none(seams.copy_icon))
     except OSError as exc:
-        safe_console.echo(f"Could not create the desktop shortcut: {exc}", err=True)
+        safe_console.echo(f"\nCould not create the desktop shortcut: {exc}", err=True)
         return
-    safe_console.echo(f"Shortcut created at {written}.")
+    safe_console.echo(f"\nShortcut created at {written}.")
 
 
 def _icon_or_none(copy_icon: Callable[[], Path]) -> Path | None:

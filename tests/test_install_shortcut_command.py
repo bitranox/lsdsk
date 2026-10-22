@@ -34,11 +34,15 @@ if TYPE_CHECKING:
 class _RecordingShortcuts:
     """A DesktopShortcuts double that records what it was told to create."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, desktop: bool = True) -> None:
+        self.desktop = desktop
         self.created: tuple[tuple[str, ...], Path | None] | None = None
 
     def exists(self) -> bool:
         return False
+
+    def has_desktop(self) -> bool:
+        return self.desktop
 
     def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
         self.created = (tuple(launch), icon)
@@ -116,6 +120,32 @@ def test_an_install_that_still_yields_no_uvx_fails_without_writing(capsys: pytes
     assert leaving.value.code == ExitCode.CONFIG_ERROR
     assert recording.created is None
     _ = capsys.readouterr()
+
+
+@pytest.mark.os_agnostic
+def test_an_account_with_no_desktop_is_refused_naming_the_folder(capsys: pytest.CaptureFixture[str]) -> None:
+    """On a headless server there is nowhere to put a shortcut, so nothing is written."""
+    recording = _RecordingShortcuts(desktop=False)
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(seams=_seams(recording, uvx=Path("/usr/bin/uvx")))
+
+    assert leaving.value.code == ExitCode.CONFIG_ERROR
+    assert recording.created is None
+    err = capsys.readouterr().err
+    assert "no desktop folder" in err
+    assert str(Path("/desktop")) in err
+
+
+@pytest.mark.os_agnostic
+def test_an_account_with_no_desktop_is_refused_in_json_too(capsys: pytest.CaptureFixture[str]) -> None:
+    recording = _RecordingShortcuts(desktop=False)
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(output_format=OutputFormat.JSON, seams=_seams(recording, uvx=Path("/usr/bin/uvx")))
+
+    assert leaving.value.code == ExitCode.CONFIG_ERROR
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["ok"] is False
+    assert "no desktop folder" in json.dumps(envelope)
 
 
 @pytest.mark.os_agnostic

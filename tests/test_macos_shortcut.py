@@ -9,14 +9,11 @@ redirected HOME; selecting the adapter per platform is the dispatcher's job.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
 from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 @pytest.fixture
@@ -56,3 +53,26 @@ def test_a_launch_argument_with_a_space_is_quoted(home: Path) -> None:
 @pytest.mark.os_posix
 def test_the_desktop_dir_is_the_home_desktop(home: Path) -> None:
     assert MacosDesktopShortcut().desktop_dir() == home / "Desktop"
+
+
+@pytest.mark.os_posix
+def test_a_desktop_folder_means_a_desktop(home: Path) -> None:
+    assert MacosDesktopShortcut().has_desktop() is True
+
+
+@pytest.mark.os_posix
+def test_a_home_with_no_desktop_folder_has_no_desktop(home: Path) -> None:
+    (home / "Desktop").rmdir()
+
+    assert MacosDesktopShortcut().has_desktop() is False
+
+
+@pytest.mark.os_posix
+def test_create_never_makes_the_desktop_folder_itself(home: Path) -> None:
+    (home / "Desktop").rmdir()
+
+    with pytest.raises(FileNotFoundError) as refused:
+        MacosDesktopShortcut().create(launch=("lsdsk",), icon=None)
+    assert refused.value.filename is not None
+    assert Path(refused.value.filename).parent == home / "Desktop", "the write must fail on the missing Desktop"
+    assert not (home / "Desktop").exists()

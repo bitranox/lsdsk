@@ -210,3 +210,13 @@ def test_a_copy_killed_by_a_signal_hands_back_the_shell_s_exit_status() -> None:
     )
 
     assert outcome == Elevation(state=ElevationState.RELAUNCHED, prompt=ElevationPrompt.SUDO, exit_code=130)
+
+
+@pytest.mark.os_agnostic
+def test_the_announcement_is_set_off_from_the_question_above_it(capsys: pytest.CaptureFixture[str]) -> None:
+    """A blank line first, so the line before sudo's prompt does not run on from the shortcut question."""
+    dispatch.announce_on_stderr(dispatch.announcement_for(ElevationPrompt.SUDO))
+
+    captured = capsys.readouterr()
+    assert captured.err == "\n" + dispatch.announcement_for(ElevationPrompt.SUDO) + "\n"
+    assert captured.out == ""

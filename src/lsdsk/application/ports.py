@@ -138,6 +138,10 @@ class DesktopShortcuts(Protocol):
         """Whether the shortcut this platform would create is already there."""
         ...
 
+    def has_desktop(self) -> bool:
+        """Whether this account has a desktop folder to put a shortcut on; a headless server has none."""
+        ...
+
     def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
         """Create (or refresh) the shortcut to run ``launch``, with ``icon`` if given.
 

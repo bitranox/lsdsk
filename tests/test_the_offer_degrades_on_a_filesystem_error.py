@@ -39,6 +39,9 @@ class _ShortcutsThatFailToCreate:
     def exists(self) -> bool:
         return False
 
+    def has_desktop(self) -> bool:
+        return True
+
     def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
         self.create_calls += 1
         raise OSError("read-only config directory")
@@ -55,6 +58,9 @@ class _RecordingShortcuts:
 
     def exists(self) -> bool:
         return False
+
+    def has_desktop(self) -> bool:
+        return True
 
     def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
         self.created = (tuple(launch), icon)
