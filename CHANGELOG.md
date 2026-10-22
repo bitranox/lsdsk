@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.15.1] 2026-10-22 20:05:35
+
 ### Fixed
 
 - A start at a terminal on a server with no graphical interface no longer offers a desktop
@@ -16,6 +18,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   `[y]`, `[n]` and `[d]` as markup and dropped them.
 - The startup questions no longer run together: the shortcut offer's follow-up lines and the line
   printed before sudo's or Windows' elevation prompt each start after a blank line.
+
+### Changed
+
+- The CI workflows pin every third-party action to a commit sha.
+- `lib_log_rich` floor raised to 6.5.7.
 
 ## [1.15.0] 2026-10-21 02:06:33
 
