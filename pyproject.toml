@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "rich-click>=1.9.9",
     "lib_cli_exit_tools>=2.4.1",
-    "lib_log_rich>=6.5.6",
+    "lib_log_rich>=6.5.7",
     "lib_layered_config>=7.3.0",
     "pydantic>=2.14.1",
     "orjson>=3.13.0",
@@ -440,4 +440,4 @@ ignores = ["E003"]
 
 [tool.uv]
 exclude-newer = "7 days"
-exclude-newer-package = {lib-cli-exit-tools = false, lib-layered-config = false, lib-log-rich = false, pwshpy = false, fake-winreg = false, lib-registry = false, httpcore2 = "2026-10-18T16:29:22Z", httpx2 = "2026-10-18T16:29:23Z", hypothesis = "2026-10-16T16:46:42Z", ruff = "2026-10-15T15:23:19Z", virtualenv = "2026-10-18T07:06:35Z", certifi = "2026-10-20T02:24:17Z"}
+exclude-newer-package = {lib-cli-exit-tools = false, lib-layered-config = false, lib-log-rich = false, pwshpy = false, fake-winreg = false, lib-registry = false, httpcore2 = "2026-10-18T16:29:22Z", httpx2 = "2026-10-18T16:29:23Z", hypothesis = "2026-10-16T16:46:42Z", virtualenv = "2026-10-18T07:06:35Z", certifi = "2026-10-20T02:24:17Z"}
