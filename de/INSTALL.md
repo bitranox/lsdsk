@@ -147,6 +147,14 @@ lsdsk install-shortcut              # die Verknüpfung für diese Plattform schr
 lsdsk install-shortcut --install-uv # und uv zuerst einrichten, wenn keines da ist
 ```
 
+Die Verknüpfung kommt in den Desktop-Ordner, und lsdsk legt diesen Ordner nie
+selbst an: Auf einem Konto ohne einen, etwa einem Server ohne grafische
+Oberfläche, bietet die interaktive Ansicht keine Verknüpfung an, und
+`lsdsk install-shortcut` lehnt ab und nennt den Ordner, nach dem es gesucht hat.
+Unter Linux ist das der Ordner, den der Desktop in `~/.config/user-dirs.dirs`
+einträgt (`~/Schreibtisch` auf einem deutschen Desktop), und `~/Desktop`, wo er
+keinen einträgt.
+
 Unter Linux schreibt es einen `.desktop`-Eintrag, unter macOS eine
 `.command`-Datei. Windows wird noch nicht unterstützt: Dort bietet die
 interaktive Ansicht keine Verknüpfung an, und `lsdsk install-shortcut` lehnt mit

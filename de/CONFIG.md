@@ -499,9 +499,11 @@ anbietet, eine Desktop-Verknüpfung anzulegen, die lsdsk startet, damit man sich
 den Befehl nicht merken muss. Das Angebot erscheint einmal, als einzeilige Frage
 mit drei Antworten: anlegen, nicht jetzt (beim nächsten Mal wieder gefragt), oder
 nie, was diesen Schlüssel auf `false` setzt. Es bleibt still, wenn die
-Ausgabe umgeleitet oder durch eine Pipe geht, wenn die Verknüpfung schon besteht,
-oder wenn dieser Schlüssel `false` ist. `lsdsk install-shortcut` legt die
-Verknüpfung ohne Weiteres an, wie dieser Schlüssel auch gesetzt ist.
+Ausgabe umgeleitet oder durch eine Pipe geht, wenn das Konto keinen
+Desktop-Ordner hat (ein Server ohne grafische Oberfläche), wenn die Verknüpfung
+schon besteht, oder wenn dieser Schlüssel `false` ist. `lsdsk install-shortcut`
+legt die Verknüpfung ohne Weiteres an, wie dieser Schlüssel auch gesetzt ist,
+sofern es einen Desktop-Ordner gibt.
 
 Farbe ist kein Schlüssel, obwohl dieser Abschnitt nach ihr benannt ist. Die
 gedruckte Palette muss auf einer schwarzen und einer weißen Konsole zugleich

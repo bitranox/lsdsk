@@ -490,8 +490,10 @@ create a desktop shortcut that launches lsdsk, so you need not remember the
 command. The offer appears once, as a one-line question with three answers:
 create it, not now (asked again next time), or never, which writes this key
 `false` for you. It stays silent when output is piped or redirected, when the
+account has no desktop folder (a server with no graphical interface), when the
 shortcut already exists, or when this key is `false`. `lsdsk install-shortcut`
-creates the shortcut outright whatever this is set to.
+creates the shortcut outright whatever this is set to, wherever a desktop folder
+exists.
 
 Colour is not a key, although this section is named for it. The printed palette
 has to stay readable on a black console and a white one at once, which is a

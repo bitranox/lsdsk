@@ -5,6 +5,18 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- A start at a terminal on a server with no graphical interface no longer offers a desktop
+  shortcut. The offer, and `lsdsk install-shortcut`, now require the account's desktop folder to
+  exist and never create it; the command refuses there, naming the folder it looked for. On Linux
+  the folder is read from `~/.config/user-dirs.dirs`, so a localised desktop such as
+  `~/Schreibtisch` gets the shortcut where it used to land in a `~/Desktop` nobody sees.
+- The shortcut question showed its three answers without the letter to type for each: Rich read
+  `[y]`, `[n]` and `[d]` as markup and dropped them.
+- The startup questions no longer run together: the shortcut offer's follow-up lines and the line
+  printed before sudo's or Windows' elevation prompt each start after a blank line.
+
 ## [1.15.0] 2026-10-21 02:06:33
 
 ### Added

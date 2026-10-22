@@ -141,6 +141,13 @@ lsdsk install-shortcut              # write the shortcut for this platform
 lsdsk install-shortcut --install-uv # and install uv first if none is present
 ```
 
+The shortcut goes into your desktop folder, and lsdsk never creates that folder:
+on an account with none, such as a server with no graphical interface, the
+interactive view offers no shortcut and `lsdsk install-shortcut` refuses, naming
+the folder it looked for. On Linux that folder is the one your desktop records
+in `~/.config/user-dirs.dirs` (`~/Schreibtisch` on a German desktop), and
+`~/Desktop` where it records none.
+
 On Linux it writes a `.desktop` entry and on macOS a `.command` file. Windows
 is not supported yet: there the interactive view offers no shortcut, and
 `lsdsk install-shortcut` refuses, saying it is not available in this build. Where
