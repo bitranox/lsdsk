@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.15.2] 2026-10-23 22:57:20
+
 ### Fixed
 
 - `lsdsk install-shortcut` no longer exits with a raw operating-system error number when the

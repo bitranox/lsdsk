@@ -1,6 +1,6 @@
 [project]
 name = "lsdsk"
-version = "1.15.1"
+version = "1.15.2"
 description = "See your disks and controllers, and what is wrong with how they are connected"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,11 +17,11 @@ dependencies = [
     # sudo on Linux and macOS (adapters/hw/elevation.py, the one module that names it).
     # Nothing else uses it. 1.5.0 is the floor: before it a refused sudo password came
     # back as exit code 1, lsdsk's own "findings" code, instead of a refusal.
-    "pwshpy>=1.5.0",
+    "pwshpy>=1.6.0",
     "click>=8.5.0", # Imported directly (adapters/cli/main.py, exit_codes.py), not only through rich-click.
     "pydantic-core>=2.50.1", # Imported directly (validation.py, cli/envelope.py, history/store.py); pydantic pins its version.
     "python-dotenv>=1.2.4", # adapters/logging/setup.py reads the LOG_* lines of a .env itself.
-    "tomlkit>=0.15.1", # adapters/config/offer.py round-trips the user config.toml to flip one key, comments intact.
+    "tomlkit>=0.15.2", # adapters/config/offer.py round-trips the user config.toml to flip one key, comments intact.
 ]
 license = { text = "MIT" }
 authors = [{ name = "bitranox", email = "bitranox@gmail.com" }]
@@ -136,6 +136,7 @@ exclude = [
 # here as a FILE is shipped whatever `exclude` says, so a state file must never
 # be added to it.
 only-include = [
+    ".bmk-cooldown.mk",
     ".claude-plugin",
     ".devcontainer",
     ".env.example",
@@ -440,4 +441,4 @@ ignores = ["E003"]
 
 [tool.uv]
 exclude-newer = "7 days"
-exclude-newer-package = {lib-cli-exit-tools = false, lib-layered-config = false, lib-log-rich = false, pwshpy = false, fake-winreg = false, lib-registry = false, httpcore2 = "2026-10-18T16:29:22Z", httpx2 = "2026-10-18T16:29:23Z", hypothesis = "2026-10-16T16:46:42Z", virtualenv = "2026-10-18T07:06:35Z", certifi = "2026-10-20T02:24:17Z"}
+exclude-newer-package = {lib-cli-exit-tools = false, lib-layered-config = false, lib-log-rich = false, pwshpy = false, fake-winreg = false, lib-registry = false, httpcore2 = "2026-10-18T16:29:22Z", httpx2 = "2026-10-18T16:29:23Z", virtualenv = "2026-10-18T07:06:35Z", certifi = "2026-10-20T02:24:17Z"}
