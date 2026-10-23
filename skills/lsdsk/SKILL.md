@@ -830,6 +830,20 @@ Five things need root or Administrator, not one:
 The last one is refused on some hosts even as root, so a `-` there is not proof
 the run was unprivileged.
 
+**A Windows SATA drive with blank speeds: ask about elevation before a fault.**
+Before reading the dashes as a drive or controller problem, check whether lsdsk
+ran elevated: the machine panel's `privileged` row says `yes` or `no`, the
+header says `Not read: the SATA link (disk and link columns), ...`, and the JSON
+`skipped` list carries an entry
+`identify: <disk> - needs Administrator to open the device for passthrough`.
+Unelevated, `disk` and `link` read `-` because ATA IDENTIFY is their only source
+on Windows; an elevated re-run brings both back. `port` is never read
+directly: Windows publishes no source for a SATA port's own capability.
+Unelevated it reads `-`; an elevated run can show a `>=` floor instead (the
+drive's own maximum, such as `>= 6G`), when the link runs at that maximum (see
+Reading a finding). A `port`
+dash on Windows is not a fault, and no privilege reveals more than that floor.
+
 **The interactive view asks for elevation itself.** A non-elevated bare `lsdsk` or
 `lsdsk tui` asks before it reads anything. On Windows that is the Administrator
 (UAC) prompt: if the person allows it, lsdsk opens elevated in a new window and the
