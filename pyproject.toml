@@ -87,6 +87,7 @@ dev = [
   "urllib3>=2.8.0",              # CVE-2025-66471, CVE-2025-66418
   "virtualenv>=21.14.11",        # CVE-2025-22702
   "certifi>=2026.10.19",         # GHSA-6q48-6c7w-9gw2, via requests (pip-audit, twine)
+  "filelock>=4.2.1",             # CVE-2026-112906, CVE-2026-112940, CVE-2026-112914, via virtualenv
 ]
 
 [project.scripts]
@@ -441,4 +442,4 @@ ignores = ["E003"]
 
 [tool.uv]
 exclude-newer = "7 days"
-exclude-newer-package = {lib-cli-exit-tools = false, lib-layered-config = false, lib-log-rich = false, pwshpy = false, fake-winreg = false, lib-registry = false, httpcore2 = "2026-10-18T16:29:22Z", httpx2 = "2026-10-18T16:29:23Z", virtualenv = "2026-10-18T07:06:35Z", certifi = "2026-10-20T02:24:17Z"}
+exclude-newer-package = {lib-cli-exit-tools = false, lib-layered-config = false, lib-log-rich = false, pwshpy = false, fake-winreg = false, lib-registry = false, httpcore2 = "2026-10-18T16:29:22Z", httpx2 = "2026-10-18T16:29:23Z", virtualenv = "2026-10-18T07:06:35Z", certifi = "2026-10-20T02:24:17Z", filelock = "2026-10-17T16:48:15Z"}
