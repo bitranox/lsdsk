@@ -90,3 +90,30 @@ about either refusal, the files it writes, its exit codes or the bare-`lsdsk` of
 - [x] No frontmatter change. ASCII only, apart from the box drawing already in HEAD. Tables reformatted.
 - [x] No address, hostname or real path added; the examples are `~/Desktop`, `~/Schreibtisch` and
       `<path>`.
+
+## Follow-up: the write-failure rows after the code fix (OPEN-WORK [120])
+
+The fix maps a failed icon copy or shortcut write to `13` (permission) or `74` (anything else),
+each with an `ok`-false envelope. The sandboxed CLI runs measured rc 74 / `IO_ERROR` for a
+directory where the file goes and rc 13 / `PERMISSION_DENIED` for an unwritable Desktop. The
+skill rows that described the old errno behaviour were then true of nothing, which was the RED
+for this edit.
+
+- [x] The outcome table now reads `13` / `PERMISSION_DENIED` and `74` / `IO_ERROR`.
+- [x] The errno sentence, and the errno exceptions on the `70` and `74` rows, are gone.
+- [x] `install-shortcut` is back in the 13/74 paragraph and named on the `74` row.
+- [x] `IO_ERROR` joins the `error.type` name list.
+- [x] The SKIP rule is scoped to `record`.
+- [x] The write order is stated: icon, then Desktop file, then menu copy; the first failure ends
+      the run.
+- [x] Quote-back on opus and haiku, four questions: directory in the way, unwritable Desktop, icon
+      copy, any errno claim left. Both quoted 74/`IO_ERROR`, 13/`PERMISSION_DENIED` and the icon
+      rule, and found no sentence giving the command an errno.
+- [x] Gaps closed from that probe:
+      - the SKIP rule read as general;
+      - `IO_ERROR` was missing from the name list;
+      - the write order and the partial-success JSON were unstated.
+- [x] Declined: an EPERM write against the general `70` row's "EPERM is itself `1`" (a pre-existing
+      general rule, not this command's); the uv installer's own failure modes; the offer's exit
+      code after a failed write (the view's own code, unchanged by the offer).
+- [x] 192 tests that read SKILL.md pass.
