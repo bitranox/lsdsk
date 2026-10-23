@@ -5,6 +5,26 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- `lsdsk install-shortcut` no longer exits with a raw operating-system error number when the
+  shortcut or its icon cannot be written. A directory where the file goes used to leave `21`, and
+  a missing path would have left `2`, which is a usage error here. It now exits `13` when the write
+  was refused for permission and `74` for any other failure, like `snapshot` and `record`. Under
+  `--format json` it now prints an `ok`-false envelope naming the file, where it used to print
+  nothing.
+
+### Changed
+
+- The usage skill now covers the desktop shortcut:
+  - Windows, which has no shortcut yet, and an account with no desktop folder (both refused with
+    `78`);
+  - the files written on Linux and macOS, the exit codes and JSON;
+  - when the bare-`lsdsk` offer stays silent.
+
+  It also corrects when the uv installer runs, what the "does not go online" section lists, and a
+  stale claim that lsdsk cannot tell which pool a disk belongs to.
+
 ## [1.15.1] 2026-10-22 20:05:35
 
 ### Fixed
