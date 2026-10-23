@@ -10,8 +10,9 @@ both ends of it could do, and reports what is worth acting on. It also names the
 mainboard, from DMI, which is what makes its placement advice actionable. Linux
 and Windows. It shells out to nothing and makes no network request, bar two opt-in
 paths: the optional Graylog log sink (`lib_log_rich.enable_graylog`, off by default) can open a
-connection, and, where a reader accepts the desktop-shortcut offer with no `uvx` installed,
-`adapters/uv_bootstrap.py` runs the official uv installer after a consent prompt - the one module
+connection, and, where neither `uvx` nor `lsdsk` is on PATH and a reader accepts the
+desktop-shortcut offer (after its consent prompt) or runs `install-shortcut --install-uv` (the
+flag is the consent), `adapters/uv_bootstrap.py` runs the official uv installer - the one module
 allowed a subprocess, held to that by the guard in `tests/test_no_subprocess_or_network.py`. Apart
 from that installer, the one process it ever starts is itself, when the interactive view relaunches
 elevated - through UAC on Windows, through sudo on Linux and macOS (see the privilege section). It runs anywhere `--replay` is all you
@@ -92,7 +93,7 @@ uvx lsdsk info                # version, homepage and the shell command name
 uvx lsdsk config              # show effective configuration (--section thresholds for one)
 uvx lsdsk config-deploy --target user   # write ~/.config/lsdsk so it can be edited (app|host need root)
 uvx lsdsk config-generate-examples --destination DIR   # scaffold examples
-uvx lsdsk install-shortcut    # drop a desktop shortcut that launches lsdsk; --install-uv installs uv first if it is missing
+uvx lsdsk install-shortcut    # Linux/macOS: a desktop shortcut that launches lsdsk; --install-uv installs uv first if it is missing
 uvx lsdsk --replay m.json     # render a capture from any machine
 ```
 
@@ -121,6 +122,79 @@ at all; one given on the command line is still judged there.
 vehicles the traceback and logging tests drive through the real entry point.
 Never reach for them to answer a question about hardware. `logdemo --theme`
 picks which logging theme it previews.
+
+### The desktop shortcut
+
+`install-shortcut` exists on Linux and macOS only. On Windows this build has no
+shortcut: the command refuses with exit `78` and `a desktop shortcut is not
+available on win32 in this build yet`, before anything else, so it writes nothing and
+`--install-uv` installs nothing.
+
+- **Linux:** an executable `lsdsk.desktop` (`Terminal=true`) on the Desktop and in
+  `$XDG_DATA_HOME/applications` (default `~/.local/share/applications`). The Desktop is
+  `$XDG_DESKTOP_DIR`, else the folder `user-dirs.dirs` names (`~/Schreibtisch` on a
+  German desktop), else `~/Desktop`.
+- **macOS:** an executable `lsdsk.command` on `~/Desktop`, which opens Terminal and
+  carries no icon.
+
+The shortcut runs `uvx ... lsdsk@latest` with a 7-day cooldown (third-party dependencies only from releases at least 7 days
+old; lsdsk and its own libraries are exempt and come at their latest), or a plain
+`lsdsk` already on PATH when there is no `uvx`; `data.launch` in `--format json`
+is the exact argv. Running it again replaces the file, and deleting the file
+removes the shortcut. Launching it is uv's business, not lsdsk's: `uvx` fetches
+`lsdsk@latest` from PyPI. It goes on the Desktop of the account it runs as, read
+from that account's `$HOME` and XDG variables, so run it as yourself, not under
+`sudo`.
+
+**An account with no desktop folder gets no shortcut**: the Desktop path above
+does not exist. That covers a headless server, a `$XDG_DESKTOP_DIR` naming a
+missing folder, `user-dirs.dirs` naming `"$HOME/"`, and a Mac with no
+`~/Desktop`. The command refuses with exit `78` and
+`no desktop folder at <path>, so there is nowhere to put a shortcut`. It never
+creates the folder, writes nothing (no menu copy either), and refuses before `--install-uv`
+could install anything.
+Do not create the folder to get past this: nobody double-clicks on a machine with
+no desktop.
+
+When neither `uvx` nor `lsdsk` is on PATH, it refuses with `78` unless
+`--install-uv` is given; with either on PATH the flag does nothing. The flag IS
+the consent: it runs the official uv installer (a network request, the one
+subprocess lsdsk ever starts besides relaunching itself) with no further prompt.
+When the installer leaves no `uvx` it can find, it refuses with `78`.
+
+| Outcome                                                          | Exit                                                                     | `--format json`                                                 |
+|------------------------------------------------------------------|--------------------------------------------------------------------------|-----------------------------------------------------------------|
+| Shortcut written                                                 | `0`                                                                      | `ok` true, `data.shortcut` (the path), `data.launch` (the argv) |
+| Refused (any case above)                                         | `78`                                                                     | `ok` false, `error.type` `CONFIG_ERROR`                         |
+| A write refused for permission                                   | `13`                                                                     | no envelope, only one stderr line naming the file               |
+| Any other failed write (such as a directory where the file goes) | the OS error number (`21` for a directory where the file goes), not `74` | no envelope, only one stderr line naming the error              |
+
+On Linux the Desktop file is written first and the menu copy second, so a
+failure on the menu copy leaves the Desktop file in place, and exits by the row that failure matches. An errno can equal a code that means
+something else here (`2` is ENOENT, `22` EINVAL), so after a non-zero exit from
+this command read its stderr line rather than the general exit-code table. Like `record`, its
+exit code is never a verdict about the hardware.
+
+Bare `lsdsk` at a terminal offers the same shortcut before it asks to elevate,
+under `--replay` and `--no-elevate` too, with three answers:
+
+- create it;
+- not now, which asks again on the next start;
+- never, which writes `display.offer_desktop_shortcut = false` into the user config.
+
+The offer stays silent in the following cases:
+
+- on Windows;
+- on an account with no desktop folder;
+- once the shortcut exists (the file on the Desktop);
+- when that key is off;
+- whenever the printed page is chosen instead of the view.
+
+`lsdsk tui` never offers. The offer appears whether or not uv is installed. Choosing
+"create it" with neither `uvx` nor `lsdsk` on PATH asks before installing uv (unlike
+the command). A declined install leaves no shortcut, says nothing and records nothing, so the
+offer comes back on the next start; a failed install
+or a failed write prints one line. The view opens either way.
 
 ## Reading `lsdsk topology`
 
@@ -547,8 +621,10 @@ non-zero code; a hint is a ceiling, not a fault.
 
 **Only the nine section commands, `report` and bare `lsdsk` set `0`/`1` from findings.**
 `record`, `snapshot` and the `config-*` commands exit `0` on success whatever the
-hardware says, so never read their code as a verdict about the machine. They are
-not always `0`, though: one that cannot write what it was asked to write leaves
+hardware says, so never read their code as a verdict about the machine. Neither is
+`install-shortcut`'s, whose failure codes are in its own table under "The desktop
+shortcut" and differ from what follows. `record`, `snapshot` and `config-*` are not
+always `0`, though: one that cannot write what it was asked to write leaves
 `13` when it lacked permission and `74` for any other reason, with one stderr
 line saying which. `record` also leaves `78` when the counter-history store it
 would add to cannot be read, because it keeps that store rather than replacing
@@ -563,18 +639,18 @@ writes no failure envelope of its own, because the handler that answers it never
 reads `--format`: the exception goes to stderr in both modes and stdout holds
 nothing, or a truncated report if the crash landed mid-write.
 
-| Code  | Means                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-|-------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `0`   | A reporting command found nothing actionable. `record`, `snapshot` and `config-*` exit `0` on success regardless                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `1`   | A reporting command found a warning or a critical. NOT a crash - that is `70` - and NOT a write that failed - that is `74`. From `record`, which reports no findings, it means no drive's power-on hours could be read, so nothing was stored                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `2`   | The command line was wrong. `USAGE_ERROR` in the envelope. See below, this one is misread constantly                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `13`  | Something needed privilege this run lacks: `config-deploy --target app` or `host` without root, a configuration file this run is not allowed to read (`PERMISSION_DENIED`; a malformed one is `78`), a diagnostic run whose hardware read the kernel refused outright, or a `snapshot`, `record` or `config-generate-examples` whose destination refuses to be written. A field that merely could not be read is different - it degrades to `-` and names itself in `skipped`                                                                                                                                                                                                                                                                                                                                                     |
-| `22`  | `lsdsk config --section` named a section that does not exist, a `--profile` was rejected, `snapshot` was given a global `--replay`, or `-o -` together with `--format json` (the capture and the envelope would both be stdout) or while the logging console writes to stdout too, or `--format` was given to `report` or `tui`, which draw a page for a person - `findings --format json` is their machine-readable form - or `tui` was run where stdin, stdout or (on Linux and macOS) stderr is not a terminal, or `config-deploy` refused a permission mode - configured, given with `--set`, or a `--set lib_layered_config.default_permissions` that is not a table - before writing anything. A `--set` that cannot be placed is `2`; a `--set` mode `config-deploy` refuses is `22`                                       |
-| `70`  | An error inside `lsdsk` itself: an exception no command handled. A bug to report and never a statement about the machine, so route it to whoever owns the tool rather than to storage. An unhandled `OSError` keeps its own code instead, because its errno means something - EPERM is itself `1`; a write that fails is `74`, not its errno                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `74`  | A write this tool was asked to make failed for a reason other than permission - a full disk, a path that cannot exist: a `snapshot` destination, the counter-history file `record` writes, the files `config-deploy` or `config-generate-examples` writes, or - for a command whose output IS standard output - standard output refusing it or closed (`lsdsk findings > /full/disk/report.txt`, `lsdsk findings >&-`). `snapshot -o <file>` needs no standard output and succeeds without one; when standard output refuses the line reporting the capture, the run leaves `74` although the capture landed, and that line says so: `wrote the capture to <file>, but standard output refused the line saying so`. Never a verdict about the machine - some output did not arrive. One stderr line names the destination and why |
-| `78`  | A configuration file this tool cannot load, such as malformed TOML in `config.d` (except under `config-deploy --force`, which skips a malformed file it is about to rewrite, warns once naming it, replaces it, and exits `0` when nothing else fails); a configuration `config --format json` cannot write because it nests deeper than this platform's JSON writer carries (98 levels on Windows; `--format human` prints it); a file that is not a snapshot this version reads; a counter-history store `record` cannot read, which it keeps untouched and adds nothing to; a damaged installation, whose own shipped configuration is missing, unreadable or corrupt - reinstall the tool; or a platform with no hardware reader                                                                                              |
-| `130` | The run was interrupted (Ctrl-C). Neither a verdict nor a bug: nothing about the machine was concluded, so re-run it rather than paging anybody                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `141` | The process reading the output closed the pipe before the command finished. Neither a verdict nor a refusal; see the ranking below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Code  | Means                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+|-------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`   | A reporting command found nothing actionable. `record`, `snapshot`, `config-*` and `install-shortcut` exit `0` on success regardless                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `1`   | A reporting command found a warning or a critical. NOT a crash - that is `70` - and NOT a write that failed - that is `74`. From `record`, which reports no findings, it means no drive's power-on hours could be read, so nothing was stored                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `2`   | The command line was wrong. `USAGE_ERROR` in the envelope. See below, this one is misread constantly                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `13`  | Something needed privilege this run lacks: `config-deploy --target app` or `host` without root, a configuration file this run is not allowed to read (`PERMISSION_DENIED`; a malformed one is `78`), a diagnostic run whose hardware read the kernel refused outright, or a `snapshot`, `record`, `config-generate-examples` or `install-shortcut` whose destination refuses to be written. A field that merely could not be read is different - it degrades to `-` and names itself in `skipped`                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `22`  | `lsdsk config --section` named a section that does not exist, a `--profile` was rejected, `snapshot` was given a global `--replay`, or `-o -` together with `--format json` (the capture and the envelope would both be stdout) or while the logging console writes to stdout too, or `--format` was given to `report` or `tui`, which draw a page for a person - `findings --format json` is their machine-readable form - or `tui` was run where stdin, stdout or (on Linux and macOS) stderr is not a terminal, or `config-deploy` refused a permission mode - configured, given with `--set`, or a `--set lib_layered_config.default_permissions` that is not a table - before writing anything. A `--set` that cannot be placed is `2`; a `--set` mode `config-deploy` refuses is `22`                                                                                                                         |
+| `70`  | An error inside `lsdsk` itself: an exception no command handled. A bug to report and never a statement about the machine, so route it to whoever owns the tool rather than to storage. An unhandled `OSError` keeps its own code instead, because its errno means something - EPERM is itself `1`; a write that fails is `74`, not its errno (except under `install-shortcut`, whose failed write keeps its errno: see its table)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `74`  | A write this tool was asked to make failed for a reason other than permission (not under `install-shortcut`, whose failed write keeps its errno: see its table) - a full disk, a path that cannot exist: a `snapshot` destination, the counter-history file `record` writes, the files `config-deploy` or `config-generate-examples` writes, or - for a command whose output IS standard output - standard output refusing it or closed (`lsdsk findings > /full/disk/report.txt`, `lsdsk findings >&-`). `snapshot -o <file>` needs no standard output and succeeds without one; when standard output refuses the line reporting the capture, the run leaves `74` although the capture landed, and that line says so: `wrote the capture to <file>, but standard output refused the line saying so`. Never a verdict about the machine - some output did not arrive. One stderr line names the destination and why |
+| `78`  | A configuration file this tool cannot load, such as malformed TOML in `config.d` (except under `config-deploy --force`, which skips a malformed file it is about to rewrite, warns once naming it, replaces it, and exits `0` when nothing else fails); a configuration `config --format json` cannot write because it nests deeper than this platform's JSON writer carries (98 levels on Windows; `--format human` prints it); a file that is not a snapshot this version reads; a counter-history store `record` cannot read, which it keeps untouched and adds nothing to; a damaged installation, whose own shipped configuration is missing, unreadable or corrupt - reinstall the tool; a platform with no hardware reader; or `install-shortcut` refusing - no shortcut on this platform, no desktop folder, or no launcher without `--install-uv`                                                          |
+| `130` | The run was interrupted (Ctrl-C). Neither a verdict nor a bug: nothing about the machine was concluded, so re-run it rather than paging anybody                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `141` | The process reading the output closed the pipe before the command finished. Neither a verdict nor a refusal; see the ranking below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 **`2` does not mean the file was missing.** It is the CLI framework's usage
 error and an absent `--replay` path is only one of its causes: an unknown
@@ -706,7 +782,7 @@ same envelope every other command has, with `recorded`, `outcome`, `store` and
 So the rule is "a REPORTING command asked for JSON does not mutate state", not
 "lsdsk does not mutate state": put `topology`, `disks`, `health`, `smart`,
 `findings`, `slots`, `controllers` or `trend` in that pipeline, and leave
-`record`, `snapshot` and the two `config-*` commands out of it, all four of
+`record`, `snapshot`, `install-shortcut` and the two `config-*` commands out of it, all five of
 which write by design whatever `--format` says. `snapshot` also REFUSES a global
 `--replay` with exit `22` rather than obeying it: it always captures the machine
 it runs on, so there is no snapshot of somebody else's capture to take. Copy the
@@ -1328,8 +1404,10 @@ soldered-down device is empty in exactly the same way as a real socket.
 ## lsdsk does not go online. You can
 
 Every limit below is the TOOL's, not yours. It reads hardware and looks nothing
-up on the network by design - the opt-in Graylog log sink sends log records and
-fetches nothing - so it never reports a figure it did not measure. You
+up on the network by design. The opt-in Graylog log sink sends log records and
+fetches nothing, and the uv installer (`install-shortcut --install-uv`, or a yes
+to the shortcut offer's uv question, on a machine with neither `uvx` nor `lsdsk`) downloads uv and
+nothing else, so it never reports a figure it did not measure. You
 have a browser and `curl`, and the things it cannot know are published. Look them
 up rather than reporting a dash back to somebody who asked a real question.
 
@@ -1409,9 +1487,11 @@ removable, so a remedy naming a card is a template rather than an observation.
 See the oversubscription finding above for the two readings that usually settle
 it.
 
-It reads hardware, not configuration or physical layout. It does not know the
-RAID or ZFS layout, which pool a disk belongs to, whether a drive is a boot
-device or a cache, which physical bay holds it, how old a SATA drive is unless
+It reads hardware, not configuration or physical layout. Its `used by` column
+names what uses a disk (the ZFS pool, volume group, RAID array, Storage Space
+or mount, and `boot` for the system disk), but it does not know how that layout
+is built: the RAID level or vdev arrangement, whether a drive is a cache or a
+spare in it, which physical bay holds it, how old a SATA drive is unless
 it reports power-on hours, or whether newer firmware exists. It looks nothing
 up on the network, so it never knows a drive's rated endurance in terabytes written or an
 OEM rebrand name. When a recommendation depends on any of those, ask rather
