@@ -167,7 +167,7 @@ def install_shortcut(
     Raises:
         SystemExit: On any refusal (unsupported platform, an account with no
             desktop folder, no launcher without ``--install-uv``, a failed
-            install), carrying the matching exit code.
+            install) and on a failed write, carrying the matching exit code.
     """
     if seams is None:
         shortcuts = shortcuts_for(sys.platform)
@@ -188,10 +188,28 @@ def install_shortcut(
             output_format=output_format,
         )
     launch = _resolve_launch(seams, install_uv=install_uv, output_format=output_format)
-    # The explicit command does NOT degrade: a reader who asked for the shortcut
-    # is told when the icon or the write fails, unlike the best-effort offer.
-    written = seams.shortcuts.create(launch=launch, icon=seams.copy_icon())
-    _report(written, launch, output_format)
+    _report(_write_shortcut(seams, launch=launch, output_format=output_format), launch, output_format)
+
+
+def _write_shortcut(seams: ShortcutSeams, *, launch: tuple[str, ...], output_format: OutputFormat) -> Path:
+    """Copy the icon and write the shortcut, or fail with the code ``snapshot`` uses for its write.
+
+    The explicit command does NOT degrade: a reader who asked for the shortcut is
+    told when the icon or the write fails, unlike the best-effort offer. Left
+    uncaught, the errno became the exit code, and a filesystem's numbers overlap
+    the ones this tool means something by - ENOENT is 2, Click's usage error -
+    and no JSON envelope was written at all.
+
+    Raises:
+        SystemExit: ``PERMISSION_DENIED`` when the write was refused for
+            permission, ``IO_ERROR`` for any other failed write.
+    """
+    try:
+        return seams.shortcuts.create(launch=launch, icon=seams.copy_icon())
+    except PermissionError as error:
+        fail(f"not allowed to write the shortcut: {error}", ExitCode.PERMISSION_DENIED, output_format=output_format)
+    except OSError as error:
+        fail(f"could not write the shortcut: {error}", ExitCode.IO_ERROR, output_format=output_format)
 
 
 #: The three-way offer prompt, mapping the reader's letter to a choice.

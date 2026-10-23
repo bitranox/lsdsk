@@ -8,6 +8,7 @@ a redirected HOME to prove the file is actually written.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -146,6 +147,85 @@ def test_an_account_with_no_desktop_is_refused_in_json_too(capsys: pytest.Captur
     envelope = json.loads(capsys.readouterr().out)
     assert envelope["ok"] is False
     assert "no desktop folder" in json.dumps(envelope)
+
+
+class _RefusingShortcuts(_RecordingShortcuts):
+    """A DesktopShortcuts double whose write fails with ``error``."""
+
+    def __init__(self, error: OSError) -> None:
+        super().__init__()
+        self.error = error
+
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+        raise self.error
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    ("error", "expected", "said"),
+    [
+        (PermissionError(13, "Permission denied", "/desktop/lsdsk.desktop"), ExitCode.PERMISSION_DENIED, "not allowed"),
+        (IsADirectoryError(21, "Is a directory", "/desktop/lsdsk.desktop"), ExitCode.IO_ERROR, "could not write"),
+        (OSError(28, "No space left on device", "/desktop/lsdsk.desktop"), ExitCode.IO_ERROR, "could not write"),
+    ],
+    ids=["permission", "directory-in-the-way", "disk-full"],
+)
+def test_a_failed_write_leaves_the_documented_code_and_an_envelope_not_its_errno(
+    error: OSError, expected: ExitCode, said: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A failed write is mapped like ``snapshot``'s, never left as its errno.
+
+    The errno is the filesystem's number, and some collide with codes this tool
+    means something by: 2 is a usage error.
+    """
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(
+            output_format=OutputFormat.JSON,
+            seams=_seams(_RefusingShortcuts(error), uvx=Path("/usr/bin/uvx")),
+        )
+
+    assert leaving.value.code == expected
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["ok"] is False
+    assert envelope["error"]["type"] == expected.name
+    assert said in envelope["error"]["message"]
+    assert "lsdsk.desktop" in envelope["error"]["message"]
+
+
+@pytest.mark.os_agnostic
+def test_an_icon_that_will_not_copy_is_a_failed_write_too(capsys: pytest.CaptureFixture[str]) -> None:
+    """The command does not degrade to an iconless shortcut: the reader asked, so the reader is told."""
+
+    def refuse() -> Path:
+        raise OSError(28, "No space left on device", "/icons/lsdsk.png")
+
+    recording = _RecordingShortcuts()
+    seams = dataclasses.replace(_seams(recording, uvx=Path("/usr/bin/uvx")), copy_icon=refuse)
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(seams=seams)
+
+    assert leaving.value.code == ExitCode.IO_ERROR
+    assert recording.created is None
+    assert "could not write" in capsys.readouterr().err
+
+
+@pytest.mark.os_linux
+def test_the_real_linux_adapter_with_a_directory_where_the_file_goes_leaves_io_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_DESKTOP_DIR", raising=False)
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    (tmp_path / "Desktop" / "lsdsk.desktop").mkdir(parents=True)
+
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(
+            output_format=OutputFormat.JSON, seams=_seams(LinuxDesktopShortcut(), uvx=Path("/usr/bin/uvx"))
+        )
+
+    assert leaving.value.code == ExitCode.IO_ERROR
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["error"]["type"] == "IO_ERROR"
 
 
 @pytest.mark.os_agnostic

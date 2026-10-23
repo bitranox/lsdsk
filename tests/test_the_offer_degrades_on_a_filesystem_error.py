@@ -8,7 +8,7 @@ for an opt-out write onto a reader-hand-edited, malformed ``config.toml``. These
 drive the real seam with a shortcut double, an icon copier and a ``disable`` that
 raise those errors and assert the offer degrades - an iconless shortcut, or one
 warning and a return - while the explicit ``install-shortcut`` command still
-surfaces a create failure.
+fails on a create failure, with ``IO_ERROR`` and a line naming it.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ import pytest
 import tomlkit
 
 from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, install_shortcut, offer_shortcut
+from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.config.tunables import DisplaySettings
 from lsdsk.domain.enums import ShortcutChoice
 
@@ -180,7 +181,10 @@ def test_an_unwritable_icon_degrades_the_offer_to_an_iconless_shortcut() -> None
 
 
 @pytest.mark.os_agnostic
-def test_the_command_still_surfaces_a_create_failure() -> None:
-    """Only the offer degrades: the explicit command still lets a create failure out."""
-    with pytest.raises(OSError, match="read-only config directory"):
+def test_the_command_still_surfaces_a_create_failure(capsys: pytest.CaptureFixture[str]) -> None:
+    """Only the offer degrades: the explicit command fails on a create failure, naming it."""
+    with pytest.raises(SystemExit) as leaving:
         install_shortcut(seams=_seams(_ShortcutsThatFailToCreate(), uvx=Path("/usr/bin/uvx")))
+
+    assert leaving.value.code == ExitCode.IO_ERROR
+    assert "read-only config directory" in capsys.readouterr().err
