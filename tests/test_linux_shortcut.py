@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
+from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut, UnwritableDesktopEntryError
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def test_create_writes_an_executable_terminal_desktop_file(home: Path) -> None:
 
     assert written == home / "Desktop" / "lsdsk.desktop"
     text = written.read_text(encoding="utf-8")
-    assert "Exec=uvx lsdsk@latest" in text
+    assert 'Exec="uvx" "lsdsk@latest"' in text
     assert "Terminal=true" in text
     assert "Type=Application" in text
     assert os.access(written, os.X_OK), "a desktop environment will not launch a non-executable .desktop"
@@ -45,7 +45,7 @@ def test_create_also_writes_into_the_application_menu(home: Path) -> None:
 
     menu_entry = home / ".local" / "share" / "applications" / "lsdsk.desktop"
     assert menu_entry.is_file()
-    assert "Exec=lsdsk" in menu_entry.read_text(encoding="utf-8")
+    assert 'Exec="lsdsk"' in menu_entry.read_text(encoding="utf-8")
 
 
 @pytest.mark.os_linux
@@ -70,11 +70,12 @@ def test_an_icon_is_referenced_only_when_one_is_given(home: Path) -> None:
 
 
 @pytest.mark.os_linux
-def test_a_launch_argument_with_a_space_is_quoted_in_exec(home: Path) -> None:
+def test_a_launch_argument_with_a_space_is_double_quoted_in_exec(home: Path) -> None:
+    """The Desktop Entry spec quotes with double quotes only; a single quote is an ordinary character there."""
     text = (
         LinuxDesktopShortcut().create(launch=("/opt/my uv/uvx", "lsdsk@latest"), icon=None).read_text(encoding="utf-8")
     )
-    assert "Exec='/opt/my uv/uvx' lsdsk@latest" in text
+    assert 'Exec="/opt/my uv/uvx" "lsdsk@latest"' in text
 
 
 @pytest.mark.os_linux
@@ -158,3 +159,101 @@ def test_create_never_makes_the_desktop_folder_itself(home: Path) -> None:
     assert refused.value.filename is not None
     assert Path(refused.value.filename).parent == home / "Desktop", "the write must fail on the missing Desktop"
     assert not (home / "Desktop").exists()
+
+
+def _string_value(raw: str) -> str:
+    """Undo the Desktop Entry ``string`` escapes: backslash-s, -n, -t, -r and a doubled backslash."""
+    escapes = {"s": " ", "n": "\n", "t": "\t", "r": "\r", "\\": "\\"}
+    out: list[str] = []
+    characters = iter(raw)
+    for character in characters:
+        if character == "\\":
+            follower = next(characters)
+            out.append(escapes[follower])
+        else:
+            out.append(character)
+    return "".join(out)
+
+
+def _exec_argv(value: str) -> list[str]:
+    """Split an unescaped ``Exec`` value into its argv the way the spec's quoting rules read it.
+
+    Written from the specification rather than borrowed from GLib, so a mistake in
+    the writer is not mirrored by the same library reading it back: outside quotes
+    a space separates arguments, inside double quotes a backslash escapes the next
+    of the four characters that need it, and ``%%`` is a literal percent sign.
+    """
+    argv: list[str] = []
+    current: list[str] = []
+    started = False
+    quoted = False
+    characters = iter(value)
+    for character in characters:
+        if quoted and character == "\\":
+            follower = next(characters)
+            assert follower in '"`$\\', (
+                f"a backslash may escape only one of the four reserved characters, not {follower!r}"
+            )
+            current.append(follower)
+        elif character == '"':
+            quoted = not quoted
+            started = True
+        elif character == " " and not quoted:
+            if started:
+                argv.append("".join(current))
+            current, started = [], False
+        else:
+            current.append(character)
+            started = True
+    assert not quoted, "an unterminated quote"
+    if started:
+        argv.append("".join(current))
+    return [argument.replace("%%", "%") for argument in argv]
+
+
+def _keys(text: str) -> dict[str, str]:
+    """The ``key=value`` lines of a single-group entry, raw."""
+    lines = text.splitlines()
+    assert lines[0] == "[Desktop Entry]"
+    return dict(line.split("=", 1) for line in lines[1:] if line)
+
+
+_AWKWARD_LAUNCH = (
+    "/opt/my uv/uvx",
+    'say "hi"',
+    "back`tick",
+    "$HOME",
+    "a\\b",
+    "100%",
+    "it's",
+    "#;|&<>~*?()",
+    f"Laufwerk-{chr(0xFC)}-{chr(0x4E2D)}-{chr(0x1F4BE)}",
+)
+
+
+@pytest.mark.os_linux
+def test_every_launch_argument_reads_back_exactly_under_the_spec_quoting(home: Path) -> None:
+    icon = home / "a dir\\with $x" / "icon.png"
+    text = LinuxDesktopShortcut().create(launch=_AWKWARD_LAUNCH, icon=icon).read_text(encoding="utf-8")
+
+    keys = _keys(text)
+    assert _exec_argv(_string_value(keys["Exec"])) == list(_AWKWARD_LAUNCH)
+    assert _string_value(keys["Icon"]) == str(icon)
+
+
+@pytest.mark.os_linux
+@pytest.mark.parametrize(
+    ("launch", "icon_name"),
+    [(("/opt/uv\nX-Injected=1/uvx",), "icon.png"), (("lsdsk",), "ic\non.png"), (("tab\there",), "icon.png")],
+    ids=["newline-in-launch", "newline-in-icon", "tab-in-launch"],
+)
+def test_a_control_character_is_refused_and_nothing_is_written(
+    home: Path, launch: tuple[str, ...], icon_name: str
+) -> None:
+    """A newline would end the key and start another one the reader never wrote."""
+    with pytest.raises(UnwritableDesktopEntryError) as refused:
+        LinuxDesktopShortcut().create(launch=launch, icon=home / icon_name)
+
+    assert isinstance(refused.value, OSError)
+    assert list((home / "Desktop").iterdir()) == []
+    assert not (home / ".local" / "share" / "applications" / "lsdsk.desktop").exists()

@@ -19,9 +19,9 @@ System Role:
 
 from __future__ import annotations
 
+import errno
 import os
 import re
-import shlex
 import stat
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -41,6 +41,18 @@ _EXECUTABLE_BITS = stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
 #: ``"$HOME/<path>"`` or an absolute path, always double-quoted.
 _DESKTOP_LINE = re.compile(r'XDG_DESKTOP_DIR="(?P<value>[^"]*)"')
 _HOME_PREFIX = "$HOME"
+
+#: The characters a backslash must escape inside a double-quoted ``Exec``
+#: argument, per the Desktop Entry spec's "The Exec key" section.
+_QUOTED_ESCAPES = frozenset('"`$\\')
+
+#: The C0 controls and DEL: no desktop-entry value can carry one, and a newline
+#: would end the key and start another.
+_CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
+
+
+class UnwritableDesktopEntryError(OSError):
+    """A launch argument or icon path holds a control character no desktop entry value can carry."""
 
 
 class LinuxDesktopShortcut:
@@ -111,19 +123,60 @@ class LinuxDesktopShortcut:
 
     @staticmethod
     def _entry(launch: Sequence[str], icon: Path | None) -> str:
-        """The ``.desktop`` file body for ``launch``, with ``icon`` when given."""
+        """The ``.desktop`` file body for ``launch``, with ``icon`` when given.
+
+        Raises:
+            UnwritableDesktopEntryError: An argument or the icon path holds a
+                control character, which no value in the file can carry.
+        """
         lines = [
             "[Desktop Entry]",
             "Type=Application",
             f"Name={_NAME}",
             f"Comment={_COMMENT}",
-            f"Exec={shlex.join(launch)}",
+            f"Exec={_exec_value(launch)}",
             "Terminal=true",
             "Categories=System;Utility;",
         ]
         if icon is not None:
-            lines.insert(4, f"Icon={icon}")
+            lines.insert(4, f"Icon={_string_value(str(icon))}")
         return "\n".join(lines) + "\n"
+
+
+def _exec_value(launch: Sequence[str]) -> str:
+    """``launch`` as the spec's ``Exec`` value: every argument double-quoted, then string-escaped.
+
+    Each argument is quoted whole, so no reserved character (a space, ``'``,
+    ``#``, ``;`` and the rest) is ever outside a quote, and inside the quotes a
+    backslash escapes the four characters that need it. A literal ``%`` is
+    written ``%%``, so nothing in a path reads as a field code. The result is
+    then a ``string`` value like any other, whose own rule doubles a backslash -
+    which is why a literal backslash ends up as four in the file. A shell's
+    single quotes (``shlex.join``) are not quoting at all here.
+    """
+    return _string_value(" ".join(_exec_argument(argument) for argument in launch))
+
+
+def _exec_argument(argument: str) -> str:
+    """One ``Exec`` argument, ``%`` doubled and double-quoted with its reserved characters escaped."""
+    escaped = "".join(f"\\{character}" if character in _QUOTED_ESCAPES else character for character in argument)
+    return '"' + escaped.replace("%", "%%") + '"'
+
+
+def _string_value(value: str) -> str:
+    """``value`` as a Desktop Entry ``string``: a backslash doubled, a control character refused.
+
+    Raises:
+        UnwritableDesktopEntryError: ``value`` holds a control character. A
+            newline would end the key and start one the reader never wrote, and
+            refusing is the honest answer for the rest: a path is not text a
+            launcher should be quietly rewriting.
+    """
+    if _CONTROL_CHARACTER.search(value) is not None:
+        raise UnwritableDesktopEntryError(
+            errno.EINVAL, f"{value!r} holds a control character, which a desktop entry cannot carry"
+        )
+    return value.replace("\\", "\\\\")
 
 
 def _expand(value: str) -> Path | None:
@@ -139,4 +192,4 @@ def _write_executable(path: Path, body: str) -> None:
     path.chmod(path.stat().st_mode | _EXECUTABLE_BITS)
 
 
-__all__ = ["LinuxDesktopShortcut"]
+__all__ = ["LinuxDesktopShortcut", "UnwritableDesktopEntryError"]

@@ -252,7 +252,7 @@ def test_the_real_linux_adapter_writes_a_desktop_file_and_reports_it_as_json(
 
     written = tmp_path / "Desktop" / "lsdsk.desktop"
     assert written.is_file()
-    assert "Exec=/usr/bin/uvx --exclude-newer" in written.read_text(encoding="utf-8")
+    assert 'Exec="/usr/bin/uvx" "--exclude-newer" "7 days"' in written.read_text(encoding="utf-8")
 
     envelope = json.loads(capsys.readouterr().out)
     assert envelope["ok"] is True
@@ -280,3 +280,26 @@ def test_a_failed_installer_is_reported_with_its_exit_code_and_the_manual_line(
     assert "the uv installer failed (exit 7)" in message
     assert manual_install_line(sys.platform) in message
     assert "uv was installed" not in message
+
+
+@pytest.mark.os_linux
+def test_a_launcher_path_with_a_newline_is_refused_with_io_error_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A newline in the path would inject a key into the entry, so the write is refused instead."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_DESKTOP_DIR", raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    (tmp_path / "Desktop").mkdir()
+
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(
+            output_format=OutputFormat.JSON,
+            seams=_seams(LinuxDesktopShortcut(), uvx=Path("/opt/uv\nX-Injected=1/uvx")),
+        )
+
+    assert leaving.value.code == ExitCode.IO_ERROR
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["error"]["type"] == "IO_ERROR"
+    assert "control character" in envelope["error"]["message"]
+    assert list((tmp_path / "Desktop").iterdir()) == []
