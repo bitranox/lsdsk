@@ -328,3 +328,53 @@ def test_a_drive_under_both_classes_is_used_by_the_space_it_backs(
     disks = {disk["node"]: disk for disk in (*envelope["data"]["disks"], *envelope["data"]["virtual_disks"])}
     assert disks["PhysicalDrive1"]["usage"]["uses"] == [{"kind": "space", "name": "PhysicalDrive4", "mounts": ["D:\\"]}]
     assert disks["PhysicalDrive4"]["readings_refused"] == [], "the Space's drive was read, so nothing is missing"
+
+
+class _SetupApiRefusingOnePath(FakeSetupApi):
+    """``setupapi`` whose detail call fails for one interface, as a transient error would leave it."""
+
+    def __init__(self, *, refused: str, **tables: Any) -> None:
+        """Answer from ``tables`` as the device-tree fake does, but never with the path ``refused``."""
+        super().__init__(**tables)
+        self.refused = refused
+
+    def _detail(
+        self,
+        handle: int,
+        interface: object,
+        buffer: ctypes.Array[ctypes.c_char] | None,
+        buffer_size: int,
+        required: object,
+        info: object | None,
+    ) -> int:
+        """Fail the call for the refused interface, and answer every other one."""
+        index: int = _referent(interface).Flags
+        path, _devinst = self._ifaces[handle][index]
+        if path == self.refused:
+            self.error = 13
+            return 0
+        return super().SetupDiGetDeviceInterfaceDetailW(handle, interface, buffer, buffer_size, required, info)
+
+    SetupDiGetDeviceInterfaceDetailW = _detail
+
+
+def test_a_hidden_interface_whose_path_cannot_be_read_is_named_as_an_unread_disk() -> None:
+    """A pooled drive lost this way is a drive the scan did not read, which the scan has to say."""
+    setupapi = _SetupApiRefusingOnePath(
+        refused=_POOLED_PATH,
+        by_guid={
+            api.GUID_DEVINTERFACE_DISK: [("\\\\?\\disk0", _DISK)],
+            api.GUID_DEVINTERFACE_HIDDEN_DISK: [(_POOLED_PATH, _POOLED)],
+        },
+    )
+    tree = reader._DeviceTree(  # pyright: ignore[reportPrivateUsage] - the seam under test
+        setupapi=cast("api.WinLibrary", setupapi),
+        cfgmgr32=cast("api.WinLibrary", FakeCfgmgr32(device_ids={_DISK: "SCSI\\DISK\\0"})),
+        kernel32=cast("api.WinLibrary", _RefusingKernel()),
+        last_error=setupapi.last_error,
+    )
+
+    disks = reader.read_disks(tree)
+
+    assert sorted(disks) == ["\\\\?\\disk0", "unreadable disk interface 1"]
+    assert disks["unreadable disk interface 1"]["error"] == "could not read the device interface path, Win32 error 13"

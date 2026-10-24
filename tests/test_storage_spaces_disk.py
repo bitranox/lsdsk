@@ -311,3 +311,46 @@ def test_a_space_named_twice_by_one_drive_is_one_use_of_it(
         assert _disk_in(envelope, node)["usage"]["uses"] == [
             {"kind": "space", "name": _REAL_SPACE, "mounts": ["D:\\"]}
         ], node
+
+
+# ---------------------------------------------------------------------------
+# What may stand on each side of a link: only a Space is linked TO, and only a
+# hidden drive is linked FROM. The capture is untrusted input, so each guard is
+# held by a relation that names something the guard exists to turn away.
+# ---------------------------------------------------------------------------
+
+
+def test_a_pooled_drive_naming_a_disk_that_is_not_a_space_is_not_used_by_it(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+) -> None:
+    """The boot disk has an instance identifier too, but Windows names no transport of it a Space."""
+
+    def name_the_boot_disk(data: dict[str, Any]) -> None:
+        boot = next(entry for entry in data["disks"].values() if entry.get("node") == "PhysicalDrive0")
+        pooled = next(entry for entry in data["disks"].values() if entry.get("node") == _REAL_POOLED[0])
+        pooled["removal_relations"].append(boot["instance"])
+
+    envelope = envelope_of(capture_with(_REAL, name_the_boot_disk, tmp_path), cli_runner, production_factory)
+
+    assert _disk_in(envelope, _REAL_POOLED[0])["usage"]["uses"] == [
+        {"kind": "space", "name": _REAL_SPACE, "mounts": ["D:\\"]}
+    ]
+
+
+def test_a_disk_listed_in_the_ordinary_class_naming_a_space_is_not_one_of_its_drives(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+) -> None:
+    """Only a drive Windows hid is in a pool; relations on an ordinary disk link it to nothing."""
+
+    def relate_the_boot_disk(data: dict[str, Any]) -> None:
+        space = next(entry for entry in data["disks"].values() if entry.get("node") == _REAL_SPACE)
+        boot = next(entry for entry in data["disks"].values() if entry.get("node") == "PhysicalDrive0")
+        boot["removal_relations"] = [space["instance"]]
+
+    envelope = envelope_of(capture_with(_REAL, relate_the_boot_disk, tmp_path), cli_runner, production_factory)
+
+    assert _disk_in(envelope, "PhysicalDrive0")["usage"]["uses"] == [{"kind": "letter", "name": "", "mounts": ["C:\\"]}]
