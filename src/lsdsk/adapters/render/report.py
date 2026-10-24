@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from rich.cells import cell_len
 from rich.console import Group
 from rich.table import Table
 from rich.text import Text
@@ -36,6 +37,7 @@ from .layout import (
     TREE_LAST,
     Column,
     Layout,
+    clip,
     pad,
 )
 
@@ -1222,7 +1224,7 @@ def render_slots(inventory: Inventory, width: int = DEFAULT_WIDTH) -> Renderable
     widths = layout.widths
     chosen = layout.columns
 
-    lines: list[RenderableType] = [_board_line(inventory)]
+    lines: list[RenderableType] = [_board_line(inventory, width)]
     lines.append(_header_line(chosen, widths, marker_field=False))
     for row in rows:
         line = Text(GUTTER)
@@ -1245,15 +1247,52 @@ def render_slots(inventory: Inventory, width: int = DEFAULT_WIDTH) -> Renderable
     return Group(*lines)
 
 
-def _board_line(inventory: Inventory) -> Text:
-    """Render the board name and how many of its ports are free."""
-    line = Text()
-    line.append(inventory.board or "mainboard not named by firmware", style="bold")
-    line.append(f"   {len(inventory.slots)} ports")
+def _board_line(inventory: Inventory, width: int) -> Text:
+    """Render the board name and how many of its ports are free, on one line at any width.
+
+    The free count goes last because it answers the page's question - where
+    could a card go - while the port count is the table's own row count.
+    """
+    total = (f"   {len(inventory.slots)} ports", "")
     free = sum(1 for slot in inventory.slots if not slot.occupied and slot.connector_present is True)
-    if free:
-        line.append(f"   {free} free", style=theme.STYLE_AT_CAPABILITY)
-    return line
+    counts = [(f"   {free} free", theme.STYLE_AT_CAPABILITY)] if free else []
+    name = inventory.board or "mainboard not named by firmware"
+    return _fields_on_one_line((name, "bold"), [[total, *counts], counts, []], width)
+
+
+def _fields_on_one_line(name: theme.Cell, candidates: Sequence[Sequence[theme.Cell]], width: int) -> Text:
+    """A heading of a name and the richest set of fields after it that fits ``width`` cells.
+
+    The heading is one physical line at every width, the way the topology's
+    board line is: a heading that wraps strands its last field on a line that
+    reads as a second heading. So a field is given up whole, in the order the
+    candidates list them, and where not even the bare name fits, the name is
+    cut and the cut marked.
+
+    Args:
+        name: The text the heading is about, and its style.
+        candidates: The field sets to try, richest first, each a sequence of
+            ``(text, style)`` with its own leading separator.
+        width: The cells the line may take.
+
+    Returns:
+        The heading.
+
+    Example:
+        >>> line = _fields_on_one_line(("board", ""), [[("   9 ports", "")], []], 12)
+        >>> line.plain
+        'board'
+        >>> _fields_on_one_line(("a long board name", ""), [[]], 8).plain
+        'a long >'
+    """
+    text, style = name
+    for fields in candidates:
+        if cell_len(text) + sum(cell_len(field) for field, _ in fields) <= width:
+            line = Text(text, style=style)
+            for field, field_style in fields:
+                line.append(field, style=field_style)
+            return line
+    return Text(clip(text, width), style=style)
 
 
 # The SMART attribute table, in the order a drive reports it. Nothing is
@@ -1317,13 +1356,11 @@ def render_smart(inventory: Inventory, width: int = DEFAULT_WIDTH) -> Renderable
 def _disk_attributes(disk: Disk, width: int, *, privileged: bool) -> list[RenderableType]:
     """Render one disk's heading and its attribute table."""
     attributes = () if disk.health is None else disk.health.attributes
-    heading = Text()
-    heading.append(disk.path, style="bold")
-    heading.append(f"  {disk.model}", style="")
     if not attributes:
-        heading.append(f"  {_no_attributes_reason(disk, privileged=privileged)}", style=theme.STYLE_UNKNOWN)
-        return [heading]
-    heading.append(f"  {len(attributes)} attributes")
+        return _disk_without_attributes(disk, width, privileged=privileged)
+    name = (disk.path, "bold")
+    model = (f"  {disk.model}", "")
+    heading = _fields_on_one_line(name, [[model, (f"  {len(attributes)} attributes", "")], [model], []], width)
 
     rows = [
         {
@@ -1351,6 +1388,23 @@ def _disk_attributes(disk: Disk, width: int, *, privileged: bool) -> list[Render
                 line.append(GAP)
         lines.append(line)
     return lines
+
+
+def _disk_without_attributes(disk: Disk, width: int, *, privileged: bool) -> list[RenderableType]:
+    """A drive with no attribute table: its heading, and why there is none.
+
+    The reason is the whole of what the page says about this drive, so it is
+    never given up as a field is. It stays on the heading's line where the line
+    has room for it, and goes on a line of its own where it does not, which is
+    prose and wraps like the notes under a table.
+    """
+    name = (disk.path, "bold")
+    model = (f"  {disk.model}", "")
+    reason = _no_attributes_reason(disk, privileged=privileged)
+    whole = (f"  {reason}", theme.STYLE_UNKNOWN)
+    if cell_len(disk.path) + cell_len(model[0]) + cell_len(whole[0]) <= width:
+        return [_fields_on_one_line(name, [[model, whole]], width)]
+    return [_fields_on_one_line(name, [[model], []], width), Text(reason, style=theme.STYLE_UNKNOWN)]
 
 
 def _no_attributes_reason(disk: Disk, *, privileged: bool) -> str:

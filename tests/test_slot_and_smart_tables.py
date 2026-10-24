@@ -14,13 +14,14 @@ so it needs no knowledge of how the layout was arrived at.
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 from rich.cells import cell_len
-from rich.console import Group
+from rich.console import Console, Group
 from rich.text import Text
 
 from lsdsk.adapters.hw.snapshot import build_from
@@ -66,7 +67,10 @@ def _smart_tables(inventory: Inventory, width: int) -> list[tuple[str, list[str]
         attributes = () if disk.health is None else disk.health.attributes
         if not attributes:
             continue
-        heading = next(index for index, line in enumerate(lines) if line.startswith(f"{disk.path}  "))
+        # A narrow console gives the heading's fields up, down to the bare path.
+        heading = next(
+            index for index, line in enumerate(lines) if line == disk.path or line.startswith(f"{disk.path}  ")
+        )
         tables.append((lines[heading + 1], lines[heading + 2 : heading + 2 + len(attributes)]))
     return tables
 
@@ -177,3 +181,79 @@ def test_every_smart_row_stays_on_one_line_and_keeps_its_attribute(capture: str)
             for row, attribute in zip(rows, drive, strict=True):
                 named = str(attribute.id) in row.split() and (attribute.name or "-")[:2] in row
                 assert named, f"{capture} at {width}: {row!r} no longer says it is attribute {attribute.id}"
+
+
+#: The widths where a heading of fields runs out of room on a real machine.
+HEADING_WIDTHS = range(20, 121)
+
+
+def _soft_lines(section: object, width: int) -> list[str]:
+    """The lines a console of this width draws for a section, never wrapping one.
+
+    ``soft_wrap`` keeps each line whole however long it is, so a heading that
+    would wrap shows up as one line wider than the console instead of as two
+    lines that each fit.
+    """
+    console = Console(file=io.StringIO(), width=width, no_color=True, soft_wrap=True)
+    with console.capture() as capture:
+        console.print(section)
+    return capture.get().split("\n")
+
+
+@pytest.mark.parametrize("capture", CAPTURES)
+def test_the_slots_board_line_stays_on_one_line_at_every_width(capture: str) -> None:
+    """The board's name and port counts, given up field by field rather than wrapped."""
+    inventory = _machine(capture)
+    for width in HEADING_WIDTHS:
+        board = _soft_lines(report.render_slots(inventory, width=width), width)[0]
+        assert cell_len(board) <= width, f"{capture} at {width}: the board line wraps: {board!r}"
+        assert board.strip(), f"{capture} at {width}: the board line is empty"
+
+
+@pytest.mark.parametrize("capture", CAPTURES)
+def test_every_smart_disk_heading_stays_on_one_line_at_every_width(capture: str) -> None:
+    """A drive's path, model and attribute count, given up field by field rather than wrapped."""
+    inventory = _machine(capture)
+    for width in HEADING_WIDTHS:
+        lines = _soft_lines(report.render_smart(inventory, width=width), width)
+        for disk in inventory.disks:
+            start = disk.path[: max(width - 1, 1)]
+            heading = next((line for line in lines if line.startswith(start)), None)
+            assert heading is not None, f"{capture} at {width}: no heading for {disk.path}"
+            assert cell_len(heading) <= width, f"{capture} at {width}: the heading of {disk.path} wraps: {heading!r}"
+
+
+def test_the_slots_board_line_gives_up_the_port_count_before_the_free_one() -> None:
+    """What is free answers the page's question; the port count is the table's own row count."""
+    inventory = _machine("linux-nvme-board")
+    full = _soft_lines(report.render_slots(inventory, width=200), 200)[0]
+    assert "ports" in full, "the premise: a wide console carries both counts"
+    assert "free" in full, "the premise: a wide console carries both counts"
+    narrowed = next(
+        line
+        for width in range(200, 20, -1)
+        if "ports" not in (line := _soft_lines(report.render_slots(inventory, width=width), width)[0])
+    )
+
+    assert "free" in narrowed, narrowed
+    assert inventory.board is not None
+    assert inventory.board in narrowed, narrowed
+
+
+def test_a_smart_heading_too_narrow_for_its_path_cuts_it_and_marks_the_cut() -> None:
+    inventory = _machine("linux-minimal")
+    disk = next(disk for disk in inventory.disks if disk.health and disk.health.attributes)
+    width = len(disk.path) - 2
+    lines = _soft_lines(report.render_smart(inventory, width=width), width)
+    heading = next(line for line in lines if line.startswith(disk.path[:3]) and ELLIPSIS in line)
+
+    assert cell_len(heading) <= width, heading
+
+
+def test_a_drive_without_a_table_still_says_why_at_every_width() -> None:
+    """The reason is the whole content of a drive with no table, so it is never given up."""
+    inventory = _machine("linux-minimal")
+    disk = next(disk for disk in inventory.disks if disk.health is None or not disk.health.attributes)
+    for width in (20, 50, 120, 200):
+        drawn = " ".join(_soft_lines(report.render_smart(inventory, width=width), width))
+        assert "NVMe publishes a fixed health log" in drawn, f"width {width}: the reason for {disk.path} is gone"
