@@ -15,14 +15,20 @@ When a drive was linked, the Space reports nothing and each drive reports its ow
 
 from __future__ import annotations
 
+import io
+import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from rich.console import Console
 from test_refused_readings import capture_with, envelope_of
+
+from lsdsk.adapters.hw.snapshot import build_from
+from lsdsk.adapters.render import tables
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from click.testing import CliRunner
 
@@ -365,3 +371,23 @@ def test_a_space_is_listed_on_the_virtual_bus(
     envelope = envelope_of(capture_with(_REAL, lambda _data: None, tmp_path), cli_runner, production_factory)
 
     assert _disk_in(envelope, _REAL_SPACE)["bus"] == "virtual"
+
+
+def test_a_pooled_drive_names_the_volume_its_space_backs_as_the_space_does() -> None:
+    """``D:`` on the Space's own row and on each of its drives, never the volume path with its separator.
+
+    A drive letter's volume path ends in a separator, which the disk table
+    drops because the letter alone is what a reader calls the volume by. The
+    pooled drives' rows wrote the path as the reader recorded it, so one volume
+    read as two names a row apart.
+    """
+    payload: dict[str, Any] = json.loads(
+        (Path(__file__).parent / "fixtures" / "hw" / "windows-storage-spaces.json").read_text(encoding="utf-8")
+    )
+    sink = io.StringIO()
+    Console(width=240, file=sink, no_color=True).print(tables.render_disks(build_from(payload), [], 240))
+    rows = {line.split()[0]: line for line in sink.getvalue().splitlines() if line.lstrip().startswith("PhysicalDrive")}
+
+    assert rows[_REAL_SPACE].rstrip().endswith(" D:"), rows[_REAL_SPACE]
+    for node in _REAL_POOLED:
+        assert rows[node].rstrip().endswith(f"space:{_REAL_SPACE} -> D:"), rows[node]

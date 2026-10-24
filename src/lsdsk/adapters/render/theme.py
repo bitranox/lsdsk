@@ -443,7 +443,9 @@ def _use_text(use: DiskUse) -> str:
     partitions mounted at once. Anything else (ZFS, LVM, MD, CRYPT, STACK) is
     named by its pool, group, array or mapping, with the mounts appended only
     where it has any: an LVM/MD/CRYPT/STACK use with nothing mounted on it yet
-    is named without a dangling arrow. A ZFS use never has any, and that is the
+    is named without a dangling arrow. Every arm writes its mounts the one way,
+    so a Storage Space's drive says ``-> D:`` where the Space's own row says
+    ``D:``. A ZFS use never has any, and that is the
     model's rule rather than this function's (``DiskUse`` refuses one built with
     mounts, ADR 0004), so nothing here has to drop data to keep it.
     """
@@ -454,7 +456,7 @@ def _use_text(use: DiskUse) -> str:
     label = f"{use.kind.value}:{use.name}"
     if not use.mounts:
         return label
-    return f"{label} -> {', '.join(use.mounts)}"
+    return f"{label} -> {', '.join(_mount_text(mount) for mount in use.mounts)}"
 
 
 def format_usage(usage: DiskUsage | None) -> Cell:
