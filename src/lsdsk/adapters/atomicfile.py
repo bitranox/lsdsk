@@ -1,17 +1,20 @@
 """Replacing a file this tool owns, so that a failed write leaves the old one intact.
 
-Two files are written by this tool and read back by it later: a snapshot and
-the counter history. Both are replaced the same way - a temporary file in the
-destination's own directory, written, forced out, narrowed to its mode, then
-renamed over the destination - and both have to close the raw descriptor
-``mkstemp`` hands back however the write ends. That sequence lives here once, so
-a writer cannot carry a copy of it that forgot the descriptor.
+Every file this tool owns and expects to find whole afterwards - a snapshot or
+the counter history, for example - is written through here. Each is replaced
+the same way - a temporary file in the destination's own directory, written,
+forced out, narrowed to its mode, then renamed over the destination - and each
+has to close the raw descriptor ``mkstemp`` hands back however the write ends.
+That sequence lives here once, so a writer cannot carry a copy of it that
+forgot the descriptor, and a new writer of such a file uses it rather than a
+copy of its own.
 
 System Role:
-    Adapter-layer output boundary shared by the snapshot and history stores.
+    Adapter-layer output boundary shared by every writer of such a file.
 
 Contents:
-    * :func:`replace_atomically` - write a whole file and rename it into place.
+    * :func:`replace_atomically` - write a whole text file and rename it into place.
+    * :func:`replace_bytes_atomically` - the same for a binary file.
     * :func:`write_through` - write through a raw descriptor and always close it.
 """
 
