@@ -192,7 +192,7 @@ def test_wear_is_styled_from_the_threshold_itself(used: int, style: str) -> None
 
 @pytest.mark.parametrize(
     ("rate", "expected"),
-    [(10.0, "10"), (9.96, "10.0"), (0.1, "0.1"), (0.0999, "0.100")],
+    [(10.0, "10"), (9.96, "10"), (0.1, "0.1"), (0.0999, "0.1")],
 )
 def test_a_rate_drops_a_decimal_from_ten_and_adds_one_below_a_tenth(rate: float, expected: str) -> None:
     assert format_rate(rate) == expected
@@ -210,3 +210,24 @@ def test_spare_capacity_is_failing_only_below_the_drives_own_threshold() -> None
     """NVMe raises its critical warning when the spare FALLS BELOW the threshold, not on reaching it."""
     assert _spare_cell(10, 10) == ("10% of 10%", theme.STYLE_AT_CAPABILITY)
     assert _spare_cell(9, 10) == ("9% of 10%", theme.STYLE_FAILING)
+
+
+@pytest.mark.parametrize(
+    ("rate", "expected"),
+    [
+        pytest.param(9.96, "10", id="rounds up to ten"),
+        pytest.param(99.6, "100", id="whole stays whole"),
+        pytest.param(0.0996, "0.1", id="rounds up to a tenth"),
+        pytest.param(0.00096, "0.001", id="rounds up a decimal place"),
+        pytest.param(0.0000096, "0.00001", id="rounds up a small decimal place"),
+        pytest.param(9.94, "9.9", id="stays below ten"),
+        pytest.param(0.0994, "0.099", id="stays below a tenth"),
+    ],
+)
+def test_a_rate_is_written_in_the_band_its_rounded_figure_lands_in(rate: float, expected: str) -> None:
+    """A figure that rounds up across a band boundary is written as that band writes it.
+
+    Choosing the band on the raw value wrote 9.96 as ``10.0``, a decimal the
+    whole-number band exists to drop, and 0.0996 as ``0.100``.
+    """
+    assert format_rate(rate) == expected

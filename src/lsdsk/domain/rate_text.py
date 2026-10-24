@@ -30,6 +30,11 @@ def format_rate(per_hour: float) -> str:
     three decimals, and more where three would still read as zero, enough to
     reach its first significant digit.
 
+    The band is chosen on the figure as it would be WRITTEN, not on the raw
+    value: 9.96 rounds to ten and is written as a whole number, 0.0996 rounds
+    to a tenth and is written with one decimal, and 0.00096 rounds to 0.001
+    and needs no fourth decimal.
+
     Args:
         per_hour: The rate against the drive's own power-on hours.
 
@@ -43,15 +48,30 @@ def format_rate(per_hour: float) -> str:
         ('0.0003', '0.00002')
         >>> format_rate(0.0)
         '0'
+        >>> format_rate(9.96), format_rate(0.0996), format_rate(0.00096)
+        ('10', '0.1', '0.001')
     """
-    if per_hour >= _WHOLE_FROM:
-        return f"{per_hour:.0f}"
-    if per_hour >= _ONE_DECIMAL_FROM:
-        return f"{per_hour:.1f}"
     if per_hour <= 0:
         return "0"
+    if float(f"{per_hour:.1f}") >= _WHOLE_FROM:
+        return f"{per_hour:.0f}"
+    if float(f"{per_hour:.{_SMALL_DECIMALS}f}") >= _ONE_DECIMAL_FROM:
+        return f"{per_hour:.1f}"
+    return _small_rate(per_hour)
+
+
+def _small_rate(per_hour: float) -> str:
+    """A rate below a tenth, with as many decimals as reach its first significant digit.
+
+    The count is read off the figure after rounding, because rounding can
+    carry into the place before: 0.00096 needs four decimals to show its first
+    digit and rounds to ``0.0010``, whose first digit is already the third.
+    """
     decimals = max(_SMALL_DECIMALS, -math.floor(math.log10(per_hour)))
-    return f"{per_hour:.{decimals}f}"
+    written = f"{per_hour:.{decimals}f}"
+    fraction = written.partition(".")[2]
+    reached = len(fraction) - len(fraction.lstrip("0")) + 1
+    return f"{per_hour:.{max(_SMALL_DECIMALS, reached)}f}" if reached < decimals else written
 
 
 __all__ = ["format_rate"]
