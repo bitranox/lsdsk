@@ -8,15 +8,27 @@ device-tree tests use, so the enumeration and the property reads run on every ru
 
 from __future__ import annotations
 
-from typing import Any, cast
+import ctypes
+import json
+from dataclasses import dataclass, field
+from operator import attrgetter
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
+from test_refused_readings import envelope_of
 from test_windows_device_tree import FakeCfgmgr32, FakeSetupApi
 from test_windows_device_tree import _tree as _wired_tree  # pyright: ignore[reportPrivateUsage]
+from test_windows_volume_reader import FakeVolume, FakeVolumeKernel
 
 from lsdsk.adapters.hw.windows import reader
 from lsdsk.adapters.hw.windows import winapi as api
 from lsdsk.adapters.hw.windows.reader import DiskInterface
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+    from click.testing import CliRunner
 
 _DISK = 11
 _POOLED = 12
@@ -170,3 +182,149 @@ def test_a_pooled_drive_reaches_the_capture_with_its_instance_its_mark_and_the_s
         True,
         [_SPACE_INSTANCE],
     )
+
+
+# ---------------------------------------------------------------------------
+# A drive under BOTH interface classes is one drive, read once - and the record
+# kept for it still carries what its hidden twin said, which is the only place
+# the Space it backs is named (ADR 0007, decision 1).
+# ---------------------------------------------------------------------------
+
+_BOTH_DISK_PATH = "\\\\?\\scsi#disk&ven_qemu&prod_harddisk#6&2b320803&0&010000#{53f56307-b6bf-11d0-94f2-00a0c91efb8b}"
+_SPACE_PATH = "\\\\?\\storage#disk#{69486059-9506-4070-8b3a-c7a565ee19ab}#{53f56307-b6bf-11d0-94f2-00a0c91efb8b}"
+_SPACE_AS_NAMED = "STORAGE\\Disk\\{69486059-9506-4070-8b3a-c7a565ee19ab}"
+_POOLED_INSTANCE = "SCSI\\DISK&VEN_QEMU&PROD_HARDDISK\\6&2B320803&0&010000"
+_BUS_SATA = 0x0B
+_BUS_SPACES = 0x10
+_VOLUME_D = "\\\\?\\Volume{d}\\"
+
+
+#: A ``ctypes.byref()`` proxy's referent, the structure a fake reads and writes in the caller's place.
+_referent = attrgetter("_obj")
+
+
+@dataclass
+class _DisksAndVolumesKernel(FakeVolumeKernel):
+    """The volume reader's ``kernel32``, which also opens disks and answers their number and transport.
+
+    The two Win32 entry points are bound to their Win32 names below rather than
+    defined under them, which is all the name has to be for the reader to call it.
+
+    Attributes:
+        disks: Each disk's ``PhysicalDrive`` number and ``STORAGE_BUS_TYPE``, keyed by its interface path.
+            Every other disk ioctl is refused, so a disk's health is recorded as refused.
+    """
+
+    disks: dict[str, tuple[int, int]] = field(default_factory=dict[str, tuple[int, int]])
+    _disk_handles: dict[int, str] = field(default_factory=dict[int, str])
+
+    def _create_file(
+        self, path: str, access: int, share: int, security: object, disposition: int, flags: int, template: object
+    ) -> int:
+        """Open a disk this fake knows, and anything else as the volume fake does."""
+        if path not in self.disks:
+            return super().CreateFileW(path, access, share, security, disposition, flags, template)
+        handle = 500 + len(self._disk_handles)
+        self._disk_handles[handle] = path
+        return handle
+
+    def _device_io_control(
+        self,
+        handle: int,
+        code: int,
+        in_buffer: object,
+        in_size: int,
+        out_buffer: ctypes.Array[ctypes.c_char],
+        out_size: int,
+        returned: object,
+        overlapped: object,
+    ) -> int:
+        """Answer a disk's number and descriptor, refuse its other ioctls, and pass a volume's on."""
+        path = self._disk_handles.get(handle)
+        if path is None:
+            return super().DeviceIoControl(handle, code, in_buffer, in_size, out_buffer, out_size, returned, overlapped)
+        number, bus = self.disks[path]
+        if code == api.IOCTL_STORAGE_GET_DEVICE_NUMBER:
+            _referent(out_buffer).DeviceNumber = number
+            return 1
+        asks_descriptor = code == api.IOCTL_STORAGE_QUERY_PROPERTY and hasattr(in_buffer, "_obj")
+        if not asks_descriptor or _referent(in_buffer).PropertyId != api.STORAGE_DEVICE_PROPERTY:
+            self.error = 1
+            return 0
+        descriptor = api.STORAGE_DEVICE_DESCRIPTOR()
+        descriptor.Size = ctypes.sizeof(descriptor)
+        descriptor.BusType = bus
+        raw = bytes(descriptor)
+        ctypes.memmove(out_buffer, raw, min(len(raw), out_size))
+        _referent(returned).value = len(raw)
+        return 1
+
+    CreateFileW = _create_file
+    DeviceIoControl = _device_io_control
+
+
+def _read_a_drive_under_both_classes() -> dict[str, Any]:
+    """Run ``read_system`` over a machine whose one pooled drive publishes both disk classes.
+
+    The ordinary class lists the drive and the Space; the hidden class lists the same
+    drive again, as the same device, naming the Space among its removal relations.
+    The Space carries a lettered volume. Disks are read by the production reader.
+    """
+    setupapi = FakeSetupApi(
+        by_guid={
+            api.GUID_DEVINTERFACE_DISK: [(_BOTH_DISK_PATH, _POOLED), (_SPACE_PATH, _SPACE)],
+            api.GUID_DEVINTERFACE_HIDDEN_DISK: [(_POOLED_PATH, _POOLED)],
+        },
+        properties=_relations(_POOLED, _SPACE_AS_NAMED),
+    )
+    kernel = _DisksAndVolumesKernel(
+        {_VOLUME_D: FakeVolume(paths=("D:\\",), disks=(4,))},
+        disks={_BOTH_DISK_PATH: (1, _BUS_SATA), _POOLED_PATH: (1, _BUS_SATA), _SPACE_PATH: (4, _BUS_SPACES)},
+    )
+
+    def tree() -> reader._DeviceTree:  # pyright: ignore[reportPrivateUsage] - the seam under test
+        return reader._DeviceTree(  # pyright: ignore[reportPrivateUsage] - the seam under test
+            setupapi=cast("api.WinLibrary", setupapi),
+            cfgmgr32=cast(
+                "api.WinLibrary", FakeCfgmgr32(device_ids={_POOLED: _POOLED_INSTANCE, _SPACE: _SPACE_INSTANCE})
+            ),
+            kernel32=cast("api.WinLibrary", kernel),
+            last_error=lambda: kernel.error or setupapi.error,
+        )
+
+    return reader.read_system(
+        reader.SystemReaders(tree=tree, elevated=lambda: False, environment=dict, pci_names=lambda _pci: {})
+    )
+
+
+def test_a_drive_under_both_disk_classes_is_read_once() -> None:
+    reading = _read_a_drive_under_both_classes()
+
+    numbered = sorted(record["node"] for record in reading["disks"].values() if "node" in record)
+    assert numbered == ["PhysicalDrive1", "PhysicalDrive4"], list(reading["disks"])
+
+
+def test_the_record_kept_for_a_drive_under_both_classes_carries_its_hidden_twins_link() -> None:
+    """The ordinary record is kept, so what only the hidden twin read must reach it, or the link is lost."""
+    reading = _read_a_drive_under_both_classes()
+
+    kept = reading["disks"][_BOTH_DISK_PATH]
+    assert (kept.get("hidden"), kept.get("removal_relations"), kept.get("instance")) == (
+        True,
+        [_SPACE_AS_NAMED],
+        _POOLED_INSTANCE,
+    )
+
+
+def test_a_drive_under_both_classes_is_used_by_the_space_it_backs(
+    tmp_path: Path, cli_runner: CliRunner, production_factory: Callable[[], object]
+) -> None:
+    """End to end: the reading replayed, the drive is used by its Space and the Space refuses nothing."""
+    capture = tmp_path / "both-classes.json"
+    capture.write_text(json.dumps(_read_a_drive_under_both_classes()), encoding="utf-8")
+
+    envelope = envelope_of(capture, cli_runner, production_factory)
+
+    disks = {disk["node"]: disk for disk in (*envelope["data"]["disks"], *envelope["data"]["virtual_disks"])}
+    assert disks["PhysicalDrive1"]["usage"]["uses"] == [{"kind": "space", "name": "PhysicalDrive4", "mounts": ["D:\\"]}]
+    assert disks["PhysicalDrive4"]["readings_refused"] == [], "the Space's drive was read, so nothing is missing"

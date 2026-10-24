@@ -309,7 +309,9 @@ class DiskEntry(CaptureModel, frozen=True):
             is the node its pooled drives name among their removal relations.
         hidden: True for a disk listed under ``GUID_DEVINTERFACE_HIDDEN_DISK``,
             which is what a drive in a Storage Spaces pool publishes instead of
-            the disk class (ADR 0007).
+            the disk class (ADR 0007). A drive listed under both classes is one
+            record, and carries the mark and the relations its hidden
+            interface read.
         removal_relations: The instance identifiers Windows lists as removed
             with a hidden disk, as it published them; which of them is a Space
             is the builder's decision. All three are absent from a capture

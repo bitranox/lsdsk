@@ -1606,12 +1606,19 @@ def read_disks(tree: _DeviceTree) -> dict[str, dict[str, Any]]:
 
 
 def without_doubles(disks: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Drop a hidden disk whose drive number an ordinary disk already carries.
+    """Fold a hidden disk whose drive number an ordinary disk already carries into that disk's record.
 
     A drive is expected to publish one of the two interface classes; if one ever
     publishes both, it would be read twice and listed as two drives. The drive
     number is what says two interfaces are one drive. A hidden disk whose number
     was not read is kept, since nothing then says it is a drive already listed.
+
+    The ordinary record is the one kept, but only the hidden twin read the
+    drive's removal relations, which is where the Space it backs is named
+    (ADR 0007). Dropped whole, the twin took that link with it and a pooled
+    drive read "not mounted", inviting somebody to reuse a drive the pool
+    depends on. So the kept record takes the twin's mark and relations, and its
+    instance identifier where the kept record has none.
 
     Args:
         disks: The readings, keyed by interface path, in the order they were read.
@@ -1620,15 +1627,44 @@ def without_doubles(disks: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[st
         The same readings without the doubles, in the same order.
 
     Example:
-        >>> list(without_doubles({"a": {"node": "PhysicalDrive1"}, "b": {"node": "PhysicalDrive1", "hidden": True}}))
-        ['a']
+        >>> folded = without_doubles(
+        ...     {
+        ...         "a": {"node": "PhysicalDrive1"},
+        ...         "b": {"node": "PhysicalDrive1", "hidden": True, "removal_relations": ["SPACE"]},
+        ...     }
+        ... )
+        >>> folded
+        {'a': {'node': 'PhysicalDrive1', 'hidden': True, 'removal_relations': ['SPACE']}}
     """
-    listed = {record["node"] for record in disks.values() if not record.get("hidden") and "node" in record}
-    return {
-        path: dict(record)
-        for path, record in disks.items()
-        if not (record.get("hidden") and record.get("node") in listed)
-    }
+    kept: dict[str, dict[str, Any]] = {}
+    listed: dict[str, dict[str, Any]] = {}
+    for path, record in disks.items():
+        if not record.get("hidden") and "node" in record:
+            listed.setdefault(record["node"], kept.setdefault(path, dict(record)))
+    for path, record in disks.items():
+        if path in kept:
+            continue
+        twin = listed.get(record["node"]) if record.get("hidden") and "node" in record else None
+        if twin is None:
+            kept[path] = dict(record)
+        else:
+            _fold_hidden_twin(twin, record)
+    return {path: kept[path] for path in disks if path in kept}
+
+
+def _fold_hidden_twin(kept: dict[str, Any], twin: Mapping[str, Any]) -> None:
+    """Give the record kept for a drive what only its hidden interface read.
+
+    Args:
+        kept: The ordinary-class record kept for the drive, changed in place.
+        twin: The hidden-class record of the same drive.
+    """
+    kept["hidden"] = True
+    relations: list[str] = list(kept.get("removal_relations", ()))
+    relations.extend(name for name in twin.get("removal_relations", ()) if name not in relations)
+    kept["removal_relations"] = relations
+    if "instance" not in kept and "instance" in twin:
+        kept["instance"] = twin["instance"]
 
 
 def devices_accessible(disks: Mapping[str, Mapping[str, Any]]) -> bool:
