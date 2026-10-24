@@ -13,7 +13,6 @@ exclude-newer-span = "P7D"
 [options.exclude-newer-package]
 certifi = "2026-10-20T02:24:17Z"
 fake-winreg = false
-filelock = "2026-10-17T16:48:15Z"
 httpcore2 = "2026-10-18T16:29:22Z"
 httpx2 = "2026-10-18T16:29:23Z"
 lib-cli-exit-tools = false

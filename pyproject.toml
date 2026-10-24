@@ -442,4 +442,4 @@ ignores = ["E003"]
 
 [tool.uv]
 exclude-newer = "7 days"
-exclude-newer-package = {lib-cli-exit-tools = false, lib-layered-config = false, lib-log-rich = false, pwshpy = false, fake-winreg = false, lib-registry = false, httpcore2 = "2026-10-18T16:29:22Z", httpx2 = "2026-10-18T16:29:23Z", virtualenv = "2026-10-18T07:06:35Z", certifi = "2026-10-20T02:24:17Z", filelock = "2026-10-17T16:48:15Z"}
+exclude-newer-package = {lib-cli-exit-tools = false, lib-layered-config = false, lib-log-rich = false, pwshpy = false, fake-winreg = false, lib-registry = false, httpcore2 = "2026-10-18T16:29:22Z", httpx2 = "2026-10-18T16:29:23Z", virtualenv = "2026-10-18T07:06:35Z", certifi = "2026-10-20T02:24:17Z"}
