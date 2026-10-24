@@ -99,3 +99,10 @@ def test_a_missing_desktop_folder_is_named_in_the_reason(home: Path) -> None:
     (home / "Desktop").rmdir()
 
     assert MacosDesktopShortcut().no_desktop_reason() == f"no desktop folder at {home / 'Desktop'}"
+
+
+@pytest.mark.os_posix
+def test_the_command_is_executable_by_everyone(home: Path) -> None:
+    written = MacosDesktopShortcut().create(launch=("lsdsk",), icon=None)
+
+    assert written.stat().st_mode & 0o777 == 0o755

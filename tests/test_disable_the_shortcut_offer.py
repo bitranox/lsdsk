@@ -129,3 +129,12 @@ def test_the_offer_reports_a_display_entry_that_is_not_a_table_as_a_warning(
 
     assert path.read_bytes() == before
     assert "Could not save the do-not-offer setting" in capsys.readouterr().err
+
+
+@pytest.mark.os_posix
+def test_the_opt_out_file_is_owner_only(user_config_dir: Path) -> None:
+    """The reader's file may hold secrets in other keys, so the write leaves it at 0600."""
+    assert user_config_dir
+    written = disable_offer()
+
+    assert written.stat().st_mode & 0o777 == 0o600

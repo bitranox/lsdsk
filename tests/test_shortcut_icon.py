@@ -130,3 +130,11 @@ def test_a_macos_command_carries_no_icon_even_when_one_is_given(
 
     assert "lsdsk.png" not in text
     assert "Icon" not in text
+
+
+@pytest.mark.os_posix
+def test_the_copied_icon_is_readable_by_everyone() -> None:
+    """A desktop environment reads it to draw the launcher, so unlike the config beside it it is 0644."""
+    from lsdsk.adapters.shortcut.icon import copy_shipped_icon
+
+    assert copy_shipped_icon().stat().st_mode & 0o777 == 0o644

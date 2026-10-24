@@ -324,3 +324,12 @@ def test_a_missing_desktop_folder_is_named_in_the_reason(home: Path) -> None:
     (home / "Desktop").rmdir()
 
     assert LinuxDesktopShortcut().no_desktop_reason() == f"no desktop folder at {home / 'Desktop'}"
+
+
+@pytest.mark.os_linux
+def test_both_entries_are_executable_by_everyone(home: Path) -> None:
+    """A desktop environment refuses to launch an entry that is not executable for the user who clicks it."""
+    LinuxDesktopShortcut().create(launch=("lsdsk",), icon=None)
+
+    for entry in (home / "Desktop" / "lsdsk.desktop", home / ".local" / "share" / "applications" / "lsdsk.desktop"):
+        assert entry.stat().st_mode & 0o777 == 0o755, entry
