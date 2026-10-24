@@ -14,11 +14,39 @@ rather than as the extent of what is callable.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 # Metadata
 from .__init__conf__ import print_info
 
-# Composition exports (wired adapters)
-from .composition import get_config
+if TYPE_CHECKING:
+    from .composition import get_config
+
+
+def __getattr__(name: str) -> object:
+    """Import the wired configuration loader on first use rather than with the package.
+
+    The console script's first act is ``from lsdsk.entry import main``, which
+    imports this package before any handler of lsdsk exists. Importing the
+    composition here made that a quarter of a second of imports in which a
+    Ctrl+C printed a traceback; deferred, the entry point imports it inside the
+    guard that answers an interrupt with 130.
+
+    Args:
+        name: The attribute asked for.
+
+    Returns:
+        ``get_config``, the configuration loader the composition wires.
+
+    Raises:
+        AttributeError: For any other name, as a module without it would.
+    """
+    if name == "get_config":
+        from .composition import get_config as loader  # noqa: PLC0415 - deferred: see the docstring
+
+        return loader
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "get_config",

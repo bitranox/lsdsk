@@ -10,16 +10,26 @@ System Role:
 
 from __future__ import annotations
 
-from .adapters.cli.main import main as cli_main
-from .composition import build_production
+#: What a Ctrl+C leaves, the shell's 128 + SIGINT; the CLI answers a later one the same way.
+_INTERRUPTED = 130
 
 
 def main() -> int:
     """Console script entry point with production services wired.
 
+    The CLI and the composition are imported here, inside the guard, rather
+    than at the top of the module: they are most of the start's import time,
+    and a Ctrl+C in that window used to print a traceback through the import
+    machinery before any handler of this project existed.
+
     Returns:
-        Exit code from CLI execution.
+        Exit code from CLI execution, 130 for an interrupt before it started.
     """
+    try:
+        from .adapters.cli.main import main as cli_main  # noqa: PLC0415 - deferred into the interrupt guard
+        from .composition import build_production  # noqa: PLC0415 - deferred into the interrupt guard
+    except KeyboardInterrupt:
+        return _INTERRUPTED
     return cli_main(services_factory=build_production)
 
 

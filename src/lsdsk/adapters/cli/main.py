@@ -131,8 +131,13 @@ def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppSe
     Returns:
         Exit code produced by the command.
     """
-    from .envelope import RefusedBeforeTheRun  # noqa: PLC0415 - deferred with the command tree below
-    from .root import cli  # noqa: PLC0415 - deferred: lazy-loads the command tree so importing main stays cheap
+    try:
+        from .envelope import RefusedBeforeTheRun  # noqa: PLC0415 - deferred with the command tree below
+        from .root import cli  # noqa: PLC0415 - deferred: lazy-loads the command tree so importing main stays cheap
+    except KeyboardInterrupt as interrupt:
+        # The command tree is most of the start; a Ctrl+C while it imports is the
+        # reader's own act, as it is once a command runs, so it leaves no traceback.
+        return code_for_an_unhandled_exception(interrupt)
 
     # Use Click's native invocation with obj parameter since lib_cli_exit_tools.run_cli
     # doesn't support passing obj. We replicate its behavior while adding obj support.
