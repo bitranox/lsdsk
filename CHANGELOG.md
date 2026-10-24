@@ -5,6 +5,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.15.3] 2026-10-24 13:58:36
+
+### Changed
+
+- The usage skill says what blank `disk` and `link` speeds on a Windows SATA drive usually mean:
+  lsdsk ran unelevated, since ATA IDENTIFY is their only source there. It names the three signals
+  that show it and that an elevated run brings both back, and that `port` is never read directly
+  on Windows (`-` unelevated, at most a `>=` floor elevated).
+
 ## [1.15.2] 2026-10-23 22:57:20
 
 ### Fixed
