@@ -286,8 +286,10 @@ enabled = true
 
 The deploy never reads a mode from a `.env` file, and reads an `app_*` or `host_*` mode only from the
 shipped defaults, the app and host files, the environment and `--set`, never from a user
-configuration file. Nor does it read any mode from a file it is about to rewrite: a `user_file` in the
-copy `--target user` replaces decides nothing, valid or not. Where such a key would have decided something - its value differs from the one
+configuration file. Nor does it read any mode from a file it deploys to, whether it rewrites that file or keeps it: a
+`user_file` in the copy `--target user` replaces decides nothing, valid or not, and neither does one in
+a `config.toml` that a deploy without `--force` keeps, which the warning then names as kept rather than
+rewritten. Where such a key would have decided something - its value differs from the one
 the deploy reads - `config-deploy` names it, and the file it came from, in a warning after the deploy has run,
 so it does not read as applied. A user file `config-deploy` wrote itself carries the shipped modes and draws
 no warning, and a refused deploy answers with its refusal alone. Nothing is named where the deploy reads no
@@ -482,8 +484,9 @@ asks on another platform, when already elevated, on a Linux machine whose disks
 have no device node to open (a container), for `--replay`, or for any printed
 command.
 `--no-elevate` turns it off for one run. The elevated copy is started with
-`--elevated-relaunch`, which stops it from asking again; it is not shown in
-`--help` and is not meant to be typed.
+`--elevated-relaunch`, which stops it from asking again and from offering the
+desktop shortcut a second time; it is not shown in `--help` and is not meant to
+be typed.
 
 `offer_desktop_shortcut` decides whether a qualifying interactive start offers to
 create a desktop shortcut that launches lsdsk, so you need not remember the
@@ -491,7 +494,10 @@ command. The offer appears once, as a one-line question with three answers:
 create it, not now (asked again next time), or never, which writes this key
 `false` for you. It stays silent when output is piped or redirected, when the
 account has no desktop folder (a server with no graphical interface), when the
-shortcut already exists, or when this key is `false`. `lsdsk install-shortcut`
+shortcut already exists, in the elevated copy the interactive view starts, in a
+run that already holds root or Administrator (an answer given there would be
+written by that account into your own configuration directory), or when this
+key is `false`. `lsdsk install-shortcut`
 creates the shortcut outright whatever this is set to, wherever a desktop folder
 exists.
 
@@ -694,7 +700,16 @@ LOG_CONSOLE_FORMAT_PRESET=short
 LOG_ENABLE_GRAYLOG=false
 ```
 
-By default, the application searches upward from the current directory to discover `.env` files.
+By default, the application searches upward from the current directory to the filesystem root and
+reads the first `.env` it finds. Where it finds none, it reads the per-user `.env` beside the user
+configuration: `~/.config/lsdsk/.env` on Linux, `~/Library/Application Support/bitranox/lsdsk/.env`
+on macOS, `%APPDATA%\bitranox\lsdsk\.env` on Windows. Logging takes its `LOG_*` lines from that
+same file, so one run never reads its configuration from one `.env` and its logging from another.
+
+The elevated copy the interactive view starts reads no `.env` at all unless `--env-file` names one.
+It starts in the directory you typed in, and a `.env` left there would otherwise choose the
+copy's history store, its log levels and a Graylog destination. An `--env-file` you typed reaches the copy
+unchanged and is read there.
 
 To load a specific `.env` file instead, use `--env-file`:
 
@@ -741,6 +756,20 @@ Instead, create your own override files in the appropriate layer directory using
 - Inside `config.d/` files load in alphabetical order, so a high number loads last
 - Everything in `config.d/` outranks that layer's `config.toml`
 - Your custom file is not touched by `config-deploy`, which writes `config.toml`
+  and the shipped `config.d` files (`40-layered-config.toml` to `90-logging.toml`)
+
+That order is also why a `config-deploy` without `--force` over an existing
+`config.toml` can change what is in force: it keeps the file and creates the
+shipped `config.d` files beside it, which outrank it. After such a deploy, each
+value the kept file sets that a file this deploy created now overrides with a
+different value is named in a warning with both files and both values, such as
+`Warning: display.wwn_width=40 in .../config.toml is now overridden by
+.../config.d/70-display.toml, which this deploy created and which sets 24.`, and
+one hint follows: `--force` does not keep these values, because it replaces the
+kept file with the shipped copy too, so set each in the file that now decides
+it, or move it into a `config.d` file of your own that sorts after the shipped
+ones, such as `config.d/99-local.toml`. A value the environment, a `.env` or
+`--set` gives is never named.
 
 **Example `999-myconfig.toml`:**
 

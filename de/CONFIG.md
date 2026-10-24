@@ -286,9 +286,11 @@ enabled = true
 
 Einen Modus aus einer `.env`-Datei liest das Ausrollen nie, und einen `app_*`- oder `host_*`-Modus
 liest es nur aus den mitgelieferten Vorgaben, den App- und Host-Dateien, der Umgebung und `--set`,
-nie aus einer Benutzer-Konfigurationsdatei. Auch aus einer Datei, die es gleich neu schreibt, liest es
-keinen Modus: Ein `user_file` in der Kopie, die `--target user` ersetzt, entscheidet nichts, ob
-gültig oder nicht. Wo ein solcher Schlüssel etwas entschieden hätte - sein Wert weicht von dem
+nie aus einer Benutzer-Konfigurationsdatei. Auch aus einer Datei, in die es ausrollt, liest es keinen
+Modus, ob es sie neu schreibt oder behält: Ein `user_file` in der Kopie, die `--target user` ersetzt,
+entscheidet nichts, ob gültig oder nicht, und ebenso wenig eines in einer `config.toml`, die ein
+Ausrollen ohne `--force` behält; die Warnung nennt diese Datei dann als behalten statt als neu
+geschrieben. Wo ein solcher Schlüssel etwas entschieden hätte - sein Wert weicht von dem
 ab, den das Ausrollen liest -, nennt `config-deploy` ihn und die Datei, aus der er kam, in einer
 Warnung, nachdem das Ausrollen gelaufen ist, damit er nicht wie angewendet wirkt. Eine
 Benutzerdatei, die `config-deploy` selbst geschrieben hat, trägt die ausgelieferten Modi und löst
@@ -491,7 +493,7 @@ nie auf einer anderen Plattform, nie mit bereits erhöhten Rechten, nie auf eine
 Linux-Rechner, dessen Platten keinen Geräteknoten zum Öffnen haben (ein
 Container), nie bei `--replay` und nie für einen druckenden Befehl. `--no-elevate` schaltet es für einen Lauf ab. Die Kopie mit
 erhöhten Rechten wird mit `--elevated-relaunch` gestartet, damit sie nicht noch
-einmal fragt; die Option erscheint nicht in `--help` und ist nicht zum Eintippen
+einmal fragt und die Desktop-Verknüpfung nicht ein zweites Mal anbietet; die Option erscheint nicht in `--help` und ist nicht zum Eintippen
 gedacht.
 
 `offer_desktop_shortcut` entscheidet, ob ein geeigneter interaktiver Start
@@ -501,7 +503,10 @@ mit drei Antworten: anlegen, nicht jetzt (beim nächsten Mal wieder gefragt), od
 nie, was diesen Schlüssel auf `false` setzt. Es bleibt still, wenn die
 Ausgabe umgeleitet oder durch eine Pipe geht, wenn das Konto keinen
 Desktop-Ordner hat (ein Server ohne grafische Oberfläche), wenn die Verknüpfung
-schon besteht, oder wenn dieser Schlüssel `false` ist. `lsdsk install-shortcut`
+schon besteht, in der Kopie mit erhöhten Rechten, die die interaktive Ansicht
+startet, in einem Lauf, der bereits Root- oder Administratorrechte hat (eine
+dort gegebene Antwort würde von diesem Konto in Ihr eigenes
+Konfigurationsverzeichnis geschrieben), oder wenn dieser Schlüssel `false` ist. `lsdsk install-shortcut`
 legt die Verknüpfung ohne Weiteres an, wie dieser Schlüssel auch gesetzt ist,
 sofern es einen Desktop-Ordner gibt.
 
@@ -713,7 +718,18 @@ LOG_CONSOLE_FORMAT_PRESET=short
 LOG_ENABLE_GRAYLOG=false
 ```
 
-Standardmäßig sucht die Anwendung vom aktuellen Verzeichnis aus nach oben nach `.env`-Dateien.
+Standardmäßig sucht die Anwendung vom aktuellen Verzeichnis aus nach oben bis zur Wurzel des
+Dateisystems und liest die erste `.env`, die sie findet. Findet sie keine, liest sie die
+benutzereigene `.env` neben der Benutzerkonfiguration: `~/.config/lsdsk/.env` unter Linux,
+`~/Library/Application Support/bitranox/lsdsk/.env` unter macOS, `%APPDATA%\bitranox\lsdsk\.env`
+unter Windows. Die Protokollierung nimmt ihre `LOG_*`-Zeilen aus genau dieser Datei, sodass ein
+Lauf nie seine Konfiguration aus der einen `.env` und seine Protokollierung aus einer anderen liest.
+
+Die Kopie mit erhöhten Rechten, die die interaktive Ansicht startet, liest gar keine `.env`, außer
+`--env-file` nennt eine. Sie startet in dem Verzeichnis, in dem Sie den Befehl eingegeben haben, und eine dort
+abgelegte `.env` würde sonst den Verlaufsspeicher der Kopie, ihre Protokollstufen und ein
+Graylog-Ziel bestimmen. Ein `--env-file`, das Sie selbst angegeben haben, erreicht die Kopie unverändert und
+wird dort gelesen.
 
 Um stattdessen eine bestimmte `.env` zu laden, nehmen Sie `--env-file`:
 
@@ -761,7 +777,23 @@ Legen Sie stattdessen eigene Überschreibungsdateien im Verzeichnis der passende
   eine hohe Zahl lädt also zuletzt
 - Alles in `config.d/` geht der `config.toml` jener Schicht vor
 - Ihre eigene Datei rührt `config-deploy` nicht an, denn es schreibt
-  `config.toml`
+  `config.toml` und die mitgelieferten `config.d`-Dateien
+  (`40-layered-config.toml` bis `90-logging.toml`)
+
+Diese Reihenfolge ist auch der Grund, warum ein `config-deploy` ohne `--force`
+über eine vorhandene `config.toml` ändern kann, was gilt: Es behält die Datei und
+legt daneben die mitgelieferten `config.d`-Dateien an, die ihr vorgehen. Nach
+einem solchen Ausrollen wird jeder Wert, den die behaltene Datei setzt und den
+eine von diesem Ausrollen angelegte Datei nun mit einem anderen Wert
+überschreibt, in einer Warnung mit beiden Dateien und beiden Werten genannt,
+etwa `Warning: display.wwn_width=40 in .../config.toml is now overridden by
+.../config.d/70-display.toml, which this deploy created and which sets 24.`,
+und ein Hinweis folgt: `--force` behält diese Werte nicht, weil es auch die
+behaltene Datei durch die mitgelieferte Kopie ersetzt; setzen Sie also jeden in
+der Datei, die ihn jetzt entscheidet, oder verschieben Sie ihn in eine eigene
+`config.d`-Datei, die nach den mitgelieferten einsortiert wird, etwa
+`config.d/99-local.toml`. Ein Wert aus der Umgebung, einer `.env` oder `--set`
+wird nie genannt.
 
 **Beispiel `999-myconfig.toml`:**
 
