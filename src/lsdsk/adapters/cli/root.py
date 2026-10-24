@@ -10,6 +10,7 @@ Contents:
     * :func:`show_help` - every command's help page, written through the guarded sink.
     * :func:`own_the_help_printer` - give every command in a tree :func:`show_help`.
     * :class:`_RootGroup` - the group's class, keeping the subcommand's arguments for the callback.
+    * :func:`_subcommand_asks_for_help` - whether the subcommand asks for help, which loads nothing.
     * :func:`_read_subcommand_request` - what ``config``/``config-deploy`` ask of the configuration.
 
 ``config`` and ``config-deploy`` repeat ``--profile``, and ``config-deploy --force`` rewrites
@@ -345,6 +346,34 @@ def _overwrites(params: dict[str, Any]) -> tuple[DeployTarget, ...]:
     return tuple(target for target in named if isinstance(target, DeployTarget))
 
 
+def _subcommand_asks_for_help(ctx: click.Context) -> bool:
+    """Whether the subcommand about to run was asked for its help page.
+
+    Help asks nothing of the configuration, so a run that asks for it loads none: a broken
+    ``config.toml`` stopped every subcommand's ``--help`` with 78 before click could print it,
+    ``config-deploy --help`` among them, the page of the command that replaces such a file.
+    Click answers the help option while it parses the subcommand, after this group's callback,
+    so the callback has to tell from the arguments alone. Read with the subcommand's own parser
+    under its own context settings, which is where ``-h`` is named, and resiliently, so a
+    command line click will refuse is not mistaken for one asking for help.
+
+    Args:
+        ctx: The root group's context, after :class:`_RootGroup` parsed the command line.
+
+    Returns:
+        ``True`` when the subcommand's arguments ask for its help; ``False`` with no subcommand.
+    """
+    name = ctx.invoked_subcommand
+    group = ctx.command
+    if name is None or not isinstance(group, click.Group):
+        return False
+    command = group.get_command(ctx, name)
+    if command is None:
+        return False
+    sub_ctx = click.Context(command, info_name=name, parent=ctx, resilient_parsing=True, **command.context_settings)
+    return _asks_for_help(command, sub_ctx, _words(ctx.meta.get(_ARGUMENTS_KEY)))
+
+
 def _read_subcommand_request(ctx: click.Context) -> _SubcommandRequest:
     """Read what the subcommand about to run asks of the configuration.
 
@@ -357,7 +386,8 @@ def _read_subcommand_request(ctx: click.Context) -> _SubcommandRequest:
 
     Returns:
         The subcommand's profile and what a forced deploy overwrites; empty for a subcommand
-        that names neither, and for a request for its help.
+        that names neither. A request for help never reaches here: it loads nothing (see
+        :func:`_subcommand_asks_for_help`).
     """
     name = ctx.invoked_subcommand
     group = ctx.command
@@ -368,8 +398,6 @@ def _read_subcommand_request(ctx: click.Context) -> _SubcommandRequest:
         return _SubcommandRequest()
     args = _words(ctx.meta.get(_ARGUMENTS_KEY))
     sub_ctx = command.make_context(name, list(args), parent=ctx, resilient_parsing=True)
-    if _asks_for_help(command, sub_ctx, args):
-        return _SubcommandRequest()
     profile: object = sub_ctx.params.get("profile")
     return _SubcommandRequest(
         profile=profile if isinstance(profile, str) else None,
@@ -550,6 +578,10 @@ def cli(
     # cast, not a type: ignore - Click types ``obj`` as Any, and this project
     # closes such gaps with a cast to the real type (see typed_click.py).
     services = cast("AppServices", ctx.obj())
+    if _subcommand_asks_for_help(ctx):
+        # Click prints the page and exits while it parses the subcommand, which runs nothing that
+        # needs the configuration, its warnings or logging.
+        return
     # The subcommand's own --profile wins, as it always did, and is read before anything is
     # loaded: loading the root's first answered for a configuration the run never used.
     request = _read_subcommand_request(ctx)
