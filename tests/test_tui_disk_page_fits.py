@@ -65,7 +65,12 @@ async def test_the_columns_the_page_exists_for_stay_on_screen(width: int) -> Non
 @pytest.mark.os_agnostic
 @pytest.mark.asyncio
 async def test_a_wide_window_still_draws_every_column() -> None:
-    """The control: fitting gives columns up only where they do not fit."""
+    """The control: fitting gives columns up only where they do not fit.
+
+    It is also what holds the page and ``lsdsk disks`` to one column list: the
+    headings are read off the table the page DREW, so a page that skipped one
+    of the printed table's columns fails here.
+    """
     app = LsdskApp(_machine())
     async with app.run_test(size=(260, 45)) as pilot:
         await pilot.press("3")

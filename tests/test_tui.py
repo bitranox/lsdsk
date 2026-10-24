@@ -22,14 +22,12 @@ from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import theme
 from lsdsk.adapters.render.layout import ELLIPSIS, Column, clip, fit, natural_widths, pad
 from lsdsk.adapters.render.report import DISK_COLUMNS, render_tree, severity_index
-from lsdsk.adapters.render.tables import DISK_COLUMNS as PRINTED_DISK_COLUMNS
 from lsdsk.adapters.render.tables import render_disks
 from lsdsk.adapters.render.tree import KEY_HINT, FabricView, render_fabric
 from lsdsk.adapters.render.trend import TREND_COLUMNS
 from lsdsk.adapters.tui import LsdskApp
 from lsdsk.adapters.tui import app as app_module
 from lsdsk.adapters.tui import palette as tui_palette
-from lsdsk.adapters.tui.app import DISK_COLUMNS as TUI_DISK_COLUMNS
 from lsdsk.adapters.tui.long_page import LongPage
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.diagnostics import diagnose
@@ -732,21 +730,6 @@ class TestTheDiskPageIdentifiesADrive:
         disk = next(d for d in inventory().disks if d.serial)
         cells = await self._cells(disk.node)
         assert cells["serial"] == disk.serial
-
-
-@pytest.mark.os_agnostic
-def test_the_disk_page_carries_the_same_columns_as_the_printed_table() -> None:
-    """`lsdsk disks` and page 3 are one view under one name, so prove it.
-
-    The page takes the printed table's columns rather than restating them, so
-    this cannot drift by a column being added to one list. What it still holds
-    is the derivation itself: replacing it with a literal tuple, which is how
-    `serial` and `firmware` went missing at 1.0.0, fails here.
-    """
-    printed = tuple(column.title for column in PRINTED_DISK_COLUMNS)
-    # The leading empty label is the severity marker's column, which the printed
-    # table renders as a fixed gutter rather than as one of its own columns.
-    assert tuple(name for name in TUI_DISK_COLUMNS if name) == printed
 
 
 @pytest.mark.os_agnostic
@@ -1593,9 +1576,11 @@ def test_every_page_takes_its_columns_from_the_printed_table_of_the_same_name() 
     from lsdsk.adapters.render import report, tables
     from lsdsk.adapters.tui import app as page
 
+    # The disk page keeps no column list of its own: it fits the printed
+    # table's columns to the window, so it is held on the headings it draws,
+    # by test_a_wide_window_still_draws_every_column.
     marked = {
         "controllers": (page.CONTROLLER_COLUMNS, tables.CONTROLLER_COLUMNS),
-        "disks": (page.DISK_COLUMNS, tables.DISK_COLUMNS),
         "health": (page.HEALTH_COLUMNS, tables.HEALTH_COLUMNS),
     }
     for name, (drawn, printed) in marked.items():

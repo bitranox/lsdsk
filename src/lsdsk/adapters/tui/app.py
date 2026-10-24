@@ -64,18 +64,12 @@ if TYPE_CHECKING:
 # been fixed for, still live in two more pages. The leading empty label is the
 # severity marker, which the printed tables draw as a fixed gutter instead.
 CONTROLLER_COLUMNS = ("", *(column.title for column in tables.CONTROLLER_COLUMNS))
-# Taken from the printed table rather than restated, because a page and the
-# command of one name are one view. Restating it is how the page came to name a
-# drive by model alone: its own tuple was written without `serial` and
-# `firmware`, and nothing compared the two lists. The leading empty label is the
-# severity marker, which the printed table draws as a fixed gutter instead.
-DISK_COLUMNS = ("", *(column.title for column in tables.DISK_COLUMNS))
 HEALTH_COLUMNS = ("", *(column.title for column in tables.HEALTH_COLUMNS))
 FILESYSTEM_COLUMNS = ("", *(column.title for column in tables.FILESYSTEM_COLUMNS))
 SLOT_COLUMNS = tuple(column.title for column in report.SLOT_COLUMNS)
 # Derived from the printed view's own columns rather than restated, for the
-# reason DISK_COLUMNS is: a page and the command of one name are one view, and a
-# second tuple is how the disk page came to name a drive by model alone.
+# reason the column sets above are: a page and the command of one name are one
+# view, and a second tuple is how the disk page came to name a drive by model alone.
 TREND_PAGE_COLUMNS = tuple(column.title for column in TREND_COLUMNS)
 
 
@@ -1323,7 +1317,6 @@ class LsdskApp(App[None]):
 
 __all__ = [
     "CONTROLLER_COLUMNS",
-    "DISK_COLUMNS",
     "FILESYSTEM_COLUMNS",
     "HEALTH_COLUMNS",
     "PAGE_LABELS",
