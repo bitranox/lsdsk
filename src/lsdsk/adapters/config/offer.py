@@ -60,6 +60,10 @@ class NoUserConfigPathError(OSError):
     """No user configuration file can be named on this machine, so nothing is written there."""
 
 
+class DisplayNotATableError(ValueError):
+    """The user file holds ``display`` as something other than a table, so the opt-out cannot be added."""
+
+
 def user_config_path(*, platform: str | None = None) -> Path:
     """The user ``config.toml`` the loader reads, whether or not it exists yet.
 
@@ -139,6 +143,8 @@ def disable_offer() -> Path:
         OSError: The file could not be written - a full disk, a permission wall,
             or a destination that is not a regular file. The previous file, if
             any, is untouched.
+        DisplayNotATableError: The file holds ``display`` as something other
+            than a table; nothing is written.
         tomlkit.exceptions.ParseError: The file exists but is not valid TOML
             (a reader hand-edited it), so there is nothing safe to edit in place;
             nothing is written.
@@ -149,7 +155,7 @@ def disable_offer() -> Path:
     # following it, and a reader's dotfile-manager link must survive the opt-out.
     path = user_config_path().resolve()
     document = _load_or_new(path)
-    _set_offer_false(document)
+    _set_offer_false(document, path=path)
     path.parent.mkdir(parents=True, exist_ok=True)
     replace_atomically(path, tomlkit.dumps(document), mode=_USER_FILE_MODE)
     # Read the written file back so a malformed round-trip fails here, at the
@@ -165,19 +171,27 @@ def _load_or_new(path: Path) -> tomlkit.TOMLDocument:
     return tomlkit.document()
 
 
-def _set_offer_false(document: tomlkit.TOMLDocument) -> None:
+def _set_offer_false(document: tomlkit.TOMLDocument, *, path: Path) -> None:
     """Set the opt-out key false, adding a ``[display]`` table if there is none.
 
     The document is read as the mapping it is - tomlkit's own ``get`` types its
     result loosely, so it is reached through the standard mapping interface for
     a value the type checker can follow.
+
+    Raises:
+        DisplayNotATableError: ``display`` is there but is not a table - an
+            ``[[display]]`` array of tables, a number, a list. Replacing it with a
+            table would discard what the reader wrote, so nothing is changed.
     """
     container = cast("MutableMapping[str, Any]", document)
-    display = container.get(DISPLAY_SECTION)
+    if DISPLAY_SECTION not in container:
+        container[DISPLAY_SECTION] = tomlkit.table()
+    display = container[DISPLAY_SECTION]
     if not isinstance(display, MutableMapping):
-        display = tomlkit.table()
-        container[DISPLAY_SECTION] = display
-    display[_OFFER_KEY] = False
+        raise DisplayNotATableError(
+            f"{DISPLAY_SECTION!r} in {path} is not a table, so the opt-out was not written; the file is unchanged"
+        )
+    cast("MutableMapping[str, Any]", display)[_OFFER_KEY] = False
 
 
-__all__ = ["NoUserConfigPathError", "disable_offer", "user_config_path"]
+__all__ = ["DisplayNotATableError", "NoUserConfigPathError", "disable_offer", "user_config_path"]

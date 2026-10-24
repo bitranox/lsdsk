@@ -16,11 +16,11 @@ from typing import TYPE_CHECKING
 import pytest
 
 from lsdsk.adapters.config.loader import get_config
-from lsdsk.adapters.config.offer import disable_offer
+from lsdsk.adapters.config.offer import DisplayNotATableError, disable_offer
 from lsdsk.adapters.config.tunables import get_display_settings
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
 
@@ -72,3 +72,54 @@ def test_disable_offer_adds_the_key_when_no_display_table_exists(
     parsed = tomllib.loads(written.read_text(encoding="utf-8"))
     assert parsed["thresholds"]["wear_warning_percent"] == 70
     assert parsed["display"]["offer_desktop_shortcut"] is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["[[display]]\npiped_width = 200\n", "display = 5\n", 'display = ["a"]\n'],
+    ids=["array-of-tables", "integer", "array"],
+)
+def test_a_display_entry_that_is_not_a_table_is_refused_and_left_as_it_was(
+    seed_user_config: Callable[[str], Path], text: str
+) -> None:
+    """Replacing it with a table would throw away what the reader put there, so nothing is written."""
+    path = seed_user_config(text)
+    before = path.read_bytes()
+
+    with pytest.raises(DisplayNotATableError) as refused:
+        disable_offer()
+
+    assert path.read_bytes() == before
+    assert "display" in str(refused.value)
+
+
+def test_the_offer_reports_a_display_entry_that_is_not_a_table_as_a_warning(
+    seed_user_config: Callable[[str], Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    from pathlib import Path
+
+    from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, offer_shortcut
+    from lsdsk.adapters.config.tunables import DisplaySettings
+    from lsdsk.domain.enums import ShortcutChoice
+
+    class _Desktop:
+        def exists(self) -> bool:
+            return False
+
+        def has_desktop(self) -> bool:
+            return True
+
+        def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+            raise AssertionError("never asked to create")
+
+        def desktop_dir(self) -> Path:
+            return Path("/desktop")
+
+    path = seed_user_config("[[display]]\npiped_width = 200\n")
+    before = path.read_bytes()
+    seams = ShortcutSeams(shortcuts=_Desktop(), uvx=lambda: None, installed_lsdsk=lambda: None, install_uv=lambda: None)
+
+    offer_shortcut(DisplaySettings(), ask_choice=lambda: ShortcutChoice.NEVER, seams=seams)
+
+    assert path.read_bytes() == before
+    assert "Could not save the do-not-offer setting" in capsys.readouterr().err

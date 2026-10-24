@@ -32,7 +32,7 @@ import tomlkit.exceptions
 from rich.markup import escape
 from rich.prompt import Confirm, Prompt
 
-from lsdsk.adapters.config.offer import disable_offer
+from lsdsk.adapters.config.offer import DisplayNotATableError, disable_offer
 from lsdsk.adapters.shortcut.icon import copy_shipped_icon
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
 from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
@@ -292,13 +292,14 @@ def _disable_for_the_offer(disable: Callable[[], object]) -> None:
     directory must not abort it, and neither must a reader-hand-edited, malformed
     ``config.toml`` that the opt-out cannot safely edit in place: the opt-out is a
     courtesy, not the run's work. The default ``disable`` (``disable_offer``)
-    raises ``OSError`` for the unwritable directory and a ``tomlkit``/``tomllib``
-    parse error for the malformed file, and both degrade the same way. A
+    raises ``OSError`` for the unwritable directory, a ``tomlkit``/``tomllib``
+    parse error for the malformed file and ``DisplayNotATableError`` for a
+    ``display`` that is not a table, and all of them degrade the same way. A
     programming error (any other exception) still propagates.
     """
     try:
         disable()
-    except (OSError, tomlkit.exceptions.ParseError, tomllib.TOMLDecodeError) as exc:
+    except (OSError, DisplayNotATableError, tomlkit.exceptions.ParseError, tomllib.TOMLDecodeError) as exc:
         safe_console.echo(f"\nCould not save the do-not-offer setting: {exc}", err=True)
         return
     safe_console.echo("\nlsdsk will not offer the shortcut again; run 'lsdsk install-shortcut' to create it later.")
