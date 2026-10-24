@@ -117,3 +117,16 @@ def test_a_real_transport_failure_is_still_named_one(monkeypatch: pytest.MonkeyP
     """Only DRIVER_SENSE is the device's answer; every other host or driver code is the transport's."""
     with pytest.raises(OSError, match="SG_IO transport failure"):
         _identify(monkeypatch, _fake_fcntl(host=host, driver=driver))
+
+
+def test_sense_cut_short_by_the_device_names_no_asc_from_the_zero_fill(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only the ``sb_len_wr`` bytes the device wrote are sense; the rest of the buffer is the reader's zero fill.
+
+    Eight bytes of fixed-format sense carry the key but end before the ASC at
+    offset 12, so there is no ASC/ASCQ to name. Read past the reported length,
+    the zero fill would supply one: ``ASC/ASCQ 0x00/0x00``, a code the device
+    never sent.
+    """
+    fake = _fake_fcntl(status=0x02, sense=_REFUSAL_SENSE[:8], driver=_DRIVER_SENSE)
+    with pytest.raises(OSError, match=r"^SG_IO SCSI status 0x02$"):
+        _identify(monkeypatch, fake)
