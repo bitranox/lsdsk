@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.15.4] 2026-10-24 14:20:52
+
 ### Fixed
 
 - `lsdsk install-shortcut` and the shortcut offer work when the user `config.toml` is a symlink, as
