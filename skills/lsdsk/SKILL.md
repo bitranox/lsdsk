@@ -276,6 +276,35 @@ no port above it): in the sample the HBA is `capable` of `Gen4x8` and
 running `Gen3x8` because the root port above it is a Gen3 port, so the card is
 not faulty and the board is the ceiling.
 
+**A drive under a "Graphics Port" is usually where it belongs.** The `name`
+column is the port's PCI ID name, which states the role the SILICON was
+designed for, not what the board wires to it. Some Intel CPU (or, on older
+platforms, northbridge) root ports are named after the graphics slot (PEG,
+PCI Express Graphics), and boards routinely wire such a port to an M.2
+socket, so an NVMe drive under it is not misplaced and the tree is not wrong.
+The bundled PCI ID list names these Intel ports this way (the tree prints
+each after `Intel Corporation`):
+
+| Id          | Name                                               |
+|-------------|----------------------------------------------------|
+| `8086:a70d` | Raptor Lake PCI Express 5.0 Graphics Port (PEG010) |
+| `8086:a74d` | Raptor Lake PCI Express 4.0 Graphics Port          |
+| `8086:2a41` | Mobile 4 Series Chipset PCI Express Graphics Port  |
+
+The parent link is the hardware's own answer; lsdsk does not choose it. Before
+calling a device misplaced or opening a bug:
+
+- Read the port's FULL name: the column is cut at `>` to fit the terminal, as
+  the sample shows. `lsdsk topology --format json` carries every node's whole
+  `name` and its `address` under `data.pci_tree`; on Linux `lspci -nn -s <address>`
+  adds the `[vendor:device]` id.
+- Check the board manual for which socket that root port feeds. lsdsk cannot
+  tell an M.2 socket from a card slot (see "What it cannot tell you"), and
+  `lsdsk slots` gives the board's own slot number to match against it.
+
+Explain the name to the user; do not change the tree, override the port's name,
+or tell the user to re-seat the drive.
+
 **A hop column holds a SYMBOL when there is no figure, and the section spells
 out whichever one it drew.** None of them is a fault, and reading one as a fault
 is a work order against hardware that is fine:

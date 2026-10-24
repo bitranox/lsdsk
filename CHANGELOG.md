@@ -5,6 +5,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.15.5] 2026-10-24 17:49:47
+
+### Changed
+
+- The lsdsk skill explains a drive under a "Graphics Port" in `lsdsk topology`: some Intel CPU (or
+  older northbridge) root ports carry the PCI ID name of the graphics slot while the board wires
+  them to an M.2 socket, so the drive is not misplaced; read the port's full name from the JSON
+  form and check the board manual before calling a device misplaced.
+
 ## [1.15.4] 2026-10-24 14:20:52
 
 ### Fixed
