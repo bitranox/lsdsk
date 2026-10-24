@@ -161,3 +161,29 @@ def test_an_invalid_mode_in_a_file_the_deploy_reads_is_refused_by_name(
     assert code == ExitCode.INVALID_ARGUMENT, err
     assert "user_file" in err, err
     assert _ignored(err) == [], err
+
+
+def test_a_mode_in_a_kept_file_is_named_without_claiming_the_file_is_rewritten(
+    user_config_dir: Path,
+    managed_traceback_state: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A file a deploy keeps still decides no mode, and the warning says it was KEPT.
+
+    A deploy without ``--force`` leaves an existing ``config.toml`` alone, yet its read of the
+    modes still skips that file, so a ``user_file`` written there decides nothing about the
+    companions it creates. The warning used to give the rewritten file's reason, "config-deploy
+    rewrites that file", for a file the same run reported as already existing and left untouched.
+    """
+    user_config_dir.mkdir(parents=True, exist_ok=True)
+    own = user_config_dir / "config.toml"
+    own.write_text(f'[{SECTION}]\nuser_file = "0o640"\n', encoding="utf-8", newline="\n")
+
+    code, err = _run(["config-deploy", "--target", "user"], capsys)
+
+    assert code == 0, err
+    assert own.read_text(encoding="utf-8") == f'[{SECTION}]\nuser_file = "0o640"\n', "the premise: the file is kept"
+    named = _ignored(err)
+    assert len(named) == NAMED_ONCE, err
+    assert all(line.startswith(f"{IGNORED}user_file=0o640 from ") for line in named), err
+    assert all("rewrites" not in line and "keeps that file" in line for line in named), err

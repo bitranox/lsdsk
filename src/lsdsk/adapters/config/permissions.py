@@ -59,6 +59,11 @@ _NOT_FROM_A_FILE_IT_REWRITES = (
     "config-deploy rewrites that file, and a file never decides the mode of its own replacement, so it takes "
     "the mode from the shipped defaults, the files it does not write and the environment"
 )
+_NOT_FROM_A_FILE_IT_KEEPS = (
+    "config-deploy keeps that file, because it exists and --force was not given, but reads no mode from a "
+    "file it deploys to, so the files it writes take the mode from the shipped defaults, the files outside "
+    "this deploy and the environment"
+)
 
 
 class SectionGivenAsAValueError(ValueError):
@@ -138,21 +143,32 @@ class ModeTheDeployIgnores(DomainModel, frozen=True):
         return f"Warning: ignoring {self.dotted}={visible_text(self.raw)} from {source}: {self.reason}."
 
 
-def _why_the_deploy_ignores(key: str, origin: Mapping[str, object], written: frozenset[Path]) -> str | None:
-    """The reason the deploy leaves `key` out when `origin` gave it, or ``None`` when it uses it."""
+def _why_the_deploy_ignores(
+    key: str, origin: Mapping[str, object], written: frozenset[Path], kept: frozenset[Path]
+) -> str | None:
+    """The reason the deploy leaves `key` out when `origin` gave it, or ``None`` when it uses it.
+
+    A file among those the deploy writes is skipped by its read whether the run replaces it or
+    keeps it, so the two get one decision and the sentence says which of the two the run does.
+    """
     layer = origin.get("layer")
     if layer == _DOTENV_LAYER:
         return _NOT_FROM_DOTENV
     if layer == _USER_LAYER and key in _SYSTEM_MODE_KEYS:
         return _NOT_FROM_A_USER_FILE
     path = origin.get("path")
-    if path is not None and Path(str(path)).resolve() in written:
+    if path is None:
+        return None
+    resolved = Path(str(path)).resolve()
+    if resolved in kept:
+        return _NOT_FROM_A_FILE_IT_KEEPS
+    if resolved in written:
         return _NOT_FROM_A_FILE_IT_REWRITES
     return None
 
 
 def modes_the_deploy_ignores(
-    config: Config, *, used: Config, written: frozenset[Path]
+    config: Config, *, used: Config, written: frozenset[Path], kept: frozenset[Path]
 ) -> tuple[ModeTheDeployIgnores, ...]:
     """The configured modes the deploy's own read of its layers leaves out, where that changes the mode.
 
@@ -177,12 +193,15 @@ def modes_the_deploy_ignores(
         used: The configuration the deploy itself reads its modes from.
         written: The resolved files the deploy writes, which its read skips. Required, because
             without it a mode in a rewritten file is the one case named nowhere.
+        kept: Those of `written` the run leaves as they are - each one already there, on a run
+            without ``--force``. Required, because the sentence for a rewritten file says the
+            opposite of what the run does to a kept one.
 
     Returns:
         One entry per mode setting the deploy will not use, in :data:`MODE_KEYS` order.
 
     Example:
-        >>> modes_the_deploy_ignores(Config({}, {}), used=Config({}, {}), written=frozenset())
+        >>> modes_the_deploy_ignores(Config({}, {}), used=Config({}, {}), written=frozenset(), kept=frozenset())
         ()
     """
     ignored: list[ModeTheDeployIgnores] = []
@@ -191,7 +210,7 @@ def modes_the_deploy_ignores(
         origin = config.origin(dotted)
         if origin is None or config.get(dotted) == used.get(dotted):
             continue
-        reason = _why_the_deploy_ignores(key, origin, written)
+        reason = _why_the_deploy_ignores(key, origin, written, kept)
         if reason is not None:
             source = origin.get("path")
             ignored.append(

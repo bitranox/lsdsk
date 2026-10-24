@@ -604,7 +604,10 @@ def _modes_the_deploy_ignores(config: Config, request: DeployRequest) -> tuple[M
         used = read_config_skipping(profile=request.profile, skip=written)
     except (ConfigError, OSError, ValueError):
         return ()
-    return modes_the_deploy_ignores(config, used=used, written=written)
+    # Read before the deploy runs, which is when this is called: a file there now is one a run
+    # without --force leaves alone.
+    kept: frozenset[Path] = frozenset(path for path in written if not request.force and path.exists())
+    return modes_the_deploy_ignores(config, used=used, written=written, kept=kept)
 
 
 def _report_deployment_result(
