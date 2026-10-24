@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from lsdsk.adapters.hw.linux import reader
 from lsdsk.adapters.hw.linux.capture import LinuxCapture
+from lsdsk.adapters.hw.snapshot import build_from
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -55,6 +56,8 @@ def _readers(
     *,
     mounts: list[dict[str, str | bool]] | None = _MOUNTS,
     environment: dict[str, Any] | None = None,
+    block: dict[str, dict[str, Any]] = _BLOCK,
+    btrfs: list[list[str]] | None = None,
 ) -> reader.SystemReaders:
     def stacked(names: list[str]) -> dict[str, dict[str, Any]]:
         recorded.stacked.append(list(names))
@@ -73,7 +76,7 @@ def _readers(
         return {}
 
     return reader.SystemReaders(
-        block=lambda: _BLOCK,
+        block=lambda: block,
         pci=dict,
         pci_names=lambda _pci: {},
         classes=dict,
@@ -90,6 +93,8 @@ def _readers(
         pool_layouts=lambda: {"tank": {"guid": "42", "vdevs": [{"kind": "disk", "dev": "8:1"}]}},
         mount_table=lambda: mounts,
         swaps=list,
+        # Never this machine's own /sys/fs/btrfs: a test reads only what it was handed.
+        btrfs_devices=lambda: btrfs,
         space=space,
         free_extents=free_extents,
     )
@@ -159,3 +164,25 @@ def test_a_reading_that_will_be_refused_stats_and_walks_no_filesystem() -> None:
     with pytest.raises(ValidationError, match="hypervisor_flag"):  # control: the run is refused for this reading
         LinuxCapture.model_validate(reading)
     assert (recorded.space, recorded.free_extents) == ([[]], [[]])
+
+
+def test_a_btrfs_whose_source_is_a_loop_member_is_stat_ed_when_another_member_is_on_a_disk() -> None:
+    # mountinfo names the loop member as the source; the kernel's member list names a disk partition beside it.
+    sdb: dict[str, Any] = {"dev": "8:16", "holders": [], "partitions": {"sdb1": {"dev": "8:17", "holders": []}}}
+    block = {**_BLOCK, "sdb": sdb}
+    btrfs_mount: dict[str, str | bool] = {
+        "dev": "0:55",
+        "mountpoint": "/mnt/b",
+        "fstype": "btrfs",
+        "read_only": False,
+        "source_dev": "7:0",
+    }
+    recorded = _Recorded()
+    reading = reader.read_system(
+        _readers(recorded, mounts=[*_MOUNTS, btrfs_mount], block=block, btrfs=[["7:0", "8:17"]])
+    )
+    assert recorded.space == [["/", "/boot", "/mnt/b"]]
+    assert recorded.free_extents == [["/", "/boot", "/mnt/b"]]
+    # Control: the filesystems section draws that very row, on the disk the partition member sits on.
+    inventory = build_from(reading)
+    assert {each.name: each.disks for each in inventory.filesystems or ()}["/mnt/b"] == ("sdb",)

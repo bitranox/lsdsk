@@ -58,7 +58,7 @@ from ..snapshot import SCHEMA_VERSION
 from . import freespace, mounts, usbfs, zfs
 from .capture import LinuxCapture
 from .filesystems import builds_filesystems
-from .usage import disks_by_device
+from .usage import DiskPlacement, disk_placement
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -86,6 +86,9 @@ _DRIVER_SENSE = 0x08
 
 # A sysfs child directory named like a PCI address, "0000:03:00.0", carries two colons.
 _PCI_ADDRESS_COLONS = 2
+
+# What the free-space walk is handed where the filesystems section is never built.
+_PLACES_NOTHING = DiskPlacement(by_device={}, by_btrfs_member={})
 
 
 class SgIoHeader(ctypes.Structure):
@@ -1261,31 +1264,33 @@ def disk_nodes_reachable(sys_block: Path = Path("/sys/block"), dev: Path = Path(
     return _devices_accessible([*nodes.scsi, *nodes.nvme], dev)
 
 
-def free_extent_devices(reading: Mapping[str, Any]) -> frozenset[str]:
-    """Every ``maj:min`` the filesystems section can keep a row for, worked out from the reading so far.
+def free_extent_placement(reading: Mapping[str, Any]) -> DiskPlacement:
+    """Which disks each device number places a filesystem on, worked out from the reading so far.
 
     ``statvfs`` and the free-space walk skip a filesystem no inventoried disk
     carries - one the section drops anyway, and a network or FUSE mount that
     could hang the call - and skip every filesystem in a container, where the
-    section is never built. The answer comes from the section's own rules over
-    the typed reading, so the two cannot disagree about which device that is.
+    section is never built. The answer is the section's own placement over the
+    typed reading, a btrfs member beside a member on a disk included, and
+    ``freespace.rows_on_disks`` asks it the section's own question, so the two
+    cannot disagree about which filesystem that is.
 
     Args:
         reading: The reading as ``read_system`` has built it, before the walk.
 
     Returns:
-        The device numbers; none in a container, and none when the reading
-        does not type, since the run's own parse of the same reading refuses
-        it with the real reason and a walk of every mount, a network one that
-        hangs among them, would only delay that.
+        The placement; one placing nothing in a container, and nothing when the
+        reading does not type, since the run's own parse of the same reading
+        refuses it with the real reason and a walk of every mount, a network
+        one that hangs among them, would only delay that.
     """
     try:
         capture = LinuxCapture.model_validate(reading)
     except ValidationError:
-        return frozenset()
+        return _PLACES_NOTHING
     if not builds_filesystems(classify(capture.environment).environment):
-        return frozenset()
-    return frozenset(disks_by_device(capture))
+        return _PLACES_NOTHING
+    return disk_placement(capture)
 
 
 class HostIdentity(NamedTuple):
@@ -1405,7 +1410,7 @@ def read_system(readers: SystemReaders | None = None) -> dict[str, Any]:
         **zfs.fragmentation_fields(fragmentation, fragmentation_error),
     }
     # statvfs and the free-space walk are both asked only about a filesystem the section can keep a row for.
-    on_disks = None if mount_rows is None else freespace.rows_on_disks(mount_rows, free_extent_devices(reading))
+    on_disks = None if mount_rows is None else freespace.rows_on_disks(mount_rows, free_extent_placement(reading))
     reading["filesystem_space"] = None if on_disks is None else read.space(on_disks)
     reading["free_extents"] = None if on_disks is None else read.free_extents(on_disks)
     return reading
@@ -1424,7 +1429,7 @@ __all__ = [
     "ata_passthrough",
     "ata_passthrough_nodes",
     "disk_nodes_reachable",
-    "free_extent_devices",
+    "free_extent_placement",
     "nvme_admin",
     "parse_pcie_capability",
     "read_ahci_capabilities",

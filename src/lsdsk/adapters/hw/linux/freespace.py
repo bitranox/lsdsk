@@ -44,6 +44,8 @@ from .zfs import Ioctl, system_ioctl
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Mapping, Sequence
 
+    from .usage import DiskPlacement
+
 #: ``_IOWR('X', 59, struct fsmap_head)`` from include/uapi/linux/fsmap.h.
 FS_IOC_GETFSMAP: Final = 0xC0C0583B
 
@@ -284,22 +286,27 @@ def _wanted(row: Mapping[str, str | bool], settled: Collection[str]) -> _Target 
     return _Target(dev, mountpoint)
 
 
-def rows_on_disks(rows: Sequence[Mapping[str, str | bool]], devices: Collection[str]) -> list[Mapping[str, str | bool]]:
+def rows_on_disks(rows: Sequence[Mapping[str, str | bool]], placement: DiskPlacement) -> list[Mapping[str, str | bool]]:
     """Every row of each filesystem that lives on an inventoried disk, so nothing else is walked.
 
-    A filesystem is kept by the rule the filesystems section keeps a row by -
-    its own device, or the device its source names, is on a disk - and keeps
-    every one of its rows, so a refused or hidden mountpoint still falls back
-    to the next.
+    A filesystem is kept by the placement the filesystems section keeps a row
+    by - its own device, or the device a mount's source names, is on a disk, a
+    btrfs member beside a member on a disk included - and keeps every one of
+    its rows, so a refused or hidden mountpoint still falls back to the next.
 
     Args:
         rows: What ``mounts.read_mounts`` returned.
-        devices: Every ``maj:min`` that lives on an inventoried disk.
+        placement: Which disks each device number lives on, the section's own.
 
     Returns:
         The kept rows, in their own order.
     """
-    kept = {row.get("dev") for row in rows if row.get("dev") in devices or row.get("source_dev") in devices}
+    sources: dict[str, list[str | None]] = {}
+    for row in rows:
+        dev, source = row.get("dev"), row.get("source_dev")
+        if isinstance(dev, str):
+            sources.setdefault(dev, []).append(source if isinstance(source, str) else None)
+    kept = {dev for dev, named in sources.items() if placement.disks_of(dev, named)}
     return [row for row in rows if row.get("dev") in kept]
 
 
