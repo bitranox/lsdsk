@@ -267,9 +267,7 @@ def privilege_note(inventory: Inventory) -> str:
     if inventory.privileged and inventory.devices_accessible:
         return ""
     names = [name for name, _ in HEALTH_NEEDING_SMART]
-    # Keyed on the RECORDED refusal, never on the link being null: a drive that
-    # simply publishes no SATA speed reads null too, and elevating would not help it.
-    if any(refused.reading == IDENTIFY_READING for disk in inventory.disks for refused in disk.readings_refused):
+    if any(_sata_link_lost_to_refused_identify(disk) for disk in inventory.disks):
         names.insert(0, SATA_LINK_NEEDING_IDENTIFY)
     missing = ", ".join(names)
     if not inventory.devices_accessible:
@@ -278,6 +276,30 @@ def privilege_note(inventory: Inventory) -> str:
             "so elevating would not change that."
         )
     return f"Not read: {missing}. Run as root or Administrator to include them."
+
+
+def _sata_link_lost_to_refused_identify(disk: Disk) -> bool:
+    """Whether a refused IDENTIFY is what left this drive's SATA link unread.
+
+    Keyed on the RECORDED refusal, never on the link being null alone: a drive
+    that simply publishes no SATA speed reads null too, and elevating would not
+    help it. The refusal alone is not enough either. A USB bridge refuses
+    IDENTIFY and has no SATA link to lose, and Linux reads a SATA link from
+    sysfs, so a refusal there leaves both figures in place. The sentence names
+    the disk and link columns, so it is said only where both of them are empty.
+
+    Args:
+        disk: One drive of the scanned machine.
+
+    Returns:
+        True for a SATA drive whose IDENTIFY was refused and whose drive and
+        negotiated link figures are both absent.
+    """
+    if disk.bus is not BusType.SATA:
+        return False
+    if not any(refused.reading == IDENTIFY_READING for refused in disk.readings_refused):
+        return False
+    return disk.link.drive_max_gbps is None and disk.link.negotiated_gbps is None
 
 
 def unread_interfaces_note(inventory: Inventory) -> str:

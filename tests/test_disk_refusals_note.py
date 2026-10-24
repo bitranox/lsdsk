@@ -29,6 +29,7 @@ from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import detail, full, report
 from lsdsk.adapters.tui import LsdskApp
 from lsdsk.domain.elevation import Elevation, ElevationPrompt, ElevationState
+from lsdsk.domain.enums import BusType
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
@@ -189,3 +190,59 @@ async def test_an_elevated_run_draws_no_note_whatever_it_was_told() -> None:
         )
         == ""
     )
+
+
+def _windows_capture(name: str, *, refuse: str) -> Inventory:
+    """A non-elevated run of a committed Windows capture, IDENTIFY refused on the disks ``refuse`` names.
+
+    ``refuse`` is a substring of the disk's instance path (``prod_extreme_ssd``),
+    or ``*`` for every disk carrying an ATA reading.
+    """
+    payload: dict[str, Any] = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+    payload["elevated"] = False
+    payload["euid"] = 1
+    for path, entry in payload["disks"].items():
+        if "ata" in entry and (refuse == "*" or refuse in path):
+            entry["ata"] = {"identify_error": NEEDS_ADMINISTRATOR}
+    return build_from(payload)
+
+
+@pytest.mark.parametrize("name", ["windows-ahci", "windows-storage-spaces"])
+def test_a_non_elevated_windows_sata_drive_still_names_its_lost_link(name: str) -> None:
+    """The case the sentence exists for, on the two committed Windows SATA guests."""
+    machine = _windows_capture(name, refuse="*")
+    sata = [disk for disk in machine.disks if disk.bus is BusType.SATA]
+    assert sata, "the premise: the capture has a SATA drive"
+    assert all(disk.link.negotiated_gbps is None and disk.link.drive_max_gbps is None for disk in sata)
+
+    assert LINK_NAMED in report.privilege_note(machine)
+
+
+def test_a_refused_identify_on_a_usb_disk_names_no_sata_link() -> None:
+    """A USB bridge's refusal costs no SATA figure, and the SATA drive beside it was read."""
+    machine = _windows_capture("windows-usb-uas", refuse="prod_extreme_ssd")
+    refused = [disk for disk in machine.disks if disk.readings_refused]
+    assert [disk.bus for disk in refused] == [BusType.USB], "the premise: only the USB disk refused IDENTIFY"
+
+    note = report.privilege_note(machine)
+
+    assert note, "the SMART columns are still missing unelevated"
+    assert LINK_NAMED not in note, note
+
+
+def test_a_linux_sata_refusal_whose_links_were_read_names_no_sata_link() -> None:
+    """Linux reads a SATA link from sysfs, so a refused IDENTIFY there leaves both figures in place."""
+    payload: dict[str, Any] = json.loads((FIXTURES / "linux-sas-hba.json").read_text(encoding="utf-8"))
+    payload["euid"] = 1000
+    for node in payload["ata"]:
+        payload["ata"][node] = {"identify_error": "[Errno 1] Operation not permitted"}
+    machine = build_from(payload)
+    refused = [disk for disk in machine.disks if disk.readings_refused]
+    assert refused, "the premise: IDENTIFY was refused"
+    assert any(disk.link.negotiated_gbps is not None and disk.link.drive_max_gbps is not None for disk in refused)
+    assert all(disk.link.negotiated_gbps is not None or disk.link.drive_max_gbps is not None for disk in refused)
+
+    note = report.privilege_note(machine)
+
+    assert note, "the SMART columns are still missing unprivileged"
+    assert LINK_NAMED not in note, note
