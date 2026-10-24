@@ -16,7 +16,7 @@ from ....domain.models import DiskUsage, DiskUse
 from .capture import BlockEntry, FilesystemSignature, LinuxCapture, PoolLayout, StackedEntry, VdevEntry
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Iterable, Mapping
 
 #: Mountpoints whose disk the machine boots from. ``/efi`` is systemd's
 #: recommended mountpoint for the EFI system partition, the same intent as
@@ -53,12 +53,15 @@ class _Sources(NamedTuple):
         boot_pool_disks: The disks the boot pools' own configs place their
             members on, by :func:`pool_disks`. ``None`` for a capture taken
             before pool layouts were read, which judges by member labels.
+        btrfs_members: Every device the kernel lists as a member of a mounted
+            btrfs.
     """
 
     mounts_by_dev: Mapping[str, tuple[str, ...]]
     swap_devs: frozenset[str]
     boot_pools: frozenset[str]
     boot_pool_disks: frozenset[str] | None
+    btrfs_members: frozenset[str]
 
 
 def _mounts_by_dev(capture: LinuxCapture) -> dict[str, tuple[str, ...]]:
@@ -78,17 +81,22 @@ def _mounts_by_dev(capture: LinuxCapture) -> dict[str, tuple[str, ...]]:
         for dev in (mount.dev, mount.source_dev):
             if dev:
                 ordered.setdefault(dev, {})[mount.mountpoint] = None
-    # Every member of a multi-device btrfs carries the mount mountinfo gave one of them.
+    by_dev = {dev: tuple(mountpoints) for dev, mountpoints in ordered.items()}
+    # Every member of a multi-device btrfs carries the mount mountinfo gave one
+    # of them. The members share one tuple: a copy each made a long member list
+    # cost its own square.
     for members in capture.btrfs_devices or ():
-        joined = {mountpoint: None for dev in members for mountpoint in ordered.get(dev, {})}
+        joined = tuple(dict.fromkeys(mountpoint for dev in members for mountpoint in by_dev.get(dev, ())))
         if joined:
-            for dev in members:
-                ordered[dev] = dict(joined)
-    return {dev: tuple(mountpoints) for dev, mountpoints in ordered.items()}
+            by_dev.update(dict.fromkeys(members, joined))
+    return by_dev
 
 
-def btrfs_siblings(capture: LinuxCapture) -> dict[str, frozenset[str]]:
+def _btrfs_groups(capture: LinuxCapture) -> dict[str, frozenset[str]]:
     """Each member device of a mounted btrfs to every member of the same filesystem, itself included.
+
+    The members of one filesystem share one set, so a member list costs its own
+    length rather than its square.
 
     Args:
         capture: A Linux reading.
@@ -97,7 +105,70 @@ def btrfs_siblings(capture: LinuxCapture) -> dict[str, frozenset[str]]:
         ``maj:min`` to its filesystem's members; empty for a capture that
         carries no member list.
     """
-    return {dev: frozenset(members) for members in capture.btrfs_devices or () for dev in members}
+    groups: dict[str, frozenset[str]] = {}
+    for members in capture.btrfs_devices or ():
+        groups.update(dict.fromkeys(members, frozenset(members)))
+    return groups
+
+
+class DiskPlacement(NamedTuple):
+    """Which disks a mounted filesystem lives on, from the device numbers its mount names.
+
+    The one rule both the filesystems section and the live reader's statvfs and
+    free-space walks keep a filesystem by, so the reader never skips a row the
+    section draws. Built once per capture by :func:`disk_placement`.
+
+    Attributes:
+        by_device: Every ``maj:min`` on a disk to the disks it lives on
+            (:func:`disks_by_device`).
+        by_btrfs_member: Every member of a mounted btrfs to the disks under
+            any member of the same filesystem, because mountinfo names only one
+            member as a mount's source; the members of one filesystem share one
+            set.
+    """
+
+    by_device: Mapping[str, frozenset[str]]
+    by_btrfs_member: Mapping[str, frozenset[str]]
+
+    def disks_of(self, dev: str, sources: Iterable[str | None]) -> frozenset[str]:
+        """The disks one mounted filesystem lives on.
+
+        Args:
+            dev: The filesystem's own ``maj:min``, the one every mount of it
+                carries.
+            sources: The resolved source device of each of its mounts, ``None``
+                or empty where one was not resolved.
+
+        Returns:
+            Every disk its own device, or a source, lives on, and for a source
+            that is a member of a mounted btrfs every disk under the other
+            members too: mountinfo names one member as a mount's source.
+        """
+        found = set(self.by_device.get(dev, frozenset()))
+        for source in dict.fromkeys(sources):
+            if source:
+                found |= self.by_device.get(source, frozenset())
+                found |= self.by_btrfs_member.get(source, frozenset())
+        return frozenset(found)
+
+
+def disk_placement(capture: LinuxCapture) -> DiskPlacement:
+    """The tables :class:`DiskPlacement` answers from, built once for the capture.
+
+    Args:
+        capture: A Linux reading.
+
+    Returns:
+        The placement of every device number a mount could name.
+    """
+    by_device = disks_by_device(capture)
+    by_group: dict[frozenset[str], frozenset[str]] = {}
+    by_member: dict[str, frozenset[str]] = {}
+    for dev, group in _btrfs_groups(capture).items():
+        if group not in by_group:
+            by_group[group] = frozenset[str]().union(*(by_device.get(each, frozenset[str]()) for each in group))
+        by_member[dev] = by_group[group]
+    return DiskPlacement(by_device, by_member)
 
 
 def _swap_devs(capture: LinuxCapture) -> frozenset[str]:
@@ -395,6 +466,8 @@ def _undecidable(
     block: BlockEntry,
     capture: LinuxCapture,
     signatures: list[FilesystemSignature | None],
+    *,
+    btrfs_members: frozenset[str],
 ) -> bool:
     """Whether a disk that resolved nothing could still be in use.
 
@@ -406,6 +479,8 @@ def _undecidable(
         block: The disk's block entry.
         capture: A Linux reading.
         signatures: The signatures that counted for this disk's leaves.
+        btrfs_members: Every device the kernel lists as a member of a mounted
+            btrfs, built once per capture.
 
     Returns:
         Whether an empty reading of this disk must be reported as not read.
@@ -419,7 +494,7 @@ def _undecidable(
         partitions is not None and any(partition.dev is None for partition in partitions.values()),
     )
     unjoinable = any(sig is not None and sig.fs_type in _UNJOINABLE_MEMBER_TYPES for sig in signatures) and (
-        capture.btrfs_devices is None or not _member_devs(block, capture.stacked).isdisjoint(btrfs_siblings(capture))
+        capture.btrfs_devices is None or not _member_devs(block, capture.stacked).isdisjoint(btrfs_members)
     )
     return any(unread) or unjoinable
 
@@ -454,7 +529,8 @@ def _disk_usage(node: str, block: BlockEntry, capture: LinuxCapture, sources: _S
         uses.extend(_leaf_uses(partition.dev, partition.holders, signature, sources, capture.stacked))
 
     merged = _merge(uses)
-    if not merged and _undecidable(block, capture, [whole_signature, *partition_signatures]):
+    signatures = [whole_signature, *partition_signatures]
+    if not merged and _undecidable(block, capture, signatures, btrfs_members=sources.btrfs_members):
         return None
     boot = _under_boot_mount(merged) or _carries_boot_pool(node, block, capture, sources)
     return DiskUsage(boot=boot, uses=merged)
@@ -715,6 +791,7 @@ def resolve_usage(capture: LinuxCapture, environment: Environment) -> dict[str, 
         swap_devs=_swap_devs(capture),
         boot_pools=boot_pools,
         boot_pool_disks=_boot_pool_disks(capture, boot_pools),
+        btrfs_members=frozenset(_btrfs_groups(capture)),
     )
     return {
         node: _disk_usage(node, block, capture, sources) for node, block in capture.block.items() if not block.virtual
@@ -723,9 +800,10 @@ def resolve_usage(capture: LinuxCapture, environment: Environment) -> dict[str, 
 
 __all__ = [
     "BOOT_MOUNTS",
+    "DiskPlacement",
     "PoolLookup",
-    "btrfs_siblings",
     "devices_on_virtual_disks",
+    "disk_placement",
     "disks_by_device",
     "disks_by_pool",
     "disks_by_pool_guid",

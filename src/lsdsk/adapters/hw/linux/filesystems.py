@@ -24,7 +24,7 @@ from ....domain.enums import Environment, FilesystemKind
 from ....domain.models import FIXED_INODE_TABLE_TYPES, Filesystem, FreeSpace, RefusedReading
 from ..free_space import free_space_of
 from ..refusals import refusals_of
-from .usage import btrfs_siblings, disks_by_device, disks_by_pool, pool_disks, pool_lookup
+from .usage import disk_placement, disks_by_pool, pool_disks, pool_lookup
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -112,14 +112,11 @@ def _mount_row(
 def _mount_rows(
     capture: LinuxCapture, *, mounts: Sequence[MountEntry], space: Mapping[str, SpaceEntry]
 ) -> list[Filesystem]:
-    by_device = disks_by_device(capture)
-    siblings = btrfs_siblings(capture)
+    placement = disk_placement(capture)
     rows: list[Filesystem] = []
     for dev, group in _grouped(tuple(mounts)).items():
-        # mountinfo names one member of a multi-device btrfs; the kernel's member list names the rest.
-        source = group[0].source_dev or ""
-        named = {dev, source, *siblings.get(source, ())}
-        disks = frozenset[str]().union(*(by_device.get(each, frozenset[str]()) for each in named))
+        # The live reader stats and walks a filesystem by this same placement, so it skips no row drawn here.
+        disks = placement.disks_of(dev, (mount.source_dev for mount in group))
         if disks:
             extents = None if capture.free_extents is None else capture.free_extents.get(dev)
             rows.append(_mount_row(group, disks, space.get(dev), extents=extents))
