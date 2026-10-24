@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar, Final
 
+from rich.cells import cell_len
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -264,24 +265,27 @@ class DiskTable(DataTable[str]):
         self.post_message(self.Resized(self.scrollable_content_region.width))
 
 
-#: The widest severity marker, which the page draws as its own leading column.
-_DISK_MARKER_WIDTH: Final = max(len(marker) for marker in theme.SEVERITY_MARKERS.values())
-
-
-def disk_page_room(width: int, *, cell_padding: int) -> int:
+def disk_page_room(width: int, *, cell_padding: int, marker: int) -> int:
     """The width a disk row's columns may take on a page ``width`` cells wide.
 
     A DataTable pads every column by ``cell_padding`` on each side, where the
-    printed layout counts one :data:`~lsdsk.adapters.render.layout.GAP` between
-    columns. With the two equal, a row of n columns costs the page
-    ``marker + 2p + sum(w) + 2p*n`` against the layout's ``sum(w) + gap*(n - 1)``,
-    so the difference is the marker column, its padding and one gap, whatever
-    n the fit settles on. Any other padding makes that difference depend on n,
-    which is decided by this very figure, so it is refused rather than guessed.
+    printed layout counts one :data:`~lsdsk.adapters.render.layout.GAP` after
+    every column and a :data:`~lsdsk.adapters.render.layout.GUTTER` in front.
+    With the two equal, a row of n columns costs the page
+    ``marker + 2p + sum(w) + 2p*n`` against the layout's
+    ``gutter + sum(w) + gap*n``, so the page needs ``marker + 2p - gutter``
+    cells more than the layout reckons, whatever n the fit settles on. Any
+    other padding makes that difference depend on n, which is decided by this
+    very figure, so it is refused rather than guessed.
+
+    ``marker`` is the width of the marker column as the table DRAWS it: a
+    DataTable sizes a column to its widest cell, so a page whose rows carry no
+    ``!!`` draws that column narrower than the widest severity marker.
 
     Args:
         width: The cells the table offers its rows.
         cell_padding: The table's padding on each side of a column.
+        marker: The widest severity marker the rows carry, in cells.
 
     Returns:
         The ``room`` to fit the columns to, never below zero.
@@ -290,14 +294,16 @@ def disk_page_room(width: int, *, cell_padding: int) -> int:
         ValueError: The padding is not half the gap the layout counts.
 
     Example:
-        >>> disk_page_room(100, cell_padding=1)
-        94
+        >>> disk_page_room(100, cell_padding=1, marker=2)
+        99
+        >>> disk_page_room(100, cell_padding=1, marker=1)
+        100
     """
     gap = len(layout.GAP)
     if 2 * cell_padding != gap:
         msg = f"a cell padding of {cell_padding} does not match the layout's {gap}-cell gap"
         raise ValueError(msg)
-    return max(width - (_DISK_MARKER_WIDTH + 2 * cell_padding + gap), 0)
+    return max(width - (marker + 2 * cell_padding) + len(layout.GUTTER), 0)
 
 
 class LsdskApp(App[None]):
@@ -735,7 +741,8 @@ class LsdskApp(App[None]):
         listed = (*self.inventory.disks, *self.inventory.virtual_disks) if expand else self.inventory.disks
         rows = tables.disk_table_rows(self.inventory, self.findings, expand_virtual=expand)
         self._disk_width_used = self._disk_table_width()
-        room = disk_page_room(self._disk_width_used, cell_padding=widget.cell_padding)
+        marker = max((cell_len(row.marker[0]) for row in rows.rich), default=0)
+        room = disk_page_room(self._disk_width_used, cell_padding=widget.cell_padding, marker=marker)
         # The wwn ceiling lives on the column, exactly as the printed table
         # reads it, so the two views cannot cut a wwn in two different places.
         fitted = tables.fit_rows(tables.disk_columns(wwn_width), rows, room, room=room)

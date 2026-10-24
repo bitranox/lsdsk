@@ -81,7 +81,7 @@ async def test_a_value_stays_under_its_own_heading_when_columns_are_given_up() -
     disk = machine.disks[0]
     printed = tables.disk_table_row(disk, machine.port_link_for(disk))
     app = LsdskApp(machine)
-    async with app.run_test(size=(90, 45)) as pilot:
+    async with app.run_test(size=(84, 45)) as pilot:
         await pilot.press("3")
         await pilot.pause()
         assert "wwn" not in _headings(app), "the premise: at this width an identity column has gone"
@@ -97,7 +97,7 @@ async def test_narrowing_the_window_fits_the_page_again() -> None:
         await pilot.press("3")
         await pilot.pause()
         assert "wwn" in _headings(app), "the control: a wide window draws the identity columns"
-        await pilot.resize_terminal(90, 45)
+        await pilot.resize_terminal(84, 45)
         await pilot.pause()
         await pilot.pause()
         narrowed = _headings(app)
@@ -108,3 +108,57 @@ async def test_narrowing_the_window_fits_the_page_again() -> None:
     assert "wwn" not in narrowed
     assert "link" in narrowed
     assert "wwn" in widened, "widening again must bring the columns back"
+
+
+async def _page_against_printed(capture: str, widths: range) -> tuple[list[str], list[str]]:
+    """Resize one app through ``widths``; collect where the page and ``lsdsk disks`` part, and where it scrolls."""
+    payload: dict[str, Any] = json.loads((CAPTURE.parent / f"{capture}.json").read_text(encoding="utf-8"))
+    app = LsdskApp(build_from(payload))
+    differ: list[str] = []
+    scrolled: list[str] = []
+    async with app.run_test(size=(widths[0], 45)) as pilot:
+        await pilot.press("3")
+        for width in widths:
+            await pilot.resize_terminal(width, 45)
+            await pilot.pause()
+            table = app.query_one("#disk-table")
+            region, drawn = table.scrollable_content_region.width, table.virtual_size.width
+            page = [heading for heading in _headings(app) if heading]
+            fitted = tables.render_disks(app.inventory, app.findings, region)
+            printed = [str(column.header) for column in fitted.columns if str(column.header)]
+            if page != printed:
+                differ.append(f"{width}: page {page} printed {printed}")
+            if drawn > region:
+                scrolled.append(f"{width}: {drawn} > {region}")
+    return differ, scrolled
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("capture", ["linux-sas-hba", "windows-chipset-switch"])
+async def test_the_page_keeps_every_column_the_printed_table_keeps_at_its_width(capture: str) -> None:
+    """``lsdsk disks`` at the page's own width is the yardstick, from 70 columns to 160.
+
+    The page once reckoned its gutter and a gap twice, so for five columns of
+    width after each point where the printed table took a column back, the page
+    still left it off. Both captures draw a one-character marker, which is
+    where the page and the printed table can agree at every width.
+    """
+    differ, scrolled = await _page_against_printed(capture, range(70, 161))
+
+    assert not differ, differ
+    assert not scrolled, scrolled
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("capture", ["linux-usb-ehci", "linux-minimal"])
+async def test_the_page_never_scrolls_sideways_whatever_marker_it_draws(capture: str) -> None:
+    """The control on the marker's width: ``!!`` in one capture, no marker in the other.
+
+    The page's marker column is as wide as the widest marker it draws, so a
+    room that assumed one width would run past the page on the capture
+    carrying ``!!``. Every third width, because a room one cell too generous
+    overruns at most widths rather than at the column transitions alone.
+    """
+    _, scrolled = await _page_against_printed(capture, range(70, 161, 3))
+
+    assert not scrolled, scrolled
