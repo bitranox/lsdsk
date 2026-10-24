@@ -234,3 +234,80 @@ def test_the_real_capture_without_its_pooled_drives_names_the_gap_again(
 
     assert [entry["reading"] for entry in _disk_in(envelope, _REAL_SPACE)["readings_refused"]] == ["pool-members"]
     assert envelope["ok"] is False
+
+
+# ---------------------------------------------------------------------------
+# A drive whose removal relations name two Spaces backs both of them. A pool
+# holding several Spaces spreads each over its drives, so one drive can name
+# more than one; which it names first is the order Windows listed them in,
+# which nothing documents, so the answer may not depend on it.
+# ---------------------------------------------------------------------------
+
+_SECOND_SPACE_GUID = "11111111-2222-3333-4444-555555555555"
+_SECOND_SPACE = "PhysicalDrive5"
+_SECOND_SPACE_PATH = f"\\\\?\\storage#disk#{{{_SECOND_SPACE_GUID}}}#{{53f56307-b6bf-11d0-94f2-00a0c91efb8b}}"
+
+
+def _plant_second_space(*, named_first: bool) -> Callable[[dict[str, Any]], None]:
+    """Add a second Space to the real capture, lettered E:, and name it in every pooled drive's relations.
+
+    Args:
+        named_first: Whether each pooled drive names the new Space before the one it already backs.
+    """
+
+    def plant(data: dict[str, Any]) -> None:
+        space = next(entry for entry in data["disks"].values() if entry.get("node") == _REAL_SPACE)
+        data["disks"][_SECOND_SPACE_PATH] = {
+            **space,
+            "path": _SECOND_SPACE_PATH,
+            "node": _SECOND_SPACE,
+            "instance": f"STORAGE\\DISK\\{{{_SECOND_SPACE_GUID.upper()}}}",
+        }
+        data["volumes"]["9"] = {"disks": [5], "drive_type": 3, "esp": False, "paths": ["E:\\"]}
+        relation = f"STORAGE\\Disk\\{{{_SECOND_SPACE_GUID}}}"
+        for entry in data["disks"].values():
+            if entry.get("hidden"):
+                relations: list[str] = entry["removal_relations"]
+                relations.insert(0 if named_first else len(relations), relation)
+
+    return plant
+
+
+@pytest.mark.parametrize("named_first", [pytest.param(True, id="named first"), pytest.param(False, id="named last")])
+def test_a_pooled_drive_naming_two_spaces_is_used_by_both_whichever_it_names_first(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+    named_first: bool,
+) -> None:
+    capture = capture_with(_REAL, _plant_second_space(named_first=named_first), tmp_path)
+    envelope = envelope_of(capture, cli_runner, production_factory)
+
+    for space in (_REAL_SPACE, _SECOND_SPACE):
+        assert _disk_in(envelope, space)["readings_refused"] == [], space
+    assert not [entry for entry in envelope["skipped"] if entry.startswith("pool-members:")], envelope["skipped"]
+    for node in _REAL_POOLED:
+        assert _disk_in(envelope, node)["usage"]["uses"] == [
+            {"kind": "space", "name": _REAL_SPACE, "mounts": ["D:\\"]},
+            {"kind": "space", "name": _SECOND_SPACE, "mounts": ["E:\\"]},
+        ], node
+
+
+def test_a_space_named_twice_by_one_drive_is_one_use_of_it(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+) -> None:
+    """A relation listed twice, in either spelling, names one Space, so the drive has one use of it."""
+
+    def name_twice(data: dict[str, Any]) -> None:
+        for entry in data["disks"].values():
+            if entry.get("hidden"):
+                entry["removal_relations"].append(entry["removal_relations"][-1].upper())
+
+    envelope = envelope_of(capture_with(_REAL, name_twice, tmp_path), cli_runner, production_factory)
+
+    for node in _REAL_POOLED:
+        assert _disk_in(envelope, node)["usage"]["uses"] == [
+            {"kind": "space", "name": _REAL_SPACE, "mounts": ["D:\\"]}
+        ], node

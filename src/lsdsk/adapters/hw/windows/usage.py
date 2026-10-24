@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Protocol
 
+from ....domain.disk_name import disk_name_order
 from ....domain.enums import Environment, UseKind
 from ....domain.models import DiskUsage, DiskUse
 from . import winapi as api
@@ -127,8 +128,8 @@ def disk_numbers(nodes: frozenset[str]) -> dict[int, str]:
     return numbered
 
 
-def space_of_each_member(capture: WindowsCapture) -> dict[str, str]:
-    """Map each drive in a Storage Spaces pool to the Space it backs (ADR 0007).
+def space_of_each_member(capture: WindowsCapture) -> dict[str, tuple[str, ...]]:
+    """Map each drive in a Storage Spaces pool to every Space it backs (ADR 0007).
 
     A pooled drive is listed under the hidden disk class and names the Space's
     instance identifier among its removal relations. Only a disk Windows names
@@ -137,25 +138,32 @@ def space_of_each_member(capture: WindowsCapture) -> dict[str, str]:
     to case, as Windows compares them: the Space names itself in upper case and
     its drives name it with a lower-case GUID, measured on one guest.
 
+    A pool can hold several Spaces, each spread over its drives, so one drive
+    can name more than one. Every Space named is kept: keeping only the first
+    left each later one with a refusal saying its drives went unread, and which
+    Space won depended on the order Windows listed the relations in, which
+    nothing documents. So the Spaces are listed once each in drive order, never
+    in the order they were named.
+
     Args:
         capture: A Windows reading, live or replayed.
 
     Returns:
-        The node of the Space each linked drive backs, keyed by the drive's node.
-        A capture taken before these readings existed links nothing.
+        The nodes of the Spaces each linked drive backs, keyed by the drive's
+        node. A capture taken before these readings existed links nothing.
     """
     spaces = {
         entry.instance.upper(): entry.node
         for entry in capture.disks.values()
         if entry.device.is_storage_space and entry.instance and entry.node
     }
-    linked: dict[str, str] = {}
+    linked: dict[str, tuple[str, ...]] = {}
     for entry in capture.disks.values():
         if not (entry.hidden and entry.node):
             continue
-        backed = [spaces[name.upper()] for name in entry.removal_relations if name.upper() in spaces]
+        backed = {spaces[name.upper()] for name in entry.removal_relations if name.upper() in spaces}
         if backed:
-            linked[entry.node] = backed[0]
+            linked[entry.node] = tuple(sorted(backed, key=disk_name_order))
     return linked
 
 
@@ -273,9 +281,13 @@ def resolve_usage(capture: WindowsCapture, environment: Environment) -> dict[str
         node_mounts = tuple(mounts.get(node, ()))
         boot = node in boot_nodes
         uses = (DiskUse(kind=UseKind.LETTER, mounts=node_mounts),) if node_mounts else ()
-        space = members.get(node)
-        if space is not None:
-            uses = (*uses, DiskUse(kind=UseKind.SPACE, name=space, mounts=tuple(mounts.get(space, ()))))
+        uses = (
+            *uses,
+            *(
+                DiskUse(kind=UseKind.SPACE, name=space, mounts=tuple(mounts.get(space, ())))
+                for space in members.get(node, ())
+            ),
+        )
         if not uses and not boot and any_volume_blocks:
             result[node] = None
         else:

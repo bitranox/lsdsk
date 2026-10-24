@@ -411,7 +411,7 @@ def build_disks(capture: WindowsCapture) -> tuple[Disk, ...]:
     """
     pci = capture.pci
     disks: list[Disk] = []
-    spaces_read = frozenset(space_of_each_member(capture).values())
+    spaces_read = frozenset(space for backed in space_of_each_member(capture).values() for space in backed)
 
     for path, entry in sorted(capture.disks.items()):
         if is_unread_interface(path, entry):
