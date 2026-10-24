@@ -326,3 +326,68 @@ def test_end_of_input_at_the_install_question_means_no_install(monkeypatch: pyte
 
     assert installs.calls == 0, "end of input installed uv without a yes"
     assert shortcuts.created is None
+
+
+def test_a_declined_install_runs_no_installer_and_writes_no_shortcut() -> None:
+    """Consent is the gate: a "no" must not reach the installer, whatever it would have found."""
+    shortcuts = _RecordingShortcuts()
+    installs = _InstallRecorder()
+
+    offer_shortcut(
+        DisplaySettings(),
+        ask_choice=lambda: ShortcutChoice.CREATE,
+        ask_install=lambda: False,
+        seams=_seams_recording_installs(shortcuts, installs),
+        disable=_DisableRecorder(),
+    )
+
+    assert installs.calls == 0
+    assert shortcuts.created is None
+
+
+def test_a_blank_enter_at_the_shortcut_question_means_not_now(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("\n"))
+    shortcuts = _RecordingShortcuts()
+    disable = _DisableRecorder()
+
+    offer_shortcut(DisplaySettings(), seams=_seams(shortcuts, uvx=Path("/usr/bin/uvx")), disable=disable)
+
+    assert shortcuts.created is None
+    assert disable.called is False
+
+
+def test_a_blank_enter_at_the_install_question_installs_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("y\n\n"))
+    shortcuts = _RecordingShortcuts()
+    installs = _InstallRecorder()
+
+    offer_shortcut(DisplaySettings(), seams=_seams_recording_installs(shortcuts, installs), disable=_DisableRecorder())
+
+    assert installs.calls == 0, "a blank Enter installed uv"
+    assert shortcuts.created is None
+
+
+def test_d_at_the_shortcut_question_writes_the_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("d\n"))
+    shortcuts = _RecordingShortcuts()
+    disable = _DisableRecorder()
+
+    offer_shortcut(DisplaySettings(), seams=_seams(shortcuts, uvx=Path("/usr/bin/uvx")), disable=disable)
+
+    assert disable.called is True
+    assert shortcuts.created is None
+
+
+def test_an_install_that_leaves_no_uvx_creates_no_shortcut(capsys: pytest.CaptureFixture[str]) -> None:
+    """Without a launcher there is nothing for the shortcut to run, so none is written."""
+    shortcuts = _RecordingShortcuts()
+    offer_shortcut(
+        DisplaySettings(),
+        ask_choice=lambda: ShortcutChoice.CREATE,
+        ask_install=lambda: True,
+        seams=_seams(shortcuts, uvx=None, lsdsk=None, installed=None),
+        disable=_DisableRecorder(),
+    )
+
+    assert shortcuts.created is None
+    assert "uvx is still not on PATH" in capsys.readouterr().out
