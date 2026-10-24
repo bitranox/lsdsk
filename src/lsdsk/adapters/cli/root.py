@@ -31,6 +31,7 @@ import rich_click as click
 
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.loader import (
+    NO_DOTENV,
     DamagedInstallationError,
     invalid_profile_message,
     require_an_intact_installation,
@@ -204,6 +205,40 @@ def _load_or_refuse(
         return load_profile_config(services, profile=profile, env_file=env_file, overwrites=overwrites)
     except UnusableConfigError as refused:
         _refuse_before_the_run(ctx, refused.message, refused.code)
+
+
+def _dotenv_for(env_file: str | None, *, elevated_relaunch: bool) -> str | None:
+    """The ``.env`` this run reads: the one named, else the upward search, else none for the elevated copy.
+
+    The elevated copy runs as root or Administrator in the directory the person
+    typed in, so a search from there lets whoever can write that directory or
+    a parent of it choose root's history path, log levels and Graylog
+    destination. It reads no ``.env`` at all unless ``--env-file`` names one,
+    which reaches it unchanged among the arguments the relaunch passes on.
+
+    The person's own run does NOT hand the copy the ``.env`` its search found:
+    that file is exactly the one the copy must not trust, so forwarding it would
+    restore the hole under a different flag.
+
+    Args:
+        env_file: The ``--env-file`` value, or ``None`` when it was not given.
+        elevated_relaunch: Whether this process is the elevated copy.
+
+    Returns:
+        ``env_file`` when given, :data:`~lsdsk.adapters.config.loader.NO_DOTENV`
+        for the elevated copy without one, else ``None`` (the upward search).
+
+    Example:
+        >>> _dotenv_for(None, elevated_relaunch=True) == NO_DOTENV
+        True
+        >>> _dotenv_for(None, elevated_relaunch=False) is None
+        True
+        >>> _dotenv_for("/srv/.env", elevated_relaunch=True)
+        '/srv/.env'
+    """
+    if env_file is not None or not elevated_relaunch:
+        return env_file
+    return NO_DOTENV
 
 
 def _refuse_before_the_run(ctx: click.Context, message: str, code: ExitCode) -> NoReturn:
@@ -587,7 +622,8 @@ def cli(
     # loaded: loading the root's first answered for a configuration the run never used.
     request = _read_subcommand_request(ctx)
     profile = request.profile if request.profile is not None else profile
-    config = _load_or_refuse(ctx, services, profile=profile, env_file=env_file, overwrites=request.overwrites)
+    dotenv = _dotenv_for(env_file, elevated_relaunch=elevated_relaunch)
+    config = _load_or_refuse(ctx, services, profile=profile, env_file=dotenv, overwrites=request.overwrites)
     # Before the --set overrides, which replace the provenance of each key they give.
     dotenv_read = dotenv_the_run_read(config)
     report_profile_that_named_nothing(config, profile)

@@ -153,6 +153,13 @@ def get_default_config_path() -> Path:
     return Path(__file__).parent / "defaultconfig.toml"
 
 
+#: The ``dotenv_path`` that asks for no ``.env`` layer at all: neither the upward search
+#: from the working directory nor a named file. Empty because no named file can be:
+#: ``--env-file`` refuses an empty value. The elevated copy reads its configuration
+#: this way, so the directory it was started in decides none of root's settings.
+NO_DOTENV: Final = ""
+
+
 # Configuration is loaded once per (profile, start_dir) tuple and cached
 # for the process lifetime. Intentional for a short-lived CLI process.
 @lru_cache(maxsize=4)
@@ -225,6 +232,9 @@ def _get_config(*, profile: str | None = None, start_dir: str | None = None, dot
             working directory when None.
         dotenv_path: Optional explicit path to a ``.env`` file. When set, this
             file is loaded directly instead of searching upward from *start_dir*.
+            :data:`NO_DOTENV` reads no ``.env`` at all, through the library's
+            own read that lets no working directory decide anything
+            (:func:`read_config_skipping` with nothing skipped).
 
     Returns:
         Immutable configuration object with provenance tracking.
@@ -249,6 +259,8 @@ def _get_config(*, profile: str | None = None, start_dir: str | None = None, dot
     """
     if profile is not None:
         validate_profile(profile)
+    if dotenv_path == NO_DOTENV:
+        return read_config_skipping(profile=profile, skip=frozenset())
     return _get_config_impl(profile=profile, start_dir=start_dir, dotenv_path=dotenv_path)
 
 
@@ -664,6 +676,7 @@ def shipped_table_paths() -> tuple[str, ...]:
 
 
 __all__ = [
+    "NO_DOTENV",
     "SHIPPED_COMPANION_FILES",
     "DamagedInstallationError",
     "get_config",
