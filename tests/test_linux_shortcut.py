@@ -257,3 +257,26 @@ def test_a_control_character_is_refused_and_nothing_is_written(
     assert isinstance(refused.value, OSError)
     assert list((home / "Desktop").iterdir()) == []
     assert not (home / ".local" / "share" / "applications" / "lsdsk.desktop").exists()
+
+
+@pytest.mark.os_linux
+@pytest.mark.parametrize("where", ["desktop", "menu"])
+def test_a_symlink_at_the_destination_is_replaced_not_written_through(home: Path, where: str) -> None:
+    """Following it would overwrite, and chmod, a file the shortcut was never meant to touch."""
+    victim = home / "victim.txt"
+    victim.write_text("keep me\n", encoding="utf-8")
+    victim.chmod(0o600)
+    destination = (
+        home / "Desktop" / "lsdsk.desktop"
+        if where == "desktop"
+        else home / ".local" / "share" / "applications" / "lsdsk.desktop"
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.symlink_to(victim)
+
+    LinuxDesktopShortcut().create(launch=("lsdsk",), icon=None)
+
+    assert victim.read_text(encoding="utf-8") == "keep me\n"
+    assert victim.stat().st_mode & 0o777 == 0o600
+    assert not destination.is_symlink()
+    assert destination.read_text(encoding="utf-8").startswith("[Desktop Entry]\n")

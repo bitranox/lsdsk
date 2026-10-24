@@ -76,3 +76,19 @@ def test_create_never_makes_the_desktop_folder_itself(home: Path) -> None:
     assert refused.value.filename is not None
     assert Path(refused.value.filename).parent == home / "Desktop", "the write must fail on the missing Desktop"
     assert not (home / "Desktop").exists()
+
+
+@pytest.mark.os_posix
+def test_a_symlink_at_the_destination_is_replaced_not_written_through(home: Path) -> None:
+    victim = home / "victim.txt"
+    victim.write_text("keep me\n", encoding="utf-8")
+    victim.chmod(0o600)
+    destination = home / "Desktop" / "lsdsk.command"
+    destination.symlink_to(victim)
+
+    MacosDesktopShortcut().create(launch=("lsdsk",), icon=None)
+
+    assert victim.read_text(encoding="utf-8") == "keep me\n"
+    assert victim.stat().st_mode & 0o777 == 0o600
+    assert not destination.is_symlink()
+    assert destination.read_text(encoding="utf-8").startswith("#!/bin/sh\n")

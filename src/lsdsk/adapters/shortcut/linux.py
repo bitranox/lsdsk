@@ -22,10 +22,10 @@ from __future__ import annotations
 import errno
 import os
 import re
-import stat
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from lsdsk.adapters.atomicfile import replace_atomically
 from lsdsk.adapters.textfile import read_text_bounded
 from lsdsk.domain.errors import ConfigurationError
 
@@ -35,7 +35,9 @@ if TYPE_CHECKING:
 _FILENAME = "lsdsk.desktop"
 _NAME = "lsdsk"
 _COMMENT = "See your disks and controllers, and what is wrong with how they are connected"
-_EXECUTABLE_BITS = stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+#: Executable for everyone, as a desktop environment requires before it launches
+#: an entry; readable for everyone, since it holds no secret.
+_EXECUTABLE_MODE = 0o755
 
 #: The desktop line ``xdg-user-dirs-update`` writes. The spec allows only
 #: ``"$HOME/<path>"`` or an absolute path, always double-quoted.
@@ -187,9 +189,13 @@ def _expand(value: str) -> Path | None:
 
 
 def _write_executable(path: Path, body: str) -> None:
-    """Write ``body`` to ``path`` and set every execute bit a desktop environment checks."""
-    path.write_text(body, encoding="utf-8")
-    path.chmod(path.stat().st_mode | _EXECUTABLE_BITS)
+    """Replace ``path`` with ``body``, executable, through the shared atomic writer.
+
+    The rename never follows a symlink planted at the destination, so a link
+    there is replaced rather than having its target overwritten and made
+    executable, and a failed write leaves the previous entry as it was.
+    """
+    replace_atomically(path, body, mode=_EXECUTABLE_MODE)
 
 
 __all__ = ["LinuxDesktopShortcut", "UnwritableDesktopEntryError"]

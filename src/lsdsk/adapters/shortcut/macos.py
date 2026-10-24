@@ -13,15 +13,17 @@ System Role:
 from __future__ import annotations
 
 import shlex
-import stat
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from lsdsk.adapters.atomicfile import replace_atomically
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 _FILENAME = "lsdsk.command"
-_EXECUTABLE_BITS = stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+#: Executable for everyone, which a ``.command`` needs to run on double-click.
+_EXECUTABLE_MODE = 0o755
 
 
 class MacosDesktopShortcut:
@@ -56,8 +58,8 @@ class MacosDesktopShortcut:
         """
         del icon
         path = self.desktop_dir() / _FILENAME
-        path.write_text(f"#!/bin/sh\nexec {shlex.join(launch)}\n", encoding="utf-8")
-        path.chmod(path.stat().st_mode | _EXECUTABLE_BITS)
+        # Atomic and never through a symlink at the destination: see linux._write_executable.
+        replace_atomically(path, f"#!/bin/sh\nexec {shlex.join(launch)}\n", mode=_EXECUTABLE_MODE)
         return path
 
 
