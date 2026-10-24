@@ -169,14 +169,17 @@ def install_shortcut(
     output_format: OutputFormat = OutputFormat.HUMAN,
     install_uv: bool = False,
     seams: ShortcutSeams | None = None,
+    platform: str = sys.platform,
 ) -> None:
     """Create (or refresh) the desktop shortcut, resolving a launcher first.
 
     Args:
         output_format: Whether to report as human text or the JSON envelope.
         install_uv: Whether to install uv when no launcher is found.
-        seams: The collaborators to drive; the real ones for this platform when
+        seams: The collaborators to drive; the real ones for ``platform`` when
             not given.
+        platform: The ``sys.platform`` whose shortcut adapter is used when no
+            ``seams`` are given; this machine's by default.
 
     Raises:
         SystemExit: On any refusal (unsupported platform, an account with no
@@ -184,10 +187,10 @@ def install_shortcut(
             install) and on a failed write, carrying the matching exit code.
     """
     if seams is None:
-        shortcuts = shortcuts_for(sys.platform)
+        shortcuts = shortcuts_for(platform)
         if shortcuts is None:
             fail(
-                f"a desktop shortcut is not available on {sys.platform} in this build yet",
+                f"a desktop shortcut is not available on {platform} in this build yet",
                 ExitCode.CONFIG_ERROR,
                 output_format=output_format,
             )

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import shlex
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -303,3 +304,22 @@ def test_a_launcher_path_with_a_newline_is_refused_with_io_error_and_writes_noth
     assert envelope["error"]["type"] == "IO_ERROR"
     assert "control character" in envelope["error"]["message"]
     assert list((tmp_path / "Desktop").iterdir()) == []
+
+
+def test_the_human_report_names_the_launch_as_a_shell_would_quote_it(capsys: pytest.CaptureFixture[str]) -> None:
+    """The line is for a reader to recognise or paste, so it is the shell form, not the .desktop form."""
+    lsdsk = Path("/opt/my apps/lsdsk")
+    install_shortcut(seams=_seams(_RecordingShortcuts(), uvx=None, lsdsk=lsdsk))
+
+    out = capsys.readouterr().out
+    assert f"It launches: {shlex.join((str(lsdsk),))}\n" in out
+
+
+def test_a_platform_with_no_shortcut_adapter_is_refused_with_config_error(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(output_format=OutputFormat.JSON, platform="win32")
+
+    assert leaving.value.code == ExitCode.CONFIG_ERROR
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["error"]["type"] == "CONFIG_ERROR"
+    assert "not available on win32" in envelope["error"]["message"]
