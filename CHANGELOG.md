@@ -5,6 +5,89 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- `lsdsk install-shortcut` and the shortcut offer work when the user `config.toml` is a symlink, as
+  home-manager or stow leave it. The command died with a bare `StopIteration` (exit 70, no
+  envelope), and a `y` or `d` answer at the offer took the whole run down. The icon now lands in the
+  configuration directory you see, the do-not-ask-again write edits the link's target and keeps the
+  link, and where no user configuration path can be named (a relative `XDG_CONFIG_HOME`) the command
+  exits `74` with an envelope and the offer warns and carries on.
+- A uv installer that failed (no curl, no network, a refused download) was reported as "uv was
+  installed but uvx is still not on PATH". Both the command and the offer now say "the uv installer
+  failed (exit N)" with the manual install line for the platform, and the command exits `78`.
+- `lsdsk install-shortcut --install-uv --format json` printed the installer's progress ahead of the
+  envelope, so the output did not parse. The installer's output now goes to standard error.
+- The Linux `.desktop` entries quote `Exec` and `Icon` the way the Desktop Entry spec requires:
+  double quotes with the spec's escapes and `%` written `%%`, where they used a shell's single quotes
+  that `desktop-file-validate` rejected. A control character in a launch argument or the icon path
+  is refused (exit `74`, the offer warns) and nothing is written, where a newline used to end the key
+  and inject another.
+- The launchers are written atomically, replacing a symlink at the destination rather than writing
+  through it and making its target executable. A failed write leaves the previous file intact.
+- With `XDG_DESKTOP_DIR="$HOME/"` in `user-dirs.dirs`, the spec's way of turning the desktop off,
+  `install-shortcut` refused with "no desktop folder at" the home folder, which plainly exists. It
+  now says `user-dirs.dirs` turns the desktop off, and keeps "no desktop folder at <path>" for a
+  folder that is really missing.
+- The do-not-ask-again answer no longer throws away a `display` that is not a table, such as a
+  `[[display]]` array: it writes nothing and warns "Could not save the do-not-offer setting".
+- Ctrl+D at the shortcut question, or at the uv-install question behind it, ended the whole run with
+  `130`. End of input now answers "not now" and "no", and the interactive view opens.
+- The elevated copy the interactive view starts, and any run already holding root or Administrator,
+  no longer offers the desktop shortcut. The copy asked a second time for one start, and a "never"
+  answered there was written by that account into your own configuration directory, as a file every
+  later unprivileged run refused with exit `13`.
+- The elevated copy reads no `.env` unless `--env-file` names one. It searched the directory you
+  typed in and its parents like a plain run, so a `.env` left there chose the copy's history store,
+  log levels and Graylog destination.
+- Logging takes its `LOG_*` lines from the `.env` the configuration loader read. It ran a search of
+  its own that stopped at a `.git` or `pyproject.toml` and never read the per-user `.env`, so one run
+  could take its configuration from one file and its logging from another, or from none.
+- A subcommand's `--help` and `-h` print their page and exit `0` while a configuration file is
+  broken. Every subcommand used to exit `78` before printing anything, `config-deploy --help`
+  included, the page of the command that replaces such a file.
+- A `config-deploy` without `--force` that names a mode set in a `config.toml` it keeps now says the
+  file is kept. The warning gave the reason meant for a replaced file, "config-deploy rewrites that
+  file", while the run left it untouched.
+- A `config-deploy` without `--force` over an existing `config.toml` keeps that file and creates the
+  `config.d` files beside it, which outrank it, so a value such as `wwn_width = 40` silently became
+  the shipped `24` while the deploy reported success. It now names each such value with both files
+  and both values, followed by a hint on how to keep them.
+- A `config-deploy --force` past a configuration file that no longer parses kept the run's `.env`
+  for the rest of the run. The reread dropped it, losing its display and threshold values, its
+  `LOG_*` lines and an `enabled` set there.
+- Ctrl+C in the first moment after starting lsdsk, while it is still importing, exits `130` without
+  a traceback. It printed 37 to 64 lines through the import machinery. `python -m lsdsk` gets the
+  same guard.
+- On Linux, a btrfs whose mountinfo source is a loop or zvol member, with another member on a disk,
+  is now stat-ed and walked. The filesystems section drew its row with every figure `-` and no
+  refusal saying why.
+- On Linux, a btrfs with a long member list no longer costs time and memory quadratic in its
+  members: a 100 KB replay naming 8,000 members took 12 s and 4.2 GB.
+- On Windows, a pooled drive that backs two Storage Spaces is linked to both. Only the first Space
+  its removal relations named got it, so the second kept its `pool-members` refusal and the scan
+  reported itself incomplete; which one won depended on the order Windows listed them. The drive's
+  `used by` names one use per Space.
+- On Windows, a drive published under both the ordinary and the hidden disk class keeps its link to
+  the Space it backs. The hidden twin, the only record holding that link, was dropped whole, so the
+  drive read `not mounted`. It is still listed once.
+- A Storage Spaces drive's use reads `space:PhysicalDrive4 -> D:`, the way the Space's own row
+  writes its volume, where it read `-> D:\`.
+- The privilege note names "the SATA link (disk and link columns)" only for a SATA drive whose
+  IDENTIFY was refused and whose drive and link figures are both missing. A USB bridge refusing
+  IDENTIFY, and a non-root Linux run whose links come from sysfs, got a sentence about dashes that
+  were not on the page.
+- The interactive disk page keeps the columns `lsdsk disks` keeps at the same width. It counted the
+  gutter and a gap twice, so for about five columns after each point where `lsdsk disks` took a
+  column back, the page still left it off.
+- The slots section's board line and each SMART disk heading stay on one line on a narrow console.
+  The tail ("3 free", "15 attributes") wrapped onto a line of its own that read as a second heading;
+  fields are now given up whole, and the name is cut with the ASCII mark only where nothing else
+  fits.
+- A counter rate that rounds across a band boundary is written in the band it lands in: 9.96 an hour
+  read `10.0` and now reads `10`, 0.0996 read `0.100` and now reads `0.1`, in the trend table and in
+  a finding's sentence alike.
+
 ## [1.15.3] 2026-10-24 13:58:36
 
 ### Changed
