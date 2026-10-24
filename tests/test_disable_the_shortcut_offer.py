@@ -113,8 +113,8 @@ def test_the_offer_reports_a_display_entry_that_is_not_a_table_as_a_warning(
         def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
             raise AssertionError("never asked to create")
 
-        def desktop_dir(self) -> Path:
-            return Path("/desktop")
+        def no_desktop_reason(self) -> str:
+            return f"no desktop folder at {Path('/desktop')}"
 
     path = seed_user_config("[[display]]\npiped_width = 200\n")
     before = path.read_bytes()

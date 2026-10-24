@@ -149,8 +149,13 @@ class DesktopShortcuts(Protocol):
         """
         ...
 
-    def desktop_dir(self) -> Path:
-        """The directory the shortcut is placed in, for a message that names it."""
+    def no_desktop_reason(self) -> str:
+        """Why :meth:`has_desktop` is False, as one clause a refusal can carry.
+
+        The adapter knows which rule turned the desktop off - a folder that is
+        missing, or a configuration that names the home folder itself - and the
+        reader is told that one rather than a guess built from the path.
+        """
         ...
 
 

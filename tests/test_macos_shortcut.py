@@ -92,3 +92,10 @@ def test_a_symlink_at_the_destination_is_replaced_not_written_through(home: Path
     assert victim.stat().st_mode & 0o777 == 0o600
     assert not destination.is_symlink()
     assert destination.read_text(encoding="utf-8").startswith("#!/bin/sh\n")
+
+
+@pytest.mark.os_posix
+def test_a_missing_desktop_folder_is_named_in_the_reason(home: Path) -> None:
+    (home / "Desktop").rmdir()
+
+    assert MacosDesktopShortcut().no_desktop_reason() == f"no desktop folder at {home / 'Desktop'}"

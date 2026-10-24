@@ -14,7 +14,10 @@ from pathlib import Path
 
 import pytest
 
+from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, install_shortcut
+from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut, UnwritableDesktopEntryError
+from lsdsk.adapters.uv_bootstrap import UvInstallResult
 
 
 @pytest.fixture
@@ -280,3 +283,44 @@ def test_a_symlink_at_the_destination_is_replaced_not_written_through(home: Path
     assert victim.stat().st_mode & 0o777 == 0o600
     assert not destination.is_symlink()
     assert destination.read_text(encoding="utf-8").startswith("[Desktop Entry]\n")
+
+
+@pytest.mark.os_linux
+@pytest.mark.parametrize("value", ["$HOME/", "$HOME"])
+def test_a_desktop_turned_off_in_user_dirs_is_refused_in_those_words(
+    home: Path, value: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Home is there, so "no desktop folder at <home>" told the reader something false."""
+    config_home = _user_dirs(home / "cfg", f'XDG_DESKTOP_DIR="{value}"')
+    seams = ShortcutSeams(
+        shortcuts=LinuxDesktopShortcut(config_home=config_home),
+        uvx=lambda: Path("/usr/bin/uvx"),
+        installed_lsdsk=lambda: None,
+        install_uv=lambda: UvInstallResult(exit_code=0, uvx=None),
+    )
+
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(seams=seams)
+
+    assert leaving.value.code == ExitCode.CONFIG_ERROR
+    err = " ".join(capsys.readouterr().err.split())
+    assert f"{config_home / 'user-dirs.dirs'} turns the desktop off" in err
+    assert "no desktop folder" not in err
+
+
+@pytest.mark.os_linux
+def test_an_environment_desktop_that_is_home_is_refused_in_those_words(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_DESKTOP_DIR", str(home))
+
+    reason = LinuxDesktopShortcut().no_desktop_reason()
+
+    assert "XDG_DESKTOP_DIR names the home folder itself" in reason
+
+
+@pytest.mark.os_linux
+def test_a_missing_desktop_folder_is_named_in_the_reason(home: Path) -> None:
+    (home / "Desktop").rmdir()
+
+    assert LinuxDesktopShortcut().no_desktop_reason() == f"no desktop folder at {home / 'Desktop'}"

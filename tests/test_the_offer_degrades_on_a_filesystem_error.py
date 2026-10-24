@@ -48,8 +48,8 @@ class _ShortcutsThatFailToCreate:
         self.create_calls += 1
         raise OSError("read-only config directory")
 
-    def desktop_dir(self) -> Path:
-        return Path("/desktop")
+    def no_desktop_reason(self) -> str:
+        return f"no desktop folder at {Path('/desktop')}"
 
 
 class _RecordingShortcuts:
@@ -68,8 +68,8 @@ class _RecordingShortcuts:
         self.created = (tuple(launch), icon)
         return Path("/desktop/lsdsk.desktop")
 
-    def desktop_dir(self) -> Path:
-        return Path("/desktop")
+    def no_desktop_reason(self) -> str:
+        return f"no desktop folder at {Path('/desktop')}"
 
 
 def _raise_oserror() -> NoReturn:

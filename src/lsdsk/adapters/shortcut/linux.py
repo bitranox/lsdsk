@@ -80,12 +80,30 @@ class LinuxDesktopShortcut:
         """Whether the Desktop already carries the shortcut."""
         return (self.desktop_dir() / _FILENAME).is_file()
 
+    def no_desktop_reason(self) -> str:
+        """Why there is no desktop: a missing folder, or a setting that names home itself.
+
+        ``"$HOME/"`` in ``user-dirs.dirs`` is how the spec turns the desktop off,
+        and home exists, so naming home as a missing folder told the reader
+        something false and pointed at the wrong fix.
+        """
+        desktop = self.desktop_dir()
+        if desktop != Path.home():
+            return f"no desktop folder at {desktop}"
+        if os.environ.get("XDG_DESKTOP_DIR"):
+            return "XDG_DESKTOP_DIR names the home folder itself, which turns the desktop off"
+        return f"{self._user_dirs_file()} turns the desktop off: its XDG_DESKTOP_DIR is the home folder itself"
+
+    def _user_dirs_file(self) -> Path:
+        """The ``user-dirs.dirs`` this account's desktop environment writes."""
+        config_home = self._config_home or Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+        return config_home / "user-dirs.dirs"
+
     def _named_in_user_dirs(self) -> Path | None:
         """The desktop folder ``user-dirs.dirs`` names, or None where it names none it could mean."""
-        config_home = self._config_home or Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
         try:
             # replace: a path that will not decode names no folder that exists, which is answer enough.
-            text = read_text_bounded(config_home / "user-dirs.dirs", what="the XDG user-dirs file", errors="replace")
+            text = read_text_bounded(self._user_dirs_file(), what="the XDG user-dirs file", errors="replace")
         except ConfigurationError:
             return None
         for line in text.splitlines():

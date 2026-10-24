@@ -44,8 +44,8 @@ class _RecordingShortcuts:
         self.created = (tuple(launch), icon)
         return Path("/desktop/lsdsk.desktop")
 
-    def desktop_dir(self) -> Path:
-        return Path("/desktop")
+    def no_desktop_reason(self) -> str:
+        return f"no desktop folder at {Path('/desktop')}"
 
 
 def _seams(

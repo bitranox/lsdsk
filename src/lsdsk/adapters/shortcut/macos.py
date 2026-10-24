@@ -41,6 +41,10 @@ class MacosDesktopShortcut:
         """Whether the Desktop already carries the launcher."""
         return (self.desktop_dir() / _FILENAME).is_file()
 
+    def no_desktop_reason(self) -> str:
+        """Why there is no desktop: on macOS only a missing ``~/Desktop``."""
+        return f"no desktop folder at {self.desktop_dir()}"
+
     def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
         """Write the ``.command`` and make it executable.
 

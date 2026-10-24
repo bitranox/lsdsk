@@ -197,7 +197,7 @@ def install_shortcut(
     # Refused before uv could be installed for it: a headless server gains nothing from either.
     if not seams.shortcuts.has_desktop():
         fail(
-            f"no desktop folder at {seams.shortcuts.desktop_dir()}, so there is nowhere to put a shortcut",
+            f"{seams.shortcuts.no_desktop_reason()}, so there is nowhere to put a shortcut",
             ExitCode.CONFIG_ERROR,
             output_format=output_format,
         )
