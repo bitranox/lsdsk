@@ -55,20 +55,20 @@ interactive view cycles the same setting with `d` on its topology page. Every
 view opens on `storage-only` and says in a line above the tree what it draws and
 how to ask for the rest.
 
-| Option                                                    | Does                                                                     |
-|-----------------------------------------------------------|--------------------------------------------------------------------------|
-| `--replay FILE`                                           | Render a capture instead of reading this machine                         |
-| `--history-file F`                                        | Read and write counter history there instead of the per-user state file  |
-| `--no-record`                                             | Judge counters against history without adding this reading to it         |
-| `--expand-virtual`                                        | List every kernel-virtual device instead of tallying them in one line    |
-| `--tree-density storage-only\|storage-and-siblings\|full` | How much of the PCI fabric every view draws (default `storage-only`)     |
-| `--no-elevate`                                            | Never ask for Administrator or root before the interactive view opens    |
-| `--profile NAME`                                          | Load a named configuration profile                                       |
-| `--set S.K=V`                                             | Override one configuration value, repeatable                             |
-| `--env-file FILE`                                         | Read that `.env` rather than searching upward from the working directory |
-| `--traceback` / `--no-traceback`                          | Print the Python traceback on an error instead of one line               |
-| `--version`                                               | Print the version and exit                                               |
-| `--help` / `-h`                                           | Print that command's own options and exit                                |
+| Option                                                    | Does                                                                          |
+|-----------------------------------------------------------|-------------------------------------------------------------------------------|
+| `--replay FILE`                                           | Render a capture instead of reading this machine                              |
+| `--history-file F`                                        | Read and write counter history there instead of the per-user state file       |
+| `--no-record`                                             | Judge counters against history without adding this reading to it              |
+| `--expand-virtual`                                        | List every kernel-virtual device instead of tallying them in one line         |
+| `--tree-density storage-only\|storage-and-siblings\|full` | How much of the PCI fabric every view draws (default `storage-only`)          |
+| `--no-elevate`                                            | Never ask for Administrator or root before the interactive view opens         |
+| `--profile NAME`                                          | Load a named configuration profile                                            |
+| `--set S.K=V`                                             | Override one configuration value, repeatable                                  |
+| `--env-file FILE`                                         | Read that `.env` rather than searching upward from the working directory      |
+| `--traceback` / `--no-traceback`                          | Print the Python traceback on an error instead of one line                    |
+| `--version`                                               | Print the version and exit                                                    |
+| `--help` / `-h`                                           | Print that command's own options and exit, even while a config file is broken |
 
 `lsdsk disks` takes one option of its own. The `wwn` column is held to
 `display.wwn_width` characters, because an NVMe WWN is five times the length of

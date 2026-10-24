@@ -275,8 +275,9 @@ Werkzeug liest, eine Nutzung fand. Eine an eine virtuelle Maschine durchgereicht
 exportierter ZFS-Pool oder eine Platte, die von etwas genutzt wird, das lsdsk nicht liest, können
 das alle ebenso zeigen. Ein Laufwerk in einem Windows-Storage-Spaces-Pool wird gelesen wie jedes
 andere Laufwerk und zeigt die virtuelle Platte des Pools, die es trägt, etwa
-`space:PhysicalDrive4 -> F:\`: Windows blendet ein Laufwerk im Pool aus der gewöhnlichen
-Plattenliste aus, und lsdsk liest es aus der Liste, in der Windows solche Laufwerke führt. Die
+`space:PhysicalDrive4 -> F:` (eine solche Nutzung je Space, wo ein Laufwerk mehrere trägt): Windows
+blendet ein Laufwerk im Pool aus der gewöhnlichen Plattenliste aus, und lsdsk liest es aus der
+Liste, in der Windows solche Laufwerke führt. Die
 virtuelle Platte selbst trägt eine Verweigerung `pool-members` nur dann, wenn keines ihrer
 Laufwerke gefunden und ihr zugeordnet werden konnte; ein solcher Scan ist dann unvollständig.
 

@@ -240,8 +240,9 @@ the mounts reached through it: the device is seen, what sits on its unread parti
 use. A disk passed through to a virtual machine, an exported ZFS pool, or a disk in use by
 something outside what lsdsk reads can all show it. A drive in a Windows Storage Spaces pool is
 read like any other drive and shows the pool's virtual disk it backs, such as
-`space:PhysicalDrive4 -> F:\`: Windows hides a pooled drive from the ordinary disk list, and lsdsk
-reads it from the list Windows keeps such drives in. The virtual disk itself carries a
+`space:PhysicalDrive4 -> F:` (one such use per Space where a drive backs several): Windows hides a
+pooled drive from the ordinary disk list, and lsdsk reads it from the list Windows keeps such
+drives in. The virtual disk itself carries a
 `pool-members` refusal only when none of its drives could be found and linked to it, and such a
 scan is then incomplete.
 

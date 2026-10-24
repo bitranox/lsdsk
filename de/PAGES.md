@@ -75,7 +75,7 @@ Startmarkierung und die Einhängepunkte, den Pool oder die Struktur, zu der sie 
 `boot zfs:rpool` oder `lvm:vg0 -> /var`. `not mounted` heißt nicht, dass die Platte gefahrlos
 gelöscht werden kann: Eine an eine virtuelle Maschine durchgereichte Platte oder ein exportierter
 ZFS-Pool kann es ebenso zeigen. Ein Laufwerk in einem Windows-Storage-Spaces-Pool (Speicherplätze)
-nennt die virtuelle Platte des Pools, die es trägt, etwa `space:PhysicalDrive4 -> F:\`. Siehe
+nennt die virtuelle Platte des Pools, die es trägt, etwa `space:PhysicalDrive4 -> F:`. Siehe
 [FINDINGS.md](FINDINGS.md#was-eine-platte-nutzt-und-was-not-mounted-bedeutet) für die genauen
 Bedingungen, unter denen `not mounted` gilt und wann stattdessen `-` steht.
 
