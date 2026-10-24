@@ -438,6 +438,8 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
         # The offer runs before elevation on the interactive path and not at all
         # where the page is printed; `order` below pins both.
         offer=note_offer,
+        # A process that is not elevated, so the offer this test orders is made.
+        already_elevated=lambda: False,
     )
 
     if expect == "tui":

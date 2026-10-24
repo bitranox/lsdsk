@@ -41,7 +41,7 @@ from lsdsk.adapters.config.tunables import (
     get_thresholds,
 )
 from lsdsk.adapters.hw import snapshot as snapshot_adapter
-from lsdsk.adapters.hw.elevation import elevate_for_the_view
+from lsdsk.adapters.hw.elevation import elevate_for_the_view, process_is_elevated
 from lsdsk.adapters.render import report, theme
 from lsdsk.adapters.render.tables import counter_legend
 from lsdsk.domain.diagnostics import count_by_severity, register_default_links
@@ -60,7 +60,7 @@ from ..exit_codes import ExitCode
 from ..typed_click import NonEmptyPath, option
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from lsdsk.adapters.history.store import HistoryRead
     from lsdsk.application.ports import ElevateForTheView
@@ -280,6 +280,10 @@ def resolve_tunables(ctx: click.Context) -> Tunables:
     # this one flag, and the relaunched copy must never ask a second time.
     if cli_context.no_elevate or cli_context.elevated_relaunch:
         display = display.with_changes(auto_elevate=False)
+    # Nor offer the desktop shortcut a second time: the person's own run already
+    # asked, and an answer given here would be written by root into their config.
+    if cli_context.elevated_relaunch:
+        display = display.with_changes(offer_desktop_shortcut=False)
     return Tunables(get_thresholds(config), display)
 
 
@@ -945,6 +949,7 @@ class Collaborators(NamedTuple):
     analyse: ReadsTheMachine
     elevate: ElevateForTheView
     offer: OffersTheShortcut
+    already_elevated: Callable[[], bool]
 
 
 def ask_before_the_view(elevate: ElevateForTheView, replay: Path | None, display: DisplaySettings) -> Elevation:
@@ -969,6 +974,34 @@ def ask_before_the_view(elevate: ElevateForTheView, replay: Path | None, display
     if elevation.state is ElevationState.RELAUNCHED:
         raise SystemExit(elevation.exit_code if elevation.exit_code is not None else ExitCode.SUCCESS)
     return elevation
+
+
+def the_offer_is_made(display: DisplaySettings, *, already_elevated: bool) -> bool:
+    """Whether this process offers the desktop shortcut, decided once before the view.
+
+    A process that is Administrator or root already never makes the offer: an
+    answer given there is written by that account into the person's own
+    configuration directory, and a root-owned ``config.toml`` there makes every
+    later unprivileged run refuse to read it. The relaunched copy has the offer
+    turned off already, by its marker (:func:`resolve_tunables`), because the
+    person's own run asked before it started the copy.
+
+    Args:
+        display: The layout values this run resolved; ``offer_desktop_shortcut``
+            is the configured answer.
+        already_elevated: Whether this process holds Administrator or root, the
+            same answer the elevation question reads.
+
+    Returns:
+        True when the configuration allows the offer and the process is not elevated.
+
+    Example:
+        >>> the_offer_is_made(DisplaySettings(), already_elevated=True)
+        False
+        >>> the_offer_is_made(DisplaySettings(), already_elevated=False)
+        True
+    """
+    return display.offer_desktop_shortcut and not already_elevated
 
 
 def run_default_view(
@@ -1029,7 +1062,8 @@ def run_default_view(
     laid_out = display if display is not None else DisplaySettings()
     # Offer the desktop shortcut before elevation: an elevated relaunch opens in
     # its own window on Windows, so asking after it would ask where nobody waits.
-    called.offer(laid_out)
+    if the_offer_is_made(laid_out, already_elevated=called.already_elevated()):
+        called.offer(laid_out)
     elevation = ask_before_the_view(called.elevate, replay, laid_out)
     with lib_log_rich.runtime.bind(job_id="cli-tui", extra={"command": "tui"}):
         inventory, findings, read = called.analyse(replay, OutputFormat.HUMAN, resolved, thresholds)
@@ -1051,7 +1085,7 @@ def the_real_collaborators(elevate: ElevateForTheView) -> Collaborators:
             group's container decides it rather than this module.
 
     Returns:
-        The four this module reaches for when nothing was substituted.
+        The collaborators this module reaches for when nothing was substituted.
     """
     from lsdsk.adapters.tui import LsdskApp  # noqa: PLC0415 - keeps textual off the fast path
 
@@ -1059,7 +1093,12 @@ def the_real_collaborators(elevate: ElevateForTheView) -> Collaborators:
     from .shortcut import offer_shortcut  # noqa: PLC0415 - deferred: keeps rich.prompt and tomlkit off the fast path
 
     return Collaborators(
-        report=run_default_report, open_view=LsdskApp, analyse=analyse, elevate=elevate, offer=offer_shortcut
+        report=run_default_report,
+        open_view=LsdskApp,
+        analyse=analyse,
+        elevate=elevate,
+        offer=offer_shortcut,
+        already_elevated=process_is_elevated,
     )
 
 
@@ -1782,5 +1821,6 @@ __all__ = [
     "run_default_view",
     "somebody_is_sitting_at_it",
     "streams_that_are_not_terminals",
+    "the_offer_is_made",
     "the_real_collaborators",
 ]
