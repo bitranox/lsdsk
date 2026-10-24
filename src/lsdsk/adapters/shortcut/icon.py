@@ -9,7 +9,7 @@ icon replaces the old one.
 
 The source is resolved through :mod:`importlib.resources` rather than a path
 built from ``__file__``, because the package may be installed read-only or
-zipped. The destination directory is the one :func:`user_config_path` resolves,
+zipped. The destination directory is the one :func:`user_config_path` names,
 so no path is guessed here, and the write goes through the shared atomic writer,
 so a failed copy leaves any previous icon untouched.
 
@@ -55,8 +55,8 @@ def copy_shipped_icon() -> Path:
     Raises:
         OSError: The icon could not be written - a full disk or a permission
             wall. Any previous copy is left untouched.
-        FileNotFoundError: The shipped default configuration is missing, so the
-            per-user directory cannot be derived.
+        NoUserConfigPathError: No user configuration directory can be named on
+            this machine (an ``OSError``, so it is a failed write like the rest).
     """
     body = (resources.files("lsdsk") / "assets" / "icon" / _SHIPPED_ICON).read_bytes()
     destination = user_config_path().parent / _USER_ICON_NAME

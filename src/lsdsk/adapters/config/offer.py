@@ -25,11 +25,22 @@ from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, cast
 
 import tomlkit
-from lib_layered_config import deploy_config_paths
+
+# The resolver and the deploy strategies are the code ``config-deploy`` and the
+# loader run themselves, reached directly because the public
+# ``deploy_config_paths`` answers with RESOLVED paths: through a symlinked
+# ``config.toml`` those carry the link target's name, so the user file cannot
+# be picked out of them by name (``profiles.py`` reaches the resolver the same way).
+from lib_layered_config.adapters.path_resolvers.default import DefaultPathResolver
+from lib_layered_config.examples.deploy import (
+    DeploymentStrategy,
+    LinuxDeployment,
+    MacDeployment,
+    WindowsDeployment,
+)
 
 from lsdsk import __init__conf__
 from lsdsk.adapters.atomicfile import replace_atomically
-from lsdsk.adapters.config.loader import get_default_config_path
 from lsdsk.adapters.config.tunables import DISPLAY_SECTION
 
 if TYPE_CHECKING:
@@ -45,30 +56,68 @@ _USER_CONFIG_NAME = "config.toml"
 _USER_FILE_MODE = 0o600
 
 
-def user_config_path() -> Path:
+class NoUserConfigPathError(OSError):
+    """No user configuration file can be named on this machine, so nothing is written there."""
+
+
+def user_config_path(*, platform: str | None = None) -> Path:
     """The user ``config.toml`` the loader reads, whether or not it exists yet.
 
-    Resolved through the same library call the deploy uses, so it lands in the
-    one place this platform's user layer is read from - Linux ``~/.config``,
-    macOS ``~/Library/Application Support``, Windows ``%APPDATA%`` - rather than
-    a path guessed here.
+    Named by the deploy's own user destination, so it lands in the one place
+    this platform's user layer is read from - Linux ``~/.config``, macOS
+    ``~/Library/Application Support``, Windows ``%APPDATA%`` - rather than a
+    path guessed here. The path is NOT resolved: where ``config.toml`` is a
+    symlink, this is the link, and its directory is the configuration directory
+    the reader sees.
+
+    Args:
+        platform: ``sys.platform`` to answer for; this machine's when not given.
 
     Returns:
         The absolute path of the user configuration file.
 
     Raises:
-        FileNotFoundError: The shipped default configuration is missing, so the
-            library cannot derive the companion paths.
+        NoUserConfigPathError: The configuration library reads no user layer on
+            ``platform``, or the base it would use is relative (an
+            ``XDG_CONFIG_HOME`` such as ``config``), which would put the file
+            wherever lsdsk happened to be started.
+
+    Example:
+        >>> user_config_path().name
+        'config.toml'
     """
-    paths = deploy_config_paths(
-        get_default_config_path(),
+    resolver = DefaultPathResolver(
         vendor=__init__conf__.LAYEREDCONF_VENDOR,
         app=__init__conf__.LAYEREDCONF_APP,
         slug=__init__conf__.LAYEREDCONF_SLUG,
         profile=None,
-        targets=["user"],
+        platform=platform,
     )
-    return next(path for path in paths if path.name == _USER_CONFIG_NAME)
+    deployment = _deployment_for(resolver)
+    if deployment is None:
+        raise NoUserConfigPathError(f"lsdsk reads no user configuration on {resolver.platform}")
+    destination = deployment.destination_for("user")
+    if destination is None or not destination.is_absolute():
+        raise NoUserConfigPathError(
+            f"the user configuration directory {destination} is not an absolute path; "
+            "set XDG_CONFIG_HOME to an absolute path or unset it"
+        )
+    return destination
+
+
+def _deployment_for(resolver: DefaultPathResolver) -> DeploymentStrategy | None:
+    """The deploy strategy for the resolver's platform, or ``None`` where the loader reads no user layer.
+
+    Keyed on the resolver's own read strategy, so a platform the loader reads no
+    user file on gets no path to write one to either.
+    """
+    if resolver.strategy is None:
+        return None
+    if resolver.platform.startswith("win"):
+        return WindowsDeployment(resolver)
+    if resolver.platform == "darwin":
+        return MacDeployment(resolver)
+    return LinuxDeployment(resolver)
 
 
 def disable_offer() -> Path:
@@ -78,10 +127,15 @@ def disable_offer() -> Path:
     either case every other key and comment is left exactly as it was. The write
     is atomic, so a failure leaves the previous file intact.
 
+    Where ``config.toml`` is a symlink, the file it leads to is edited and the
+    link is kept.
+
     Returns:
-        The path written.
+        The path written: the link's target where ``config.toml`` is a link.
 
     Raises:
+        NoUserConfigPathError: No user configuration file can be named here
+            (see :func:`user_config_path`); nothing is written.
         OSError: The file could not be written - a full disk, a permission wall,
             or a destination that is not a regular file. The previous file, if
             any, is untouched.
@@ -91,7 +145,9 @@ def disable_offer() -> Path:
         tomllib.TOMLDecodeError: The written file did not round-trip back to valid
             TOML, caught here at the write rather than later as an unreadable layer.
     """
-    path = user_config_path()
+    # Resolved for the write only: a rename replaces a symlink rather than
+    # following it, and a reader's dotfile-manager link must survive the opt-out.
+    path = user_config_path().resolve()
     document = _load_or_new(path)
     _set_offer_false(document)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,4 +180,4 @@ def _set_offer_false(document: tomlkit.TOMLDocument) -> None:
     display[_OFFER_KEY] = False
 
 
-__all__ = ["disable_offer", "user_config_path"]
+__all__ = ["NoUserConfigPathError", "disable_offer", "user_config_path"]
