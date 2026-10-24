@@ -81,7 +81,7 @@ def test_only_log_lines_of_the_dotenv_reach_the_environment(
     (tmp_path / ".env").write_text(f"{LEVEL}=WARNING\n{PREFIXED_MODE}=0o604\n{UNRELATED}=1\n", encoding="utf-8")
     clean_environment.chdir(tmp_path)
 
-    setup.load_log_variables(None)
+    setup.load_log_variables(str(tmp_path / ".env"))
 
     assert os.environ.get(LEVEL) == "WARNING"
     assert PREFIXED_MODE not in os.environ
@@ -93,7 +93,7 @@ def test_a_log_variable_already_set_is_not_replaced(tmp_path: Path, clean_enviro
     clean_environment.chdir(tmp_path)
     clean_environment.setenv(LEVEL, "ERROR")
 
-    setup.load_log_variables(None)
+    setup.load_log_variables(str(tmp_path / ".env"))
 
     assert os.environ[LEVEL] == "ERROR"
 
@@ -130,31 +130,16 @@ def test_a_log_line_in_the_named_env_file_reaches_logging(
     assert f"ignoring environment variable {LEVEL}=nope" in err, err
 
 
-def test_the_upward_search_stops_at_the_project_root(tmp_path: Path, clean_environment: pytest.MonkeyPatch) -> None:
+def test_no_dotenv_is_read_where_the_configuration_read_none(
+    tmp_path: Path, clean_environment: pytest.MonkeyPatch
+) -> None:
+    """Logging has no search of its own: ``None`` means the loader read no ``.env``, so neither does it."""
     (tmp_path / ".env").write_text(f"{LEVEL}=WARNING\n", encoding="utf-8")
-    project = tmp_path / "project"
-    (project / "src").mkdir(parents=True)
-    (project / "pyproject.toml").write_text("", encoding="utf-8")
-    clean_environment.chdir(project / "src")
+    clean_environment.chdir(tmp_path)
 
     setup.load_log_variables(None)
 
     assert LEVEL not in os.environ
-
-
-def test_the_nearest_dotenv_above_the_working_directory_is_found(
-    tmp_path: Path, clean_environment: pytest.MonkeyPatch
-) -> None:
-    """The control for the project-root stop: below a root, the search does climb."""
-    project = tmp_path / "project"
-    (project / "src").mkdir(parents=True)
-    (project / "pyproject.toml").write_text("", encoding="utf-8")
-    (project / ".env").write_text(f"{LEVEL}=WARNING\n", encoding="utf-8")
-    clean_environment.chdir(project / "src")
-
-    setup.load_log_variables(None)
-
-    assert os.environ.get(LEVEL) == "WARNING"
 
 
 def test_a_dotenv_that_is_not_utf_8_is_passed_over(tmp_path: Path, clean_environment: pytest.MonkeyPatch) -> None:
@@ -162,6 +147,58 @@ def test_a_dotenv_that_is_not_utf_8_is_passed_over(tmp_path: Path, clean_environ
     (tmp_path / ".env").write_bytes(f"{LEVEL}=WARN\xe4\n".encode("latin-1"))
     clean_environment.chdir(tmp_path)
 
-    setup.load_log_variables(None)
+    setup.load_log_variables(str(tmp_path / ".env"))
 
     assert LEVEL not in os.environ
+
+
+#: A .env line the configuration loader takes as display.wwn_width, refused so a warning names it.
+DISPLAY_LINE = "DISPLAY__WWN_WIDTH=wide"
+#: What a run prints when the configuration loader read that line.
+DISPLAY_READ = "display.wwn_width"
+#: What a run prints when logging read the LOG_ line of the same file.
+LEVEL_READ = f"ignoring environment variable {LEVEL}=nope"
+
+
+def test_logging_reads_the_dotenv_the_configuration_read_past_a_project_root(
+    tmp_path: Path,
+    clean_environment: pytest.MonkeyPatch,
+    managed_traceback_state: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """One run, one ``.env``: logging used to stop its own search at a ``.git`` the loader climbs past.
+
+    The configuration loader searches from the working directory up to the filesystem root, so
+    from ``A/sub`` (a repository) it read ``A/.env`` - its display line is reported - while
+    logging stopped at ``sub``'s ``.git`` and never saw the ``LOG_`` line of the same file.
+    """
+    holder = tmp_path / "A"
+    (holder / "sub" / ".git").mkdir(parents=True)
+    (holder / ".env").write_text(f"{LEVEL}=nope\n{DISPLAY_LINE}\n", encoding="utf-8", newline="\n")
+    clean_environment.chdir(holder / "sub")
+
+    code, err = _run(["config"], capsys)
+
+    assert code == 0, err
+    assert DISPLAY_READ in err, "the premise: the configuration loader read A/.env"
+    assert LEVEL_READ in err, err
+
+
+def test_logging_reads_the_per_user_dotenv_the_configuration_read(
+    tmp_path: Path,
+    user_config_dir: Path,
+    clean_environment: pytest.MonkeyPatch,
+    managed_traceback_state: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The loader's last place to look is the per-user ``.env``, which logging never looked in."""
+    user_config_dir.mkdir(parents=True, exist_ok=True)
+    (user_config_dir / ".env").write_text(f"{LEVEL}=nope\n{DISPLAY_LINE}\n", encoding="utf-8", newline="\n")
+    (tmp_path / "cwd").mkdir()
+    clean_environment.chdir(tmp_path / "cwd")
+
+    code, err = _run(["config"], capsys)
+
+    assert code == 0, err
+    assert DISPLAY_READ in err, "the premise: the configuration loader read the per-user .env"
+    assert LEVEL_READ in err, err

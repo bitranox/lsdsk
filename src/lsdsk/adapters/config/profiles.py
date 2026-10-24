@@ -135,6 +135,43 @@ def contributed_layers(config: Config, profile: str) -> tuple[str, ...]:
     return tuple(paths)
 
 
+#: The provenance layer a ``.env`` file's values are recorded under.
+_DOTENV_LAYER = "dotenv"
+
+
+def dotenv_the_run_read(config: Config) -> str | None:
+    """The ``.env`` file the configuration loader read for `config`, or ``None`` when it read none.
+
+    The loader settles which ``.env`` a run reads - an explicit ``--env-file``, or the first one
+    upward from the working directory, then the per-user one - and records it as the path of
+    every key that file gave. Logging takes its ``LOG_*`` lines from that same file, so asking the
+    provenance rather than searching again means the two cannot disagree. A ``LOG_*`` line is a
+    key of the file that no other layer outranks, so a file holding one is always found here; a
+    file that gave no surviving key has no ``LOG_*`` line to take.
+
+    Args:
+        config: The configuration as loaded, with its provenance.
+
+    Returns:
+        The file's path as the loader recorded it, or ``None``.
+
+    Example:
+        >>> from lib_layered_config import Config
+        >>> meta = {"display.wwn_width": {"layer": "dotenv", "path": "/x/.env", "key": "display.wwn_width"}}
+        >>> dotenv_the_run_read(Config({"display": {"wwn_width": 3}}, meta))
+        '/x/.env'
+        >>> dotenv_the_run_read(Config({}, {})) is None
+        True
+    """
+    for key in _dotted_keys(config.as_dict()):
+        origin = config.origin(key)
+        if origin is not None and origin.get("layer") == _DOTENV_LAYER:
+            path = origin.get("path")
+            if isinstance(path, str):
+                return path
+    return None
+
+
 def _is_a_file_of(path: str, profile: str) -> bool:
     """Whether `path` lies in the directory the loader inserts for `profile`."""
     wanted = (PROFILE_SEGMENT, profile)
@@ -183,6 +220,7 @@ def nearest_profile(typed: str, known: Iterable[str]) -> str | None:
 __all__ = [
     "PROFILE_SEGMENT",
     "contributed_layers",
+    "dotenv_the_run_read",
     "existing_profiles",
     "nearest_profile",
 ]

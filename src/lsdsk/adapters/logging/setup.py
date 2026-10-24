@@ -215,40 +215,6 @@ def _report_once(notes: Sequence[str]) -> None:
 
 #: The variables lib_log_rich reads itself; the only lines of a ``.env`` logging takes.
 _LOG_VARIABLE_PREFIX: Final = "LOG_"
-#: A directory holding one of these is a project root: the upward ``.env`` search stops there.
-_PROJECT_MARKERS: Final = ("pyproject.toml", ".git")
-
-
-def _dotenv_in(directory: Path) -> tuple[Path | None, bool]:
-    """The ``.env`` in ``directory``, and whether the search stops there.
-
-    A directory that cannot be read is passed over: before Python 3.14 a path
-    behind a directory without search permission raises rather than answering
-    False.
-    """
-    try:
-        candidate = directory / ".env"
-        if candidate.is_file():
-            return candidate, True
-        return None, any((directory / marker).exists() for marker in _PROJECT_MARKERS)
-    except OSError:
-        return None, False
-
-
-def _nearest_dotenv() -> Path | None:
-    """The ``.env`` in the working directory or the nearest parent, up to the project root.
-
-    Walks by path alone, with no ``chdir``.
-    """
-    try:
-        start = Path.cwd()
-    except OSError:
-        return None
-    for directory in (start, *start.parents):
-        found, stop = _dotenv_in(directory)
-        if found is not None or stop:
-            return found
-    return None
 
 
 def load_log_variables(dotenv_path: str | None) -> None:
@@ -260,17 +226,22 @@ def load_log_variables(dotenv_path: str | None) -> None:
     mode from the environment and never from a ``.env``. A file that cannot be
     read or decoded is passed over: the configuration loader reports it.
 
+    No search of its own: the file is the one the configuration loader read
+    (:func:`~lsdsk.adapters.config.profiles.dotenv_the_run_read`), so logging and
+    the configuration of one run cannot take their lines from two different files.
+    A search here once stopped at a project root the loader climbs past and never
+    looked in the per-user ``.env`` the loader falls back to.
+
     Args:
-        dotenv_path: The ``.env`` the configuration was loaded from
-            (``--env-file``), or ``None`` for the nearest one from the working
-            directory up to the project root.
+        dotenv_path: The ``.env`` the configuration loader read, or ``None`` when
+            it read none, which leaves the environment as it is.
 
     Example:
-        >>> load_log_variables(None)  # doctest: +SKIP
+        >>> load_log_variables(None)
     """
-    path = Path(dotenv_path) if dotenv_path is not None else _nearest_dotenv()
-    if path is None:
+    if dotenv_path is None:
         return
+    path = Path(dotenv_path)
     try:
         values = dotenv_values(path, encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -293,9 +264,8 @@ def init_logging(config: Config, *, dotenv_path: str | None = None) -> None:
     Args:
         config: Already-loaded layered configuration object containing logging
             settings in the [lib_log_rich] section.
-        dotenv_path: The ``.env`` the configuration was loaded from (``--env-file``),
-            or ``None`` for the nearest one from the working directory up to the
-            project root.
+        dotenv_path: The ``.env`` the configuration loader read, or ``None`` when it
+            read none.
 
     Side Effects:
         Copies the ``LOG_*`` lines of that .env into the process environment on first

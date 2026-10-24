@@ -36,6 +36,7 @@ from lsdsk.adapters.config.loader import (
     require_an_intact_installation,
 )
 from lsdsk.adapters.config.overrides import apply_overrides
+from lsdsk.adapters.config.profiles import dotenv_the_run_read
 from lsdsk.adapters.hw.elevation import RELAUNCH_MARKER
 from lsdsk.domain.enums import DeployTarget, TreeDensity
 
@@ -587,6 +588,8 @@ def cli(
     request = _read_subcommand_request(ctx)
     profile = request.profile if request.profile is not None else profile
     config = _load_or_refuse(ctx, services, profile=profile, env_file=env_file, overwrites=request.overwrites)
+    # Before the --set overrides, which replace the provenance of each key they give.
+    dotenv_read = dotenv_the_run_read(config)
     report_profile_that_named_nothing(config, profile)
     report_keys_nothing_reads(config)
     config = _apply_cli_overrides(config, set_overrides)
@@ -595,7 +598,7 @@ def cli(
     # both surfaces have to be read once the two are merged.
     _refuse_an_ambiguous_mode(ctx, config)
     report_values_nothing_uses(config, history_file=history_file)
-    services.init_logging(config, dotenv_path=env_file)
+    services.init_logging(config, dotenv_path=dotenv_read)
     store_cli_context(
         ctx,
         CLIContext(
