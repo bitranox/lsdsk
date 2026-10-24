@@ -8,6 +8,7 @@ platform and nothing writes to the developer's own machine.
 from __future__ import annotations
 
 import io
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -15,8 +16,9 @@ import pytest
 
 from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, offer_shortcut
 from lsdsk.adapters.config.tunables import DisplaySettings
+from lsdsk.adapters.uv_bootstrap import UvInstallResult
 from lsdsk.domain.enums import ShortcutChoice
-from lsdsk.domain.shortcut import uvx_launch_args
+from lsdsk.domain.shortcut import manual_install_line, uvx_launch_args
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -52,12 +54,13 @@ def _seams(
     uvx: Path | None = None,
     lsdsk: Path | None = None,
     installed: Path | None = None,
+    installer_exit: int = 0,
 ) -> ShortcutSeams:
     return ShortcutSeams(
         shortcuts=shortcuts,
         uvx=lambda: uvx,
         installed_lsdsk=lambda: lsdsk,
-        install_uv=lambda: installed,
+        install_uv=lambda: UvInstallResult(exit_code=installer_exit, uvx=installed),
     )
 
 
@@ -262,3 +265,23 @@ def test_each_step_of_the_offer_is_set_off_by_a_blank_line(capsys: pytest.Captur
     assert before_install.startswith("\nlsdsk runs through uv")
     assert before_install.endswith("\n\n"), "the install question needs a blank line above it"
     assert capsys.readouterr().out.startswith("\nShortcut created at")
+
+
+def test_a_failed_installer_in_the_offer_names_its_exit_code_and_creates_nothing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    shortcuts = _RecordingShortcuts()
+    ask_choice, ask_install = _answers(ShortcutChoice.CREATE, install=True)
+    offer_shortcut(
+        DisplaySettings(),
+        ask_choice=ask_choice,
+        ask_install=ask_install,
+        seams=_seams(shortcuts, uvx=None, lsdsk=None, installed=Path("/root/.local/bin/uvx"), installer_exit=7),
+        disable=_DisableRecorder(),
+    )
+
+    assert shortcuts.created is None
+    said = capsys.readouterr()
+    assert "the uv installer failed (exit 7)" in said.err
+    assert manual_install_line(sys.platform) in said.err
+    assert "uv was installed" not in said.out + said.err

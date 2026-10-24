@@ -100,6 +100,7 @@ def test_the_offer_reports_a_display_entry_that_is_not_a_table_as_a_warning(
 
     from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, offer_shortcut
     from lsdsk.adapters.config.tunables import DisplaySettings
+    from lsdsk.adapters.uv_bootstrap import UvInstallResult
     from lsdsk.domain.enums import ShortcutChoice
 
     class _Desktop:
@@ -117,7 +118,12 @@ def test_the_offer_reports_a_display_entry_that_is_not_a_table_as_a_warning(
 
     path = seed_user_config("[[display]]\npiped_width = 200\n")
     before = path.read_bytes()
-    seams = ShortcutSeams(shortcuts=_Desktop(), uvx=lambda: None, installed_lsdsk=lambda: None, install_uv=lambda: None)
+    seams = ShortcutSeams(
+        shortcuts=_Desktop(),
+        uvx=lambda: None,
+        installed_lsdsk=lambda: None,
+        install_uv=lambda: UvInstallResult(exit_code=0, uvx=None),
+    )
 
     offer_shortcut(DisplaySettings(), ask_choice=lambda: ShortcutChoice.NEVER, seams=seams)
 

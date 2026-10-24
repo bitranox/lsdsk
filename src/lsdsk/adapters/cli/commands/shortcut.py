@@ -36,10 +36,10 @@ from lsdsk.adapters.config.offer import DisplayNotATableError, disable_offer
 from lsdsk.adapters.shortcut.icon import copy_shipped_icon
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
 from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
+from lsdsk.adapters.uv_bootstrap import UvInstallResult, uvx_path
 from lsdsk.adapters.uv_bootstrap import install_uv as run_uv_installer
-from lsdsk.adapters.uv_bootstrap import uvx_path
 from lsdsk.domain.enums import ActionCommand, OutputFormat, ShortcutChoice
-from lsdsk.domain.shortcut import consent_text, plan_launch, should_offer
+from lsdsk.domain.shortcut import consent_text, manual_install_line, plan_launch, should_offer
 
 from .. import safe_console
 from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION
@@ -57,6 +57,15 @@ if TYPE_CHECKING:
 #: Said when an install reports success but uvx is still not resolvable in this
 #: shell - a PATH that a new shell will pick up, shared by the command and the offer.
 _UVX_STILL_MISSING = "uv was installed but uvx is still not on PATH; open a new shell and run 'lsdsk install-shortcut'."
+
+
+def _installer_failed(exit_code: int) -> str:
+    """What a non-zero installer is said as, by the command and the offer alike."""
+    return (
+        f"the uv installer failed (exit {exit_code}), so there is no launcher for the shortcut. "
+        f"Install uv yourself with:\n\n  {manual_install_line(sys.platform)}\n\n"
+        "then run 'lsdsk install-shortcut'."
+    )
 
 
 class InstallShortcutResult(ActionResult):
@@ -79,7 +88,8 @@ class ShortcutSeams:
         shortcuts: The platform's shortcut writer.
         uvx: Resolves the ``uvx`` path, or ``None``.
         installed_lsdsk: Resolves a plain ``lsdsk`` launcher on PATH, or ``None``.
-        install_uv: Installs uv and returns the ``uvx`` path if it is now resolvable.
+        install_uv: Installs uv and returns the installer's exit code with the
+            ``uvx`` path it now resolves to, if any.
         copy_icon: Copies the shipped icon into place and returns its path; the real
             copier by default, so a test can inject one that raises to drive the
             offer's degrade-to-iconless path without touching the module.
@@ -88,7 +98,7 @@ class ShortcutSeams:
     shortcuts: DesktopShortcuts
     uvx: Callable[[], Path | None]
     installed_lsdsk: Callable[[], Path | None]
-    install_uv: Callable[[], Path | None]
+    install_uv: Callable[[], UvInstallResult]
     copy_icon: Callable[[], Path] = copy_shipped_icon
 
 
@@ -123,7 +133,8 @@ def _resolve_launch(seams: ShortcutSeams, *, install_uv: bool, output_format: Ou
 
     Raises:
         SystemExit: When no launcher is available and ``--install-uv`` was not
-            given, or an install still left ``uvx`` unresolvable.
+            given, the installer failed, or an install still left ``uvx``
+            unresolvable.
     """
     plan = plan_launch(uvx=seams.uvx(), installed_lsdsk=seams.installed_lsdsk())
     if not plan.needs_uv:
@@ -135,7 +146,10 @@ def _resolve_launch(seams: ShortcutSeams, *, install_uv: bool, output_format: Ou
             ExitCode.CONFIG_ERROR,
             output_format=output_format,
         )
-    replan = plan_launch(uvx=seams.install_uv(), installed_lsdsk=seams.installed_lsdsk())
+    installed = seams.install_uv()
+    if installed.exit_code != 0:
+        fail(_installer_failed(installed.exit_code), ExitCode.CONFIG_ERROR, output_format=output_format)
+    replan = plan_launch(uvx=installed.uvx, installed_lsdsk=seams.installed_lsdsk())
     if replan.needs_uv:
         fail(_UVX_STILL_MISSING, ExitCode.CONFIG_ERROR, output_format=output_format)
     return replan.argv
@@ -318,7 +332,11 @@ def _offer_create(seams: ShortcutSeams, *, ask_install: Callable[[], bool]) -> N
         safe_console.echo(f"\n{consent_text(sys.platform)}\n")
         if not ask_install():
             return
-        plan = plan_launch(uvx=seams.install_uv(), installed_lsdsk=seams.installed_lsdsk())
+        installed = seams.install_uv()
+        if installed.exit_code != 0:
+            safe_console.echo(f"\n{_installer_failed(installed.exit_code)}", err=True)
+            return
+        plan = plan_launch(uvx=installed.uvx, installed_lsdsk=seams.installed_lsdsk())
         if plan.needs_uv:
             safe_console.echo(f"\n{_UVX_STILL_MISSING}")
             return

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,8 +24,9 @@ from lsdsk.adapters.cli.commands.shortcut import (
 from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
 from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
+from lsdsk.adapters.uv_bootstrap import UvInstallResult
 from lsdsk.domain.enums import OutputFormat
-from lsdsk.domain.shortcut import uvx_launch_args
+from lsdsk.domain.shortcut import manual_install_line, uvx_launch_args
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -59,12 +61,13 @@ def _seams(
     uvx: Path | None = None,
     lsdsk: Path | None = None,
     installed: Path | None = None,
+    installer_exit: int = 0,
 ) -> ShortcutSeams:
     return ShortcutSeams(
         shortcuts=shortcuts,
         uvx=lambda: uvx,
         installed_lsdsk=lambda: lsdsk,
-        install_uv=lambda: installed,
+        install_uv=lambda: UvInstallResult(exit_code=installer_exit, uvx=installed),
     )
 
 
@@ -256,3 +259,24 @@ def test_the_real_linux_adapter_writes_a_desktop_file_and_reports_it_as_json(
     assert envelope["command"] == "install-shortcut"
     assert envelope["data"]["shortcut"] == str(written)
     assert envelope["data"]["launch"] == list(uvx_launch_args("/usr/bin/uvx"))
+
+
+@pytest.mark.parametrize("installed", [None, Path("/root/.local/bin/uvx")], ids=["no-uvx-after", "uvx-after"])
+def test_a_failed_installer_is_reported_with_its_exit_code_and_the_manual_line(
+    installed: Path | None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A non-zero installer is a failure in its own words, never 'uv was installed but ...'."""
+    recording = _RecordingShortcuts()
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(
+            output_format=OutputFormat.JSON,
+            seams=_seams(recording, uvx=None, lsdsk=None, installed=installed, installer_exit=7),
+            install_uv=True,
+        )
+
+    assert leaving.value.code == ExitCode.CONFIG_ERROR
+    assert recording.created is None
+    message = json.loads(capsys.readouterr().out)["error"]["message"]
+    assert "the uv installer failed (exit 7)" in message
+    assert manual_install_line(sys.platform) in message
+    assert "uv was installed" not in message

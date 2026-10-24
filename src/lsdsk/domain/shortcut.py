@@ -86,8 +86,19 @@ def plan_launch(*, uvx: Path | None, installed_lsdsk: Path | None) -> LaunchPlan
     return LaunchPlan((), needs_uv=True)
 
 
-def _manual_install_line(platform: str) -> str:
-    """The one install command this platform's reader can run by hand."""
+def manual_install_line(platform: str) -> str:
+    """The one install command this platform's reader can run by hand.
+
+    Args:
+        platform: ``sys.platform`` of the machine the line is for.
+
+    Returns:
+        The command, built from the pinned installer URL.
+
+    Example:
+        >>> manual_install_line("linux").startswith("curl -LsSf https://astral.sh/uv/")
+        True
+    """
     if platform == "win32":
         return f'powershell -ExecutionPolicy ByPass -c "irm {UV_INSTALLER_URL_WINDOWS} | iex"'
     return f"curl -LsSf {UV_INSTALLER_URL_POSIX} | sh"
@@ -116,7 +127,7 @@ def consent_text(platform: str) -> str:
         "uv is not installed yet. lsdsk can install it for you now from the official installer at\n"
         "astral.sh, or you can install it yourself first:\n"
         "\n"
-        f"  {_manual_install_line(platform)}"
+        f"  {manual_install_line(platform)}"
     )
 
 
@@ -189,6 +200,7 @@ __all__ = [
     "UV_INSTALLER_VERSION",
     "LaunchPlan",
     "consent_text",
+    "manual_install_line",
     "plan_launch",
     "should_offer",
     "uvx_launch_args",

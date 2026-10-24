@@ -17,6 +17,7 @@ System Role:
 Contents:
     * :func:`uvx_path` - where ``uvx`` resolves, or ``None``.
     * :func:`install_uv` - run the pinned official installer, then re-resolve ``uvx``.
+    * :class:`UvInstallResult` - the installer's exit code and where ``uvx`` resolves after it.
 """
 
 from __future__ import annotations
@@ -27,12 +28,25 @@ import shutil
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from lsdsk.domain.shortcut import UV_INSTALLER_URL_POSIX, UV_INSTALLER_URL_WINDOWS
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+
+class UvInstallResult(NamedTuple):
+    """What an installer run came to.
+
+    Attributes:
+        exit_code: The installer's own exit code; anything but 0 is a failed
+            install, whatever ``uvx`` resolves to afterwards.
+        uvx: Where ``uvx`` resolves after the run, or ``None``.
+    """
+
+    exit_code: int
+    uvx: Path | None
 
 
 def uvx_path(*, which: Callable[[str], str | None] = shutil.which) -> Path | None:
@@ -73,13 +87,14 @@ def install_uv(
     run: Callable[[Sequence[str]], int] = _subprocess_run,
     platform: str = sys.platform,
     which: Callable[[str], str | None] = shutil.which,
-) -> Path | None:
-    """Run the pinned official uv installer, then report whether ``uvx`` is now resolvable.
+) -> UvInstallResult:
+    """Run the pinned official uv installer, then report its exit code and whether ``uvx`` resolves.
 
     The caller gates this on the reader's consent; it is never reached without a
-    yes. The installer puts ``uvx`` on ``PATH``, so the return value - the path
-    re-resolved after the run - is the signal the caller needs to decide whether
-    the shortcut can now be created.
+    yes. Both halves are returned because they answer different questions: the
+    exit code says whether the installer worked, and the re-resolved path says
+    whether THIS shell can see what it installed - a successful install whose
+    ``uvx`` a new shell will pick up is not a failed one.
 
     Args:
         run: Executes a command and returns its exit code; injectable for tests.
@@ -87,11 +102,10 @@ def install_uv(
         which: The ``uvx`` lookup, injectable for tests.
 
     Returns:
-        The path ``uvx`` resolves to after the install, or ``None`` when the
-        install left it unresolvable.
+        The installer's exit code and the path ``uvx`` resolves to after it.
     """
-    run(_installer_command(platform))
-    return uvx_path(which=which)
+    exit_code = run(_installer_command(platform))
+    return UvInstallResult(exit_code=exit_code, uvx=uvx_path(which=which))
 
 
-__all__ = ["install_uv", "uvx_path"]
+__all__ = ["UvInstallResult", "install_uv", "uvx_path"]

@@ -14,11 +14,16 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lsdsk.adapters.uv_bootstrap import install_uv, uvx_path
+from lsdsk.adapters.uv_bootstrap import UvInstallResult, install_uv, uvx_path
 from lsdsk.domain.shortcut import UV_INSTALLER_VERSION
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
+
+
+def _which_finds_uvx_at(found: str | None) -> Callable[[str], str | None]:
+    """A lookup that answers ``found`` for ``uvx`` and nothing for any other name, so a look for ``uv`` fails."""
+    return lambda name: found if name == "uvx" else None
 
 
 class _Recorder:
@@ -36,17 +41,17 @@ class _Recorder:
 @pytest.mark.os_agnostic
 def test_uvx_path_follows_what_which_finds() -> None:
     """Resolution is injected, so the answer is exactly what the lookup returned."""
-    assert uvx_path(which=lambda _name: None) is None
-    assert uvx_path(which=lambda _name: "/opt/bin/uvx") == Path("/opt/bin/uvx")
+    assert uvx_path(which=_which_finds_uvx_at(None)) is None
+    assert uvx_path(which=_which_finds_uvx_at("/opt/bin/uvx")) == Path("/opt/bin/uvx")
 
 
 @pytest.mark.os_agnostic
 def test_the_posix_installer_runs_the_pinned_astral_shell_script() -> None:
     """On POSIX the command fetches the pinned install.sh and pipes it to a shell."""
     runner = _Recorder()
-    result = install_uv(run=runner, platform="linux", which=lambda _name: "/opt/bin/uvx")
+    result = install_uv(run=runner, platform="linux", which=_which_finds_uvx_at("/opt/bin/uvx"))
 
-    assert result == Path("/opt/bin/uvx")
+    assert result == UvInstallResult(exit_code=0, uvx=Path("/opt/bin/uvx"))
     assert len(runner.commands) == 1
     command = runner.commands[0]
     assert command[0] == "sh"
@@ -58,9 +63,9 @@ def test_the_posix_installer_runs_the_pinned_astral_shell_script() -> None:
 def test_the_windows_installer_runs_the_pinned_astral_powershell_script() -> None:
     """On Windows the command fetches the pinned install.ps1 through PowerShell."""
     runner = _Recorder()
-    result = install_uv(run=runner, platform="win32", which=lambda _name: None)
+    result = install_uv(run=runner, platform="win32", which=_which_finds_uvx_at(None))
 
-    assert result is None  # the fake which still finds no uvx after the fake install
+    assert result.uvx is None  # the fake which still finds no uvx after the fake install
     command = runner.commands[0]
     assert command[0] == "powershell"
     assert f"https://astral.sh/uv/{UV_INSTALLER_VERSION}/install.ps1" in command[-1]
@@ -70,6 +75,14 @@ def test_the_windows_installer_runs_the_pinned_astral_powershell_script() -> Non
 def test_the_uvx_path_is_re_resolved_after_the_installer_runs() -> None:
     """A successful install makes uvx resolvable, which is the signal the caller needs."""
     runner = _Recorder()
-    result = install_uv(run=runner, platform="linux", which=lambda _name: "/home/me/.local/bin/uvx")
+    result = install_uv(run=runner, platform="linux", which=_which_finds_uvx_at("/home/me/.local/bin/uvx"))
 
-    assert result == Path("/home/me/.local/bin/uvx")
+    assert result.uvx == Path("/home/me/.local/bin/uvx")
+
+
+def test_the_installers_exit_code_comes_back_with_the_result() -> None:
+    """A failed installer is not reported as a success that merely left uvx off PATH."""
+    result = install_uv(run=_Recorder(code=7), platform="linux", which=_which_finds_uvx_at(None))
+
+    assert result.exit_code == 7
+    assert result.uvx is None

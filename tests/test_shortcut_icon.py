@@ -22,6 +22,7 @@ from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, install_shortcut
 from lsdsk.adapters.config.offer import user_config_path
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
 from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
+from lsdsk.adapters.uv_bootstrap import UvInstallResult
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
@@ -105,7 +106,7 @@ def test_the_linux_desktop_built_through_install_references_the_copied_icon(
         shortcuts=LinuxDesktopShortcut(),
         uvx=lambda: Path("/usr/bin/uvx"),
         installed_lsdsk=lambda: None,
-        install_uv=lambda: None,
+        install_uv=lambda: UvInstallResult(exit_code=0, uvx=None),
     )
     install_shortcut(seams=seams)
 

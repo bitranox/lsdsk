@@ -23,6 +23,7 @@ import tomlkit
 from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, install_shortcut, offer_shortcut
 from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.config.tunables import DisplaySettings
+from lsdsk.adapters.uv_bootstrap import UvInstallResult
 from lsdsk.domain.enums import ShortcutChoice
 
 if TYPE_CHECKING:
@@ -98,7 +99,7 @@ def _seams(
         shortcuts=shortcuts,
         uvx=lambda: uvx,
         installed_lsdsk=lambda: None,
-        install_uv=lambda: None,
+        install_uv=lambda: UvInstallResult(exit_code=0, uvx=None),
     )
     # With no copier given, the dataclass's default - the real icon copier - stays in place.
     return seams if copy_icon is None else dataclasses.replace(seams, copy_icon=copy_icon)

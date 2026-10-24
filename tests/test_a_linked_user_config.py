@@ -28,6 +28,7 @@ from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, install_shortcut
 from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.config.offer import NoUserConfigPathError, disable_offer, user_config_path
 from lsdsk.adapters.config.tunables import DisplaySettings
+from lsdsk.adapters.uv_bootstrap import UvInstallResult
 from lsdsk.domain.enums import OutputFormat, ShortcutChoice
 
 if TYPE_CHECKING:
@@ -59,7 +60,7 @@ def _seams(shortcuts: _RecordingShortcuts) -> ShortcutSeams:
         shortcuts=shortcuts,
         uvx=lambda: Path("/usr/bin/uvx"),
         installed_lsdsk=lambda: None,
-        install_uv=lambda: None,
+        install_uv=lambda: UvInstallResult(exit_code=0, uvx=None),
     )
 
 
