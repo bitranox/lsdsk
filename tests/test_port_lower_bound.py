@@ -13,6 +13,7 @@ one, so no finding may move. The last test holds that over every committed captu
 
 from __future__ import annotations
 
+import ast
 import io
 import json
 from pathlib import Path
@@ -191,21 +192,92 @@ _NO_BOUND_CAPTURES = frozenset(
 )
 
 
+#: The one name the guard below looks for.
+_BOUND = "port_floor_gbps"
+
+
+def _reads_of_the_bound(source: str) -> list[int]:
+    """The lines of ``source`` that name the bound, outside the property that defines it.
+
+    A read is an attribute or a name spelled like the bound, or a string that
+    is exactly its name (a ``getattr``). The property's own body is left out,
+    so the model may derive the bound while every rule beside it - in
+    ``models.py`` as much as in ``diagnostics.py`` - may not read it.
+    """
+    tree = ast.parse(source)
+    inside = {
+        line
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == _BOUND
+        for line in range(node.lineno, (node.end_lineno or node.lineno) + 1)
+    }
+    return sorted(
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Attribute, ast.Name, ast.Constant))
+        and _spelled(node) == _BOUND
+        and node.lineno not in inside
+    )
+
+
+def _spelled(node: ast.Attribute | ast.Name | ast.Constant) -> object:
+    """The name an attribute or a name spells, or the value a constant holds."""
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    if isinstance(node, ast.Name):
+        return node.id
+    return node.value
+
+
 @pytest.mark.os_agnostic
 def test_no_rule_reads_the_bound() -> None:
-    """Only the model that derives the bound may name it inside the domain.
+    """Only the property that derives the bound may name it inside the domain.
 
     The capture test above cannot carry this alone: every bounded link in the
     committed captures is a healthy one, where the floor equals the drive's own
     maximum and a rule asking "could it be faster" answers no either way. A
     rule that read the bound would pass there and start treating a one-ended
-    reading as a capable port on the first machine where that matters.
+    reading as a capable port on the first machine where that matters. That
+    includes a rule on the model itself, so ``models.py`` is scanned too, all
+    but the property's own body.
     """
     domain = Path(__file__).parent.parent / "src" / "lsdsk" / "domain"
-    readers = sorted(
-        path.name
-        for path in domain.rglob("*.py")
-        if path.name != "models.py" and "port_floor_gbps" in path.read_text(encoding="utf-8")
+    sources = {path.name: path.read_text(encoding="utf-8") for path in domain.rglob("*.py")}
+    assert "diagnostics.py" in sources, "the domain was not found, so the scan read nothing"
+    assert f"def {_BOUND}(" in sources["models.py"], "the property moved, so the exemption covers nothing"
+
+    readers = {name: lines for name, source in sources.items() if (lines := _reads_of_the_bound(source))}
+
+    assert readers == {}, f"a domain module reads the drawing-only bound: {readers}"
+
+
+def test_the_bound_guard_sees_a_read_beside_the_property() -> None:
+    """The control: a property on the same model that reads the bound is caught."""
+    planted = (
+        "class InterfaceLink:\n"
+        "    @property\n"
+        f"    def {_BOUND}(self):\n"
+        "        return self.negotiated_gbps\n"
+        "    @property\n"
+        "    def is_underperforming(self):\n"
+        f"        return self.{_BOUND} is not None\n"
+        "    def other(self):\n"
+        f"        return getattr(self, '{_BOUND}')\n"
     )
-    assert any(domain.rglob("diagnostics.py")), "the domain was not found, so the scan read nothing"
-    assert readers == [], f"a domain module reads the drawing-only bound: {readers}"
+
+    assert _reads_of_the_bound(planted) == [7, 9]
+
+
+def test_the_bound_moves_no_verdict_on_the_link_it_is_drawn_for() -> None:
+    """A link at the drive's maximum with its port unread is neither slow nor proven fast."""
+    link = AT_DRIVE_MAX.link
+
+    assert link.port_floor_gbps == 6.0, "the premise: this link carries the bound"
+    assert not link.is_underperforming
+    assert not link.is_below_drive_capability
+    assert link.achievable_gbps is None
+
+
+def test_a_link_reading_above_the_drive_maximum_bounds_nothing() -> None:
+    """Only a link running AT the drive's maximum proves the port; a reading above it is not one."""
+    assert InterfaceLink(negotiated_gbps=12.0, drive_max_gbps=6.0).port_floor_gbps is None
