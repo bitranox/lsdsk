@@ -66,7 +66,23 @@ def test_a_failing_real_installer_leaves_config_error_naming_its_exit_code(
         install_shortcut(output_format=OutputFormat.JSON, install_uv=True)
 
     assert leaving.value.code == ExitCode.CONFIG_ERROR
-    out = capfd.readouterr().out
-    envelope = json.loads(out[out.index("{") :])
+    envelope = json.loads(capfd.readouterr().out)
     assert "the uv installer failed (exit 7)" in envelope["error"]["message"]
     assert list(desktop.iterdir()) == []
+
+
+@pytest.mark.os_posix
+def test_the_installers_own_output_never_reaches_the_json_envelope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """Standard output is the envelope alone; the installer's chatter goes to standard error."""
+    desktop = _machine(tmp_path, monkeypatch, code=0, leave_uvx=True)
+
+    install_shortcut(output_format=OutputFormat.JSON, install_uv=True)
+
+    captured = capfd.readouterr()
+    envelope = json.loads(captured.out)
+    assert envelope["ok"] is True
+    assert envelope["data"]["launch"][0] == str(tmp_path / "bin" / "uvx")
+    assert "downloading uv (stand-in installer)" in captured.err
+    assert len(list(desktop.iterdir())) == 1

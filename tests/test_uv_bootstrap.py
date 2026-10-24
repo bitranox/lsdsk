@@ -9,12 +9,13 @@ fake runner and a fake ``which``, so the real installer never runs here.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
-from lsdsk.adapters.uv_bootstrap import UvInstallResult, install_uv, uvx_path
+from lsdsk.adapters.uv_bootstrap import UvInstallResult, install_uv, run_installer, uvx_path
 from lsdsk.domain.shortcut import UV_INSTALLER_VERSION
 
 if TYPE_CHECKING:
@@ -86,3 +87,19 @@ def test_the_installers_exit_code_comes_back_with_the_result() -> None:
 
     assert result.exit_code == 7
     assert result.uvx is None
+
+
+def test_the_real_runner_returns_the_exit_code_and_keeps_the_childs_output_off_standard_output(
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    """A failing child is an exit code, not an exception, and what it prints goes to standard error.
+
+    Standard output belongs to the JSON envelope that follows the install, so the
+    installer's progress lines there would make it unparseable.
+    """
+    child = [sys.executable, "-c", "import sys; print('installer chatter'); sys.exit(3)"]
+
+    assert run_installer(child) == 3
+    captured = capfd.readouterr()
+    assert "installer chatter" not in captured.out
+    assert "installer chatter" in captured.err

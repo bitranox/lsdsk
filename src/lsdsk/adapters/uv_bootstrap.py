@@ -74,17 +74,36 @@ def _installer_command(platform: str) -> list[str]:
     return ["sh", "-c", f"curl -LsSf {UV_INSTALLER_URL_POSIX} | sh"]
 
 
-def _subprocess_run(command: Sequence[str]) -> int:
-    """Run ``command`` to completion and return its exit code."""
+#: The process's own standard-error descriptor. The installer's standard output
+#: is sent there because lsdsk's standard output carries the ``--format json``
+#: envelope that follows the install: inherited, the installer's progress lines
+#: came first and the envelope no longer parsed. The descriptor rather than
+#: ``sys.stderr``, which a test harness or a redirect replaces with an object
+#: that has no descriptor at all.
+_STANDARD_ERROR = 2
+
+
+def run_installer(command: Sequence[str]) -> int:
+    """Run ``command`` to completion and return its exit code, its output on standard error.
+
+    A failing installer is an exit code here, never an exception (``check`` is
+    off), so the caller can say which code it was.
+
+    Args:
+        command: The argv to run.
+
+    Returns:
+        The command's exit code.
+    """
     # Fixed argv built from pinned-constant installer URLs, no user input reaches it;
     # subprocess here is the one allow-listed shell-out (see the module docstring).
-    completed = subprocess.run(list(command), check=False)  # noqa: S603  # nosec B603
+    completed = subprocess.run(list(command), check=False, stdout=_STANDARD_ERROR)  # noqa: S603  # nosec B603
     return completed.returncode
 
 
 def install_uv(
     *,
-    run: Callable[[Sequence[str]], int] = _subprocess_run,
+    run: Callable[[Sequence[str]], int] = run_installer,
     platform: str = sys.platform,
     which: Callable[[str], str | None] = shutil.which,
 ) -> UvInstallResult:
@@ -108,4 +127,4 @@ def install_uv(
     return UvInstallResult(exit_code=exit_code, uvx=uvx_path(which=which))
 
 
-__all__ = ["UvInstallResult", "install_uv", "uvx_path"]
+__all__ = ["UvInstallResult", "install_uv", "run_installer", "uvx_path"]
