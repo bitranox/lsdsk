@@ -24,6 +24,8 @@ Contents:
     * :func:`prompt_for` - which prompt a platform asks through, if any.
     * :func:`announcement_for` - the line printed before that prompt.
     * :func:`elevate_for_the_view` - ask where it helps, report what happened.
+    * :func:`the_real_seams` - this machine's collaborators for that question.
+    * :func:`process_is_elevated` - whether this process is Administrator or root already.
     * :func:`announce_on_stderr` - print that line, set off from what came before.
     * :func:`relaunch_through_pwshpy` - the relaunch, as an outcome.
 """
@@ -143,7 +145,7 @@ def elevate_for_the_view(replay: Path | None, *, wanted: bool, seams: ElevationS
         did not show) where the run may not ask, otherwise whatever the
         relaunch reported.
     """
-    called = seams if seams is not None else _the_real_seams()
+    called = seams if seams is not None else the_real_seams()
     prompt = called.prompt
     if replay is not None or prompt is None or called.is_elevated() or not called.devices_readable():
         return Elevation(state=ElevationState.NOT_ASKED)
@@ -153,22 +155,38 @@ def elevate_for_the_view(replay: Path | None, *, wanted: bool, seams: ElevationS
     return called.relaunch(called.argv, called.cwd)
 
 
-def _the_real_seams() -> ElevationSeams:
-    """This machine's prompt, privilege, disks and relaunch, the platform ones loaded lazily."""
+def the_real_seams(*, load: Callable[[], PwshpyModule] | None = None) -> ElevationSeams:
+    """This machine's prompt, privilege, disks and relaunch, the platform ones loaded lazily.
+
+    Args:
+        load: Returns the pwshpy module the relaunch goes through; the installed
+            one when not given. A test passes a stand-in so the real seams can be
+            driven end to end without starting a process.
+
+    Returns:
+        The seams :func:`elevate_for_the_view` uses when it is given none.
+    """
     prompt = prompt_for(sys.platform)
     return ElevationSeams(
         prompt=prompt,
-        is_elevated=_is_elevated_here,
+        is_elevated=process_is_elevated,
         devices_readable=_devices_readable_here,
-        relaunch=partial(relaunch_through_pwshpy, prompt=prompt) if prompt is not None else _relaunch_nowhere,
+        relaunch=partial(relaunch_through_pwshpy, prompt=prompt, load=load)
+        if prompt is not None
+        else _relaunch_nowhere,
         announce=announce_on_stderr,
         argv=tuple(sys.argv[1:]),
         cwd=str(Path.cwd()),
     )
 
 
-def _is_elevated_here() -> bool:
-    """Whether this process holds Administrator (Windows' own token check) or root (euid 0)."""
+def process_is_elevated() -> bool:
+    """Whether this process holds Administrator (Windows' own token check) or root (euid 0).
+
+    Returns:
+        True when it does; the answer the elevation question and the desktop
+        shortcut offer both read.
+    """
     if sys.platform == "win32":
         from .windows.reader import is_elevated  # noqa: PLC0415 - Windows-only path, kept off every other platform's import
 
@@ -297,6 +315,8 @@ __all__ = [
     "announce_on_stderr",
     "announcement_for",
     "elevate_for_the_view",
+    "process_is_elevated",
     "prompt_for",
     "relaunch_through_pwshpy",
+    "the_real_seams",
 ]
