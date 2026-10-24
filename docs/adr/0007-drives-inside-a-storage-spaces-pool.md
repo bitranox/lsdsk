@@ -16,19 +16,27 @@ incomplete, because it was.
 
 1. **The reader enumerates both interface classes.** Every interface of
    `GUID_DEVINTERFACE_HIDDEN_DISK` is read exactly like a disk - opened, asked for IDENTIFY and
-   SMART - after the ordinary disk class. A hidden interface whose device number is already listed
-   is skipped, so a drive publishing both is read once.
+   SMART - after the ordinary disk class. A hidden interface whose drive number an ordinary
+   interface already carries is not listed a second time but folded into the record kept for that
+   drive, which takes the hidden mark and the removal relations from it, and its instance
+   identifier where the kept record has none. So a drive publishing both is listed once and keeps
+   the link to its Space, which only the hidden interface read.
 2. **The capture records what Windows published, and the builder decides what it means.** Each
    disk entry carries its own device instance identifier, whether it came from the hidden class,
    and its `DEVPKEY_Device_RemovalRelations` list. A Space's instance identifier is
    `STORAGE\DISK\{...}`, and each pooled drive names it among its removal relations.
-3. **A drive is linked to a Space when one of its removal relations equals the Space's instance
-   identifier.** No WMI and no Storage Management API is consulted: the device tree already holds
-   the relation.
+3. **A drive is linked to a Space when one of its removal relations names the Space's instance
+   identifier, compared without regard to case.** Windows compares them that way, and the two
+   spellings differ: the Space names itself `STORAGE\DISK\{...}` with an upper-case GUID, while
+   its drives name it `STORAGE\Disk\{...}` with a lower-case one, measured on one guest. No
+   WMI and no Storage Management API is consulted: the device tree already holds the relation.
 4. **What uses a linked drive is the Space.** A new use kind, `space`, named by the Space's node
    (`PhysicalDrive4`) with the Space's volume paths as its mounts, the shape an LVM member already
    has. Without it a pooled drive would read `not mounted`, since no volume names it directly, and
-   invite somebody to reuse a drive the pool depends on.
+   invite somebody to reuse a drive the pool depends on. A pool can hold several Spaces spread over
+   the same drives, so a drive whose removal relations name several gets one `space` use per
+   Space, each with that Space's mounts, listed once each in drive order rather than in the order
+   Windows lists the relations.
 5. **A Space with at least one linked drive no longer carries the `pool-members` refusal; a Space
    with none keeps it.** A capture taken before these fields existed has no link and so replays
    exactly as before. This reverses the 2026-10-19 choice to keep every Spaces scan incomplete,
@@ -45,8 +53,9 @@ were checked against the SDK header.
 
 ## Not measured
 
-Simple and Parity layouts, several Spaces in one pool, a pool with no virtual disk, a degraded
-pool, and any physical machine. A drive missing from a pool is pool health, which this tool does
+Simple and Parity layouts, several Spaces in one pool (the one-use-per-Space rule is held by tests
+over the committed capture with a second Space planted, not by a machine that has one), a pool
+with no virtual disk, a degraded pool, and any physical machine. A drive missing from a pool is pool health, which this tool does
 not read; it is not a reading the scan left out.
 
 ## Left out
