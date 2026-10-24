@@ -41,10 +41,11 @@ set of ioctls and the mainboard manual.
 lsdsk makes no network requests, with two exceptions that both stay off until you ask for them.
 The optional Graylog log sink opens a connection only once you enable it. And if you accept the
 offer to create a desktop shortcut on a machine that has no uv installed, lsdsk can install uv for
-you from the official astral.sh installer, but only after you confirm. The only process it ever
-starts is itself: the interactive view asks for Administrator on Windows, where it reopens
-elevated in a new window, and for root through sudo on Linux and macOS, where it restarts as root
-in the same terminal (`--no-elevate` turns that off). Every value it prints was read directly,
+you from the official astral.sh installer, but only after you confirm; that installer runs the
+astral.sh script through `sh` and `curl`. Apart from that installer, the one process it ever
+starts is its own elevated copy: the interactive view asks for Administrator on Windows, where it
+reopens elevated in a new window, and for root through sudo on Linux and macOS, where it restarts
+as root in the same terminal (`--no-elevate` turns that off). Every value it prints was read directly,
 from sysfs and direct ioctls on Linux and from SetupAPI and DeviceIoControl on Windows.
 
 ## QUICKSTART
@@ -138,9 +139,11 @@ Python 3.11 or newer, Linux or Windows. It shells out to nothing - no
 `smartmontools`, no `nvme-cli`, no `lspci` - and reaches no network, with two
 exceptions you have to turn on: the optional Graylog log sink, and, if you
 accept the desktop-shortcut offer on a machine with no uv, installing uv for you
-from the official astral.sh installer after you confirm. The one process it
-starts is its own elevated copy, when the interactive view asks for
-Administrator on Windows or for root through sudo on Linux. Its own Python
+from the official astral.sh installer after you confirm, which runs the
+astral.sh script through `sh` and `curl`. Apart from that installer, the one
+process it starts is its own elevated copy, when the interactive view asks for
+Administrator through UAC on Windows or for root through sudo on Linux and
+macOS. Its own Python
 dependencies are declared in `pyproject.toml`.
 
 From the hardware `lsdsk` reads only a controller's numeric identifiers, not its
