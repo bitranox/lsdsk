@@ -163,6 +163,29 @@ def _get_config_impl(
 
     Profile validation must be done by caller before invoking this function.
     """
+    return read_config_now(profile=profile, start_dir=start_dir, dotenv_path=dotenv_path)
+
+
+def read_config_now(
+    *, profile: str | None = None, start_dir: str | None = None, dotenv_path: str | None = None
+) -> Config:
+    """Read the configuration from the files as they are now, past the cache :data:`get_config` keeps.
+
+    For a run that has just rewritten configuration files and must see what they decide now; the
+    cached read answers for the files as they were when it first ran.
+
+    Args:
+        profile: The profile to read, already validated, or ``None``.
+        start_dir: Directory the upward ``.env`` search starts from.
+        dotenv_path: An explicit ``.env`` file, skipping that search.
+
+    Returns:
+        The merged configuration, with provenance.
+
+    Raises:
+        LayerLoadError: A configuration file is not valid TOML or could not be read.
+        OSError: A configuration file could not be read for any other reason.
+    """
     return read_config(
         vendor=__init__conf__.LAYEREDCONF_VENDOR,
         app=__init__conf__.LAYEREDCONF_APP,
@@ -430,7 +453,7 @@ def _beneath_the_environment(config: Config, dotenv: LayerSnapshot) -> Config:
     """
     files: dict[tuple[str, str | None], dict[str, object]] = {}
     environment: dict[str, object] = {}
-    for segments, value in _leaves(config.as_dict(), ()):
+    for segments, value in table_leaves(config.as_dict()):
         origin = config.origin(".".join(segments))
         layer = Layer.DEFAULTS.value if origin is None else origin["layer"]
         path = None if origin is None else origin["path"]
@@ -444,19 +467,26 @@ def _beneath_the_environment(config: Config, dotenv: LayerSnapshot) -> Config:
     return Config(merged.data, merged.provenance)
 
 
-def _leaves(table: Mapping[str, object], prefix: tuple[str, ...]) -> Iterable[tuple[tuple[str, ...], object]]:
+def table_leaves(table: Mapping[str, object], prefix: tuple[str, ...] = ()) -> Iterable[tuple[tuple[str, ...], object]]:
     """Every leaf of a nested table with the path of keys that reaches it.
 
     An empty table is a leaf: it holds no key to carry it, and dropping it would remove a table
     the files declare (the shipped ``console_styles = {}``).
 
+    Args:
+        table: The nested table, as ``Config.as_dict`` gives it.
+        prefix: The keys that lead to `table`; empty at the top.
+
+    Returns:
+        ``(keys, value)`` for every leaf, in the table's own order.
+
     Example:
-        >>> list(_leaves({"a": {"b": 1}, "c": [2], "d": {}}, ()))
+        >>> list(table_leaves({"a": {"b": 1}, "c": [2], "d": {}}))
         [(('a', 'b'), 1), (('c',), [2]), (('d',), {})]
     """
     for key, value in table.items():
         if isinstance(value, Mapping) and value:
-            yield from _leaves(cast("Mapping[str, object]", value), (*prefix, key))
+            yield from table_leaves(cast("Mapping[str, object]", value), (*prefix, key))
         else:
             yield (*prefix, key), value
 
@@ -639,11 +669,13 @@ __all__ = [
     "get_config",
     "get_default_config_path",
     "invalid_profile_message",
+    "read_config_now",
     "read_config_skipping",
     "read_run_config_skipping",
     "require_an_intact_installation",
     "shipped_section",
     "shipped_table_paths",
+    "table_leaves",
     "unparsable_files",
     "validate_profile",
 ]

@@ -16,11 +16,16 @@ from lib_layered_config import (
 from lib_layered_config.examples import DeployAction
 
 from lsdsk import __init__conf__
-from lsdsk.adapters.config.loader import get_default_config_path, validate_profile
+from lsdsk.adapters.config.loader import get_default_config_path, table_leaves, validate_profile
+from lsdsk.adapters.config.values import rendered
+from lsdsk.domain.base import DomainModel
 from lsdsk.domain.errors import ConfigurationError
+from lsdsk.domain.text import visible_text
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+    from lib_layered_config import Config
 
     from lsdsk.domain.deployment import DeployRequest
     from lsdsk.domain.enums import DeployTarget
@@ -109,6 +114,100 @@ def paths_the_deploy_writes(targets: Iterable[DeployTarget], *, profile: str | N
         profile=profile,
         targets=[target.value for target in targets],
     )
+
+
+#: The most characters :func:`~lsdsk.domain.text.visible_text` writes for one, ``\UNNNNNNNN``.
+_LONGEST_ESCAPE = 10
+
+#: Said once after the values a deploy's new files override: how to keep each of them.
+SHADOWED_VALUES_HINT = (
+    "Hint: --force does not keep these values: it replaces the kept file with the shipped copy too. To keep one, "
+    "set it in the file that now decides it, or move it into a config.d file of your own that sorts after "
+    "the shipped ones, such as config.d/99-local.toml."
+)
+
+
+class ValueTheDeployShadows(DomainModel, frozen=True):
+    """A value a kept file sets that a file this deploy created now overrides.
+
+    Attributes:
+        dotted: The setting, ``display.wwn_width``.
+        raw: The value the kept file sets, as a reader would recognise it.
+        source: The kept file that sets it.
+        winner: The file this deploy created, which now decides the setting.
+        winning_raw: The value that file gives it.
+
+    Example:
+        >>> ValueTheDeployShadows(
+        ...     dotted="display.wwn_width", raw="40", source="/u/config.toml",
+        ...     winner="/u/config.d/70-display.toml", winning_raw="24",
+        ... ).as_sentence()  # doctest: +NORMALIZE_WHITESPACE
+        'Warning: display.wwn_width=40 in /u/config.toml is now overridden by /u/config.d/70-display.toml,
+        which this deploy created and which sets 24.'
+    """
+
+    dotted: str
+    raw: str
+    source: str
+    winner: str
+    winning_raw: str
+
+    def as_sentence(self) -> str:
+        """The warning, the values cut as every quoted value is and the paths whole, as text."""
+        source = visible_text(self.source, limit=_LONGEST_ESCAPE * len(self.source))
+        winner = visible_text(self.winner, limit=_LONGEST_ESCAPE * len(self.winner))
+        return (
+            f"Warning: {self.dotted}={visible_text(self.raw)} in {source} is now overridden by {winner}, "
+            f"which this deploy created and which sets {visible_text(self.winning_raw)}."
+        )
+
+
+def values_the_deploy_shadows(
+    before: Config, after: Config, *, written: Iterable[Path]
+) -> tuple[ValueTheDeployShadows, ...]:
+    """The values a file the deploy did not write set before it, and a file it wrote now overrides.
+
+    A deploy without ``--force`` keeps a ``config.toml`` already there and creates the ``config.d``
+    companions beside it, which the loader reads after it and which therefore win: a value the
+    reader wrote into ``config.toml`` is replaced by the shipped one while the deploy reports
+    success. Only a file of the SAME layer counts, because outranking a lower layer is what a
+    deploy to a higher one is for. Read from provenance on both sides, so a value the environment,
+    a ``.env`` or ``--set`` gives is never named, and a file the deploy replaced (``--force``) is
+    one whose values it was asked to replace.
+
+    Args:
+        before: The configuration as the files decided it before the deploy.
+        after: The configuration as the files decide it now.
+        written: The files the deploy created or overwrote.
+
+    Returns:
+        One entry per overridden setting, in key order.
+
+    Example:
+        >>> from lib_layered_config import Config
+        >>> values_the_deploy_shadows(Config({}, {}), Config({}, {}), written=[])
+        ()
+    """
+    fresh = frozenset(path.resolve() for path in written)
+    shadowed: list[ValueTheDeployShadows] = []
+    for segments, value in table_leaves(after.as_dict()):
+        dotted = ".".join(segments)
+        now, then = after.origin(dotted), before.origin(dotted)
+        if now is None or then is None or now["path"] is None or then["path"] is None:
+            continue
+        if now["layer"] != then["layer"] or before.get(dotted) == value:
+            continue
+        if Path(now["path"]).resolve() in fresh and Path(then["path"]).resolve() not in fresh:
+            shadowed.append(
+                ValueTheDeployShadows(
+                    dotted=dotted,
+                    raw=rendered(before.get(dotted)),
+                    source=then["path"],
+                    winner=now["path"],
+                    winning_raw=rendered(value),
+                )
+            )
+    return tuple(sorted(shadowed, key=lambda entry: entry.dotted))
 
 
 def deploy_configuration(request: DeployRequest) -> list[Path]:
@@ -286,7 +385,10 @@ def generate_examples_refusing_directories(
 
 
 __all__ = [
+    "SHADOWED_VALUES_HINT",
+    "ValueTheDeployShadows",
     "deploy_configuration",
     "generate_examples_refusing_directories",
     "paths_the_deploy_writes",
+    "values_the_deploy_shadows",
 ]

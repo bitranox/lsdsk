@@ -24,8 +24,8 @@ from lib_layered_config.domain.permissions import modes_apply
 from rich.console import Console
 
 from lsdsk import __init__conf__
-from lsdsk.adapters.config.deploy import paths_the_deploy_writes
-from lsdsk.adapters.config.loader import read_config_skipping, shipped_table_paths
+from lsdsk.adapters.config.deploy import SHADOWED_VALUES_HINT, paths_the_deploy_writes, values_the_deploy_shadows
+from lsdsk.adapters.config.loader import read_config_now, read_config_skipping, shipped_table_paths
 from lsdsk.adapters.config.permissions import (
     ModeTheDeployIgnores,
     SectionGivenAsAValueError,
@@ -525,6 +525,7 @@ def _execute_deploy(
     # Worked out before the deploy rewrites the files they are read from, and said only after
     # it: a refused deploy reads no mode, so a sentence about how it would have read one is moot.
     unused_modes = _modes_the_deploy_ignores(config, settled)
+    files_before = _what_the_files_decide(cli_ctx, settled)
 
     try:
         deployed_paths = cli_ctx.services.deploy_configuration(settled)
@@ -563,6 +564,7 @@ def _execute_deploy(
         safe_console.echo(rejected.as_sentence(), err=True)
     for ignored in unused_modes:
         safe_console.echo(ignored.as_sentence(), err=True)
+    _name_the_values_now_overridden(files_before, cli_ctx, settled, deployed_paths)
     # Outside the try on purpose: the files are written by now, and a report that
     # cannot reach a full standard output is a failure to REPORT, which is not the
     # "Failed to deploy configuration" the arms above would have called it.
@@ -608,6 +610,56 @@ def _modes_the_deploy_ignores(config: Config, request: DeployRequest) -> tuple[M
     # without --force leaves alone.
     kept: frozenset[Path] = frozenset(path for path in written if not request.force and path.exists())
     return modes_the_deploy_ignores(config, used=used, written=written, kept=kept)
+
+
+def _what_the_files_decide(cli_ctx: CLIContext, request: DeployRequest) -> Config | None:
+    """The configuration the files decide right now, without ``--set``, or ``None`` when it cannot load.
+
+    Read rather than taken from the run's configuration, which carries the ``--set`` overrides:
+    a value given there would hide the file value a deploy may override for every later run.
+
+    Args:
+        cli_ctx: CLI context, for the run's ``--env-file``.
+        request: The deploy, for its profile.
+
+    Returns:
+        The merged configuration, or ``None`` where a file does not load: a forced deploy past a
+        broken file it replaces, which overrides nothing a reader keeps.
+    """
+    try:
+        return read_config_now(profile=request.profile, dotenv_path=cli_ctx.env_file)
+    except (ConfigError, OSError, ValueError):
+        return None
+
+
+def _name_the_values_now_overridden(
+    before: Config | None, cli_ctx: CLIContext, request: DeployRequest, deployed_paths: list[Path]
+) -> None:
+    """Warn about each value a kept file sets that a file this deploy created now overrides.
+
+    The deploy is not refused for it: a hand-written ``config.toml`` is an ordinary state to
+    deploy into, and refusing would leave ``--force`` - which replaces that file too - as the only
+    way through. Saying it is what keeps "deployed successfully" from hiding a changed value.
+
+    Args:
+        before: What the files decided before the deploy, or ``None`` when that could not load.
+        cli_ctx: CLI context, for the run's ``--env-file``.
+        request: The deploy as it ran.
+        deployed_paths: The files it created or overwrote.
+
+    Side Effects:
+        Writes a line per overridden value, and one hint after them, to stderr.
+    """
+    if before is None or not deployed_paths:
+        return
+    after = _what_the_files_decide(cli_ctx, request)
+    if after is None:
+        return
+    shadowed = values_the_deploy_shadows(before, after, written=deployed_paths)
+    for entry in shadowed:
+        safe_console.echo(entry.as_sentence(), err=True)
+    if shadowed:
+        safe_console.echo(SHADOWED_VALUES_HINT, err=True)
 
 
 def _report_deployment_result(
