@@ -285,3 +285,44 @@ def test_a_failed_installer_in_the_offer_names_its_exit_code_and_creates_nothing
     assert "the uv installer failed (exit 7)" in said.err
     assert manual_install_line(sys.platform) in said.err
     assert "uv was installed" not in said.out + said.err
+
+
+class _InstallRecorder:
+    """An ``install_uv`` seam that counts its calls and reports ``uvx`` found afterwards."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self) -> UvInstallResult:
+        self.calls += 1
+        return UvInstallResult(exit_code=0, uvx=Path("/root/.local/bin/uvx"))
+
+
+def _seams_recording_installs(shortcuts: DesktopShortcuts, installs: _InstallRecorder) -> ShortcutSeams:
+    """Seams with no launcher on the machine, so every create needs the recorded install first."""
+    return ShortcutSeams(shortcuts=shortcuts, uvx=lambda: None, installed_lsdsk=lambda: None, install_uv=installs)
+
+
+def test_end_of_input_at_the_shortcut_question_means_not_now_and_the_run_goes_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ctrl+D is not a reason to abort the view the reader started; it answers like a blank Enter."""
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    shortcuts = _RecordingShortcuts()
+    disable = _DisableRecorder()
+
+    offer_shortcut(DisplaySettings(), seams=_seams(shortcuts, uvx=Path("/usr/bin/uvx")), disable=disable)
+
+    assert shortcuts.created is None
+    assert disable.called is False
+
+
+def test_end_of_input_at_the_install_question_means_no_install(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("y\n"))
+    shortcuts = _RecordingShortcuts()
+    installs = _InstallRecorder()
+
+    offer_shortcut(DisplaySettings(), seams=_seams_recording_installs(shortcuts, installs), disable=_DisableRecorder())
+
+    assert installs.calls == 0, "end of input installed uv without a yes"
+    assert shortcuts.created is None

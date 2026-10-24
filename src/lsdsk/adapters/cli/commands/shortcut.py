@@ -230,24 +230,42 @@ def _write_shortcut(seams: ShortcutSeams, *, launch: tuple[str, ...], output_for
 _OFFER_ANSWERS = {"y": ShortcutChoice.CREATE, "n": ShortcutChoice.NOT_NOW, "d": ShortcutChoice.NEVER}
 
 
+#: What a blank Enter, and end of input, answer at the shortcut question.
+_OFFER_DEFAULT = "n"
+
+
 def _ask_choice_prompt() -> ShortcutChoice:
-    """Ask whether to create the shortcut: yes, not now, or never again."""
+    """Ask whether to create the shortcut: yes, not now, or never again.
+
+    End of input (Ctrl+D) answers like a blank Enter, "not now": the question
+    comes before the view the reader started, and leaving the input is no
+    reason to abort that view.
+    """
     # Escaped because Rich reads "[y]" as a markup tag and drops it, which left the
     # reader a list of answers with no letter to type for any of them.
-    answer = Prompt.ask(
-        escape(
-            "Create a desktop shortcut that launches lsdsk? "
-            "[y] yes, [n] not now, [d] do not ask again (sets display.offer_desktop_shortcut = false)"
-        ),
-        choices=list(_OFFER_ANSWERS),
-        default="n",
-    )
+    try:
+        answer = Prompt.ask(
+            escape(
+                "Create a desktop shortcut that launches lsdsk? "
+                "[y] yes, [n] not now, [d] do not ask again (sets display.offer_desktop_shortcut = false)"
+            ),
+            choices=list(_OFFER_ANSWERS),
+            default=_OFFER_DEFAULT,
+        )
+    except EOFError:
+        # The prompt line was left unfinished; end it so the next line starts clean.
+        safe_console.echo("")
+        return _OFFER_ANSWERS[_OFFER_DEFAULT]
     return _OFFER_ANSWERS[answer]
 
 
 def _ask_install_prompt() -> bool:
-    """Ask whether to install uv now, defaulting to no (a blank Enter does not install)."""
-    return Confirm.ask("Install uv automatically now?", default=False)
+    """Ask whether to install uv now, defaulting to no: a blank Enter or end of input does not install."""
+    try:
+        return Confirm.ask("Install uv automatically now?", default=False)
+    except EOFError:
+        safe_console.echo("")
+        return False
 
 
 def offer_shortcut(
