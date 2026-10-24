@@ -18,14 +18,14 @@ import os
 import stat
 import tomllib
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
 from lsdsk.adapters import cli as cli_mod
 from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.config.deploy import paths_the_deploy_writes
-from lsdsk.adapters.config.loader import get_config, get_default_config_path
+from lsdsk.adapters.config.loader import get_config, get_default_config_path, read_run_config_skipping
 from lsdsk.composition import build_production
 from lsdsk.domain.enums import DeployTarget
 
@@ -202,3 +202,113 @@ def test_the_paths_a_deploy_writes_are_the_ones_it_reports_writing(
     written = {Path(path).resolve() for path in json.loads(out)["data"]["deployed"]}
     assert written, "the deploy wrote nothing, so there is nothing to compare"
     assert paths_the_deploy_writes((DeployTarget.USER,), profile=profile) == frozenset(written)
+
+
+#: A .env the run reads: a display value the configuration reports, a LOG_ line logging reports.
+_DOTENV = "LOG_CONSOLE_LEVEL=nope\nDISPLAY__WWN_WIDTH=wide\n"
+#: What a run prints when the configuration took the display line of that file.
+_DISPLAY_READ = "ignoring display.wwn_width=wide"
+#: What a run prints when logging took its LOG_ line.
+_LEVEL_READ = "ignoring environment variable LOG_CONSOLE_LEVEL=nope"
+
+
+@pytest.fixture
+def no_console_level(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``LOG_CONSOLE_LEVEL`` starts unset and is unset again afterwards, whatever the run copied in."""
+    monkeypatch.setenv("LOG_CONSOLE_LEVEL", "placeholder")
+    monkeypatch.delenv("LOG_CONSOLE_LEVEL")
+
+
+@pytest.mark.parametrize("named", [False, True], ids=["searched", "env-file"])
+def test_a_forced_deploy_past_a_broken_file_still_reads_the_runs_dotenv(
+    named: bool,
+    tmp_path: Path,
+    user_config_dir: Path,
+    no_console_level: None,
+    monkeypatch: pytest.MonkeyPatch,
+    managed_traceback_state: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Skipping the broken file must not skip the ``.env`` too, found or named with ``--env-file``.
+
+    The reread past the broken file used the deploy's own read, which takes no ``.env`` at all,
+    so the run's display values and its ``LOG_*`` variables went missing for that one run.
+    """
+    _write(user_config_dir / "config.toml", BROKEN)
+    holder = tmp_path / ("named" if named else "cwd")
+    dotenv = _write(holder / ".env", _DOTENV)
+    (tmp_path / "elsewhere").mkdir()
+    monkeypatch.chdir(tmp_path / "elsewhere" if named else holder)
+    named_argv = ["--env-file", str(dotenv)] if named else []
+
+    exit_code, _out, err = _run([*named_argv, "config-deploy", "--target", "user", "--force"], capsys)
+
+    assert exit_code == 0, err
+    assert _warnings_naming(user_config_dir / "config.toml", err), "the premise: the broken file was skipped"
+    assert _DISPLAY_READ in err, err
+    assert _LEVEL_READ in err, err
+
+
+def test_a_forced_deploy_past_a_broken_file_honours_enabled_from_the_dotenv(
+    tmp_path: Path,
+    user_config_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    managed_traceback_state: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``enabled`` is settled by lsdsk from the configuration the run reads, ``.env`` included."""
+    _write(user_config_dir / "config.toml", BROKEN)
+    _write(tmp_path / ".env", "LIB_LAYERED_CONFIG__DEFAULT_PERMISSIONS__ENABLED=false\n")
+    monkeypatch.chdir(tmp_path)
+
+    exit_code, out, err = _run(["config-deploy", "--target", "user", "--force"], capsys)
+
+    assert exit_code == 0, err
+    assert _warnings_naming(user_config_dir / "config.toml", err), "the premise: the broken file was skipped"
+    assert "(permissions not set)" in out, out
+
+
+def _leaf_keys(table: dict[str, object], prefix: str = "") -> list[str]:
+    """Every leaf of a merged table as a dotted key, an empty table counted as a leaf."""
+    keys: list[str] = []
+    for key, value in table.items():
+        if isinstance(value, dict) and value:
+            keys.extend(_leaf_keys(cast("dict[str, object]", value), f"{prefix}{key}."))
+        else:
+            keys.append(f"{prefix}{key}")
+    return keys
+
+
+def test_the_reread_past_a_skipped_file_is_the_run_s_own_read_when_nothing_is_skipped(
+    tmp_path: Path,
+    user_config_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With nothing to skip, the reread is :func:`get_config`, value for value and origin for origin.
+
+    One key per precedence step: a file under the ``.env``, the ``.env`` under the environment,
+    and one each layer alone gives.
+    """
+    _write(
+        user_config_dir / "config.toml",
+        "[display]\nwwn_width = 30\nname_width = 31\n[thresholds]\nwear_warning_percent = 70\n",
+    )
+    _write(
+        tmp_path / ".env",
+        "DISPLAY__NAME_WIDTH=41\nTHRESHOLDS__WEAR_WARNING_PERCENT=71\nTHRESHOLDS__WEAR_CRITICAL_PERCENT=96\n",
+    )
+    monkeypatch.setenv("LSDSK___THRESHOLDS__WEAR_WARNING_PERCENT", "72")
+    monkeypatch.chdir(tmp_path)
+    get_config.cache_clear()
+    try:
+        expected = get_config()
+    finally:
+        get_config.cache_clear()
+
+    reread = read_run_config_skipping(profile=None, skip=frozenset(), dotenv_path=None)
+
+    assert reread.as_dict() == expected.as_dict()
+    keys = _leaf_keys(expected.as_dict())
+    assert [reread.origin(key) for key in keys] == [expected.origin(key) for key in keys]
+    layers = {origin["layer"] for origin in map(expected.origin, keys) if origin is not None}
+    assert layers >= {"defaults", "user", "dotenv", "env"}, "the premise: every layer the reread rebuilds gave a key"

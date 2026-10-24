@@ -13,6 +13,8 @@ from typing import Final, Protocol, cast
 from lib_layered_config import (
     DEFAULT_MAX_PROFILE_LENGTH,
     Config,
+    Layer,
+    LayerLoadError,
     read_config,
     read_deploy_config,
     validate_profile_name,
@@ -22,8 +24,12 @@ from lib_layered_config import (
 )
 
 # Below the top-level exports, as profiles.py reaches the library where it keeps a name: the
-# per-file parse that tells a broken file from a missing one has no top-level export.
+# per-file parse that tells a broken file from a missing one, the .env search, and the merge
+# that layers it in have no top-level export.
+from lib_layered_config.adapters.dotenv.default import DefaultDotEnvLoader
 from lib_layered_config.adapters.file_loaders.structured import TOMLFileLoader
+from lib_layered_config.adapters.path_resolvers.default import DefaultPathResolver
+from lib_layered_config.application.merge import LayerSnapshot, merge_layers
 from lib_layered_config.domain.errors import InvalidFormatError, NotFoundError
 
 from lsdsk import __init__conf__
@@ -361,6 +367,115 @@ def read_config_skipping(*, profile: str | None, skip: frozenset[Path]) -> Confi
     )
 
 
+def read_run_config_skipping(*, profile: str | None, skip: frozenset[Path], dotenv_path: str | None) -> Config:
+    """The configuration this run reads, with `skip` left out: the deploy's read plus the run's ``.env``.
+
+    :func:`read_config_skipping` is the deploy's own read, which takes no ``.env``. Used as the
+    configuration of a whole run - a forced deploy past a file that no longer parses - it dropped
+    the ``.env`` the run would otherwise read, explicit (``--env-file``) or found, so that one run
+    lost the file's values, its ``LOG_*`` lines and an ``enabled`` it settles. That file is read
+    here as :func:`get_config` reads it and layered back in beneath the environment, where the
+    library's own read puts it. One difference stays: a user file's ``app_*`` and ``host_*`` modes
+    are absent, as the deploy's read drops them, and no mode the deploy applies comes from there.
+
+    Args:
+        profile: The profile deployed into, or ``None``.
+        skip: Paths to leave out.
+        dotenv_path: An explicit ``.env`` file, or ``None`` for the loader's own search.
+
+    Returns:
+        The merged configuration, with provenance.
+
+    Raises:
+        LayerLoadError: A file not in `skip`, or the ``.env``, is not valid or could not be read.
+        FileNotFoundError: The shipped default configuration is missing.
+        ValueError: `profile` is not a valid profile name, or the environment gives a key both
+            as a value and as a table.
+    """
+    deployed = read_config_skipping(profile=profile, skip=skip)
+    try:
+        dotenv = _dotenv_snapshot(profile=profile, dotenv_path=dotenv_path)
+    except InvalidFormatError as error:
+        raise LayerLoadError(str(error)) from error
+    if dotenv is None:
+        return deployed
+    return _beneath_the_environment(deployed, dotenv)
+
+
+def _dotenv_snapshot(*, profile: str | None, dotenv_path: str | None) -> LayerSnapshot | None:
+    """The ``.env`` layer exactly as :func:`get_config` finds it, or ``None`` when it finds none.
+
+    The library's own wiring: an explicit file replaces the search, and the search runs up from
+    the working directory and then to the per-user file, which an explicit one never probes.
+    """
+    resolver = DefaultPathResolver(
+        vendor=__init__conf__.LAYEREDCONF_VENDOR,
+        app=__init__conf__.LAYEREDCONF_APP,
+        slug=__init__conf__.LAYEREDCONF_SLUG,
+        profile=profile,
+    )
+    loader = DefaultDotEnvLoader(extras=list(resolver.dotenv()) if dotenv_path is None else [])
+    data = loader.load(None, dotenv_path=dotenv_path)
+    if not data:
+        return None
+    return LayerSnapshot(Layer.DOTENV, data, loader.last_loaded_path)
+
+
+def _beneath_the_environment(config: Config, dotenv: LayerSnapshot) -> Config:
+    """`config` with `dotenv` merged in above every file and below the environment.
+
+    Every leaf of a merged configuration has one origin, so regrouping the leaves by origin gives
+    layers that do not overlap; merging them again with `dotenv` placed before the environment's
+    is the library's own precedence, with provenance kept for every key.
+    """
+    files: dict[tuple[str, str | None], dict[str, object]] = {}
+    environment: dict[str, object] = {}
+    for segments, value in _leaves(config.as_dict(), ()):
+        origin = config.origin(".".join(segments))
+        layer = Layer.DEFAULTS.value if origin is None else origin["layer"]
+        path = None if origin is None else origin["path"]
+        target = environment if layer == Layer.ENV else files.setdefault((layer, path), {})
+        _place(target, segments, value)
+    layers = [LayerSnapshot(layer, payload, path) for (layer, path), payload in files.items()]
+    layers.append(dotenv)
+    if environment:
+        layers.append(LayerSnapshot(Layer.ENV, environment, None))
+    merged = merge_layers(layers)
+    return Config(merged.data, merged.provenance)
+
+
+def _leaves(table: Mapping[str, object], prefix: tuple[str, ...]) -> Iterable[tuple[tuple[str, ...], object]]:
+    """Every leaf of a nested table with the path of keys that reaches it.
+
+    An empty table is a leaf: it holds no key to carry it, and dropping it would remove a table
+    the files declare (the shipped ``console_styles = {}``).
+
+    Example:
+        >>> list(_leaves({"a": {"b": 1}, "c": [2], "d": {}}, ()))
+        [(('a', 'b'), 1), (('c',), [2]), (('d',), {})]
+    """
+    for key, value in table.items():
+        if isinstance(value, Mapping) and value:
+            yield from _leaves(cast("Mapping[str, object]", value), (*prefix, key))
+        else:
+            yield (*prefix, key), value
+
+
+def _place(table: dict[str, object], segments: tuple[str, ...], value: object) -> None:
+    """Put `value` into `table` at the path `segments`, creating the tables on the way.
+
+    Example:
+        >>> table: dict[str, object] = {}
+        >>> _place(table, ("a", "b"), 1)
+        >>> table
+        {'a': {'b': 1}}
+    """
+    node = table
+    for key in segments[:-1]:
+        node = cast("dict[str, object]", node.setdefault(key, {}))
+    node[segments[-1]] = value
+
+
 def _deep_merge(base: dict[str, object], update: Mapping[str, object]) -> None:
     """Merge `update` into `base` in place, a nested table key by key.
 
@@ -525,6 +640,7 @@ __all__ = [
     "get_default_config_path",
     "invalid_profile_message",
     "read_config_skipping",
+    "read_run_config_skipping",
     "require_an_intact_installation",
     "shipped_section",
     "shipped_table_paths",

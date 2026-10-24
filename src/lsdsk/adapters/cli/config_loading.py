@@ -30,7 +30,7 @@ from lib_layered_config import ConfigError
 from lsdsk.adapters.config.deploy import paths_the_deploy_writes
 from lsdsk.adapters.config.history import read_history_settings
 from lsdsk.adapters.config.known_keys import nearest_known_key, unknown_owned_keys
-from lsdsk.adapters.config.loader import read_config_skipping, unparsable_files
+from lsdsk.adapters.config.loader import read_run_config_skipping, unparsable_files
 from lsdsk.adapters.config.permissions import read_permission_defaults
 from lsdsk.adapters.config.profiles import contributed_layers, existing_profiles, nearest_profile
 from lsdsk.adapters.config.tunables import read_display_settings, read_thresholds
@@ -89,9 +89,9 @@ def load_profile_config(
     A forced deploy is the one run a file that does not parse may not stop, when it is a file
     that deploy rewrites: the deploy exists to replace it, and its own read of the permission
     modes already skips every file it writes. Such a file is skipped here too, with one
-    warning naming it, and the configuration is the one the deploy itself reads (see
-    :func:`~lsdsk.adapters.config.loader.read_config_skipping`). An unreadable file, and a
-    broken file the deploy does not rewrite, still refuse.
+    warning naming it, and the configuration is the one the run reads without it, ``.env``
+    included (see :func:`~lsdsk.adapters.config.loader.read_run_config_skipping`). An unreadable
+    file, and a broken file the deploy does not rewrite, still refuse.
 
     Args:
         services: The wired adapters, whose loader is called.
@@ -121,7 +121,8 @@ def load_profile_config(
             f"Warning: {reason}. config-deploy --force replaces it, so it is skipped while reading the configuration.",
             err=True,
         )
-    return _mapped(lambda: read_config_skipping(profile=profile, skip=frozenset(path for path, _ in broken)))
+    skipped = frozenset(path for path, _ in broken)
+    return _mapped(lambda: read_run_config_skipping(profile=profile, skip=skipped, dotenv_path=env_file))
 
 
 def _mapped(load: Callable[[], Config]) -> Config:
