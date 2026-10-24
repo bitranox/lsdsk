@@ -241,3 +241,21 @@ def test_a_short_transfer_both_ways_names_both_shortfalls() -> None:
     assert set(record) == {"identify_error", "smart_data_error", "smart_thresholds_error"}, record
     for reason in record.values():
         assert reason == "passthrough refused, 100 of 512 bytes returned; SAT refused, 0 of 512 bytes returned", reason
+
+
+def test_sense_cut_short_by_the_port_driver_is_read_only_as_far_as_it_reaches() -> None:
+    """Eight sense bytes end before the ASC, so the zero fill after them is not the drive's ASC/ASCQ.
+
+    The port driver writes back how many sense bytes it returned. Read past
+    that count, the buffer's zero fill decodes as ASC/ASCQ 0x00/0x00 - "no
+    additional sense information" - which the drive never said; read to it,
+    the refusal says only the status it did return.
+    """
+    truncated = bytes([0x70, 0, 0x05, 0, 0, 0, 0, 10])
+    fake = FakeKernel32(ata_answers=False, sat_answers=lambda _command: (0x02, truncated))
+
+    record = _read(fake)
+
+    assert set(record) == {"identify_error", "smart_data_error", "smart_thresholds_error"}, record
+    for reason in record.values():
+        assert reason.endswith("; SAT refused, SCSI status 0x02"), reason

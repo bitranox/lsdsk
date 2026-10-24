@@ -354,3 +354,14 @@ def test_a_disk_listed_in_the_ordinary_class_naming_a_space_is_not_one_of_its_dr
     envelope = envelope_of(capture_with(_REAL, relate_the_boot_disk, tmp_path), cli_runner, production_factory)
 
     assert _disk_in(envelope, "PhysicalDrive0")["usage"]["uses"] == [{"kind": "letter", "name": "", "mounts": ["C:\\"]}]
+
+
+def test_a_space_is_listed_on_the_virtual_bus(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+) -> None:
+    """Windows names its transport, so the Space is a virtual disk rather than one whose bus went unread."""
+    envelope = envelope_of(capture_with(_REAL, lambda _data: None, tmp_path), cli_runner, production_factory)
+
+    assert _disk_in(envelope, _REAL_SPACE)["bus"] == "virtual"
