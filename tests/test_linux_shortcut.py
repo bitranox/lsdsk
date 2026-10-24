@@ -333,3 +333,57 @@ def test_both_entries_are_executable_by_everyone(home: Path) -> None:
 
     for entry in (home / "Desktop" / "lsdsk.desktop", home / ".local" / "share" / "applications" / "lsdsk.desktop"):
         assert entry.stat().st_mode & 0o777 == 0o755, entry
+
+
+@pytest.mark.os_linux
+def test_a_bare_home_in_user_dirs_is_home_itself_and_so_no_desktop(home: Path) -> None:
+    """``"$HOME"`` without the slash is expanded like ``"$HOME/"``: home, which turns the desktop off."""
+    config_home = _user_dirs(home / "cfg", 'XDG_DESKTOP_DIR="$HOME"')
+    shortcut = LinuxDesktopShortcut(config_home=config_home)
+
+    assert shortcut.desktop_dir() == home
+    assert shortcut.has_desktop() is False
+
+
+@pytest.mark.os_linux
+def test_a_relative_path_in_user_dirs_is_ignored_for_the_default(home: Path) -> None:
+    """The spec allows only ``$HOME/...`` or an absolute path; a relative one would follow the working directory."""
+    (home / "Desk").mkdir()
+    config_home = _user_dirs(home / "cfg", 'XDG_DESKTOP_DIR="Desk"')
+
+    assert LinuxDesktopShortcut(config_home=config_home).desktop_dir() == home / "Desktop"
+
+
+@pytest.mark.os_linux
+def test_a_commented_out_desktop_line_is_not_read(home: Path) -> None:
+    (home / "Old").mkdir()
+    config_home = _user_dirs(home / "cfg", '# XDG_DESKTOP_DIR="$HOME/Old"')
+
+    assert LinuxDesktopShortcut(config_home=config_home).desktop_dir() == home / "Desktop"
+
+
+@pytest.mark.os_linux
+def test_user_dirs_is_read_from_xdg_config_home_when_none_is_given(home: Path, user_config_dir: Path) -> None:
+    """With no directory given, user-dirs.dirs is read from the config home the environment names.
+
+    ``user_config_dir`` points that variable away from ``~/.config`` on Linux, and
+    its parent is the config home itself, so the file here is found only if the
+    variable is honoured.
+    """
+    (home / "Schreibtisch").mkdir()
+    _user_dirs(user_config_dir.parent, 'XDG_DESKTOP_DIR="$HOME/Schreibtisch"')
+
+    assert LinuxDesktopShortcut().desktop_dir() == home / "Schreibtisch"
+
+
+@pytest.mark.os_linux
+def test_an_undecodable_line_elsewhere_in_user_dirs_does_not_hide_the_desktop_line(home: Path) -> None:
+    """One path that will not decode names no folder; it is no reason to ignore the line that does."""
+    (home / "Schreibtisch").mkdir()
+    config_home = home / "cfg"
+    config_home.mkdir()
+    (config_home / "user-dirs.dirs").write_bytes(
+        b'XDG_MUSIC_DIR="$HOME/M\xffsik"\nXDG_DESKTOP_DIR="$HOME/Schreibtisch"\n'
+    )
+
+    assert LinuxDesktopShortcut(config_home=config_home).desktop_dir() == home / "Schreibtisch"
