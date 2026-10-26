@@ -1,5 +1,7 @@
 # lsdsk
 
+<img src="../src/lsdsk/assets/icon/lsdsk-256.png" alt="lsdsk-Logo: eine Festplattenscheibe, durchzogen von einer Herzschlaglinie" width="128" align="right">
+
 [English](../README.md) | **Deutsch**
 
 <!-- Badges -->

@@ -1,5 +1,7 @@
 # lsdsk
 
+<img src="https://raw.githubusercontent.com/bitranox/lsdsk/main/src/lsdsk/assets/icon/lsdsk-256.png" alt="lsdsk logo: a disk platter crossed by a heartbeat line" width="128" align="right">
+
 **English** | [Deutsch](https://github.com/bitranox/lsdsk/blob/main/de/README.md)
 
 <!-- Badges -->
