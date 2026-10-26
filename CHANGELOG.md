@@ -27,6 +27,10 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 - The README shows the lsdsk logo.
 
+### Changed
+
+- Requires pwshpy 1.9.0 or later.
+
 ## [1.15.5] 2026-10-24 17:49:47
 
 ### Changed

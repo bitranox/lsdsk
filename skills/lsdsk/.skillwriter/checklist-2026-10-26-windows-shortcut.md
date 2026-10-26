@@ -37,9 +37,14 @@ stays silent there.
     "Administrator" means an elevated process.
 - [x] `tests/test_windows_shortcut.py` (14 tests, fake pwshpy module at the loader seam) holds each
       of those, and mutating `run_as_administrator` or the Start-menu write turns them RED.
-- [ ] Not yet run on a real Windows machine: pwshpy's `run_as_administrator` keyword ships in a
-      later pwshpy release. The real run (`install-shortcut --json`, then `ps.get_shortcut`
-      reading the flag back on both files) is part of the release that raises the floor.
+- [x] Run on a real Windows 11 machine with pwshpy 1.9.0: `install-shortcut --format json` exited
+      0 and named the Desktop file, and `ps.get_shortcut` read back both `lsdsk.lnk` files
+      (Desktop and Start-menu Programs) with `run_as_administrator` true, the `uvx` target, the
+      `"7 days"` argument quoted as one, the copied `lsdsk.ico` present, and the shared
+      description.
+- [x] A double-click on that machine, with lsdsk 1.15.6 on PyPI: one UAC prompt, then the
+      interactive view in one window with no NOT ELEVATED banner and no second prompt; a cancelled
+      prompt started nothing; the lsdsk icon on the Desktop and in the Start menu.
 
 ## RED
 
