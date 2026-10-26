@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 
 import lib_log_rich.runtime
 import pytest
-from lib_log_rich.domain import LogLevel
+from lib_log_rich.domain import ConsoleStream, LogLevel
 from lib_log_rich.runtime import RichConsoleAdapter
 
 from lsdsk.adapters.cli import safe_console
@@ -71,7 +71,7 @@ def _slow_console(appearance: ConsoleAppearance) -> ConsolePort:
     return _SlowConsole(
         RichConsoleAdapter(
             no_color=True,
-            stream="custom",
+            stream=ConsoleStream.CUSTOM,
             stream_target=safe_console.safe_stream(err=True, records_failures=True),
         )
     )

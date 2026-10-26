@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Final, NamedTuple, cast
 
 import lib_log_rich.runtime
 from dotenv import dotenv_values
-from lib_log_rich.domain import ConsoleStream, LogLevel
+from lib_log_rich.domain import ConsoleStream, ConsoleTheme, LogLevel
 from lib_log_rich.domain.palettes import CONSOLE_STYLE_THEMES
 from lib_log_rich.runtime import RichConsoleAdapter
 from lib_log_rich.runtime.settings import parse_console_styles, parse_scrub_patterns
@@ -185,9 +185,7 @@ def _guarded_console(appearance: ConsoleAppearance) -> RichConsoleAdapter:
         styles=appearance.styles,
         format_preset=appearance.format_preset,
         format_template=appearance.format_template,
-        # The adapter's parameter is text, so the member crosses as its value here
-        # and nowhere earlier.
-        stream=stream.value,
+        stream=stream,
         stream_target=target,
     )
 
@@ -741,7 +739,7 @@ def _demo_settings(key: str) -> dict[str, object]:
         # is over when this returns, with nothing left in a queue.
         "queue_enabled": False,
         "force_color": True,
-        "console_styles": dict(CONSOLE_STYLE_THEMES[key]),
+        "console_styles": dict(CONSOLE_STYLE_THEMES[ConsoleTheme(key)]),
         "console_theme": key,
     }
 
