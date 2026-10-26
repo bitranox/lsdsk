@@ -117,8 +117,8 @@ include = [
 
 # `packages` above ships the whole src/lsdsk tree, data files included, so the
 # editable icon master is dropped from the WHEEL here while it stays in the sdist
-# (it has no runtime consumer; only lsdsk-256.png and lsdsk.ico do). See the
-# lsdsk.ico acceptance in CLAUDE.md.
+# (it has no runtime consumer; only lsdsk-256.png, the Linux shortcut's icon,
+# and lsdsk.ico, the Windows one, do).
 exclude = [
     "src/lsdsk/assets/icon/lsdsk.svg",
 ]

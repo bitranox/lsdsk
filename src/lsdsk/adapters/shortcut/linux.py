@@ -28,13 +28,13 @@ from typing import TYPE_CHECKING
 from lsdsk.adapters.atomicfile import replace_atomically
 from lsdsk.adapters.textfile import read_text_bounded
 from lsdsk.domain.errors import ConfigurationError
+from lsdsk.domain.shortcut import SHORTCUT_COMMENT
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 _FILENAME = "lsdsk.desktop"
 _NAME = "lsdsk"
-_COMMENT = "See your disks and controllers, and what is wrong with how they are connected"
 #: Executable for everyone, as a desktop environment requires before it launches
 #: an entry; readable for everyone, since it holds no secret.
 _EXECUTABLE_MODE = 0o755
@@ -153,7 +153,7 @@ class LinuxDesktopShortcut:
             "[Desktop Entry]",
             "Type=Application",
             f"Name={_NAME}",
-            f"Comment={_COMMENT}",
+            f"Comment={SHORTCUT_COMMENT}",
             f"Exec={_exec_value(launch)}",
             "Terminal=true",
             "Categories=System;Utility;",

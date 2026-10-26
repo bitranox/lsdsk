@@ -23,6 +23,7 @@ Contents:
 
 from __future__ import annotations
 
+import sys
 from importlib import resources
 from typing import TYPE_CHECKING
 
@@ -32,22 +33,26 @@ from lsdsk.adapters.config.offer import user_config_path
 if TYPE_CHECKING:
     from pathlib import Path
 
-#: The icon as it is shipped inside the package.
-_SHIPPED_ICON = "lsdsk-256.png"
-
-#: The name of the copy the shortcut references, beside the user ``config.toml``.
-_USER_ICON_NAME = "lsdsk.png"
+#: The shipped icon and the name of the copy the shortcut references, beside the
+#: user ``config.toml``. Windows takes the ICO, because a ``.lnk`` draws its icon
+#: from an ICO or an executable and never from a PNG; a ``.desktop`` takes the PNG.
+_PNG_ICON = ("lsdsk-256.png", "lsdsk.png")
+_ICO_ICON = ("lsdsk.ico", "lsdsk.ico")
 
 #: An icon is not a secret, so unlike the configuration beside it the copy is
 #: world-readable - a desktop environment reads it to draw the launcher.
 _ICON_MODE = 0o644
 
 
-def copy_shipped_icon() -> Path:
+def copy_shipped_icon(*, platform: str = sys.platform) -> Path:
     """Copy the packaged icon into the per-user directory and return its path.
 
     The copy lands beside the user ``config.toml`` and is rewritten on every
     call, so a package upgrade's new icon propagates to the shortcut.
+
+    Args:
+        platform: ``sys.platform`` whose shortcut shows the icon, which decides
+            the format; this machine's by default.
 
     Returns:
         The path of the copied icon.
@@ -58,8 +63,9 @@ def copy_shipped_icon() -> Path:
         NoUserConfigPathError: No user configuration directory can be named on
             this machine (an ``OSError``, so it is a failed write like the rest).
     """
-    body = (resources.files("lsdsk") / "assets" / "icon" / _SHIPPED_ICON).read_bytes()
-    destination = user_config_path().parent / _USER_ICON_NAME
+    shipped, copy_name = _ICO_ICON if platform == "win32" else _PNG_ICON
+    body = (resources.files("lsdsk") / "assets" / "icon" / shipped).read_bytes()
+    destination = user_config_path().parent / copy_name
     destination.parent.mkdir(parents=True, exist_ok=True)
     replace_bytes_atomically(destination, body, mode=_ICON_MODE)
     return destination

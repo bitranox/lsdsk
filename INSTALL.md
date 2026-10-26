@@ -148,9 +148,12 @@ the folder it looked for. On Linux that folder is the one your desktop records
 in `~/.config/user-dirs.dirs` (`~/Schreibtisch` on a German desktop), and
 `~/Desktop` where it records none.
 
-On Linux it writes a `.desktop` entry and on macOS a `.command` file. Windows
-is not supported yet: there the interactive view offers no shortcut, and
-`lsdsk install-shortcut` refuses, saying it is not available in this build. Where
+On Linux it writes a `.desktop` entry (to the desktop and the application
+menu), on macOS a `.command` file, and on Windows a `.lnk` shortcut (to the
+desktop and the Start menu). The Windows shortcut starts lsdsk as Administrator:
+Windows asks once through UAC before lsdsk starts, and the view opens in that
+one window; cancelling the prompt starts nothing. On Windows the desktop is the
+folder Windows names for your account, including one moved into OneDrive. Where
 `uvx` is available the shortcut launches lsdsk through it, with the same 7-day
 cooldown the project pins, so a start from the desktop gets the supply-chain
 protection a plain `uvx` run would. (If only a plainly installed `lsdsk` is on

@@ -18,7 +18,9 @@ elevated through pwshpy's ``ps.elevate`` - a UAC prompt on Windows (the user's
 decision of 2026-10-16), ``sudo`` on Linux and macOS (2026-10-17), which
 pwshpy starts. pwshpy is reached by NAME through importlib, so the import graph
 below cannot see it, and the second test pins it to the one module allowed to
-start that process.
+start that process. The Windows desktop shortcut reaches pwshpy too, to write a
+``.lnk`` and look up the Desktop folder; that starts no process, and a test
+holds that module to those members and away from ``elevate``.
 
 Nothing checked it. Every one of those documents would have gone on saying it
 after the first ``import subprocess`` landed, so the claim is asserted here
@@ -357,9 +359,16 @@ def test_only_the_uv_bootstrap_module_shells_out_and_it_still_does() -> None:
     )
 
 
-#: The one module allowed to reach pwshpy, whose ``ps.elevate`` starts the
+#: The one module allowed to reach pwshpy's ``ps.elevate``, which starts the
 #: elevated copy - the only process lsdsk ever starts through the library.
 RELAUNCHES = "adapters/hw/elevation.py"
+
+#: The Windows shortcut writer, which reaches pwshpy only to write a ``.lnk`` and
+#: name the Desktop and Start-menu folders - neither starts a process.
+WRITES_SHORTCUTS = "adapters/shortcut/windows.py"
+
+#: The pwshpy members the shortcut writer may name; ``elevate`` is not one.
+_SHORTCUT_MEMBERS = frozenset({"ps", "KnownFolder", "PwshPyError", "get_known_folder", "new_shortcut"})
 
 
 def _reaches_pwshpy(source: str) -> bool:
@@ -408,14 +417,34 @@ def test_the_pwshpy_scan_sees_a_reach_but_not_a_bare_package_name() -> None:
 
 
 @pytest.mark.os_agnostic
-def test_only_the_elevation_module_reaches_the_library_that_starts_a_process() -> None:
-    """A second module importing pwshpy would be a second way to start a process."""
+def test_only_the_elevation_and_shortcut_modules_reach_the_library_that_starts_a_process() -> None:
+    """A third module importing pwshpy would be a third reach, and possibly a second way to start a process."""
     naming = sorted(
         str(module.relative_to(SRC)).replace("\\", "/")
         for module in _modules()
         if _reaches_pwshpy(module.read_text(encoding="utf-8"))
     )
-    assert naming == [RELAUNCHES], f"pwshpy is imported outside {RELAUNCHES}: {naming}"
+    assert naming == sorted([RELAUNCHES, WRITES_SHORTCUTS]), f"pwshpy is imported outside the two allowed: {naming}"
+
+
+def _pwshpy_members_named(source: str) -> set[str]:
+    """Every attribute name the module reads off anything, which covers every pwshpy member it calls."""
+    return {node.attr for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Attribute)}
+
+
+@pytest.mark.os_agnostic
+def test_the_shortcut_writer_names_no_pwshpy_member_that_starts_a_process() -> None:
+    """Writing a ``.lnk`` is the shortcut module's whole reach: it must never name ``elevate``.
+
+    Checked against the attributes the module reads, so a call written through
+    ``ps.elevate`` - or any starter pwshpy grows - shows up by name, and the
+    allowed set is the shortcut and known-folder members the adapter needs.
+    """
+    named = _pwshpy_members_named((SRC / WRITES_SHORTCUTS).read_text(encoding="utf-8"))
+
+    assert "elevate" not in named
+    assert named >= _SHORTCUT_MEMBERS, "the control: the scan must see the members the adapter really calls"
+    assert "elevate" in _pwshpy_members_named("pwshpy.ps.elevate(['x'])\n"), "the planted call must be seen"
 
 
 # The kernel log is the one plausible SECOND source for the AHCI port bitmap,

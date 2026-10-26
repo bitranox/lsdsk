@@ -155,10 +155,14 @@ Unter Linux ist das der Ordner, den der Desktop in `~/.config/user-dirs.dirs`
 einträgt (`~/Schreibtisch` auf einem deutschen Desktop), und `~/Desktop`, wo er
 keinen einträgt.
 
-Unter Linux schreibt es einen `.desktop`-Eintrag, unter macOS eine
-`.command`-Datei. Windows wird noch nicht unterstützt: Dort bietet die
-interaktive Ansicht keine Verknüpfung an, und `lsdsk install-shortcut` lehnt mit
-dem Hinweis ab, dass sie in diesem Build noch nicht verfügbar ist. Wo `uvx`
+Unter Linux schreibt es einen `.desktop`-Eintrag (auf den Desktop und ins
+Anwendungsmenü), unter macOS eine `.command`-Datei und unter Windows eine
+`.lnk`-Verknüpfung (auf den Desktop und ins Startmenü). Die Windows-Verknüpfung
+startet lsdsk als Administrator: Windows fragt einmal über die
+Benutzerkontensteuerung, bevor lsdsk startet, und die Ansicht öffnet sich in
+diesem einen Fenster; bricht man die Abfrage ab, startet nichts. Unter Windows
+ist der Desktop der Ordner, den Windows für das Konto angibt, auch ein nach
+OneDrive verschobener. Wo `uvx`
 vorhanden ist, startet die Verknüpfung lsdsk darüber,
 mit derselben 7-Tage-Wartezeit, die das Projekt festlegt, so bekommt ein Start
 vom Desktop den Lieferkettenschutz, den ein einfacher `uvx`-Lauf hätte. (Ist nur

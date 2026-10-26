@@ -93,7 +93,7 @@ uvx lsdsk info                # version, homepage and the shell command name
 uvx lsdsk config              # show effective configuration (--section thresholds for one)
 uvx lsdsk config-deploy --target user   # write ~/.config/lsdsk so it can be edited (app|host need root)
 uvx lsdsk config-generate-examples --destination DIR   # scaffold examples
-uvx lsdsk install-shortcut    # Linux/macOS: a desktop shortcut that launches lsdsk; --install-uv installs uv first if it is missing
+uvx lsdsk install-shortcut    # a desktop shortcut that launches lsdsk; --install-uv installs uv first if it is missing
 uvx lsdsk --replay m.json     # render a capture from any machine
 ```
 
@@ -125,10 +125,7 @@ picks which logging theme it previews.
 
 ### The desktop shortcut
 
-`install-shortcut` exists on Linux and macOS only. On Windows this build has no
-shortcut: the command refuses with exit `78` and `a desktop shortcut is not
-available on win32 in this build yet`, before anything else, so it writes nothing and
-`--install-uv` installs nothing.
+`install-shortcut` writes the platform's own launcher:
 
 - **Linux:** an executable `lsdsk.desktop` (`Terminal=true`) on the Desktop and in
   `$XDG_DATA_HOME/applications` (default `~/.local/share/applications`). The Desktop is
@@ -136,20 +133,31 @@ available on win32 in this build yet`, before anything else, so it writes nothin
   German desktop), else `~/Desktop`.
 - **macOS:** an executable `lsdsk.command` on `~/Desktop`, which opens Terminal and
   carries no icon.
+- **Windows:** `lsdsk.lnk` on the Desktop and in the Start-menu Programs folder,
+  showing `lsdsk.ico`. The Desktop is the folder Windows names for the account,
+  a Desktop moved into OneDrive included. Both are marked to run as
+  Administrator: a double-click asks once through UAC before lsdsk starts, and the
+  view opens in that one console window, already elevated, so lsdsk does not
+  relaunch itself. Cancelling that prompt starts nothing. On a standard account
+  UAC asks for an administrator's credentials, and lsdsk then runs as that
+  administrator, with that account's configuration and counter history.
 
 The shortcut runs `uvx ... lsdsk@latest` with a 7-day cooldown (third-party dependencies only from releases at least 7 days
 old; lsdsk and its own libraries are exempt and come at their latest), or a plain
 `lsdsk` already on PATH when there is no `uvx`; `data.launch` in `--format json`
-is the exact argv. Running it again replaces the file, and deleting the file
-removes the shortcut. Launching it is uv's business, not lsdsk's: `uvx` fetches
-`lsdsk@latest` from PyPI. It goes on the Desktop of the account it runs as, read
-from that account's `$HOME` and XDG variables, so run it as yourself, not under
-`sudo`.
+is the exact argv. Running it again replaces the files, and deleting them
+removes the shortcut; `data.shortcut` is the Desktop one. Launching it is uv's business, not lsdsk's: `uvx` fetches
+`lsdsk@latest` from PyPI. It goes on the Desktop of the account it runs as (read
+from that account's `$HOME` and XDG variables on Linux), so run it as yourself, not
+under `sudo` or as another Administrator account. The icon is copied first to the
+user configuration directory (`lsdsk.png` beside `config.toml`, `lsdsk.ico` on
+Windows), so it survives an upgrade.
 
 **An account with no desktop folder gets no shortcut**: the Desktop path above
 does not exist. That covers a headless server, a `$XDG_DESKTOP_DIR` naming a
-missing folder, `user-dirs.dirs` naming `"$HOME/"`, and a Mac with no
-`~/Desktop`. The command refuses with exit `78` and
+missing folder, `user-dirs.dirs` naming `"$HOME/"`, a Mac with no
+`~/Desktop`, and a Windows account Windows names no Desktop for (`Windows names
+no Desktop folder for this account`). The command refuses with exit `78` and
 `<reason>, so there is nowhere to put a shortcut`. A folder that is really missing reads
 `no desktop folder at <path>`; `"$HOME/"` in `user-dirs.dirs`, the spec's way of
 turning the desktop off, reads `<config>/user-dirs.dirs turns the desktop off: its
@@ -176,12 +184,13 @@ goes to standard error too, so `--format json` still prints the envelope alone.
 |---------------------------------------------------------------------------------------------------------------------------|------|-----------------------------------------------------------------|
 | Shortcut written                                                                                                          | `0`  | `ok` true, `data.shortcut` (the path), `data.launch` (the argv) |
 | Refused (any case above)                                                                                                  | `78` | `ok` false, `error.type` `CONFIG_ERROR`                         |
-| A write refused for permission                                                                                            | `13` | `ok` false, `error.type` `PERMISSION_DENIED`                    |
+| A file write refused for permission (a Linux or macOS shortcut, or the icon copy)                                         | `13` | `ok` false, `error.type` `PERMISSION_DENIED`                    |
 | Any other failed write (a full disk, a directory where the file goes)                                                     | `74` | `ok` false, `error.type` `IO_ERROR`                             |
+| A Windows `.lnk` the shell refused to save, for any reason, access denied included                                        | `74` | `ok` false, `error.type` `IO_ERROR`, the HRESULT in the message |
 | A control character (a newline included) in a launch argument or the icon path, which no Linux `.desktop` value can carry | `74` | `ok` false, `error.type` `IO_ERROR`, nothing written            |
 | No user configuration directory can be named (a relative `$XDG_CONFIG_HOME`)                                              | `74` | `ok` false, `error.type` `IO_ERROR`                             |
 
-On Linux the Desktop file is written first and the menu copy second, so a
+On Linux and Windows the Desktop file is written first and the menu copy second, so a
 failure on the menu copy leaves the Desktop file in place, and exits by the row that failure matches. The icon
 is copied before either, so an icon that will not copy writes no shortcut at all. The
 first failure ends the run, with one stderr line naming the file, and the JSON is the
@@ -197,13 +206,13 @@ under `--replay` and `--no-elevate` too, with three answers:
 
 The offer stays silent in the following cases:
 
-- on Windows;
 - on an account with no desktop folder;
 - once the shortcut exists (the file on the Desktop);
 - in the elevated copy the interactive view starts, which would otherwise ask a
   second time for one start;
-- in a run already holding root or Administrator, whose answer would be written by
-  that account into the person's own configuration directory;
+- in a run already holding root or Administrator (on Windows an elevated process,
+  not merely an account in the Administrators group), whose answer would be written
+  by that account into the person's own configuration directory;
 - when that key is off;
 - whenever the printed page is chosen instead of the view.
 

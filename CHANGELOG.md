@@ -5,6 +5,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Added
+
+- Windows gets the desktop shortcut too: `lsdsk install-shortcut` and the interactive view's offer
+  write `lsdsk.lnk` to the Desktop Windows names for the account (a OneDrive Desktop included) and
+  to the Start menu, with the lsdsk icon. The shortcut starts lsdsk as Administrator, so Windows
+  asks once through UAC and the view opens in that one window. It is written through pwshpy's
+  shortcut API; the module that does it starts no process, and the guard that pins pwshpy's reach
+  now names it beside the elevation relaunch.
+
 ## [1.15.6] 2026-10-27 09:12:15
 
 ### Fixed
@@ -13,6 +22,10 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   'custom'` (exit 70) on a fresh install, `uvx lsdsk` and the desktop shortcut included, because
   the resolver picked lib_log_rich 8, which takes its console stream and theme as enum members
   rather than strings. lsdsk now passes the enum members and requires lib_log_rich 8.0.1 or newer.
+
+### Added
+
+- The README shows the lsdsk logo.
 
 ## [1.15.5] 2026-10-24 17:49:47
 

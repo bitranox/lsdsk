@@ -37,6 +37,10 @@ OWNED_CLOSURE: Final = (
     "lib-registry",
 )
 
+#: The one-line description every platform's shortcut carries: the Linux
+#: entry's ``Comment`` and the tooltip Explorer shows for the Windows ``.lnk``.
+SHORTCUT_COMMENT: Final = "See your disks and controllers, and what is wrong with how they are connected"
+
 #: The uv release lsdsk's installer is pinned to, so a reader runs a known
 #: installer rather than whatever is newest. Bump it deliberately as uv releases,
 #: the way a dependency floor is bumped; both the automatic install and the
@@ -194,6 +198,7 @@ def should_offer(
 
 __all__ = [
     "OWNED_CLOSURE",
+    "SHORTCUT_COMMENT",
     "UVX_COOLDOWN",
     "UV_INSTALLER_URL_POSIX",
     "UV_INSTALLER_URL_WINDOWS",

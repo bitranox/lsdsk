@@ -25,6 +25,7 @@ from lsdsk.adapters.cli.commands.shortcut import (
 from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
 from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
+from lsdsk.adapters.shortcut.windows import WindowsDesktopShortcut
 from lsdsk.adapters.uv_bootstrap import UvInstallResult
 from lsdsk.domain.enums import OutputFormat
 from lsdsk.domain.shortcut import manual_install_line, uvx_launch_args
@@ -233,10 +234,11 @@ def test_the_real_linux_adapter_with_a_directory_where_the_file_goes_leaves_io_e
 
 
 @pytest.mark.os_agnostic
-def test_the_platform_dispatch_has_linux_and_macos_and_leaves_windows_pending() -> None:
+def test_the_platform_dispatch_has_linux_macos_and_windows_and_nothing_else() -> None:
     assert isinstance(shortcuts_for("linux"), LinuxDesktopShortcut)
     assert isinstance(shortcuts_for("darwin"), MacosDesktopShortcut)
-    assert shortcuts_for("win32") is None
+    assert isinstance(shortcuts_for("win32"), WindowsDesktopShortcut)
+    assert shortcuts_for("aix") is None
 
 
 @pytest.mark.os_linux
@@ -317,9 +319,9 @@ def test_the_human_report_names_the_launch_as_a_shell_would_quote_it(capsys: pyt
 
 def test_a_platform_with_no_shortcut_adapter_is_refused_with_config_error(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as leaving:
-        install_shortcut(output_format=OutputFormat.JSON, platform="win32")
+        install_shortcut(output_format=OutputFormat.JSON, platform="aix")
 
     assert leaving.value.code == ExitCode.CONFIG_ERROR
     envelope = json.loads(capsys.readouterr().out)
     assert envelope["error"]["type"] == "CONFIG_ERROR"
-    assert "not available on win32" in envelope["error"]["message"]
+    assert "not available on aix" in envelope["error"]["message"]

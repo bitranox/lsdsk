@@ -25,6 +25,8 @@ from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
 from lsdsk.adapters.uv_bootstrap import UvInstallResult
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+#: An ICO file starts with a zero reserved word and type 1.
+_ICO_SIGNATURE = b"\x00\x00\x01\x00"
 
 
 @pytest.mark.os_agnostic
@@ -44,7 +46,7 @@ def test_copy_shipped_icon_writes_the_png_into_the_user_config_dir() -> None:
     """The icon lands beside the user config.toml, resolved through the one resolver."""
     from lsdsk.adapters.shortcut.icon import copy_shipped_icon
 
-    destination = copy_shipped_icon()
+    destination = copy_shipped_icon(platform="linux")
 
     assert destination == user_config_path().parent / "lsdsk.png"
     assert destination.is_file()
@@ -53,15 +55,27 @@ def test_copy_shipped_icon_writes_the_png_into_the_user_config_dir() -> None:
 
 
 @pytest.mark.os_agnostic
+def test_windows_gets_the_ico_because_a_lnk_shows_no_png() -> None:
+    """A ``.lnk`` takes its icon from an ICO (or an executable), never from a PNG."""
+    from lsdsk.adapters.shortcut.icon import copy_shipped_icon
+
+    destination = copy_shipped_icon(platform="win32")
+
+    assert destination == user_config_path().parent / "lsdsk.ico"
+    assert destination.read_bytes().startswith(_ICO_SIGNATURE), "the Windows icon is not an ICO"
+    assert destination.read_bytes() == (resources.files("lsdsk") / "assets" / "icon" / "lsdsk.ico").read_bytes()
+
+
+@pytest.mark.os_agnostic
 def test_copy_shipped_icon_refreshes_on_every_call() -> None:
     """A second create re-copies, so an upgraded package icon propagates."""
     from lsdsk.adapters.shortcut.icon import copy_shipped_icon
 
-    destination = copy_shipped_icon()
+    destination = copy_shipped_icon(platform="linux")
     shipped = destination.read_bytes()
     destination.write_bytes(b"stale")
 
-    again = copy_shipped_icon()
+    again = copy_shipped_icon(platform="linux")
 
     assert again == destination
     assert destination.read_bytes() == shipped, "the icon was not refreshed on re-create"
