@@ -998,7 +998,7 @@ wheels = [
 
 [[package]]
 name = "lib-log-rich"
-version = "8.0.1"
+version = "8.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lib-cli-exit-tools" },
@@ -1008,9 +1008,9 @@ dependencies = [
     { name = "rich" },
     { name = "rich-click" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5d/2c/13deb021e641707bbda1b097662a2f3116c2741de7a5a8c9a4fd1addad2c/lib_log_rich-8.0.1.tar.gz", hash = "sha256:d163d30fc54e3dd30a55e91f7e55b34ba5b2ee07911f90e25208a9af65b49cb1", size = 396010, upload-time = "2026-10-26T21:05:33.725Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/76/f8/4f4164bd42fae21d0aa449b9cb7ab3b4b0c27e0423364d496bf07f2eeee1/lib_log_rich-8.0.3.tar.gz", hash = "sha256:bb29a87650e0d2af2898a04f7a06088bc93d18abe7691953a03885f466184430", size = 409976, upload-time = "2026-10-27T09:49:23.065Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c0/a5/83738c158d8fe837be7703b165b0e053f4249e8b27d5c5db0bd5724caeb9/lib_log_rich-8.0.1-py3-none-any.whl", hash = "sha256:77098cbacf9388a181e858267d790da918363689bc1e95de661178d3f1bb2e9e", size = 235534, upload-time = "2026-10-26T21:05:31.896Z" },
+    { url = "https://files.pythonhosted.org/packages/a5/cf/60ea6bd3ce43ec7ec7a9f964a56951fc56932c9ae21f1ea89e288d7ef565/lib_log_rich-8.0.3-py3-none-any.whl", hash = "sha256:f2361f51fdaf052178968e3ca40afc2c56db867302250a1f6b83e1a675e3bc4f", size = 240455, upload-time = "2026-10-27T09:49:21.323Z" },
 ]
 
 [[package]]
@@ -1049,7 +1049,7 @@ wheels = [
 
 [[package]]
 name = "lsdsk"
-version = "1.15.6"
+version = "1.16.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
@@ -1108,7 +1108,7 @@ requires-dist = [
     { name = "jaraco-context", marker = "extra == 'dev'", specifier = ">=6.1.2" },
     { name = "lib-cli-exit-tools", specifier = ">=2.4.1" },
     { name = "lib-layered-config", specifier = ">=7.3.0" },
-    { name = "lib-log-rich", specifier = ">=8.0.1" },
+    { name = "lib-log-rich", specifier = ">=8.0.3" },
     { name = "orjson", specifier = ">=3.13.0" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.10.1" },
     { name = "pwshpy", specifier = ">=1.9.0" },

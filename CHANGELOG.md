@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.16.0] 2026-10-27 10:49:11
+
 ### Added
 
 - Windows gets the desktop shortcut too: `lsdsk install-shortcut` and the interactive view's offer
@@ -13,6 +15,10 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   asks once through UAC and the view opens in that one window. It is written through pwshpy's
   shortcut API; the module that does it starts no process, and the guard that pins pwshpy's reach
   now names it beside the elevation relaunch.
+- An interactive start shows a bold green "Scanning Drives ..." line with a spinner from the moment
+  Python starts until the view opens, so the seconds spent importing and reading the machine are no
+  longer a blank window. It gives way to the shortcut offer and the elevation prompt, and never
+  appears for a subcommand, `--help`, `--version`, a pipe or a redirect.
 
 ## [1.15.6] 2026-10-27 09:12:15
 
