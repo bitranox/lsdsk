@@ -5,6 +5,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.15.6] 2026-10-27 09:12:15
+
+### Fixed
+
+- Every command crashed at start with `TypeError: stream must be a member of ConsoleStream, got
+  'custom'` (exit 70) on a fresh install, `uvx lsdsk` and the desktop shortcut included, because
+  the resolver picked lib_log_rich 8, which takes its console stream and theme as enum members
+  rather than strings. lsdsk now passes the enum members and requires lib_log_rich 8.0.1 or newer.
+
 ## [1.15.5] 2026-10-24 17:49:47
 
 ### Changed
