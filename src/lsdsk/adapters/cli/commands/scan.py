@@ -20,9 +20,8 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple, Protocol, TextIO
+from typing import TYPE_CHECKING, NamedTuple, Protocol
 
 import lib_log_rich.runtime
 import rich_click as click
@@ -44,6 +43,8 @@ from lsdsk.adapters.hw import snapshot as snapshot_adapter
 from lsdsk.adapters.hw.elevation import elevate_for_the_view, process_is_elevated
 from lsdsk.adapters.render import report, theme
 from lsdsk.adapters.render.tables import counter_legend
+from lsdsk.adapters.startup_notice import NoStartupNotice
+from lsdsk.adapters.terminal_streams import names_of_the_streams_the_view_needs, streams_that_are_not_terminals
 from lsdsk.domain.diagnostics import count_by_severity, register_default_links
 from lsdsk.domain.elevation import Elevation, ElevationState
 from lsdsk.domain.enums import ActionCommand, CliCommand, Environment, OutputFormat, Severity, TreeDensity
@@ -63,7 +64,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from lsdsk.adapters.history.store import HistoryRead
-    from lsdsk.application.ports import ElevateForTheView
+    from lsdsk.application.ports import ElevateForTheView, ShowsStartupProgress
     from lsdsk.domain.history import History
 
 logger = logging.getLogger(__name__)
@@ -735,69 +736,6 @@ def emit_json(
     safe_console.echo(envelope.model_dump_json(indent=2))
 
 
-def streams_that_are_not_terminals() -> list[str]:
-    """Name each standard stream the interactive view needs that is not a terminal.
-
-    Textual reads key events from stdin, so ``lsdsk < /dev/null`` would open a
-    view nobody can quit, and stdout is asked because a redirected stdout means
-    the reader wants the printed page. The third is the stream the view DRAWS
-    on, which Textual chooses by platform exactly as :func:`_drawing_stream`
-    does: its POSIX driver draws on ``sys.__stderr__``, so ``lsdsk 2>err.log``
-    at a terminal opened a view nobody could see - measured, the screen stayed
-    on the shell's text, 161,934 bytes of escape sequences went into the file,
-    and the run ended only on a blind ``q``; with ``2>&-`` there was nothing to
-    draw on at all. Its Windows driver draws on stdout, which is already asked,
-    so a Windows ``lsdsk 2>log`` keeps its view.
-
-    Returns:
-        ``"standard input"``, ``"standard output"`` and, where the view draws
-        on it, ``"standard error"``, each included when that stream is missing
-        or not a terminal. Empty when somebody is sitting at every one of them.
-    """
-    return [name for name, stream in _streams_the_view_needs() if not (stream is not None and stream.isatty())]
-
-
-def names_of_the_streams_the_view_needs() -> list[str]:
-    """Name every standard stream the interactive view needs on this platform.
-
-    Returns:
-        ``"standard input"`` and ``"standard output"``, and ``"standard error"``
-        where the view draws on it - so a refusal names the requirement that
-        holds here rather than another platform's.
-    """
-    return [name for name, _ in _streams_the_view_needs()]
-
-
-def _streams_the_view_needs() -> list[tuple[str, TextIO | None]]:
-    """Pair each stream the interactive view needs with its name.
-
-    Returns:
-        stdin and stdout, then the drawing stream where it is a third one.
-    """
-    streams: list[tuple[str, TextIO | None]] = [("standard input", sys.stdin), ("standard output", sys.stdout)]
-    drawing = _drawing_stream()
-    if drawing is not None:
-        streams.append(drawing)
-    return streams
-
-
-def _drawing_stream() -> tuple[str, TextIO | None] | None:
-    """Name the stream Textual draws on when it is not one already asked.
-
-    Textual picks its driver from ``sys.platform == "win32"`` (``App.get_driver_class``):
-    the Windows driver writes to ``sys.__stdout__``, the POSIX one to
-    ``sys.__stderr__``. It is the ORIGINAL stderr because that is the object the
-    driver holds - ``sys.stderr`` may be a stand-in this tool installed.
-
-    Returns:
-        ``("standard error", sys.__stderr__)`` off Windows; None on Windows,
-        where the view draws on the stdout the caller already asks about.
-    """
-    if sys.platform == "win32":
-        return None
-    return ("standard error", sys.__stderr__)
-
-
 def somebody_is_sitting_at_it() -> bool:
     """Answer whether a full-screen view has a terminal to open on.
 
@@ -950,6 +888,7 @@ class Collaborators(NamedTuple):
     elevate: ElevateForTheView
     offer: OffersTheShortcut
     already_elevated: Callable[[], bool]
+    startup: ShowsStartupProgress
 
 
 def ask_before_the_view(elevate: ElevateForTheView, replay: Path | None, display: DisplaySettings) -> Elevation:
@@ -1053,36 +992,48 @@ def run_default_view(
     # keyboard behind it. `script`, expect and pty-allocating job runners look
     # the same. That is what `lsdsk report` is for.
     if not somebody_is_sitting_at_it():
+        if seams is not None:
+            seams.startup.stop()
         page = seams.report if seams is not None else run_default_report
         page(replay, settings=settings, thresholds=thresholds, display=display)
         return
 
-    called = seams if seams is not None else the_real_collaborators(elevate_for_the_view)
+    called = seams if seams is not None else the_real_collaborators(elevate_for_the_view, NoStartupNotice())
     resolved = settings if settings is not None else get_history_settings(Config({}, {}))
     laid_out = display if display is not None else DisplaySettings()
     # Offer the desktop shortcut before elevation: an elevated relaunch opens in
     # its own window on Windows, so asking after it would ask where nobody waits.
+    # The startup line gives way to each prompt, so the question starts on a
+    # clean line, and runs again while the machine is read.
     if the_offer_is_made(laid_out, already_elevated=called.already_elevated()):
+        called.startup.pause()
         called.offer(laid_out)
+    called.startup.pause()
     elevation = ask_before_the_view(called.elevate, replay, laid_out)
+    called.startup.resume()
     with lib_log_rich.runtime.bind(job_id="cli-tui", extra={"command": "tui"}):
         inventory, findings, read = called.analyse(replay, OutputFormat.HUMAN, resolved, thresholds)
-        called.open_view(
+        view = called.open_view(
             inventory,
             read.history,
             tunables=Tunables(thresholds, laid_out),
             store_refusal=read.refusal,
             elevation=elevation,
-        ).run()
+        )
+        # Stopped after the view is BUILT, which imports and lays out nothing
+        # visible yet, and before it takes the screen.
+        called.startup.stop()
+        view.run()
         raise SystemExit(exit_code_for(findings))
 
 
-def the_real_collaborators(elevate: ElevateForTheView) -> Collaborators:
+def the_real_collaborators(elevate: ElevateForTheView, startup: ShowsStartupProgress) -> Collaborators:
     """Resolve the production functions, deferring both imports as before.
 
     Args:
         elevate: The elevation port the run's services carry, so the root
             group's container decides it rather than this module.
+        startup: The startup line the entry point started, from the same services.
 
     Returns:
         The collaborators this module reaches for when nothing was substituted.
@@ -1099,6 +1050,7 @@ def the_real_collaborators(elevate: ElevateForTheView) -> Collaborators:
         elevate=elevate,
         offer=offer_shortcut,
         already_elevated=process_is_elevated,
+        startup=startup,
     )
 
 
@@ -1482,7 +1434,9 @@ def cli_tui(
         # of escape sequences on stderr and nothing on stdout, and `lsdsk tui
         # 2>err.log` at a terminal left the screen unchanged and waited for a
         # blind q.
+        startup = get_cli_context(ctx).services.startup
         if not somebody_is_sitting_at_it():
+            startup.stop()
             missing = streams_that_are_not_terminals()
             verb = "is" if len(missing) == 1 else "are"
             needed = names_of_the_streams_the_view_needs()
@@ -1501,7 +1455,9 @@ def cli_tui(
         # Asked before anything is read, as on a bare run: the elevated copy
         # reads the machine itself.
         replaying = effective_replay(ctx, replay)
+        startup.pause()
         elevation = ask_before_the_view(get_cli_context(ctx).services.elevate, replaying, display)
+        startup.resume()
         # The interactive view has no machine-readable mode, so a refusal here is
         # always prose for the person in front of it.
         inventory = load_inventory(replaying, output_format=OutputFormat.HUMAN)
@@ -1520,13 +1476,15 @@ def cli_tui(
         from .history import read_history  # noqa: PLC0415 - deferred: history imports this module
 
         read = read_history(inventory, resolve_history(ctx))
-        open_view(
+        view = open_view(
             inventory,
             read.history,
             tunables=Tunables(thresholds, display),
             store_refusal=read.refusal,
             elevation=elevation,
-        ).run()
+        )
+        startup.stop()
+        view.run()
         raise SystemExit(ExitCode.SUCCESS)
 
 

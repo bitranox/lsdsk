@@ -125,6 +125,31 @@ class ElevateForTheView(Protocol):
     def __call__(self, replay: Path | None, *, wanted: bool) -> Elevation: ...
 
 
+class ShowsStartupProgress(Protocol):
+    """The line an interactive start shows until the view takes the screen.
+
+    A port because the entry point starts it before the CLI is imported and the
+    router has to give way to every prompt and stop it before the view draws;
+    a test watches those steps without a terminal.
+    """
+
+    def start(self) -> None:
+        """Draw the line; the entry point does this before the CLI is imported."""
+        ...
+
+    def pause(self) -> None:
+        """Erase the line and hand the streams back, so a prompt starts on a clean line."""
+        ...
+
+    def resume(self) -> None:
+        """Draw the line again after a pause; nothing once stopped."""
+        ...
+
+    def stop(self) -> None:
+        """Erase the line for good."""
+        ...
+
+
 class DesktopShortcuts(Protocol):
     """Create and find the desktop shortcut that launches lsdsk, per platform.
 
@@ -168,4 +193,5 @@ __all__ = [
     "GetConfig",
     "InitLogging",
     "PrintInfo",
+    "ShowsStartupProgress",
 ]

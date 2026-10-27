@@ -39,6 +39,7 @@ from lsdsk.adapters.config.loader import (
 from lsdsk.adapters.config.overrides import apply_overrides
 from lsdsk.adapters.config.profiles import dotenv_the_run_read
 from lsdsk.adapters.hw.elevation import RELAUNCH_MARKER
+from lsdsk.adapters.startup_notice import opens_the_view
 from lsdsk.domain.enums import DeployTarget, TreeDensity
 
 from . import safe_console
@@ -614,6 +615,10 @@ def cli(
     # cast, not a type: ignore - Click types ``obj`` as Any, and this project
     # closes such gaps with a cast to the real type (see typed_click.py).
     services = cast("AppServices", ctx.obj())
+    # The entry point guessed from the raw arguments whether this run opens the
+    # view; click now knows, and any other subcommand prints, so the line goes.
+    if ctx.invoked_subcommand is not None and not opens_the_view(ctx.invoked_subcommand):
+        services.startup.stop()
     if _subcommand_asks_for_help(ctx):
         # Click prints the page and exits while it parses the subcommand, which runs nothing that
         # needs the configuration, its warnings or logging.
@@ -690,7 +695,7 @@ def cli(
         settings=resolve_history(ctx),
         thresholds=thresholds,
         display=display,
-        seams=the_real_collaborators(services.elevate),
+        seams=the_real_collaborators(services.elevate, services.startup),
     )
 
 

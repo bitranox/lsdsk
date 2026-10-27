@@ -345,7 +345,7 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
     from lsdsk.adapters.cli.commands import scan
     from lsdsk.adapters.cli.commands.history import HistoryRead
     from lsdsk.adapters.cli.commands.scan import Analysis
-    from lsdsk.adapters.memory import elevate_in_memory
+    from lsdsk.adapters.memory import StartupNoticeInMemory, elevate_in_memory
     from lsdsk.domain.history import History
     from lsdsk.domain.thresholds import Thresholds
 
@@ -440,6 +440,7 @@ def test_the_default_view_follows_whether_anything_can_be_typed_at(
         offer=note_offer,
         # A process that is not elevated, so the offer this test orders is made.
         already_elevated=lambda: False,
+        startup=StartupNoticeInMemory(),
     )
 
     if expect == "tui":

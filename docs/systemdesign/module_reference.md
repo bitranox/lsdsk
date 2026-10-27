@@ -144,6 +144,8 @@ module exists that is not listed here, or a listed path does not exist.
 ### Adapters - shared
 
 - `src/lsdsk/adapters/atomicfile.py` - Replacing a file this tool owns, so that a failed write leaves the old one intact.
+- `src/lsdsk/adapters/startup_notice.py` - The "Scanning Drives ..." line an interactive start shows until the view takes the screen.
+- `src/lsdsk/adapters/terminal_streams.py` - Which standard streams the interactive view needs, and which of them is not a terminal.
 - `src/lsdsk/adapters/textfile.py` - Reading a JSON file that came from somewhere else, without trusting its size.
 - `src/lsdsk/adapters/uv_bootstrap.py` - Detect uvx and, on the reader's consent, run the pinned official uv installer.
 - `src/lsdsk/adapters/validation.py` - Pydantic's refusal as this tool's own sentences, shared by both JSON-backed stores.
@@ -166,6 +168,7 @@ module exists that is not listed here, or a listed path does not exist.
 - `src/lsdsk/adapters/memory/elevation.py` - Elevation that never asks and never starts anything, for tests.
 - `src/lsdsk/adapters/memory/info.py` - An in-memory stand-in for printing the package's own metadata.
 - `src/lsdsk/adapters/memory/logging.py` - In-memory logging adapter for testing.
+- `src/lsdsk/adapters/memory/startup.py` - A startup line that draws nothing and records each step, for tests.
 
 ### Composition
 

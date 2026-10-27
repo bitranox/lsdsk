@@ -18,6 +18,9 @@ from ..adapters.hw.elevation import elevate_for_the_view
 # Logging services
 from ..adapters.logging.setup import init_logging
 
+# The line an interactive start shows until the view draws
+from ..adapters.startup_notice import NoStartupNotice
+
 # Static conformance assertions - pyright verifies that each adapter function
 # structurally satisfies its corresponding Protocol at type-check time.
 if TYPE_CHECKING:
@@ -29,6 +32,7 @@ if TYPE_CHECKING:
         GetConfig,
         InitLogging,
         PrintInfo,
+        ShowsStartupProgress,
     )
 
     _assert_print_info: PrintInfo = __init__conf__.print_info
@@ -38,6 +42,7 @@ if TYPE_CHECKING:
     _assert_display_config: DisplayConfig = display_config
     _assert_init_logging: InitLogging = init_logging
     _assert_elevate: ElevateForTheView = elevate_for_the_view
+    _assert_startup: ShowsStartupProgress = NoStartupNotice()
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,10 +56,15 @@ class AppServices:
     init_logging: InitLogging
     print_info: PrintInfo
     elevate: ElevateForTheView
+    startup: ShowsStartupProgress
 
 
-def build_production() -> AppServices:
+def build_production(*, startup: ShowsStartupProgress | None = None) -> AppServices:
     """Wire production adapters into an AppServices container.
+
+    Args:
+        startup: The notice the entry point already started; one that draws
+            nothing when not given (an embedder, a test, ``python -m``).
 
     Returns:
         The services every command resolves its ports through.
@@ -67,6 +77,7 @@ def build_production() -> AppServices:
         init_logging=init_logging,
         print_info=__init__conf__.print_info,
         elevate=elevate_for_the_view,
+        startup=startup if startup is not None else NoStartupNotice(),
     )
 
 
@@ -77,6 +88,7 @@ def build_testing() -> AppServices:
         AppServices container with in-memory adapters.
     """
     from ..adapters.memory import (  # noqa: PLC0415 - deferred: keeps in-memory test doubles out of the production import path
+        StartupNoticeInMemory,
         deploy_configuration_in_memory,
         display_config_in_memory,
         elevate_in_memory,
@@ -94,6 +106,7 @@ def build_testing() -> AppServices:
         init_logging=init_logging_in_memory,
         print_info=print_info_in_memory,
         elevate=elevate_in_memory,
+        startup=StartupNoticeInMemory(),
     )
 
 

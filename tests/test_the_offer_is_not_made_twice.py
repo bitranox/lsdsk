@@ -29,6 +29,7 @@ from lsdsk.adapters.cli import cli
 from lsdsk.adapters.cli.commands import scan
 from lsdsk.adapters.cli.context import CLIContext, store_cli_context
 from lsdsk.adapters.config.tunables import DisplaySettings
+from lsdsk.adapters.memory import StartupNoticeInMemory
 from lsdsk.composition import build_testing
 from lsdsk.domain.elevation import Elevation, ElevationPrompt, ElevationState
 
@@ -79,7 +80,7 @@ def _the_display_a_run_resolves(*, elevated_relaunch: bool) -> DisplaySettings:
 def _offers_made(display: DisplaySettings, *, already_elevated: bool) -> list[DisplaySettings]:
     """Run the router once and return every offer it made."""
     offered: list[DisplaySettings] = []
-    seams = scan.the_real_collaborators(_relaunched)._replace(
+    seams = scan.the_real_collaborators(_relaunched, StartupNoticeInMemory())._replace(
         offer=offered.append, already_elevated=lambda: already_elevated
     )
     with pytest.raises(SystemExit) as left:
@@ -118,7 +119,7 @@ def test_a_root_run_does_not_offer_the_shortcut_through_the_real_check(monkeypat
     _at_a_terminal(monkeypatch)
     monkeypatch.setattr(os, "geteuid", lambda: 0)
     offered: list[DisplaySettings] = []
-    seams = scan.the_real_collaborators(_relaunched)._replace(offer=offered.append)
+    seams = scan.the_real_collaborators(_relaunched, StartupNoticeInMemory())._replace(offer=offered.append)
 
     with pytest.raises(SystemExit) as left:
         scan.run_default_view(None, display=DisplaySettings(), seams=seams)

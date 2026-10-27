@@ -30,6 +30,7 @@ from .config import (
 from .elevation import elevate_in_memory
 from .info import print_info_in_memory, reset_info_in_memory
 from .logging import init_logging_in_memory
+from .startup import StartupNoticeInMemory
 
 # Static conformance assertions
 if TYPE_CHECKING:
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
         GenerateExamples,
         GetConfig,
         InitLogging,
+        ShowsStartupProgress,
     )
 
     _assert_get_config: GetConfig = get_config_in_memory
@@ -48,8 +50,10 @@ if TYPE_CHECKING:
     _assert_display_config: DisplayConfig = display_config_in_memory
     _assert_init_logging: InitLogging = init_logging_in_memory
     _assert_elevate: ElevateForTheView = elevate_in_memory
+    _assert_startup: ShowsStartupProgress = StartupNoticeInMemory()
 
 __all__ = [
+    "StartupNoticeInMemory",
     "deploy_configuration_in_memory",
     "display_config_in_memory",
     "elevate_in_memory",
