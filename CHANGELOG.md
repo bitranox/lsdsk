@@ -5,6 +5,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- The interactive view no longer crashes with `NoMatches` when Textual refreshes the footer while
+  the page tabs or the detail panel are not mounted (seen once on a heavily loaded machine). The
+  page-gated keys then answer "not offered" instead.
+
 ## [1.16.0] 2026-10-27 10:49:11
 
 ### Added

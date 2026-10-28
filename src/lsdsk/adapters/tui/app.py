@@ -20,6 +20,7 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, HorizontalScroll, Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.message import Message
 from textual.widgets import DataTable, Footer, Header, OptionList, Static, TabbedContent, TabPane
 from textual.widgets.option_list import Option
@@ -836,10 +837,16 @@ class LsdskApp(App[None]):
         is simply not that page.
 
         Returns:
-            The page in front, or ``None`` before one is or if the active id
-            names something that is not a page.
+            The page in front, or ``None`` before one is (the tabs not yet
+            mounted included) or if the active id names something that is not
+            a page.
         """
-        active = self.query_one(TabbedContent).active
+        # Textual refreshes the footer, and so calls check_action, while the tabs can
+        # still be unmounted (seen once under heavy load); no tabs is no page up.
+        try:
+            active = self.query_one(TabbedContent).active
+        except NoMatches:
+            return None
         return CliCommand(active) if active in PAGE_IDS else None
 
     def _refresh_detail(self) -> None:
@@ -1013,7 +1020,11 @@ class LsdskApp(App[None]):
             # Offered only where there is something to scroll TO, the same rule
             # the wwn strip's control follows: a key advertised on a panel that
             # already shows everything is a key that answers nothing.
-            panel = self.query_one("#detail", VerticalScroll)
+            # The footer asks before the panel may be mounted; no panel has nothing to scroll.
+            try:
+                panel = self.query_one("#detail", VerticalScroll)
+            except NoMatches:
+                return False
             return bool(panel.display) and panel.virtual_size.height > panel.size.height
         if action in {"wwn_left", "wwn_right"}:
             return self._active_page() is CliCommand.DISKS

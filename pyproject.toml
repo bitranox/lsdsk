@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "rich-click>=1.9.9",
     "lib_cli_exit_tools>=2.4.1",
-    "lib_log_rich>=8.0.3",
+    "lib_log_rich>=8.1.1",
     "lib_layered_config>=7.3.0",
     "pydantic>=2.14.1",
     "orjson>=3.13.0",
@@ -17,7 +17,7 @@ dependencies = [
     # sudo on Linux and macOS (adapters/hw/elevation.py, the one module that names it),
     # and adapters/shortcut/windows.py writes the Windows .lnk with ps.new_shortcut.
     # 1.9.0 is the floor: before it new_shortcut could not mark a .lnk run-as-Administrator.
-    "pwshpy>=1.9.0",
+    "pwshpy>=1.11.0",
     "click>=8.5.0", # Imported directly (adapters/cli/main.py, exit_codes.py), not only through rich-click.
     "pydantic-core>=2.50.1", # Imported directly (validation.py, cli/envelope.py, history/store.py); pydantic pins its version.
     "python-dotenv>=1.2.4", # adapters/logging/setup.py reads the LOG_* lines of a .env itself.
@@ -78,7 +78,7 @@ dev = [
   "pip-audit>=2.10.1",
   "import-linter>=2.15",
   "rtoml>=0.14.0",
-  "httpx2>=2.15.1",
+  "httpx2>=2.16.0",
   # Transitive CVE pins
   "click>=8.5.0",                # CVE-2026-7246
   "jaraco-context>=6.1.2",       # CVE-2025-23949
@@ -86,7 +86,7 @@ dev = [
   "wheel>=0.48.0",               # CVE-2025-24049
   "pynacl>=1.6.2",               # CVE-2025-69277
   "urllib3>=2.8.0",              # CVE-2025-66471, CVE-2025-66418
-  "virtualenv>=21.14.11",        # CVE-2025-22702
+  "virtualenv>=21.14.12",        # CVE-2025-22702
   "certifi>=2026.10.19",         # GHSA-6q48-6c7w-9gw2, via requests (pip-audit, twine)
   "filelock>=4.2.4",             # CVE-2026-112906, CVE-2026-112940, CVE-2026-112914, via virtualenv
 ]

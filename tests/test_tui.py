@@ -256,6 +256,27 @@ async def test_the_density_key_is_gated_to_the_topology_page() -> None:
 
 @pytest.mark.os_agnostic
 @pytest.mark.asyncio
+async def test_check_action_answers_false_while_the_pages_are_not_mounted() -> None:
+    """Verify the footer's checks hide the page keys, never raise, before the pages are up.
+
+    Textual asks check_action for every binding whenever it refreshes the footer,
+    which can happen while the tabs or the detail panel are not mounted (seen once
+    under heavy load as a NoMatches from that refresh). A page that is not up is
+    not the page a key belongs to, so each gated key answers False.
+    """
+    app = LsdskApp(inventory())
+    async with app.run_test(size=(140, 45)) as pilot:
+        await pilot.pause()
+        await app.query_one(TabbedContent).remove()
+        await app.query_one("#detail", VerticalScroll).remove()
+        await pilot.pause()
+
+        for action in ("wwn_left", "wwn_right", "tree_density", "detail_down", "detail_up"):
+            assert app.check_action(action, ()) is False, f"{action} is offered with no page mounted"
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.asyncio
 async def test_a_pages_table_takes_the_keyboard_when_it_opens() -> None:
     """Verify a table can be scrolled, which needs focus to leave the tab bar.
 
