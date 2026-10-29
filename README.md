@@ -44,7 +44,8 @@ lsdsk makes no network requests, with two exceptions that both stay off until yo
 The optional Graylog log sink opens a connection only once you enable it. And if you accept the
 offer to create a desktop shortcut on a machine that has no uv installed, lsdsk can install uv for
 you from the official astral.sh installer, but only after you confirm; that installer runs the
-astral.sh script through `sh` and `curl`. Apart from that installer, the one process it ever
+astral.sh script through `sh` and `curl` on Linux and macOS, and through PowerShell on Windows.
+Apart from that installer, the one process it ever
 starts is its own elevated copy: the interactive view asks for Administrator on Windows, where it
 reopens elevated in a new window, and for root through sudo on Linux and macOS, where it restarts
 as root in the same terminal (`--no-elevate` turns that off). Every value it prints was read directly,
@@ -142,8 +143,9 @@ Python 3.11 or newer, Linux or Windows. It shells out to nothing - no
 exceptions you have to turn on: the optional Graylog log sink, and, if you
 accept the desktop-shortcut offer on a machine with no uv, installing uv for you
 from the official astral.sh installer after you confirm, which runs the
-astral.sh script through `sh` and `curl`. Apart from that installer, the one
-process it starts is its own elevated copy, when the interactive view asks for
+astral.sh script through `sh` and `curl` on Linux and macOS, and through
+PowerShell on Windows. Apart from that installer, the one process it starts
+is its own elevated copy, when the interactive view asks for
 Administrator through UAC on Windows or for root through sudo on Linux and
 macOS. Its own Python
 dependencies are declared in `pyproject.toml`.

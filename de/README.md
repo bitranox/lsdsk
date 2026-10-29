@@ -45,8 +45,8 @@ lsdsk stellt keine Netzwerkanfragen, mit zwei Ausnahmen, die beide aus bleiben, 
 anfordert. Die optionale Graylog-Protokollsenke öffnet eine Verbindung erst, wenn man sie
 einschaltet. Und nimmt man das Angebot an, auf einer Maschine ohne installiertes uv eine
 Desktop-Verknüpfung anzulegen, kann lsdsk uv vom offiziellen astral.sh-Installer einrichten, aber
-erst nach ausdrücklicher Bestätigung; dieser Installer führt das astral.sh-Skript über `sh` und
-`curl` aus. Abgesehen von diesem Installer ist der einzige Prozess, den es je startet, seine
+erst nach ausdrücklicher Bestätigung; dieser Installer führt das astral.sh-Skript unter Linux und
+macOS über `sh` und `curl` aus, unter Windows über PowerShell. Abgesehen von diesem Installer ist der einzige Prozess, den es je startet, seine
 eigene Kopie mit erhöhten Rechten: Die interaktive Ansicht fragt unter Windows nach Administratorrechten und öffnet sich dann
 mit erhöhten Rechten in einem neuen Fenster, unter Linux und macOS über sudo nach Root-Rechten und
 startet dann als root im selben Terminal neu (`--no-elevate` schaltet das ab). Jeder Wert, den es
@@ -150,7 +150,8 @@ Python 3.11 oder neuer, Linux oder Windows. Es ruft nichts auf - kein
 zwei Ausnahmen, die man einschalten muss: die optionale Graylog-Protokollsenke,
 und, nimmt man das Desktop-Verknüpfungs-Angebot auf einer Maschine ohne uv an,
 das Einrichten von uv vom offiziellen astral.sh-Installer nach ausdrücklicher
-Bestätigung, der das astral.sh-Skript über `sh` und `curl` ausführt. Abgesehen von
+Bestätigung, der das astral.sh-Skript unter Linux und macOS über `sh` und `curl`, unter
+Windows über PowerShell ausführt. Abgesehen von
 diesem Installer ist der einzige Prozess, den es startet, seine eigene Kopie mit
 erhöhten Rechten, wenn die interaktive Ansicht unter Windows über UAC nach
 Administratorrechten oder unter Linux und macOS über sudo nach Root-Rechten fragt. Seine eigenen Python-Abhängigkeiten stehen
