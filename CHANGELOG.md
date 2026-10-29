@@ -5,6 +5,71 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- A uv installer download that failed (no network, a refused download) was still reported as
+  "uv was installed but uvx is still not on PATH": `curl ... | sh` exits with the shell's code,
+  and an empty script exits 0. The installer is now fetched first and run only when the download
+  succeeded, so `install-shortcut --install-uv` and the shortcut offer report "the uv installer
+  failed (exit N)" with curl's own exit code.
+- `lsdsk install-shortcut` and the shortcut offer wrote a relative launcher (`bin/uvx`,
+  `bin/lsdsk`) when `uvx` or `lsdsk` was found through a relative PATH entry, or on Windows in the
+  current directory. That runs nothing from the Desktop, and Windows refused the `.lnk`. The
+  launcher is now always an absolute path.
+- On Windows, `lsdsk install-shortcut` now prints a second line, `In PowerShell: & ...`, below
+  `It launches: ...`. The cmd form 1.16.2 printed is a parse error in PowerShell when its program
+  is quoted, so 1.16.2's note that the line is how PowerShell reads it was wrong. An argument
+  PowerShell would read as syntax (a `$`, a quote, a parenthesis) is written there as a
+  single-quoted PowerShell string.
+- With a relative `XDG_CONFIG_HOME`, `lsdsk install-shortcut` now exits `78` (`CONFIG_ERROR`)
+  naming the configuration directory, rather than `74` (`IO_ERROR`) with "could not write the
+  shortcut" and the file named as a directory.
+- On Python 3.11-3.13, a Desktop folder behind a parent folder the account cannot enter no longer
+  makes `install-shortcut` exit 13 without a JSON envelope, or the shortcut offer raise before the
+  interactive view. It is treated as no desktop, as Python 3.14 already did: `install-shortcut`
+  refuses with exit 78 and its `CONFIG_ERROR` envelope, and the offer stays silent.
+- When `install-shortcut` or the shortcut offer writes the Desktop shortcut but the copy into the
+  application menu (Linux) or the Start menu (Windows) fails, the command now succeeds and prints a
+  warning naming the menu path and the cause. It exited 74 (or 13) saying the shortcut could not
+  be written while the Desktop shortcut was already there.
+- The Linux `.desktop` entry declares one main category (`Categories=System;Monitor;`), so
+  desktop-file-validate accepts it without a hint and a menu no longer lists lsdsk twice.
+- A warning printed while "Scanning Drives ..." is on screen, such as a configuration value that
+  fell back, appears on its own line above the spinner instead of glued onto it.
+- A mistyped command, such as `lsdsk dsiks` at a terminal, no longer flashes the
+  "Scanning Drives ..." line around the usage error.
+- Ctrl+C in the first milliseconds of a start no longer prints a traceback: neither the package
+  nor the entry point imports anything before the interrupt guard.
+- A crash report is laid out by the run's own configuration, so a
+  `--set display.traceback_*_limit` applies to it. The elevated copy's crash report no longer
+  reads a `.env` from the working directory and no longer prints a stray
+  `[INFO]: configuration_merged` line.
+- Every section title that names the machine (`Disks on`, `Controllers on`, `Filesystems on`,
+  `Disk health on`, `Counter trends on`, `SMART attributes on`) stays on one line at every width.
+  Below its own length it is cut with `>` instead of wrapping and leaving the hostname on a line
+  of its own, and a table's title no longer wraps at the width of its columns on a console wide
+  enough for it.
+- The interactive disk page no longer draws a column that `lsdsk disks` has just given up at the
+  same width. On a page whose rows carry no severity marker it fitted one cell too generously, so
+  at about ten widths per machine it showed one column more than the printed table. 1.15.4 said
+  the two keep the same columns at every width; at a few widths the page keeps one FEWER, because
+  its table spends a cell on each column's outer edge and on its marker and gives up a column
+  rather than cut the device name.
+- A capture naming one device in two btrfs member lists no longer makes the disk-usage build take
+  time in proportion to the square of the list (a crafted 4.3 MB replay took 23 seconds); each
+  list is now joined from its members' own mounts. The kernel lists each filesystem once, so a
+  real capture never reached it.
+- Folding a pooled drive's hidden interface into the record kept for it no longer compares every
+  removal relation with every earlier one, so a drive naming thousands of relations is read in
+  linear time, still in first-seen order and once each.
+- The README said the uv installer runs through `sh` and `curl`; on Windows it runs through
+  PowerShell.
+
+### Changed
+
+- Requires pwshpy 1.11.0 or later (raised in 1.16.1 without a note): a `.lnk` Windows refuses
+  for lack of rights is reported as access denied, exit 13, only from that version on.
+
 ## [1.16.2] - 2026-10-29
 
 ### Fixed

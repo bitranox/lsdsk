@@ -11,7 +11,9 @@ matching function key switch page, and `q` or `escape` quits; the footer lists t
 there is nothing to memorise. `left`, `right`, `tab` and `shift+tab` also step
 between pages, and `r` or `f10` rescans, without appearing in the footer.
 The pages carry the same names as the commands, in the same order, so `4` and
-`lsdsk health` are the same view, drawing the same columns.
+`lsdsk health` are the same view. The disks page draws the columns `lsdsk disks`
+draws at the same width, except at a few widths where it has already given up one
+more, because its table needs a little more room for the same columns.
 Each page stands alone and shows every disk, so nothing has to be selected to
 read one.
 

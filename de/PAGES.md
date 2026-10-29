@@ -13,7 +13,9 @@ führt diese auf, es ist also nichts auswendig zu lernen. `left`, `right`, `tab`
 und `shift+tab` schalten ebenfalls zwischen den Seiten weiter, und `r` oder `f10` liest neu
 ein, ohne in der Fußzeile zu erscheinen. Die Seiten tragen dieselben Namen wie
 die Befehle, in derselben Reihenfolge, `4` und `lsdsk health` sind also dieselbe
-Ansicht mit denselben Spalten. Jede Seite steht für sich und zeigt jede Platte,
+Ansicht. Die Plattenseite zeigt die Spalten, die `lsdsk disks` bei derselben Breite
+zeigt; nur bei einigen Breiten hat sie schon eine Spalte mehr aufgegeben, weil ihre
+Tabelle für dieselben Spalten etwas mehr Platz braucht. Jede Seite steht für sich und zeigt jede Platte,
 es muss also nichts ausgewählt werden, um eine zu lesen.
 
 Sieben der neun Seiten führen außerdem einen Cursor - Topologie, Controller,
