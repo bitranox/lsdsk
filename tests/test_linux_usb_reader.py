@@ -174,7 +174,7 @@ def test_a_header_that_is_not_a_bos_is_refused(tmp_path: Path, monkeypatch: pyte
         return transfer.wLength
 
     monkeypatch.setattr(fcntl, "ioctl", device_descriptor)
-    with pytest.raises(ValueError, match="1201000200"):
+    with pytest.raises(ValueError, match=r"answered GET_DESCRIPTOR\(BOS\) with 1201000200"):
         usbfs.read_bos(node)
 
 

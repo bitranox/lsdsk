@@ -68,7 +68,13 @@ def test_no_free_space_reads_as_a_value_with_no_score() -> None:
 
 @pytest.mark.parametrize("histogram", [[1, 2, 3], [0] * 22])
 def test_a_histogram_of_another_length_is_refused_at_the_parse(histogram: list[int]) -> None:
-    with pytest.raises(ValidationError, match="21"):
+    with pytest.raises(
+        ValidationError,
+        match=(
+            r"histogram\n  Value error, "
+            rf"a free-space histogram has {FREE_SPACE_BUCKETS} buckets, not {len(histogram)}"
+        ),
+    ):
         FreeExtentsEntry.model_validate({"count": 1, "total": 1, "largest": 1, "histogram": histogram})
 
 

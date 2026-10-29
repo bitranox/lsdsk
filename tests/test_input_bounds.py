@@ -1005,7 +1005,9 @@ def test_a_ports_bitmap_wider_than_the_register_is_refused(tmp_path: Path) -> No
     crafted = tmp_path / "wide-bitmap.json"
     crafted.write_text(_capture_with(ports_implemented=(1 << 14000) - 1), encoding="utf-8")
 
-    with pytest.raises(ConfigurationError, match="ports_implemented"):
+    with pytest.raises(
+        ConfigurationError, match=r"ports_implemented: Input should be less than or equal to 4294967295"
+    ):
         load(crafted)
 
 
@@ -1086,7 +1088,9 @@ def test_a_windows_length_wider_than_the_api_that_reports_it_is_refused(tmp_path
         encoding="utf-8",
     )
 
-    with pytest.raises(ConfigurationError, match="size_bytes"):
+    with pytest.raises(
+        ConfigurationError, match=r"size_bytes: Input should be less than or equal to 9223372036854775807"
+    ):
         load(crafted)
 
 

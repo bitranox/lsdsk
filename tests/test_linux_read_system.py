@@ -161,7 +161,8 @@ def test_a_reading_that_will_be_refused_stats_and_walks_no_filesystem() -> None:
     recorded = _Recorded()
     reading = reader.read_system(_readers(recorded, environment={"hypervisor_flag": []}))
 
-    with pytest.raises(ValidationError, match="hypervisor_flag"):  # control: the run is refused for this reading
+    # control: the run is refused for this reading
+    with pytest.raises(ValidationError, match=r"hypervisor_flag\n  Input should be a valid boolean"):
         LinuxCapture.model_validate(reading)
     assert (recorded.space, recorded.free_extents) == ([[]], [[]])
 

@@ -185,21 +185,27 @@ def test_no_temporary_file_is_left_behind(store: Path) -> None:
 def test_a_corrupt_store_is_reported_rather_than_crashing(store: Path) -> None:
     store.parent.mkdir(parents=True)
     store.write_text("{not json at all", encoding="utf-8")
-    with pytest.raises(ConfigurationError, match="history"):
+    with pytest.raises(ConfigurationError, match=r"Could not read the history store at "):
         load_history(store, hostname="box")
 
 
 def test_a_store_from_another_machine_is_refused_not_merged(store: Path) -> None:
     """Serial numbers can collide between machines, so the two must not mix."""
     save_history(History(hostname="other-box"), store)
-    with pytest.raises(ConfigurationError, match="other-box"):
+    with pytest.raises(ConfigurationError, match=r"holds history for 'other-box', not for 'box'"):
         load_history(store, hostname="box")
 
 
 def test_a_store_from_a_future_schema_is_refused(store: Path) -> None:
     store.parent.mkdir(parents=True)
     store.write_text(json.dumps({"schema": HISTORY_SCHEMA_VERSION + 1, "hostname": "box"}), encoding="utf-8")
-    with pytest.raises(ConfigurationError, match="schema"):
+    with pytest.raises(
+        ConfigurationError,
+        match=(
+            rf"is a schema {HISTORY_SCHEMA_VERSION + 1} history store; "
+            rf"this version of lsdsk reads schema {HISTORY_SCHEMA_VERSION}\."
+        ),
+    ):
         load_history(store, hostname="box")
 
 

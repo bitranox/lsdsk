@@ -135,7 +135,7 @@ def test_a_run_told_not_to_ask_names_the_prompt_it_did_not_show() -> None:
 @pytest.mark.os_agnostic
 @pytest.mark.parametrize("state", [ElevationState.TURNED_OFF, ElevationState.DECLINED, ElevationState.FAILED])
 def test_an_outcome_a_banner_explains_cannot_be_built_without_its_prompt(state: ElevationState) -> None:
-    with pytest.raises(ValidationError, match="prompt"):
+    with pytest.raises(ValidationError, match=f"an elevation that is {state.value} must name its prompt"):
         Elevation(state=state)
 
 

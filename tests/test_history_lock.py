@@ -54,7 +54,7 @@ def _plant_a_link(tmp_path: Path) -> tuple[Path, Path]:
 def test_the_lock_refuses_a_symlink_planted_at_its_name(tmp_path: Path) -> None:
     store, victim = _plant_a_link(tmp_path)
 
-    with pytest.raises(OSError, match=r"lock"), history_lock(store):
+    with pytest.raises(OSError, match=r"is a symbolic link, which lsdsk never follows"), history_lock(store):
         pass
 
     assert not victim.exists(), "the lock followed a planted link and created its target"
