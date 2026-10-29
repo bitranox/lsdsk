@@ -28,7 +28,7 @@ from ...domain.thresholds import DEFAULT_THRESHOLDS, Thresholds
 from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_WWN_WIDTH
 from . import theme
 from .layout import DEVICE_MIN_WIDTH, GAP, GUTTER, Column, Layout, clip, clip_keeping
-from .report import disk_row, severity_index, virtual_note
+from .report import disk_row, severity_index, title_line, virtual_note
 from .rows import MarkedRow
 
 # A single character, because these columns are already the first to be dropped
@@ -269,8 +269,17 @@ def _render(title: str, columns: Sequence[Column], rows: TableRows, width: int, 
     # parsed as MARKUP, so a hostname of ``box[/bold]`` stopped the run with a
     # MarkupError and a ``[link=...]`` one became a hyperlink; a Text is drawn
     # as the characters it holds, on every console, the TUI's included.
+    #
+    # The title is cut to the console rather than wrapped, so the hostname is
+    # never stranded on a line of its own. Rich draws a title at the TABLE's
+    # width, not the console's, so a title wider than the columns that fit
+    # wrapped on a console with room to spare for it; drawn unwrapped, the
+    # line runs past the last column instead, and it already fits the console.
+    heading = title_line(title, width)
+    heading.no_wrap = True
+    heading.overflow = "ignore"
     table = Table(
-        title=Text(title),
+        title=heading,
         title_justify="left",
         title_style="bold",
         caption=Text(caption) if caption else None,

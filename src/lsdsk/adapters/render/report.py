@@ -1295,6 +1295,30 @@ def _fields_on_one_line(name: theme.Cell, candidates: Sequence[Sequence[theme.Ce
     return Text(clip(text, width), style=style)
 
 
+def title_line(title: str, width: int) -> Text:
+    """A section's title on one line of ``width`` cells, cut and marked where it does not fit.
+
+    Every section title names the machine, so a title that wraps strands the
+    hostname on a line that reads as a second heading. One function for every
+    titled section, the tables and the SMART page alike, cutting the way a
+    drive's heading on the SMART page is cut.
+
+    Args:
+        title: The whole title.
+        width: The cells the line may take.
+
+    Returns:
+        The title in bold, whole or cut with the ASCII clip mark.
+
+    Example:
+        >>> title_line("Disks on a-host", 40).plain
+        'Disks on a-host'
+        >>> title_line("Disks on a-host", 10).plain
+        'Disks on >'
+    """
+    return _fields_on_one_line((title, "bold"), [[]], width)
+
+
 # The SMART attribute table, in the order a drive reports it. Nothing is
 # dropped: a vendor attribute nobody has a name for is still evidence, and
 # hiding it would make the page disagree with what other tools show.
@@ -1344,7 +1368,7 @@ def render_smart(inventory: Inventory, width: int = DEFAULT_WIDTH) -> Renderable
         A table per disk that reported attributes, and a line for each that did
         not, so no disk is silently absent.
     """
-    lines: list[RenderableType] = [Text(f"SMART attributes on {inventory.hostname}", style="bold")]
+    lines: list[RenderableType] = [title_line(f"SMART attributes on {inventory.hostname}", width)]
     for disk in inventory.disks:
         lines.append(Text(""))
         lines.extend(_disk_attributes(disk, width, privileged=inventory.privileged))
@@ -1500,6 +1524,7 @@ __all__ = [
     "slot_privilege_note",
     "slot_table_row",
     "slot_verdict",
+    "title_line",
     "unread_interfaces_note",
     "usb_speed_text",
     "virtual_note",
