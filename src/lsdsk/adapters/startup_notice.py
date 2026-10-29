@@ -19,8 +19,9 @@ System Role:
     before the CLI; ``lsdsk.adapters.cli`` is the whole command line.
 
 Contents:
-    * :data:`COMMAND_NAMES` - every subcommand, so the start rule can tell one from the view.
+    * :data:`ROOT_OPTIONS_TAKING_A_VALUE` - the root options whose next word is their value.
     * :func:`opens_the_view` - whether a subcommand (or none) opens the interactive view.
+    * :func:`command_word` - the word click will read as the subcommand.
     * :func:`spinner_for` - the spinner a stream of this encoding can draw.
     * :class:`StartupNotice` - the line and its spinner, paused around prompts.
     * :class:`NoStartupNotice` - the same steps, doing nothing, for every other start.
@@ -48,35 +49,18 @@ LINE = "Scanning Drives ..."
 #: Bold green, the line and the spinner beside it.
 STYLE = "bold green"
 
-#: Every subcommand the CLI registers. A test holds this to the CLI's own registry,
-#: because the rule has to be decided before the CLI is imported.
-COMMAND_NAMES: frozenset[str] = frozenset(
-    {
-        "config",
-        "config-deploy",
-        "config-generate-examples",
-        "controllers",
-        "disks",
-        "fail",
-        "filesystems",
-        "findings",
-        "health",
-        "info",
-        "install-shortcut",
-        "logdemo",
-        "record",
-        "report",
-        "slots",
-        "smart",
-        "snapshot",
-        "topology",
-        "trend",
-        "tui",
-    }
+#: The root options that take a value, so the word after one is that value and
+#: not the command. A test holds this to the CLI's own options, because the rule
+#: has to be decided before the CLI is imported.
+ROOT_OPTIONS_TAKING_A_VALUE: frozenset[str] = frozenset(
+    {"--env-file", "--history-file", "--profile", "--replay", "--set", "--tree-density"}
 )
 
 #: The one subcommand that opens the interactive view, as a bare run does.
 _VIEW_COMMAND = "tui"
+
+#: click's own end of the options: the word after it is the command whatever it looks like.
+_END_OF_OPTIONS = "--"
 
 #: Options that print something and leave without opening the view.
 _LEAVES_WITHOUT_THE_VIEW = frozenset({"--help", "-h", "--version"})
@@ -99,6 +83,38 @@ def opens_the_view(command: str | None) -> bool:
         (True, True, False)
     """
     return command is None or command == _VIEW_COMMAND
+
+
+def command_word(argv: Sequence[str]) -> str | None:
+    """The word click will read as the subcommand, found without importing the CLI.
+
+    The root options come first, so the first word that is neither an option
+    nor the value of one is the command. A word that names no command is
+    returned as it is: click refuses it with a usage error.
+
+    Args:
+        argv: The arguments after the program name.
+
+    Returns:
+        The command word, or None for a run that names none.
+
+    Example:
+        >>> command_word(["--replay", "capture.json", "disks"])
+        'disks'
+        >>> command_word(["--no-elevate"]) is None
+        True
+        >>> command_word(["--profile", "disks"]) is None
+        True
+    """
+    words = iter(argv)
+    for word in words:
+        if word == _END_OF_OPTIONS:
+            return next(words, None)
+        if not word.startswith("-"):
+            return word
+        if word in ROOT_OPTIONS_TAKING_A_VALUE:
+            next(words, None)
+    return None
 
 
 def spinner_for(encoding: str) -> str:
@@ -200,6 +216,8 @@ def notice_for_this_start(
     Only a start that is going to open the interactive view shows it: every
     stream the view needs is a terminal (the router's own rule), and the
     arguments ask for neither another subcommand nor ``--help``/``--version``.
+    A word that names no command at all - a typo - shows nothing either: click
+    refuses it at once, and the line would only flash around the usage error.
     A guess this rule gets wrong is corrected once click has parsed the run,
     which stops the notice for any subcommand but ``tui``.
 
@@ -215,7 +233,7 @@ def notice_for_this_start(
     """
     if any(arg in _LEAVES_WITHOUT_THE_VIEW for arg in argv):
         return NoStartupNotice()
-    if any(arg in COMMAND_NAMES and not opens_the_view(arg) for arg in argv):
+    if not opens_the_view(command_word(argv)):
         return NoStartupNotice()
     if not_terminals():
         return NoStartupNotice()
@@ -230,10 +248,11 @@ def _console_on_the_drawing_stream() -> Console:
 
 
 __all__ = [
-    "COMMAND_NAMES",
     "LINE",
+    "ROOT_OPTIONS_TAKING_A_VALUE",
     "NoStartupNotice",
     "StartupNotice",
+    "command_word",
     "notice_for_this_start",
     "opens_the_view",
     "spinner_for",

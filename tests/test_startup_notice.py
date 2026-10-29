@@ -152,15 +152,60 @@ def test_a_redirected_stream_shows_nothing() -> None:
     assert isinstance(notice, NoStartupNotice)
 
 
-def test_the_command_names_the_start_rule_knows_are_the_commands_the_cli_has() -> None:
+def test_only_tui_among_the_commands_opens_the_view() -> None:
     from lsdsk.adapters.cli import cli  # the CLI is the slow import this module exists to run ahead of
 
-    assert frozenset(cli.commands) == startup_notice.COMMAND_NAMES
-
-
-def test_only_tui_among_the_commands_opens_the_view() -> None:
-    assert [name for name in sorted(startup_notice.COMMAND_NAMES) if startup_notice.opens_the_view(name)] == ["tui"]
+    assert [name for name in sorted(cli.commands) if startup_notice.opens_the_view(name)] == ["tui"]
     assert startup_notice.opens_the_view(None)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["dsiks"], id="a mistyped command"),
+        pytest.param(["--no-elevate", "dsiks"], id="a mistyped command after a root option"),
+        pytest.param(["--replay", "capture.json", "dsiks"], id="a mistyped command after a root option's value"),
+        pytest.param(["--", "dsiks"], id="a mistyped command after the end of the options"),
+    ],
+)
+def test_a_mistyped_command_shows_nothing(argv: list[str]) -> None:
+    """Click refuses the word with a usage error, which the line would only flash around."""
+    console, _ = a_terminal()
+
+    notice = notice_for_this_start(argv, not_terminals=nothing_is_redirected, console=lambda: console)
+
+    assert isinstance(notice, NoStartupNotice)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["--profile", "disks"], id="a root option's value that happens to name a command"),
+        pytest.param(["--set=display.piped_width=90", "tui"], id="a root option written with its value attached"),
+        pytest.param(["--tree-density", "full", "tui", "--no-such-option"], id="the view, whatever follows it"),
+    ],
+)
+def test_a_value_is_not_read_as_the_command(argv: list[str]) -> None:
+    console, _ = a_terminal()
+
+    notice = notice_for_this_start(argv, not_terminals=nothing_is_redirected, console=lambda: console)
+
+    assert isinstance(notice, StartupNotice)
+
+
+def test_the_root_options_the_start_rule_skips_a_value_for_are_the_ones_the_cli_has() -> None:
+    import click
+
+    from lsdsk.adapters.cli import cli  # the CLI is the slow import this module exists to run ahead of
+
+    taking_a_value = {
+        name
+        for param in cli.params
+        if isinstance(param, click.Option) and not param.is_flag and not param.count
+        for name in (*param.opts, *param.secondary_opts)
+    }
+
+    assert frozenset(taking_a_value) == startup_notice.ROOT_OPTIONS_TAKING_A_VALUE
 
 
 def _a_terminal_file(path: Path) -> tuple[Console, TextIO]:
