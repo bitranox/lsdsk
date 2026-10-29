@@ -177,3 +177,31 @@ def test_the_entry_point_starts_the_notice_and_stops_it_however_the_run_ends() -
     assert seen == [["--version"]]
     assert journal[0] == "start"
     assert journal[-1] == "stop"
+
+
+def test_the_entry_point_hands_its_notice_to_the_cli(capsys: pytest.CaptureFixture[str]) -> None:
+    """The CLI stops the line the entry point started, as soon as click knows the run is ``info``.
+
+    Without the hand-over the CLI would stop a notice of its own and the entry
+    point's line would run on through the whole command, stopped only by the
+    entry point's ``finally`` on the way out.
+    """
+    journal: list[str] = []
+
+    code = entry.main(["info"], start_notice=lambda argv: StartupNoticeInMemory(journal))
+
+    assert code == 0, capsys.readouterr().err
+    assert journal == ["start", "stop", "stop"]
+
+
+def test_an_interrupt_while_the_entry_point_decides_on_the_notice_leaves_130() -> None:
+    def interrupted(argv: list[str]) -> StartupNoticeInMemory:
+        del argv
+        raise KeyboardInterrupt
+
+    try:
+        code = entry.main(["info"], start_notice=interrupted)
+    except KeyboardInterrupt:
+        pytest.fail("the interrupt escaped the entry point, which prints a traceback")
+
+    assert code == 130

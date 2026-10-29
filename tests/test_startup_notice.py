@@ -239,3 +239,52 @@ def test_a_line_printed_while_the_notice_runs_lands_above_it_rather_than_glued_t
     # rich's proxy erases the line before it writes what was printed; a write
     # that went around the proxy follows the spinner's text on the same line.
     assert f"{ERASE_LINE}Warning: a value fell back\n" in drawn, repr(drawn)
+
+
+def test_an_encoding_python_does_not_know_gets_the_ascii_spinner() -> None:
+    assert spinner_for("no-such-encoding") == "line"
+
+
+def test_a_stopped_notice_leaves_no_line_behind(tmp_path: Path) -> None:
+    console, stream = _a_terminal_file(tmp_path / "terminal")
+    notice = StartupNotice(console)
+
+    notice.start()
+    notice.stop()
+    stream.close()
+    drawn = (tmp_path / "terminal").read_text(encoding="utf-8")
+
+    # Erased: the last thing written is the erase of the line it was drawn on,
+    # not the line drawn once more for good.
+    assert drawn.endswith(ERASE_LINE), repr(drawn)
+
+
+class _TerminalBuffer(io.StringIO):
+    """A buffer rich takes for a terminal, so a notice drawn on it is seen."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+@pytest.mark.parametrize(
+    ("platform", "drawn_on"),
+    [
+        pytest.param("linux", "__stderr__", id="off Windows, the stream the view draws on"),
+        pytest.param("win32", "stdout", id="on Windows, stdout"),
+    ],
+)
+def test_the_notice_is_drawn_on_the_stream_the_view_will_draw_on(
+    monkeypatch: pytest.MonkeyPatch, platform: str, drawn_on: str
+) -> None:
+    streams = {name: _TerminalBuffer() for name in ("stdout", "stderr", "__stderr__")}
+    for name, buffer in streams.items():
+        monkeypatch.setattr(sys, name, buffer)
+    monkeypatch.setattr(sys, "platform", platform)
+    # rich draws no live display on a dumb terminal, so the line would be on no stream.
+    monkeypatch.delenv("TERM", raising=False)
+
+    notice = notice_for_this_start([], not_terminals=nothing_is_redirected)
+    notice.start()
+    notice.stop()
+
+    assert [name for name, buffer in streams.items() if LINE in buffer.getvalue()] == [drawn_on]
