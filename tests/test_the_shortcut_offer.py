@@ -18,7 +18,7 @@ from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, offer_shortcut
 from lsdsk.adapters.config.tunables import DisplaySettings
 from lsdsk.adapters.uv_bootstrap import UvInstallResult
 from lsdsk.domain.enums import ShortcutChoice
-from lsdsk.domain.shortcut import manual_install_line, uvx_launch_args
+from lsdsk.domain.shortcut import ShortcutWritten, manual_install_line, uvx_launch_args
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -40,9 +40,9 @@ class _RecordingShortcuts:
     def has_desktop(self) -> bool:
         return self.desktop
 
-    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> ShortcutWritten:
         self.created = (tuple(launch), icon)
-        return Path("/desktop/lsdsk.desktop")
+        return ShortcutWritten(path=Path("/desktop/lsdsk.desktop"), skipped=())
 
     def no_desktop_reason(self) -> str:
         return f"no desktop folder at {Path('/desktop')}"
@@ -162,6 +162,34 @@ def test_create_writes_the_uvx_launch_when_uvx_is_present() -> None:
     assert shortcuts.created is not None
     # The launch carries the path as this platform renders it: on Windows the same Path reads \usr\bin\uvx.
     assert shortcuts.created[0] == uvx_launch_args(str(uvx))
+
+
+class _MenuCopyMissedShortcuts(_RecordingShortcuts):
+    """Writes the Desktop shortcut and reports the menu copy it could not write."""
+
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> ShortcutWritten:
+        written = super().create(launch=launch, icon=icon)
+        return ShortcutWritten(path=written.path, skipped=("it could not be added to the application menu",))
+
+
+@pytest.mark.os_agnostic
+def test_the_offer_tells_the_reader_on_stderr_which_menu_copy_was_not_written(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The offer says the shortcut was created, and also which copy is missing, as the command does."""
+    ask_choice, ask_install = _answers(ShortcutChoice.CREATE)
+
+    offer_shortcut(
+        DisplaySettings(),
+        ask_choice=ask_choice,
+        ask_install=ask_install,
+        seams=_seams(_MenuCopyMissedShortcuts(), uvx=Path("/usr/bin/uvx")),
+        disable=_DisableRecorder(),
+    )
+
+    captured = capsys.readouterr()
+    assert "Shortcut created at" in captured.out
+    assert "it could not be added to the application menu" in captured.err
 
 
 @pytest.mark.os_agnostic

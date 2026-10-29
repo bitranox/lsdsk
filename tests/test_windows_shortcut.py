@@ -95,7 +95,7 @@ def test_create_writes_a_run_as_administrator_lnk_on_the_desktop(desktop: Path, 
     ps = _FakePs(folders={"Desktop": desktop})
     icon = tmp_path / "lsdsk.ico"
 
-    written = _adapter(ps).create(launch=_LAUNCH, icon=icon)
+    written = _adapter(ps).create(launch=_LAUNCH, icon=icon).path
 
     assert written == desktop / "lsdsk.lnk"
     assert ps.written[0]["path"] == desktop / "lsdsk.lnk"
@@ -297,23 +297,21 @@ def test_a_start_menu_copy_that_fails_after_the_desktop_one_is_a_warning_not_a_f
 ) -> None:
     """The Desktop ``.lnk`` is the shortcut and it is written; a refused Start-menu copy must not say nothing was."""
     ps = _FakePs(folders={"Desktop": desktop, "Programs": programs}, refuse_with=refusal, refuse_only_in=programs)
-    warnings: list[str] = []
 
-    written = WindowsDesktopShortcut(load=lambda: _FakePwshpy(ps=ps), warn=warnings.append).create(
-        launch=_LAUNCH, icon=None
-    )
+    written = WindowsDesktopShortcut(load=lambda: _FakePwshpy(ps=ps)).create(launch=_LAUNCH, icon=None)
 
-    assert written == desktop / "lsdsk.lnk"
+    assert written.path == desktop / "lsdsk.lnk"
     assert [entry["path"] for entry in ps.written] == [desktop / "lsdsk.lnk"]
-    assert len(warnings) == 1, warnings
-    assert "on the Desktop" in warnings[0]
-    assert str(programs / "lsdsk.lnk") in warnings[0]
-    assert str(refusal) in warnings[0]
+    assert len(written.skipped) == 1, written.skipped
+    assert "on the Desktop" in written.skipped[0]
+    assert str(programs / "lsdsk.lnk") in written.skipped[0]
+    assert str(refusal) in written.skipped[0]
 
 
-def test_install_shortcut_reports_the_desktop_lnk_when_only_the_start_menu_copy_failed(
+def test_install_shortcut_names_the_start_menu_copy_it_could_not_write_in_skipped(
     desktop: Path, programs: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """The Desktop ``.lnk`` is reported, and the refused Start-menu copy is named in ``skipped``, ``ok`` false."""
     refusal = _FakeError("IPersistFile::Save failed: 0x80004005")
     ps = _FakePs(folders={"Desktop": desktop, "Programs": programs}, refuse_with=refusal, refuse_only_in=programs)
     shortcuts = WindowsDesktopShortcut(load=lambda: _FakePwshpy(ps=ps))
@@ -321,8 +319,11 @@ def test_install_shortcut_reports_the_desktop_lnk_when_only_the_start_menu_copy_
     install_shortcut(output_format=OutputFormat.JSON, seams=_seams(shortcuts, tmp_path / "lsdsk.ico"))
 
     envelope = json.loads(capsys.readouterr().out)
-    assert envelope["ok"] is True
     assert envelope["data"]["shortcut"] == str(desktop / "lsdsk.lnk")
+    assert envelope["ok"] is False
+    assert len(envelope["skipped"]) == 1, envelope["skipped"]
+    assert "could not be added to the Start menu" in envelope["skipped"][0]
+    assert str(refusal) in envelope["skipped"][0]
 
 
 def test_a_refused_write_carries_eio(desktop: Path) -> None:
@@ -359,12 +360,11 @@ def test_create_on_a_named_desktop_folder_that_is_missing_writes_nothing_and_say
 def test_a_start_menu_windows_names_but_that_is_missing_is_skipped_quietly(desktop: Path, tmp_path: Path) -> None:
     """A Programs folder that is not there is no Start menu to add to: skipped, as one Windows names none of is."""
     ps = _FakePs(folders={"Desktop": desktop, "Programs": tmp_path / "Start Menu" / "Programs"})
-    warnings: list[str] = []
 
-    WindowsDesktopShortcut(load=lambda: _FakePwshpy(ps=ps), warn=warnings.append).create(launch=_LAUNCH, icon=None)
+    written = WindowsDesktopShortcut(load=lambda: _FakePwshpy(ps=ps)).create(launch=_LAUNCH, icon=None)
 
     assert [entry["path"] for entry in ps.written] == [desktop / "lsdsk.lnk"]
-    assert warnings == []
+    assert written.skipped == ()
 
 
 def test_a_folder_named_like_the_shortcut_is_not_the_shortcut(desktop: Path) -> None:

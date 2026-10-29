@@ -35,7 +35,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.mark.os_linux
 def test_create_writes_an_executable_terminal_desktop_file(home: Path) -> None:
-    written = LinuxDesktopShortcut().create(launch=("uvx", "lsdsk@latest"), icon=None)
+    written = LinuxDesktopShortcut().create(launch=("uvx", "lsdsk@latest"), icon=None).path
 
     assert written == home / "Desktop" / "lsdsk.desktop"
     text = written.read_text(encoding="utf-8")
@@ -67,11 +67,11 @@ def test_an_icon_is_referenced_only_when_one_is_given(home: Path) -> None:
     icon = home / "icon.png"
     icon.write_bytes(b"\x89PNG\r\n")
 
-    with_icon = LinuxDesktopShortcut().create(launch=("lsdsk",), icon=icon).read_text(encoding="utf-8")
+    with_icon = LinuxDesktopShortcut().create(launch=("lsdsk",), icon=icon).path.read_text(encoding="utf-8")
     assert f"Icon={icon}" in with_icon
 
     (home / "Desktop" / "lsdsk.desktop").unlink()
-    without = LinuxDesktopShortcut().create(launch=("lsdsk",), icon=None).read_text(encoding="utf-8")
+    without = LinuxDesktopShortcut().create(launch=("lsdsk",), icon=None).path.read_text(encoding="utf-8")
     assert "Icon=" not in without
 
 
@@ -79,7 +79,9 @@ def test_an_icon_is_referenced_only_when_one_is_given(home: Path) -> None:
 def test_a_launch_argument_with_a_space_is_double_quoted_in_exec(home: Path) -> None:
     """The Desktop Entry spec quotes with double quotes only; a single quote is an ordinary character there."""
     text = (
-        LinuxDesktopShortcut().create(launch=("/opt/my uv/uvx", "lsdsk@latest"), icon=None).read_text(encoding="utf-8")
+        LinuxDesktopShortcut()
+        .create(launch=("/opt/my uv/uvx", "lsdsk@latest"), icon=None)
+        .path.read_text(encoding="utf-8")
     )
     assert 'Exec="/opt/my uv/uvx" "lsdsk@latest"' in text
 
@@ -107,7 +109,7 @@ def test_a_localised_desktop_named_in_user_dirs_is_the_one_used(home: Path) -> N
     shortcut = LinuxDesktopShortcut(config_home=config_home)
 
     assert shortcut.desktop_dir() == home / "Schreibtisch"
-    assert shortcut.create(launch=("lsdsk",), icon=None) == home / "Schreibtisch" / "lsdsk.desktop"
+    assert shortcut.create(launch=("lsdsk",), icon=None).path == home / "Schreibtisch" / "lsdsk.desktop"
 
 
 @pytest.mark.os_linux
@@ -249,7 +251,7 @@ _AWKWARD_LAUNCH = (
 @pytest.mark.os_linux
 def test_every_launch_argument_reads_back_exactly_under_the_spec_quoting(home: Path) -> None:
     icon = home / "a dir\\with $x" / "icon.png"
-    text = LinuxDesktopShortcut().create(launch=_AWKWARD_LAUNCH, icon=icon).read_text(encoding="utf-8")
+    text = LinuxDesktopShortcut().create(launch=_AWKWARD_LAUNCH, icon=icon).path.read_text(encoding="utf-8")
 
     keys = _keys(text)
     assert _exec_argv(_string_value(keys["Exec"])) == list(_AWKWARD_LAUNCH)
@@ -277,7 +279,7 @@ def test_each_reserved_character_is_written_with_the_escape_the_spec_names(
     a backslash, a ``%`` is doubled, and the string rule then doubles every
     backslash once more - so the file holds two backslashes before each of them.
     """
-    text = LinuxDesktopShortcut().create(launch=(argument,), icon=None).read_text(encoding="utf-8")
+    text = LinuxDesktopShortcut().create(launch=(argument,), icon=None).path.read_text(encoding="utf-8")
 
     assert _keys(text)["Exec"] == written.removeprefix("Exec=")
 
@@ -454,7 +456,7 @@ def test_the_written_entry_passes_desktop_file_validate_without_a_hint(home: Pat
     # in the call below too, so the argv is fixed text rather than a PATH lookup.
     if not Path("/usr/bin/desktop-file-validate").is_file():
         pytest.skip("desktop-file-validate is not installed")
-    written = LinuxDesktopShortcut().create(launch=launch, icon=home / "a dir\\with $x" / "icon.png")
+    written = LinuxDesktopShortcut().create(launch=launch, icon=home / "a dir\\with $x" / "icon.png").path
 
     # The entry named relative to its folder, which keeps the whole argv fixed text.
     result = subprocess.run(
@@ -490,23 +492,18 @@ def test_a_menu_entry_that_fails_after_the_desktop_one_is_a_warning_not_a_failur
     find, and on macOS, which has none: the reader is told it is missing, and why.
     """
     menu = _menu_that_cannot_be_written(home, monkeypatch)
-    warnings: list[str] = []
 
-    written = LinuxDesktopShortcut(warn=warnings.append).create(launch=("lsdsk",), icon=None)
+    written = LinuxDesktopShortcut().create(launch=("lsdsk",), icon=None)
 
-    assert written == home / "Desktop" / "lsdsk.desktop"
-    assert written.read_text(encoding="utf-8").startswith("[Desktop Entry]\n")
-    assert len(warnings) == 1, warnings
-    assert "on the Desktop" in warnings[0]
-    assert str(menu) in warnings[0]
+    assert written.path == home / "Desktop" / "lsdsk.desktop"
+    assert written.path.read_text(encoding="utf-8").startswith("[Desktop Entry]\n")
+    assert len(written.skipped) == 1, written.skipped
+    assert "on the Desktop" in written.skipped[0]
+    assert str(menu) in written.skipped[0]
 
 
-@pytest.mark.os_linux
-def test_install_shortcut_reports_the_desktop_entry_when_only_the_menu_copy_failed(
-    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    _menu_that_cannot_be_written(home, monkeypatch)
-    seams = ShortcutSeams(
+def _real_linux_seams(home: Path) -> ShortcutSeams:
+    return ShortcutSeams(
         shortcuts=LinuxDesktopShortcut(),
         uvx=lambda: Path("/usr/bin/uvx"),
         installed_lsdsk=lambda: None,
@@ -514,8 +511,50 @@ def test_install_shortcut_reports_the_desktop_entry_when_only_the_menu_copy_fail
         copy_icon=lambda: home / "icon.png",
     )
 
-    install_shortcut(output_format=OutputFormat.JSON, seams=seams)
+
+@pytest.mark.os_linux
+def test_install_shortcut_names_the_menu_copy_it_could_not_write_in_skipped(
+    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The run succeeds, since the Desktop entry is there, but a JSON caller is told the menu entry is not.
+
+    ``ok`` true with ``skipped`` empty said nothing was missing, while the entry
+    the reader looks for by name in the menu had never been written.
+    """
+    menu = _menu_that_cannot_be_written(home, monkeypatch)
+
+    install_shortcut(output_format=OutputFormat.JSON, seams=_real_linux_seams(home))
 
     envelope = json.loads(capsys.readouterr().out)
-    assert envelope["ok"] is True
     assert envelope["data"]["shortcut"] == str(home / "Desktop" / "lsdsk.desktop")
+    assert envelope["ok"] is False
+    assert len(envelope["skipped"]) == 1, envelope["skipped"]
+    assert "could not be added to the application menu" in envelope["skipped"][0]
+    assert str(menu / "lsdsk.desktop") in envelope["skipped"][0]
+
+
+@pytest.mark.os_linux
+def test_install_shortcut_skips_nothing_when_the_menu_copy_is_written(
+    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / "data"))
+
+    install_shortcut(output_format=OutputFormat.JSON, seams=_real_linux_seams(home))
+
+    envelope = json.loads(capsys.readouterr().out)
+    assert (envelope["ok"], envelope["skipped"]) == (True, [])
+    assert (home / "data" / "applications" / "lsdsk.desktop").is_file()
+
+
+@pytest.mark.os_linux
+def test_install_shortcut_tells_a_reader_on_stderr_which_menu_copy_failed(
+    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    menu = _menu_that_cannot_be_written(home, monkeypatch)
+
+    install_shortcut(output_format=OutputFormat.HUMAN, seams=_real_linux_seams(home))
+
+    captured = capsys.readouterr()
+    assert "Shortcut created" in captured.out
+    assert "could not be added to the application menu" in captured.err
+    assert str(menu / "lsdsk.desktop") in captured.err

@@ -171,12 +171,11 @@ def test_a_start_menu_that_cannot_be_reached_is_skipped_quietly(tmp_path: Path, 
     desktop = tmp_path / "Desktop"
     desktop.mkdir()
     ps = _FakePs(folders={"Desktop": desktop, "Programs": locked / "Desktop"})
-    warnings: list[str] = []
 
-    written = WindowsDesktopShortcut(load=lambda: _FakePwshpy(ps=ps), warn=warnings.append).create(
+    written = WindowsDesktopShortcut(load=lambda: _FakePwshpy(ps=ps)).create(
         launch=("C:/uv/uvx.exe", "lsdsk@latest"), icon=None
     )
 
-    assert written == desktop / "lsdsk.lnk"
+    assert written.path == desktop / "lsdsk.lnk"
     assert ps.written == [str(desktop / "lsdsk.lnk")]
-    assert warnings == []
+    assert written.skipped == ()

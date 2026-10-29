@@ -25,7 +25,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.mark.os_posix
 def test_create_writes_an_executable_command_that_runs_the_launch(home: Path) -> None:
-    written = MacosDesktopShortcut().create(launch=("uvx", "lsdsk@latest"), icon=None)
+    written = MacosDesktopShortcut().create(launch=("uvx", "lsdsk@latest"), icon=None).path
 
     assert written == home / "Desktop" / "lsdsk.command"
     text = written.read_text(encoding="utf-8")
@@ -45,7 +45,9 @@ def test_exists_turns_true_once_created(home: Path) -> None:
 @pytest.mark.os_posix
 def test_a_launch_argument_with_a_space_is_quoted(home: Path) -> None:
     text = (
-        MacosDesktopShortcut().create(launch=("/opt/my uv/uvx", "lsdsk@latest"), icon=None).read_text(encoding="utf-8")
+        MacosDesktopShortcut()
+        .create(launch=("/opt/my uv/uvx", "lsdsk@latest"), icon=None)
+        .path.read_text(encoding="utf-8")
     )
     assert "exec '/opt/my uv/uvx' lsdsk@latest" in text
 
@@ -103,6 +105,6 @@ def test_a_missing_desktop_folder_is_named_in_the_reason(home: Path) -> None:
 
 @pytest.mark.os_posix
 def test_the_command_is_executable_by_everyone(home: Path) -> None:
-    written = MacosDesktopShortcut().create(launch=("lsdsk",), icon=None)
+    written = MacosDesktopShortcut().create(launch=("lsdsk",), icon=None).path
 
     assert written.stat().st_mode & 0o777 == 0o755

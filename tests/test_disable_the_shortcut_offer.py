@@ -23,6 +23,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
+    from lsdsk.domain.shortcut import ShortcutWritten
+
 
 @pytest.mark.os_agnostic
 def test_disable_offer_writes_false_into_a_freshly_created_user_config(user_config_dir: Path) -> None:
@@ -110,7 +112,7 @@ def test_the_offer_reports_a_display_entry_that_is_not_a_table_as_a_warning(
         def has_desktop(self) -> bool:
             return True
 
-        def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+        def create(self, *, launch: Sequence[str], icon: Path | None) -> ShortcutWritten:
             raise AssertionError("never asked to create")
 
         def no_desktop_reason(self) -> str:
@@ -184,7 +186,7 @@ class _DesktopNeverAsked:
     def has_desktop(self) -> bool:
         return True
 
-    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> ShortcutWritten:
         raise AssertionError("never asked to create")
 
     def no_desktop_reason(self) -> str:

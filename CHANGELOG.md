@@ -5,6 +5,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- When `lsdsk install-shortcut` writes the Desktop shortcut but cannot add its copy to the
+  application menu (Linux) or the Start menu (Windows), `--format json` now reports `ok` false
+  and names that copy and the cause in `skipped`. Before this, the envelope said `ok` true with
+  `skipped` empty, and only a stderr warning mentioned the missing copy. The exit code is still
+  `0`, because the shortcut itself is in place. Text output prints the same sentence on stderr
+  as a `Warning:` line, and the shortcut offer does the same after "Shortcut created at ...".
+
 ## [1.16.3] - 2026-10-29
 
 ### Fixed

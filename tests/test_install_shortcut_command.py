@@ -28,7 +28,7 @@ from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
 from lsdsk.adapters.shortcut.windows import WindowsDesktopShortcut
 from lsdsk.adapters.uv_bootstrap import UvInstallResult
 from lsdsk.domain.enums import OutputFormat
-from lsdsk.domain.shortcut import command_line, manual_install_line, uvx_launch_args
+from lsdsk.domain.shortcut import ShortcutWritten, command_line, manual_install_line, uvx_launch_args
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -49,9 +49,9 @@ class _RecordingShortcuts:
     def has_desktop(self) -> bool:
         return self.desktop
 
-    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> ShortcutWritten:
         self.created = (tuple(launch), icon)
-        return Path("/desktop/lsdsk.desktop")
+        return ShortcutWritten(path=Path("/desktop/lsdsk.desktop"), skipped=())
 
     def no_desktop_reason(self) -> str:
         return f"no desktop folder at {Path('/desktop')}"
@@ -161,7 +161,7 @@ class _RefusingShortcuts(_RecordingShortcuts):
         super().__init__()
         self.error = error
 
-    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> ShortcutWritten:
         raise self.error
 
 

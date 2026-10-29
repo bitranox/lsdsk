@@ -22,7 +22,6 @@ System Role:
 from __future__ import annotations
 
 import errno
-import logging
 import os
 import re
 from pathlib import Path
@@ -32,12 +31,10 @@ from lsdsk.adapters.atomicfile import replace_atomically
 from lsdsk.adapters.shortcut.probe import probe
 from lsdsk.adapters.textfile import read_text_bounded
 from lsdsk.domain.errors import ConfigurationError
-from lsdsk.domain.shortcut import SHORTCUT_COMMENT
+from lsdsk.domain.shortcut import SHORTCUT_COMMENT, ShortcutWritten
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
-
-_LOGGER = logging.getLogger(__name__)
+    from collections.abc import Sequence
 
 _FILENAME = "lsdsk.desktop"
 _NAME = "lsdsk"
@@ -66,17 +63,14 @@ class UnwritableDesktopEntryError(OSError):
 class LinuxDesktopShortcut:
     """Create and find the ``lsdsk.desktop`` launcher under the reader's home."""
 
-    def __init__(self, *, config_home: Path | None = None, warn: Callable[[str], None] | None = None) -> None:
-        """Read ``user-dirs.dirs`` from ``config_home`` and report a skipped menu copy through ``warn``.
+    def __init__(self, *, config_home: Path | None = None) -> None:
+        """Read ``user-dirs.dirs`` from ``config_home``.
 
         Args:
             config_home: Where ``user-dirs.dirs`` lives; ``$XDG_CONFIG_HOME`` or
                 ``~/.config`` when not given.
-            warn: Told, in one sentence, when the Desktop entry was written and
-                the menu copy was not; a logged warning when not given.
         """
         self._config_home = config_home
-        self._warn = warn or _LOGGER.warning
 
     def desktop_dir(self) -> Path:
         """The Desktop directory: ``$XDG_DESKTOP_DIR``, then ``user-dirs.dirs``, then ``~/Desktop``."""
@@ -126,18 +120,18 @@ class LinuxDesktopShortcut:
                 return _expand(found["value"])
         return None
 
-    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> ShortcutWritten:
         """Write the entry to the Desktop and the application menu, both executable.
 
-        A menu copy that cannot be written is reported through ``warn`` and does
-        not fail the call, because the Desktop entry it returns is already there.
+        A menu copy that cannot be written is named in the result's ``skipped``
+        and does not fail the call, because the Desktop entry is already there.
 
         Args:
             launch: The command the entry runs, as an argv.
             icon: An icon file to reference, or ``None`` for the default icon.
 
         Returns:
-            The path of the Desktop entry.
+            The Desktop entry, and the menu copy in ``skipped`` when it failed.
 
         Raises:
             FileNotFoundError: When the Desktop folder does not exist; it is
@@ -147,19 +141,18 @@ class LinuxDesktopShortcut:
         body = self._entry(launch, icon)
         desktop = self.desktop_dir() / _FILENAME
         _write_executable(desktop, body)
-        self._add_to_the_menu(body)
-        return desktop
+        missed = self._add_to_the_menu(body)
+        return ShortcutWritten(path=desktop, skipped=() if missed is None else (missed,))
 
-    def _add_to_the_menu(self, body: str) -> None:
-        """Write ``body`` into the application menu too, warning rather than raising when it will not go."""
+    def _add_to_the_menu(self, body: str) -> str | None:
+        """Write ``body`` into the application menu too; the sentence saying why it would not go, or None."""
         menu = self._applications_dir() / _FILENAME
         try:
             menu.parent.mkdir(parents=True, exist_ok=True)
             _write_executable(menu, body)
         except OSError as exc:
-            self._warn(
-                f"the shortcut is on the Desktop, but it could not be added to the application menu at {menu}: {exc}"
-            )
+            return f"the shortcut is on the Desktop, but it could not be added to the application menu at {menu}: {exc}"
+        return None
 
     @staticmethod
     def _applications_dir() -> Path:

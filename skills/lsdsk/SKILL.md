@@ -180,20 +180,24 @@ uvx is still not on PATH`. Each refusal goes to stderr as `Error: <text>` and, u
 `--format json`, is also the envelope's `error.message`. The installer's own output
 goes to standard error too, so `--format json` still prints the envelope alone.
 
-| Outcome                                                                                                                                                    | Exit | `--format json`                                                                         |
-|------------------------------------------------------------------------------------------------------------------------------------------------------------|------|-----------------------------------------------------------------------------------------|
-| Shortcut written                                                                                                                                           | `0`  | `ok` true, `data.shortcut` (the path), `data.launch` (the argv)                         |
-| Desktop shortcut written, but its copy into the application menu (Linux) or the Start menu (Windows) failed, for any reason, a refused permission included | `0`  | `ok` true, `data` as above; the failure is one stderr warning only                      |
-| Refused (any case above)                                                                                                                                   | `78` | `ok` false, `error.type` `CONFIG_ERROR`                                                 |
-| No user configuration directory can be named (a relative `$XDG_CONFIG_HOME`)                                                                               | `78` | `ok` false, `error.type` `CONFIG_ERROR`, the message naming the relative path           |
-| A write refused for permission: a Linux or macOS shortcut, a Windows `.lnk` refused with access denied (`0x80070005`), or the icon copy on any platform    | `13` | `ok` false, `error.type` `PERMISSION_DENIED` (for a `.lnk`, the HRESULT in the message) |
-| Any other failed write (a full disk, a directory where the file goes)                                                                                      | `74` | `ok` false, `error.type` `IO_ERROR`                                                     |
-| A Windows `.lnk` the shell refused to save for any reason other than access denied                                                                         | `74` | `ok` false, `error.type` `IO_ERROR`, the HRESULT in the message                         |
-| A control character (a newline included) in a launch argument or the icon path, which no Linux `.desktop` value can carry                                  | `74` | `ok` false, `error.type` `IO_ERROR`, nothing written                                    |
+| Outcome                                                                                                                                                                     | Exit | `--format json`                                                                         |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------|-----------------------------------------------------------------------------------------|
+| Shortcut written                                                                                                                                                            | `0`  | `ok` true, `data.shortcut` (the path), `data.launch` (the argv)                         |
+| Desktop shortcut written, but its copy into the application menu (Linux) or the Start menu (Windows) failed, for any reason, a refused permission included                  | `0`  | `ok` false, `data` as above, `skipped` naming the copy and the cause                    |
+| Refused (any case above)                                                                                                                                                    | `78` | `ok` false, `error.type` `CONFIG_ERROR`                                                 |
+| No user configuration directory can be named (a relative `$XDG_CONFIG_HOME`)                                                                                                | `78` | `ok` false, `error.type` `CONFIG_ERROR`, the message naming the relative path           |
+| A write refused for permission: the Linux or macOS Desktop shortcut, the Windows Desktop `.lnk` refused with access denied (`0x80070005`), or the icon copy on any platform | `13` | `ok` false, `error.type` `PERMISSION_DENIED` (for a `.lnk`, the HRESULT in the message) |
+| Any other failed write (a full disk, a directory where the file goes)                                                                                                       | `74` | `ok` false, `error.type` `IO_ERROR`                                                     |
+| The Windows Desktop `.lnk` the shell refused to save for any reason other than access denied                                                                                | `74` | `ok` false, `error.type` `IO_ERROR`, the HRESULT in the message                         |
+| A control character (a newline included) in a launch argument or the icon path, which no Linux `.desktop` value can carry                                                   | `74` | `ok` false, `error.type` `IO_ERROR`, nothing written                                    |
 
 On Linux and Windows the Desktop file is written first and the menu copy second, so a
-failure on the menu copy leaves the Desktop file in place and the command still succeeds: exit `0`, `ok`
-true, and one warning on stderr naming the menu and the cause, which `--format json` does not carry. The icon
+failure on the menu copy leaves the Desktop file in place and the run still exits `0`.
+`--format json` then reports `ok` false, and `skipped` is a list holding one sentence, `the shortcut is
+on the Desktop, but it could not be added to the application menu at <path>: <cause>` on Linux or
+`the shortcut is on the Desktop, but it could not be added to the Start menu: <cause>` on Windows,
+where the cause names the `.lnk` path. Text output prints that sentence on stderr after `Warning: `.
+Branch on `ok` and `skipped`, never on the exit code, to notice a missing menu entry. The icon
 is copied before either, so an icon that will not copy writes no shortcut at all. Any
 other failure ends the run, with one stderr line naming the file, and the JSON is the
 `ok`-false envelope with its `error` and no `data`. Like `record`, its exit code is never a verdict about the
@@ -223,7 +227,9 @@ The offer stays silent in the following cases:
 the command). A declined install leaves no shortcut, says nothing and records nothing, so the
 offer comes back on the next start. A failed install prints `the uv installer failed
 (exit N)` with the manual install line, a failed shortcut write prints `Could not
-create the desktop shortcut: <reason>`, and a "never" that cannot be saved (an
+create the desktop shortcut: <reason>`, a Desktop shortcut whose menu copy failed prints
+`Shortcut created at <path>.` on stdout and then the same `Warning:` line on stderr as the command,
+and a "never" that cannot be saved (an
 unwritable or malformed config file, a `display` that is not a table) prints `Could
 not save the do-not-offer setting: <reason>` and leaves the file as it was.
 End of input (Ctrl+D) answers "not now" at the shortcut question and "no" at the uv

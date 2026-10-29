@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from ..domain.deployment import DeployRequest
     from ..domain.elevation import Elevation
     from ..domain.enums import OutputFormat
+    from ..domain.shortcut import ShortcutWritten
 
 
 class PrintInfo(Protocol):
@@ -167,10 +168,11 @@ class DesktopShortcuts(Protocol):
         """Whether this account has a desktop folder to put a shortcut on; a headless server has none."""
         ...
 
-    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> ShortcutWritten:
         """Create (or refresh) the shortcut to run ``launch``, with ``icon`` if given.
 
-        Returns the path written.
+        Returns the Desktop shortcut written, and in ``skipped`` each extra copy
+        (an application-menu or Start-menu entry) that could not be, and why.
         """
         ...
 

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from lsdsk.adapters.atomicfile import replace_atomically
 from lsdsk.adapters.shortcut.probe import probe
+from lsdsk.domain.shortcut import ShortcutWritten
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -46,7 +47,7 @@ class MacosDesktopShortcut:
         """Why there is no desktop: on macOS only a missing ``~/Desktop``."""
         return f"no desktop folder at {self.desktop_dir()}"
 
-    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> ShortcutWritten:
         """Write the ``.command`` and make it executable.
 
         Args:
@@ -55,7 +56,7 @@ class MacosDesktopShortcut:
                 it is unused here (the ``.app`` form that could is a later step).
 
         Returns:
-            The path of the ``.command`` file.
+            The ``.command`` file, with nothing skipped: macOS has no menu copy.
 
         Raises:
             FileNotFoundError: When the Desktop folder does not exist; it is
@@ -65,7 +66,7 @@ class MacosDesktopShortcut:
         path = self.desktop_dir() / _FILENAME
         # Atomic and never through a symlink at the destination: see linux._write_executable.
         replace_atomically(path, f"#!/bin/sh\nexec {shlex.join(launch)}\n", mode=_EXECUTABLE_MODE)
-        return path
+        return ShortcutWritten(path=path, skipped=())
 
 
 __all__ = ["MacosDesktopShortcut"]

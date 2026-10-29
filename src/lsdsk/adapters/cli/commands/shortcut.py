@@ -59,6 +59,7 @@ if TYPE_CHECKING:
 
     from lsdsk.adapters.config.tunables import DisplaySettings
     from lsdsk.application.ports import DesktopShortcuts
+    from lsdsk.domain.shortcut import ShortcutWritten
 
 
 #: Said when an install reports success but uvx is still not resolvable in this
@@ -167,19 +168,32 @@ def _resolve_launch(seams: ShortcutSeams, *, install_uv: bool, output_format: Ou
     return replan.argv
 
 
-def _report(written: Path, launch: tuple[str, ...], output_format: OutputFormat, *, platform: str) -> None:
+def _report(written: ShortcutWritten, launch: tuple[str, ...], output_format: OutputFormat, *, platform: str) -> None:
     """Say what was created, in the format the caller asked for; the launch line as ``platform`` reads it.
 
-    Windows gets a second line for PowerShell, which reads the cmd form of a
-    quoted program as a parse error rather than as a command.
+    A menu copy that was not written goes into the envelope's ``skipped``, or
+    onto stderr for a reader, so neither form reports a complete shortcut over
+    a missing one. Windows gets a second line for PowerShell, which reads the
+    cmd form of a quoted program as a parse error rather than as a command.
     """
     if output_format is OutputFormat.JSON:
-        emit_action(ActionCommand.INSTALL_SHORTCUT, InstallShortcutResult(shortcut=str(written), launch=list(launch)))
+        emit_action(
+            ActionCommand.INSTALL_SHORTCUT,
+            InstallShortcutResult(shortcut=str(written.path), launch=list(launch)),
+            skipped=list(written.skipped),
+        )
         return
-    safe_console.echo(f"\nShortcut created:\n  {written}")
+    safe_console.echo(f"\nShortcut created:\n  {written.path}")
     safe_console.echo(f"It launches: {command_line(launch, platform=platform)}")
     if platform == "win32":
         safe_console.echo(f"In PowerShell: {powershell_line(launch)}")
+    _warn_about_skipped(written)
+
+
+def _warn_about_skipped(written: ShortcutWritten) -> None:
+    """Put each menu copy that was not written on stderr, one warning line each."""
+    for reason in written.skipped:
+        safe_console.echo(f"Warning: {reason}", err=True)
 
 
 def install_shortcut(
@@ -228,7 +242,7 @@ def install_shortcut(
     )
 
 
-def _write_shortcut(seams: ShortcutSeams, *, launch: tuple[str, ...], output_format: OutputFormat) -> Path:
+def _write_shortcut(seams: ShortcutSeams, *, launch: tuple[str, ...], output_format: OutputFormat) -> ShortcutWritten:
     """Copy the icon and write the shortcut, or fail with the code ``snapshot`` uses for its write.
 
     The explicit command does NOT degrade: a reader who asked for the shortcut is
@@ -398,7 +412,8 @@ def _create_for_the_offer(seams: ShortcutSeams, *, launch: tuple[str, ...]) -> N
     except OSError as exc:
         safe_console.echo(f"\nCould not create the desktop shortcut: {exc}", err=True)
         return
-    safe_console.echo(f"\nShortcut created at {written}.")
+    safe_console.echo(f"\nShortcut created at {written.path}.")
+    _warn_about_skipped(written)
 
 
 def _icon_or_none(copy_icon: Callable[[], Path]) -> Path | None:

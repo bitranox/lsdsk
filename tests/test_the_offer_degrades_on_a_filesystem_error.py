@@ -25,6 +25,7 @@ from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.config.tunables import DisplaySettings
 from lsdsk.adapters.uv_bootstrap import UvInstallResult
 from lsdsk.domain.enums import ShortcutChoice
+from lsdsk.domain.shortcut import ShortcutWritten
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -44,7 +45,7 @@ class _ShortcutsThatFailToCreate:
     def has_desktop(self) -> bool:
         return True
 
-    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> ShortcutWritten:
         self.create_calls += 1
         raise OSError("read-only config directory")
 
@@ -64,9 +65,9 @@ class _RecordingShortcuts:
     def has_desktop(self) -> bool:
         return True
 
-    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> ShortcutWritten:
         self.created = (tuple(launch), icon)
-        return Path("/desktop/lsdsk.desktop")
+        return ShortcutWritten(path=Path("/desktop/lsdsk.desktop"), skipped=())
 
     def no_desktop_reason(self) -> str:
         return f"no desktop folder at {Path('/desktop')}"

@@ -68,6 +68,23 @@ class LaunchPlan(NamedTuple):
     needs_uv: bool
 
 
+class ShortcutWritten(NamedTuple):
+    """The shortcut a platform wrote, and each copy of it that it could not write.
+
+    Returned rather than warned about from inside the adapter, so the caller
+    that reports the run - the JSON envelope included - holds every missing copy
+    and cannot report ``ok`` over one by leaving it out.
+
+    Attributes:
+        path: The Desktop shortcut, which is the shortcut itself.
+        skipped: One sentence per extra copy (an application-menu or Start-menu
+            entry) that was not written, naming where and why; empty when none.
+    """
+
+    path: Path
+    skipped: tuple[str, ...]
+
+
 def plan_launch(*, uvx: Path | None, installed_lsdsk: Path | None) -> LaunchPlan:
     """Decide what a shortcut should launch, given what is on the machine.
 
@@ -315,6 +332,7 @@ __all__ = [
     "UV_INSTALLER_URL_WINDOWS",
     "UV_INSTALLER_VERSION",
     "LaunchPlan",
+    "ShortcutWritten",
     "command_line",
     "consent_text",
     "manual_install_line",

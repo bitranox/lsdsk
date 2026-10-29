@@ -140,7 +140,7 @@ def test_a_macos_command_carries_no_icon_even_when_one_is_given(
     icon = tmp_path / "lsdsk.png"
     icon.write_bytes(_PNG_SIGNATURE)
 
-    text = MacosDesktopShortcut().create(launch=("lsdsk",), icon=icon).read_text(encoding="utf-8")
+    text = MacosDesktopShortcut().create(launch=("lsdsk",), icon=icon).path.read_text(encoding="utf-8")
 
     assert "lsdsk.png" not in text
     assert "Icon" not in text
