@@ -246,3 +246,49 @@ def test_a_linux_sata_refusal_whose_links_were_read_names_no_sata_link() -> None
 
     assert note, "the SMART columns are still missing unprivileged"
     assert LINK_NAMED not in note, note
+
+
+def test_an_unprivileged_sata_drive_with_no_link_and_no_refusal_names_no_sata_link() -> None:
+    """A drive that publishes no SATA speed reads null too, and elevating would not help it.
+
+    The note is keyed on the RECORDED refusal: windows-ahci is a QEMU guest whose
+    virtual SATA disk reads no link even elevated, so an unprivileged run of it
+    with its IDENTIFY reading intact has both figures empty and nothing refused.
+    """
+    payload: dict[str, Any] = json.loads((FIXTURES / "windows-ahci.json").read_text(encoding="utf-8"))
+    payload["elevated"] = False
+    payload["euid"] = 1
+    machine = build_from(payload)
+    sata = [disk for disk in machine.disks if disk.bus is BusType.SATA]
+    assert sata, "the premise: the capture has a SATA drive"
+    assert all(disk.link.negotiated_gbps is None and disk.link.drive_max_gbps is None for disk in sata)
+    assert not any(disk.readings_refused for disk in machine.disks), "the premise: nothing was refused"
+
+    note = report.privilege_note(machine)
+
+    assert note, "the SMART columns are still missing unprivileged"
+    assert LINK_NAMED not in note, note
+
+
+def test_a_refused_identify_that_left_the_negotiated_link_names_no_sata_link() -> None:
+    """The sentence names the disk AND link columns, so it is said only where both are empty.
+
+    A refused IDENTIFY costs the drive's own maximum; where the negotiated speed
+    was still read from elsewhere, the link column carries a figure and the
+    sentence would send the reader to elevate for a column that is already full.
+    """
+    machine = _windows_machine(elevated=False)
+    assert LINK_NAMED in report.privilege_note(machine), "the premise: both figures empty names the link"
+    disks = tuple(
+        disk.with_changes(link=disk.link.with_changes(negotiated_gbps=6.0)) if disk.bus is BusType.SATA else disk
+        for disk in machine.disks
+    )
+    machine = machine.with_changes(disks=disks)
+    sata = [disk for disk in machine.disks if disk.bus is BusType.SATA]
+    assert sata, "the premise: the capture has a SATA drive"
+    assert all(disk.link.drive_max_gbps is None and disk.readings_refused for disk in sata)
+
+    note = report.privilege_note(machine)
+
+    assert note, "the SMART columns are still missing unelevated"
+    assert LINK_NAMED not in note, note
