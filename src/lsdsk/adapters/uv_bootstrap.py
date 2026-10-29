@@ -56,10 +56,13 @@ def uvx_path(*, which: Callable[[str], str | None] = shutil.which) -> Path | Non
         which: The lookup, injectable so a test need not alter the real ``PATH``.
 
     Returns:
-        The absolute path of ``uvx``, or ``None``.
+        The absolute path of ``uvx``, or ``None``. A lookup answers a relative
+        path for a relative ``PATH`` entry (and, on Windows, for the current
+        directory it searches first); the shortcut runs from the Desktop, where
+        that path names nothing, so it is anchored here.
     """
     found = which("uvx")
-    return Path(found) if found else None
+    return Path(found).absolute() if found else None
 
 
 #: Fetch the installer named by ``$0`` and run it only when the fetch succeeded,

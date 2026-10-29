@@ -336,3 +336,31 @@ def test_a_platform_with_no_shortcut_adapter_is_refused_with_config_error(capsys
     envelope = json.loads(capsys.readouterr().out)
     assert envelope["error"]["type"] == "CONFIG_ERROR"
     assert "not available on aix" in envelope["error"]["message"]
+
+
+@pytest.mark.os_posix
+def test_a_plain_lsdsk_found_through_a_relative_path_entry_is_launched_by_its_absolute_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The shortcut runs from the Desktop, so a launcher resolved as ``bin/lsdsk`` must be made absolute.
+
+    Driven through the real lookups and the real platform adapter: ``PATH`` holds
+    one relative entry with a plain ``lsdsk`` and no ``uvx``.
+    """
+    home = tmp_path / "home"
+    (home / "Desktop").mkdir(parents=True)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    lsdsk = bin_dir / "lsdsk"
+    lsdsk.write_bytes(b"#!/bin/sh\nexit 0\n")
+    lsdsk.chmod(0o755)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_DESKTOP_DIR", raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", "bin")
+
+    install_shortcut(output_format=OutputFormat.JSON)
+
+    launch = json.loads(capsys.readouterr().out)["data"]["launch"]
+    assert launch == [str(lsdsk)]

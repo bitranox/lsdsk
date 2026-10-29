@@ -103,9 +103,13 @@ class ShortcutSeams:
 
 
 def _installed_lsdsk() -> Path | None:
-    """A plain ``lsdsk`` launcher already on PATH, or ``None``."""
+    """A plain ``lsdsk`` launcher already on PATH, as an absolute path, or ``None``.
+
+    Absolute because a relative ``PATH`` entry resolves relative to the directory
+    lsdsk ran in, and the shortcut runs from the Desktop.
+    """
     found = shutil.which("lsdsk")
-    return Path(found) if found else None
+    return Path(found).absolute() if found else None
 
 
 def shortcuts_for(platform: str) -> DesktopShortcuts | None:
