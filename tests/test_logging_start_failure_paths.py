@@ -64,7 +64,8 @@ def test_settings_the_library_refuses_even_when_shipped_are_raised_not_swallowed
     refused = {**shipped_section("lib_log_rich"), "console_level": "NOPE"}
     assert not lib_log_rich.runtime.is_initialised()
 
-    with pytest.raises(ValueError, match="NOPE"):
+    # The library's own sentence: a refusal of this tool's making could echo the value as well.
+    with pytest.raises(ValueError, match=r"console_level: Unknown log level: 'NOPE'"):
         start_runtime(refused, refused)
 
     assert not lib_log_rich.runtime.is_initialised()

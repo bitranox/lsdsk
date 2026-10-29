@@ -60,7 +60,8 @@ def test_the_plausible_page_the_other_cases_start_from_decodes() -> None:
     ids=["ones-with-a-zero-first", "ones-with-a-zero-last", "space-fill"],
 )
 def test_a_page_that_is_nearly_noise_is_refused(page: bytes) -> None:
-    with pytest.raises(ValueError, match="IDENTIFY"):
+    # The implausible-field rule's own verdict; the all-zeros/all-ones check says "carries no identity".
+    with pytest.raises(ValueError, match="it is not an IDENTIFY answer"):
         decode_identify(page)
 
 
@@ -103,7 +104,7 @@ def test_a_real_rotation_rate_is_kept(rpm: int) -> None:
 def test_the_vpd_wrapper_refuses_the_same_noise() -> None:
     page = bytes(60) + _fill(0xFFFF, except_word=0)
 
-    with pytest.raises(ValueError, match="IDENTIFY"):
+    with pytest.raises(ValueError, match="it is not an IDENTIFY answer"):
         decode_vpd_ata_information(page)
 
 

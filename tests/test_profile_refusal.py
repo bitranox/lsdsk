@@ -67,7 +67,8 @@ def test_an_invalid_profile_is_refused_with_22_in_human(
 @pytest.mark.parametrize("name", [7, b"x", ["a"]])
 def test_a_profile_that_is_not_text_is_a_value_error_not_a_type_error(name: object) -> None:
     """``get_config(profile=7)`` documents ``ValueError`` for every refused name."""
-    with pytest.raises(ValueError, match="profile"):
+    # The not-text rule's own sentence: a name coerced to text would be refused as "invalid characters".
+    with pytest.raises(ValueError, match="profile must be text, not"):
         validate_profile(cast("str", name))
-    with pytest.raises(ValueError, match="profile"):
+    with pytest.raises(ValueError, match="profile must be text, not"):
         get_config(profile=cast("str", name))

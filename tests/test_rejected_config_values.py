@@ -526,15 +526,15 @@ def test_a_span_the_rules_cannot_divide_by_is_refused_by_the_value_object() -> N
 
     from lsdsk.domain.thresholds import Thresholds
 
-    # Matched on the FIELD rather than on pydantic's sentence: which field was
-    # refused is the whole claim, and three arms that assert only the type
-    # would all pass against a model that rejected one field and ignored the
-    # other two.
-    with pytest.raises(ValidationError, match="min_span_hours"):
+    # Matched on the FIELD and on the bound that refused it: three arms that
+    # assert only the type would all pass against a model that rejected one
+    # field and ignored the other two, and the field name alone is printed for
+    # any rule that refuses it, so a moved bound would pass as well.
+    with pytest.raises(ValidationError, match=r"min_span_hours\n  Input should be greater than or equal to 1\b"):
         Thresholds(min_span_hours=0)
-    with pytest.raises(ValidationError, match="min_span_hours"):
+    with pytest.raises(ValidationError, match=r"min_span_hours\n  Input should be greater than or equal to 1\b"):
         Thresholds(min_span_hours=-1)
-    with pytest.raises(ValidationError, match="quiet_expected_min"):
+    with pytest.raises(ValidationError, match=r"quiet_expected_min\n  Input should be greater than 0\b"):
         Thresholds(quiet_expected_min=0.0)
 
     # The control: the shipped figures, and the smallest span a rate can be

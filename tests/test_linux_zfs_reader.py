@@ -282,7 +282,11 @@ def test_a_fragmentation_at_either_end_of_0_to_100_is_kept(value: int) -> None:
 
 @pytest.mark.parametrize("value", [-1, 101])
 def test_a_fragmentation_outside_0_to_100_is_refused(value: int) -> None:
-    with pytest.raises(ValidationError, match="zfs_fragmentation"):
+    # The field AND the range bound: a model refusing the value for another reason names the field too.
+    with pytest.raises(
+        ValidationError,
+        match=r"zfs_fragmentation\.rpool\n  Input should be (?:greater than or equal to 0|less than or equal to 100)\b",
+    ):
         LinuxCapture.model_validate({**_MINIMAL, "zfs_fragmentation": {"rpool": value}})
 
 

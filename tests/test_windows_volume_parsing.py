@@ -241,7 +241,8 @@ def test_a_bitmap_header_is_the_starting_cluster_and_the_bit_count() -> None:
 
 
 def test_a_negative_header_field_is_refused() -> None:
-    with pytest.raises(ValueError, match="negative"):
+    # The field that is negative, named with its value: the refusal must say which one it was.
+    with pytest.raises(ValueError, match=r"the volume bitmap header is negative \(lcn -1, bits 0\)"):
         parse_bitmap_header((-1).to_bytes(8, "little", signed=True) + bytes(8))
 
 

@@ -60,5 +60,5 @@ def test_a_numeric_setting_passes_through_as_a_number(tmp_path: Path, clear_conf
 
 @pytest.mark.os_agnostic
 def test_a_value_that_is_not_text_is_still_refused(clear_config_cache: None) -> None:
-    with pytest.raises(ValidationError, match="service"):
+    with pytest.raises(ValidationError, match=r"service\n  Input should be a valid string\b"):
         LoggingConfigModel.model_validate({"service": ["not", "text"]})
