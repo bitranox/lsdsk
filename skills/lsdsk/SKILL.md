@@ -180,15 +180,15 @@ uvx is still not on PATH`. Each refusal goes to stderr as `Error: <text>` and, u
 `--format json`, is also the envelope's `error.message`. The installer's own output
 goes to standard error too, so `--format json` still prints the envelope alone.
 
-| Outcome                                                                                                                   | Exit | `--format json`                                                 |
-|---------------------------------------------------------------------------------------------------------------------------|------|-----------------------------------------------------------------|
-| Shortcut written                                                                                                          | `0`  | `ok` true, `data.shortcut` (the path), `data.launch` (the argv) |
-| Refused (any case above)                                                                                                  | `78` | `ok` false, `error.type` `CONFIG_ERROR`                         |
-| A file write refused for permission (a Linux or macOS shortcut, or the icon copy)                                         | `13` | `ok` false, `error.type` `PERMISSION_DENIED`                    |
-| Any other failed write (a full disk, a directory where the file goes)                                                     | `74` | `ok` false, `error.type` `IO_ERROR`                             |
-| A Windows `.lnk` the shell refused to save, for any reason, access denied included                                        | `74` | `ok` false, `error.type` `IO_ERROR`, the HRESULT in the message |
-| A control character (a newline included) in a launch argument or the icon path, which no Linux `.desktop` value can carry | `74` | `ok` false, `error.type` `IO_ERROR`, nothing written            |
-| No user configuration directory can be named (a relative `$XDG_CONFIG_HOME`)                                              | `74` | `ok` false, `error.type` `IO_ERROR`                             |
+| Outcome                                                                                                                                                 | Exit | `--format json`                                                                         |
+|---------------------------------------------------------------------------------------------------------------------------------------------------------|------|-----------------------------------------------------------------------------------------|
+| Shortcut written                                                                                                                                        | `0`  | `ok` true, `data.shortcut` (the path), `data.launch` (the argv)                         |
+| Refused (any case above)                                                                                                                                | `78` | `ok` false, `error.type` `CONFIG_ERROR`                                                 |
+| A write refused for permission: a Linux or macOS shortcut, a Windows `.lnk` refused with access denied (`0x80070005`), or the icon copy on any platform | `13` | `ok` false, `error.type` `PERMISSION_DENIED` (for a `.lnk`, the HRESULT in the message) |
+| Any other failed write (a full disk, a directory where the file goes)                                                                                   | `74` | `ok` false, `error.type` `IO_ERROR`                                                     |
+| A Windows `.lnk` the shell refused to save for any reason other than access denied                                                                      | `74` | `ok` false, `error.type` `IO_ERROR`, the HRESULT in the message                         |
+| A control character (a newline included) in a launch argument or the icon path, which no Linux `.desktop` value can carry                               | `74` | `ok` false, `error.type` `IO_ERROR`, nothing written                                    |
+| No user configuration directory can be named (a relative `$XDG_CONFIG_HOME`)                                                                            | `74` | `ok` false, `error.type` `IO_ERROR`                                                     |
 
 On Linux and Windows the Desktop file is written first and the menu copy second, so a
 failure on the menu copy leaves the Desktop file in place, and exits by the row that failure matches. The icon
