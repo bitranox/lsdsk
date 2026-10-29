@@ -378,3 +378,87 @@ def test_a_hidden_interface_whose_path_cannot_be_read_is_named_as_an_unread_disk
 
     assert sorted(disks) == ["\\\\?\\disk0", "unreadable disk interface 1"]
     assert disks["unreadable disk interface 1"]["error"] == "could not read the device interface path, Win32 error 13"
+
+
+# ---------------------------------------------------------------------------
+# Folding a hidden twin into the ordinary record kept for the drive: which
+# record receives it, which instance identifier survives, and what merging the
+# removal relations costs. Driven through ``without_doubles``, the function the
+# reader composes, over plain records as ``read_disks`` hands them on.
+# ---------------------------------------------------------------------------
+
+_TWIN_RELATIONS = 2_000
+
+
+class _CountedRelation(str):
+    """A relation whose every comparison and hash is counted, so a list scan in C becomes visible."""
+
+    __slots__ = ()
+    calls = 0
+
+    def __eq__(self, other: object) -> bool:
+        _CountedRelation.calls += 1
+        return str.__eq__(self, other)
+
+    def __hash__(self) -> int:
+        _CountedRelation.calls += 1
+        return str.__hash__(self)
+
+
+def test_a_twin_naming_many_relations_is_folded_in_its_own_order_at_a_cost_in_proportion_to_them() -> None:
+    """A `not in` scan of the growing list compared every relation with every earlier one."""
+    relations = [_CountedRelation(f"STORAGE\\Disk\\{{{n:08x}}}") for n in range(_TWIN_RELATIONS)]
+    disks = {
+        "a": {"node": "PhysicalDrive1"},
+        "b": {"node": "PhysicalDrive1", "hidden": True, "removal_relations": relations},
+    }
+    _CountedRelation.calls = 0
+
+    folded = reader.without_doubles(disks)
+    counted = _CountedRelation.calls
+
+    assert folded["a"]["removal_relations"] == relations
+    # Linear is about one hash per relation; the list scan made about two million comparisons.
+    assert counted < 4 * _TWIN_RELATIONS, f"{counted} comparisons and hashes"
+
+
+def test_two_twins_of_one_drive_merge_their_relations_once_each_in_first_seen_order() -> None:
+    disks = {
+        "a": {"node": "PhysicalDrive1"},
+        "b": {"node": "PhysicalDrive1", "hidden": True, "removal_relations": ["X", "Y", "X"]},
+        "c": {"node": "PhysicalDrive1", "hidden": True, "removal_relations": ["Z", "Y", "W"]},
+    }
+
+    assert reader.without_doubles(disks)["a"]["removal_relations"] == ["X", "Y", "Z", "W"]
+
+
+def test_a_kept_record_with_no_instance_takes_its_twins() -> None:
+    disks = {
+        "a": {"node": "PhysicalDrive1"},
+        "b": {"node": "PhysicalDrive1", "hidden": True, "instance": "SCSI\\DISK\\TWIN"},
+    }
+
+    assert reader.without_doubles(disks)["a"].get("instance") == "SCSI\\DISK\\TWIN"
+
+
+def test_a_kept_record_keeps_its_own_instance_over_its_twins() -> None:
+    disks = {
+        "a": {"node": "PhysicalDrive1", "instance": "SCSI\\DISK\\OWN"},
+        "b": {"node": "PhysicalDrive1", "hidden": True, "instance": "SCSI\\DISK\\TWIN"},
+    }
+
+    assert reader.without_doubles(disks)["a"]["instance"] == "SCSI\\DISK\\OWN"
+
+
+def test_a_twin_of_a_drive_listed_twice_in_the_ordinary_class_folds_into_the_first() -> None:
+    """Both ordinary records are kept; the first listed is the one that stands for the drive."""
+    disks = {
+        "a": {"node": "PhysicalDrive1"},
+        "b": {"node": "PhysicalDrive1"},
+        "c": {"node": "PhysicalDrive1", "hidden": True, "removal_relations": ["SPACE"]},
+    }
+
+    folded = reader.without_doubles(disks)
+
+    assert list(folded) == ["a", "b"]
+    assert (folded["a"].get("removal_relations"), folded["b"].get("removal_relations")) == (["SPACE"], None)

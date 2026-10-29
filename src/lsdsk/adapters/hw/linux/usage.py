@@ -81,12 +81,16 @@ def _mounts_by_dev(capture: LinuxCapture) -> dict[str, tuple[str, ...]]:
         for dev in (mount.dev, mount.source_dev):
             if dev:
                 ordered.setdefault(dev, {})[mount.mountpoint] = None
-    by_dev = {dev: tuple(mountpoints) for dev, mountpoints in ordered.items()}
+    own = {dev: tuple(mountpoints) for dev, mountpoints in ordered.items()}
+    by_dev = dict(own)
     # Every member of a multi-device btrfs carries the mount mountinfo gave one
     # of them. The members share one tuple: a copy each made a long member list
-    # cost its own square.
+    # cost its own square. Each join reads the members' OWN mounts, never a
+    # tuple an earlier list already joined: a device named in two lists would
+    # otherwise hand every member of the second the whole first join, once per
+    # member, which is the square again.
     for members in capture.btrfs_devices or ():
-        joined = tuple(dict.fromkeys(mountpoint for dev in members for mountpoint in by_dev.get(dev, ())))
+        joined = tuple(dict.fromkeys(mountpoint for dev in members for mountpoint in own.get(dev, ())))
         if joined:
             by_dev.update(dict.fromkeys(members, joined))
     return by_dev

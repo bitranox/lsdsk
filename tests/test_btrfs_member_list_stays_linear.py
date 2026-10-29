@@ -19,6 +19,8 @@ import tracemalloc
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from workcount import work_to_run
+
 from lsdsk.adapters.hw import snapshot
 
 if TYPE_CHECKING:
@@ -54,3 +56,46 @@ def test_a_btrfs_member_list_of_twenty_thousand_builds_within_a_bounded_peak() -
     filesystems = {each.name: each for each in inventory.filesystems or ()}
     assert filesystems["/mnt/b"].disks == ("sdb", "sdc")
     assert len(reading["btrfs_devices"][0]) == _MEMBERS + 2
+
+
+# ---------------------------------------------------------------------------
+# One device named in two member lists. The kernel lists each filesystem once,
+# but a capture is untrusted input, and the join of the second list used to
+# read the tuple the first had already joined: every member of the second list
+# then contributed the whole first join, so the build cost the square of the
+# list in time while allocating no more than before - which a traced peak
+# cannot see. The arm counts work instead (``work_to_run``), doubling twice.
+# ---------------------------------------------------------------------------
+
+_OVERLAP_SMALL, _OVERLAP_LARGE = 500, 2_000
+
+
+def _listed_twice(extra_members: int) -> dict[str, Any]:
+    """The capture's btrfs with `extra_members` more, each mounted, and its member list given twice."""
+    reading: dict[str, Any] = json.loads(_CAPTURE.read_text(encoding="utf-8"))
+    members = ["8:16", "8:32", *(f"9:{n}" for n in range(extra_members))]
+    reading["btrfs_devices"] = [members, list(members)]
+    reading["mounts"] += [
+        {"dev": "0:55", "fstype": "btrfs", "mountpoint": f"/mnt/b/s{n}", "read_only": False, "source_dev": f"9:{n}"}
+        for n in range(extra_members)
+    ]
+    return reading
+
+
+def _overlap_work(extra_members: int) -> int:
+    inventory, work = work_to_run(lambda: snapshot.build_from(_listed_twice(extra_members)))
+    # Control: every planted mount was read and joins the btrfs, so the work
+    # counted includes the join being measured.
+    usage = {disk.node: disk.usage for disk in inventory.disks}
+    sdb = usage["sdb"]
+    assert sdb is not None
+    mounts = {mount for use in sdb.uses for mount in use.mounts}
+    assert {f"/mnt/b/s{n}" for n in range(extra_members)} <= mounts
+    return work
+
+
+def test_a_device_named_in_two_btrfs_member_lists_costs_work_in_proportion_to_the_lists() -> None:
+    ratio = _overlap_work(_OVERLAP_LARGE) / _overlap_work(_OVERLAP_SMALL)
+
+    # Four times the members: linear reads about 3.5, rejoining the first join about 10.5.
+    assert ratio < 6, f"{_OVERLAP_LARGE} members listed twice cost {ratio:.1f}x the work of {_OVERLAP_SMALL}"
