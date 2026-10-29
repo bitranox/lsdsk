@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from lsdsk.adapters.atomicfile import replace_atomically
+from lsdsk.adapters.shortcut.probe import probe
 from lsdsk.adapters.textfile import read_text_bounded
 from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.shortcut import SHORTCUT_COMMENT
@@ -87,11 +88,11 @@ class LinuxDesktopShortcut:
     def has_desktop(self) -> bool:
         """Whether the Desktop folder exists; ``"$HOME/"`` in ``user-dirs.dirs`` turns it off."""
         desktop = self.desktop_dir()
-        return _probe(desktop.is_dir) and desktop != Path.home()
+        return probe(desktop.is_dir) and desktop != Path.home()
 
     def exists(self) -> bool:
         """Whether the Desktop already carries the shortcut."""
-        return _probe((self.desktop_dir() / _FILENAME).is_file)
+        return probe((self.desktop_dir() / _FILENAME).is_file)
 
     def no_desktop_reason(self) -> str:
         """Why there is no desktop: a missing folder, or a setting that names home itself.
@@ -187,19 +188,6 @@ class LinuxDesktopShortcut:
         if icon is not None:
             lines.insert(4, f"Icon={_string_value(str(icon))}")
         return "\n".join(lines) + "\n"
-
-
-def _probe(check: Callable[[], bool]) -> bool:
-    """``check()``, an ``OSError`` read as no: a folder this account cannot reach holds no shortcut.
-
-    ``Path.is_dir`` and ``Path.is_file`` re-raise the ``PermissionError`` met under
-    a parent with no search permission before Python 3.14, which answers
-    ``False``; this gives every supported interpreter the 3.14 answer.
-    """
-    try:
-        return check()
-    except OSError:
-        return False
 
 
 def _exec_value(launch: Sequence[str]) -> str:
