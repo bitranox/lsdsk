@@ -391,3 +391,64 @@ def test_a_pooled_drive_names_the_volume_its_space_backs_as_the_space_does() -> 
     assert rows[_REAL_SPACE].rstrip().endswith(" D:"), rows[_REAL_SPACE]
     for node in _REAL_POOLED:
         assert rows[node].rstrip().endswith(f"space:{_REAL_SPACE} -> D:"), rows[node]
+
+
+def test_a_space_whose_own_instance_is_lower_case_still_links_its_drives(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+) -> None:
+    """Case is folded on both sides of the link, not only on the drive's: Windows compares them without regard to it."""
+
+    def lower_the_space(data: dict[str, Any]) -> None:
+        space = next(entry for entry in data["disks"].values() if entry.get("node") == _REAL_SPACE)
+        space["instance"] = space["instance"].lower()
+
+    envelope = envelope_of(capture_with(_REAL, lower_the_space, tmp_path), cli_runner, production_factory)
+
+    assert _disk_in(envelope, _REAL_SPACE)["readings_refused"] == []
+    for node in _REAL_POOLED:
+        assert _disk_in(envelope, node)["usage"]["uses"] == [
+            {"kind": "space", "name": _REAL_SPACE, "mounts": ["D:\\"]}
+        ], node
+
+
+def _add_numbered_space(data: dict[str, Any], number: int) -> None:
+    """Add a Space on drive number `number`, with a volume of its own, named last by every pooled drive."""
+    space = next(entry for entry in data["disks"].values() if entry.get("node") == _REAL_SPACE)
+    guid = f"11111111-2222-3333-4444-{number:012d}"
+    path = f"\\\\?\\storage#disk#{{{guid}}}#{{53f56307-b6bf-11d0-94f2-00a0c91efb8b}}"
+    instance = f"STORAGE\\DISK\\{{{guid.upper()}}}"
+    data["disks"][path] = {**space, "path": path, "node": f"PhysicalDrive{number}", "instance": instance}
+    data["volumes"][f"v{number}"] = {"disks": [number], "drive_type": 3, "esp": False, "paths": [f"M:\\{number}\\"]}
+    for entry in data["disks"].values():
+        if entry.get("hidden"):
+            entry["removal_relations"].append(f"STORAGE\\Disk\\{{{guid}}}")
+
+
+def _plant_spaces_numbered(*numbers: int) -> Callable[[dict[str, Any]], None]:
+    """Add one Space per drive number to the real capture, named by the pooled drives in the order given.
+
+    Args:
+        numbers: The ``PhysicalDrive`` number of each Space.
+    """
+
+    def plant(data: dict[str, Any]) -> None:
+        for number in numbers:
+            _add_numbered_space(data, number)
+
+    return plant
+
+
+def test_the_spaces_a_drive_backs_are_listed_in_drive_number_order_not_name_order(
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    production_factory: Callable[[], object],
+) -> None:
+    """PhysicalDrive9 before PhysicalDrive10, which a sort by name puts first, whichever the drive names first."""
+    capture = capture_with(_REAL, _plant_spaces_numbered(10, 9), tmp_path)
+    envelope = envelope_of(capture, cli_runner, production_factory)
+
+    for node in _REAL_POOLED:
+        uses = _disk_in(envelope, node)["usage"]["uses"]
+        assert [use["name"] for use in uses] == [_REAL_SPACE, "PhysicalDrive9", "PhysicalDrive10"], node
