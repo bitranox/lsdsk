@@ -71,6 +71,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 - Requires pwshpy 1.11.0 or later (raised in 1.16.1 without a note): a `.lnk` Windows refuses
   for lack of rights is reported as access denied, exit 13, only from that version on.
+- Requires lib_layered_config 7.4.2 or later.
 
 ## [1.16.2] - 2026-10-29
 

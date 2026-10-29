@@ -28,6 +28,8 @@ from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
+    from textual.pilot import Pilot
+
     from lsdsk.domain.models import Inventory
 
 CAPTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-sas-hba.json"
@@ -120,6 +122,28 @@ async def test_narrowing_the_window_fits_the_page_again() -> None:
     assert "wwn" in widened, "widening again must bring the columns back"
 
 
+#: Pauses to wait for a refit before calling it lost; one or two settle it on any machine measured.
+REFIT_PAUSES = 50
+
+
+async def _refitted(pilot: Pilot[None], app: LsdskApp) -> int:
+    """Pause until the disk page has refitted to the width its table now offers, and return that width.
+
+    The refit follows the resize through a posted message, so one pause after
+    ``resize_terminal`` can read the page still fitted to the previous width:
+    measured on a Windows CI runner, the page at 58 showed the columns the
+    printed table draws at 57, the width the test had just left.
+    """
+    table = app.query_one("#disk-table")
+    width = 0
+    for _ in range(REFIT_PAUSES):
+        await pilot.pause()
+        width = table.scrollable_content_region.width
+        if width and app.disk_page_width == width:
+            return width
+    raise AssertionError(f"the page never refitted: table {width}, fitted {app.disk_page_width}")
+
+
 async def _page_against_printed(capture: str, widths: range) -> tuple[list[str], list[str]]:
     """Resize one app through ``widths``; collect where the page and ``lsdsk disks`` part, and where it scrolls."""
     payload: dict[str, Any] = json.loads((CAPTURE.parent / f"{capture}.json").read_text(encoding="utf-8"))
@@ -130,9 +154,8 @@ async def _page_against_printed(capture: str, widths: range) -> tuple[list[str],
         await pilot.press("3")
         for width in widths:
             await pilot.resize_terminal(width, 45)
-            await pilot.pause()
-            table = app.query_one("#disk-table")
-            region, drawn = table.scrollable_content_region.width, table.virtual_size.width
+            region = await _refitted(pilot, app)
+            drawn = app.query_one("#disk-table").virtual_size.width
             page = [heading for heading in _headings(app) if heading]
             fitted = tables.render_disks(app.inventory, app.findings, region)
             printed = [str(column.header) for column in fitted.columns if str(column.header)]
@@ -230,9 +253,7 @@ async def test_the_page_never_keeps_a_column_the_printed_table_gives_up(capture:
         await pilot.press("3")
         for region in regions:
             await pilot.resize_terminal(region + 2, 45)
-            await pilot.pause()
-            table = app.query_one("#disk-table")
-            drawn = table.scrollable_content_region.width
+            drawn = await _refitted(pilot, app)
             assert drawn == region, f"the premise: a window two cells wider gives the table {region}, not {drawn}"
             page = [heading for heading in _headings(app) if heading]
             printed = _printed_headings(inventory, region)

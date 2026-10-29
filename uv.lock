@@ -996,7 +996,7 @@ wheels = [
 
 [[package]]
 name = "lib-layered-config"
-version = "7.4.1"
+version = "7.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lib-cli-exit-tools" },
@@ -1005,9 +1005,9 @@ dependencies = [
     { name = "rtoml", marker = "python_full_version < '3.14'" },
     { name = "tomli", marker = "python_full_version == '3.14.*'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/54/d7/2f730c7323445fe1b8bd5b470583fc8d46ce614b050f601295f2619cbf5a/lib_layered_config-7.4.1.tar.gz", hash = "sha256:b718b18d4599c3ada7f305f0704901794de476f85c9dce35f9af21fcd86e06df", size = 529668, upload-time = "2026-10-29T16:22:23.678Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/52/a3/8498664fe6291f58ca5e1db6831e82b949574963c478462b5f327819b6ee/lib_layered_config-7.4.2.tar.gz", hash = "sha256:cab32b05150963dc5a165cf42c0b2b0f54a0b8baaf767f3dc0ab3188487b16e8", size = 536285, upload-time = "2026-10-29T20:22:19.19Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/29/e2/9afe581ebb7aab57063402db2c3a7dccdb2d7df468bdf1c9c632bfc56cf5/lib_layered_config-7.4.1-py3-none-any.whl", hash = "sha256:a61c3146e11eae72c5fc949488f6a67bfe5fcdb096dbdc1155f285d633e318e1", size = 159059, upload-time = "2026-10-29T16:22:21.764Z" },
+    { url = "https://files.pythonhosted.org/packages/dc/51/e2dd0c906e4fa5ded019e4af312a3d2bd926e3655c5f166c218e23227a9c/lib_layered_config-7.4.2-py3-none-any.whl", hash = "sha256:a007793c0710e87628318e6035544b96bbcd1e1905e65746cffdfcd803512891", size = 161577, upload-time = "2026-10-29T20:22:17.803Z" },
 ]
 
 [[package]]
@@ -1121,7 +1121,7 @@ requires-dist = [
     { name = "import-linter", marker = "extra == 'dev'", specifier = ">=2.15" },
     { name = "jaraco-context", marker = "extra == 'dev'", specifier = ">=6.1.2" },
     { name = "lib-cli-exit-tools", specifier = ">=2.4.1" },
-    { name = "lib-layered-config", specifier = ">=7.4.1" },
+    { name = "lib-layered-config", specifier = ">=7.4.2" },
     { name = "lib-log-rich", specifier = ">=8.1.2" },
     { name = "orjson", specifier = ">=3.13.0" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.10.1" },

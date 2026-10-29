@@ -792,6 +792,17 @@ class LsdskApp(App[None]):
         shown = listed[min(cursor, len(listed) - 1)] if listed else None
         self._show_wwn(None if shown is None else shown.wwn)
 
+    @property
+    def disk_page_width(self) -> int:
+        """The width the disk page's columns were last fitted to, ``0`` before the first fit.
+
+        A resize refits the page through a posted :class:`DiskTable.Resized`, so
+        the new fit lands a turn after the table has its new width; a reader that
+        must see the refitted page waits until this equals the table's width
+        rather than counting pauses, which a slow machine outruns.
+        """
+        return self._disk_width_used
+
     def _disk_table_width(self) -> int:
         """Cells the disk table offers its rows, or the window's width before the first layout.
 
