@@ -9,6 +9,7 @@ under the test's own directory.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -19,6 +20,7 @@ from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, install_shortcut
 from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut, UnwritableDesktopEntryError
 from lsdsk.adapters.uv_bootstrap import UvInstallResult
+from lsdsk.domain.enums import OutputFormat
 
 
 @pytest.fixture
@@ -467,3 +469,53 @@ def test_the_written_entry_passes_desktop_file_validate_without_a_hint(home: Pat
     )
 
     assert (result.returncode, result.stdout + result.stderr) == (0, "")
+
+
+def _menu_that_cannot_be_written(home: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the application menu at a plain FILE, so its directory can never be made and the entry never written."""
+    data_home = home / "data"
+    data_home.mkdir()
+    (data_home / "applications").write_bytes(b"")
+    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
+    return data_home / "applications"
+
+
+@pytest.mark.os_linux
+def test_a_menu_entry_that_fails_after_the_desktop_one_is_a_warning_not_a_failure(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Desktop entry is the shortcut, and it is written: a failed menu copy must not report that nothing was.
+
+    The menu copy is the extra, as on Windows, which skips a Start menu it cannot
+    find, and on macOS, which has none: the reader is told it is missing, and why.
+    """
+    menu = _menu_that_cannot_be_written(home, monkeypatch)
+    warnings: list[str] = []
+
+    written = LinuxDesktopShortcut(warn=warnings.append).create(launch=("lsdsk",), icon=None)
+
+    assert written == home / "Desktop" / "lsdsk.desktop"
+    assert written.read_text(encoding="utf-8").startswith("[Desktop Entry]\n")
+    assert len(warnings) == 1, warnings
+    assert "on the Desktop" in warnings[0]
+    assert str(menu) in warnings[0]
+
+
+@pytest.mark.os_linux
+def test_install_shortcut_reports_the_desktop_entry_when_only_the_menu_copy_failed(
+    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _menu_that_cannot_be_written(home, monkeypatch)
+    seams = ShortcutSeams(
+        shortcuts=LinuxDesktopShortcut(),
+        uvx=lambda: Path("/usr/bin/uvx"),
+        installed_lsdsk=lambda: None,
+        install_uv=lambda: UvInstallResult(exit_code=0, uvx=None),
+        copy_icon=lambda: home / "icon.png",
+    )
+
+    install_shortcut(output_format=OutputFormat.JSON, seams=seams)
+
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["ok"] is True
+    assert envelope["data"]["shortcut"] == str(home / "Desktop" / "lsdsk.desktop")

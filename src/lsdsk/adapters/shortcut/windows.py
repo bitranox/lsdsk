@@ -12,6 +12,9 @@ The Desktop is the folder Windows itself names for this account (a redirected or
 OneDrive Desktop included), asked through pwshpy's known-folder lookup, and it is
 never created here. The same shortcut also goes into the Start-menu Programs
 folder, so lsdsk is found by name, as the Linux entry is in the application menu.
+The Desktop ``.lnk`` is the shortcut and the Start-menu copy the extra: a Start
+menu Windows names none of is skipped, and one that refuses the copy is a
+warning about a shortcut that does exist rather than a failure to make one.
 
 pwshpy is reached by name through a narrow typed facade, as
 :mod:`lsdsk.adapters.hw.elevation` reaches it, and the loader is a keyword so a
@@ -27,6 +30,7 @@ from __future__ import annotations
 
 import errno
 import importlib
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, TypedDict, Unpack, cast
 
@@ -34,6 +38,8 @@ from lsdsk.domain.shortcut import SHORTCUT_COMMENT
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+_LOGGER = logging.getLogger(__name__)
 
 _FILENAME = "lsdsk.lnk"
 
@@ -116,9 +122,18 @@ def _installed_pwshpy() -> PwshpyShortcutModule:
 class WindowsDesktopShortcut:
     """Create and find the ``lsdsk.lnk`` launcher on the reader's Desktop."""
 
-    def __init__(self, *, load: Callable[[], PwshpyShortcutModule] | None = None) -> None:
-        """Reach pwshpy through ``load``; the installed module when not given."""
+    def __init__(
+        self, *, load: Callable[[], PwshpyShortcutModule] | None = None, warn: Callable[[str], None] | None = None
+    ) -> None:
+        """Reach pwshpy through ``load`` and report a skipped Start-menu copy through ``warn``.
+
+        Args:
+            load: Returns the pwshpy module; the installed one when not given.
+            warn: Told, in one sentence, when the Desktop shortcut was written
+                and the Start-menu copy was refused; a logged warning when not given.
+        """
         self._load = load or _installed_pwshpy
+        self._warn = warn or _LOGGER.warning
         self._module: PwshpyShortcutModule | None = None
         self._lookup_error: str | None = None
 
@@ -163,6 +178,9 @@ class WindowsDesktopShortcut:
     def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
         """Write the run-as ``.lnk`` to the Desktop, and to the Start menu where Windows names one.
 
+        A Start-menu copy that is refused is reported through ``warn`` and does
+        not fail the call, because the Desktop shortcut it returns is already there.
+
         Args:
             launch: The command the shortcut runs, as an argv; the first item is
                 the executable, an absolute path.
@@ -174,10 +192,10 @@ class WindowsDesktopShortcut:
         Raises:
             FileNotFoundError: When there is no Desktop folder; it is never
                 created here, so nothing is written at all.
-            ShortcutAccessDeniedError: Windows refused to write a shortcut for
-                lack of rights; a ``PermissionError``.
+            ShortcutAccessDeniedError: Windows refused to write the Desktop
+                shortcut for lack of rights; a ``PermissionError``.
             ShortcutWriteError: The launch is empty, or pwshpy refused or failed
-                to write a shortcut for any other reason.
+                to write the Desktop shortcut for any other reason.
         """
         if not launch:
             raise ShortcutWriteError(errno.EINVAL, "a shortcut needs a command to run, and the launch is empty")
@@ -195,10 +213,18 @@ class WindowsDesktopShortcut:
         )
         written = desktop / _FILENAME
         self._write(written, fields)
-        menu = self._known_folder(lambda folders: folders.PROGRAMS)
-        if menu is not None and menu.is_dir():
-            self._write(menu / _FILENAME, fields)
+        self._add_to_the_start_menu(fields)
         return written
+
+    def _add_to_the_start_menu(self, fields: ShortcutFields) -> None:
+        """Write the same ``.lnk`` into the Start menu where Windows names one, warning rather than raising."""
+        menu = self._known_folder(lambda folders: folders.PROGRAMS)
+        if menu is None or not menu.is_dir():
+            return
+        try:
+            self._write(menu / _FILENAME, fields)
+        except OSError as exc:
+            self._warn(f"the shortcut is on the Desktop, but it could not be added to the Start menu: {exc}")
 
     def _write(self, path: Path, fields: ShortcutFields) -> None:
         """Write one ``.lnk`` at ``path`` from ``fields``, replacing any there."""
