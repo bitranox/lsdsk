@@ -39,7 +39,14 @@ from lsdsk.adapters.shortcut.windows import WindowsDesktopShortcut
 from lsdsk.adapters.uv_bootstrap import UvInstallResult, uvx_path
 from lsdsk.adapters.uv_bootstrap import install_uv as run_uv_installer
 from lsdsk.domain.enums import ActionCommand, OutputFormat, ShortcutChoice
-from lsdsk.domain.shortcut import command_line, consent_text, manual_install_line, plan_launch, should_offer
+from lsdsk.domain.shortcut import (
+    command_line,
+    consent_text,
+    manual_install_line,
+    plan_launch,
+    powershell_line,
+    should_offer,
+)
 
 from .. import safe_console
 from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION
@@ -161,12 +168,18 @@ def _resolve_launch(seams: ShortcutSeams, *, install_uv: bool, output_format: Ou
 
 
 def _report(written: Path, launch: tuple[str, ...], output_format: OutputFormat, *, platform: str) -> None:
-    """Say what was created, in the format the caller asked for; the launch line as ``platform`` reads it."""
+    """Say what was created, in the format the caller asked for; the launch line as ``platform`` reads it.
+
+    Windows gets a second line for PowerShell, which reads the cmd form of a
+    quoted program as a parse error rather than as a command.
+    """
     if output_format is OutputFormat.JSON:
         emit_action(ActionCommand.INSTALL_SHORTCUT, InstallShortcutResult(shortcut=str(written), launch=list(launch)))
         return
     safe_console.echo(f"\nShortcut created:\n  {written}")
     safe_console.echo(f"It launches: {command_line(launch, platform=platform)}")
+    if platform == "win32":
+        safe_console.echo(f"In PowerShell: {powershell_line(launch)}")
 
 
 def install_shortcut(

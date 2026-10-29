@@ -131,11 +131,13 @@ def _windows_argument(argument: str) -> str:
 def command_line(argv: Sequence[str], *, platform: str) -> str:
     """The launch as one line a reader of ``platform`` can recognise or paste.
 
-    Windows reads a command line by the C runtime's rules (CreateProcess, cmd,
-    PowerShell's call operator), which know no single quotes, so the shell form
-    printed a line that does not run there. The rules are those of
-    ``subprocess.list2cmdline``, written out because this module starts nothing.
-    Every other platform gets the shell form.
+    Windows reads a command line by the C runtime's rules (CreateProcess, cmd),
+    which know no single quotes, so the shell form printed a line that does not
+    run there. The rules are those of ``subprocess.list2cmdline``, written out
+    because this module starts nothing. PowerShell does NOT read this form as a
+    command when its program is quoted: a quoted string followed by arguments is
+    a parse error there, which is what :func:`powershell_line` is for. Every
+    other platform gets the shell form.
 
     Args:
         argv: The command, executable first.
@@ -153,6 +155,68 @@ def command_line(argv: Sequence[str], *, platform: str) -> str:
     if platform == "win32":
         return " ".join(_windows_argument(argument) for argument in argv)
     return shlex.join(argv)
+
+
+#: The typographic single quotes, which PowerShell reads as a single quote and escapes by doubling.
+_POWERSHELL_SINGLE_QUOTES: Final = frozenset(("'", *map(chr, (0x2018, 0x2019, 0x201A, 0x201B))))
+
+#: Characters PowerShell reads as syntax anywhere in a word, or inside the double
+#: quotes of the cmd form (``$`` and the backtick expand there, and the
+#: typographic double quotes are quotes): an argument holding one is single-quoted.
+_POWERSHELL_SYNTAX: Final = (
+    frozenset('$`"(){};,&|<>\r\n') | frozenset(map(chr, (0x201C, 0x201D, 0x201E))) | (_POWERSHELL_SINGLE_QUOTES)
+)
+
+
+def _reads_the_same_in_powershell(argument: str) -> bool:
+    """Whether PowerShell reads the cmd form of ``argument`` as ``argument`` itself.
+
+    PowerShell takes a double-quoted word literally apart from ``$`` and the
+    backtick, so the C runtime's escapes do not apply there: a quoted argument
+    ending in a backslash, whose backslashes the cmd form doubles, would arrive
+    with the doubled run. A word starting ``@`` (splatting) or ``#`` (a comment)
+    and the stop-parsing token ``--%`` mean something of their own.
+    """
+    if not argument or argument == "--%" or argument.startswith(("@", "#")):
+        return False
+    if not _POWERSHELL_SYNTAX.isdisjoint(argument):
+        return False
+    quoted = " " in argument or "\t" in argument
+    return not (quoted and argument.endswith("\\"))
+
+
+def _powershell_argument(argument: str) -> str:
+    """One argument as PowerShell reads it: its cmd form where that is the same, else a literal string."""
+    if _reads_the_same_in_powershell(argument):
+        return _windows_argument(argument)
+    literal = "".join(character * 2 if character in _POWERSHELL_SINGLE_QUOTES else character for character in argument)
+    return f"'{literal}'"
+
+
+def powershell_line(argv: Sequence[str]) -> str:
+    """The launch as a line PowerShell runs: the call operator, then each argument as PowerShell reads it.
+
+    A line beginning with a quoted program is an expression to PowerShell, and
+    the arguments after it a parse error, so the program is invoked with ``&``.
+    Each argument keeps its cmd form (:func:`command_line`) wherever PowerShell
+    reads that form as the argument itself, which is every launch lsdsk builds
+    from an ordinary path, so this is then the cmd line with ``& `` in front. An
+    argument PowerShell would read as syntax - a ``$`` it would expand, a quote,
+    a parenthesis, a semicolon - is written as a single-quoted literal instead.
+
+    Args:
+        argv: The command, executable first.
+
+    Returns:
+        The whole command as one PowerShell line.
+
+    Example:
+        >>> powershell_line(("C:/Program Files/uv/uvx.exe", "7 days"))
+        '& "C:/Program Files/uv/uvx.exe" "7 days"'
+        >>> powershell_line(("C:/Users/O'Brien/uvx.exe", "$HOME"))
+        "& 'C:/Users/O''Brien/uvx.exe' '$HOME'"
+    """
+    return "& " + " ".join(_powershell_argument(argument) for argument in argv)
 
 
 def consent_text(platform: str) -> str:
@@ -255,6 +319,7 @@ __all__ = [
     "consent_text",
     "manual_install_line",
     "plan_launch",
+    "powershell_line",
     "should_offer",
     "uvx_launch_args",
 ]

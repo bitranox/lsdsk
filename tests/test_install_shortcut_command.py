@@ -28,7 +28,7 @@ from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
 from lsdsk.adapters.shortcut.windows import WindowsDesktopShortcut
 from lsdsk.adapters.uv_bootstrap import UvInstallResult
 from lsdsk.domain.enums import OutputFormat
-from lsdsk.domain.shortcut import manual_install_line, uvx_launch_args
+from lsdsk.domain.shortcut import command_line, manual_install_line, uvx_launch_args
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -364,3 +364,23 @@ def test_a_plain_lsdsk_found_through_a_relative_path_entry_is_launched_by_its_ab
 
     launch = json.loads(capsys.readouterr().out)["data"]["launch"]
     assert launch == [str(lsdsk)]
+
+
+def test_the_human_report_on_windows_adds_the_line_powershell_runs(capsys: pytest.CaptureFixture[str]) -> None:
+    """PowerShell reads a quoted program followed by arguments as a parse error, so it gets its own line.
+
+    The cmd form comes first and unchanged; the line after it is the same launch
+    behind PowerShell's call operator.
+    """
+    uvx = Path("C:/Users/Jane Doe/.local/bin/uvx.exe")
+    install_shortcut(seams=_seams(_RecordingShortcuts(), uvx=uvx), platform="win32")
+
+    cmd_form = command_line(uvx_launch_args(str(uvx)), platform="win32")
+    out = capsys.readouterr().out
+    assert f"It launches: {cmd_form}\nIn PowerShell: & {cmd_form}\n" in out
+
+
+def test_the_human_report_off_windows_has_no_powershell_line(capsys: pytest.CaptureFixture[str]) -> None:
+    install_shortcut(seams=_seams(_RecordingShortcuts(), uvx=Path("/usr/bin/uvx")), platform="linux")
+
+    assert "PowerShell" not in capsys.readouterr().out
