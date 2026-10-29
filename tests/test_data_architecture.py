@@ -309,7 +309,11 @@ def test_an_action_result_refuses_a_field_it_does_not_declare() -> None:
     from lsdsk.adapters.cli.commands.history import RecordResult
 
     with pytest.raises(pydantic.ValidationError, match=r"drivs\n  Extra inputs are not permitted"):
-        RecordResult.model_validate({"recorded": True, "store": "/tmp/h.json", "drives": 2, "drivs": 3})
+        # Every declared field valid, so the misspelt key is the only refusal: a missing field's
+        # error echoes the whole input, which names the key whatever rule fired.
+        RecordResult.model_validate(
+            {"recorded": True, "outcome": "recorded", "store": "/tmp/h.json", "drives": 2, "drivs": 3}
+        )
 
 
 @pytest.mark.os_agnostic
