@@ -5,7 +5,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
-## [1.16.2] 2026-10-29 14:29:34
+## [1.16.2] - 2026-10-29
 
 ### Fixed
 
@@ -16,7 +16,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   (`PERMISSION_DENIED`), as a refused icon copy on the same machine does; it exited `74`
   (`IO_ERROR`). Any other refusal still exits `74` with the HRESULT in the message.
 
-## [1.16.1] 2026-10-29 00:49:50
+## [1.16.1] - 2026-10-29
 
 ### Fixed
 
@@ -24,7 +24,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   the page tabs or the detail panel are not mounted (seen once on a heavily loaded machine). The
   page-gated keys then answer "not offered" instead.
 
-## [1.16.0] 2026-10-27 10:49:11
+## [1.16.0] - 2026-10-27
 
 ### Added
 
@@ -39,7 +39,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   longer a blank window. It gives way to the shortcut offer and the elevation prompt, and never
   appears for a subcommand, `--help`, `--version`, a pipe or a redirect.
 
-## [1.15.6] 2026-10-27 09:12:15
+## [1.15.6] - 2026-10-27
 
 ### Fixed
 
@@ -56,7 +56,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 - Requires pwshpy 1.9.0 or later.
 
-## [1.15.5] 2026-10-24 17:49:47
+## [1.15.5] - 2026-10-24
 
 ### Changed
 
@@ -65,7 +65,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   them to an M.2 socket, so the drive is not misplaced; read the port's full name from the JSON
   form and check the board manual before calling a device misplaced.
 
-## [1.15.4] 2026-10-24 14:20:52
+## [1.15.4] - 2026-10-24
 
 ### Fixed
 
@@ -150,7 +150,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   read `10.0` and now reads `10`, 0.0996 read `0.100` and now reads `0.1`, in the trend table and in
   a finding's sentence alike.
 
-## [1.15.3] 2026-10-24 13:58:36
+## [1.15.3] - 2026-10-24
 
 ### Changed
 
@@ -159,7 +159,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   that show it and that an elevated run brings both back, and that `port` is never read directly
   on Windows (`-` unelevated, at most a `>=` floor elevated).
 
-## [1.15.2] 2026-10-23 22:57:20
+## [1.15.2] - 2026-10-23
 
 ### Fixed
 
@@ -181,7 +181,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   It also corrects when the uv installer runs, what the "does not go online" section lists, and a
   stale claim that lsdsk cannot tell which pool a disk belongs to.
 
-## [1.15.1] 2026-10-22 20:05:35
+## [1.15.1] - 2026-10-22
 
 ### Fixed
 
@@ -200,7 +200,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 - The CI workflows pin every third-party action to a commit sha.
 - `lib_log_rich` floor raised to 6.5.7.
 
-## [1.15.0] 2026-10-21 02:06:33
+## [1.15.0] - 2026-10-21
 
 ### Added
 
@@ -222,7 +222,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   exception, the uv install above. It is confined to the single module `adapters/uv_bootstrap.py`
   and enforced by `tests/test_no_subprocess_or_network.py`.
 
-## [1.14.1] 2026-10-20 15:28:53
+## [1.14.1] - 2026-10-20
 
 ### Tests
 
@@ -232,7 +232,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   no reachable machine reports `DRIVE_RAMDISK` (every RAM-disk driver reports `DRIVE_FIXED`), so the
   RAM-disk arm is pinned by replaying a capture that carries such a volume. No behaviour change.
 
-## [1.14.0] 2026-10-20 12:30:22
+## [1.14.0] - 2026-10-20
 
 ### Added
 
@@ -251,7 +251,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   when none of its drives could be found and linked to it, which is also how a snapshot taken by
   an earlier version replays.
 
-## [1.13.0] 2026-10-19 23:27:52
+## [1.13.0] - 2026-10-19
 
 ### Changed
 
@@ -290,7 +290,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   and the additional sense code the device returned. A refused SCSI passthrough on Windows names
   them the same way. The scan still reports the reading as refused either way.
 
-## [1.12.0] 2026-10-19 16:30:06
+## [1.12.0] - 2026-10-19
 
 ### Added
 
@@ -329,7 +329,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   against hand-built captures. The capture-wide refusal check now requires every refusal to be one
   the capture recorded, since this guest's virtual disks genuinely reject ATA passthrough.
 
-## [1.11.0] 2026-10-19 00:06:20
+## [1.11.0] - 2026-10-19
 
 ### Added
 
@@ -396,7 +396,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 - `click`, `pydantic-core` and `python-dotenv` are declared dependencies. lsdsk imports each of
   them itself and only received them through other packages.
 
-## [1.10.0] 2026-10-17 00:28:58
+## [1.10.0] - 2026-10-17
 
 ### Added
 
@@ -419,7 +419,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   page (it showed it nowhere before), and a drive's detail panel lists its refused readings with the
   reason Windows gave, as a filesystem's already did.
 
-## [1.9.4] 2026-10-16 20:25:59
+## [1.9.4] - 2026-10-16
 
 ### Added
 
@@ -433,7 +433,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   `pip install` from PyPI does not, with the commands for a cooldown of your own; the README carries
   a short summary that links to it. Both are in English and German.
 
-## [1.9.3] 2026-10-16 19:05:09
+## [1.9.3] - 2026-10-16
 
 ### Changed
 
@@ -507,7 +507,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   "about 0.0 an hour"; a very slow rate is never written as zero.
 - The topology board line no longer wraps when the board name uses double-width (CJK) characters.
 
-## [1.9.2] 2026-10-16 12:30:18
+## [1.9.2] - 2026-10-16
 
 ### Changed
 
@@ -656,7 +656,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 - CONTRIBUTING.md asks only for the Linux capture of a chipset used as a PCIe switch; the Windows one
   is among the tests.
 
-## [1.9.1] 2026-10-15 14:10:52
+## [1.9.1] - 2026-10-15
 
 ### Changed
 
@@ -726,7 +726,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   `LOG_SCRUB_PATTERNS=k=a{1,2,3}`, the third and later pieces were reported as having no `=` instead
   of continuing a cut regex. The entry was dropped either way; now the reason is right.
 
-## [1.9.0] 2026-10-13 19:17:37
+## [1.9.0] - 2026-10-13
 
 ### Added
 
@@ -744,7 +744,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   shown only: no finding and no threshold. A read stops at a million free extents and, on Linux, at
   four million space-map records of any kind, and says which. See ADR 0006.
 
-## [1.8.0] 2026-10-13 10:32:47
+## [1.8.0] - 2026-10-13
 
 ### Added
 
@@ -788,7 +788,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   decodes the platform's own serial field, the two VPD page 0x83 designators separately and the
   `classes/nvme` serial, and the documents now give that count.
 
-## [1.7.7] 2026-10-12 21:21:36
+## [1.7.7] - 2026-10-12
 
 ### Changed
 
@@ -800,7 +800,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   octal. Every other refused value (a boolean, a negative or non-octal mode, any non-mode setting)
   still warns and keeps the default.
 
-## [1.7.6] 2026-10-12 19:02:40
+## [1.7.6] - 2026-10-12
 
 ### Changed
 
@@ -821,7 +821,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   refused. The `[lib_log_rich]` section now turns such a number back into the text that was
   written; numeric settings still read as numbers and a value that is not text is still refused.
 
-## [1.7.5] 2026-10-12 12:04:26
+## [1.7.5] - 2026-10-12
 
 ### Added
 
@@ -879,7 +879,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   blaming a cut regex.
 - **"1 warning on this machine is not on this page"**, no longer "are".
 
-## [1.7.4] 2026-10-12 00:25:12
+## [1.7.4] - 2026-10-12
 
 ### Changed
 
@@ -963,7 +963,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   history write.
 - **A Windows disk with thousands of folder mounts resolves in linear time.**
 
-## [1.7.3] 2026-10-09 12:47:51
+## [1.7.3] - 2026-10-09
 
 ### Changed
 
@@ -1058,7 +1058,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   `INVALID_ARGUMENT`, `IO_ERROR`, `PERMISSION_DENIED` and `USAGE_ERROR`. It named
   `SOFTWARE_ERROR` and `GENERAL_ERROR`, which no envelope carries, and left out `IO_ERROR`.
 
-## [1.7.2] 2026-10-09 08:31:46
+## [1.7.2] - 2026-10-09
 
 ### Changed
 
@@ -1109,7 +1109,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 - **Windows: the explanation for an empty privileged report appears when every disk refused to
   open**, rather than only when no disk was listed.
 
-## [1.7.1] 2026-10-08 18:20:37
+## [1.7.1] - 2026-10-08
 
 ### Added
 
@@ -1176,7 +1176,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   itself, which is opened without waiting, so the swap is refused with the same message as a
   FIFO given outright. `--replay` still reads from a pipe.
 
-## [1.7.0] 2026-10-08 10:27:22
+## [1.7.0] - 2026-10-08
 
 ### Added
 
@@ -1192,7 +1192,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   path); a Fedora/anaconda `luks-<UUID>` mapping name is recorded as `luks`. On Windows a volume's
   machine-unique GUID path never reaches the capture, keyed instead by a per-capture ordinal.
 
-## [1.6.4] 2026-10-05 20:11:15
+## [1.6.4] - 2026-10-05
 
 ### Changed
 
@@ -1213,7 +1213,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   device sitting under the wrong port. A device the new density does not draw
   hands the cursor to its nearest drawn ancestor.
 
-## [1.6.3] 2026-10-05 18:03:42
+## [1.6.3] - 2026-10-05
 
 Neither 1.6.1 nor 1.6.2 was published to PyPI, so this is the first release on
 PyPI since 1.6.0 and carries both of their changes below as well.
@@ -1235,7 +1235,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   refused with "File '...' is not readable" (exit `2`), because the option asked
   an output path to be readable.
 
-## [1.6.2] 2026-10-05 16:57:31
+## [1.6.2] - 2026-10-05
 
 ### Changed
 
@@ -1306,7 +1306,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   chain of 4,000 capped switch cards took 9 seconds; it takes under one.
 - **The lock-timeout error names the store once.**
 
-## [1.6.1] 2026-10-02 21:29:01
+## [1.6.1] - 2026-10-02
 
 ### Changed
 
@@ -1423,7 +1423,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   dictionary, which holds a warmed `cached_property` beside the fields, and the
   model refused the extra key. No shipped model had such a property yet.
 
-## [1.6.0] 2026-10-02 13:33:54
+## [1.6.0] - 2026-10-02
 
 ### Added
 
@@ -1465,7 +1465,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   holds it there. The host controller still gets none of the controller rules
   (port count, free sockets).
 
-## [1.5.0] 2026-09-28 23:32:21
+## [1.5.0] - 2026-09-28
 
 ### Changed
 
@@ -1522,7 +1522,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   cannot carry, and puts LBA bits 27:24 in the DEVICE byte, instead of writing
   bytes a translator ignores.
 
-## [1.4.1] 2026-09-28 18:13:30
+## [1.4.1] - 2026-09-28
 
 ### Changed
 
@@ -1731,7 +1731,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   now reads each one at the capture's own bound and records an over-long one as
   not read, and a capture file carrying one is refused at `78`.
 
-## [1.3.1] 2026-09-28 01:24:32
+## [1.3.1] - 2026-09-28
 
 ### Fixed
 
@@ -1778,7 +1778,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   empty stdout, which every other refusal already avoids. It now emits the same
   `{"ok": false, ...}` object on stdout.
 
-## [1.3.0] 2026-09-21 09:14:01
+## [1.3.0] - 2026-09-21
 
 ### Added
 
@@ -2915,7 +2915,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   and the read raised out of `collect()` past the CLI's named catches. They
   degrade like the reads do.
 
-## [1.2.15] 2026-09-18 14:03:22
+## [1.2.15] - 2026-09-18
 
 ### Added
 
@@ -2963,7 +2963,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   guard is written for the whole group rather than for that one label, so a
   figure added beside them later is covered by it.
 
-## [1.2.14] 2026-09-18 13:06:03
+## [1.2.14] - 2026-09-18
 
 ### Added
 
@@ -3246,7 +3246,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   the device counts this repo pins.
 
 
-## [1.2.13] 2026-09-12 23:30:24
+## [1.2.13] - 2026-09-12
 
 ### Fixed
 
@@ -3283,7 +3283,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   Windows layout is read, and a Windows control plants a serial and requires the
   check to name it.
 
-## [1.2.12] 2026-09-12 02:09:28
+## [1.2.12] - 2026-09-12
 
 ### Fixed
 
@@ -3299,7 +3299,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   A port whose capability was not read refutes nothing, which is every Windows
   bridge, so judging there is unchanged.
 
-## [1.2.11] 2026-09-11 16:22:19
+## [1.2.11] - 2026-09-11
 
 ### Fixed
 
@@ -3321,7 +3321,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   drives whose serial was not read, or that only share a tri-mode HBA, still
   count separately.
 
-## [1.2.10] 2026-09-11 14:54:30
+## [1.2.10] - 2026-09-11
 
 ### Changed
 
@@ -3392,7 +3392,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   claimed to apply never reached pytest-cov, which creates its database before
   any conftest is imported, so both are gone.
 
-## [1.2.9] 2026-09-11 03:00:00
+## [1.2.9] - 2026-09-11
 
 ### Changed
 
@@ -3426,7 +3426,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   old offset first; it now applies at once. The same window is what made one TUI
   test fail at random on a slow CI runner.
 
-## [1.2.8] 2026-09-11 00:50:18
+## [1.2.8] - 2026-09-11
 
 ### Fixed
 
@@ -3452,7 +3452,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   identifies. Both now do, matching what `snapshot --help` and its write-time
   notice say.
 
-## [1.2.7] 2026-09-10 20:08:28
+## [1.2.7] - 2026-09-10
 
 ### Changed
 
@@ -3476,7 +3476,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   the controller's own PCIe link, and `load` is a capability sum of the attached
   drives' negotiated links rather than a measurement of traffic.
 
-## [1.2.6] 2026-09-10 18:22:35
+## [1.2.6] - 2026-09-10
 
 ### Fixed
 
@@ -3490,7 +3490,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   fault, and the controller-link rule already names it with the remedy that
   fits.
 
-## [1.2.5] 2026-09-10 17:20:36
+## [1.2.5] - 2026-09-10
 
 ### Fixed
 
@@ -3523,7 +3523,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   guard now covers its eighth section.
 
 
-## [1.2.4] 2026-08-29
+## [1.2.4] - 2026-08-29
 
 ### Fixed
 
@@ -3556,7 +3556,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   substring test would also blank any ordinary name containing a sensitive
   word, which hides the configuration a reader came to see.
 
-## [1.2.3] 2026-08-28
+## [1.2.3] - 2026-08-28
 
 ### Fixed
 
@@ -3572,7 +3572,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   than one per drive, and it named a per-drive cap without naming the key that
   sets it.
 
-## [1.2.2] 2026-08-28
+## [1.2.2] - 2026-08-28
 
 ### Changed
 
@@ -3594,7 +3594,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
 - The README's trend example showed four different spans without saying why they
   differ, which is the misreading the rename exists to prevent. It now says.
 
-## [1.2.1] 2026-08-28
+## [1.2.1] - 2026-08-28
 
 ### Fixed
 
@@ -3624,7 +3624,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
   counter last moved, not from when recording began, and a store holding 531
   power-on hours of readings was being described as its first one.
 
-## [1.2.0] 2026-08-28
+## [1.2.0] - 2026-08-28
 
 ### Added
 
@@ -3662,7 +3662,7 @@ PyPI since 1.6.0 and carries both of their changes below as well.
 The JSON envelope is unchanged and carries every WWN in full, whatever the
 human view was asked for.
 
-## [1.1.1] 2026-08-28
+## [1.1.1] - 2026-08-28
 
 ### Fixed
 
@@ -3675,7 +3675,7 @@ human view was asked for.
   either: the tuple was written that way at 1.0.0 and nothing compared the two.
   A test compares them now.
 
-## [1.1.0] 2026-08-27
+## [1.1.0] - 2026-08-27
 
 ### Changed
 
@@ -3715,7 +3715,7 @@ human view was asked for.
   zvol on a pool of spinning disks reported solid state.
 
 
-## [1.0.8] 2026-08-27 19:53:27
+## [1.0.8] - 2026-08-27
 
 ### Fixed
 
