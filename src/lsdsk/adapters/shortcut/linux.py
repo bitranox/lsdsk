@@ -87,11 +87,11 @@ class LinuxDesktopShortcut:
     def has_desktop(self) -> bool:
         """Whether the Desktop folder exists; ``"$HOME/"`` in ``user-dirs.dirs`` turns it off."""
         desktop = self.desktop_dir()
-        return desktop.is_dir() and desktop != Path.home()
+        return _probe(desktop.is_dir) and desktop != Path.home()
 
     def exists(self) -> bool:
         """Whether the Desktop already carries the shortcut."""
-        return (self.desktop_dir() / _FILENAME).is_file()
+        return _probe((self.desktop_dir() / _FILENAME).is_file)
 
     def no_desktop_reason(self) -> str:
         """Why there is no desktop: a missing folder, or a setting that names home itself.
@@ -187,6 +187,19 @@ class LinuxDesktopShortcut:
         if icon is not None:
             lines.insert(4, f"Icon={_string_value(str(icon))}")
         return "\n".join(lines) + "\n"
+
+
+def _probe(check: Callable[[], bool]) -> bool:
+    """``check()``, an ``OSError`` read as no: a folder this account cannot reach holds no shortcut.
+
+    ``Path.is_dir`` and ``Path.is_file`` re-raise the ``PermissionError`` met under
+    a parent with no search permission before Python 3.14, which answers
+    ``False``; this gives every supported interpreter the 3.14 answer.
+    """
+    try:
+        return check()
+    except OSError:
+        return False
 
 
 def _exec_value(launch: Sequence[str]) -> str:

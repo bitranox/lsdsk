@@ -114,6 +114,19 @@ class PwshpyShortcutModule(Protocol):
     def PwshPyError(self) -> type[Exception]: ...  # noqa: D102, N802 - pwshpy's own class name
 
 
+def _probe(check: Callable[[], bool]) -> bool:
+    """``check()``, an ``OSError`` read as no: a folder this account cannot reach holds no shortcut.
+
+    ``Path.is_dir`` and ``Path.is_file`` re-raise the ``PermissionError`` met under
+    a parent with no search permission before Python 3.14, which answers
+    ``False``; this gives every supported interpreter the 3.14 answer.
+    """
+    try:
+        return check()
+    except OSError:
+        return False
+
+
 def _installed_pwshpy() -> PwshpyShortcutModule:
     """Import pwshpy by name, as the elevation relaunch does."""
     return cast("PwshpyShortcutModule", importlib.import_module("pwshpy"))
@@ -159,12 +172,12 @@ class WindowsDesktopShortcut:
     def has_desktop(self) -> bool:
         """Whether Windows names a Desktop folder and it exists; it is never created here."""
         desktop = self.desktop_dir()
-        return desktop is not None and desktop.is_dir()
+        return desktop is not None and _probe(desktop.is_dir)
 
     def exists(self) -> bool:
         """Whether the Desktop already carries the shortcut."""
         desktop = self.desktop_dir()
-        return desktop is not None and (desktop / _FILENAME).is_file()
+        return desktop is not None and _probe((desktop / _FILENAME).is_file)
 
     def no_desktop_reason(self) -> str:
         """Why there is no desktop: a failed lookup, no folder named, or a named folder that is missing."""
@@ -200,7 +213,7 @@ class WindowsDesktopShortcut:
         if not launch:
             raise ShortcutWriteError(errno.EINVAL, "a shortcut needs a command to run, and the launch is empty")
         desktop = self.desktop_dir()
-        if desktop is None or not desktop.is_dir():
+        if desktop is None or not _probe(desktop.is_dir):
             raise FileNotFoundError(errno.ENOENT, self.no_desktop_reason(), str(desktop) if desktop else None)
         fields = ShortcutFields(
             target=launch[0],
@@ -219,7 +232,7 @@ class WindowsDesktopShortcut:
     def _add_to_the_start_menu(self, fields: ShortcutFields) -> None:
         """Write the same ``.lnk`` into the Start menu where Windows names one, warning rather than raising."""
         menu = self._known_folder(lambda folders: folders.PROGRAMS)
-        if menu is None or not menu.is_dir():
+        if menu is None or not _probe(menu.is_dir):
             return
         try:
             self._write(menu / _FILENAME, fields)
