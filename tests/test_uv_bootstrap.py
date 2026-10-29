@@ -48,16 +48,21 @@ def test_uvx_path_follows_what_which_finds() -> None:
 
 @pytest.mark.os_agnostic
 def test_the_posix_installer_runs_the_pinned_astral_shell_script() -> None:
-    """On POSIX the command fetches the pinned install.sh and pipes it to a shell."""
+    """On POSIX the command fetches the pinned install.sh with curl and runs it in a shell.
+
+    The URL is the script's ``$0``, an argument of its own, so it is never part
+    of the text the shell parses.
+    """
     runner = _Recorder()
     result = install_uv(run=runner, platform="linux", which=_which_finds_uvx_at("/opt/bin/uvx"))
 
     assert result == UvInstallResult(exit_code=0, uvx=Path("/opt/bin/uvx"))
     assert len(runner.commands) == 1
     command = runner.commands[0]
-    assert command[0] == "sh"
-    assert "curl" in command[-1]
-    assert f"https://astral.sh/uv/{UV_INSTALLER_VERSION}/install.sh" in command[-1]
+    assert command[:2] == ["sh", "-c"]
+    assert "curl" in command[2]
+    assert "astral.sh" not in command[2]
+    assert command[3:] == [f"https://astral.sh/uv/{UV_INSTALLER_VERSION}/install.sh"]
 
 
 @pytest.mark.os_agnostic
