@@ -52,8 +52,9 @@ if TYPE_CHECKING:
     from ...domain.elevation import Elevation
     from ...domain.models import Finding
     from ..render.detail import Detail
-    from ..render.layout import Column
+    from ..render.layout import Column, Layout
     from ..render.rows import MarkedRow, Row
+    from ..render.tables import TableRows
     from ..render.tree import FabricLine, FabricSubject, FabricView
 
 # Column sets per page. Every one DERIVES from the printed table of the same
@@ -299,6 +300,32 @@ def disk_page_room(width: int, *, cell_padding: int, marker: int) -> int:
         msg = f"a cell padding of {cell_padding} does not match the layout's {gap}-cell gap"
         raise ValueError(msg)
     return max(width - (marker + 2 * cell_padding) + len(layout.GUTTER), 0)
+
+
+def disk_page_layout(columns: Sequence[Column], rows: TableRows, width: int, *, cell_padding: int) -> Layout:
+    """The columns the disk page draws ``rows`` with, on a table ``width`` cells wide.
+
+    The printed table's own fitting step (:func:`tables.fit_rows`), measured
+    for the cells a DataTable really spends: :func:`disk_page_room` is what one
+    row may take. The columns are FITTED at the lesser of that room and the
+    width itself, because the printed table fits at its console's width and
+    keeps a cell of room past it for the one-line cut: fitted at the room, a
+    page whose rows carry no marker came out one cell more generous than
+    ``lsdsk disks`` at the same width and kept a column the printed table had
+    just given up.
+
+    Args:
+        columns: Every column the disk table could show.
+        rows: The disk rows, in one or both forms.
+        width: The cells the table offers its rows.
+        cell_padding: The table's padding on each side of a column.
+
+    Returns:
+        The layout, whose ``bandwidth`` says which form of the rows it measured.
+    """
+    marker = max((cell_len(row.marker[0]) for row in rows.rich), default=0)
+    room = disk_page_room(width, cell_padding=cell_padding, marker=marker)
+    return tables.fit_rows(columns, rows, min(width, room), room=room)
 
 
 class LsdskApp(App[None]):
@@ -736,11 +763,11 @@ class LsdskApp(App[None]):
         listed = (*self.inventory.disks, *self.inventory.virtual_disks) if expand else self.inventory.disks
         rows = tables.disk_table_rows(self.inventory, self.findings, expand_virtual=expand)
         self._disk_width_used = self._disk_table_width()
-        marker = max((cell_len(row.marker[0]) for row in rows.rich), default=0)
-        room = disk_page_room(self._disk_width_used, cell_padding=widget.cell_padding, marker=marker)
         # The wwn ceiling lives on the column, exactly as the printed table
         # reads it, so the two views cannot cut a wwn in two different places.
-        fitted = tables.fit_rows(tables.disk_columns(wwn_width), rows, room, room=room)
+        fitted = disk_page_layout(
+            tables.disk_columns(wwn_width), rows, self._disk_width_used, cell_padding=widget.cell_padding
+        )
         drawn = rows.rich if fitted.bandwidth or rows.plain is None else rows.plain
         table.add_column("")
         for column in fitted.columns:
@@ -1334,4 +1361,6 @@ __all__ = [
     "SLOT_COLUMNS",
     "TREND_PAGE_COLUMNS",
     "LsdskApp",
+    "disk_page_layout",
+    "disk_page_room",
 ]

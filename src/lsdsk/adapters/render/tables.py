@@ -940,6 +940,7 @@ __all__ = [
     "HEALTH_COLUMNS",
     "OVERFLOW_WIDTH",
     "RISING_MARK",
+    "TableRows",
     "controller_table_row",
     "counter_cell",
     "counter_legend",
