@@ -431,3 +431,34 @@ def test_two_twins_of_one_drive_merge_their_relations_once_each_in_first_seen_or
 
     assert reader.without_doubles(disks)["a"]["removal_relations"] == ["X", "Y", "Z", "W"]
 
+
+def test_a_kept_record_with_no_instance_takes_its_twins() -> None:
+    disks = {
+        "a": {"node": "PhysicalDrive1"},
+        "b": {"node": "PhysicalDrive1", "hidden": True, "instance": "SCSI\\DISK\\TWIN"},
+    }
+
+    assert reader.without_doubles(disks)["a"].get("instance") == "SCSI\\DISK\\TWIN"
+
+
+def test_a_kept_record_keeps_its_own_instance_over_its_twins() -> None:
+    disks = {
+        "a": {"node": "PhysicalDrive1", "instance": "SCSI\\DISK\\OWN"},
+        "b": {"node": "PhysicalDrive1", "hidden": True, "instance": "SCSI\\DISK\\TWIN"},
+    }
+
+    assert reader.without_doubles(disks)["a"]["instance"] == "SCSI\\DISK\\OWN"
+
+
+def test_a_twin_of_a_drive_listed_twice_in_the_ordinary_class_folds_into_the_first() -> None:
+    """Both ordinary records are kept; the first listed is the one that stands for the drive."""
+    disks = {
+        "a": {"node": "PhysicalDrive1"},
+        "b": {"node": "PhysicalDrive1"},
+        "c": {"node": "PhysicalDrive1", "hidden": True, "removal_relations": ["SPACE"]},
+    }
+
+    folded = reader.without_doubles(disks)
+
+    assert list(folded) == ["a", "b"]
+    assert (folded["a"].get("removal_relations"), folded["b"].get("removal_relations")) == (["SPACE"], None)
