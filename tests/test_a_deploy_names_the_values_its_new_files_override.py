@@ -12,7 +12,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from lib_layered_config import Config
+
 from lsdsk.adapters import cli as cli_mod
+from lsdsk.adapters.config.deploy import values_the_deploy_shadows
 from lsdsk.adapters.config.loader import get_config
 from lsdsk.composition import build_production
 
@@ -21,6 +24,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     import pytest
+    from lib_layered_config.domain.config import SourceInfo
 
 #: What every shadowing warning begins with.
 SHADOWED = "Warning: display.wwn_width=40 in "
@@ -136,3 +140,46 @@ def test_the_hinted_file_of_ones_own_keeps_the_value(
     _code, out, _err = _run(["config", "--format", "json"], capsys)
 
     assert '"wwn_width": 40' in out, out
+
+
+def _origin(layer: str, path: Path, dotted: str) -> SourceInfo:
+    return {"layer": layer, "path": str(path), "key": dotted}
+
+
+def _shadowed_dotted(tmp_path: Path, *, before_layer: str) -> list[str]:
+    """What ``values_the_deploy_shadows`` names when a user companion replaces a value of `before_layer`."""
+    kept = tmp_path / "before" / "config.toml"
+    winner = tmp_path / "user" / "config.d" / "70-display.toml"
+    dotted = "display.wwn_width"
+    before = Config({"display": {"wwn_width": 40}}, {dotted: _origin(before_layer, kept, dotted)})
+    after = Config({"display": {"wwn_width": 24}}, {dotted: _origin("user", winner, dotted)})
+    return [entry.dotted for entry in values_the_deploy_shadows(before, after, written=[winner])]
+
+
+def test_a_value_from_a_lower_layer_that_a_new_user_file_outranks_is_not_named(tmp_path: Path) -> None:
+    """Outranking a lower layer is what a deploy to a higher one is for: only a SAME-layer value is shadowed.
+
+    The control beside it gives the same pair of files one layer and requires the entry, so the
+    empty answer is the layer rule speaking rather than a comparison that never matches.
+    """
+    assert _shadowed_dotted(tmp_path, before_layer="user") == ["display.wwn_width"], "the control: same layer"
+    assert _shadowed_dotted(tmp_path, before_layer="app") == []
+
+
+def test_the_overridden_values_are_named_in_key_order_whatever_order_the_files_give_them(tmp_path: Path) -> None:
+    kept = tmp_path / "config.toml"
+    winner = tmp_path / "config.d" / "70-display.toml"
+    # Merged in the order the files gave them, which is not key order: the last key first.
+    keys = ("zeta", "alpha", "mid")
+    before = Config(
+        {"display": dict.fromkeys(keys, 40)},
+        {f"display.{key}": _origin("user", kept, f"display.{key}") for key in keys},
+    )
+    after = Config(
+        {"display": dict.fromkeys(keys, 24)},
+        {f"display.{key}": _origin("user", winner, f"display.{key}") for key in keys},
+    )
+
+    named = [entry.dotted for entry in values_the_deploy_shadows(before, after, written=[winner])]
+
+    assert named == ["display.alpha", "display.mid", "display.zeta"]
