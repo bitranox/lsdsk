@@ -16,11 +16,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from rich.cells import cell_len
 
+from lsdsk.adapters.config.tunables import DEFAULT_WWN_WIDTH
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import tables
 from lsdsk.adapters.tui import LsdskApp
+from lsdsk.adapters.tui.app import disk_page_layout, disk_page_room
 from lsdsk.adapters.tui.typed_table import rows_of
+from lsdsk.domain.diagnostics import diagnose
+from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
 
 if TYPE_CHECKING:
     from lsdsk.domain.models import Inventory
@@ -167,3 +172,128 @@ async def test_the_page_never_scrolls_sideways_whatever_marker_it_draws(capture:
     _, scrolled = await _page_against_printed(capture, range(70, 161, 3))
 
     assert not scrolled, scrolled
+
+
+def _printed_headings(inventory: Inventory, width: int) -> list[str]:
+    """The column headings ``lsdsk disks`` draws on a console ``width`` cells wide."""
+    findings = list(diagnose(inventory, thresholds=DEFAULT_THRESHOLDS))
+    fitted = tables.render_disks(inventory, findings, width)
+    return [str(column.header) for column in fitted.columns if str(column.header)]
+
+
+def _marker_width(inventory: Inventory) -> int:
+    """How wide the page draws its marker column: the widest severity marker a row carries."""
+    findings = list(diagnose(inventory, thresholds=DEFAULT_THRESHOLDS))
+    rows = tables.disk_table_rows(inventory, findings, expand_virtual=False)
+    return max((cell_len(row.marker[0]) for row in rows.rich), default=0)
+
+
+def _around_each_change(inventory: Inventory, widths: range) -> list[int]:
+    """Every width where ``lsdsk disks`` changes its columns, and the width just before it.
+
+    The page and the printed table can only part where one of them changes its
+    columns, so these are the widths a sample has to contain; between two of
+    them both lists hold still.
+    """
+    picked: set[int] = set()
+    previous = _printed_headings(inventory, widths[0] - 1)
+    for width in widths:
+        current = _printed_headings(inventory, width)
+        if current != previous:
+            picked.update({width - 1, width})
+        previous = current
+    return sorted(picked)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("capture", ["linux-minimal", "linux-usb-ehci"])
+async def test_the_page_never_keeps_a_column_the_printed_table_gives_up(capture: str) -> None:
+    """At each width where ``lsdsk disks`` changes its columns, from 30 to 160, and the one before it.
+
+    Driven through the window on two captures, the page with no marker and the
+    page with ``!!``; every capture at every width is held below through the
+    function the page draws with. The page once fitted its columns to its room
+    rather than to its width, one cell more generous than the printed table at
+    the same width, so a page whose rows carry no marker kept a column the
+    printed table had just given up. Where no marker is drawn the page costs
+    exactly what the printed table does, so there the two lists are one.
+    """
+    payload: dict[str, Any] = json.loads((CAPTURE.parent / f"{capture}.json").read_text(encoding="utf-8"))
+    inventory = build_from(payload)
+    regions = _around_each_change(inventory, range(30, 161))
+    assert len(regions) >= 8, f"the premise: the printed table changes its columns across the sweep: {regions}"
+    unmarked = _marker_width(inventory) == 0
+    extra: list[str] = []
+    parted: list[str] = []
+    app = LsdskApp(inventory)
+    async with app.run_test(size=(regions[0] + 2, 45)) as pilot:
+        await pilot.press("3")
+        for region in regions:
+            await pilot.resize_terminal(region + 2, 45)
+            await pilot.pause()
+            table = app.query_one("#disk-table")
+            drawn = table.scrollable_content_region.width
+            assert drawn == region, f"the premise: a window two cells wider gives the table {region}, not {drawn}"
+            page = [heading for heading in _headings(app) if heading]
+            printed = _printed_headings(inventory, region)
+            if [heading for heading in printed if heading in page] != page:
+                extra.append(f"{region}: page {page} printed {printed}")
+            if unmarked and page != printed:
+                parted.append(f"{region}: page {page} printed {printed}")
+    assert not extra, extra
+    assert not parted, parted
+
+
+ALL_CAPTURES = sorted(path.stem for path in CAPTURE.parent.glob("*.json"))
+#: The DataTable's padding on each side of a column, as the page sets it.
+PAGE_CELL_PADDING = 1
+
+
+@pytest.mark.parametrize("capture", ALL_CAPTURES)
+def test_at_every_width_the_page_keeps_no_column_the_printed_table_drops(capture: str) -> None:
+    """Every capture, every width from 30 to 160, through the function the page draws with.
+
+    Two claims at each width: no column the printed table gave up, and a row
+    that fits the table without a sideways scroll. Where no marker is drawn
+    the page costs exactly what the printed table does, so there the two
+    column lists are one.
+    """
+    payload: dict[str, Any] = json.loads((CAPTURE.parent / f"{capture}.json").read_text(encoding="utf-8"))
+    inventory = build_from(payload)
+    findings = list(diagnose(inventory, thresholds=DEFAULT_THRESHOLDS))
+    rows = tables.disk_table_rows(inventory, findings, expand_virtual=False)
+    marker = _marker_width(inventory)
+    extra: list[str] = []
+    parted: list[str] = []
+    overrun: list[str] = []
+    for width in range(30, 161):
+        fitted = disk_page_layout(tables.disk_columns(DEFAULT_WWN_WIDTH), rows, width, cell_padding=PAGE_CELL_PADDING)
+        page = [column.title for column in fitted.columns]
+        printed = _printed_headings(inventory, width)
+        if [heading for heading in printed if heading in page] != page:
+            extra.append(f"{width}: page {page} printed {printed}")
+        if marker == 0 and page != printed:
+            parted.append(f"{width}: page {page} printed {printed}")
+        drawn = marker + sum(fitted.widths[column.key] for column in fitted.columns)
+        drawn += 2 * PAGE_CELL_PADDING * (len(fitted.columns) + 1)
+        if drawn > width:
+            overrun.append(f"{width}: the row takes {drawn}")
+    assert not extra, extra
+    assert not parted, parted
+    assert not overrun, overrun
+
+
+def test_the_sweep_holds_both_kinds_of_page() -> None:
+    """The sweep above reaches pages with and without a marker, or its equality claim holds over nothing."""
+    markers = {
+        _marker_width(build_from(json.loads((CAPTURE.parent / f"{name}.json").read_text(encoding="utf-8"))))
+        for name in ALL_CAPTURES
+    }
+    assert 0 in markers
+    assert markers - {0}
+
+
+@pytest.mark.parametrize("width", [0, 1])
+def test_the_disk_page_room_is_never_negative(width: int) -> None:
+    """A table narrower than its own marker and padding has no room, not a negative amount of it."""
+    assert disk_page_room(width, cell_padding=PAGE_CELL_PADDING, marker=2) == 0

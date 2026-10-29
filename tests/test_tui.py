@@ -1247,6 +1247,23 @@ class TestTheDetailPanelAnswersForTheRowUnderTheCursor:
         assert offered["short"], "a record too tall for the panel offers no way to reach the rest"
         assert not offered["tall"], "the keys are offered where the whole record already fits"
 
+    @pytest.mark.asyncio
+    async def test_the_scroll_keys_go_with_the_panel_when_it_is_hidden(self) -> None:
+        """A hidden panel has nothing on screen to scroll, however tall the record it holds."""
+        app = LsdskApp(inventory(), tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings(detail_height_percent=10)))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.press("4")
+            await pilot.pause()
+            offered = app.check_action("detail_down", ())
+            await pilot.press("i")
+            await pilot.pause()
+            hidden = app.check_action("detail_down", ()), app.check_action("detail_up", ())
+            in_footer = "detail_down" in {active.binding.action for active in app.screen.active_bindings.values()}
+
+        assert offered, "the premise: a record too tall for the panel offers the keys while it is shown"
+        assert hidden == (False, False), hidden
+        assert not in_footer, "the footer still offers a key for a panel nobody can see"
+
 
 def _is_device_row(line: object) -> bool:
     """Whether a fabric line is one the section promises to keep to one line.
