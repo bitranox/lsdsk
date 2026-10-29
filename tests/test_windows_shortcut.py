@@ -323,3 +323,52 @@ def test_install_shortcut_reports_the_desktop_lnk_when_only_the_start_menu_copy_
     envelope = json.loads(capsys.readouterr().out)
     assert envelope["ok"] is True
     assert envelope["data"]["shortcut"] == str(desktop / "lsdsk.lnk")
+
+
+def test_a_refused_write_carries_eio(desktop: Path) -> None:
+    """``EIO``, not ``EACCES``: only a refusal for rights is a permission error, and the errno says which it was."""
+    ps = _FakePs(folders={"Desktop": desktop}, refuse_with=_FakeError("IPersistFile::Save failed: 0x80004005"))
+
+    with pytest.raises(ShortcutWriteError) as refused:
+        _adapter(ps).create(launch=_LAUNCH, icon=None)
+
+    assert refused.value.errno == errno.EIO
+
+
+def test_an_empty_launch_carries_einval(desktop: Path) -> None:
+    """An empty argv is a bad argument to the adapter, not a failed write."""
+    with pytest.raises(ShortcutWriteError) as refused:
+        _adapter(_FakePs(folders={"Desktop": desktop})).create(launch=(), icon=None)
+
+    assert refused.value.errno == errno.EINVAL
+
+
+def test_create_on_a_named_desktop_folder_that_is_missing_writes_nothing_and_says_why(tmp_path: Path) -> None:
+    """Windows can name a Desktop that is not there (a redirect to a removed share); the folder is never created."""
+    missing = tmp_path / "Desktop"
+    ps = _FakePs(folders={"Desktop": missing})
+
+    with pytest.raises(FileNotFoundError, match="no desktop folder at") as refused:
+        _adapter(ps).create(launch=_LAUNCH, icon=None)
+
+    assert refused.value.filename == str(missing)
+    assert ps.written == []
+    assert not missing.exists()
+
+
+def test_a_start_menu_windows_names_but_that_is_missing_is_skipped_quietly(desktop: Path, tmp_path: Path) -> None:
+    """A Programs folder that is not there is no Start menu to add to: skipped, as one Windows names none of is."""
+    ps = _FakePs(folders={"Desktop": desktop, "Programs": tmp_path / "Start Menu" / "Programs"})
+    warnings: list[str] = []
+
+    WindowsDesktopShortcut(load=lambda: _FakePwshpy(ps=ps), warn=warnings.append).create(launch=_LAUNCH, icon=None)
+
+    assert [entry["path"] for entry in ps.written] == [desktop / "lsdsk.lnk"]
+    assert warnings == []
+
+
+def test_a_folder_named_like_the_shortcut_is_not_the_shortcut(desktop: Path) -> None:
+    """Only a FILE called lsdsk.lnk is the shortcut; a directory of that name must not stop the offer."""
+    (desktop / "lsdsk.lnk").mkdir()
+
+    assert _adapter(_FakePs(folders={"Desktop": desktop})).exists() is False
