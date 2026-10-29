@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.16.3] - 2026-10-29
+
 ### Fixed
 
 - A uv installer download that failed (no network, a refused download) was still reported as
