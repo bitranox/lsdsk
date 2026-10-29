@@ -156,7 +156,7 @@ class LinuxDesktopShortcut:
             f"Comment={SHORTCUT_COMMENT}",
             f"Exec={_exec_value(launch)}",
             "Terminal=true",
-            "Categories=System;Utility;",
+            "Categories=System;Monitor;",
         ]
         if icon is not None:
             lines.insert(4, f"Icon={_string_value(str(icon))}")

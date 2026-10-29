@@ -10,6 +10,7 @@ under the test's own directory.
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -432,3 +433,37 @@ def test_an_undecodable_line_elsewhere_in_user_dirs_does_not_hide_the_desktop_li
     )
 
     assert LinuxDesktopShortcut(config_home=config_home).desktop_dir() == home / "Schreibtisch"
+
+
+@pytest.mark.os_linux
+@pytest.mark.parametrize(
+    "launch",
+    [("/usr/bin/uvx", "--exclude-newer", "7 days", "lsdsk@latest"), _AWKWARD_LAUNCH],
+    ids=["uvx-launch", "awkward-launch"],
+)
+def test_the_written_entry_passes_desktop_file_validate_without_a_hint(home: Path, launch: tuple[str, ...]) -> None:
+    """The freedesktop validator is the reader the spec is written for; it must accept the entry silently.
+
+    Skipped where the validator is not installed. A hint counts as a finding: two
+    main categories (``System;Utility;``) list the application twice in a menu,
+    which the validator reports only as a hint and with exit status 0.
+    """
+    # Where desktop-file-utils installs it on Debian, Ubuntu and Fedora; spelled out
+    # in the call below too, so the argv is fixed text rather than a PATH lookup.
+    if not Path("/usr/bin/desktop-file-validate").is_file():
+        pytest.skip("desktop-file-validate is not installed")
+    written = LinuxDesktopShortcut().create(launch=launch, icon=home / "a dir\\with $x" / "icon.png")
+
+    # The entry named relative to its folder, which keeps the whole argv fixed text.
+    result = subprocess.run(
+        ("/usr/bin/desktop-file-validate", "lsdsk.desktop"),
+        cwd=written.parent,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "LC_ALL": "C"},
+        check=False,
+        timeout=60,
+    )
+
+    assert (result.returncode, result.stdout + result.stderr) == (0, "")
