@@ -31,7 +31,7 @@ import tomlkit.exceptions
 from rich.markup import escape
 from rich.prompt import Confirm, Prompt
 
-from lsdsk.adapters.config.offer import DisplayNotATableError, disable_offer
+from lsdsk.adapters.config.offer import DisplayNotATableError, NoUserConfigPathError, disable_offer
 from lsdsk.adapters.shortcut.icon import copy_shipped_icon
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
 from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
@@ -237,12 +237,19 @@ def _write_shortcut(seams: ShortcutSeams, *, launch: tuple[str, ...], output_for
     the ones this tool means something by - ENOENT is 2, Click's usage error -
     and no JSON envelope was written at all.
 
+    A user configuration directory that cannot be named - a relative
+    ``XDG_CONFIG_HOME`` - is not a failed write but the reader's environment, so
+    it is refused as a configuration error before anything is written.
+
     Raises:
-        SystemExit: ``PERMISSION_DENIED`` when the write was refused for
-            permission, ``IO_ERROR`` for any other failed write.
+        SystemExit: ``CONFIG_ERROR`` when no user configuration directory can be
+            named for the icon, ``PERMISSION_DENIED`` when the write was refused
+            for permission, ``IO_ERROR`` for any other failed write.
     """
     try:
         return seams.shortcuts.create(launch=launch, icon=seams.copy_icon())
+    except NoUserConfigPathError as error:
+        fail(f"the shortcut was not written: {error}", ExitCode.CONFIG_ERROR, output_format=output_format)
     except PermissionError as error:
         fail(f"not allowed to write the shortcut: {error}", ExitCode.PERMISSION_DENIED, output_format=output_format)
     except OSError as error:

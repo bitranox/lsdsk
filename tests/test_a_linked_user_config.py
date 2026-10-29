@@ -11,8 +11,8 @@ icon copier and the real command against a linked file.
 Where no user path can be named at all - a platform the configuration library
 reads no user layer on, or a relative ``XDG_CONFIG_HOME`` that would put the
 file wherever the reader happened to start lsdsk - the answer is a typed
-``OSError``, which the command's 13/74 envelope and the offer's warning already
-handle.
+``OSError``: the command refuses it as a configuration error (78), and the
+offer warns and carries on.
 """
 
 from __future__ import annotations
@@ -146,7 +146,7 @@ def test_a_relative_xdg_config_home_names_no_user_config_path(
     linux_config_home_set_to: Callable[[str], None],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A relative base would put the file wherever lsdsk was started, so the command refuses with 74."""
+    """A relative base would put the file wherever lsdsk was started, so the command refuses with 78."""
     monkeypatch.chdir(tmp_path)
     linux_config_home_set_to("relative/config")
 
@@ -156,11 +156,36 @@ def test_a_relative_xdg_config_home_names_no_user_config_path(
     with pytest.raises(SystemExit) as leaving:
         install_shortcut(output_format=OutputFormat.JSON, seams=_seams(_RecordingShortcuts()))
 
-    assert leaving.value.code == ExitCode.IO_ERROR
+    assert leaving.value.code == ExitCode.CONFIG_ERROR
     envelope = json.loads(capsys.readouterr().out)
-    assert envelope["error"]["type"] == "IO_ERROR"
+    assert envelope["error"]["type"] == "CONFIG_ERROR"
     assert "is not an absolute path" in envelope["error"]["message"]
     assert not (tmp_path / "relative").exists(), "a file was written relative to the working directory"
+
+
+@pytest.mark.os_linux
+def test_a_relative_xdg_config_home_is_named_as_the_directory_it_makes_and_refused_as_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    linux_config_home_set_to: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The refusal is the reader's environment, not a failed write, and it names a directory as a directory.
+
+    It was ``IO_ERROR`` (74), worded "could not write the shortcut", and it
+    called the file ``relative/config/lsdsk/config.toml`` a directory.
+    """
+    monkeypatch.chdir(tmp_path)
+    linux_config_home_set_to("relative/config")
+
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(output_format=OutputFormat.JSON, seams=_seams(_RecordingShortcuts()))
+
+    assert leaving.value.code == ExitCode.CONFIG_ERROR
+    message = json.loads(capsys.readouterr().out)["error"]["message"]
+    assert "the user configuration directory relative/config/lsdsk is not an absolute path" in message
+    assert "config.toml" not in message
+    assert "could not write" not in message
 
 
 @pytest.mark.os_linux
