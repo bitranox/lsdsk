@@ -257,3 +257,69 @@ def test_a_drive_without_a_table_still_says_why_at_every_width() -> None:
     for width in (20, 50, 120, 200):
         drawn = " ".join(_soft_lines(report.render_smart(inventory, width=width), width))
         assert "NVMe publishes a fixed health log" in drawn, f"width {width}: the reason for {disk.path} is gone"
+
+
+def _headed_drives(inventory: Inventory) -> list[tuple[str, str, int]]:
+    """Each drive with an attribute table: its path, its model and how many attributes it has."""
+    return [
+        (disk.path, disk.model, len(disk.health.attributes))
+        for disk in inventory.disks
+        if disk.health is not None and disk.health.attributes
+    ]
+
+
+@pytest.mark.parametrize("capture", CAPTURES)
+def test_a_smart_heading_keeps_every_field_at_exactly_the_width_it_takes(capture: str) -> None:
+    """A heading that fits to the last cell is drawn whole: the bound is inclusive."""
+    inventory = _machine(capture)
+    for path, model, count in _headed_drives(inventory):
+        full = f"{path}  {model}  {count} attributes"
+        width = cell_len(full)
+        lines = _soft_lines(report.render_smart(inventory, width=width), width)
+        assert full in lines, f"{capture} at {width}: the heading of {path} lost a field it had room for"
+
+
+@pytest.mark.parametrize("capture", CAPTURES)
+def test_a_smart_heading_too_narrow_for_its_count_keeps_its_model(capture: str) -> None:
+    """The attribute count is given up first, and the model stays while it fits."""
+    inventory = _machine(capture)
+    for path, model, _count in _headed_drives(inventory):
+        named = f"{path}  {model}"
+        width = cell_len(named)
+        lines = _soft_lines(report.render_smart(inventory, width=width), width)
+        assert named in lines, f"{capture} at {width}: the heading of {path} gave up its model with room for it"
+
+
+def _reasons_without_a_table(inventory: Inventory) -> list[tuple[str, str]]:
+    """Each drive with no attribute table and the reason the page gives, read where it all fits."""
+    wide = 1000
+    lines = _soft_lines(report.render_smart(inventory, width=wide), wide)
+    reasons: list[tuple[str, str]] = []
+    for disk in inventory.disks:
+        if disk.health is not None and disk.health.attributes:
+            continue
+        opening = f"{disk.path}  {disk.model}  "
+        heading = next(line for line in lines if line.startswith(opening))
+        reasons.append((disk.path, heading.removeprefix(opening).rstrip()))
+    return reasons
+
+
+@pytest.mark.parametrize("capture", CAPTURES)
+def test_every_drive_without_a_table_says_why_at_every_width(capture: str) -> None:
+    """The reason stays whole at every width, on the heading's line or on its own.
+
+    Whether it fits beside the heading is decided by the path, the model and the
+    reason together: a decision leaving the model out of the sum put the reason on
+    a line too narrow for it, where the heading cut it away with nothing after.
+    """
+    inventory = _machine(capture)
+    reasons = _reasons_without_a_table(inventory)
+    for width in range(20, 201):
+        lines = _soft_lines(report.render_smart(inventory, width=width), width)
+        for path, reason in reasons:
+            assert any(reason in line for line in lines), f"{capture} at {width}: the reason for {path} is gone"
+
+
+def test_the_sweep_has_drives_without_a_table() -> None:
+    """Without a capture carrying one, the sweep above would hold over nothing."""
+    assert any(_reasons_without_a_table(_machine(capture)) for capture in CAPTURES)
