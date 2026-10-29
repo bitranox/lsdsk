@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -665,6 +666,25 @@ def test_a_rejected_profile_is_a_clean_argument_error_not_a_traceback(
 # --------------------------------------------------------------------------
 
 
+def _shown_alerting_host(stdout: str, output_format: str) -> str | None:
+    """The ``[alerting] host`` value as ``lsdsk config`` showed it, read whole rather than searched for.
+
+    A substring search accepts any longer host that contains the expected one, so the value is
+    parsed and compared whole: from the JSON payload, or from the text display's one ``host = ...``
+    line read as TOML.
+
+    Returns:
+        The host shown, or ``None`` where the section shows no single host.
+    """
+    if output_format == "json":
+        section: dict[str, object] = json.loads(stdout)["data"]["alerting"]
+        host = section.get("host")
+    else:
+        lines = [line.strip() for line in stdout.splitlines() if line.strip().startswith("host ")]
+        host = tomllib.loads(lines[0]).get("host") if len(lines) == 1 else None
+    return host if isinstance(host, str) else None
+
+
 @pytest.mark.os_agnostic
 @pytest.mark.parametrize("output_format", ["human", "json"])
 def test_a_camel_case_secret_is_redacted_in_both_modes(
@@ -706,7 +726,9 @@ def test_a_camel_case_secret_is_redacted_in_both_modes(
     finally:
         get_config.cache_clear()
 
-    assert "mail.example.com" in result.output, "the section did not render, so this asserted nothing"
+    assert _shown_alerting_host(result.stdout, output_format) == "mail.example.com", (
+        f"the section did not render, so this asserted nothing:\n{result.output}"
+    )
     for secret in ("hunter2-super-secret", "another-secret-value", "abcdef123456", "properly-named-secret"):
         assert secret not in result.output, f"{output_format}: {secret!r} reached the output"
 
