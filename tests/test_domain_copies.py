@@ -85,7 +85,7 @@ def test_a_plain_copy_carries_no_cached_index_either(deep: bool) -> None:
 @pytest.mark.os_agnostic
 def test_a_copy_refuses_a_field_the_model_does_not_have() -> None:
     """``update=`` goes through validation, as ``with_changes`` does, so a typo is refused."""
-    with pytest.raises(ValidationError, match="seires"):
+    with pytest.raises(ValidationError, match=r"seires\n  Extra inputs are not permitted"):
         History(hostname="box").model_copy(update={"seires": ()})
 
 

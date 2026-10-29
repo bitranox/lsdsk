@@ -43,7 +43,7 @@ def test_a_capture_without_a_hostname_is_still_refused(tmp_path: Path, name: str
     """The control: dropping one required key did not drop the guard the others are."""
     path, _ = _committed_without(tmp_path, name, "hostname")
 
-    with pytest.raises(ConfigurationError, match="hostname"):
+    with pytest.raises(ConfigurationError, match="hostname: Field required"):
         snapshot.load(path)
 
 

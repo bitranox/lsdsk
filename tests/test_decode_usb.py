@@ -176,7 +176,7 @@ def test_a_connection_reports_a_hub_and_an_empty_port() -> None:
 
 @pytest.mark.os_agnostic
 def test_a_short_connection_buffer_is_refused() -> None:
-    with pytest.raises(ValueError, match="short"):
+    with pytest.raises(ValueError, match="connection information short: 34 of 35 bytes"):
         usb.decode_connection(bytes(34))
 
 
@@ -222,11 +222,16 @@ def test_the_hub_type_and_the_descriptor_payload_decode() -> None:
 
 @pytest.mark.os_agnostic
 @pytest.mark.parametrize(
-    "decode",
-    [usb.decode_connection_v2, usb.decode_connector, usb.decode_superspeedplus, usb.decode_hub_type],
+    ("decode", "refusal"),
+    [
+        pytest.param(usb.decode_connection_v2, "connection information V2 short: 3 of 16 bytes", id="v2"),
+        pytest.param(usb.decode_connector, "connector properties short: 3 of 16 bytes", id="connector"),
+        pytest.param(usb.decode_superspeedplus, "SuperSpeedPlus information short: 3 of 24 bytes", id="superspeedplus"),
+        pytest.param(usb.decode_hub_type, "hub information short", id="hub-type"),
+    ],
 )
-def test_every_short_hub_answer_is_refused(decode: Callable[[bytes], object]) -> None:
-    with pytest.raises(ValueError, match="short"):
+def test_every_short_hub_answer_is_refused(decode: Callable[[bytes], object], refusal: str) -> None:
+    with pytest.raises(ValueError, match=refusal):
         decode(b"\x00\x00\x00")
 
 
@@ -323,14 +328,14 @@ def test_both_directions_at_two_lanes_make_ten_gigabits_two_gen1_lanes() -> None
 def test_a_connector_answer_of_exactly_its_fixed_size_decodes() -> None:
     """The structure's fixed part is 16 bytes, so 16 bytes is an answer and 15 is a short one."""
     assert usb.decode_connector(bytes(16)) == usb.UsbConnector(companion_port=0, type_c=False)
-    with pytest.raises(ValueError, match="short"):
+    with pytest.raises(ValueError, match="connector properties short: 15 of 16 bytes"):
         usb.decode_connector(bytes(15))
 
 
 def test_a_hub_type_answer_of_exactly_its_field_decodes() -> None:
     """The type is one 32-bit field, so 4 bytes is an answer and 3 is a short one."""
     assert usb.decode_hub_type(bytes(4)) == 0
-    with pytest.raises(ValueError, match="short"):
+    with pytest.raises(ValueError, match="hub information short"):
         usb.decode_hub_type(bytes(3))
 
 

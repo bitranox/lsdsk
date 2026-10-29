@@ -24,7 +24,7 @@ def test_when_profile_is_dot_dot_it_rejects(clear_config_cache: None) -> None:
     """A bare '..' profile must be rejected."""
     from lsdsk.adapters.config.loader import get_config
 
-    with pytest.raises(ValueError, match="profile"):
+    with pytest.raises(ValueError, match="profile cannot start with a dot"):
         get_config(profile="..")
 
 

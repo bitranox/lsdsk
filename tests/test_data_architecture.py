@@ -308,7 +308,7 @@ def test_an_action_result_refuses_a_field_it_does_not_declare() -> None:
 
     from lsdsk.adapters.cli.commands.history import RecordResult
 
-    with pytest.raises(pydantic.ValidationError, match="drivs"):
+    with pytest.raises(pydantic.ValidationError, match=r"drivs\n  Extra inputs are not permitted"):
         RecordResult.model_validate({"recorded": True, "store": "/tmp/h.json", "drives": 2, "drivs": 3})
 
 
@@ -500,9 +500,9 @@ def test_a_changed_copy_refuses_a_misspelt_field_by_either_spelling() -> None:
     """
     controller = Controller(address="0000:01:00.0", name="HBA", ports_used=1)
 
-    with pytest.raises(ValidationError, match="prots_used"):
+    with pytest.raises(ValidationError, match=r"prots_used\n  Extra inputs are not permitted"):
         controller.with_changes(prots_used=3)
-    with pytest.raises(ValidationError, match="prots_used"):
+    with pytest.raises(ValidationError, match=r"prots_used\n  Extra inputs are not permitted"):
         controller.model_copy(update={"prots_used": 3})
 
     assert controller.with_changes(ports_used=3).ports_used == 3

@@ -27,7 +27,7 @@ def test_a_usage_carries_the_boot_mark_and_its_uses_in_order() -> None:
 
 @pytest.mark.os_agnostic
 def test_a_use_refuses_a_field_it_does_not_declare() -> None:
-    with pytest.raises(ValueError, match="mountpoint"):
+    with pytest.raises(ValueError, match=r"mountpoint\n  Extra inputs are not permitted"):
         DiskUse(kind=UseKind.MOUNT, mountpoint="/")  # type: ignore[call-arg]
 
 
