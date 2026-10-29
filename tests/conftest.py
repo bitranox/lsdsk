@@ -515,12 +515,18 @@ def managed_traceback_state() -> Iterator[None]:
         _restore_cli_config(snapshot)
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def clear_config_cache() -> Iterator[None]:
-    """Clear the get_config lru_cache before each test.
+    """Clear the get_config lru_cache before AND after every test.
 
-    Note: Only clears before, not after, to avoid errors when the function
-    has been monkeypatched during the test (losing cache_clear method).
+    Every test reads its configuration layers from its own directories, so a
+    Config cached by one test describes layers the next test does not have.
+    Clearing only before, and only in tests that asked, let a test that seeded a
+    user config leave it cached for the next test on the same worker, which
+    then reported that file as the source of a value it never set.
+
+    The function is captured before the test runs, so the clear afterwards still
+    reaches the real cache when a test has monkeypatched ``get_config`` away.
 
     Yields:
         None: Test runs with cleared config cache.
@@ -532,8 +538,10 @@ def clear_config_cache() -> Iterator[None]:
     """
     from lsdsk.adapters.config import loader as config_mod
 
-    config_mod.get_config.cache_clear()
+    get_config = config_mod.get_config
+    get_config.cache_clear()
     yield
+    get_config.cache_clear()
 
 
 @pytest.fixture
