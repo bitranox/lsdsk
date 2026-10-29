@@ -1,13 +1,13 @@
 [project]
 name = "lsdsk"
-version = "1.16.1"
+version = "1.16.2"
 description = "See your disks and controllers, and what is wrong with how they are connected"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "rich-click>=1.9.9",
     "lib_cli_exit_tools>=2.4.1",
-    "lib_log_rich>=8.1.1",
+    "lib_log_rich>=8.1.2",
     "lib_layered_config>=7.3.0",
     "pydantic>=2.14.1",
     "orjson>=3.13.0",

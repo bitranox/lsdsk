@@ -5,6 +5,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.16.2] 2026-10-29 14:29:34
+
+### Fixed
+
+- `lsdsk install-shortcut` on Windows prints the launch the way cmd and PowerShell read it
+  (`"C:\...\uvx.exe" --exclude-newer "7 days" ...`). It printed POSIX single quotes there, so the
+  line could not be pasted into a Windows shell. Linux and macOS keep the shell form.
+- A Windows `.lnk` that Windows refuses to save for lack of rights now exits `13`
+  (`PERMISSION_DENIED`), as a refused icon copy on the same machine does; it exited `74`
+  (`IO_ERROR`). Any other refusal still exits `74` with the HRESULT in the message.
+
 ## [1.16.1] 2026-10-29 00:49:50
 
 ### Fixed
