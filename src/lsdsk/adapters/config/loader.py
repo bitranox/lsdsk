@@ -463,11 +463,13 @@ def _beneath_the_environment(config: Config, dotenv: LayerSnapshot) -> Config:
     layers that do not overlap; merging them again with `dotenv` placed before the environment's
     is the library's own precedence, with provenance kept for every key.
     """
-    files: dict[tuple[str, str | None], dict[str, object]] = {}
+    files: dict[tuple[Layer, str | None], dict[str, object]] = {}
     environment: dict[str, object] = {}
     for segments, value in table_leaves(config.as_dict()):
         origin = config.origin(".".join(segments))
-        layer = Layer.DEFAULTS.value if origin is None else origin["layer"]
+        # Provenance names the layer as plain text, and from lib_layered_config 7.5.0 on a
+        # snapshot built from that text fails inside merge_layers, which reads its `.value`.
+        layer = Layer.DEFAULTS if origin is None else Layer(origin["layer"])
         path = None if origin is None else origin["path"]
         target = environment if layer == Layer.ENV else files.setdefault((layer, path), {})
         _place(target, segments, value)

@@ -25,6 +25,7 @@ from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, cast
 
 import tomlkit
+from lib_layered_config import Layer
 
 # The resolver and the deploy strategies are the code ``config-deploy`` and the
 # loader run themselves, reached directly because the public
@@ -100,9 +101,7 @@ def user_config_path(*, platform: str | None = None) -> Path:
     deployment = _deployment_for(resolver)
     if deployment is None:
         raise NoUserConfigPathError(f"lsdsk reads no user configuration on {resolver.platform}")
-    destination = deployment.destination_for("user")
-    if destination is None:
-        raise NoUserConfigPathError(f"lsdsk names no user configuration file on {resolver.platform}")
+    destination = deployment.destination_for(Layer.USER)
     if not destination.is_absolute():
         raise NoUserConfigPathError(
             f"the user configuration directory {destination.parent} is not an absolute path; "

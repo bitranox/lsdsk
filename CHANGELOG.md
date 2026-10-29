@@ -5,7 +5,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- With lib_layered_config 7.5.0 installed, `lsdsk config-deploy --target user --force` crashed
+  with exit 70 (`AttributeError: 'str' object has no attribute 'value'`) when a deployed file was
+  broken and a `.env` was found. 7.5.0 reads each layer's name as a `Layer` member, and lsdsk
+  passed the plain name the configuration's own provenance reports. lsdsk now passes the member,
+  which works on every version of the library.
+
 ### Changed
+
+- Requires lib_layered_config 7.5.0 or later.
 
 - When `lsdsk install-shortcut` writes the Desktop shortcut but cannot add its copy to the
   application menu (Linux) or the Start menu (Windows), `--format json` now reports `ok` false
