@@ -19,8 +19,8 @@ decision of 2026-10-16), ``sudo`` on Linux and macOS (2026-10-17), which
 pwshpy starts. pwshpy is reached by NAME through importlib, so the import graph
 below cannot see it, and the second test pins it to the one module allowed to
 start that process. The Windows desktop shortcut reaches pwshpy too, to write a
-``.lnk`` and look up the Desktop folder; that starts no process, and a test
-holds that module to those members and away from ``elevate``.
+``.lnk`` and look up the Desktop folder; that starts no process, and each of
+the two modules is held to an allow-list of the pwshpy members it names.
 
 Nothing checked it. Every one of those documents would have gone on saying it
 after the first ``import subprocess`` landed, so the claim is asserted here
@@ -367,8 +367,17 @@ RELAUNCHES = "adapters/hw/elevation.py"
 #: name the Desktop and Start-menu folders - neither starts a process.
 WRITES_SHORTCUTS = "adapters/shortcut/windows.py"
 
-#: The pwshpy members the shortcut writer may name; ``elevate`` is not one.
-_SHORTCUT_MEMBERS = frozenset({"ps", "KnownFolder", "PwshPyError", "get_known_folder", "new_shortcut"})
+#: Every pwshpy member each module that imports pwshpy may name, and nothing else.
+#: An allow-list rather than a list of starters to refuse: pwshpy grows members
+#: (``exec``, ``invoke_web_request``), and a deny-list refuses only the ones
+#: somebody thought to write down. Only the relaunch may name ``elevate``; the
+#: shortcut writer gets the ``.lnk`` and known-folder members it needs.
+ALLOWED_PWSHPY_MEMBERS: dict[str, frozenset[str]] = {
+    RELAUNCHES: frozenset({"ps", "PwshPyError", "ElevationDeclinedError", "elevate"}),
+    WRITES_SHORTCUTS: frozenset(
+        {"ps", "KnownFolder", "PwshPyError", "get_known_folder", "new_shortcut", "DESKTOP", "PROGRAMS"}
+    ),
+}
 
 
 def _reaches_pwshpy(source: str) -> bool:
@@ -428,23 +437,157 @@ def test_only_the_elevation_and_shortcut_modules_reach_the_library_that_starts_a
 
 
 def _pwshpy_members_named(source: str) -> set[str]:
-    """Every attribute name the module reads off anything, which covers every pwshpy member it calls."""
-    return {node.attr for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Attribute)}
+    """Every pwshpy member ``source`` names, by any route a module could take to one.
 
-
-@pytest.mark.os_agnostic
-def test_the_shortcut_writer_names_no_pwshpy_member_that_starts_a_process() -> None:
-    """Writing a ``.lnk`` is the shortcut module's whole reach: it must never name ``elevate``.
-
-    Checked against the attributes the module reads, so a call written through
-    ``ps.elevate`` - or any starter pwshpy grows - shows up by name, and the
-    allowed set is the shortcut and known-folder members the adapter needs.
+    A member read off a pwshpy handle (``pwshpy.ps.elevate``), off an alias of
+    one (``shell = pwshpy.ps``), off an import of it (``from pwshpy import ps``),
+    off a dynamic import (``import_module("pwshpy").ps``), through ``getattr``
+    with a literal name, and every member the module's typed facade declares: a
+    module cast to a ``Protocol`` can call only what that Protocol names, so a
+    new member has to appear there for pyright to accept the call. ``pwshpy`` is
+    a handle by name too, since both modules bind the loaded module to a local
+    of that name.
     """
-    named = _pwshpy_members_named((SRC / WRITES_SHORTCUTS).read_text(encoding="utf-8"))
+    tree = ast.parse(source)
+    handles = _pwshpy_handles(tree)
+    named = _protocol_members(tree)
+    for node in ast.walk(tree):
+        for reference in _pwshpy_references(node, handles):
+            named.update(reference.split(".")[1:])
+    return named
 
-    assert "elevate" not in named
-    assert named >= _SHORTCUT_MEMBERS, "the control: the scan must see the members the adapter really calls"
-    assert "elevate" in _pwshpy_members_named("pwshpy.ps.elevate(['x'])\n"), "the planted call must be seen"
+
+def _pwshpy_handles(tree: ast.AST) -> dict[str, str]:
+    """Every local name bound to pwshpy or a member of it, as the dotted name it stands for."""
+    bound = {"pwshpy": "pwshpy"}
+    for node in ast.walk(tree):
+        _import_references(node, bound)
+    handles = {name: target for name, target in bound.items() if target.split(".")[0] == "pwshpy"}
+    while _bind_aliases(tree, handles):
+        pass
+    return handles
+
+
+def _bind_aliases(tree: ast.AST, handles: dict[str, str]) -> bool:
+    """Record each plain name assigned a handle or a member of one; whether any was new."""
+    grew = False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Attribute | ast.Name):
+            continue
+        resolved = _pwshpy_chain(node.value, handles)
+        for target in node.targets:
+            if resolved is not None and isinstance(target, ast.Name) and target.id not in handles:
+                handles[target.id] = resolved
+                grew = True
+    return grew
+
+
+def _pwshpy_chain(node: ast.expr, handles: dict[str, str]) -> str | None:
+    """``a.b.c`` as a dotted pwshpy name when ``a`` is a handle or a dynamic import of pwshpy, else None."""
+    attributes: list[str] = []
+    current = node
+    while isinstance(current, ast.Attribute):
+        attributes.insert(0, current.attr)
+        current = current.value
+    if isinstance(current, ast.Name) and current.id in handles:
+        return ".".join([handles[current.id], *attributes])
+    if isinstance(current, ast.Call) and _is_dynamic_import_of(current, "pwshpy"):
+        return ".".join(["pwshpy", *attributes])
+    return None
+
+
+def _pwshpy_references(node: ast.AST, handles: dict[str, str]) -> list[str]:
+    """The dotted pwshpy names one node reads: an attribute chain, or a ``getattr`` with a literal name."""
+    if isinstance(node, ast.Attribute):
+        chain = _pwshpy_chain(node, handles)
+        return [chain] if chain is not None else []
+    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr"):
+        return []
+    if len(node.args) < 2:
+        return []
+    owner, member = _pwshpy_chain(node.args[0], handles), _literal_text(node.args[1])
+    return [f"{owner}.{member}"] if owner is not None and member is not None else []
+
+
+def _protocol_members(tree: ast.AST) -> set[str]:
+    """Every member a ``Protocol`` class in ``tree`` declares, dunders aside."""
+    members: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and any(_names_protocol(base) for base in node.bases):
+            members.update(_declared_names(node))
+    return members
+
+
+def _names_protocol(base: ast.expr) -> bool:
+    """Whether a base-class expression is ``Protocol`` or ``typing.Protocol``."""
+    return (isinstance(base, ast.Name) and base.id == "Protocol") or (
+        isinstance(base, ast.Attribute) and base.attr == "Protocol"
+    )
+
+
+def _declared_names(cls: ast.ClassDef) -> set[str]:
+    """The methods, properties and annotated attributes a class body declares, dunders aside."""
+    names = {
+        statement.name
+        for statement in cls.body
+        if isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef) and not statement.name.startswith("__")
+    }
+    names.update(
+        statement.target.id
+        for statement in cls.body
+        if isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name)
+    )
+    return names
+
+
+def test_each_module_reaching_pwshpy_names_only_the_members_allowed_to_it() -> None:
+    """An allow-list per module, so a member pwshpy grows tomorrow is refused without anyone naming it.
+
+    The guard this replaces asked whether the shortcut writer named ``elevate``,
+    which is a deny-list of one: ``ps.exec``, ``invoke_web_request`` or any
+    starter pwshpy adds later passed it. The second assertion is the control: a
+    scan that sees fewer members than the module really uses would pass the
+    first one vacuously, and an allow-list entry nothing uses any more is a
+    member a later change could start calling unnoticed.
+    """
+    reaching = {
+        module.relative_to(SRC).as_posix(): module.read_text(encoding="utf-8")
+        for module in _modules()
+        if _reaches_pwshpy(module.read_text(encoding="utf-8"))
+    }
+    assert set(reaching) == set(ALLOWED_PWSHPY_MEMBERS), (
+        f"a module reaches pwshpy with no allow-list: {sorted(reaching)}"
+    )
+    for module, source in reaching.items():
+        named, allowed = _pwshpy_members_named(source), ALLOWED_PWSHPY_MEMBERS[module]
+        assert named <= allowed, f"{module} names pwshpy members outside its allow-list: {sorted(named - allowed)}"
+        assert named >= allowed, f"{module} no longer names, or the scan cannot see: {sorted(allowed - named)}"
+
+
+@pytest.mark.parametrize(
+    ("source", "forbidden"),
+    [
+        pytest.param("pwshpy.ps.exec(['x'])\n", "exec", id="off-the-handle"),
+        pytest.param("pwshpy = load()\npwshpy.invoke_web_request('u')\n", "invoke_web_request", id="loaded-handle"),
+        pytest.param("shell = pwshpy.ps\nshell.start_process('x')\n", "start_process", id="aliased-member"),
+        pytest.param("from pwshpy import ps\nps.exec('x')\n", "exec", id="imported-member"),
+        pytest.param("import pwshpy as p\np.ps.exec('x')\n", "exec", id="aliased-import"),
+        pytest.param('import importlib\nimportlib.import_module("pwshpy").ps.exec("x")\n', "exec", id="dynamic-import"),
+        pytest.param('getattr(pwshpy.ps, "exec")("x")\n', "exec", id="getattr"),
+        pytest.param("class _Ps(Protocol):\n    def exec(self) -> int: ...\n", "exec", id="facade-declares-it"),
+    ],
+)
+def test_the_allow_list_refuses_a_planted_member_whichever_way_it_is_reached(source: str, forbidden: str) -> None:
+    """The planted control: each route to a member must surface it, or the allow-list check above is blind to it."""
+    for allowed in ALLOWED_PWSHPY_MEMBERS.values():
+        assert forbidden in _pwshpy_members_named(source) - allowed
+
+
+def test_the_member_scan_ignores_an_attribute_read_off_anything_else() -> None:
+    """The false-positive control: ``self.exec`` or ``os.path`` is not a pwshpy member, and must not refuse a module."""
+    unrelated = "self.exec()\nos.path.join('a')\nclass Plain:\n    def exec(self) -> None: ...\n"
+
+    assert _pwshpy_members_named(unrelated) == set()
 
 
 # The kernel log is the one plausible SECOND source for the AHCI port bitmap,
