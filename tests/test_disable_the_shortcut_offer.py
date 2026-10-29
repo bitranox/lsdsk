@@ -138,3 +138,77 @@ def test_the_opt_out_file_is_owner_only(user_config_dir: Path) -> None:
     written = disable_offer()
 
     assert written.stat().st_mode & 0o777 == 0o600
+
+
+#: A file tomlkit edits but the standard library's TOML reader refuses: a trailing
+#: comma in an inline table is TOML 1.1, which tomllib reads only from Python 3.15.
+#: tomlkit keeps the text as it was, so the written file carries it too.
+_TOMLKIT_ONLY = "[extra]\nx = { a = 1, }\n"
+
+
+def _skip_where_tomllib_reads_toml_1_1() -> None:
+    """The read-back guard has nothing to catch where the standard library reads the file."""
+    try:
+        tomllib.loads(_TOMLKIT_ONLY)
+    except tomllib.TOMLDecodeError:
+        return
+    pytest.skip("this Python's tomllib reads TOML 1.1, so the written file reads back")
+
+
+def test_a_written_file_that_does_not_read_back_as_toml_is_refused_at_the_write(
+    seed_user_config: Callable[[str], Path],
+) -> None:
+    """The read-back is what turns a file the loader cannot read into a failure here.
+
+    Without it the opt-out reported success into a file the configuration loader
+    would refuse later, far from the write that made it.
+    """
+    _skip_where_tomllib_reads_toml_1_1()
+    path = seed_user_config(_TOMLKIT_ONLY)
+
+    with pytest.raises(tomllib.TOMLDecodeError) as refused:
+        disable_offer()
+
+    # The inline table's trailing comma, on the line the seed put it on.
+    assert "(at line 2," in str(refused.value)
+    # Raised by the read-back, after the write: tomlkit's own parse accepted the file.
+    assert "offer_desktop_shortcut = false" in path.read_text(encoding="utf-8")
+
+
+class _DesktopNeverAsked:
+    """A desktop whose shortcut does not exist yet and is never created: the answer is "never"."""
+
+    def exists(self) -> bool:
+        return False
+
+    def has_desktop(self) -> bool:
+        return True
+
+    def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
+        raise AssertionError("never asked to create")
+
+    def no_desktop_reason(self) -> str:
+        return "a desktop is present"
+
+
+def test_the_offer_warns_when_the_written_opt_out_does_not_read_back(
+    seed_user_config: Callable[[str], Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The real writer's read-back failure degrades the offer to one warning, like any other failed opt-out."""
+    from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, offer_shortcut
+    from lsdsk.adapters.config.tunables import DisplaySettings
+    from lsdsk.adapters.uv_bootstrap import UvInstallResult
+    from lsdsk.domain.enums import ShortcutChoice
+
+    _skip_where_tomllib_reads_toml_1_1()
+    seed_user_config(_TOMLKIT_ONLY)
+    seams = ShortcutSeams(
+        shortcuts=_DesktopNeverAsked(),
+        uvx=lambda: None,
+        installed_lsdsk=lambda: None,
+        install_uv=lambda: UvInstallResult(exit_code=0, uvx=None),
+    )
+
+    offer_shortcut(DisplaySettings(), ask_choice=lambda: ShortcutChoice.NEVER, seams=seams)
+
+    assert "Could not save the do-not-offer setting" in capsys.readouterr().err

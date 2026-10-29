@@ -41,23 +41,32 @@ class _Recorder:
 
 @pytest.mark.os_agnostic
 def test_uvx_path_follows_what_which_finds() -> None:
-    """Resolution is injected, so the answer is exactly what the lookup returned."""
+    """Resolution is injected, so the answer is what the lookup returned, anchored as an absolute path.
+
+    The expected value is anchored too: on Windows ``/opt/bin/uvx`` has no drive,
+    so it is not absolute there until it is.
+    """
     assert uvx_path(which=_which_finds_uvx_at(None)) is None
-    assert uvx_path(which=_which_finds_uvx_at("/opt/bin/uvx")) == Path("/opt/bin/uvx")
+    assert uvx_path(which=_which_finds_uvx_at("/opt/bin/uvx")) == Path("/opt/bin/uvx").absolute()
 
 
 @pytest.mark.os_agnostic
 def test_the_posix_installer_runs_the_pinned_astral_shell_script() -> None:
-    """On POSIX the command fetches the pinned install.sh and pipes it to a shell."""
+    """On POSIX the command fetches the pinned install.sh with curl and runs it in a shell.
+
+    The URL is the script's ``$0``, an argument of its own, so it is never part
+    of the text the shell parses.
+    """
     runner = _Recorder()
     result = install_uv(run=runner, platform="linux", which=_which_finds_uvx_at("/opt/bin/uvx"))
 
-    assert result == UvInstallResult(exit_code=0, uvx=Path("/opt/bin/uvx"))
+    assert result == UvInstallResult(exit_code=0, uvx=Path("/opt/bin/uvx").absolute())
     assert len(runner.commands) == 1
     command = runner.commands[0]
-    assert command[0] == "sh"
-    assert "curl" in command[-1]
-    assert f"https://astral.sh/uv/{UV_INSTALLER_VERSION}/install.sh" in command[-1]
+    assert command[:2] == ["sh", "-c"]
+    assert "curl" in command[2]
+    assert "astral.sh" not in command[2]
+    assert command[3:] == [f"https://astral.sh/uv/{UV_INSTALLER_VERSION}/install.sh"]
 
 
 @pytest.mark.os_agnostic
@@ -78,7 +87,7 @@ def test_the_uvx_path_is_re_resolved_after_the_installer_runs() -> None:
     runner = _Recorder()
     result = install_uv(run=runner, platform="linux", which=_which_finds_uvx_at("/home/me/.local/bin/uvx"))
 
-    assert result.uvx == Path("/home/me/.local/bin/uvx")
+    assert result.uvx == Path("/home/me/.local/bin/uvx").absolute()
 
 
 def test_the_installers_exit_code_comes_back_with_the_result() -> None:
@@ -103,3 +112,26 @@ def test_the_real_runner_returns_the_exit_code_and_keeps_the_childs_output_off_s
     captured = capfd.readouterr()
     assert "installer chatter" not in captured.out
     assert "installer chatter" in captured.err
+
+
+def test_a_uvx_found_through_a_relative_path_entry_comes_back_absolute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A relative ``PATH`` entry makes the lookup answer a relative path; the shortcut needs an absolute one.
+
+    A shortcut is started from the Desktop, not from the directory lsdsk ran in,
+    so a launcher written as ``bin/uvx`` runs nothing there.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    uvx = bin_dir / ("uvx.exe" if sys.platform == "win32" else "uvx")
+    uvx.write_bytes(b"#!/bin/sh\nexit 0\n")
+    uvx.chmod(0o755)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", "bin")
+
+    found = uvx_path()
+
+    assert found is not None
+    assert found.is_absolute()
+    assert found.samefile(uvx)

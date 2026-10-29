@@ -101,9 +101,11 @@ def user_config_path(*, platform: str | None = None) -> Path:
     if deployment is None:
         raise NoUserConfigPathError(f"lsdsk reads no user configuration on {resolver.platform}")
     destination = deployment.destination_for("user")
-    if destination is None or not destination.is_absolute():
+    if destination is None:
+        raise NoUserConfigPathError(f"lsdsk names no user configuration file on {resolver.platform}")
+    if not destination.is_absolute():
         raise NoUserConfigPathError(
-            f"the user configuration directory {destination} is not an absolute path; "
+            f"the user configuration directory {destination.parent} is not an absolute path; "
             "set XDG_CONFIG_HOME to an absolute path or unset it"
         )
     return destination

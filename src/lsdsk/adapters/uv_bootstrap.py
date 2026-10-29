@@ -56,10 +56,18 @@ def uvx_path(*, which: Callable[[str], str | None] = shutil.which) -> Path | Non
         which: The lookup, injectable so a test need not alter the real ``PATH``.
 
     Returns:
-        The absolute path of ``uvx``, or ``None``.
+        The absolute path of ``uvx``, or ``None``. A lookup answers a relative
+        path for a relative ``PATH`` entry (and, on Windows, for the current
+        directory it searches first); the shortcut runs from the Desktop, where
+        that path names nothing, so it is anchored here.
     """
     found = which("uvx")
-    return Path(found) if found else None
+    return Path(found).absolute() if found else None
+
+
+#: Fetch the installer named by ``$0`` and run it only when the fetch succeeded,
+#: leaving with ``curl``'s exit code when it did not.
+_FETCH_THEN_RUN = 'script=$(curl -LsSf "$0") || exit $?; printf "%s\\n" "$script" | sh'
 
 
 def _installer_command(platform: str) -> list[str]:
@@ -67,11 +75,18 @@ def _installer_command(platform: str) -> list[str]:
 
     The network fetch is the installer's own (``curl``/``irm``); Python opens no
     socket. The URL is a module constant, so nothing a reader supplies reaches
-    the shell.
+    the shell; on POSIX it is handed to the script as ``$0`` rather than written
+    into it.
+
+    On POSIX the script is fetched first and run second. ``curl | sh`` reports
+    the exit code of ``sh``, and a failed download hands ``sh`` an empty script,
+    which exits 0: the run read as an install that worked and merely left
+    ``uvx`` off PATH. Fetched into a variable, ``curl``'s own failure is the
+    command's exit code.
     """
     if platform == "win32":
         return ["powershell", "-ExecutionPolicy", "ByPass", "-c", f"irm {UV_INSTALLER_URL_WINDOWS} | iex"]
-    return ["sh", "-c", f"curl -LsSf {UV_INSTALLER_URL_POSIX} | sh"]
+    return ["sh", "-c", _FETCH_THEN_RUN, UV_INSTALLER_URL_POSIX]
 
 
 #: The process's own standard-error descriptor. The installer's standard output

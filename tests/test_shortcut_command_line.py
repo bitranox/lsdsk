@@ -27,6 +27,8 @@ _ARGVS = [
     pytest.param(("prog", "C:\\dir with space\\"), id="trailing-backslash-quoted"),
     pytest.param(("prog", "C:\\dir\\"), id="trailing-backslash-bare"),
     pytest.param(("prog", "tab\there"), id="tab"),
+    pytest.param(("prog", "C:\\dir with space\\\\"), id="double-trailing-backslash-quoted"),
+    pytest.param(("prog", "with space\\\n"), id="backslash-newline-quoted"),
 ]
 
 

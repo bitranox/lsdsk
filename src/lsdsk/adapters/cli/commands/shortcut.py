@@ -31,7 +31,7 @@ import tomlkit.exceptions
 from rich.markup import escape
 from rich.prompt import Confirm, Prompt
 
-from lsdsk.adapters.config.offer import DisplayNotATableError, disable_offer
+from lsdsk.adapters.config.offer import DisplayNotATableError, NoUserConfigPathError, disable_offer
 from lsdsk.adapters.shortcut.icon import copy_shipped_icon
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
 from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
@@ -39,7 +39,14 @@ from lsdsk.adapters.shortcut.windows import WindowsDesktopShortcut
 from lsdsk.adapters.uv_bootstrap import UvInstallResult, uvx_path
 from lsdsk.adapters.uv_bootstrap import install_uv as run_uv_installer
 from lsdsk.domain.enums import ActionCommand, OutputFormat, ShortcutChoice
-from lsdsk.domain.shortcut import command_line, consent_text, manual_install_line, plan_launch, should_offer
+from lsdsk.domain.shortcut import (
+    command_line,
+    consent_text,
+    manual_install_line,
+    plan_launch,
+    powershell_line,
+    should_offer,
+)
 
 from .. import safe_console
 from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION
@@ -103,9 +110,13 @@ class ShortcutSeams:
 
 
 def _installed_lsdsk() -> Path | None:
-    """A plain ``lsdsk`` launcher already on PATH, or ``None``."""
+    """A plain ``lsdsk`` launcher already on PATH, as an absolute path, or ``None``.
+
+    Absolute because a relative ``PATH`` entry resolves relative to the directory
+    lsdsk ran in, and the shortcut runs from the Desktop.
+    """
     found = shutil.which("lsdsk")
-    return Path(found) if found else None
+    return Path(found).absolute() if found else None
 
 
 def shortcuts_for(platform: str) -> DesktopShortcuts | None:
@@ -157,12 +168,18 @@ def _resolve_launch(seams: ShortcutSeams, *, install_uv: bool, output_format: Ou
 
 
 def _report(written: Path, launch: tuple[str, ...], output_format: OutputFormat, *, platform: str) -> None:
-    """Say what was created, in the format the caller asked for; the launch line as ``platform`` reads it."""
+    """Say what was created, in the format the caller asked for; the launch line as ``platform`` reads it.
+
+    Windows gets a second line for PowerShell, which reads the cmd form of a
+    quoted program as a parse error rather than as a command.
+    """
     if output_format is OutputFormat.JSON:
         emit_action(ActionCommand.INSTALL_SHORTCUT, InstallShortcutResult(shortcut=str(written), launch=list(launch)))
         return
     safe_console.echo(f"\nShortcut created:\n  {written}")
     safe_console.echo(f"It launches: {command_line(launch, platform=platform)}")
+    if platform == "win32":
+        safe_console.echo(f"In PowerShell: {powershell_line(launch)}")
 
 
 def install_shortcut(
@@ -220,12 +237,19 @@ def _write_shortcut(seams: ShortcutSeams, *, launch: tuple[str, ...], output_for
     the ones this tool means something by - ENOENT is 2, Click's usage error -
     and no JSON envelope was written at all.
 
+    A user configuration directory that cannot be named - a relative
+    ``XDG_CONFIG_HOME`` - is not a failed write but the reader's environment, so
+    it is refused as a configuration error before anything is written.
+
     Raises:
-        SystemExit: ``PERMISSION_DENIED`` when the write was refused for
-            permission, ``IO_ERROR`` for any other failed write.
+        SystemExit: ``CONFIG_ERROR`` when no user configuration directory can be
+            named for the icon, ``PERMISSION_DENIED`` when the write was refused
+            for permission, ``IO_ERROR`` for any other failed write.
     """
     try:
         return seams.shortcuts.create(launch=launch, icon=seams.copy_icon())
+    except NoUserConfigPathError as error:
+        fail(f"the shortcut was not written: {error}", ExitCode.CONFIG_ERROR, output_format=output_format)
     except PermissionError as error:
         fail(f"not allowed to write the shortcut: {error}", ExitCode.PERMISSION_DENIED, output_format=output_format)
     except OSError as error:
