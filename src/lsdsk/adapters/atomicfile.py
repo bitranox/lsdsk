@@ -1,7 +1,12 @@
 """Replacing a file this tool owns, so that a failed write leaves the old one intact.
 
-Every file this tool owns and expects to find whole afterwards - a snapshot or
-the counter history, for example - is written through here. Each is replaced
+Every file this tool writes itself and expects to find whole afterwards - a
+snapshot, the counter history, the opt-out edit of the user's ``config.toml``,
+a Linux or macOS shortcut, the shortcut icon - is written through here. Two kinds of
+file this tool causes to exist are written by somebody else and are not: the
+Windows ``.lnk``, which pwshpy saves through the Shell's COM object, and the
+configuration files ``config-deploy`` and ``config-generate-examples`` place,
+which lib_layered_config writes. Each file written here is replaced
 the same way - a temporary file in the destination's own directory, written,
 forced out, narrowed to its mode, then renamed over the destination - and each
 has to close the raw descriptor ``mkstemp`` hands back however the write ends.
