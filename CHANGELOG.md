@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.16.1] 2026-10-29 00:49:50
+
 ### Fixed
 
 - The interactive view no longer crashes with `NoMatches` when Textual refreshes the footer while
