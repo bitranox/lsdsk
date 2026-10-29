@@ -9,7 +9,9 @@ under the test's own directory.
 
 from __future__ import annotations
 
+import json
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -18,6 +20,7 @@ from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, install_shortcut
 from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut, UnwritableDesktopEntryError
 from lsdsk.adapters.uv_bootstrap import UvInstallResult
+from lsdsk.domain.enums import OutputFormat
 
 
 @pytest.fixture
@@ -185,6 +188,11 @@ def _exec_argv(value: str) -> list[str]:
     the writer is not mirrored by the same library reading it back: outside quotes
     a space separates arguments, inside double quotes a backslash escapes the next
     of the four characters that need it, and ``%%`` is a literal percent sign.
+
+    It is strict where the spec is: a backtick or dollar sign inside the quotes
+    with no backslash before it, and a ``%`` that is not half of ``%%``, are
+    refused rather than read leniently, since a launcher reads the first as
+    shell syntax and the second as a field code it substitutes.
     """
     argv: list[str] = []
     current: list[str] = []
@@ -198,6 +206,8 @@ def _exec_argv(value: str) -> list[str]:
                 f"a backslash may escape only one of the four reserved characters, not {follower!r}"
             )
             current.append(follower)
+        elif quoted and character in "`$":
+            raise AssertionError(f"a reserved {character!r} inside the quotes must be escaped with a backslash")
         elif character == '"':
             quoted = not quoted
             started = True
@@ -211,6 +221,8 @@ def _exec_argv(value: str) -> list[str]:
     assert not quoted, "an unterminated quote"
     if started:
         argv.append("".join(current))
+    for argument in argv:
+        assert "%" not in argument.replace("%%", ""), f"a lone % in {argument!r} is a field code, not a percent sign"
     return [argument.replace("%%", "%") for argument in argv]
 
 
@@ -242,6 +254,42 @@ def test_every_launch_argument_reads_back_exactly_under_the_spec_quoting(home: P
     keys = _keys(text)
     assert _exec_argv(_string_value(keys["Exec"])) == list(_AWKWARD_LAUNCH)
     assert _string_value(keys["Icon"]) == str(icon)
+
+
+@pytest.mark.os_linux
+@pytest.mark.parametrize(
+    ("argument", "written"),
+    [
+        pytest.param("a`b", 'Exec="a\\\\`b"', id="backtick"),
+        pytest.param("a$b", 'Exec="a\\\\$b"', id="dollar"),
+        pytest.param('a"b', 'Exec="a\\\\"b"', id="double-quote"),
+        pytest.param("a\\b", 'Exec="a\\\\\\\\b"', id="backslash"),
+        pytest.param("100%", 'Exec="100%%"', id="percent"),
+        pytest.param("%f", 'Exec="%%f"', id="field-code-lookalike"),
+    ],
+)
+def test_each_reserved_character_is_written_with_the_escape_the_spec_names(
+    home: Path, argument: str, written: str
+) -> None:
+    """The exact bytes, not a read-back: a lenient reader accepts what a launcher would not.
+
+    Inside the quotes a backtick, dollar sign, double quote and backslash each take
+    a backslash, a ``%`` is doubled, and the string rule then doubles every
+    backslash once more - so the file holds two backslashes before each of them.
+    """
+    text = LinuxDesktopShortcut().create(launch=(argument,), icon=None).read_text(encoding="utf-8")
+
+    assert _keys(text)["Exec"] == written.removeprefix("Exec=")
+
+
+@pytest.mark.os_linux
+@pytest.mark.parametrize("control", [chr(0x7F), chr(0x1F), chr(0x00)], ids=["DEL", "unit-separator", "NUL"])
+def test_every_control_character_including_del_is_refused(home: Path, control: str) -> None:
+    """DEL (0x7F) sits just past the C0 range, so a class that stops at 0x1F would let it into the file."""
+    with pytest.raises(UnwritableDesktopEntryError, match="holds a control character"):
+        LinuxDesktopShortcut().create(launch=(f"lsdsk{control}",), icon=None)
+
+    assert list((home / "Desktop").iterdir()) == []
 
 
 @pytest.mark.os_linux
@@ -387,3 +435,87 @@ def test_an_undecodable_line_elsewhere_in_user_dirs_does_not_hide_the_desktop_li
     )
 
     assert LinuxDesktopShortcut(config_home=config_home).desktop_dir() == home / "Schreibtisch"
+
+
+@pytest.mark.os_linux
+@pytest.mark.parametrize(
+    "launch",
+    [("/usr/bin/uvx", "--exclude-newer", "7 days", "lsdsk@latest"), _AWKWARD_LAUNCH],
+    ids=["uvx-launch", "awkward-launch"],
+)
+def test_the_written_entry_passes_desktop_file_validate_without_a_hint(home: Path, launch: tuple[str, ...]) -> None:
+    """The freedesktop validator is the reader the spec is written for; it must accept the entry silently.
+
+    Skipped where the validator is not installed. A hint counts as a finding: two
+    main categories (``System;Utility;``) list the application twice in a menu,
+    which the validator reports only as a hint and with exit status 0.
+    """
+    # Where desktop-file-utils installs it on Debian, Ubuntu and Fedora; spelled out
+    # in the call below too, so the argv is fixed text rather than a PATH lookup.
+    if not Path("/usr/bin/desktop-file-validate").is_file():
+        pytest.skip("desktop-file-validate is not installed")
+    written = LinuxDesktopShortcut().create(launch=launch, icon=home / "a dir\\with $x" / "icon.png")
+
+    # The entry named relative to its folder, which keeps the whole argv fixed text.
+    result = subprocess.run(
+        ("/usr/bin/desktop-file-validate", "lsdsk.desktop"),
+        cwd=written.parent,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "LC_ALL": "C"},
+        check=False,
+        timeout=60,
+    )
+
+    assert (result.returncode, result.stdout + result.stderr) == (0, "")
+
+
+def _menu_that_cannot_be_written(home: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the application menu at a plain FILE, so its directory can never be made and the entry never written."""
+    data_home = home / "data"
+    data_home.mkdir()
+    (data_home / "applications").write_bytes(b"")
+    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
+    return data_home / "applications"
+
+
+@pytest.mark.os_linux
+def test_a_menu_entry_that_fails_after_the_desktop_one_is_a_warning_not_a_failure(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Desktop entry is the shortcut, and it is written: a failed menu copy must not report that nothing was.
+
+    The menu copy is the extra, as on Windows, which skips a Start menu it cannot
+    find, and on macOS, which has none: the reader is told it is missing, and why.
+    """
+    menu = _menu_that_cannot_be_written(home, monkeypatch)
+    warnings: list[str] = []
+
+    written = LinuxDesktopShortcut(warn=warnings.append).create(launch=("lsdsk",), icon=None)
+
+    assert written == home / "Desktop" / "lsdsk.desktop"
+    assert written.read_text(encoding="utf-8").startswith("[Desktop Entry]\n")
+    assert len(warnings) == 1, warnings
+    assert "on the Desktop" in warnings[0]
+    assert str(menu) in warnings[0]
+
+
+@pytest.mark.os_linux
+def test_install_shortcut_reports_the_desktop_entry_when_only_the_menu_copy_failed(
+    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _menu_that_cannot_be_written(home, monkeypatch)
+    seams = ShortcutSeams(
+        shortcuts=LinuxDesktopShortcut(),
+        uvx=lambda: Path("/usr/bin/uvx"),
+        installed_lsdsk=lambda: None,
+        install_uv=lambda: UvInstallResult(exit_code=0, uvx=None),
+        copy_icon=lambda: home / "icon.png",
+    )
+
+    install_shortcut(output_format=OutputFormat.JSON, seams=seams)
+
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["ok"] is True
+    assert envelope["data"]["shortcut"] == str(home / "Desktop" / "lsdsk.desktop")

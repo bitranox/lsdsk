@@ -4,7 +4,9 @@ lsdsk reads SMART and link data through passthrough commands that need root, so
 the interactive view self-elevates with ``sudo`` - which needs a terminal to ask
 in. The entry is therefore ``Terminal=true``. It is written to the Desktop, made
 executable (a desktop environment refuses to launch a ``.desktop`` that is not),
-and also to the application menu so it is found by name.
+and also to the application menu so it is found by name. The Desktop entry is
+the shortcut; the menu copy is the extra, so a menu that will not take one is a
+warning about a shortcut that does exist rather than a failure to make one.
 
 The Desktop is the folder the desktop environment itself names in
 ``user-dirs.dirs`` (``~/Schreibtisch`` on a German one), not always
@@ -20,6 +22,7 @@ System Role:
 from __future__ import annotations
 
 import errno
+import logging
 import os
 import re
 from pathlib import Path
@@ -31,7 +34,9 @@ from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.shortcut import SHORTCUT_COMMENT
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
+
+_LOGGER = logging.getLogger(__name__)
 
 _FILENAME = "lsdsk.desktop"
 _NAME = "lsdsk"
@@ -60,9 +65,17 @@ class UnwritableDesktopEntryError(OSError):
 class LinuxDesktopShortcut:
     """Create and find the ``lsdsk.desktop`` launcher under the reader's home."""
 
-    def __init__(self, *, config_home: Path | None = None) -> None:
-        """Read ``user-dirs.dirs`` from ``config_home``; ``$XDG_CONFIG_HOME`` or ``~/.config`` when not given."""
+    def __init__(self, *, config_home: Path | None = None, warn: Callable[[str], None] | None = None) -> None:
+        """Read ``user-dirs.dirs`` from ``config_home`` and report a skipped menu copy through ``warn``.
+
+        Args:
+            config_home: Where ``user-dirs.dirs`` lives; ``$XDG_CONFIG_HOME`` or
+                ``~/.config`` when not given.
+            warn: Told, in one sentence, when the Desktop entry was written and
+                the menu copy was not; a logged warning when not given.
+        """
         self._config_home = config_home
+        self._warn = warn or _LOGGER.warning
 
     def desktop_dir(self) -> Path:
         """The Desktop directory: ``$XDG_DESKTOP_DIR``, then ``user-dirs.dirs``, then ``~/Desktop``."""
@@ -74,11 +87,11 @@ class LinuxDesktopShortcut:
     def has_desktop(self) -> bool:
         """Whether the Desktop folder exists; ``"$HOME/"`` in ``user-dirs.dirs`` turns it off."""
         desktop = self.desktop_dir()
-        return desktop.is_dir() and desktop != Path.home()
+        return _probe(desktop.is_dir) and desktop != Path.home()
 
     def exists(self) -> bool:
         """Whether the Desktop already carries the shortcut."""
-        return (self.desktop_dir() / _FILENAME).is_file()
+        return _probe((self.desktop_dir() / _FILENAME).is_file)
 
     def no_desktop_reason(self) -> str:
         """Why there is no desktop: a missing folder, or a setting that names home itself.
@@ -115,6 +128,9 @@ class LinuxDesktopShortcut:
     def create(self, *, launch: Sequence[str], icon: Path | None) -> Path:
         """Write the entry to the Desktop and the application menu, both executable.
 
+        A menu copy that cannot be written is reported through ``warn`` and does
+        not fail the call, because the Desktop entry it returns is already there.
+
         Args:
             launch: The command the entry runs, as an argv.
             icon: An icon file to reference, or ``None`` for the default icon.
@@ -125,14 +141,24 @@ class LinuxDesktopShortcut:
         Raises:
             FileNotFoundError: When the Desktop folder does not exist; it is
                 never created here, so nothing is written at all.
+            OSError: When the Desktop entry itself could not be written.
         """
         body = self._entry(launch, icon)
         desktop = self.desktop_dir() / _FILENAME
-        menu = self._applications_dir() / _FILENAME
         _write_executable(desktop, body)
-        menu.parent.mkdir(parents=True, exist_ok=True)
-        _write_executable(menu, body)
+        self._add_to_the_menu(body)
         return desktop
+
+    def _add_to_the_menu(self, body: str) -> None:
+        """Write ``body`` into the application menu too, warning rather than raising when it will not go."""
+        menu = self._applications_dir() / _FILENAME
+        try:
+            menu.parent.mkdir(parents=True, exist_ok=True)
+            _write_executable(menu, body)
+        except OSError as exc:
+            self._warn(
+                f"the shortcut is on the Desktop, but it could not be added to the application menu at {menu}: {exc}"
+            )
 
     @staticmethod
     def _applications_dir() -> Path:
@@ -156,11 +182,24 @@ class LinuxDesktopShortcut:
             f"Comment={SHORTCUT_COMMENT}",
             f"Exec={_exec_value(launch)}",
             "Terminal=true",
-            "Categories=System;Utility;",
+            "Categories=System;Monitor;",
         ]
         if icon is not None:
             lines.insert(4, f"Icon={_string_value(str(icon))}")
         return "\n".join(lines) + "\n"
+
+
+def _probe(check: Callable[[], bool]) -> bool:
+    """``check()``, an ``OSError`` read as no: a folder this account cannot reach holds no shortcut.
+
+    ``Path.is_dir`` and ``Path.is_file`` re-raise the ``PermissionError`` met under
+    a parent with no search permission before Python 3.14, which answers
+    ``False``; this gives every supported interpreter the 3.14 answer.
+    """
+    try:
+        return check()
+    except OSError:
+        return False
 
 
 def _exec_value(launch: Sequence[str]) -> str:

@@ -48,6 +48,8 @@ class _FakePs:
     written: list[dict[str, object]] = field(default_factory=list[dict[str, object]])
     refuse_with: Exception | None = None
     lookup_fails: bool = False
+    #: Refuse only a shortcut written into this folder, as a Start menu that will not take one does.
+    refuse_only_in: Path | None = None
 
     def get_known_folder(self, folder: object) -> Path | None:
         if self.lookup_fails:
@@ -55,7 +57,8 @@ class _FakePs:
         return self.folders.get(str(folder))
 
     def new_shortcut(self, path: object, **fields: object) -> object:
-        if self.refuse_with is not None:
+        refused_here = self.refuse_only_in is None or Path(str(path)).parent == self.refuse_only_in
+        if self.refuse_with is not None and refused_here:
             raise self.refuse_with
         Path(str(path)).write_bytes(b"")
         self.written.append({"path": Path(str(path)), **fields})
@@ -279,3 +282,93 @@ def test_install_shortcut_turns_an_access_denied_lnk_into_permission_denied(
     envelope = json.loads(capsys.readouterr().out)
     assert envelope["error"]["type"] == "PERMISSION_DENIED"
     assert "0x80070005" in envelope["error"]["message"]
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        _FakeError("IPersistFile::Save failed: 0x80004005"),
+        _FakeAccessDeniedError("IPersistFile::Save failed: 0x80070005"),
+    ],
+    ids=["refused", "access-denied"],
+)
+def test_a_start_menu_copy_that_fails_after_the_desktop_one_is_a_warning_not_a_failure(
+    desktop: Path, programs: Path, refusal: Exception
+) -> None:
+    """The Desktop ``.lnk`` is the shortcut and it is written; a refused Start-menu copy must not say nothing was."""
+    ps = _FakePs(folders={"Desktop": desktop, "Programs": programs}, refuse_with=refusal, refuse_only_in=programs)
+    warnings: list[str] = []
+
+    written = WindowsDesktopShortcut(load=lambda: _FakePwshpy(ps=ps), warn=warnings.append).create(
+        launch=_LAUNCH, icon=None
+    )
+
+    assert written == desktop / "lsdsk.lnk"
+    assert [entry["path"] for entry in ps.written] == [desktop / "lsdsk.lnk"]
+    assert len(warnings) == 1, warnings
+    assert "on the Desktop" in warnings[0]
+    assert str(programs / "lsdsk.lnk") in warnings[0]
+    assert str(refusal) in warnings[0]
+
+
+def test_install_shortcut_reports_the_desktop_lnk_when_only_the_start_menu_copy_failed(
+    desktop: Path, programs: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    refusal = _FakeError("IPersistFile::Save failed: 0x80004005")
+    ps = _FakePs(folders={"Desktop": desktop, "Programs": programs}, refuse_with=refusal, refuse_only_in=programs)
+    shortcuts = WindowsDesktopShortcut(load=lambda: _FakePwshpy(ps=ps))
+
+    install_shortcut(output_format=OutputFormat.JSON, seams=_seams(shortcuts, tmp_path / "lsdsk.ico"))
+
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["ok"] is True
+    assert envelope["data"]["shortcut"] == str(desktop / "lsdsk.lnk")
+
+
+def test_a_refused_write_carries_eio(desktop: Path) -> None:
+    """``EIO``, not ``EACCES``: only a refusal for rights is a permission error, and the errno says which it was."""
+    ps = _FakePs(folders={"Desktop": desktop}, refuse_with=_FakeError("IPersistFile::Save failed: 0x80004005"))
+
+    with pytest.raises(ShortcutWriteError) as refused:
+        _adapter(ps).create(launch=_LAUNCH, icon=None)
+
+    assert refused.value.errno == errno.EIO
+
+
+def test_an_empty_launch_carries_einval(desktop: Path) -> None:
+    """An empty argv is a bad argument to the adapter, not a failed write."""
+    with pytest.raises(ShortcutWriteError) as refused:
+        _adapter(_FakePs(folders={"Desktop": desktop})).create(launch=(), icon=None)
+
+    assert refused.value.errno == errno.EINVAL
+
+
+def test_create_on_a_named_desktop_folder_that_is_missing_writes_nothing_and_says_why(tmp_path: Path) -> None:
+    """Windows can name a Desktop that is not there (a redirect to a removed share); the folder is never created."""
+    missing = tmp_path / "Desktop"
+    ps = _FakePs(folders={"Desktop": missing})
+
+    with pytest.raises(FileNotFoundError, match="no desktop folder at") as refused:
+        _adapter(ps).create(launch=_LAUNCH, icon=None)
+
+    assert refused.value.filename == str(missing)
+    assert ps.written == []
+    assert not missing.exists()
+
+
+def test_a_start_menu_windows_names_but_that_is_missing_is_skipped_quietly(desktop: Path, tmp_path: Path) -> None:
+    """A Programs folder that is not there is no Start menu to add to: skipped, as one Windows names none of is."""
+    ps = _FakePs(folders={"Desktop": desktop, "Programs": tmp_path / "Start Menu" / "Programs"})
+    warnings: list[str] = []
+
+    WindowsDesktopShortcut(load=lambda: _FakePwshpy(ps=ps), warn=warnings.append).create(launch=_LAUNCH, icon=None)
+
+    assert [entry["path"] for entry in ps.written] == [desktop / "lsdsk.lnk"]
+    assert warnings == []
+
+
+def test_a_folder_named_like_the_shortcut_is_not_the_shortcut(desktop: Path) -> None:
+    """Only a FILE called lsdsk.lnk is the shortcut; a directory of that name must not stop the offer."""
+    (desktop / "lsdsk.lnk").mkdir()
+
+    assert _adapter(_FakePs(folders={"Desktop": desktop})).exists() is False

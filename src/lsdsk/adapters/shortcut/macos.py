@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 from lsdsk.adapters.atomicfile import replace_atomically
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 _FILENAME = "lsdsk.command"
 #: Executable for everyone, which a ``.command`` needs to run on double-click.
@@ -35,11 +35,11 @@ class MacosDesktopShortcut:
 
     def has_desktop(self) -> bool:
         """Whether the Desktop folder exists; it is never created here."""
-        return self.desktop_dir().is_dir()
+        return _probe(self.desktop_dir().is_dir)
 
     def exists(self) -> bool:
         """Whether the Desktop already carries the launcher."""
-        return (self.desktop_dir() / _FILENAME).is_file()
+        return _probe((self.desktop_dir() / _FILENAME).is_file)
 
     def no_desktop_reason(self) -> str:
         """Why there is no desktop: on macOS only a missing ``~/Desktop``."""
@@ -65,6 +65,19 @@ class MacosDesktopShortcut:
         # Atomic and never through a symlink at the destination: see linux._write_executable.
         replace_atomically(path, f"#!/bin/sh\nexec {shlex.join(launch)}\n", mode=_EXECUTABLE_MODE)
         return path
+
+
+def _probe(check: Callable[[], bool]) -> bool:
+    """``check()``, an ``OSError`` read as no: a folder this account cannot reach holds no shortcut.
+
+    ``Path.is_dir`` and ``Path.is_file`` re-raise the ``PermissionError`` met under
+    a parent with no search permission before Python 3.14, which answers
+    ``False``; this gives every supported interpreter the 3.14 answer.
+    """
+    try:
+        return check()
+    except OSError:
+        return False
 
 
 __all__ = ["MacosDesktopShortcut"]
