@@ -22,7 +22,7 @@ from lsdsk.adapters.config.tunables import DEFAULT_WWN_WIDTH
 from lsdsk.adapters.hw.snapshot import build_from
 from lsdsk.adapters.render import tables
 from lsdsk.adapters.tui import LsdskApp
-from lsdsk.adapters.tui.app import disk_page_layout
+from lsdsk.adapters.tui.app import disk_page_layout, disk_page_room
 from lsdsk.adapters.tui.typed_table import rows_of
 from lsdsk.domain.diagnostics import diagnose
 from lsdsk.domain.thresholds import DEFAULT_THRESHOLDS
@@ -291,3 +291,9 @@ def test_the_sweep_holds_both_kinds_of_page() -> None:
     }
     assert 0 in markers
     assert markers - {0}
+
+
+@pytest.mark.parametrize("width", [0, 1])
+def test_the_disk_page_room_is_never_negative(width: int) -> None:
+    """A table narrower than its own marker and padding has no room, not a negative amount of it."""
+    assert disk_page_room(width, cell_padding=PAGE_CELL_PADDING, marker=2) == 0
