@@ -42,6 +42,15 @@ class ShortcutWriteError(OSError):
     """pwshpy refused or failed to write the ``.lnk``; an ``OSError`` so a failed write is handled as one."""
 
 
+class ShortcutAccessDeniedError(ShortcutWriteError, PermissionError):
+    """Windows refused the ``.lnk`` for lack of rights; a ``PermissionError``, so the command exits 13 for it.
+
+    A subclass of ``OSError`` built with ``EACCES`` stays that subclass rather
+    than becoming a ``PermissionError`` (only a bare ``OSError`` maps its errno to
+    a subclass), so the class itself has to be one.
+    """
+
+
 class ShortcutFields(TypedDict):
     """Everything a ``.lnk`` carries besides its own path, named as pwshpy's ``new_shortcut`` takes it.
 
@@ -165,8 +174,10 @@ class WindowsDesktopShortcut:
         Raises:
             FileNotFoundError: When there is no Desktop folder; it is never
                 created here, so nothing is written at all.
+            ShortcutAccessDeniedError: Windows refused to write a shortcut for
+                lack of rights; a ``PermissionError``.
             ShortcutWriteError: The launch is empty, or pwshpy refused or failed
-                to write a shortcut.
+                to write a shortcut for any other reason.
         """
         if not launch:
             raise ShortcutWriteError(errno.EINVAL, "a shortcut needs a command to run, and the launch is empty")
@@ -194,8 +205,18 @@ class WindowsDesktopShortcut:
         pwshpy = self._pwshpy()
         try:
             pwshpy.ps.new_shortcut(str(path), **fields)
+        # pwshpy's NativeAccessDeniedError is a PwshPyError AND a PermissionError, so this arm must
+        # come first. It is caught by the stdlib type: the facade names only pwshpy's root error.
+        except PermissionError as exc:
+            raise ShortcutAccessDeniedError(errno.EACCES, f"not allowed to write {path}: {exc}") from exc
         except pwshpy.PwshPyError as exc:
             raise ShortcutWriteError(errno.EIO, f"could not write {path}: {exc}") from exc
 
 
-__all__ = ["PwshpyShortcutModule", "ShortcutFields", "ShortcutWriteError", "WindowsDesktopShortcut"]
+__all__ = [
+    "PwshpyShortcutModule",
+    "ShortcutAccessDeniedError",
+    "ShortcutFields",
+    "ShortcutWriteError",
+    "WindowsDesktopShortcut",
+]

@@ -16,7 +16,8 @@ dependencies = [
     # The interactive view relaunches itself elevated through ps.elevate - UAC on Windows,
     # sudo on Linux and macOS (adapters/hw/elevation.py, the one module that names it),
     # and adapters/shortcut/windows.py writes the Windows .lnk with ps.new_shortcut.
-    # 1.9.0 is the floor: before it new_shortcut could not mark a .lnk run-as-Administrator.
+    # 1.11.0 is the floor: from it a .lnk refused for lack of rights raises NativeAccessDeniedError,
+    # a PermissionError, so install-shortcut exits 13 for it (1.9.0 added run-as-Administrator).
     "pwshpy>=1.11.0",
     "click>=8.5.0", # Imported directly (adapters/cli/main.py, exit_codes.py), not only through rich-click.
     "pydantic-core>=2.50.1", # Imported directly (validation.py, cli/envelope.py, history/store.py); pydantic pins its version.

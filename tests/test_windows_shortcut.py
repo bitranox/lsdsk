@@ -11,6 +11,7 @@ Start-menu copy, the refusals - testable on every runner, while the shell's own
 
 from __future__ import annotations
 
+import errno
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +29,10 @@ _LAUNCH = ("C:/Users/me/.local/bin/uvx.exe", "--exclude-newer", "7 days", "lsdsk
 
 class _FakeError(Exception):
     """Stands in for pwshpy's ``PwshPyError``."""
+
+
+class _FakeAccessDeniedError(_FakeError, PermissionError):
+    """Stands in for pwshpy's ``NativeAccessDeniedError``: a ``PwshPyError`` AND a ``PermissionError``."""
 
 
 class _KnownFolder:
@@ -183,13 +188,28 @@ def test_create_on_an_account_with_no_desktop_writes_nothing() -> None:
 
 @pytest.mark.os_agnostic
 def test_a_refused_write_is_an_oserror_carrying_pwshpys_message(desktop: Path) -> None:
-    ps = _FakePs(folders={"Desktop": desktop}, refuse_with=_FakeError("IPersistFile::Save failed: 0x80070005"))
+    ps = _FakePs(folders={"Desktop": desktop}, refuse_with=_FakeError("IPersistFile::Save failed: 0x80004005"))
 
     with pytest.raises(ShortcutWriteError) as refused:
         _adapter(ps).create(launch=_LAUNCH, icon=None)
 
     assert isinstance(refused.value, OSError), "the command and the offer both catch OSError for a failed write"
+    assert not isinstance(refused.value, PermissionError), "only a refusal for lack of rights is a permission error"
+    assert "0x80004005" in str(refused.value)
+
+
+@pytest.mark.os_agnostic
+def test_an_access_denied_write_is_a_permission_error_carrying_pwshpys_message(desktop: Path) -> None:
+    denied = _FakeAccessDeniedError("IPersistFile::Save failed: 0x80070005")
+    ps = _FakePs(folders={"Desktop": desktop}, refuse_with=denied)
+
+    with pytest.raises(ShortcutWriteError) as refused:
+        _adapter(ps).create(launch=_LAUNCH, icon=None)
+
+    assert isinstance(refused.value, PermissionError), "the command exits 13 for a PermissionError"
+    assert refused.value.errno == errno.EACCES
     assert "0x80070005" in str(refused.value)
+    assert refused.value.__cause__ is denied
 
 
 @pytest.mark.os_agnostic
@@ -241,3 +261,21 @@ def test_install_shortcut_turns_a_refused_lnk_into_io_error(
     assert leaving.value.code == ExitCode.IO_ERROR
     envelope = json.loads(capsys.readouterr().out)
     assert "0x80004005" in envelope["error"]["message"]
+
+
+@pytest.mark.os_agnostic
+def test_install_shortcut_turns_an_access_denied_lnk_into_permission_denied(
+    desktop: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    denied = _FakeAccessDeniedError("IPersistFile::Save failed: 0x80070005")
+    ps = _FakePs(folders={"Desktop": desktop}, refuse_with=denied)
+
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(output_format=OutputFormat.JSON, seams=_seams(_adapter(ps), tmp_path / "lsdsk.ico"))
+
+    assert leaving.value.code == ExitCode.PERMISSION_DENIED, (
+        "an icon copy refused for rights exits 13; so does the .lnk"
+    )
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["error"]["type"] == "PERMISSION_DENIED"
+    assert "0x80070005" in envelope["error"]["message"]
