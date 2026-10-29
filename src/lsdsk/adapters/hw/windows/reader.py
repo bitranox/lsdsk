@@ -1660,9 +1660,12 @@ def _fold_hidden_twin(kept: dict[str, Any], twin: Mapping[str, Any]) -> None:
         twin: The hidden-class record of the same drive.
     """
     kept["hidden"] = True
-    relations: list[str] = list(kept.get("removal_relations", ()))
-    relations.extend(name for name in twin.get("removal_relations", ()) if name not in relations)
-    kept["removal_relations"] = relations
+    # The kept record's own relations are empty for the first twin and hold the
+    # earlier twin's for a second one, so both are merged. A dict is the ordered
+    # set: a `not in` scan of the growing list compared every relation with
+    # every earlier one.
+    merged = (*kept.get("removal_relations", ()), *twin.get("removal_relations", ()))
+    kept["removal_relations"] = list(dict.fromkeys(merged))
     if "instance" not in kept and "instance" in twin:
         kept["instance"] = twin["instance"]
 
