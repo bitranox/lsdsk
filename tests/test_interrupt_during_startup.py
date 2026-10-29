@@ -103,6 +103,7 @@ def _interrupted_while_importing(tmp_path: Path, module: str, argv: list[str]) -
 @pytest.mark.parametrize(
     "module",
     [
+        pytest.param("lsdsk.__init__conf__", id="while the package metadata imports"),
         pytest.param("lsdsk.composition", id="while the package imports"),
         pytest.param("lsdsk.adapters.cli.root", id="while the command tree imports"),
     ],
@@ -117,3 +118,44 @@ def test_ctrl_c_during_startup_leaves_130_and_no_traceback(tmp_path: Path, modul
     assert "Traceback" not in left.stderr, left.stderr
     assert "KeyboardInterrupt" not in left.stderr, left.stderr
     assert left.returncode == 130, (left.returncode, left.stderr)
+
+
+#: Prints the modules importing the entry point loads, the way each way in imports it.
+_LOADED_BY = """\
+import sys
+
+before = set(sys.modules)
+{statement}
+print(sorted(set(sys.modules) - before))
+"""
+
+
+@pytest.mark.parametrize(
+    ("statement", "loaded"),
+    [
+        pytest.param("from lsdsk.entry import main", ["lsdsk", "lsdsk.entry"], id="console script"),
+        pytest.param("import lsdsk.__main__", ["lsdsk", "lsdsk.__main__", "lsdsk.entry"], id="python -m"),
+    ],
+)
+def test_reaching_the_entry_point_imports_nothing_but_the_entry_point(statement: str, loaded: list[str]) -> None:
+    """Everything up to the entry point's own guard is outside every handler, so it imports nothing more.
+
+    A Ctrl+C in that stretch is answered by the interpreter with a traceback;
+    the stretch is kept to the import system finding and running these few
+    modules, which no handler of this project can cover (nor can the
+    interpreter's own start before them). Every other import happens inside
+    the guard, where the test above drives it.
+    """
+    # The program goes in on stdin, so the argv is fixed and nothing in it is built.
+    child = subprocess.run(
+        [sys.executable, "-"],
+        input=_LOADED_BY.format(statement=statement),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+    assert child.returncode == 0, child.stderr
+    assert child.stdout.strip() == repr(loaded), child.stdout

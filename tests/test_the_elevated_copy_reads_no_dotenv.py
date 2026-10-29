@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING
 import pytest
 
 from lsdsk.adapters.cli import cli
+from lsdsk.adapters.cli.main import main
+from lsdsk.composition import build_production
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -104,3 +106,53 @@ def test_the_elevated_copy_still_reads_a_dotenv_named_on_its_command_line(
 
     assert path == str(named / PLANTED)
     assert os.environ.get("LOG_CONSOLE_LEVEL") == "DEBUG"
+
+
+def _crash_report(options: list[str], capsys: pytest.CaptureFixture[str]) -> str:
+    """Run the command that raises on purpose and return what was printed about it."""
+    code = main([*options, "fail"], services_factory=build_production)
+    err = capsys.readouterr().err
+    assert code != 0, err
+    assert "I should fail" in err or "TRUNCATED" in err, err
+    return err
+
+
+@pytest.mark.usefixtures("clear_config_cache", "managed_traceback_state")
+@pytest.mark.parametrize(
+    ("options", "reads_the_planted_file"),
+    [
+        pytest.param([], True, id="a plain run's crash report reads it"),
+        pytest.param(["--elevated-relaunch"], False, id="the elevated copy's does not"),
+    ],
+)
+def test_the_elevated_copys_crash_report_takes_nothing_from_a_dotenv_in_its_working_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    options: list[str],
+    reads_the_planted_file: bool,
+) -> None:
+    """The report of a crash is laid out by the run's own configuration, not a second read of the files.
+
+    The second read searched the working directory for a ``.env`` the elevated
+    copy had refused, and as an uncached read it logged a stray
+    ``configuration_merged`` line under every crash of the copy.
+    """
+    (tmp_path / ".env").write_bytes(b"DISPLAY__TRACEBACK_SUMMARY_LIMIT=12\n")
+    monkeypatch.chdir(tmp_path)
+
+    err = _crash_report(options, capsys)
+
+    assert ("TRUNCATED at 12 characters" in err) is reads_the_planted_file, err
+    assert "configuration_merged" not in err, err
+
+
+@pytest.mark.usefixtures("clear_config_cache", "managed_traceback_state")
+def test_a_crash_report_is_laid_out_by_the_runs_own_overrides(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    err = _crash_report(["--set", "display.traceback_summary_limit=12"], capsys)
+
+    assert "TRUNCATED at 12 characters" in err, err

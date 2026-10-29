@@ -8,25 +8,28 @@ System Role:
     the adapters layer without violating clean architecture layer constraints.
 """
 
-from __future__ import annotations
-
-import functools
 import sys
-from typing import TYPE_CHECKING
+
+#: ``typing.TYPE_CHECKING`` without importing ``typing``. This module is imported
+#: before any handler of lsdsk exists, so it imports nothing it can do without:
+#: no ``typing``, no ``functools``, not even ``__future__`` - hence the quoted
+#: annotations. ``sys`` is always loaded already, so importing it finds nothing.
+TYPE_CHECKING = False
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from .application.ports import ShowsStartupProgress
+    from .composition import AppServices
 
 #: What a Ctrl+C leaves, the shell's 128 + SIGINT; the CLI answers a later one the same way.
 _INTERRUPTED = 130
 
 
 def main(
-    argv: Sequence[str] | None = None,
+    argv: "Sequence[str] | None" = None,
     *,
-    start_notice: Callable[[list[str]], ShowsStartupProgress] | None = None,
+    start_notice: "Callable[[list[str]], ShowsStartupProgress] | None" = None,
 ) -> int:
     """Console script entry point with production services wired.
 
@@ -64,7 +67,11 @@ def main(
             from .composition import build_production  # noqa: PLC0415 - deferred into the interrupt guard
         except KeyboardInterrupt:
             return _INTERRUPTED
-        return cli_main(args, services_factory=functools.partial(build_production, startup=notice))
+
+        def services() -> "AppServices":
+            return build_production(startup=notice)
+
+        return cli_main(args, services_factory=services)
     finally:
         notice.stop()
 

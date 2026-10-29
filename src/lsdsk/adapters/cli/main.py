@@ -9,6 +9,7 @@ Contents:
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import sys
 from typing import TYPE_CHECKING
@@ -19,8 +20,9 @@ import lib_log_rich.runtime
 
 from lsdsk import __init__conf__
 
-from ..config.loader import get_config
+from ..config.loader import NO_DOTENV, get_config
 from ..config.tunables import DisplaySettings, get_display_settings
+from ..hw.elevation import RELAUNCH_MARKER
 from . import safe_console
 from .context import (
     apply_traceback_preferences,
@@ -32,22 +34,71 @@ from .exit_codes import code_for_an_unhandled_exception
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from lib_layered_config import Config
+
     from lsdsk.composition import AppServices
 
     from .envelope import RefusedBeforeTheRun
 
 
-def _display_settings() -> DisplaySettings:
-    """Layout settings for the error path, falling back to the shipped ones.
+class _TheRunsConfiguration:
+    """The configuration this run resolved, kept for laying out the report of a crash.
 
-    This runs while handling an exception, possibly one raised by configuration
-    loading itself, so a failure here must not replace the error the user needs
-    to see with a second one.
+    The report used to read the configuration files a second time. That read
+    knew nothing of the run: not its ``--set`` overrides, and not that the
+    elevated copy reads no ``.env``, so it searched the working directory for
+    one the copy had refused, and as an uncached read it logged a stray
+    ``configuration_merged`` line under every crash of the copy.
+
+    The root group hands the configuration it settled on - every layer, the
+    overrides applied - to the logging port, so it is recorded there on the way
+    past. A crash before that has no configuration of the run to use, and then
+    the files are read once more, without a ``.env`` in the elevated copy.
     """
-    try:
-        return get_display_settings(get_config())
-    except Exception:
-        return DisplaySettings()
+
+    def __init__(self, services_factory: Callable[[], AppServices], args: Sequence[str]) -> None:
+        """Wrap the services factory the run is handed.
+
+        Args:
+            services_factory: The factory the run resolves its services through.
+            args: The command line, without the program name.
+        """
+        self._services_factory = services_factory
+        self._elevated_copy = RELAUNCH_MARKER in args
+        self._resolved: Config | None = None
+
+    def services(self) -> AppServices:
+        """The run's services, with a logging port that records the configuration it is handed.
+
+        Returns:
+            What the wrapped factory returns, its ``init_logging`` recording first.
+        """
+        services = self._services_factory()
+        start_logging = services.init_logging
+
+        def init_logging(config: Config, *, dotenv_path: str | None = None) -> None:
+            self._resolved = config
+            start_logging(config, dotenv_path=dotenv_path)
+
+        return dataclasses.replace(services, init_logging=init_logging)
+
+    def display_settings(self) -> DisplaySettings:
+        """Layout settings for the error path, falling back to the shipped ones.
+
+        This runs while handling an exception, possibly one raised by
+        configuration loading itself, so a failure here must not replace the
+        error the user needs to see with a second one.
+
+        Returns:
+            The ``[display]`` section of the run's configuration, of a fresh read
+            when the run had none yet, or the shipped values when that fails too.
+        """
+        try:
+            if self._resolved is not None:
+                return get_display_settings(self._resolved)
+            return get_display_settings(get_config(dotenv_path=NO_DOTENV if self._elevated_copy else None))
+        except Exception:
+            return DisplaySettings()
 
 
 def _answer_a_refused_command_line(exc: click.ClickException, args: Sequence[str]) -> None:
@@ -121,12 +172,13 @@ def _code_a_command_chose(exc: SystemExit) -> int:
     return code if isinstance(code, int) else 1
 
 
-def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppServices]) -> int:
+def _run_cli(args: Sequence[str], *, run: _TheRunsConfiguration) -> int:
     """Execute the CLI with exception handling.
 
     Args:
-        argv: Optional sequence of CLI arguments. None uses sys.argv.
-        services_factory: Factory function that returns AppServices. Passed via ctx.obj.
+        args: The CLI arguments, without the program name.
+        run: Hands click the services factory and keeps the configuration the
+            run resolves, for the report of a crash.
 
     Returns:
         Exit code produced by the command.
@@ -141,8 +193,6 @@ def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppSe
 
     # Use Click's native invocation with obj parameter since lib_cli_exit_tools.run_cli
     # doesn't support passing obj. We replicate its behavior while adding obj support.
-    args = list(argv) if argv is not None else sys.argv[1:]
-
     try:
         # Under standalone_mode=False click catches the Exit that ctx.exit() raises and
         # RETURNS its code, as it returns a callback's plain return value, so the code
@@ -151,7 +201,7 @@ def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppSe
         exit_code = cli.main(
             args=args,
             prog_name=__init__conf__.shell_command,
-            obj=services_factory,
+            obj=run.services,
             standalone_mode=False,
         )
         return exit_code if isinstance(exit_code, int) else 0
@@ -180,14 +230,15 @@ def _run_cli(argv: Sequence[str] | None, *, services_factory: Callable[[], AppSe
         # Catch BaseException (not just Exception) to handle SystemExit, KeyboardInterrupt,
         # and all errors at the CLI boundary. This ensures consistent error formatting via
         # lib_cli_exit_tools regardless of exception type. Intentional, not a bug.
-        return _answer_an_unhandled_exception(exc)
+        return _answer_an_unhandled_exception(exc, run)
 
 
-def _answer_an_unhandled_exception(exc: BaseException) -> int:
+def _answer_an_unhandled_exception(exc: BaseException, run: _TheRunsConfiguration) -> int:
     """Report an exception that escaped every command, and name the code to leave with.
 
     Args:
         exc: The exception that reached the last-resort handler.
+        run: Where the layout of the report is read from.
 
     Returns:
         The exit code the process should leave with.
@@ -219,7 +270,7 @@ def _answer_an_unhandled_exception(exc: BaseException) -> int:
     # Read from configuration rather than the module constants: the two keys
     # are documented in the shipped [display] section, and a documented key
     # nothing reads is a lie in the config file.
-    display = _display_settings()
+    display = run.display_settings()
     length_limit = display.traceback_verbose_limit if tracebacks_enabled else display.traceback_summary_limit
     # On the guarded writer, never the default: handed no stream the library
     # builds its rich console on the RAW stderr, and rich's on_broken_pipe answers
@@ -236,7 +287,7 @@ def _answer_an_unhandled_exception(exc: BaseException) -> int:
     return code
 
 
-def _shut_logging_down(shutdown: Callable[[], None] | None) -> int | None:
+def _shut_logging_down(shutdown: Callable[[], None] | None, run: _TheRunsConfiguration) -> int | None:
     """Drain and stop the logging runtime, answering a failure as a crash instead of letting it escape.
 
     The drain is where a queue setting finally fails (a wait the platform cannot
@@ -247,6 +298,7 @@ def _shut_logging_down(shutdown: Callable[[], None] | None) -> int | None:
 
     Args:
         shutdown: The shutdown to run, or ``None`` for the logging library's own.
+        run: Where the layout of a failure's report is read from.
 
     Returns:
         ``None`` once the runtime is down or was never up, otherwise the exit code
@@ -257,7 +309,7 @@ def _shut_logging_down(shutdown: Callable[[], None] | None) -> int | None:
     try:
         (shutdown or lib_log_rich.runtime.shutdown)()
     except Exception as exc:
-        return _answer_an_unhandled_exception(exc)
+        return _answer_an_unhandled_exception(exc, run)
     return None
 
 
@@ -309,6 +361,8 @@ def main(
     if services_factory is None:
         raise ValueError("services_factory is required. Pass build_production from composition layer.")
 
+    args = list(argv) if argv is not None else sys.argv[1:]
+    run = _TheRunsConfiguration(services_factory, args)
     previous_state = snapshot_traceback_state()
     # Before any command runs, so every printer - click's, rich's, this
     # project's own - meets the same refusal on a process with no stdout.
@@ -316,11 +370,11 @@ def main(
     # Before anything is written, so the buffer the re-encoding flushes is empty.
     safe_console.write_redirected_streams_in_utf8()
     try:
-        code = _run_cli(argv, services_factory=services_factory)
+        code = _run_cli(args, run=run)
     finally:
         if restore_traceback:
             restore_traceback_state(previous_state)
-        shutdown_failure = _shut_logging_down(shutdown_logging)
+        shutdown_failure = _shut_logging_down(shutdown_logging, run)
     if shutdown_failure is not None:
         code = shutdown_failure
 

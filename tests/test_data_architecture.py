@@ -21,6 +21,7 @@ from lsdsk.domain.errors import ConfigurationError
 from lsdsk.domain.models import Controller
 
 if TYPE_CHECKING:
+    import ast
     from collections.abc import Callable
     from typing import Any
 
@@ -403,8 +404,18 @@ def _exported_and_public(path: Path) -> tuple[set[str] | None, set[str]]:
     return exported, public
 
 
+def _imports_from_this_project(node: ast.ImportFrom) -> bool:
+    """Whether a ``from ... import`` names one of lsdsk's own modules.
+
+    ``from typing import TYPE_CHECKING`` reaches for typing's name, never for
+    the ``TYPE_CHECKING = False`` a module of lsdsk declares to avoid importing
+    typing; counting it made that module look as if it hid a consumed name.
+    """
+    return node.level > 0 or (node.module or "").split(".")[0] == "lsdsk"
+
+
 def _names_reached_from_elsewhere() -> dict[str, set[Path]]:
-    """Every name any file imports or reaches through a module, by the file that does."""
+    """Every name any file imports from lsdsk or reaches through a module, by the file that does."""
     import ast
     from collections import defaultdict
 
@@ -413,7 +424,7 @@ def _names_reached_from_elsewhere() -> dict[str, set[Path]]:
         for path in sorted(root.rglob("*.py")):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
-                if isinstance(node, ast.ImportFrom):
+                if isinstance(node, ast.ImportFrom) and _imports_from_this_project(node):
                     for alias in node.names:
                         reached[alias.name].add(path)
                 elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
