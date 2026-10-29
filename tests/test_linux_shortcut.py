@@ -185,6 +185,11 @@ def _exec_argv(value: str) -> list[str]:
     the writer is not mirrored by the same library reading it back: outside quotes
     a space separates arguments, inside double quotes a backslash escapes the next
     of the four characters that need it, and ``%%`` is a literal percent sign.
+
+    It is strict where the spec is: a backtick or dollar sign inside the quotes
+    with no backslash before it, and a ``%`` that is not half of ``%%``, are
+    refused rather than read leniently, since a launcher reads the first as
+    shell syntax and the second as a field code it substitutes.
     """
     argv: list[str] = []
     current: list[str] = []
@@ -198,6 +203,8 @@ def _exec_argv(value: str) -> list[str]:
                 f"a backslash may escape only one of the four reserved characters, not {follower!r}"
             )
             current.append(follower)
+        elif quoted and character in "`$":
+            raise AssertionError(f"a reserved {character!r} inside the quotes must be escaped with a backslash")
         elif character == '"':
             quoted = not quoted
             started = True
@@ -211,6 +218,8 @@ def _exec_argv(value: str) -> list[str]:
     assert not quoted, "an unterminated quote"
     if started:
         argv.append("".join(current))
+    for argument in argv:
+        assert "%" not in argument.replace("%%", ""), f"a lone % in {argument!r} is a field code, not a percent sign"
     return [argument.replace("%%", "%") for argument in argv]
 
 
@@ -242,6 +251,42 @@ def test_every_launch_argument_reads_back_exactly_under_the_spec_quoting(home: P
     keys = _keys(text)
     assert _exec_argv(_string_value(keys["Exec"])) == list(_AWKWARD_LAUNCH)
     assert _string_value(keys["Icon"]) == str(icon)
+
+
+@pytest.mark.os_linux
+@pytest.mark.parametrize(
+    ("argument", "written"),
+    [
+        pytest.param("a`b", 'Exec="a\\\\`b"', id="backtick"),
+        pytest.param("a$b", 'Exec="a\\\\$b"', id="dollar"),
+        pytest.param('a"b', 'Exec="a\\\\"b"', id="double-quote"),
+        pytest.param("a\\b", 'Exec="a\\\\\\\\b"', id="backslash"),
+        pytest.param("100%", 'Exec="100%%"', id="percent"),
+        pytest.param("%f", 'Exec="%%f"', id="field-code-lookalike"),
+    ],
+)
+def test_each_reserved_character_is_written_with_the_escape_the_spec_names(
+    home: Path, argument: str, written: str
+) -> None:
+    """The exact bytes, not a read-back: a lenient reader accepts what a launcher would not.
+
+    Inside the quotes a backtick, dollar sign, double quote and backslash each take
+    a backslash, a ``%`` is doubled, and the string rule then doubles every
+    backslash once more - so the file holds two backslashes before each of them.
+    """
+    text = LinuxDesktopShortcut().create(launch=(argument,), icon=None).read_text(encoding="utf-8")
+
+    assert _keys(text)["Exec"] == written.removeprefix("Exec=")
+
+
+@pytest.mark.os_linux
+@pytest.mark.parametrize("control", [chr(0x7F), chr(0x1F), chr(0x00)], ids=["DEL", "unit-separator", "NUL"])
+def test_every_control_character_including_del_is_refused(home: Path, control: str) -> None:
+    """DEL (0x7F) sits just past the C0 range, so a class that stops at 0x1F would let it into the file."""
+    with pytest.raises(UnwritableDesktopEntryError, match="holds a control character"):
+        LinuxDesktopShortcut().create(launch=(f"lsdsk{control}",), icon=None)
+
+    assert list((home / "Desktop").iterdir()) == []
 
 
 @pytest.mark.os_linux
