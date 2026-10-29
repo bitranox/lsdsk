@@ -186,10 +186,7 @@ def _stream_encoding(file: IO[Any] | None, *, err: bool = False) -> str | None:
     degrade output that may well have been fine.
 
     With no explicit `file` the answer comes from ``sys.stdout``/``sys.stderr``,
-    which is what :func:`click.echo` resolves its own default target from. click
-    exposes no supported way to ask for that stream: ``get_text_stream`` was
-    deprecated in click 8.5.0 and is removed in 9.0, its documented replacement
-    being to let ``echo`` resolve the stream itself.
+    which is the object :func:`echo` hands click to write to.
     """
     stream = file if file is not None else (sys.stderr if err else sys.stdout)
     encoding = getattr(stream, "encoding", None)
@@ -1023,7 +1020,11 @@ def echo(message: object = "", *, file: IO[Any] | None = None, err: bool = False
 
     Args:
         message: The text to write. Non-string values are stringified as click does.
-        file: Target stream. Defaults to click's stdout (or stderr when `err`).
+        file: Target stream. Defaults to ``sys.stdout`` (or ``sys.stderr`` when
+            `err`) as it is at the call, which is handed to click explicitly:
+            left to choose, click wraps the binary buffer BEHIND that object,
+            which went around the proxy rich's live display puts there, so a
+            warning printed under the startup line was glued onto the spinner.
         err: Write to stderr instead of stdout.
         nl: Append a newline.
 
@@ -1042,7 +1043,7 @@ def echo(message: object = "", *, file: IO[Any] | None = None, err: bool = False
         deliver_pending_log_lines()
     try:
         click.echo(
-            encode_safe(text, _stream_encoding(file, err=err), _stream_errors(target)), file=file, err=err, nl=nl
+            encode_safe(text, _stream_encoding(file, err=err), _stream_errors(target)), file=target, err=err, nl=nl
         )
     except OSError as exc:
         if target is sys.stderr:

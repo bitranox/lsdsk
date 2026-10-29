@@ -10,14 +10,23 @@ from __future__ import annotations
 
 import io
 import sys
+from typing import TYPE_CHECKING
 
 import pytest
 from rich.console import Console
 
 from lsdsk.adapters import startup_notice
+from lsdsk.adapters.cli import safe_console
 from lsdsk.adapters.startup_notice import NoStartupNotice, StartupNotice, notice_for_this_start, spinner_for
 
+if TYPE_CHECKING:
+    from pathlib import Path
+    from typing import TextIO
+
 LINE = "Scanning Drives ..."
+
+#: The control sequence that erases the line the cursor is on.
+ERASE_LINE = "\x1b[2K"
 
 
 def a_terminal() -> tuple[Console, io.StringIO]:
@@ -152,3 +161,36 @@ def test_the_command_names_the_start_rule_knows_are_the_commands_the_cli_has() -
 def test_only_tui_among_the_commands_opens_the_view() -> None:
     assert [name for name in sorted(startup_notice.COMMAND_NAMES) if startup_notice.opens_the_view(name)] == ["tui"]
     assert startup_notice.opens_the_view(None)
+
+
+def _a_terminal_file(path: Path) -> tuple[Console, TextIO]:
+    """A console drawing into a real buffered text file, which is what a terminal stream is.
+
+    A ``StringIO`` cannot stand in here: click resolves its default stream by
+    the object's ``buffer``, which a ``StringIO`` has none of, and that is the
+    path a warning took around rich's proxy.
+    """
+    stream = path.open("w", encoding="utf-8", newline="")
+    console = Console(file=stream, force_terminal=True, width=80, color_system="standard", legacy_windows=False)
+    return console, stream
+
+
+@pytest.mark.parametrize("err", [True, False], ids=["stderr", "stdout"])
+def test_a_line_printed_while_the_notice_runs_lands_above_it_rather_than_glued_to_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, err: bool
+) -> None:
+    console, stream = _a_terminal_file(tmp_path / "terminal")
+    # One terminal behind both streams, as at a shell prompt.
+    monkeypatch.setattr(sys, "stdout", stream)
+    monkeypatch.setattr(sys, "stderr", stream)
+    notice = StartupNotice(console)
+
+    notice.start()
+    safe_console.echo("Warning: a value fell back", err=err)
+    notice.stop()
+    stream.close()
+    drawn = (tmp_path / "terminal").read_text(encoding="utf-8")
+
+    # rich's proxy erases the line before it writes what was printed; a write
+    # that went around the proxy follows the spinner's text on the same line.
+    assert f"{ERASE_LINE}Warning: a value fell back\n" in drawn, repr(drawn)
