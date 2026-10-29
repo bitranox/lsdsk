@@ -10,9 +10,12 @@ these answers and act on them.
 
 from __future__ import annotations
 
+import re
+import shlex
 from typing import TYPE_CHECKING, Final, NamedTuple
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
 #: The cooldown the desktop launcher pins, the same figure as lsdsk's own
@@ -106,6 +109,50 @@ def manual_install_line(platform: str) -> str:
     if platform == "win32":
         return f'powershell -ExecutionPolicy ByPass -c "irm {UV_INSTALLER_URL_WINDOWS} | iex"'
     return f"curl -LsSf {UV_INSTALLER_URL_POSIX} | sh"
+
+
+#: A run of backslashes before a double quote: the C runtime halves such a run, so it is
+#: doubled and the quote escaped. Anywhere else a backslash is literal and passes unchanged.
+_BACKSLASHES_BEFORE_A_QUOTE: Final = re.compile(r'(\\*)"')
+
+#: Backslashes ending an argument that gets quoted: doubled, or they would escape the closing quote.
+_TRAILING_BACKSLASHES: Final = re.compile(r"(\\*)\Z")
+
+
+def _windows_argument(argument: str) -> str:
+    """One argument quoted as the MS C runtime and ``CommandLineToArgvW`` read it back."""
+    # Lambdas, not template strings: re would read the replacement's backslashes as escapes.
+    escaped = _BACKSLASHES_BEFORE_A_QUOTE.sub(lambda run: run.group(1) * 2 + '\\"', argument)
+    if argument and " " not in argument and "\t" not in argument:
+        return escaped
+    return '"' + _TRAILING_BACKSLASHES.sub(lambda run: run.group(1) * 2, escaped) + '"'
+
+
+def command_line(argv: Sequence[str], *, platform: str) -> str:
+    """The launch as one line a reader of ``platform`` can recognise or paste.
+
+    Windows reads a command line by the C runtime's rules (CreateProcess, cmd,
+    PowerShell's call operator), which know no single quotes, so the shell form
+    printed a line that does not run there. The rules are those of
+    ``subprocess.list2cmdline``, written out because this module starts nothing.
+    Every other platform gets the shell form.
+
+    Args:
+        argv: The command, executable first.
+        platform: ``sys.platform`` of the machine the line is for.
+
+    Returns:
+        The whole command as one line.
+
+    Example:
+        >>> command_line(("C:/Program Files/uv/uvx.exe", "7 days"), platform="win32")
+        '"C:/Program Files/uv/uvx.exe" "7 days"'
+        >>> command_line(("/opt/my apps/lsdsk",), platform="linux")
+        "'/opt/my apps/lsdsk'"
+    """
+    if platform == "win32":
+        return " ".join(_windows_argument(argument) for argument in argv)
+    return shlex.join(argv)
 
 
 def consent_text(platform: str) -> str:
@@ -204,6 +251,7 @@ __all__ = [
     "UV_INSTALLER_URL_WINDOWS",
     "UV_INSTALLER_VERSION",
     "LaunchPlan",
+    "command_line",
     "consent_text",
     "manual_install_line",
     "plan_launch",

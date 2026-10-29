@@ -19,7 +19,6 @@ System Role:
 
 from __future__ import annotations
 
-import shlex
 import shutil
 import sys
 import tomllib
@@ -40,7 +39,7 @@ from lsdsk.adapters.shortcut.windows import WindowsDesktopShortcut
 from lsdsk.adapters.uv_bootstrap import UvInstallResult, uvx_path
 from lsdsk.adapters.uv_bootstrap import install_uv as run_uv_installer
 from lsdsk.domain.enums import ActionCommand, OutputFormat, ShortcutChoice
-from lsdsk.domain.shortcut import consent_text, manual_install_line, plan_launch, should_offer
+from lsdsk.domain.shortcut import command_line, consent_text, manual_install_line, plan_launch, should_offer
 
 from .. import safe_console
 from ..constants import CLICK_CONTEXT_SETTINGS, FORMAT_OPTION
@@ -157,13 +156,13 @@ def _resolve_launch(seams: ShortcutSeams, *, install_uv: bool, output_format: Ou
     return replan.argv
 
 
-def _report(written: Path, launch: tuple[str, ...], output_format: OutputFormat) -> None:
-    """Say what was created, in the format the caller asked for."""
+def _report(written: Path, launch: tuple[str, ...], output_format: OutputFormat, *, platform: str) -> None:
+    """Say what was created, in the format the caller asked for; the launch line as ``platform`` reads it."""
     if output_format is OutputFormat.JSON:
         emit_action(ActionCommand.INSTALL_SHORTCUT, InstallShortcutResult(shortcut=str(written), launch=list(launch)))
         return
     safe_console.echo(f"\nShortcut created:\n  {written}")
-    safe_console.echo(f"It launches: {shlex.join(launch)}")
+    safe_console.echo(f"It launches: {command_line(launch, platform=platform)}")
 
 
 def install_shortcut(
@@ -207,7 +206,9 @@ def install_shortcut(
             output_format=output_format,
         )
     launch = _resolve_launch(seams, install_uv=install_uv, output_format=output_format)
-    _report(_write_shortcut(seams, launch=launch, output_format=output_format), launch, output_format)
+    _report(
+        _write_shortcut(seams, launch=launch, output_format=output_format), launch, output_format, platform=platform
+    )
 
 
 def _write_shortcut(seams: ShortcutSeams, *, launch: tuple[str, ...], output_format: OutputFormat) -> Path:

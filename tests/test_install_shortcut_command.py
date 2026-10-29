@@ -311,10 +311,21 @@ def test_a_launcher_path_with_a_newline_is_refused_with_io_error_and_writes_noth
 def test_the_human_report_names_the_launch_as_a_shell_would_quote_it(capsys: pytest.CaptureFixture[str]) -> None:
     """The line is for a reader to recognise or paste, so it is the shell form, not the .desktop form."""
     lsdsk = Path("/opt/my apps/lsdsk")
-    install_shortcut(seams=_seams(_RecordingShortcuts(), uvx=None, lsdsk=lsdsk))
+    install_shortcut(seams=_seams(_RecordingShortcuts(), uvx=None, lsdsk=lsdsk), platform="linux")
 
     out = capsys.readouterr().out
     assert f"It launches: {shlex.join((str(lsdsk),))}\n" in out
+
+
+@pytest.mark.os_agnostic
+def test_the_human_report_on_windows_names_the_launch_as_cmd_reads_it(capsys: pytest.CaptureFixture[str]) -> None:
+    """Cmd and PowerShell know no single quotes, so the Windows line is the CreateProcess form."""
+    uvx = Path("C:/Users/Jane Doe/.local/bin/uvx.exe")
+    install_shortcut(seams=_seams(_RecordingShortcuts(), uvx=uvx), platform="win32")
+
+    out = capsys.readouterr().out
+    assert f'It launches: "{uvx}" --exclude-newer "7 days" ' in out
+    assert "'" not in out.split("It launches: ", 1)[1]
 
 
 def test_a_platform_with_no_shortcut_adapter_is_refused_with_config_error(capsys: pytest.CaptureFixture[str]) -> None:
