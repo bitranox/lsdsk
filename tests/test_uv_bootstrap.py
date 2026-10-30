@@ -4,13 +4,12 @@ lsdsk otherwise shells out to nothing and opens no socket. When a reader accepts
 the desktop shortcut and ``uvx`` is not installed, lsdsk offers to install uv for
 them from the official installer; that is the single exception, confined to this
 module and guarded by ``test_no_subprocess_or_network``. These drive it with a
-fake runner and a fake ``which``, so the real installer never runs here.
+fake runner and a ``PATH`` of their own, so the real installer never runs here.
 """
 
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -19,12 +18,17 @@ from lsdsk.adapters.uv_bootstrap import UvInstallResult, install_uv, run_install
 from lsdsk.domain.shortcut import UV_INSTALLER_VERSION
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
+    from pathlib import Path
 
 
-def _which_finds_uvx_at(found: str | None) -> Callable[[str], str | None]:
-    """A lookup that answers ``found`` for ``uvx`` and nothing for any other name, so a look for ``uv`` fails."""
-    return lambda name: found if name == "uvx" else None
+def _uvx_in(directory: Path) -> Path:
+    """A real executable ``uvx`` in ``directory``, created along with it."""
+    directory.mkdir(parents=True, exist_ok=True)
+    uvx = directory / ("uvx.exe" if sys.platform == "win32" else "uvx")
+    uvx.write_bytes(b"#!/bin/sh\nexit 0\n")
+    uvx.chmod(0o755)
+    return uvx
 
 
 class _Recorder:
@@ -39,28 +43,28 @@ class _Recorder:
         return self.code
 
 
+def test_uvx_path_answers_the_uvx_in_the_searched_directory(tmp_path: Path) -> None:
+    """The answer is the file in the ``PATH`` handed in, or ``None`` where that holds none."""
+    uvx = _uvx_in(tmp_path / "bin")
+
+    assert uvx_path(search=str(tmp_path / "empty")) is None
+    found = uvx_path(search=str(tmp_path / "bin"))
+    assert found is not None
+    assert found.samefile(uvx)
+
+
 @pytest.mark.os_agnostic
-def test_uvx_path_follows_what_which_finds() -> None:
-    """Resolution is injected, so the answer is what the lookup returned, anchored as an absolute path.
-
-    The expected value is anchored too: on Windows ``/opt/bin/uvx`` has no drive,
-    so it is not absolute there until it is.
-    """
-    assert uvx_path(which=_which_finds_uvx_at(None)) is None
-    assert uvx_path(which=_which_finds_uvx_at("/opt/bin/uvx")) == Path("/opt/bin/uvx").absolute()
-
-
-@pytest.mark.os_agnostic
-def test_the_posix_installer_runs_the_pinned_astral_shell_script() -> None:
+def test_the_posix_installer_runs_the_pinned_astral_shell_script(tmp_path: Path) -> None:
     """On POSIX the command fetches the pinned install.sh with curl and runs it in a shell.
 
     The URL is the script's ``$0``, an argument of its own, so it is never part
     of the text the shell parses.
     """
     runner = _Recorder()
-    result = install_uv(run=runner, platform="linux", which=_which_finds_uvx_at("/opt/bin/uvx"))
+    uvx = _uvx_in(tmp_path / "bin")
+    result = install_uv(run=runner, platform="linux", search=str(tmp_path / "bin"))
 
-    assert result == UvInstallResult(exit_code=0, uvx=Path("/opt/bin/uvx").absolute())
+    assert result == UvInstallResult(exit_code=0, uvx=uvx)
     assert len(runner.commands) == 1
     command = runner.commands[0]
     assert command[:2] == ["sh", "-c"]
@@ -70,29 +74,40 @@ def test_the_posix_installer_runs_the_pinned_astral_shell_script() -> None:
 
 
 @pytest.mark.os_agnostic
-def test_the_windows_installer_runs_the_pinned_astral_powershell_script() -> None:
+def test_the_windows_installer_runs_the_pinned_astral_powershell_script(tmp_path: Path) -> None:
     """On Windows the command fetches the pinned install.ps1 through PowerShell."""
     runner = _Recorder()
-    result = install_uv(run=runner, platform="win32", which=_which_finds_uvx_at(None))
+    result = install_uv(run=runner, platform="win32", search=str(tmp_path))
 
-    assert result.uvx is None  # the fake which still finds no uvx after the fake install
+    assert result.uvx is None  # the fake install left no uvx in the searched directory
     command = runner.commands[0]
     assert command[0] == "powershell"
     assert f"https://astral.sh/uv/{UV_INSTALLER_VERSION}/install.ps1" in command[-1]
 
 
 @pytest.mark.os_agnostic
-def test_the_uvx_path_is_re_resolved_after_the_installer_runs() -> None:
-    """A successful install makes uvx resolvable, which is the signal the caller needs."""
-    runner = _Recorder()
-    result = install_uv(run=runner, platform="linux", which=_which_finds_uvx_at("/home/me/.local/bin/uvx"))
+def test_the_uvx_path_is_re_resolved_after_the_installer_runs(tmp_path: Path) -> None:
+    """A successful install makes uvx resolvable, which is the signal the caller needs.
 
-    assert result.uvx == Path("/home/me/.local/bin/uvx").absolute()
+    The ``uvx`` appears only while the installer runs, so a lookup made before it
+    would have answered ``None``.
+    """
+    bin_dir = tmp_path / "bin"
+
+    def installs(command: Sequence[str]) -> int:
+        del command
+        _uvx_in(bin_dir)
+        return 0
+
+    result = install_uv(run=installs, platform="linux", search=str(bin_dir))
+
+    assert result.uvx is not None
+    assert result.uvx.samefile(bin_dir / result.uvx.name)
 
 
-def test_the_installers_exit_code_comes_back_with_the_result() -> None:
+def test_the_installers_exit_code_comes_back_with_the_result(tmp_path: Path) -> None:
     """A failed installer is not reported as a success that merely left uvx off PATH."""
-    result = install_uv(run=_Recorder(code=7), platform="linux", which=_which_finds_uvx_at(None))
+    result = install_uv(run=_Recorder(code=7), platform="linux", search=str(tmp_path))
 
     assert result.exit_code == 7
     assert result.uvx is None
@@ -112,26 +127,3 @@ def test_the_real_runner_returns_the_exit_code_and_keeps_the_childs_output_off_s
     captured = capfd.readouterr()
     assert "installer chatter" not in captured.out
     assert "installer chatter" in captured.err
-
-
-def test_a_uvx_found_through_a_relative_path_entry_comes_back_absolute(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A relative ``PATH`` entry makes the lookup answer a relative path; the shortcut needs an absolute one.
-
-    A shortcut is started from the Desktop, not from the directory lsdsk ran in,
-    so a launcher written as ``bin/uvx`` runs nothing there.
-    """
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    uvx = bin_dir / ("uvx.exe" if sys.platform == "win32" else "uvx")
-    uvx.write_bytes(b"#!/bin/sh\nexit 0\n")
-    uvx.chmod(0o755)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("PATH", "bin")
-
-    found = uvx_path()
-
-    assert found is not None
-    assert found.is_absolute()
-    assert found.samefile(uvx)

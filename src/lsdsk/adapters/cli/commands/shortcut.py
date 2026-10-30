@@ -19,11 +19,9 @@ System Role:
 
 from __future__ import annotations
 
-import shutil
 import sys
 import tomllib
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import rich_click as click
@@ -36,7 +34,7 @@ from lsdsk.adapters.shortcut.icon import copy_shipped_icon
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
 from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
 from lsdsk.adapters.shortcut.windows import WindowsDesktopShortcut
-from lsdsk.adapters.uv_bootstrap import UvInstallResult, uvx_path
+from lsdsk.adapters.uv_bootstrap import UvInstallResult, executable_on_path, uvx_path
 from lsdsk.adapters.uv_bootstrap import install_uv as run_uv_installer
 from lsdsk.domain.enums import ActionCommand, OutputFormat, ShortcutChoice
 from lsdsk.domain.shortcut import (
@@ -56,6 +54,7 @@ from ..typed_click import option
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
     from lsdsk.adapters.config.tunables import DisplaySettings
     from lsdsk.application.ports import DesktopShortcuts
@@ -111,13 +110,12 @@ class ShortcutSeams:
 
 
 def _installed_lsdsk() -> Path | None:
-    """A plain ``lsdsk`` launcher already on PATH, as an absolute path, or ``None``.
+    """A plain ``lsdsk`` launcher in an absolute ``PATH`` directory, or ``None``.
 
-    Absolute because a relative ``PATH`` entry resolves relative to the directory
-    lsdsk ran in, and the shortcut runs from the Desktop.
+    Looked up the way ``uvx`` is (:func:`executable_on_path`), so a copy in the
+    directory lsdsk ran in can never become the shortcut's target.
     """
-    found = shutil.which("lsdsk")
-    return Path(found).absolute() if found else None
+    return executable_on_path("lsdsk")
 
 
 def shortcuts_for(platform: str) -> DesktopShortcuts | None:

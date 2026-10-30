@@ -5,6 +5,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Security
+
+- The desktop shortcut could launch a `uvx` or `lsdsk` planted in the folder lsdsk was started
+  from. On Windows, where the shortcut runs as administrator, Python's executable lookup searches
+  the current folder before `PATH`, and since 1.16.3 lsdsk turned what it found into the
+  shortcut's absolute target, so a `uvx.exe` left in a download folder or a cloned repository ran
+  elevated on every double-click. A relative `PATH` entry (`.`, an empty entry, `bin`) had the same
+  effect on every platform. lsdsk now looks for the launcher only in the absolute directories on
+  `PATH`. A `uvx` or `lsdsk` reachable only through the current folder or a relative entry counts
+  as not installed, so `install-shortcut` refuses with `78` and offers `--install-uv`.
+
 ## [1.16.4] - 2026-10-30
 
 ### Fixed

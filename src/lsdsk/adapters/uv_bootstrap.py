@@ -15,6 +15,7 @@ System Role:
     Adapter-layer process/network boundary, allow-listed and consent-gated.
 
 Contents:
+    * :func:`executable_on_path` - an executable in an absolute ``PATH`` directory, or ``None``.
     * :func:`uvx_path` - where ``uvx`` resolves, or ``None``.
     * :func:`install_uv` - run the pinned official installer, then re-resolve ``uvx``.
     * :class:`UvInstallResult` - the installer's exit code and where ``uvx`` resolves after it.
@@ -22,6 +23,7 @@ Contents:
 
 from __future__ import annotations
 
+import os
 import shutil
 
 # subprocess is the one allow-listed shell-out here; see the module docstring and the guard test.
@@ -49,20 +51,52 @@ class UvInstallResult(NamedTuple):
     uvx: Path | None
 
 
-def uvx_path(*, which: Callable[[str], str | None] = shutil.which) -> Path | None:
+def executable_on_path(name: str, *, search: str | None = None) -> Path | None:
+    """The executable ``name`` in the first ABSOLUTE ``PATH`` directory holding it, or ``None``.
+
+    What this answers becomes the target of a shortcut that, on Windows, runs as
+    administrator on every double-click. ``shutil.which(name)`` searches the
+    current directory first on Windows, and resolves a relative ``PATH`` entry
+    (``.``, an empty entry, ``bin``) against the current directory everywhere, so
+    an executable planted in the folder lsdsk was started from would become that
+    target. Only an absolute directory names the same file wherever lsdsk runs,
+    so each one is asked about directly: a name that carries a directory makes
+    ``which`` check that one place, with no current-directory insert, while
+    Windows' ``PATHEXT`` still applies.
+
+    Args:
+        name: The executable's bare name, such as ``uvx``.
+        search: The ``PATH`` value to search; the process's own when ``None``.
+
+    Returns:
+        The absolute path of the first match, or ``None``.
+
+    Examples:
+        >>> executable_on_path("uvx", search="") is None
+        True
+    """
+    entries = os.environ.get("PATH", "") if search is None else search
+    for entry in entries.split(os.pathsep):
+        directory = Path(entry)
+        if not entry or not directory.is_absolute():
+            continue
+        found = shutil.which(str(directory / name))
+        if found:
+            return Path(found)
+    return None
+
+
+def uvx_path(*, search: str | None = None) -> Path | None:
     """Where ``uvx`` resolves on this machine, or ``None`` when it is not installed.
 
     Args:
-        which: The lookup, injectable so a test need not alter the real ``PATH``.
+        search: The ``PATH`` value to search; the process's own when ``None``.
 
     Returns:
-        The absolute path of ``uvx``, or ``None``. A lookup answers a relative
-        path for a relative ``PATH`` entry (and, on Windows, for the current
-        directory it searches first); the shortcut runs from the Desktop, where
-        that path names nothing, so it is anchored here.
+        The absolute path of ``uvx`` in an absolute ``PATH`` directory (see
+        :func:`executable_on_path`), or ``None``.
     """
-    found = which("uvx")
-    return Path(found).absolute() if found else None
+    return executable_on_path("uvx", search=search)
 
 
 #: Fetch the installer named by ``$0`` and run it only when the fetch succeeded,
@@ -120,7 +154,7 @@ def install_uv(
     *,
     run: Callable[[Sequence[str]], int] = run_installer,
     platform: str = sys.platform,
-    which: Callable[[str], str | None] = shutil.which,
+    search: str | None = None,
 ) -> UvInstallResult:
     """Run the pinned official uv installer, then report its exit code and whether ``uvx`` resolves.
 
@@ -133,13 +167,14 @@ def install_uv(
     Args:
         run: Executes a command and returns its exit code; injectable for tests.
         platform: The platform whose installer is chosen; defaults to this one.
-        which: The ``uvx`` lookup, injectable for tests.
+        search: The ``PATH`` value ``uvx`` is looked up in afterwards; the
+            process's own when ``None``.
 
     Returns:
         The installer's exit code and the path ``uvx`` resolves to after it.
     """
     exit_code = run(_installer_command(platform))
-    return UvInstallResult(exit_code=exit_code, uvx=uvx_path(which=which))
+    return UvInstallResult(exit_code=exit_code, uvx=uvx_path(search=search))
 
 
-__all__ = ["UvInstallResult", "install_uv", "run_installer", "uvx_path"]
+__all__ = ["UvInstallResult", "executable_on_path", "install_uv", "run_installer", "uvx_path"]
