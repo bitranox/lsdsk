@@ -14,6 +14,11 @@ The Desktop is the folder the desktop environment itself names in
 desktop, and this adapter never creates one: a folder conjured on a machine
 nobody looks at graphically holds a shortcut nobody can double-click.
 
+A relative ``XDG_DESKTOP_DIR``, ``XDG_DATA_HOME`` or ``XDG_CONFIG_HOME`` is
+refused rather than resolved: it names a different folder wherever lsdsk is
+started, so following it writes the shortcut into the current directory, or
+reads a ``user-dirs.dirs`` planted there.
+
 System Role:
     Adapter-layer file-writing boundary; satisfies
     :class:`~lsdsk.application.ports.DesktopShortcuts` on Linux.
@@ -60,6 +65,28 @@ class UnwritableDesktopEntryError(OSError):
     """A launch argument or icon path holds a control character no desktop entry value can carry."""
 
 
+class RelativeXdgDirectoryError(OSError):
+    """An XDG directory variable the shortcut depends on is set to a relative path."""
+
+
+def _xdg_directory(variable: str) -> Path | None:
+    """The absolute directory ``variable`` names, or ``None`` when it is unset or empty.
+
+    Raises:
+        RelativeXdgDirectoryError: ``variable`` is set to a relative path, which
+            would be resolved against whatever folder lsdsk was started in.
+    """
+    value = os.environ.get(variable)
+    if not value:
+        return None
+    if not Path(value).is_absolute():
+        # The message alone, as NoUserConfigPathError carries it: an errno would put "[Errno 22]" in front of it.
+        raise RelativeXdgDirectoryError(
+            f"{variable}={value} is not an absolute path; set {variable} to an absolute path or unset it"
+        )
+    return Path(value)
+
+
 class LinuxDesktopShortcut:
     """Create and find the ``lsdsk.desktop`` launcher under the reader's home."""
 
@@ -73,19 +100,36 @@ class LinuxDesktopShortcut:
         self._config_home = config_home
 
     def desktop_dir(self) -> Path:
-        """The Desktop directory: ``$XDG_DESKTOP_DIR``, then ``user-dirs.dirs``, then ``~/Desktop``."""
-        override = os.environ.get("XDG_DESKTOP_DIR")
-        if override:
-            return Path(override)
+        """The Desktop directory: ``$XDG_DESKTOP_DIR``, then ``user-dirs.dirs``, then ``~/Desktop``.
+
+        Raises:
+            RelativeXdgDirectoryError: ``XDG_DESKTOP_DIR``, or the
+                ``XDG_CONFIG_HOME`` holding ``user-dirs.dirs``, is relative.
+        """
+        override = _xdg_directory("XDG_DESKTOP_DIR")
+        if override is not None:
+            return override
         return self._named_in_user_dirs() or Path.home() / "Desktop"
 
     def has_desktop(self) -> bool:
-        """Whether the Desktop folder exists; ``"$HOME/"`` in ``user-dirs.dirs`` turns it off."""
+        """Whether the Desktop folder exists; ``"$HOME/"`` in ``user-dirs.dirs`` turns it off.
+
+        The menu directory is checked here too, so a relative ``XDG_DATA_HOME``
+        is refused before a caller installs anything for a shortcut it cannot write.
+
+        Raises:
+            RelativeXdgDirectoryError: An XDG directory the shortcut depends on is relative.
+        """
+        self._applications_dir()
         desktop = self.desktop_dir()
         return probe(desktop.is_dir) and desktop != Path.home()
 
     def exists(self) -> bool:
-        """Whether the Desktop already carries the shortcut."""
+        """Whether the Desktop already carries the shortcut.
+
+        Raises:
+            RelativeXdgDirectoryError: The Desktop is named by a relative XDG directory.
+        """
         return probe((self.desktop_dir() / _FILENAME).is_file)
 
     def no_desktop_reason(self) -> str:
@@ -98,13 +142,13 @@ class LinuxDesktopShortcut:
         desktop = self.desktop_dir()
         if desktop != Path.home():
             return f"no desktop folder at {desktop}"
-        if os.environ.get("XDG_DESKTOP_DIR"):
+        if _xdg_directory("XDG_DESKTOP_DIR") is not None:
             return "XDG_DESKTOP_DIR names the home folder itself, which turns the desktop off"
         return f"{self._user_dirs_file()} turns the desktop off: its XDG_DESKTOP_DIR is the home folder itself"
 
     def _user_dirs_file(self) -> Path:
         """The ``user-dirs.dirs`` this account's desktop environment writes."""
-        config_home = self._config_home or Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+        config_home = self._config_home or _xdg_directory("XDG_CONFIG_HOME") or Path.home() / ".config"
         return config_home / "user-dirs.dirs"
 
     def _named_in_user_dirs(self) -> Path | None:
@@ -136,17 +180,22 @@ class LinuxDesktopShortcut:
         Raises:
             FileNotFoundError: When the Desktop folder does not exist; it is
                 never created here, so nothing is written at all.
+            RelativeXdgDirectoryError: When the Desktop or the menu is named by
+                a relative XDG directory; nothing is written at all.
             OSError: When the Desktop entry itself could not be written.
         """
         body = self._entry(launch, icon)
+        # Both destinations are named before either is written, so a relative
+        # XDG_DATA_HOME refuses the whole shortcut rather than only its menu copy.
+        menu = self._applications_dir() / _FILENAME
         desktop = self.desktop_dir() / _FILENAME
         _write_executable(desktop, body)
-        missed = self._add_to_the_menu(body)
+        missed = self._add_to_the_menu(menu, body)
         return ShortcutWritten(path=desktop, skipped=() if missed is None else (missed,))
 
-    def _add_to_the_menu(self, body: str) -> str | None:
-        """Write ``body`` into the application menu too; the sentence saying why it would not go, or None."""
-        menu = self._applications_dir() / _FILENAME
+    @staticmethod
+    def _add_to_the_menu(menu: Path, body: str) -> str | None:
+        """Write ``body`` to ``menu`` too; the sentence saying why it would not go, or None."""
         try:
             menu.parent.mkdir(parents=True, exist_ok=True)
             _write_executable(menu, body)
@@ -156,10 +205,12 @@ class LinuxDesktopShortcut:
 
     @staticmethod
     def _applications_dir() -> Path:
-        """The per-user application-menu directory, honouring ``XDG_DATA_HOME``."""
-        data_home = os.environ.get("XDG_DATA_HOME")
-        base = Path(data_home) if data_home else Path.home() / ".local" / "share"
-        return base / "applications"
+        """The per-user application-menu directory, honouring ``XDG_DATA_HOME``.
+
+        Raises:
+            RelativeXdgDirectoryError: ``XDG_DATA_HOME`` is relative.
+        """
+        return (_xdg_directory("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "applications"
 
     @staticmethod
     def _entry(launch: Sequence[str], icon: Path | None) -> str:
@@ -236,4 +287,4 @@ def _write_executable(path: Path, body: str) -> None:
     replace_atomically(path, body, mode=_EXECUTABLE_MODE)
 
 
-__all__ = ["LinuxDesktopShortcut", "UnwritableDesktopEntryError"]
+__all__ = ["LinuxDesktopShortcut", "RelativeXdgDirectoryError", "UnwritableDesktopEntryError"]

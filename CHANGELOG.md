@@ -16,6 +16,16 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   `PATH`. A `uvx` or `lsdsk` reachable only through the current folder or a relative entry counts
   as not installed, so `install-shortcut` refuses with `78` and offers `--install-uv`.
 
+### Fixed
+
+- On Linux, a relative `XDG_DESKTOP_DIR` or `XDG_DATA_HOME` made `install-shortcut` write the
+  shortcut or its menu copy into the folder lsdsk was started from and report success, and a
+  relative `XDG_CONFIG_HOME` made it read the `user-dirs.dirs` in that folder to find the Desktop.
+  All three are now refused the way a relative `XDG_CONFIG_HOME` already was for the icon:
+  `install-shortcut` exits `78` with a message naming the variable and writes nothing, before it
+  would install uv, and the offer at the interactive view says it could not create the shortcut
+  and opens the view.
+
 ## [1.16.4] - 2026-10-30
 
 ### Fixed

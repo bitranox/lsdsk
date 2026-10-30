@@ -161,11 +161,22 @@ class DesktopShortcuts(Protocol):
     """
 
     def exists(self) -> bool:
-        """Whether the shortcut this platform would create is already there."""
+        """Whether the shortcut this platform would create is already there.
+
+        Raises:
+            OSError: The environment names the shortcut's folder in a way that
+                cannot be followed (a relative XDG directory on Linux).
+        """
         ...
 
     def has_desktop(self) -> bool:
-        """Whether this account has a desktop folder to put a shortcut on; a headless server has none."""
+        """Whether this account has a desktop folder to put a shortcut on; a headless server has none.
+
+        Raises:
+            OSError: The environment names a folder the shortcut needs in a way
+                that cannot be followed (a relative XDG directory on Linux), so
+                no shortcut can be written whatever the answer would be.
+        """
         ...
 
     def create(self, *, launch: Sequence[str], icon: Path | None) -> ShortcutWritten:

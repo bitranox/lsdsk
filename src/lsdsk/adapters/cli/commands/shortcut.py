@@ -31,7 +31,7 @@ from rich.prompt import Confirm, Prompt
 
 from lsdsk.adapters.config.offer import DisplayNotATableError, NoUserConfigPathError, disable_offer
 from lsdsk.adapters.shortcut.icon import copy_shipped_icon
-from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
+from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut, RelativeXdgDirectoryError
 from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
 from lsdsk.adapters.shortcut.windows import WindowsDesktopShortcut
 from lsdsk.adapters.uv_bootstrap import UvInstallResult, executable_on_path, uvx_path
@@ -213,8 +213,9 @@ def install_shortcut(
 
     Raises:
         SystemExit: On any refusal (unsupported platform, an account with no
-            desktop folder, no launcher without ``--install-uv``, a failed
-            install) and on a failed write, carrying the matching exit code.
+            desktop folder, a shortcut folder named by a relative XDG
+            directory, no launcher without ``--install-uv``, a failed install)
+            and on a failed write, carrying the matching exit code.
     """
     if seams is None:
         shortcuts = shortcuts_for(platform)
@@ -227,8 +228,13 @@ def install_shortcut(
         seams = ShortcutSeams(
             shortcuts=shortcuts, uvx=uvx_path, installed_lsdsk=_installed_lsdsk, install_uv=run_uv_installer
         )
-    # Refused before uv could be installed for it: a headless server gains nothing from either.
-    if not seams.shortcuts.has_desktop():
+    # Refused before uv could be installed for it: a headless server gains nothing from either,
+    # and neither does an environment naming the shortcut's folders by a relative path.
+    try:
+        desktop_present = seams.shortcuts.has_desktop()
+    except RelativeXdgDirectoryError as error:
+        fail(f"the shortcut was not written: {error}", ExitCode.CONFIG_ERROR, output_format=output_format)
+    if not desktop_present:
         fail(
             f"{seams.shortcuts.no_desktop_reason()}, so there is nowhere to put a shortcut",
             ExitCode.CONFIG_ERROR,
@@ -255,12 +261,13 @@ def _write_shortcut(seams: ShortcutSeams, *, launch: tuple[str, ...], output_for
 
     Raises:
         SystemExit: ``CONFIG_ERROR`` when no user configuration directory can be
-            named for the icon, ``PERMISSION_DENIED`` when the write was refused
+            named for the icon or the shortcut's own folder is named by a
+            relative XDG directory, ``PERMISSION_DENIED`` when the write was refused
             for permission, ``IO_ERROR`` for any other failed write.
     """
     try:
         return seams.shortcuts.create(launch=launch, icon=seams.copy_icon())
-    except NoUserConfigPathError as error:
+    except (NoUserConfigPathError, RelativeXdgDirectoryError) as error:
         fail(f"the shortcut was not written: {error}", ExitCode.CONFIG_ERROR, output_format=output_format)
     except PermissionError as error:
         fail(f"not allowed to write the shortcut: {error}", ExitCode.PERMISSION_DENIED, output_format=output_format)
@@ -342,12 +349,21 @@ def offer_shortcut(
         seams = ShortcutSeams(
             shortcuts=shortcuts, uvx=uvx_path, installed_lsdsk=_installed_lsdsk, install_uv=run_uv_installer
         )
+    try:
+        desktop_present = seams.shortcuts.has_desktop()
+        shortcut_present = seams.shortcuts.exists()
+    except RelativeXdgDirectoryError as exc:
+        # Asking would be a question whose yes cannot work, so the reason is said instead -
+        # only to a reader who has not turned the offer off.
+        if display.offer_desktop_shortcut:
+            safe_console.echo(f"\nCould not create the desktop shortcut: {exc}", err=True)
+        return
     # at_terminal is True here: this is reached only on the interactive path.
     if not should_offer(
         at_terminal=True,
         offer_enabled=display.offer_desktop_shortcut,
-        desktop_present=seams.shortcuts.has_desktop(),
-        shortcut_present=seams.shortcuts.exists(),
+        desktop_present=desktop_present,
+        shortcut_present=shortcut_present,
     ):
         return
     choice = (ask_choice or _ask_choice_prompt)()

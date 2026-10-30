@@ -378,18 +378,20 @@ def user_config_dir_under(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ca
 
 
 @pytest.fixture
-def linux_config_home_set_to(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
+def linux_config_home_set_to(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], str]:
     """Set the Linux config home to exactly the value a test names, relative or not.
 
     Not a way to seed a configuration file - ``user_config_dir`` does that on
     every platform. This is for an ``os_linux`` test whose subject is the
     variable itself, such as a relative value the XDG spec calls invalid, which
     no directory fixture can produce. It lives here so the variable is still
-    named in one file only.
+    named in one file only, and it returns that name, so a test can assert that
+    a message names the variable without naming it a second time.
     """
 
-    def _set(value: str) -> None:
+    def _set(value: str) -> str:
         monkeypatch.setenv("XDG_CONFIG_HOME", value)
+        return "XDG_CONFIG_HOME"
 
     return _set
 
