@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.16.4] - 2026-10-30
+
 ### Fixed
 
 - With lib_layered_config 7.5.0 installed, `lsdsk config-deploy --target user --force` crashed
@@ -15,7 +17,7 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
-- Requires lib_layered_config 7.5.0 or later.
+- Requires lib_layered_config 7.6.0 or later.
 
 - When `lsdsk install-shortcut` writes the Desktop shortcut but cannot add its copy to the
   application menu (Linux) or the Start menu (Windows), `--format json` now reports `ok` false

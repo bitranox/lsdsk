@@ -900,14 +900,14 @@ wheels = [
 
 [[package]]
 name = "importlib-metadata"
-version = "9.0.1"
+version = "9.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "zipp" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6f/7e/1e7e8dc30634b93ebb3d58a3dea569ad146e656218d3960ab04f62047b29/importlib_metadata-9.0.1.tar.gz", hash = "sha256:ab830580bc0ef3db61ce8fae716389e5462b67e033018bab6d8f80ef17172f99", size = 59124, upload-time = "2026-08-28T15:30:34.646Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/16/f9/795a9a483b9f0168ab3e32906039140e233a546c04dec35dd671733de369/importlib_metadata-9.1.0.tar.gz", hash = "sha256:9607fb24f95d4e0b1c17d57ec4604357d76d3f0d154f19fd4861f2e31c8e4065", size = 62078, upload-time = "2026-10-22T23:22:14.12Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b3/55/ecca97ae19075f1fac62def77731e7f535e6c1fb8f92ff08160c5e6dade8/importlib_metadata-9.0.1-py3-none-any.whl", hash = "sha256:bba5600596a7e21f3eef53281cf28d6a5195634d2f2b78ff9501a3272c6eaab0", size = 27920, upload-time = "2026-08-28T15:30:33.433Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/9f/2e33795e8765420ac43de1f29fe3d827ab4eaa45cbcf4a5de83555a3f9dd/importlib_metadata-9.1.0-py3-none-any.whl", hash = "sha256:626c65eddcd23c0ee0ffb17567aa882f8cfce0e552c424f2fa37c8b679374078", size = 28434, upload-time = "2026-10-22T23:22:12.531Z" },
 ]
 
 [[package]]
@@ -996,7 +996,7 @@ wheels = [
 
 [[package]]
 name = "lib-layered-config"
-version = "7.5.0"
+version = "7.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lib-cli-exit-tools" },
@@ -1005,9 +1005,9 @@ dependencies = [
     { name = "rtoml", marker = "python_full_version < '3.14'" },
     { name = "tomli", marker = "python_full_version == '3.14.*'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6f/3d/51848087230e346be8dd80fd908e1bb74c943d2fe6009b6e07ebea775931/lib_layered_config-7.5.0.tar.gz", hash = "sha256:86e95abda239ef3a33085a7e03f60b56120a8a99f723c4c5e73948942e5c22ba", size = 542191, upload-time = "2026-10-29T22:44:36.531Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e6/3f/8aed73c9897185d72158e1e1db2f96ada5bf194679abbe54b5737eeefd25/lib_layered_config-7.6.0.tar.gz", hash = "sha256:e59d87ed9438ef2b41b443230fba22709e8fd6cb1e4fc6c39dd5049e91e03c69", size = 548139, upload-time = "2026-10-29T23:34:38.355Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/82/e5/698cffb3bd8106d06617e5dd6b520388f550369ec2120e67d8bc7667ef6c/lib_layered_config-7.5.0-py3-none-any.whl", hash = "sha256:f49e106f3903d74b5f6d826a99e9f639debece8a9b290103a6b52736cfa4ce17", size = 164624, upload-time = "2026-10-29T22:44:35.151Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/43/2098288794ec006da27892a5cea56688dea9ef3168b0f770d1a17beb31d2/lib_layered_config-7.6.0-py3-none-any.whl", hash = "sha256:379bb77aaf11c5d95a57b075530b3e4d518b485fcc3bdc0790fd1b6f1124fcbf", size = 167590, upload-time = "2026-10-29T23:34:36.976Z" },
 ]
 
 [[package]]
@@ -1063,7 +1063,7 @@ wheels = [
 
 [[package]]
 name = "lsdsk"
-version = "1.16.3"
+version = "1.16.4"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
@@ -1121,7 +1121,7 @@ requires-dist = [
     { name = "import-linter", marker = "extra == 'dev'", specifier = ">=2.15" },
     { name = "jaraco-context", marker = "extra == 'dev'", specifier = ">=6.1.2" },
     { name = "lib-cli-exit-tools", specifier = ">=2.4.1" },
-    { name = "lib-layered-config", specifier = ">=7.5.0" },
+    { name = "lib-layered-config", specifier = ">=7.6.0" },
     { name = "lib-log-rich", specifier = ">=8.1.2" },
     { name = "orjson", specifier = ">=3.13.0" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.10.1" },
