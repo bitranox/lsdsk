@@ -62,7 +62,11 @@ _CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
 
 
 class UnwritableDesktopEntryError(OSError):
-    """A launch argument or icon path holds a control character no desktop entry value can carry."""
+    """A launch argument or icon path holds a character no desktop entry value can carry.
+
+    A control character, or one UTF-8 cannot encode: the lone surrogate Python
+    reads a filename byte as when it is not valid UTF-8.
+    """
 
 
 class RelativeXdgDirectoryError(OSError):
@@ -255,19 +259,34 @@ def _exec_argument(argument: str) -> str:
 
 
 def _string_value(value: str) -> str:
-    """``value`` as a Desktop Entry ``string``: a backslash doubled, a control character refused.
+    """``value`` as a Desktop Entry ``string``: a backslash doubled, an uncarriable character refused.
 
     Raises:
-        UnwritableDesktopEntryError: ``value`` holds a control character. A
-            newline would end the key and start one the reader never wrote, and
-            refusing is the honest answer for the rest: a path is not text a
-            launcher should be quietly rewriting.
+        UnwritableDesktopEntryError: ``value`` holds a control character, or a
+            character UTF-8 cannot encode. A newline would end the key and start
+            one the reader never wrote; the file is UTF-8 by the spec, so a path
+            byte that is not valid UTF-8 has no spelling in it; and refusing is
+            the honest answer for the rest: a path is not text a launcher should
+            be quietly rewriting.
     """
     if _CONTROL_CHARACTER.search(value) is not None:
         raise UnwritableDesktopEntryError(
             errno.EINVAL, f"{value!r} holds a control character, which a desktop entry cannot carry"
         )
+    if not _encodes_as_utf8(value):
+        raise UnwritableDesktopEntryError(
+            errno.EINVAL, f"{value!r} is not valid UTF-8, which a desktop entry cannot carry"
+        )
     return value.replace("\\", "\\\\")
+
+
+def _encodes_as_utf8(value: str) -> bool:
+    """Whether ``value`` has a UTF-8 spelling; a lone surrogate from an undecodable filename byte has none."""
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _expand(value: str) -> Path | None:

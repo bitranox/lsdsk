@@ -66,12 +66,14 @@ def write_through(descriptor: int, body: str | bytes, *, sync: bool) -> None:
             temporary file first, and the snapshot writer's in-place path
             reports it as the failed write it is.
         UnicodeEncodeError: If a ``str`` ``body`` holds a character UTF-8 cannot
-            encode, which is a lone surrogate. The text callers cannot produce
-            one - their bodies are JSON a serialiser wrote, and ``json.dumps``
-            and pydantic each escape or refuse a surrogate - so this is a
-            contract for a new caller rather than a path anything takes today. A
-            ``bytes`` body is written as-is and never raises this. The descriptor
-            is closed here too.
+            encode, which is a lone surrogate - what Python reads a filename
+            byte as when it is not valid UTF-8. No text caller hands one over:
+            the shortcut writers, whose bodies carry paths, refuse such a
+            character before they write; the history and snapshot bodies are
+            JSON, and ``json.dumps`` and pydantic each escape or refuse a
+            surrogate; and the configuration edit re-serialises a file it read
+            as strict UTF-8. A ``bytes`` body is written as-is and never raises
+            this. The descriptor is closed here too.
 
     Example:
         >>> import tempfile

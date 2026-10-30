@@ -12,6 +12,7 @@ System Role:
 
 from __future__ import annotations
 
+import errno
 import shlex
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -26,6 +27,10 @@ if TYPE_CHECKING:
 _FILENAME = "lsdsk.command"
 #: Executable for everyone, which a ``.command`` needs to run on double-click.
 _EXECUTABLE_MODE = 0o755
+
+
+class UnwritableCommandFileError(OSError):
+    """A launch argument holds a character the UTF-8 ``.command`` file cannot carry."""
 
 
 class MacosDesktopShortcut:
@@ -61,12 +66,30 @@ class MacosDesktopShortcut:
         Raises:
             FileNotFoundError: When the Desktop folder does not exist; it is
                 never created here.
+            UnwritableCommandFileError: A launch argument holds a character
+                UTF-8 cannot encode, so nothing is written.
         """
         del icon
+        for argument in launch:
+            _require_utf8(argument)
         path = self.desktop_dir() / _FILENAME
         # Atomic and never through a symlink at the destination: see linux._write_executable.
         replace_atomically(path, f"#!/bin/sh\nexec {shlex.join(launch)}\n", mode=_EXECUTABLE_MODE)
         return ShortcutWritten(path=path, skipped=())
 
 
-__all__ = ["MacosDesktopShortcut"]
+def _require_utf8(argument: str) -> None:
+    """Refuse ``argument`` when UTF-8 cannot encode it, as the lone surrogate of an undecodable filename byte.
+
+    Raises:
+        UnwritableCommandFileError: ``argument`` has no UTF-8 spelling.
+    """
+    try:
+        argument.encode("utf-8")
+    except UnicodeEncodeError:
+        raise UnwritableCommandFileError(
+            errno.EINVAL, f"{argument!r} is not valid UTF-8, which the .command file cannot carry"
+        ) from None
+
+
+__all__ = ["MacosDesktopShortcut", "UnwritableCommandFileError"]

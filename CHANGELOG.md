@@ -29,6 +29,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   Start-menu copy without a word and reported `ok` true. The failed lookup is now named in
   `skipped`, with `ok` false and exit `0`, the way a refused Start-menu write already was. A
   failed Start-menu lookup is also no longer reported later as the reason there was no Desktop.
+- On Linux and macOS, a launcher or icon path holding a byte that is not valid UTF-8 made
+  `install-shortcut` exit `70` with a `UnicodeEncodeError` traceback and no JSON envelope, and
+  stopped the interactive view from opening when the offer hit it. Such a path is now refused the
+  way a control character already was: `install-shortcut` exits `74` with an envelope saying the
+  path is not valid UTF-8, and the offer says it could not create the shortcut and opens the view.
 
 ## [1.16.4] - 2026-10-30
 
