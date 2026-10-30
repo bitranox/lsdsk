@@ -25,6 +25,10 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   `install-shortcut` exits `78` with a message naming the variable and writes nothing, before it
   would install uv, and the offer at the interactive view says it could not create the shortcut
   and opens the view.
+- On Windows, when Windows could not name the Start-menu folder, `install-shortcut` left out the
+  Start-menu copy without a word and reported `ok` true. The failed lookup is now named in
+  `skipped`, with `ok` false and exit `0`, the way a refused Start-menu write already was. A
+  failed Start-menu lookup is also no longer reported later as the reason there was no Desktop.
 
 ## [1.16.4] - 2026-10-30
 

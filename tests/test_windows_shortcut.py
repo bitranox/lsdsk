@@ -48,11 +48,13 @@ class _FakePs:
     written: list[dict[str, object]] = field(default_factory=list[dict[str, object]])
     refuse_with: Exception | None = None
     lookup_fails: bool = False
+    #: Fail the lookup of this one known folder only, as a Start menu Windows cannot name does.
+    lookup_fails_for: str | None = None
     #: Refuse only a shortcut written into this folder, as a Start menu that will not take one does.
     refuse_only_in: Path | None = None
 
     def get_known_folder(self, folder: object) -> Path | None:
-        if self.lookup_fails:
+        if self.lookup_fails or str(folder) == self.lookup_fails_for:
             raise _FakeError("SHGetKnownFolderPath failed: 0x80070002")
         return self.folders.get(str(folder))
 
@@ -324,6 +326,50 @@ def test_install_shortcut_names_the_start_menu_copy_it_could_not_write_in_skippe
     assert len(envelope["skipped"]) == 1, envelope["skipped"]
     assert "could not be added to the Start menu" in envelope["skipped"][0]
     assert str(refusal) in envelope["skipped"][0]
+
+
+_NO_START_MENU = (
+    "the shortcut is on the Desktop, but Windows could not name the Start menu folder: "
+    "SHGetKnownFolderPath failed: 0x80070002"
+)
+
+
+@pytest.mark.os_agnostic
+def test_a_start_menu_windows_could_not_name_is_named_in_skipped(desktop: Path) -> None:
+    """A failed Programs lookup is a copy that was not made, so it is reported like a refused write."""
+    ps = _FakePs(folders={"Desktop": desktop}, lookup_fails_for="Programs")
+
+    written = _adapter(ps).create(launch=_LAUNCH, icon=None)
+
+    assert [entry["path"] for entry in ps.written] == [desktop / "lsdsk.lnk"]
+    assert written.skipped == (_NO_START_MENU,)
+
+
+@pytest.mark.os_agnostic
+def test_install_shortcut_reports_a_start_menu_windows_could_not_name(
+    desktop: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """End to end: the Desktop ``.lnk`` is reported, ``ok`` is false, ``skipped`` says why the menu copy is missing."""
+    ps = _FakePs(folders={"Desktop": desktop}, lookup_fails_for="Programs")
+
+    install_shortcut(output_format=OutputFormat.JSON, seams=_seams(_adapter(ps), tmp_path / "lsdsk.ico"))
+
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["data"]["shortcut"] == str(desktop / "lsdsk.lnk")
+    assert envelope["ok"] is False
+    assert envelope["skipped"] == [_NO_START_MENU]
+
+
+@pytest.mark.os_agnostic
+def test_a_failed_start_menu_lookup_is_not_later_blamed_on_the_desktop(desktop: Path) -> None:
+    """The reason for no desktop is the Desktop's own lookup, never one left over from the Start menu's."""
+    ps = _FakePs(folders={"Desktop": desktop}, lookup_fails_for="Programs")
+    shortcut = _adapter(ps)
+    shortcut.create(launch=_LAUNCH, icon=None)
+    (desktop / "lsdsk.lnk").unlink()
+    desktop.rmdir()
+
+    assert shortcut.no_desktop_reason() == f"no desktop folder at {desktop}"
 
 
 def test_a_refused_write_carries_eio(desktop: Path) -> None:

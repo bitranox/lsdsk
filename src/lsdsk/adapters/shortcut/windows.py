@@ -31,7 +31,7 @@ from __future__ import annotations
 import errno
 import importlib
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, TypedDict, Unpack, cast
+from typing import TYPE_CHECKING, NamedTuple, Protocol, TypedDict, Unpack, cast
 
 from lsdsk.adapters.shortcut.probe import probe
 from lsdsk.domain.shortcut import SHORTCUT_COMMENT, ShortcutWritten
@@ -118,6 +118,22 @@ def _installed_pwshpy() -> PwshpyShortcutModule:
     return cast("PwshpyShortcutModule", importlib.import_module("pwshpy"))
 
 
+class _FolderLookup(NamedTuple):
+    """What asking Windows for one known folder came to.
+
+    The error travels with the answer rather than being stashed on the adapter,
+    where a failed Start-menu lookup was later read back as the reason there was
+    no Desktop.
+
+    Attributes:
+        folder: The folder Windows named, or ``None``.
+        error: pwshpy's message when the lookup itself failed, else ``None``.
+    """
+
+    folder: Path | None
+    error: str | None
+
+
 class WindowsDesktopShortcut:
     """Create and find the ``lsdsk.lnk`` launcher on the reader's Desktop."""
 
@@ -129,7 +145,6 @@ class WindowsDesktopShortcut:
         """
         self._load = load or _installed_pwshpy
         self._module: PwshpyShortcutModule | None = None
-        self._lookup_error: str | None = None
 
     def _pwshpy(self) -> PwshpyShortcutModule:
         """The pwshpy module, loaded on first use so no other platform pays for it."""
@@ -137,18 +152,17 @@ class WindowsDesktopShortcut:
             self._module = self._load()
         return self._module
 
-    def _known_folder(self, choose: Callable[[_KnownFolders], object]) -> Path | None:
-        """The folder ``choose`` picks, or None where Windows names none or the lookup failed."""
+    def _known_folder(self, choose: Callable[[_KnownFolders], object]) -> _FolderLookup:
+        """The folder ``choose`` picks, with pwshpy's message where the lookup itself failed."""
         pwshpy = self._pwshpy()
         try:
-            return pwshpy.ps.get_known_folder(choose(pwshpy.KnownFolder))
+            return _FolderLookup(folder=pwshpy.ps.get_known_folder(choose(pwshpy.KnownFolder)), error=None)
         except pwshpy.PwshPyError as exc:
-            self._lookup_error = str(exc)
-            return None
+            return _FolderLookup(folder=None, error=str(exc))
 
     def desktop_dir(self) -> Path | None:
         """The Desktop folder Windows names for this account, or None where it names none."""
-        return self._known_folder(lambda folders: folders.DESKTOP)
+        return self._known_folder(lambda folders: folders.DESKTOP).folder
 
     def has_desktop(self) -> bool:
         """Whether Windows names a Desktop folder and it exists; it is never created here."""
@@ -162,9 +176,9 @@ class WindowsDesktopShortcut:
 
     def no_desktop_reason(self) -> str:
         """Why there is no desktop: a failed lookup, no folder named, or a named folder that is missing."""
-        desktop = self.desktop_dir()
-        if self._lookup_error is not None:
-            return f"Windows could not name the Desktop folder ({self._lookup_error})"
+        desktop, error = self._known_folder(lambda folders: folders.DESKTOP)
+        if error is not None:
+            return f"Windows could not name the Desktop folder ({error})"
         if desktop is None:
             return "Windows names no Desktop folder for this account"
         return f"no desktop folder at {desktop}"
@@ -214,9 +228,12 @@ class WindowsDesktopShortcut:
         """Write the same ``.lnk`` into the Start menu where Windows names one; why it was refused, or None.
 
         A Start menu Windows names none of, or names but that is missing, is no
-        copy to make, so it returns None rather than a refusal.
+        copy to make, so it returns None rather than a refusal. A lookup that
+        failed is a copy that was not made, so it is reported like a refused write.
         """
-        menu = self._known_folder(lambda folders: folders.PROGRAMS)
+        menu, error = self._known_folder(lambda folders: folders.PROGRAMS)
+        if error is not None:
+            return f"the shortcut is on the Desktop, but Windows could not name the Start menu folder: {error}"
         if menu is None or not probe(menu.is_dir):
             return None
         try:
