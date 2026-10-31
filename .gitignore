@@ -29,6 +29,9 @@ pnpm-debug.log*
 !.env.example
 todo.md
 tmp_*
+# Local working material kept under docs/: the sdist walks docs/ whole, and hatchling
+# honours this file but not .git/info/exclude (tests/test_sdist_contents.py).
+docs/artikel/
 
 # ====================================
 # IDEs & Editors

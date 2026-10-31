@@ -34,6 +34,11 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   stopped the interactive view from opening when the offer hit it. Such a path is now refused the
   way a control character already was: `install-shortcut` exits `74` with an envelope saying the
   path is not valid UTF-8, and the offer says it could not create the shortcut and opens the view.
+- A source distribution built from a working checkout could include files that were kept out of
+  git only by `.git/info/exclude`, because the build walks `docs/` whole and does not read that
+  file. Published releases were not affected: CI builds from a clean clone. The local material
+  is now ignored by the tracked `.gitignore`, and the test suite fails on any untracked file a
+  local build would pick up.
 
 ## [1.16.4] - 2026-10-30
 
