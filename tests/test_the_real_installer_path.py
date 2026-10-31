@@ -112,6 +112,17 @@ exit 0
 SCRIPT
 """
 
+#: A stand-in ``curl`` that serves an installer which itself fails, as the real
+#: script does on a platform it does not support, leaving no ``uvx`` behind.
+_SERVING_A_FAILING_SCRIPT_CURL = """#!/bin/sh
+PATH=/usr/bin:/bin
+printf '%s\\n' "$@" > "{record}"
+cat <<'SCRIPT'
+echo "error: unsupported platform (stand-in script)" >&2
+exit 3
+SCRIPT
+"""
+
 
 def _machine_with_curl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, curl: str) -> tuple[Path, Path]:
     """A home with a Desktop, and a PATH holding the real ``sh`` beside a stand-in ``curl``.
@@ -179,3 +190,26 @@ def test_a_download_that_succeeds_is_run_and_its_uvx_becomes_the_launcher(
     assert "installing uv (stand-in script)" in captured.err
     assert UV_INSTALLER_URL_POSIX in record.read_text(encoding="utf-8").splitlines()
     assert len(list(desktop.iterdir())) == 1
+
+
+@pytest.mark.os_posix
+def test_an_installer_script_that_fails_is_reported_with_its_own_exit_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """The downloaded script's own failure is the installer's exit code, not a quiet missing ``uvx``.
+
+    The download worked here, so ``curl`` says nothing; only the shell the script
+    ran in knows it failed. Ending the fetch-then-run line in anything but that
+    shell's status reads the failure as a successful install that left ``uvx``
+    off PATH.
+    """
+    desktop, _record = _machine_with_curl(tmp_path, monkeypatch, curl=_SERVING_A_FAILING_SCRIPT_CURL)
+
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(output_format=OutputFormat.JSON, install_uv=True)
+
+    assert leaving.value.code == ExitCode.CONFIG_ERROR
+    message = json.loads(capfd.readouterr().out)["error"]["message"]
+    assert "the uv installer failed (exit 3)" in message
+    assert "uvx is still not on PATH" not in message
+    assert list(desktop.iterdir()) == []

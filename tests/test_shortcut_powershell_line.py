@@ -41,6 +41,10 @@ _ARGVS: list[tuple[str, ...]] = [
     ("prog", "C:\\dir with space\\", "C:\\dir with space\\\\", 'say "hi"', "tab\there", "two\nlines"),
     # PowerShell reads the typographic quotes as quotes too.
     ("prog", "O" + chr(0x2019) + "Brien", "a" + chr(0x201C) + "b" + chr(0x201D)),
+    # Each quote alone, so dropping any one of them from the set is seen.
+    ("prog", *("a" + chr(quote) + "b" for quote in (0x2018, 0x2019, 0x201A, 0x201B, 0x201C, 0x201D, 0x201E))),
+    # A carriage return alone, and a tab with no space beside a trailing backslash.
+    ("prog", "a\rb", "tab\there\\"),
 ]
 
 _PARSE = r"""

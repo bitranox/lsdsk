@@ -156,3 +156,40 @@ def test_a_crash_report_is_laid_out_by_the_runs_own_overrides(
     err = _crash_report(["--set", "display.traceback_summary_limit=12"], capsys)
 
     assert "TRUNCATED at 12 characters" in err, err
+
+
+def _a_factory_that_breaks() -> AppServices:
+    """A services factory that raises before any logging has been set up, so no configuration was handed over."""
+    raise RuntimeError("the services factory broke before logging started")
+
+
+@pytest.mark.usefixtures("clear_config_cache", "managed_traceback_state")
+@pytest.mark.parametrize(
+    ("options", "reads_the_planted_file"),
+    [
+        pytest.param([], True, id="a plain run's early crash reads it"),
+        pytest.param(["--elevated-relaunch"], False, id="the elevated copy's early crash does not"),
+    ],
+)
+def test_a_crash_before_logging_starts_reads_no_dotenv_in_the_elevated_copy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    options: list[str],
+    reads_the_planted_file: bool,
+) -> None:
+    """With no configuration of the run to use, the report reads the files again - without a ``.env`` in the copy.
+
+    This is the one path that reads them a second time, so it is where the
+    elevated copy could still pick up a ``.env`` planted in the directory it
+    was started in.
+    """
+    (tmp_path / ".env").write_bytes(b"DISPLAY__TRACEBACK_SUMMARY_LIMIT=12\n")
+    monkeypatch.chdir(tmp_path)
+
+    code = main([*options, "info"], services_factory=_a_factory_that_breaks)
+    err = capsys.readouterr().err
+
+    assert code != 0, err
+    assert "the services factory broke" in err or "TRUNCATED" in err, err
+    assert ("TRUNCATED at 12 characters" in err) is reads_the_planted_file, err
