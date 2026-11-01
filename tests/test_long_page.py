@@ -98,7 +98,7 @@ async def _laid_out_during(action: Callable[[], Awaitable[None]]) -> int:
 
 
 def _smart_page(app: LsdskApp) -> RenderableType:
-    return report.render_smart(app.inventory)
+    return report.SmartSection(app.inventory)
 
 
 def _findings_page(app: LsdskApp) -> RenderableType:

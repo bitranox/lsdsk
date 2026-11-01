@@ -591,8 +591,8 @@ class LsdskApp(App[None]):
         self._refill_tree()
 
     def _fill_smart(self) -> None:
-        """Draw the SMART page, in this view's palette."""
-        self.query_one("#smart-body", LongPage).update(tui_palette.Recoloured(report.render_smart(self.inventory)))
+        """Draw the SMART page, in this view's palette, laid out at the width the page is shown at."""
+        self.query_one("#smart-body", LongPage).update(tui_palette.Recoloured(report.SmartSection(self.inventory)))
 
     def _fill_findings(self) -> None:
         """Draw the findings page, in this view's palette.

@@ -45,7 +45,7 @@ from .layout import (
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Mapping, Sequence
 
-    from rich.console import RenderableType
+    from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
 
     from ...domain.models import (
         Controller,
@@ -1425,6 +1425,40 @@ def render_smart(inventory: Inventory, width: int = DEFAULT_WIDTH) -> Renderable
     return Group(*lines)
 
 
+class SmartSection:
+    """The SMART section, laid out at whatever width it is handed.
+
+    :func:`render_smart` fits its tables and cuts its headings once, for one
+    width, which is what a command that knows the console's width wants. A page
+    inside a window does not know it until the layout runs and loses it again on
+    every resize, so it asked for no width at all and got the piped default: the
+    tables were fitted for 120 columns and then squeezed into the window, which
+    is not what ``lsdsk smart`` draws at that width. The same reason, and the
+    same answer, as :class:`~.tree.FabricSection`.
+
+    Example:
+        >>> from rich.console import Console
+        >>> from lsdsk.domain.models import Inventory
+        >>> console = Console(width=24, no_color=True)
+        >>> with console.capture() as capture:
+        ...     console.print(SmartSection(Inventory(hostname="a-long-host-name")))
+        >>> capture.get().splitlines()[0]
+        'SMART attributes on a-l>'
+    """
+
+    def __init__(self, inventory: Inventory) -> None:
+        """Hold the machine, without measuring anything yet.
+
+        Args:
+            inventory: The machine whose drives the section lists.
+        """
+        self.inventory = inventory
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        """Render the section at the width the console offers right now."""
+        yield render_smart(self.inventory, width=options.max_width)
+
+
 def _disk_attributes(disk: Disk, width: int, *, privileged: bool) -> list[RenderableType]:
     """Render one disk's heading and its attribute table."""
     attributes = () if disk.health is None else disk.health.attributes
@@ -1550,6 +1584,7 @@ __all__ = [
     "SLOT_COLUMNS",
     "SUMMARY_LIMIT",
     "VIRTUAL_HEADING",
+    "SmartSection",
     "disk_cell_styles",
     "disk_cells",
     "disk_row",
