@@ -99,9 +99,15 @@ def uvx_path(*, search: str | None = None) -> Path | None:
     return executable_on_path("uvx", search=search)
 
 
-#: Fetch the installer named by ``$0`` and run it only when the fetch succeeded,
+#: Fetch the installer named by ``$1`` and run it only when the fetch succeeded,
 #: leaving with ``curl``'s exit code when it did not.
-_FETCH_THEN_RUN = 'script=$(curl -LsSf "$0") || exit $?; printf "%s\\n" "$script" | sh'
+_FETCH_THEN_RUN = 'script=$(curl -LsSf "$1") || exit $?; printf "%s\\n" "$script" | sh'
+
+#: The script's ``$0``, which the shell puts in front of every error it reports
+#: itself (``lsdsk-uv-installer: 1: curl: not found``). With the URL there, a
+#: missing ``curl`` was reported under the download's address, which reads as
+#: the URL being what was not found.
+_SCRIPT_NAME = "lsdsk-uv-installer"
 
 
 def _installer_command(platform: str) -> list[str]:
@@ -109,8 +115,8 @@ def _installer_command(platform: str) -> list[str]:
 
     The network fetch is the installer's own (``curl``/``irm``); Python opens no
     socket. The URL is a module constant, so nothing a reader supplies reaches
-    the shell; on POSIX it is handed to the script as ``$0`` rather than written
-    into it.
+    the shell; on POSIX it is handed to the script as ``$1`` rather than written
+    into it, and ``$0`` names the step for the shell's own error lines.
 
     On POSIX the script is fetched first and run second. ``curl | sh`` reports
     the exit code of ``sh``, and a failed download hands ``sh`` an empty script,
@@ -120,7 +126,7 @@ def _installer_command(platform: str) -> list[str]:
     """
     if platform == "win32":
         return ["powershell", "-ExecutionPolicy", "ByPass", "-c", f"irm {UV_INSTALLER_URL_WINDOWS} | iex"]
-    return ["sh", "-c", _FETCH_THEN_RUN, UV_INSTALLER_URL_POSIX]
+    return ["sh", "-c", _FETCH_THEN_RUN, _SCRIPT_NAME, UV_INSTALLER_URL_POSIX]
 
 
 #: The process's own standard-error descriptor. The installer's standard output

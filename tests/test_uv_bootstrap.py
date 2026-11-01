@@ -57,8 +57,9 @@ def test_uvx_path_answers_the_uvx_in_the_searched_directory(tmp_path: Path) -> N
 def test_the_posix_installer_runs_the_pinned_astral_shell_script(tmp_path: Path) -> None:
     """On POSIX the command fetches the pinned install.sh with curl and runs it in a shell.
 
-    The URL is the script's ``$0``, an argument of its own, so it is never part
-    of the text the shell parses.
+    The URL is the script's ``$1``, an argument of its own, so it is never part
+    of the text the shell parses; ``$0`` is a name for the step, which the shell
+    puts in front of its own error lines.
     """
     runner = _Recorder()
     uvx = _uvx_in(tmp_path / "bin")
@@ -70,7 +71,7 @@ def test_the_posix_installer_runs_the_pinned_astral_shell_script(tmp_path: Path)
     assert command[:2] == ["sh", "-c"]
     assert "curl" in command[2]
     assert "astral.sh" not in command[2]
-    assert command[3:] == [f"https://astral.sh/uv/{UV_INSTALLER_VERSION}/install.sh"]
+    assert command[3:] == ["lsdsk-uv-installer", f"https://astral.sh/uv/{UV_INSTALLER_VERSION}/install.sh"]
 
 
 @pytest.mark.os_agnostic

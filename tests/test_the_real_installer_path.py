@@ -124,12 +124,13 @@ SCRIPT
 """
 
 
-def _machine_with_curl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, curl: str) -> tuple[Path, Path]:
+def _machine_with_curl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, curl: str | None) -> tuple[Path, Path]:
     """A home with a Desktop, and a PATH holding the real ``sh`` beside a stand-in ``curl``.
 
     Unlike :func:`_machine`, the shell is the real one, so the installer command's
     own script runs and decides what a failed download comes to. Returns the
-    Desktop and the file the stand-in ``curl`` records its arguments in.
+    Desktop and the file the stand-in ``curl`` records its arguments in. With
+    ``curl`` ``None`` the PATH holds no ``curl`` at all, as on a minimal system.
     """
     real_sh = shutil.which("sh")
     assert real_sh is not None, "a POSIX machine has an sh"
@@ -140,9 +141,10 @@ def _machine_with_curl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, curl:
     bin_dir.mkdir()
     (bin_dir / "sh").symlink_to(real_sh)
     record = tmp_path / "curl-arguments.txt"
-    stand_in = bin_dir / "curl"
-    stand_in.write_bytes(curl.format(record=record, bin_dir=bin_dir).encode("utf-8"))
-    stand_in.chmod(stat.S_IRWXU)
+    if curl is not None:
+        stand_in = bin_dir / "curl"
+        stand_in.write_bytes(curl.format(record=record, bin_dir=bin_dir).encode("utf-8"))
+        stand_in.chmod(stat.S_IRWXU)
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("PATH", str(bin_dir))
     monkeypatch.delenv("XDG_DESKTOP_DIR", raising=False)
@@ -212,4 +214,31 @@ def test_an_installer_script_that_fails_is_reported_with_its_own_exit_code(
     message = json.loads(capfd.readouterr().out)["error"]["message"]
     assert "the uv installer failed (exit 3)" in message
     assert "uvx is still not on PATH" not in message
+    assert list(desktop.iterdir()) == []
+
+
+@pytest.mark.os_posix
+def test_a_missing_curl_is_reported_under_the_installers_name_not_the_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """The shell names a command it cannot find after ``$0``, so ``$0`` must name the step, not the download.
+
+    With the URL as ``$0`` the shell's line read ``https://astral.sh/uv/.../install.sh: 1: curl: not
+    found``: it put the address in the place of the program that failed, which reads as the URL being
+    what was not found.
+    """
+    desktop, _record = _machine_with_curl(tmp_path, monkeypatch, curl=None)
+
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(output_format=OutputFormat.JSON, install_uv=True)
+
+    assert leaving.value.code == ExitCode.CONFIG_ERROR
+    captured = capfd.readouterr()
+    assert "the uv installer failed (exit 127)" in json.loads(captured.out)["error"]["message"]
+    # The shell's own line, "<$0>: 1: curl: not found" in dash and "<$0>: line 1: curl: command not found"
+    # in bash, in the shell's language; the error's manual install line also names curl, but not so.
+    shell_lines = [line for line in captured.err.splitlines() if ": curl:" in line]
+    assert shell_lines, f"the shell should have said curl is missing: {captured.err!r}"
+    assert all(UV_INSTALLER_URL_POSIX not in line for line in shell_lines), shell_lines
+    assert all(line.startswith("lsdsk-uv-installer:") for line in shell_lines), shell_lines
     assert list(desktop.iterdir()) == []
