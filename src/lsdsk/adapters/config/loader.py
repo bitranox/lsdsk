@@ -467,8 +467,8 @@ def _beneath_the_environment(config: Config, dotenv: LayerSnapshot) -> Config:
     environment: dict[str, object] = {}
     for segments, value in table_leaves(config.as_dict()):
         origin = config.origin(".".join(segments))
-        # Provenance names the layer as plain text, and from lib_layered_config 7.5.0 on a
-        # snapshot built from that text fails inside merge_layers, which reads its `.value`.
+        # Provenance names the layer as plain text, while a snapshot's layer is typed Layer, so
+        # the text is parsed into its member here, where the files below are grouped by it.
         layer = Layer.DEFAULTS if origin is None else Layer(origin["layer"])
         path = None if origin is None else origin["path"]
         target = environment if layer == Layer.ENV else files.setdefault((layer, path), {})
