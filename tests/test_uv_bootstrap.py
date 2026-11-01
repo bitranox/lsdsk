@@ -5,10 +5,14 @@ the desktop shortcut and ``uvx`` is not installed, lsdsk offers to install uv fo
 them from the official installer; that is the single exception, confined to this
 module and guarded by ``test_no_subprocess_or_network``. These drive it with a
 fake runner and a ``PATH`` of their own, so the real installer never runs here.
+The installer's own program (``sh``, ``powershell``) is looked up in the process's
+``PATH`` before anything runs, so each test that reaches the runner puts a stand-in
+for it in an absolute directory there first.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import TYPE_CHECKING
 
@@ -29,6 +33,22 @@ def _uvx_in(directory: Path) -> Path:
     uvx.write_bytes(b"#!/bin/sh\nexit 0\n")
     uvx.chmod(0o755)
     return uvx
+
+
+def _installer_programs_on_path(directory: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Stand-in ``sh`` and ``powershell.EXE`` in ``directory``, made the whole ``PATH``; returns the ``sh``.
+
+    The recording runner never starts them; they are there because the
+    installer's program is resolved to an absolute path before the runner is
+    handed the command, and an install with no such program never reaches it.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in ("sh", "powershell.EXE"):
+        program = directory / name
+        program.write_bytes(b"#!/bin/sh\nexit 0\n")
+        program.chmod(0o755)
+    monkeypatch.setenv("PATH", str(directory))
+    return directory / "sh"
 
 
 class _Recorder:
@@ -54,13 +74,17 @@ def test_uvx_path_answers_the_uvx_in_the_searched_directory(tmp_path: Path) -> N
 
 
 @pytest.mark.os_agnostic
-def test_the_posix_installer_runs_the_pinned_astral_shell_script(tmp_path: Path) -> None:
+def test_the_posix_installer_runs_the_pinned_astral_shell_script(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """On POSIX the command fetches the pinned install.sh with curl and runs it in a shell.
 
     The URL is the script's ``$1``, an argument of its own, so it is never part
     of the text the shell parses; ``$0`` is a name for the step, which the shell
-    puts in front of its own error lines.
+    puts in front of its own error lines. The shell is the absolute path it was
+    found at, never a bare name the operating system would look up again.
     """
+    shell = _installer_programs_on_path(tmp_path / "programs", monkeypatch)
     runner = _Recorder()
     uvx = _uvx_in(tmp_path / "bin")
     result = install_uv(run=runner, platform="linux", search=str(tmp_path / "bin"))
@@ -68,32 +92,36 @@ def test_the_posix_installer_runs_the_pinned_astral_shell_script(tmp_path: Path)
     assert result == UvInstallResult(exit_code=0, uvx=uvx)
     assert len(runner.commands) == 1
     command = runner.commands[0]
-    assert command[:2] == ["sh", "-c"]
+    assert command[:2] == [str(shell), "-c"]
     assert "curl" in command[2]
     assert "astral.sh" not in command[2]
     assert command[3:] == ["lsdsk-uv-installer", f"https://astral.sh/uv/{UV_INSTALLER_VERSION}/install.sh"]
 
 
 @pytest.mark.os_agnostic
-def test_the_windows_installer_runs_the_pinned_astral_powershell_script(tmp_path: Path) -> None:
-    """On Windows the command fetches the pinned install.ps1 through PowerShell."""
+def test_the_windows_installer_runs_the_pinned_astral_powershell_script(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On Windows the command fetches the pinned install.ps1 through PowerShell, found by its absolute path."""
+    _installer_programs_on_path(tmp_path / "programs", monkeypatch)
     runner = _Recorder()
     result = install_uv(run=runner, platform="win32", search=str(tmp_path))
 
     assert result.uvx is None  # the fake install left no uvx in the searched directory
     command = runner.commands[0]
-    assert command[0] == "powershell"
+    assert command[0] == os.fspath(tmp_path / "programs" / "powershell.EXE")
     assert f"https://astral.sh/uv/{UV_INSTALLER_VERSION}/install.ps1" in command[-1]
 
 
 @pytest.mark.os_agnostic
-def test_the_uvx_path_is_re_resolved_after_the_installer_runs(tmp_path: Path) -> None:
+def test_the_uvx_path_is_re_resolved_after_the_installer_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A successful install makes uvx resolvable, which is the signal the caller needs.
 
     The ``uvx`` appears only while the installer runs, so a lookup made before it
     would have answered ``None``.
     """
     bin_dir = tmp_path / "bin"
+    _installer_programs_on_path(tmp_path / "programs", monkeypatch)
 
     def installs(command: Sequence[str]) -> int:
         del command
@@ -106,8 +134,9 @@ def test_the_uvx_path_is_re_resolved_after_the_installer_runs(tmp_path: Path) ->
     assert result.uvx.samefile(bin_dir / result.uvx.name)
 
 
-def test_the_installers_exit_code_comes_back_with_the_result(tmp_path: Path) -> None:
+def test_the_installers_exit_code_comes_back_with_the_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A failed installer is not reported as a success that merely left uvx off PATH."""
+    _installer_programs_on_path(tmp_path / "programs", monkeypatch)
     result = install_uv(run=_Recorder(code=7), platform="linux", search=str(tmp_path))
 
     assert result.exit_code == 7

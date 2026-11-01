@@ -66,10 +66,18 @@ if TYPE_CHECKING:
 _UVX_STILL_MISSING = "uv was installed but uvx is still not on PATH; open a new shell and run 'lsdsk install-shortcut'."
 
 
-def _installer_failed(exit_code: int) -> str:
-    """What a non-zero installer is said as, by the command and the offer alike."""
+def _installer_failed(installed: UvInstallResult) -> str:
+    """What a failed install is said as, by the command and the offer alike.
+
+    An installer whose own program was not found never ran, so it is said as
+    that program missing rather than as the exit code standing in for it.
+    """
+    if installed.missing_program is not None:
+        what = f"could not start: no '{installed.missing_program}' in an absolute PATH directory"
+    else:
+        what = f"failed (exit {installed.exit_code})"
     return (
-        f"the uv installer failed (exit {exit_code}), so there is no launcher for the shortcut. "
+        f"the uv installer {what}, so there is no launcher for the shortcut. "
         f"Install uv yourself with:\n\n  {manual_install_line(sys.platform)}\n\n"
         "then run 'lsdsk install-shortcut'."
     )
@@ -159,7 +167,7 @@ def _resolve_launch(seams: ShortcutSeams, *, install_uv: bool, output_format: Ou
         )
     installed = seams.install_uv()
     if installed.exit_code != 0:
-        fail(_installer_failed(installed.exit_code), ExitCode.CONFIG_ERROR, output_format=output_format)
+        fail(_installer_failed(installed), ExitCode.CONFIG_ERROR, output_format=output_format)
     replan = plan_launch(uvx=installed.uvx, installed_lsdsk=seams.installed_lsdsk())
     if replan.needs_uv:
         fail(_UVX_STILL_MISSING, ExitCode.CONFIG_ERROR, output_format=output_format)
@@ -410,7 +418,7 @@ def _offer_create(seams: ShortcutSeams, *, ask_install: Callable[[], bool]) -> N
             return
         installed = seams.install_uv()
         if installed.exit_code != 0:
-            safe_console.echo(f"\n{_installer_failed(installed.exit_code)}", err=True)
+            safe_console.echo(f"\n{_installer_failed(installed)}", err=True)
             return
         plan = plan_launch(uvx=installed.uvx, installed_lsdsk=seams.installed_lsdsk())
         if plan.needs_uv:
