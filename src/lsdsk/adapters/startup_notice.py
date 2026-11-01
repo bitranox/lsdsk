@@ -1,24 +1,23 @@
 """The line an interactive start shows while lsdsk imports and reads the machine.
 
 After uvx prints its install line, an interactive start used to show nothing
-for several seconds. Measured on a slow Windows guest: the CLI import takes
-about 1.8 s, the interactive view's import up to 1.5 s more and the scan
-1.3 s. So the line starts in the entry point, BEFORE the CLI import, and stays
-until the view takes the screen.
+for several seconds: on a slow machine the CLI import, the interactive view's
+import and the scan each take a noticeable part of that. So the line starts in
+the entry point, BEFORE the CLI import, and stays until the view takes the
+screen.
 
 It is drawn with rich, imported here ahead of the CLI that imports it anyway:
-measured on the same guest, rich's console and status cost 0.25 s up front
-and the CLI import shrinks by about as much, so the start is no slower. rich's
-live display swaps stdout and stderr for proxies while it runs, so a warning
-printed during the start (a configuration value that fell back, a counter
-history this machine cannot use) lands above the line instead of tangling
-with it, and the original streams come back on pause and stop.
+what rich's console and status cost up front, the CLI import no longer pays,
+so the start is no slower. rich's live display swaps stdout and stderr for
+proxies while it runs, so a warning printed during the start (a configuration
+value that fell back, a counter history this machine cannot use) lands above
+the line instead of tangling with it, and the original streams come back on
+pause and stop.
 
 lib_layered_config is imported here too, for the profile-name check that
 decides whether a ``--profile`` is refused: the CLI imports it anyway, so the
-start is no slower, and the line comes that much later - measured on the
-development container, 39 ms against 22 ms for this module with rich (not
-measured on the slow guest).
+start is no slower, though the line now appears after that import rather than
+before it.
 
 System Role:
     Adapter layer. Outside ``adapters/cli`` because the entry point imports it

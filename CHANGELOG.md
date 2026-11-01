@@ -40,6 +40,23 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   is now ignored by the root `.gitignore`, and the test suite fails on any untracked file a
   local build would pick up, including one hidden only by a nested `.gitignore`, which the build
   does not read either.
+- The "Scanning Drives ..." line no longer flashes around a usage error in the root options: a
+  mistyped option, an option missing its value, a `--tree-density` or `--profile` the tool
+  refuses, or a `--replay`/`--env-file` that is missing or unreadable.
+- A Ctrl+C that lands while the "Scanning Drives ..." line starts or stops now exits with `130`
+  and leaves the cursor visible and both standard streams restored, instead of printing a
+  traceback.
+- When both a `[lib_log_rich]` setting and its `LOG_*` environment variable hold a value the
+  logging library refuses, each warning now gives its own value's reason, instead of the
+  setting's warning quoting the variable's.
+- The default page's own headings, `Topology on` and `Findings on`, and the report banner now
+  stay on one line at every width like the section titles, so the hostname is no longer stranded
+  on a line of its own. A narrow banner gives up the board, the virtual count and then the disk
+  count before it cuts the hostname.
+- The interactive SMART page is laid out at the window's width, as `lsdsk smart` is at a
+  terminal's, instead of at 120 columns whatever the window: in a narrow window the attribute
+  tables no longer keep columns the printed view gives up, and in a wide one nothing is cut that
+  fits.
 
 ## [1.16.4] - 2026-10-30
 
