@@ -1181,7 +1181,7 @@ def cli_topology(
             from lsdsk.adapters.render import tree  # noqa: PLC0415 - same flat-graph reason as its neighbours
 
             console = console_for_output(display.piped_width)
-            console.print(report.render_header(inventory))
+            console.print(report.render_header(inventory, width=console.width))
             console.print()
             console.print(report.render_verdict(findings, display.summary_limit))
             console.print()
@@ -1257,7 +1257,7 @@ def cli_findings(ctx: click.Context, replay: Path | None, output_format: OutputF
             emit_json(inventory, findings, CliCommand.FINDINGS, history=read)
         else:
             console = console_for_output(display.piped_width)
-            console.print(report.render_header(inventory))
+            console.print(report.render_header(inventory, width=console.width))
             console.print()
             console.print(report.render_findings(findings))
         raise SystemExit(exit_code_for(findings))

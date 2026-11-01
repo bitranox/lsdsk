@@ -31,6 +31,7 @@ from ..config.tunables import DEFAULT_PIPED_WIDTH, DEFAULT_SUMMARY_LIMIT
 from . import theme
 from .layout import (
     DEVICE_MIN_WIDTH,
+    ELLIPSIS,
     GAP,
     GUTTER,
     TREE_BRANCH,
@@ -173,7 +174,7 @@ def findings_for(findings: Iterable[Finding], *subjects: str) -> tuple[Finding, 
     return tuple(finding for finding in findings if finding.subject in wanted)
 
 
-def render_header(inventory: Inventory) -> RenderableType:
+def render_header(inventory: Inventory, *, width: int = DEFAULT_WIDTH) -> RenderableType:
     """Render the banner above the report, including any caveat on the readings.
 
     The caveat is not decoration. In a container the hardware shown belongs to
@@ -183,26 +184,31 @@ def render_header(inventory: Inventory) -> RenderableType:
 
     Args:
         inventory: The machine this report is about.
+        width: The cells the banner line may take; the caveat lines below it
+            are sentences and wrap as sentences do.
 
     Returns:
         The banner, with the caveat line where one applies.
     """
-    line = Text()
+    lead = Text()
     # The version rides in the banner because this output gets pasted into
     # tickets and mails, where the first question asked of a surprising reading
     # is which build produced it. A reader who has the report should never have
     # to go back to the machine for that.
-    line.append(f"lsdsk {__init__conf__.version}  ", style="bold")
-    line.append(inventory.hostname, style=theme.STYLE_IDENTIFIER)
-    line.append(f"   {len(inventory.disks)} disks on {len(inventory.controllers)} controllers")
+    lead.append(f"lsdsk {__init__conf__.version}  ", style="bold")
+    lead.append(inventory.hostname, style=theme.STYLE_IDENTIFIER)
+    counts: theme.Cell = (f"   {len(inventory.disks)} disks on {len(inventory.controllers)} controllers", "")
     # Counted apart rather than added in: a zram or a zvol is not a drive, and a
     # count that folds them in overstates what the machine has to diagnose.
-    if inventory.virtual_disks:
-        line.append(f"   {len(inventory.virtual_disks)} virtual", style=theme.STYLE_UNKNOWN)
+    virtual = [(f"   {len(inventory.virtual_disks)} virtual", theme.STYLE_UNKNOWN)] if inventory.virtual_disks else []
     # The placement hints talk about what "this board" can offer, so naming it
     # turns that advice into something the reader can act on or shop for.
-    if inventory.board:
-        line.append(f"   {inventory.board}")
+    board = [(f"   {inventory.board}", "")] if inventory.board else []
+    # One physical line at every width, like every section title below it: a
+    # banner that wraps strands the hostname on a line of its own. The fields
+    # are given up whole from the end, and the lead is cut and marked only where
+    # it cannot fit on its own.
+    line = _heading_on_one_line(lead, [[counts, *virtual, *board], [counts, *virtual], [counts], []], width)
 
     caveat = environment_caveat(inventory)
     limitation = privilege_note(inventory)
@@ -1286,13 +1292,55 @@ def _fields_on_one_line(name: theme.Cell, candidates: Sequence[Sequence[theme.Ce
         'a long >'
     """
     text, style = name
+    return _heading_on_one_line(Text(text, style=style), candidates, width)
+
+
+def _heading_on_one_line(name: Text, candidates: Sequence[Sequence[theme.Cell]], width: int) -> Text:
+    """:func:`_fields_on_one_line` for a name drawn in more than one style.
+
+    The banner's name is the build and the machine, each in its own style, so
+    it arrives as a :class:`~rich.text.Text` and keeps its spans through the cut.
+
+    Args:
+        name: The text the heading is about, styled.
+        candidates: The field sets to try, richest first, each a sequence of
+            ``(text, style)`` with its own leading separator.
+        width: The cells the line may take.
+
+    Returns:
+        The heading.
+
+    Example:
+        >>> name = Text().append("lsdsk  ", style="bold").append("a-host", style="cyan")
+        >>> _heading_on_one_line(name, [[("   2 disks", "")], []], 20).plain
+        'lsdsk  a-host'
+        >>> cut = _heading_on_one_line(name, [[]], 10)
+        >>> cut.plain, [span.style for span in cut.spans]
+        ('lsdsk  a->', ['bold', 'cyan', 'cyan'])
+    """
     for fields in candidates:
-        if cell_len(text) + sum(cell_len(field) for field, _ in fields) <= width:
-            line = Text(text, style=style)
+        if cell_len(name.plain) + sum(cell_len(field) for field, _ in fields) <= width:
+            line = name.copy()
             for field, field_style in fields:
                 line.append(field, style=field_style)
             return line
-    return Text(clip(text, width), style=style)
+    return _clipped(name, width)
+
+
+def _clipped(text: Text, width: int) -> Text:
+    """``text`` cut to ``width`` cells the way :func:`~.layout.clip` cuts a string, keeping its styles.
+
+    The clip mark takes the style of the character it follows, so a cut inside
+    the hostname is marked in the hostname's style.
+    """
+    cut = clip(text.plain, width)
+    if cut == text.plain or not cut:
+        return text.copy() if cut else Text("", style=text.style)
+    kept = len(cut) - len(ELLIPSIS)
+    head = text.divide([kept])[0]
+    mark_style = next((span.style for span in reversed(head.spans) if span.end >= kept), "")
+    head.append(ELLIPSIS, style=mark_style)
+    return head
 
 
 def title_line(title: str, width: int) -> Text:

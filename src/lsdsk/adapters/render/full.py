@@ -42,13 +42,15 @@ if TYPE_CHECKING:
 DEFAULT_WIDTH = DEFAULT_PIPED_WIDTH
 
 
-def _heading(title: str) -> Text:
+def _heading(title: str, width: int) -> Text:
     """Render a section heading in the same style the tables title themselves.
 
     The tables carry their own titles, so a section that has none needs one that
-    looks identical or the page reads as though it changed format halfway down.
+    looks identical or the page reads as though it changed format halfway down -
+    which includes being cut to one line rather than wrapped, since the heading
+    names the machine and a wrap strands the hostname on a line of its own.
     """
-    return Text(title, style="bold")
+    return report.title_line(title, width)
 
 
 def _legend(text: str) -> tuple[RenderableType, ...]:
@@ -95,11 +97,11 @@ def render_full(
     settled = tunables
     laid_out = settled.display
     sections: list[RenderableType] = [
-        report.render_header(inventory),
+        report.render_header(inventory, width=width),
         blank,
         report.render_verdict(findings, laid_out.summary_limit),
         blank,
-        _heading(f"Topology on {host}"),
+        _heading(f"Topology on {host}", width),
         tree.render_fabric(
             inventory,
             findings,
@@ -131,7 +133,7 @@ def render_full(
             store_refusal=read.refusal,
         ),
         blank,
-        _heading(f"Findings on {host}"),
+        _heading(f"Findings on {host}", width),
         report.render_findings(findings),
     ]
     return Group(*sections)

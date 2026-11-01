@@ -28,8 +28,10 @@ from rich.console import Console
 from rich.segment import Segment
 from rich.table import Table
 
+from lsdsk import __init__conf__
+from lsdsk.adapters.config.tunables import DisplaySettings, Tunables
 from lsdsk.adapters.hw.snapshot import build_from
-from lsdsk.adapters.render import report, tables
+from lsdsk.adapters.render import full, report, tables
 from lsdsk.adapters.render.layout import ELLIPSIS
 from lsdsk.adapters.render.trend import render_trend
 from lsdsk.domain.diagnostics import diagnose
@@ -145,3 +147,80 @@ def test_a_wide_character_hostname_keeps_every_title_on_one_line() -> None:
     for width in WIDTHS:
         problem = _whole_or_marked(title, _first_line(render_trend(trended, history, width=width), width), width)
         assert not problem, f"trend at width {width}: {problem}"
+
+
+# The default page carries two headings of its own above the sections that title
+# themselves, and the banner above everything: each names the machine as well.
+_PAGE_HEADINGS = ("Topology on", "Findings on")
+
+
+def _page_lines(inventory: Inventory, findings: tuple[Finding, ...], width: int) -> list[str]:
+    """Every line the default page draws at ``width``, as the reader sees them."""
+    console = Console(width=width, color_system=None, file=io.StringIO())
+    page = full.render_full(inventory, findings, width, tunables=Tunables(DEFAULT_THRESHOLDS, DisplaySettings()))
+    return ["".join(segment.text for segment in line).rstrip() for line in console.render_lines(page, pad=False)]
+
+
+def _banner_lead(inventory: Inventory) -> str:
+    """The part of the banner no width gives up: the build and the machine it describes."""
+    return f"lsdsk {__init__conf__.version}  {inventory.hostname}"
+
+
+def _banner_problem(inventory: Inventory, drawn: str, width: int) -> str:
+    """Why ``drawn`` is not the banner kept to one line of ``width`` cells, or an empty string."""
+    lead = _banner_lead(inventory)
+    if cell_len(drawn) > width:
+        return f"{drawn!r} is {cell_len(drawn)} cells on a console of {width}"
+    if drawn.startswith(lead):
+        return ""
+    if drawn.endswith(ELLIPSIS) and lead.startswith(drawn.removesuffix(ELLIPSIS)):
+        return ""
+    return f"{drawn!r} is neither {lead!r} with whole fields after it nor a marked cut of it"
+
+
+def _page_widths(inventory: Inventory) -> range:
+    """Every width at which a heading or the banner lead is cut, and a little past the last of them."""
+    longest = max(cell_len(_banner_lead(inventory)), *(cell_len(f"{w} {inventory.hostname}") for w in _PAGE_HEADINGS))
+    return range(20, longest + 3)
+
+
+def _assert_the_page_keeps_its_headings_on_one_line(inventory: Inventory, findings: tuple[Finding, ...]) -> None:
+    for width in _page_widths(inventory):
+        lines = _page_lines(inventory, findings, width)
+        problem = _banner_problem(inventory, lines[0], width)
+        assert not problem, f"banner at width {width}: {problem}"
+        for words in _PAGE_HEADINGS:
+            title = f"{words} {inventory.hostname}"
+            drawn = next(line for line in lines if line.startswith(words))
+            problem = _whole_or_marked(title, drawn, width)
+            assert not problem, f"{words} at width {width}: {problem}"
+
+
+@pytest.mark.parametrize("capture", CAPTURES)
+def test_the_default_page_keeps_its_own_headings_and_banner_on_one_line(capture: str) -> None:
+    inventory, findings = _machine(capture)
+    _assert_the_page_keeps_its_headings_on_one_line(inventory, findings)
+
+
+def test_a_wide_character_hostname_keeps_the_default_page_headings_on_one_line() -> None:
+    inventory, findings = _machine("linux-minimal")
+    _assert_the_page_keeps_its_headings_on_one_line(inventory.with_changes(hostname=WIDE_HOSTNAME), findings)
+
+
+@pytest.mark.parametrize("capture", CAPTURES)
+def test_the_banner_takes_one_line_at_every_width(capture: str) -> None:
+    """The banner the section commands print is the default page's own, held at every width."""
+    inventory, _ = _machine(capture)
+    for width in WIDTHS:
+        problem = _banner_problem(inventory, _first_line(report.render_header(inventory, width=width), width), width)
+        assert not problem, f"{capture} at width {width}: {problem}"
+
+
+def test_the_banner_is_whole_wherever_the_console_has_room_for_it() -> None:
+    """A field is given up only where it must be: a banner that fits loses nothing."""
+    inventory, _ = _machine("linux-btrfs-raid1-zoned-xfs")
+    whole = _first_line(report.render_header(inventory, width=400), 400)
+    assert whole.startswith(_banner_lead(inventory)), "the premise: the lead opens the banner"
+    assert f"{len(inventory.disks)} disks on" in whole, "the premise: the counts are fields of the banner"
+    for width in range(cell_len(whole), 201):
+        assert _first_line(report.render_header(inventory, width=width), width) == whole, f"width {width}"
