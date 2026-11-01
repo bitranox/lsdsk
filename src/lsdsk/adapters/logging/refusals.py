@@ -5,13 +5,16 @@ its settings resolver and the composition that parses each level - and only the
 first names a field. So a refusal is attributed here from what the library DID
 say: the field a validation error names where there is one, and otherwise every
 setting this run changed from the shipped value whose key or value the message
-quotes. When nothing is quoted, every changed setting is named, which says more
-than is wrong rather than pointing at the wrong one.
+quotes. A refusal that names none of them is the caller's to spread over every
+changed setting, which says more than is wrong rather than pointing at the
+wrong one - and then in words that quote no other setting's reason.
 
 Contents:
     * :data:`REFUSALS` - what the library raises for a value it cannot use.
     * :func:`changed_keys` - the settings this run holds differently from the shipped ones.
-    * :func:`offending_keys` - the settings a refusal is about.
+    * :func:`named_keys` - the changed settings a refusal names, if it names any.
+    * :func:`named_reason` - a refusal's reason for one setting it names.
+    * :func:`unnamed_reason` - the reason given to a setting no refusal named.
     * :func:`with_shipped_values` - a section with those settings put back.
     * :func:`ignored_sentence` - the warning for one setting that fell back.
     * :func:`offending_variables` - the ``LOG_*`` variables a refusal is about.
@@ -51,6 +54,10 @@ _RESOLVER_PREFIX: Final = "Invalid runtime settings: "
 
 #: What a setting the package does not ship falls back to.
 _LIBRARY_DEFAULT: Final = "lib_log_rich's own default"
+
+#: The reason a setting no refusal named is given when the refusal that sent it
+#: back quotes another setting: that setting's reason is not this one's.
+_REASON_UNNAMED: Final = "refused by the logging library with the others, which named no reason for this setting"
 
 #: The prefix of every environment variable lib_log_rich reads by itself.
 _LIBRARY_VARIABLE_PREFIX: Final = "LOG_"
@@ -169,10 +176,12 @@ def _quoted_in(message: str, key: str, value: object) -> bool:
     return key in message or (isinstance(value, str) and repr(value) in message)
 
 
-def offending_keys(
-    refused: BaseException, configured: Mapping[str, object], shipped: Mapping[str, object]
-) -> list[str]:
-    """The settings a refusal is about, as precisely as the library's words allow.
+def named_keys(refused: BaseException, configured: Mapping[str, object], shipped: Mapping[str, object]) -> list[str]:
+    """The changed settings a refusal names, as precisely as the library's words allow.
+
+    A setting still at its shipped value is never named: putting it back would
+    change nothing, so a refusal about it is one that names no setting this run
+    can repair by itself.
 
     Args:
         refused: What starting the runtime raised.
@@ -180,23 +189,63 @@ def offending_keys(
         shipped: The same table as the package ships it.
 
     Returns:
-        The keys to fall back on. Never empty when `configured` differs from
-        `shipped`, because a refusal nothing can be attributed to is put on every
-        changed setting.
+        The keys to put back, empty when the refusal names none of them.
 
     Examples:
-        >>> offending_keys(ValueError("Unknown log level: 'WARN'"), {"level": "WARN", "x": 1}, {"level": "INFO"})
+        >>> named_keys(ValueError("Unknown log level: 'WARN'"), {"level": "WARN", "x": 1}, {"level": "INFO"})
         ['level']
-        >>> offending_keys(ValueError("something odd"), {"a": 1, "b": 2}, {"a": 0})
-        ['a', 'b']
+        >>> named_keys(ValueError("something odd"), {"a": 1, "b": 2}, {"a": 0})
+        []
     """
     changed = changed_keys(configured, shipped)
-    named = [key for key in _named_fields(refused) if key in configured]
+    named = [key for key in _named_fields(refused) if key in changed]
     if named:
         return named
     message = _message(refused)
-    quoted = [key for key in changed if _quoted_in(message, key, configured[key])]
-    return quoted or changed
+    return [key for key in changed if _quoted_in(message, key, configured[key])]
+
+
+def named_reason(key: str, refused: BaseException) -> str:
+    """The reason `refused` gives for `key`, a setting it names.
+
+    Args:
+        key: A setting :func:`named_keys` found in the refusal.
+        refused: What the library raised.
+
+    Returns:
+        The validation error's own sentence for the field, or the library's message.
+
+    Example:
+        >>> named_reason("console_level", ValueError("console_level: Unknown log level: 'X'"))
+        "console_level: Unknown log level: 'X'"
+    """
+    return _named_fields(refused).get(key) or _message(refused)
+
+
+def unnamed_reason(refused: BaseException, configured: Mapping[str, object]) -> str:
+    """The reason given to a setting put back by a refusal that did not name it.
+
+    The library's message is that reason only while it quotes no setting at
+    all; a message about another setting would hand this one that setting's
+    reason.
+
+    Args:
+        refused: What the library raised.
+        configured: The ``[lib_log_rich]`` table that was refused.
+
+    Returns:
+        The library's message, or a sentence saying no reason was given.
+
+    Examples:
+        >>> unnamed_reason(OverflowError("Python int too large"), {"size": 10, "level": "X"})
+        'Python int too large'
+        >>> unnamed_reason(ValueError("level: Unknown 'X'"), {"size": 10, "level": "X"})
+        'refused by the logging library with the others, which named no reason for this setting'
+    """
+    message = _message(refused)
+    fields = _named_fields(refused)
+    quotes_a_setting = any(key in fields or _quoted_in(message, key, value) for key, value in configured.items())
+    return _REASON_UNNAMED if quotes_a_setting else message
 
 
 def with_shipped_values(
@@ -224,14 +273,12 @@ def with_shipped_values(
     return kept
 
 
-def ignored_sentence(
-    key: str, *, refused: BaseException, configured: Mapping[str, object], shipped: Mapping[str, object]
-) -> str:
+def ignored_sentence(key: str, *, reason: str, configured: Mapping[str, object], shipped: Mapping[str, object]) -> str:
     """The warning for one setting that fell back, worded as every other fallback's is.
 
     Args:
         key: The setting, under ``[lib_log_rich]``.
-        refused: What the library raised, which carries the reason.
+        reason: Why it fell back, from :func:`named_reason` or :func:`unnamed_reason`.
         configured: The table holding the refused value.
         shipped: The table holding the value used instead.
 
@@ -241,13 +288,12 @@ def ignored_sentence(
     Example:
         >>> ignored_sentence(
         ...     "console_level",
-        ...     refused=ValueError("Unknown log level: 'WARN'"),
+        ...     reason="Unknown log level: 'WARN'",
         ...     configured={"console_level": "WARN"},
         ...     shipped={"console_level": "INFO"},
         ... )
         "Warning: ignoring lib_log_rich.console_level=WARN: Unknown log level: 'WARN'. Using INFO."
     """
-    reason = _named_fields(refused).get(key) or _message(refused)
     used = rendered(shipped[key]) if key in shipped else _LIBRARY_DEFAULT
     return RejectedValue(
         dotted=f"lib_log_rich.{visible_text(key)}",
@@ -310,8 +356,10 @@ __all__ = [
     "changed_keys",
     "check_timeouts",
     "ignored_sentence",
-    "offending_keys",
+    "named_keys",
+    "named_reason",
     "offending_variables",
+    "unnamed_reason",
     "variable_sentence",
     "with_shipped_values",
 ]

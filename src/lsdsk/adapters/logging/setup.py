@@ -48,8 +48,10 @@ from .refusals import (
     changed_keys,
     check_timeouts,
     ignored_sentence,
-    offending_keys,
+    named_keys,
+    named_reason,
     offending_variables,
+    unnamed_reason,
     variable_sentence,
     with_shipped_values,
 )
@@ -671,6 +673,57 @@ def _refused_without(section: Mapping[str, object], hidden: Sequence[str]) -> Ba
         return _refused_by(section)
 
 
+class _PutBack(NamedTuple):
+    """The settings put back to their shipped values, and how the last start went.
+
+    Attributes:
+        reasons: Each setting put back, with the reason the refusal that named it gave.
+        refused: ``None`` once the runtime started, else the last refusal.
+    """
+
+    reasons: dict[str, str]
+    refused: BaseException | None
+
+
+def _put_back_until_started(
+    configured: Mapping[str, object], shipped: Mapping[str, object], *, refused: BaseException, hidden: Sequence[str]
+) -> _PutBack:
+    """Put back the settings each refusal names, one refusal at a time, until the runtime starts.
+
+    lib_log_rich stops at the first value it cannot use, so a refusal names one
+    setting while others may be refused behind it. Each one is put back under the
+    reason its own refusal gave, never the first one's, and a valid setting no
+    refusal names is kept. A refusal that names no setting not already put back
+    sends every remaining changed setting back at once, which is the shipped table.
+
+    Args:
+        configured: The ``[lib_log_rich]`` table as the layers merged it.
+        shipped: The same table as the package ships it.
+        refused: What starting from `configured` raised.
+        hidden: ``LOG_*`` variables to set aside for every start.
+
+    Returns:
+        The settings put back with their reasons, and the last refusal if the runtime never started.
+    """
+    changed = changed_keys(configured, shipped)
+    reasons: dict[str, str] = {}
+    # Each pass puts back at least one changed setting or ends, so this bounds it.
+    for _ in range(len(changed) + 1):
+        named = [key for key in named_keys(refused, configured, shipped) if key not in reasons]
+        rest = [key for key in changed if key not in reasons]
+        if named:
+            reasons.update({key: named_reason(key, refused) for key in named})
+        elif rest:
+            reasons.update(dict.fromkeys(rest, unnamed_reason(refused, configured)))
+        else:
+            break
+        attempt = _refused_without(with_shipped_values(configured, shipped, list(reasons)), hidden)
+        if attempt is None:
+            return _PutBack(reasons, None)
+        refused = attempt
+    return _PutBack(reasons, refused)
+
+
 def start_runtime(configured: Mapping[str, object], shipped: Mapping[str, object]) -> list[str]:
     """Start the runtime, falling back to the shipped settings for any value it refused.
 
@@ -681,16 +734,17 @@ def start_runtime(configured: Mapping[str, object], shipped: Mapping[str, object
     and says so.
 
     The attempts after the first narrow what is trusted: the refused settings put
-    back to their shipped values; then the ``LOG_*`` variables the refusal is
+    back to their shipped values, one refusal at a time because the library stops
+    at the first value it cannot use; then the ``LOG_*`` variables the refusal is
     about set aside for the start, because lib_log_rich reads those ahead of
     every setting and no fallback in this tool's configuration can outrank one;
-    then both, with the shipped table whole. Every command binds a logging
-    context, so running on with no runtime at all is not an option. If the
-    shipped settings with those variables set aside are refused too, that is a
-    fault in this tool, and the original refusal is raised.
+    then both. Every command binds a logging context, so running on with no
+    runtime at all is not an option. If the shipped settings with those
+    variables set aside are refused too, that is a fault in this tool, and the
+    original refusal is raised.
 
-    Where both a setting and a variable were refused, each warning quotes the
-    refusal its own source earned: the first refusal is about whichever the
+    Each warning quotes the refusal its own source earned. Where both a setting
+    and a variable were refused, the first refusal is about whichever the
     library read first - the variable, which it reads ahead of the setting - so
     quoting it under the setting gave the setting the variable's reason.
 
@@ -711,26 +765,30 @@ def start_runtime(configured: Mapping[str, object], shipped: Mapping[str, object
         return []
     # Read before any variable is set aside: the sentences quote their values.
     environ = dict(os.environ)
-    offenders = offending_keys(refused, configured, shipped)
+
+    def about_keys(reasons: Mapping[str, str]) -> list[str]:
+        return [
+            ignored_sentence(key, reason=reason, configured=configured, shipped=shipped)
+            for key, reason in reasons.items()
+        ]
+
+    def about_variables(names: Sequence[str], reason: BaseException) -> list[str]:
+        return [variable_sentence(name, refused=reason, environ=environ) for name in names]
+
+    in_place = _put_back_until_started(configured, shipped, refused=refused, hidden=())
+    if in_place.refused is None:
+        return about_keys(in_place.reasons)
     variables = offending_variables(refused, environ)
-
-    def about_keys(keys: Sequence[str], reason: BaseException) -> list[str]:
-        return [ignored_sentence(key, refused=reason, configured=configured, shipped=shipped) for key in keys]
-
-    def about_variables(reason: BaseException) -> list[str]:
-        return [variable_sentence(name, refused=reason, environ=environ) for name in variables]
-
-    with_keys_put_back = _refused_without(with_shipped_values(configured, shipped, offenders), ())
-    if with_keys_put_back is None:
-        return about_keys(offenders, refused)
+    if not variables:
+        raise refused
     with_variables_aside = _refused_without(configured, variables)
     if with_variables_aside is None:
-        return about_variables(refused)
-    if _refused_without(shipped, variables) is None:
-        return [
-            *about_keys(changed_keys(configured, shipped), with_variables_aside),
-            *about_variables(with_keys_put_back),
-        ]
+        return about_variables(variables, refused)
+    aside = _put_back_until_started(configured, shipped, refused=with_variables_aside, hidden=variables)
+    if aside.refused is None:
+        # With every setting put back and the variables still read, what refused
+        # the start can only be the variables: that is their reason.
+        return [*about_keys(aside.reasons), *about_variables(variables, in_place.refused)]
     raise refused
 
 
