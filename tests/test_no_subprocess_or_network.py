@@ -436,77 +436,169 @@ def test_only_the_elevation_and_shortcut_modules_reach_the_library_that_starts_a
     assert naming == sorted([RELAUNCHES, WRITES_SHORTCUTS]), f"pwshpy is imported outside the two allowed: {naming}"
 
 
+#: What a ``getattr`` on pwshpy with a name computed at run time is recorded as. No
+#: allow-list can hold it, so such a read is refused: the member is unknowable here.
+COMPUTED_MEMBER = "<a member named only at run time>"
+
+
 def _pwshpy_members_named(source: str) -> set[str]:
     """Every pwshpy member ``source`` names, by any route a module could take to one.
 
     A member read off a pwshpy handle (``pwshpy.ps.elevate``), off an alias of
     one (``shell = pwshpy.ps``), off an import of it (``from pwshpy import ps``),
-    off a dynamic import (``import_module("pwshpy").ps``), through ``getattr``
-    with a literal name, and every member the module's typed facade declares: a
-    module cast to a ``Protocol`` can call only what that Protocol names, so a
-    new member has to appear there for pyright to accept the call. ``pwshpy`` is
-    a handle by name too, since both modules bind the loaded module to a local
-    of that name.
+    off a dynamic import (``import_module("pwshpy").ps``), off what a loader
+    returns (``_load().ps``, ``self._pwshpy().ps``, a ``cast`` of either), off an
+    attribute that holds the module (``self._module.ps``), and through
+    ``getattr`` - a literal name is that member, a computed one is
+    :data:`COMPUTED_MEMBER`, which no allow-list holds. Every member the module's
+    typed facade declares counts too: a module cast to a ``Protocol`` can call
+    only what that Protocol names, so a new member has to appear there for
+    pyright to accept the call. ``pwshpy`` is a handle by name too, since both
+    modules bind the loaded module to a local of that name.
     """
     tree = ast.parse(source)
-    handles = _pwshpy_handles(tree)
+    reach = _PwshpyReach(tree)
     named = _protocol_members(tree)
     for node in ast.walk(tree):
-        for reference in _pwshpy_references(node, handles):
-            named.update(reference.split(".")[1:])
+        if isinstance(node, ast.Attribute | ast.Call):
+            reference = reach.resolve(node)
+            if reference is not None:
+                named.update(reference.split(".")[1:])
+        if isinstance(node, ast.Call) and reach.reads_a_computed_member(node):
+            named.add(COMPUTED_MEMBER)
     return named
 
 
-def _pwshpy_handles(tree: ast.AST) -> dict[str, str]:
-    """Every local name bound to pwshpy or a member of it, as the dotted name it stands for."""
-    bound = {"pwshpy": "pwshpy"}
-    for node in ast.walk(tree):
-        _import_references(node, bound)
-    handles = {name: target for name, target in bound.items() if target.split(".")[0] == "pwshpy"}
-    while _bind_aliases(tree, handles):
-        pass
-    return handles
-
-
-def _bind_aliases(tree: ast.AST, handles: dict[str, str]) -> bool:
-    """Record each plain name assigned a handle or a member of one; whether any was new."""
-    grew = False
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Attribute | ast.Name):
-            continue
-        resolved = _pwshpy_chain(node.value, handles)
-        for target in node.targets:
-            if resolved is not None and isinstance(target, ast.Name) and target.id not in handles:
-                handles[target.id] = resolved
-                grew = True
-    return grew
-
-
-def _pwshpy_chain(node: ast.expr, handles: dict[str, str]) -> str | None:
-    """``a.b.c`` as a dotted pwshpy name when ``a`` is a handle or a dynamic import of pwshpy, else None."""
-    attributes: list[str] = []
-    current = node
-    while isinstance(current, ast.Attribute):
-        attributes.insert(0, current.attr)
-        current = current.value
-    if isinstance(current, ast.Name) and current.id in handles:
-        return ".".join([handles[current.id], *attributes])
-    if isinstance(current, ast.Call) and _is_dynamic_import_of(current, "pwshpy"):
-        return ".".join(["pwshpy", *attributes])
+def _dotted(node: ast.expr) -> str | None:
+    """A ``Name`` or a chain of attributes off one (``self._module``) as dotted text, else None."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        owner = _dotted(node.value)
+        return None if owner is None else f"{owner}.{node.attr}"
     return None
 
 
-def _pwshpy_references(node: ast.AST, handles: dict[str, str]) -> list[str]:
-    """The dotted pwshpy names one node reads: an attribute chain, or a ``getattr`` with a literal name."""
-    if isinstance(node, ast.Attribute):
-        chain = _pwshpy_chain(node, handles)
-        return [chain] if chain is not None else []
-    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr"):
-        return []
-    if len(node.args) < 2:
-        return []
-    owner, member = _pwshpy_chain(node.args[0], handles), _literal_text(node.args[1])
-    return [f"{owner}.{member}"] if owner is not None and member is not None else []
+def _is_getattr(call: ast.Call) -> bool:
+    """Whether ``call`` is the builtin ``getattr`` with an owner and a name."""
+    return isinstance(call.func, ast.Name) and call.func.id == "getattr" and len(call.args) >= 2
+
+
+class _PwshpyReach:
+    """Which expressions in one module stand for pwshpy or a member of it.
+
+    Two tables, filled to a fixpoint: ``handles`` maps a local name or an
+    attribute path (``self._module``) to the pwshpy name it holds, and
+    ``loaders`` maps a callable - a function, a method, an attribute holding one
+    (``self._load = load or _installed``) - to the pwshpy name it returns. A
+    member read off a loader's result is how the shortcut writer reaches pwshpy,
+    so a table of names alone sees nothing that module calls.
+    """
+
+    def __init__(self, tree: ast.AST) -> None:
+        bound = {"pwshpy": "pwshpy"}
+        for node in ast.walk(tree):
+            _import_references(node, bound)
+        self.handles = {name: target for name, target in bound.items() if target.split(".")[0] == "pwshpy"}
+        self.loaders: dict[str, str] = {}
+        while self._learn(tree):
+            pass
+
+    def _learn(self, tree: ast.AST) -> bool:
+        """One pass over ``tree``, recording each new handle and loader; whether anything was new."""
+        grew = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                grew |= self._learn_loader(node)
+            elif isinstance(node, ast.Assign | ast.AnnAssign) and node.value is not None:
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                for target in targets:
+                    grew |= self._learn_binding(target, node.value)
+        return grew
+
+    def _learn_loader(self, function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        """Record ``function`` as a loader when one of its ``return`` statements yields pwshpy."""
+        for node in ast.walk(function):
+            returned = self.resolve(node.value) if isinstance(node, ast.Return) and node.value is not None else None
+            if returned is not None:
+                # Called bare or as a method: the scan does not tell one class's ``self`` from another's.
+                return self._record(self.loaders, function.name, returned) | self._record(
+                    self.loaders, f"self.{function.name}", returned
+                )
+        return False
+
+    def _learn_binding(self, target: ast.expr, value: ast.expr) -> bool:
+        """Record ``target`` as a handle, or a loader, when ``value`` is one."""
+        key = _dotted(target)
+        if key is None:
+            return False
+        held = self.resolve(value)
+        if held is not None:
+            return self._record(self.handles, key, held)
+        returned = self._loader_returns(value)
+        return returned is not None and self._record(self.loaders, key, returned)
+
+    @staticmethod
+    def _record(table: dict[str, str], key: str, value: str) -> bool:
+        if key in table:
+            return False
+        table[key] = value
+        return True
+
+    def resolve(self, node: ast.expr) -> str | None:
+        """The pwshpy name ``node`` evaluates to, or None when it is not pwshpy."""
+        if isinstance(node, ast.Name | ast.Attribute):
+            return self._resolve_path(node)
+        if isinstance(node, ast.Call):
+            return self._resolve_call(node)
+        if isinstance(node, ast.IfExp):
+            return self.resolve(node.body) or self.resolve(node.orelse)
+        if isinstance(node, ast.BoolOp):
+            return next((found for value in node.values if (found := self.resolve(value)) is not None), None)
+        return None
+
+    def _resolve_path(self, node: ast.Name | ast.Attribute) -> str | None:
+        """A name or attribute chain, by the longest prefix of it that holds pwshpy."""
+        attributes: list[str] = []
+        current: ast.expr = node
+        while isinstance(current, ast.Attribute):
+            path = _dotted(current)
+            if path is not None and path in self.handles:
+                return ".".join([self.handles[path], *attributes])
+            attributes.insert(0, current.attr)
+            current = current.value
+        if isinstance(current, ast.Name):
+            held = self.handles.get(current.id)
+            return None if held is None else ".".join([held, *attributes])
+        owner = self.resolve(current)
+        return None if owner is None else ".".join([owner, *attributes])
+
+    def _resolve_call(self, call: ast.Call) -> str | None:
+        """What a call returns: a dynamic import, a ``cast``, a literal ``getattr``, or a loader."""
+        if _is_dynamic_import_of(call, "pwshpy"):
+            return "pwshpy"
+        if isinstance(call.func, ast.Name) and call.func.id == "cast" and len(call.args) == 2:
+            return self.resolve(call.args[1])
+        if _is_getattr(call):
+            owner, member = self.resolve(call.args[0]), _literal_text(call.args[1])
+            return None if owner is None or member is None else f"{owner}.{member}"
+        callee = _dotted(call.func)
+        return None if callee is None else self.loaders.get(callee)
+
+    def _loader_returns(self, value: ast.expr) -> str | None:
+        """What ``value``, taken as a callable, returns when it is a loader (``load or _installed``)."""
+        if isinstance(value, ast.BoolOp):
+            return next((found for item in value.values if (found := self._loader_returns(item)) is not None), None)
+        if isinstance(value, ast.IfExp):
+            return self._loader_returns(value.body) or self._loader_returns(value.orelse)
+        if isinstance(value, ast.Lambda):
+            return self.resolve(value.body)
+        path = _dotted(value)
+        return None if path is None else self.loaders.get(path)
+
+    def reads_a_computed_member(self, call: ast.Call) -> bool:
+        """Whether ``call`` is a ``getattr`` on pwshpy whose name is computed at run time."""
+        return _is_getattr(call) and self.resolve(call.args[0]) is not None and _literal_text(call.args[1]) is None
 
 
 def _protocol_members(tree: ast.AST) -> set[str]:
@@ -575,6 +667,34 @@ def test_each_module_reaching_pwshpy_names_only_the_members_allowed_to_it() -> N
         pytest.param('import importlib\nimportlib.import_module("pwshpy").ps.exec("x")\n', "exec", id="dynamic-import"),
         pytest.param('getattr(pwshpy.ps, "exec")("x")\n', "exec", id="getattr"),
         pytest.param("class _Ps(Protocol):\n    def exec(self) -> int: ...\n", "exec", id="facade-declares-it"),
+        pytest.param(
+            'def _load():\n    return importlib.import_module("pwshpy")\n_load().ps.exec("x")\n',
+            "exec",
+            id="off-a-call-result",
+        ),
+        pytest.param(
+            'def _load():\n    return cast("M", importlib.import_module("pwshpy"))\n'
+            'module = _load()\nmodule.ps.exec("x")\n',
+            "exec",
+            id="off-a-cast-loader-result",
+        ),
+        pytest.param(
+            'class S:\n    def go(self):\n        self._module = importlib.import_module("pwshpy")\n'
+            '        self._module.ps.exec("x")\n',
+            "exec",
+            id="off-self-module",
+        ),
+        pytest.param(
+            "class S:\n    def __init__(self, load=None):\n        self._load = load or _installed\n"
+            "    def _pwshpy(self):\n        if self._module is None:\n            self._module = self._load()\n"
+            "        return self._module\n"
+            '    def go(self):\n        self._pwshpy().ps.exec("x")\n'
+            'def _installed():\n    return importlib.import_module("pwshpy")\n',
+            "exec",
+            id="off-a-stored-loader-method",
+        ),
+        pytest.param('getattr(pwshpy, "ps").exec("x")\n', "exec", id="off-a-getattr-result"),
+        pytest.param("getattr(pwshpy.ps, name)('x')\n", COMPUTED_MEMBER, id="getattr-with-a-computed-name"),
     ],
 )
 def test_the_allow_list_refuses_a_planted_member_whichever_way_it_is_reached(source: str, forbidden: str) -> None:
