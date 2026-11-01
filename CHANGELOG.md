@@ -61,6 +61,10 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   copied, it now says so on stderr and names the error; it said only "Shortcut created".
 - A refused write (the shortcut, its menu copy, a snapshot, the counter history) now names the
   file asked for, the same on every run; it named a random `.<name>.<random>.tmp` beside it.
+- A `config-deploy --force` that replaces a broken configuration file no longer also prints
+  `[ERRO] config_file_invalid` from the configuration library after lsdsk's own warning that the
+  file is skipped. lsdsk now requires lib_layered_config 7.7.0 or later, which reports a refused
+  file at debug level.
 - When `curl` is missing, the uv installer's error now names `lsdsk-uv-installer` rather than
   putting the download URL where the failing program goes.
 - On Windows, an argument of the `It launches:` line holding `& | < > ^` is now double-quoted, so
