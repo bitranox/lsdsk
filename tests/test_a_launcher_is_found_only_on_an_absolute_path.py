@@ -185,3 +185,52 @@ def test_a_directory_the_account_cannot_enter_is_passed_over_without_raising(tmp
 
     assert found is not None
     assert found.samefile(real)
+
+
+def test_a_directory_named_like_the_launcher_is_passed_over_for_the_executable_behind_it(tmp_path: Path) -> None:
+    """A folder called ``uvx`` is no launcher, so the executable ``uvx`` later on ``PATH`` answers.
+
+    Execute access alone cannot tell them apart: POSIX grants it for any
+    directory the account may enter and Windows for every path, so only the
+    regular-file check keeps a folder from becoming the shortcut's target.
+    """
+    first = tmp_path / "first"
+    (first / f"uvx{_SUFFIX}").mkdir(parents=True)
+    real = _plant(tmp_path / "second", "uvx")
+
+    found = uvx_path(search=_search(first, tmp_path / "second"))
+
+    assert found is not None
+    assert found.samefile(real)
+
+
+def test_the_first_absolute_directory_holding_the_launcher_is_the_one_found(tmp_path: Path) -> None:
+    """With ``uvx`` in two absolute directories the earlier one answers, as a shell's own lookup does.
+
+    The reader orders ``PATH`` to say which install wins, so a later copy - an
+    older uv, a second install - must not shadow the one the shell would run.
+    """
+    first = _plant(tmp_path / "first", "uvx")
+    later = _plant(tmp_path / "later", "uvx")
+
+    found = uvx_path(search=_search(tmp_path / "first", tmp_path / "later"))
+
+    assert found is not None
+    assert found.samefile(first)
+    assert not found.samefile(later)
+
+
+def test_a_pathext_ending_in_a_separator_still_finds_the_launcher_by_its_suffix(tmp_path: Path) -> None:
+    """``PATHEXT`` written with a trailing ``;`` holds an empty entry, which is no suffix at all.
+
+    Read as a suffix, the empty entry is one every name already ends with, so
+    ``uvx`` would be looked for bare and the ``uvx.EXE`` beside it never tried.
+    Driven through ``pathext`` so every runner holds the Windows rule.
+    """
+    directory = tmp_path / "bin"
+    directory.mkdir()
+    launcher = directory / "uvx.EXE"
+    launcher.write_bytes(b"MZ")
+    launcher.chmod(stat.S_IRWXU)
+
+    assert executable_on_path("uvx", search=str(directory), pathext=".COM;.EXE;") == launcher

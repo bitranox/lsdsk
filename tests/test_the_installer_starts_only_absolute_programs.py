@@ -209,3 +209,46 @@ def test_install_shortcut_says_which_installer_program_is_missing(
     assert "the uv installer could not start: no 'sh' in an absolute PATH directory" in message
     assert not marker.exists()
     assert list(desktop.iterdir()) == []
+
+
+def test_windows_powershell_is_looked_up_by_the_suffixes_the_environment_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ``PATHEXT`` in the environment is the one the lookup uses, not Windows' default.
+
+    ``.PY`` is in no default, so a ``powershell.PY`` is found only by a lookup
+    that read the variable. Driven through the ``win32`` platform, whose suffix
+    rule applies on every runner.
+    """
+    programs = tmp_path / "programs"
+    powershell = _write_script(programs / "powershell.PY", "#!/bin/sh\nexit 0\n")
+    monkeypatch.setenv("PATH", _search(programs))
+    monkeypatch.setenv("PATHEXT", ".PY")
+    started = _Recorder()
+
+    result = install_uv(run=started, platform="win32", search=str(tmp_path / "empty"))
+
+    assert result.missing_program is None
+    assert [command[0] for command in started.commands] == [str(powershell)]
+
+
+@pytest.mark.parametrize("suffix", [".COM", ".EXE", ".BAT", ".CMD"])
+def test_windows_powershell_is_found_by_each_default_suffix_where_the_environment_names_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str
+) -> None:
+    """With no ``PATHEXT`` set, each suffix Windows' own default lists still finds the program.
+
+    An environment without the variable is not one without executables: a
+    lookup that then tried the bare name alone, or fewer suffixes than Windows
+    does, would call a ``powershell.CMD`` missing and refuse the install.
+    """
+    programs = tmp_path / "programs"
+    powershell = _write_script(programs / f"powershell{suffix}", "#!/bin/sh\nexit 0\n")
+    monkeypatch.setenv("PATH", _search(programs))
+    monkeypatch.delenv("PATHEXT", raising=False)
+    started = _Recorder()
+
+    result = install_uv(run=started, platform="win32", search=str(tmp_path / "empty"))
+
+    assert result.missing_program is None
+    assert [command[0] for command in started.commands] == [str(powershell)]
