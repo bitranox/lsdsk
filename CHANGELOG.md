@@ -5,6 +5,58 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.16.6] - 2026-11-01
+
+### Security
+
+- `install-shortcut --install-uv` and the shortcut offer now start the uv installer's own shell
+  (`sh`, or `powershell` on Windows) only from an absolute `PATH` directory. A program of that
+  name in the folder lsdsk was started from, or reachable through a relative `PATH` entry such as
+  `.`, is never run. When no absolute directory holds it, the install fails with `the uv
+  installer could not start: no 'sh' in an absolute PATH directory` instead of running whatever
+  was found. The installer itself also runs with only the absolute `PATH` entries, so its `curl`
+  cannot come from the current folder either.
+
+### Fixed
+
+- When several `[lib_log_rich]` settings are refused, each is put back on its own with its own
+  reason, and a valid setting beside them (such as `console_theme = "classic"`) is kept.
+  Previously every warning quoted the first refused setting's reason and every changed setting
+  fell back to the shipped value.
+- The "Scanning Drives ..." line no longer flashes around a `--set` the root group refuses (no
+  `=`, an unknown key of `[display]`, `[thresholds]` or `[history]`, a typo of one of those
+  sections, an empty value, two settings that contradict each other) or around a usage error in
+  `tui`'s own options (`tui --bogus`, `tui extra`, `tui --replay <missing>`, `tui --replay` with
+  no value, `tui --format ...`).
+- A crash before logging starts now lays out its report with the `.env` named by `--env-file`,
+  rather than one found by searching up from the working directory.
+- `install-shortcut --install-uv` no longer installs uv before refusing a relative
+  `XDG_CONFIG_HOME` when `XDG_DESKTOP_DIR` is set. The folder the icon is copied to is now named,
+  and refused, before anything is installed, as the Desktop and the menu already were. The same
+  holds on Windows for a relative `%APPDATA%`/`%LOCALAPPDATA%`.
+- A user configuration directory that resolves to a relative path is refused with a message naming
+  the variable it came from: `APPDATA`, or `LOCALAPPDATA` where `APPDATA` does not exist, on
+  Windows, `HOME` on macOS, and `XDG_CONFIG_HOME` or `HOME` on Linux. Every platform used to be told
+  to set `XDG_CONFIG_HOME`, which Windows and macOS never read.
+- The PowerShell launch line `install-shortcut` prints on Windows now single-quotes an argument
+  that starts with `]`. PowerShell split `]b` into two arguments and refused `]@` as a parse
+  error.
+- A refused menu copy on Linux, and a refused `.lnk` on Windows (Desktop or Start menu), now name
+  the file once. Before, the message read `at X: [Errno 13] Permission denied: 'X'`, and on
+  Windows `could not write X: writing the shortcut X failed ...`.
+- A launch argument or icon path that is not valid UTF-8, or that holds a control character, is
+  now refused by naming that one argument, with an undecodable byte shown as the byte itself
+  (`b'/opt/bin\xff/uvx'`). It used to quote the whole Exec line behind `[Errno 22]` with a
+  `\udcff` escape. The exit code is still `74`.
+- The Quickstart notebook installs from a checkout whose path contains a space. It put the path
+  into an IPython shell line unquoted, so uv got it as two arguments and failed with
+  'Distribution not found'. Both installs now run as argument lists, still show their output in
+  the cell, and still fail the cell when they fail.
+- The 1.16.5 entry said the test suite fails on any untracked file a local build would pick up.
+  It did not for a build from a `.claude/worktrees/` checkout, where the build applies no ignore
+  pattern at all, or for a file re-included by a `!` pattern under an ignored directory. The test
+  now asks the build backend's own file walk, so both are caught.
+
 ## [1.16.5] - 2026-11-01
 
 ### Security

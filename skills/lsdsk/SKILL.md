@@ -174,26 +174,30 @@ When neither `uvx` nor `lsdsk` is on PATH, it refuses with `78` unless
 launcher for the shortcut` and ends naming `--install-uv`. With either on PATH the flag does
 nothing. The flag IS the consent: it runs the official uv installer (a network request, the one
 subprocess lsdsk ever starts besides relaunching itself) with no further prompt.
+The installer's own shell (`sh`, or `powershell` on Windows) is started only from an absolute
+PATH directory, and the installer runs with only the absolute PATH entries. When no absolute
+directory holds that shell, nothing runs and the command refuses with `78` and `the uv installer
+could not start: no 'sh' in an absolute PATH directory, so there is no launcher for the shortcut`.
 An installer that exits non-zero (no curl, no network, a refused download) refuses
 with `78` and `the uv installer failed (exit N), so there is no launcher for the
-shortcut`, followed in the same message by the manual install line for the platform; an installer that
-exits `0` but leaves no `uvx` it can find refuses with `78` and `uv was installed but
-uvx is still not on PATH`. Each refusal goes to stderr as `Error: <text>` and, under
+shortcut`. Both are followed in the same message by the manual install line for the platform. An
+installer that exits `0` but leaves no `uvx` it can find refuses with `78` and `uv was installed
+but uvx is still not on PATH`. Each refusal goes to stderr as `Error: <text>` and, under
 `--format json`, is also the envelope's `error.message`. The installer's own output
 goes to standard error too, so `--format json` still prints the envelope alone.
 
-| Outcome                                                                                                                                                                     | Exit | `--format json`                                                                                  |
-|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------|--------------------------------------------------------------------------------------------------|
-| Shortcut written                                                                                                                                                            | `0`  | `ok` true, `data.shortcut` (the path), `data.launch` (the argv)                                  |
-| Desktop shortcut written, but its copy into the application menu (Linux) or the Start menu (Windows) failed, for any reason, a refused permission included                  | `0`  | `ok` false, `data` as above, `skipped` naming the copy and the cause                             |
-| Refused (any case above)                                                                                                                                                    | `78` | `ok` false, `error.type` `CONFIG_ERROR`                                                          |
-| No user configuration directory can be named (a relative `$XDG_CONFIG_HOME`)                                                                                                | `78` | `ok` false, `error.type` `CONFIG_ERROR`, the message naming the relative path                    |
-| On Linux, a relative `$XDG_DESKTOP_DIR` or `$XDG_DATA_HOME`, refused before `--install-uv` could install anything                                                           | `78` | `ok` false, `error.type` `CONFIG_ERROR`, the message naming the variable, nothing written        |
-| A write refused for permission: the Linux or macOS Desktop shortcut, the Windows Desktop `.lnk` refused with access denied (`0x80070005`), or the icon copy on any platform | `13` | `ok` false, `error.type` `PERMISSION_DENIED` (for a `.lnk`, the HRESULT in the message)          |
-| Any other failed write (a full disk, a directory where the file goes)                                                                                                       | `74` | `ok` false, `error.type` `IO_ERROR`                                                              |
-| The Windows Desktop `.lnk` the shell refused to save for any reason other than access denied                                                                                | `74` | `ok` false, `error.type` `IO_ERROR`, the HRESULT in the message                                  |
-| A control character (a newline included) in a launch argument or the icon path, which no Linux `.desktop` value can carry                                                   | `74` | `ok` false, `error.type` `IO_ERROR`, nothing written                                             |
-| On Linux or macOS, a launch argument or the icon path holding a byte that is not valid UTF-8                                                                                | `74` | `ok` false, `error.type` `IO_ERROR`, the message saying it `is not valid UTF-8`, nothing written |
+| Outcome                                                                                                                                                                                                                                | Exit | `--format json`                                                                                       |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------|-------------------------------------------------------------------------------------------------------|
+| Shortcut written                                                                                                                                                                                                                       | `0`  | `ok` true, `data.shortcut` (the path), `data.launch` (the argv)                                       |
+| Desktop shortcut written, but its copy into the application menu (Linux) or the Start menu (Windows) failed, for any reason, a refused permission included                                                                             | `0`  | `ok` false, `data` as above, `skipped` naming the copy and the cause                                  |
+| Refused (any case above)                                                                                                                                                                                                               | `78` | `ok` false, `error.type` `CONFIG_ERROR`                                                               |
+| No user configuration directory can be named (a relative `$XDG_CONFIG_HOME`; on Windows a relative `%APPDATA%`, or a relative `%LOCALAPPDATA%` where `%APPDATA%` does not exist), refused before `--install-uv` could install anything | `78` | `ok` false, `error.type` `CONFIG_ERROR`, the message naming the relative path and the variable to set |
+| On Linux, a relative `$XDG_DESKTOP_DIR` or `$XDG_DATA_HOME`, refused before `--install-uv` could install anything                                                                                                                      | `78` | `ok` false, `error.type` `CONFIG_ERROR`, the message naming the variable, nothing written             |
+| A write refused for permission: the Linux or macOS Desktop shortcut, the Windows Desktop `.lnk` refused with access denied (`0x80070005`), or the icon copy on any platform                                                            | `13` | `ok` false, `error.type` `PERMISSION_DENIED` (for a `.lnk`, the HRESULT in the message)               |
+| Any other failed write (a full disk, a directory where the file goes)                                                                                                                                                                  | `74` | `ok` false, `error.type` `IO_ERROR`                                                                   |
+| The Windows Desktop `.lnk` the shell refused to save for any reason other than access denied                                                                                                                                           | `74` | `ok` false, `error.type` `IO_ERROR`, the HRESULT in the message                                       |
+| A control character (a newline included) in a launch argument or the icon path, which no Linux `.desktop` value can carry                                                                                                              | `74` | `ok` false, `error.type` `IO_ERROR`, nothing written                                                  |
+| On Linux or macOS, a launch argument or the icon path holding a byte that is not valid UTF-8                                                                                                                                           | `74` | `ok` false, `error.type` `IO_ERROR`, the message saying it `is not valid UTF-8`, nothing written      |
 
 On Linux and Windows the Desktop file is written first and the menu copy second, so a
 failure on the menu copy leaves the Desktop file in place and the run still exits `0`.
@@ -228,22 +232,21 @@ The offer stays silent in the following cases:
 - when that key is off;
 - whenever the printed page is chosen instead of the view.
 
-`lsdsk tui` never offers. The offer appears whether or not uv is installed. Choosing
-"create it" with neither `uvx` nor `lsdsk` on PATH asks before installing uv (unlike
-the command). A declined install leaves no shortcut, says nothing and records nothing, so the
-offer comes back on the next start. A failed install prints `the uv installer failed
-(exit N)` with the manual install line, a failed shortcut write prints `Could not
-create the desktop shortcut: <reason>`, a Desktop shortcut whose menu copy failed prints
-`Shortcut created at <path>.` on stdout and then the same `Warning:` line on stderr as the command,
-an icon that will not copy does not stop the offer (unlike the command): it writes the shortcut
-without an icon, prints `Shortcut created at <path>.` on stdout and then `Warning: the shortcut was
-created without its icon, which could not be copied: <error>` on stderr,
-and a "never" that cannot be saved (an
-unwritable or malformed config file, a `display` that is not a table) prints `Could
-not save the do-not-offer setting: <reason>` and leaves the file as it was. The failed-install line
-and both `Could not ...` lines go to stderr.
-End of input (Ctrl+D) answers "not now" at the shortcut question and "no" at the uv
-question, recording nothing. The view opens in every case.
+`lsdsk tui` never offers. The offer appears whether or not uv is installed. Choosing "create it"
+with neither `uvx` nor `lsdsk` on PATH asks before installing uv (unlike the command). A declined
+install leaves no shortcut, says nothing and records nothing, so the offer comes back on the next
+start. A failed install prints the command's own `the uv installer failed (exit N)` or `the uv
+installer could not start` message, manual install line included and without the `Error:` prefix,
+and writes no shortcut. A failed shortcut write prints `Could not create the desktop shortcut:
+<reason>`, a Desktop shortcut whose menu copy failed prints `Shortcut created at <path>.` on stdout
+and then the same `Warning:` line on stderr as the command, an icon that will not copy does not stop
+the offer (unlike the command): it writes the shortcut without an icon, prints `Shortcut created at
+<path>.` on stdout and then `Warning: the shortcut was created without its icon, which could not be
+copied: <error>` on stderr, and a "never" that cannot be saved (an unwritable or malformed config
+file, a `display` that is not a table) prints `Could not save the do-not-offer setting: <reason>`
+and leaves the file as it was. The failed-install line and both `Could not ...` lines go to stderr.
+End of input (Ctrl+D) answers "not now" at the shortcut question and "no" at the uv question,
+recording nothing. The view opens in every case.
 
 ## Reading `lsdsk topology`
 
