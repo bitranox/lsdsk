@@ -193,3 +193,36 @@ def test_a_crash_before_logging_starts_reads_no_dotenv_in_the_elevated_copy(
     assert code != 0, err
     assert "the services factory broke" in err or "TRUNCATED" in err, err
     assert ("TRUNCATED at 12 characters" in err) is reads_the_planted_file, err
+
+
+@pytest.mark.usefixtures("clear_config_cache", "managed_traceback_state")
+@pytest.mark.parametrize(
+    "written",
+    [
+        pytest.param("separate", id="the option and its value as two words"),
+        pytest.param("attached", id="the value attached with an equals sign"),
+        pytest.param("elevated", id="the elevated copy, which reads only a named one"),
+    ],
+)
+def test_a_crash_before_logging_starts_reads_the_dotenv_the_run_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], written: str
+) -> None:
+    """``--env-file`` names the run's ``.env``; the report of an early crash reads that one, not the search's."""
+    (tmp_path / ".env").write_bytes(b"DISPLAY__TRACEBACK_SUMMARY_LIMIT=12\n")
+    named = tmp_path / "named"
+    named.mkdir()
+    explicit = named / "explicit.env"
+    explicit.write_bytes(b"DISPLAY__TRACEBACK_SUMMARY_LIMIT=30\n")
+    monkeypatch.chdir(tmp_path)
+    options = {
+        "separate": ["--env-file", str(explicit)],
+        "attached": [f"--env-file={explicit}"],
+        "elevated": ["--elevated-relaunch", "--env-file", str(explicit)],
+    }[written]
+
+    code = main([*options, "info"], services_factory=_a_factory_that_breaks)
+    err = capsys.readouterr().err
+
+    assert code != 0, err
+    assert "TRUNCATED at 12 characters" not in err, err
+    assert "TRUNCATED at 30 characters" in err, err

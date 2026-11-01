@@ -12,7 +12,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import click
 import lib_cli_exit_tools
@@ -23,6 +23,7 @@ from lsdsk import __init__conf__
 from ..config.loader import NO_DOTENV, get_config
 from ..config.tunables import DisplaySettings, get_display_settings
 from ..hw.elevation import RELAUNCH_MARKER
+from ..startup_notice import ROOT_OPTIONS_TAKING_A_VALUE
 from . import safe_console
 from .context import (
     apply_traceback_preferences,
@@ -53,7 +54,9 @@ class _TheRunsConfiguration:
     The root group hands the configuration it settled on - every layer, the
     overrides applied - to the logging port, so it is recorded there on the way
     past. A crash before that has no configuration of the run to use, and then
-    the files are read once more, without a ``.env`` in the elevated copy.
+    the files are read once more with the ``.env`` the run would have read: the
+    one ``--env-file`` names, else none in the elevated copy, else the search
+    from the working directory.
     """
 
     def __init__(self, services_factory: Callable[[], AppServices], args: Sequence[str]) -> None:
@@ -64,7 +67,11 @@ class _TheRunsConfiguration:
             args: The command line, without the program name.
         """
         self._services_factory = services_factory
-        self._elevated_copy = RELAUNCH_MARKER in args
+        named = _env_file_named(args)
+        if named is not None:
+            self._dotenv: str | None = named
+        else:
+            self._dotenv = NO_DOTENV if RELAUNCH_MARKER in args else None
         self._resolved: Config | None = None
 
     def services(self) -> AppServices:
@@ -96,9 +103,49 @@ class _TheRunsConfiguration:
         try:
             if self._resolved is not None:
                 return get_display_settings(self._resolved)
-            return get_display_settings(get_config(dotenv_path=NO_DOTENV if self._elevated_copy else None))
+            return get_display_settings(get_config(dotenv_path=self._dotenv))
         except Exception:
             return DisplaySettings()
+
+
+#: The root option naming the run's ``.env``.
+_ENV_FILE: Final = "--env-file"
+
+
+def _env_file_named(args: Sequence[str]) -> str | None:
+    """The ``.env`` the command line names with ``--env-file``, read as the root group reads it.
+
+    Only the root options are looked at - the words before the command, and
+    before ``--`` - and the word after another root option that takes a value
+    is that value, not an option. Given twice, the last one counts, as click
+    keeps the last.
+
+    Args:
+        args: The command line, without the program name.
+
+    Returns:
+        The path as typed, or ``None`` when no ``--env-file`` was given.
+
+    Example:
+        >>> _env_file_named(["--env-file", "a.env", "--env-file=b.env", "info"])
+        'b.env'
+        >>> _env_file_named(["--set", "--env-file=x", "info"]) is None
+        True
+        >>> _env_file_named(["--", "--env-file", "a.env"]) is None
+        True
+    """
+    named: str | None = None
+    words = iter(args)
+    for word in words:
+        if word == "--" or not word.startswith("-"):
+            break
+        name, attached, value = word.partition("=")
+        if name not in ROOT_OPTIONS_TAKING_A_VALUE:
+            continue
+        found = value if attached else next(words, None)
+        if name == _ENV_FILE and found is not None:
+            named = found
+    return named
 
 
 def _answer_a_refused_command_line(exc: click.ClickException, args: Sequence[str]) -> None:
