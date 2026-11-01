@@ -183,6 +183,31 @@ def test_an_unwritable_icon_degrades_the_offer_to_an_iconless_shortcut() -> None
 
 
 @pytest.mark.os_agnostic
+def test_an_iconless_offer_says_why_the_icon_is_missing(capsys: pytest.CaptureFixture[str]) -> None:
+    """The degraded shortcut is still reported, and the failed icon copy is named on stderr.
+
+    The explicit command refuses the same failure with an exit code, and the
+    offer is never made again once a shortcut exists, so a silent degrade left
+    the reader no way to learn why their launcher has no icon.
+    """
+    shortcuts = _RecordingShortcuts()
+
+    offer_shortcut(
+        DisplaySettings(),
+        ask_choice=lambda: ShortcutChoice.CREATE,
+        ask_install=lambda: False,
+        seams=_seams(shortcuts, uvx=Path("/usr/bin/uvx"), copy_icon=_raise_oserror),
+    )
+
+    captured = capsys.readouterr()
+    assert "Shortcut created at" in captured.out, "the iconless shortcut should still be reported as created"
+    warnings = [line for line in captured.err.splitlines() if line.startswith("Warning: ")]
+    assert len(warnings) == 1, f"one warning line should name the failed icon copy: {captured.err!r}"
+    assert "icon" in warnings[0], f"the warning should say it is the icon that failed: {warnings[0]!r}"
+    assert "no space left on device" in warnings[0], f"the warning should carry the copy's own error: {warnings[0]!r}"
+
+
+@pytest.mark.os_agnostic
 def test_the_command_still_surfaces_a_create_failure(capsys: pytest.CaptureFixture[str]) -> None:
     """Only the offer degrades: the explicit command fails on a create failure, naming it."""
     with pytest.raises(SystemExit) as leaving:

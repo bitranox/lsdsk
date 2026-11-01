@@ -400,8 +400,8 @@ def _offer_create(seams: ShortcutSeams, *, ask_install: Callable[[], bool]) -> N
 
     Best-effort, unlike the explicit command: this runs before the interactive
     view opens, so an unwritable config directory must not abort the view. An
-    icon that will not copy degrades to an iconless shortcut, and a create that
-    fails warns once and returns.
+    icon that will not copy degrades to an iconless shortcut with a warning
+    naming why, and a create that fails warns once and returns.
     """
     plan = plan_launch(uvx=seams.uvx(), installed_lsdsk=seams.installed_lsdsk())
     if plan.needs_uv:
@@ -420,22 +420,34 @@ def _offer_create(seams: ShortcutSeams, *, ask_install: Callable[[], bool]) -> N
 
 
 def _create_for_the_offer(seams: ShortcutSeams, *, launch: tuple[str, ...]) -> None:
-    """Create the shortcut best-effort, never letting a filesystem error abort the view."""
+    """Create the shortcut best-effort, never letting a filesystem error abort the view.
+
+    An icon that would not copy is said once the shortcut exists: the offer is
+    never made again after that, so a degrade nobody was told about would leave
+    the reader with no way to learn why the launcher has no icon.
+    """
+    icon, icon_missed = _icon_or_reason(seams.copy_icon)
     try:
-        written = seams.shortcuts.create(launch=launch, icon=_icon_or_none(seams.copy_icon))
+        written = seams.shortcuts.create(launch=launch, icon=icon)
     except OSError as exc:
         safe_console.echo(f"\nCould not create the desktop shortcut: {exc}", err=True)
         return
     safe_console.echo(f"\nShortcut created at {written.path}.")
+    if icon_missed is not None:
+        safe_console.echo(f"Warning: {icon_missed}", err=True)
     _warn_about_skipped(written)
 
 
-def _icon_or_none(copy_icon: Callable[[], Path]) -> Path | None:
-    """The copied icon, or ``None`` when the copy fails - an iconless shortcut still launches lsdsk."""
+def _icon_or_reason(copy_icon: Callable[[], Path]) -> tuple[Path | None, str | None]:
+    """The copied icon, or ``None`` with the sentence saying why it would not copy.
+
+    An iconless shortcut still launches lsdsk, so the failure degrades rather
+    than refusing the shortcut.
+    """
     try:
-        return copy_icon()
-    except OSError:
-        return None
+        return copy_icon(), None
+    except OSError as exc:
+        return None, f"the shortcut was created without its icon, which could not be copied: {exc}"
 
 
 @click.command("install-shortcut", context_settings=CLICK_CONTEXT_SETTINGS)
