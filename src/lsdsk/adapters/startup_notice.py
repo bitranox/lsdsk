@@ -19,18 +19,30 @@ decides whether a ``--profile`` is refused: the CLI imports it anyway, so the
 start is no slower, though the line now appears after that import rather than
 before it.
 
+A ``--set`` is judged here by the rules :func:`lsdsk.adapters.config.overrides.apply_overrides`
+refuses by, rather than by calling it: importing that module brings in the
+configuration package and the domain models, which measured 0.19-0.20 s on the
+development box against 0.09-0.14 s for this whole module, and the line exists
+to be on the screen before that wait. So the keys of the sections this tool
+owns are carried here as :data:`OWNED_SETTINGS`, and a test holds them, and the
+whole judgement, to the real one.
+
 System Role:
     Adapter layer. Outside ``adapters/cli`` because the entry point imports it
     before the CLI; ``lsdsk.adapters.cli`` is the whole command line.
 
 Contents:
     * :data:`ROOT_OPTIONS_TAKING_A_VALUE` - the root options whose next word is their value.
+    * :data:`VIEW_OPTIONS_TAKING_A_VALUE` - ``tui``'s own options whose next word is their value.
+    * :data:`VIEW_FLAGS` - ``tui``'s own options that take no value.
+    * :data:`OWNED_SETTINGS` - the sections ``--set`` may only name known keys of, with those keys.
     * :func:`opens_the_view` - whether a subcommand (or none) opens the interactive view.
     * :data:`ROOT_FLAGS` - the root options that take no value.
     * :data:`TREE_DENSITIES` - what ``--tree-density`` takes.
     * :func:`command_word` - the word click will read as the subcommand.
     * :func:`root_value_accepted` - whether the root group takes a value for one of its options.
     * :func:`refuses_a_root_option` - whether the root options end the run in a refusal.
+    * :func:`refuses_a_view_option` - whether ``tui``'s own options end the run in a refusal.
     * :func:`spinner_for` - the spinner a stream of this encoding can draw.
     * :class:`StartupNotice` - the line and its spinner, paused around prompts.
     * :class:`NoStartupNotice` - the same steps, doing nothing, for every other start.
@@ -39,6 +51,7 @@ Contents:
 
 from __future__ import annotations
 
+import difflib
 import os
 import signal
 import stat
@@ -46,8 +59,9 @@ import sys
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, cast
 
+import orjson
 from lib_layered_config import is_valid_profile_name
 from rich.console import Console
 from rich.live import Live
@@ -89,6 +103,57 @@ ROOT_FLAGS: frozenset[str] = frozenset(
 
 #: What ``--tree-density`` takes, held by a test to the CLI's own choices.
 TREE_DENSITIES: frozenset[str] = frozenset({"full", "storage-and-siblings", "storage-only"})
+
+#: ``tui``'s own options that take a value. Held by a test to the command's own.
+VIEW_OPTIONS_TAKING_A_VALUE: frozenset[str] = frozenset({"--format", "--replay"})
+
+#: ``tui``'s own options that take no value. Held by the same test.
+VIEW_FLAGS: frozenset[str] = frozenset({"--expand-virtual", "--help", "-h"})
+
+#: The sections a ``--set`` may name only a known key of, and those keys.
+#:
+#: The configuration derives these from its models; importing them here would
+#: cost the start the wait this line exists to cover, so they are written out
+#: and a test holds them to ``known_keys.owned_sections()``.
+OWNED_SETTINGS: Final[Mapping[str, frozenset[str]]] = {
+    "display": frozenset(
+        {
+            "auto_elevate",
+            "detail_height_percent",
+            "expand_virtual",
+            "offer_desktop_shortcut",
+            "piped_width",
+            "summary_limit",
+            "traceback_summary_limit",
+            "traceback_verbose_limit",
+            "tree_density",
+            "wear_row_floor_percent",
+            "wwn_width",
+        }
+    ),
+    "history": frozenset({"enabled", "max_samples_per_drive", "path"}),
+    "thresholds": frozenset(
+        {
+            "crc_errors_significant",
+            "filesystem_full_hint_percent",
+            "filesystem_full_warning_percent",
+            "inodes_full_hint_percent",
+            "inodes_full_warning_percent",
+            "min_span_hours",
+            "mixed_firmware_threshold",
+            "quiet_expected_min",
+            "wear_critical_percent",
+            "wear_projection_min_points",
+            "wear_warning_percent",
+        }
+    ),
+}
+
+#: The deepest a ``--set`` may nest, section and key path included: ``overrides.MAX_OVERRIDE_DEPTH``.
+_MAX_SETTING_DEPTH: Final = 95
+
+#: How close a section has to be to an owned one to be refused as its typo: ``known_keys``' own cutoff.
+_TYPO_CUTOFF: Final = 0.6
 
 #: The one subcommand that opens the interactive view, as a bare run does.
 _VIEW_COMMAND = "tui"
@@ -140,15 +205,36 @@ def command_word(argv: Sequence[str]) -> str | None:
         >>> command_word(["--profile", "disks"]) is None
         True
     """
-    words = iter(argv)
-    for word in words:
+    return _split_at_command(argv)[1]
+
+
+def _split_at_command(argv: Sequence[str]) -> tuple[list[str], str | None, list[str]]:
+    """The root options, the command word and the command's own words, as click will split them.
+
+    Args:
+        argv: The arguments after the program name.
+
+    Returns:
+        The words before the command (without a ``--`` ending them), the
+        command or None, and the words after it.
+
+    Example:
+        >>> _split_at_command(["--set", "a.b=1", "tui", "--bogus"])
+        (['--set', 'a.b=1'], 'tui', ['--bogus'])
+        >>> _split_at_command(["--no-elevate", "--", "tui"])
+        (['--no-elevate'], 'tui', [])
+    """
+    words = list(argv)
+    index = 0
+    while index < len(words):
+        word = words[index]
         if word == _END_OF_OPTIONS:
-            return next(words, None)
+            command = words[index + 1] if index + 1 < len(words) else None
+            return words[:index], command, words[index + 2 :]
         if not word.startswith("-"):
-            return word
-        if word in ROOT_OPTIONS_TAKING_A_VALUE:
-            next(words, None)
-    return None
+            return words[:index], word, words[index + 1 :]
+        index += 2 if word in ROOT_OPTIONS_TAKING_A_VALUE else 1
+    return words, None, []
 
 
 def _a_readable_non_directory(value: str) -> bool | None:
@@ -179,6 +265,88 @@ def _names_a_density(value: str) -> bool:
     return value.casefold() in {density.casefold() for density in TREE_DENSITIES}
 
 
+def _parsed_setting_value(text: str) -> object:
+    """A ``--set`` value as the override parser reads it: JSON where it is JSON, the text otherwise."""
+    if text == "":
+        return text
+    try:
+        return cast("object", orjson.loads(text))
+    except ValueError:  # orjson.JSONDecodeError is one
+        return text
+
+
+def _nesting(value: object) -> int:
+    """How many levels of tables and lists `value` holds, walked without recursion as the override parser walks it.
+
+    Example:
+        >>> _nesting(1), _nesting([]), _nesting({"a": [1, {"b": 2}]})
+        (0, 1, 3)
+    """
+    deepest = 0
+    pending: list[tuple[object, int]] = [(value, 0)]
+    while pending:
+        item, depth = pending.pop()
+        if isinstance(item, dict):
+            children: list[object] = list(cast("dict[str, object]", item).values())
+        elif isinstance(item, list):
+            children = list(cast("list[object]", item))
+        else:
+            deepest = max(deepest, depth)
+            continue
+        deepest = max(deepest, depth + 1)
+        pending.extend((child, depth + 1) for child in children)
+    return deepest
+
+
+def _setting_path(raw: str) -> tuple[str, ...] | None:
+    """The dotted path a ``--set`` names, or None where the override parser refuses its shape.
+
+    Example:
+        >>> _setting_path("display.piped_width=90"), _setting_path("nonsense"), _setting_path("display.=1")
+        (('display', 'piped_width'), None, None)
+    """
+    path, equals, value = raw.partition("=")
+    if not equals or "." not in path:
+        return None
+    parts = tuple(path.split("."))
+    if not all(parts) or len(parts) + _nesting(_parsed_setting_value(value)) > _MAX_SETTING_DEPTH:
+        return None
+    return parts
+
+
+def _names_an_unknown_owned_key(path: tuple[str, ...]) -> bool:
+    """Whether `path` names a key an owned section lacks, or a section one typo from an owned one."""
+    section, *keys = path
+    known = OWNED_SETTINGS.get(section)
+    if known is None:
+        return bool(difflib.get_close_matches(section, sorted(OWNED_SETTINGS), n=1, cutoff=_TYPO_CUTOFF))
+    return len(keys) != 1 or keys[0] not in known
+
+
+def _settings_accepted(values: Sequence[str]) -> bool:
+    """Whether the root group applies every ``--set`` in `values` together without a usage error.
+
+    Example:
+        >>> _settings_accepted(["display.piped_width=90", "lib_log_rich.console_level=DEBUG"])
+        True
+        >>> _settings_accepted(["display.nonexistent=1"]), _settings_accepted(["a.b=1", "a.b.c=2"])
+        (False, False)
+    """
+    paths = [_setting_path(raw) for raw in values]
+    shaped = [path for path in paths if path is not None]
+    if len(shaped) != len(paths):
+        return False
+    # One setting's path inside another's asks for a value and a table at once.
+    if any(len(outer) < len(inner) and inner[: len(outer)] == outer for outer in shaped for inner in shaped):
+        return False
+    return not any(_names_an_unknown_owned_key(path) for path in shaped)
+
+
+def _a_setting_the_root_group_takes(value: str) -> bool:
+    """Whether one ``--set`` is applied without a usage error."""
+    return _settings_accepted([value])
+
+
 #: What each root option's value must be for the root group to take it; any other takes any text.
 _ACCEPTS: Final[Mapping[str, Callable[[str], bool]]] = {
     "--env-file": _names_a_readable_file,
@@ -186,6 +354,7 @@ _ACCEPTS: Final[Mapping[str, Callable[[str], bool]]] = {
     # The library's own judge, the one the root group's refusal delegates to.
     "--profile": is_valid_profile_name,
     "--replay": _names_a_readable_file,
+    "--set": _a_setting_the_root_group_takes,
     "--tree-density": _names_a_density,
 }
 
@@ -211,13 +380,47 @@ def root_value_accepted(option: str, value: str) -> bool:
     return accepts is None or accepts(value)
 
 
+def _values_given(
+    words: Sequence[str], *, flags: frozenset[str], taking_a_value: frozenset[str]
+) -> dict[str, list[str]] | None:
+    """Every value each option among `words` was given, or None where click refuses the words.
+
+    Each word must be an option the command has; a flag takes no value; an
+    option that takes one needs it, as the next word or after ``=``. A word that
+    is not an option is an argument, which neither the root options nor ``tui``
+    take, and ``--`` may end them only with nothing after it.
+
+    Example:
+        >>> _values_given(["--a", "1", "--b"], flags=frozenset({"--b"}), taking_a_value=frozenset({"--a"}))
+        {'--a': ['1']}
+        >>> _values_given(["--b=1"], flags=frozenset({"--b"}), taking_a_value=frozenset()) is None
+        True
+    """
+    given: dict[str, list[str]] = {}
+    remaining = iter(words)
+    for word in remaining:
+        if word == _END_OF_OPTIONS:
+            return given if next(remaining, None) is None else None
+        name, attached, value = word.partition("=")
+        if not word.startswith("-") or (name in flags and attached) or (name not in flags | taking_a_value):
+            return None
+        if name in flags:
+            continue
+        found = value if attached else next(remaining, None)
+        if found is None:
+            return None
+        given.setdefault(name, []).append(found)
+    return given
+
+
 def refuses_a_root_option(argv: Sequence[str]) -> bool:
     """Whether this run's root options end it in a refusal before any command runs.
 
-    The root options are the words before the command. Each must be one the
-    root group has; a flag takes no value; an option that takes one needs it,
-    as the next word or after ``=``, and needs one it accepts. For an option
-    given twice, the last value is the one judged, as click keeps the last.
+    The root options are the words before the command, judged by
+    :func:`_values_given`, and each value must be one the root group accepts.
+    For an option given twice, the last value is the one judged, as click keeps
+    the last - except ``--set``, which is given as often as it is written and is
+    judged as the whole set, because two settings can refuse each other.
 
     Args:
         argv: The arguments after the program name.
@@ -230,22 +433,43 @@ def refuses_a_root_option(argv: Sequence[str]) -> bool:
         (True, True)
         >>> refuses_a_root_option(["--no-elevate", "--tree-density=full", "disks", "--bogus"])
         False
+        >>> refuses_a_root_option(["--set", "nonsense"])
+        True
     """
-    given: dict[str, str] = {}
-    words = iter(argv)
-    for word in words:
-        if word == _END_OF_OPTIONS or not word.startswith("-"):
-            break
-        name, attached, value = word.partition("=")
-        if name in ROOT_FLAGS and not attached:
-            continue
-        if name not in ROOT_OPTIONS_TAKING_A_VALUE:
-            return True
-        found = value if attached else next(words, None)
-        if found is None:
-            return True
-        given[name] = found
-    return not all(root_value_accepted(name, value) for name, value in given.items())
+    root, _command, _rest = _split_at_command(argv)
+    given = _values_given(root, flags=ROOT_FLAGS, taking_a_value=ROOT_OPTIONS_TAKING_A_VALUE)
+    if given is None or not _settings_accepted(given.pop("--set", [])):
+        return True
+    return not all(root_value_accepted(name, values[-1]) for name, values in given.items())
+
+
+def refuses_a_view_option(argv: Sequence[str]) -> bool:
+    """Whether ``tui``'s own options end this run in a refusal before the view opens.
+
+    Judged as the root options are, by :func:`_values_given`. ``--format`` is
+    refused whatever it is given, because the view has no form it could take.
+
+    Args:
+        argv: The arguments after the program name.
+
+    Returns:
+        True where the run names ``tui`` and click, or ``tui`` itself, refuses
+        the words after it; False for any other run.
+
+    Example:
+        >>> refuses_a_view_option(["tui", "--bogus"]), refuses_a_view_option(["tui", "extra"])
+        (True, True)
+        >>> refuses_a_view_option(["tui", "--expand-virtual"]), refuses_a_view_option(["disks", "--bogus"])
+        (False, False)
+    """
+    _root, command, rest = _split_at_command(argv)
+    if command != _VIEW_COMMAND:
+        return False
+    given = _values_given(rest, flags=VIEW_FLAGS, taking_a_value=VIEW_OPTIONS_TAKING_A_VALUE)
+    if given is None or "--format" in given:
+        return True
+    replay = given.get("--replay")
+    return replay is not None and not _names_a_readable_file(replay[-1])
 
 
 def spinner_for(encoding: str) -> str:
@@ -382,8 +606,9 @@ def notice_for_this_start(
     A word that names no command at all - a typo - shows nothing either: click
     refuses it at once, and the line would only flash around the usage error.
     Nor does a root option click or the root group refuses: one it does not
-    have, a value missing or one it does not take (see
-    :func:`refuses_a_root_option`).
+    have, a value missing or one it does not take, a ``--set`` the root group
+    cannot apply (see :func:`refuses_a_root_option`), nor an option of ``tui``'s
+    own it refuses (see :func:`refuses_a_view_option`).
     A guess this rule gets wrong is corrected once click has parsed the run,
     which stops the notice for any subcommand but ``tui``.
 
@@ -399,7 +624,7 @@ def notice_for_this_start(
     """
     if any(arg in _LEAVES_WITHOUT_THE_VIEW for arg in argv):
         return NoStartupNotice()
-    if not opens_the_view(command_word(argv)) or refuses_a_root_option(argv):
+    if not opens_the_view(command_word(argv)) or refuses_a_root_option(argv) or refuses_a_view_option(argv):
         return NoStartupNotice()
     if not_terminals():
         return NoStartupNotice()
@@ -415,15 +640,19 @@ def _console_on_the_drawing_stream() -> Console:
 
 __all__ = [
     "LINE",
+    "OWNED_SETTINGS",
     "ROOT_FLAGS",
     "ROOT_OPTIONS_TAKING_A_VALUE",
     "TREE_DENSITIES",
+    "VIEW_FLAGS",
+    "VIEW_OPTIONS_TAKING_A_VALUE",
     "NoStartupNotice",
     "StartupNotice",
     "command_word",
     "notice_for_this_start",
     "opens_the_view",
     "refuses_a_root_option",
+    "refuses_a_view_option",
     "root_value_accepted",
     "spinner_for",
 ]

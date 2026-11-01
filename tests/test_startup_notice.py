@@ -185,7 +185,7 @@ def test_a_mistyped_command_shows_nothing(argv: list[str]) -> None:
     [
         pytest.param(["--profile", "disks"], id="a root option's value that happens to name a command"),
         pytest.param(["--set=display.piped_width=90", "tui"], id="a root option written with its value attached"),
-        pytest.param(["--tree-density", "full", "tui", "--no-such-option"], id="the view, whatever follows it"),
+        pytest.param(["--tree-density", "full", "tui", "--expand-virtual"], id="the view, with an option of its own"),
     ],
 )
 def test_a_value_is_not_read_as_the_command(argv: list[str]) -> None:
@@ -321,22 +321,53 @@ def _paths_to_try(tmp_path: Path) -> list[str]:
     return ["", str(FIXTURE), str(tmp_path), str(tmp_path / "missing"), str(unreadable)]
 
 
+#: ``--set`` values worth asking both judges about: one of every shape the root group refuses, and some it takes.
+_SETTINGS_TO_TRY = [
+    "display.piped_width=90",
+    "lib_log_rich.console_level=DEBUG",
+    "somebody_elses.section.key=1",
+    "history.enabled=false",
+    "thresholds.wear_warning_percent=5",
+    "",
+    "=",
+    "no-equals-sign",
+    "nonsense",
+    "display=1",
+    ".piped_width=1",
+    "display.=1",
+    "display..piped_width=1",
+    "display.nonexistent=1",
+    "display.piped_width.deeper=1",
+    "dispaly.piped_width=90",
+    "Display.piped_width=90",
+    "lib_log_rich.x=" + "[" * 93 + "]" * 93,
+    "lib_log_rich.x=" + "[" * 94 + "]" * 94,
+    "lib_log_rich.x=[[[",
+]
+
+
 def _values_to_try(option: str, paths: list[str]) -> list[str]:
     """Values worth asking both judges about, for one root option that takes a value."""
     by_option = {
         "--profile": ["production", "staging-v2", "../x", "", "bad name!", "a" * 65, "-x", "CON"],
         "--tree-density": [*sorted(startup_notice.TREE_DENSITIES), "FULL", "Storage-Only", "dense", ""],
-        "--set": ["display.piped_width=90", "", "no-equals-sign"],
+        "--set": _SETTINGS_TO_TRY,
     }
     return by_option.get(option, paths)
 
 
 def test_the_start_rule_and_the_cli_agree_on_every_root_option_value(tmp_path: Path) -> None:
-    """The start rule judges each value as the root group does: click's own conversion, then its profile check."""
+    """The start rule judges each value as the root group does.
+
+    Click's own conversion, then the checks the root group's callback makes: the
+    profile name, and every ``--set`` applied as the run applies it.
+    """
     import click
+    from lib_layered_config import Config
 
     from lsdsk.adapters.cli import cli  # the CLI is the slow import this module exists to run ahead of
     from lsdsk.adapters.config.loader import invalid_profile_message
+    from lsdsk.adapters.config.overrides import apply_overrides
 
     context = click.Context(cli, info_name="lsdsk", **cli.context_settings)
     by_name = {name: param for param in cli.params for name in param.opts}
@@ -346,6 +377,11 @@ def test_the_start_rule_and_the_cli_agree_on_every_root_option_value(tmp_path: P
             by_name[option].type.convert(value, by_name[option], context)
         except click.BadParameter:
             return False
+        if option == "--set":
+            try:
+                apply_overrides(Config({}, {}), (value,))
+            except ValueError:
+                return False
         return option != "--profile" or invalid_profile_message(value) is None
 
     paths = _paths_to_try(tmp_path)
@@ -439,3 +475,167 @@ def test_the_notice_is_drawn_on_the_stream_the_view_will_draw_on(
     notice.stop()
 
     assert [name for name, buffer in streams.items() if LINE in buffer.getvalue()] == [drawn_on]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["--set", "nonsense"], id="a setting with no equals sign"),
+        pytest.param(["--set", "display.nonexistent=1"], id="a key the display section does not have"),
+        pytest.param(["--set="], id="an empty setting, attached"),
+        pytest.param(["--set", ""], id="an empty setting"),
+        pytest.param(["--set", "dispaly.piped_width=90"], id="a section one typo from an owned one"),
+        pytest.param(["--set", "lib_log_rich.a=1", "--set", "lib_log_rich.a.b=2"], id="two settings no table can hold"),
+        pytest.param(["--set", "display.piped_width=90", "--set", "nonsense"], id="a bad setting after a good one"),
+    ],
+)
+def test_a_setting_the_root_group_refuses_shows_nothing(argv: list[str]) -> None:
+    """The root group refuses these with a usage error, which the line would only flash around."""
+    console, _ = a_terminal()
+
+    notice = notice_for_this_start(argv, not_terminals=nothing_is_redirected, console=lambda: console)
+
+    assert isinstance(notice, NoStartupNotice)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["tui", "--bogus"], id="an option the view does not have"),
+        pytest.param(["tui", "extra"], id="an argument the view takes none of"),
+        pytest.param(["tui", "--replay", f"{TMP}/missing.json"], id="a capture that does not exist"),
+        pytest.param(["tui", "--replay"], id="a capture option with no value"),
+        pytest.param(["tui", "--replay="], id="an empty capture, attached"),
+        pytest.param(["tui", "--expand-virtual=yes"], id="a flag given a value"),
+        pytest.param(["tui", "--format", "json"], id="a format the view refuses"),
+        pytest.param(["tui", "--", "extra"], id="an argument after the end of the options"),
+        pytest.param(["--no-elevate", "tui", "--expand-virtual", "--bogus"], id="a bad option after a good one"),
+    ],
+)
+def test_a_view_option_click_refuses_shows_nothing(argv: list[str], tmp_path: Path) -> None:
+    """``tui``'s own options are judged as the root's are: a refusal the line would only flash around."""
+    console, _ = a_terminal()
+
+    notice = notice_for_this_start(_under(tmp_path, argv), not_terminals=nothing_is_redirected, console=lambda: console)
+
+    assert isinstance(notice, NoStartupNotice)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["tui", "--expand-virtual"], id="the view's own flag"),
+        pytest.param(["tui", "--replay", str(FIXTURE)], id="the view's own capture"),
+        pytest.param(["tui", f"--replay={FIXTURE}"], id="the view's own capture, attached"),
+        pytest.param(["tui", "--"], id="the end of the options and nothing after"),
+        pytest.param(["--set", "display.piped_width=90", "--set", "history.enabled=false"], id="two settings"),
+        pytest.param(["--set", "lib_log_rich.console_level=DEBUG", "tui"], id="a setting of a section not owned"),
+    ],
+)
+def test_options_the_cli_takes_still_show_the_notice(argv: list[str]) -> None:
+    """The control for the two refusal tests above: what the CLI takes is not made quiet."""
+    console, _ = a_terminal()
+
+    notice = notice_for_this_start(argv, not_terminals=nothing_is_redirected, console=lambda: console)
+
+    assert isinstance(notice, StartupNotice)
+
+
+def test_the_settings_the_start_rule_knows_are_the_ones_the_configuration_owns() -> None:
+    """The start rule cannot import the models without slowing the start, so it carries their keys: held here."""
+    from lsdsk.adapters.config.known_keys import owned_sections
+
+    assert dict(startup_notice.OWNED_SETTINGS) == dict(owned_sections())
+
+
+def test_the_view_options_the_start_rule_knows_are_the_ones_tui_has() -> None:
+    import click
+
+    from lsdsk.adapters.cli import cli  # the CLI is the slow import this module exists to run ahead of
+
+    tui = cli.commands["tui"]
+    params = tui.get_params(click.Context(tui, info_name="tui", **tui.context_settings))
+    names = {
+        name: isinstance(param, click.Option) and (param.is_flag or param.count)
+        for param in params
+        for name in (*param.opts, *param.secondary_opts)
+    }
+
+    assert frozenset(name for name, flag in names.items() if flag) == startup_notice.VIEW_FLAGS
+    assert frozenset(name for name, flag in names.items() if not flag) == startup_notice.VIEW_OPTIONS_TAKING_A_VALUE
+
+
+def _view_arguments_to_try(tmp_path: Path) -> list[list[str]]:
+    """Whole command lines that name the view, worth asking both the start rule and the CLI about."""
+    missing = str(tmp_path / "missing.json")
+    tails = [
+        [],
+        ["--expand-virtual"],
+        ["--expand-virtual=yes"],
+        ["--replay", str(FIXTURE)],
+        [f"--replay={FIXTURE}"],
+        ["--replay", missing],
+        ["--replay", str(tmp_path)],
+        ["--replay", ""],
+        ["--replay"],
+        ["--format", "json"],
+        ["--format", "nope"],
+        ["--format"],
+        ["--bogus"],
+        ["-x"],
+        ["extra"],
+        ["--"],
+        ["--", "extra"],
+        ["--expand-virtual", "--replay", str(FIXTURE), "--expand-virtual"],
+    ]
+    heads = [
+        [],
+        ["--no-elevate"],
+        ["--set", "display.piped_width=90"],
+        ["--set", "nonsense"],
+        ["--set", "lib_log_rich.a=1", "--set", "lib_log_rich.a.b=2"],
+        ["--set", "lib_log_rich.a.b=2", "--set", "lib_log_rich.a=1"],
+        ["--set", "display.piped_width=90", "--set", "display.piped_width=80"],
+    ]
+    return [*([*head, "tui", *tail] for head in heads for tail in tails), *heads]
+
+
+def test_the_start_rule_and_the_cli_agree_on_every_command_line_that_names_the_view(tmp_path: Path) -> None:
+    """The notice is drawn exactly where the CLI parses the run without a usage error.
+
+    The oracle is the CLI itself: the root group's parse, its ``--set`` application,
+    then ``tui``'s own parse and its refusal of ``--format``.
+    """
+    import click
+    from lib_layered_config import Config
+
+    from lsdsk.adapters.cli import cli  # the CLI is the slow import this module exists to run ahead of
+    from lsdsk.adapters.config.overrides import apply_overrides
+
+    def the_cli_refuses(argv: list[str]) -> bool:
+        context = click.Context(cli, info_name="lsdsk", **cli.context_settings)
+        try:
+            cli.parse_args(context, list(argv))
+            apply_overrides(Config({}, {}), tuple(context.params["set_overrides"]))
+            # The group's own parser, unlike parse_args, hands back the command's name too.
+            _found, rest, _order = cli.make_parser(context).parse_args(list(argv))
+            if not rest:
+                return False
+            _name, command, arguments = cli.resolve_command(context, rest)
+            assert command is not None
+            view = command.make_context("tui", arguments, parent=context)
+        except (click.UsageError, ValueError):
+            return True
+        return view.params["output_format"] is not None
+
+    console, _ = a_terminal()
+    disagreements = [
+        argv
+        for argv in _view_arguments_to_try(tmp_path)
+        if isinstance(
+            notice_for_this_start(argv, not_terminals=nothing_is_redirected, console=lambda: console), NoStartupNotice
+        )
+        != the_cli_refuses(argv)
+    ]
+
+    assert disagreements == []
