@@ -47,6 +47,21 @@ def _fill(word: int, *, except_word: int | None = None) -> bytes:
     return struct.pack("<256H", *words)
 
 
+def _zeros_with_a_control_byte_model() -> bytes:
+    """A zeroed page whose one set word puts control bytes in the model.
+
+    The implausible-field rule refuses it (word 27 is not ASCII). Without that
+    rule the model decodes to nothing, so the no-identity rule refuses it in
+    its place, with a message that also names IDENTIFY: the one nearly-noise
+    page on which only the match tells the two rules apart. Every other page
+    here decodes cleanly once the implausible-field rule is gone, so a test
+    of them alone fails the same way whatever its match says.
+    """
+    words = [0] * 256
+    words[27] = 0x0101
+    return struct.pack("<256H", *words)
+
+
 def test_the_plausible_page_the_other_cases_start_from_decodes() -> None:
     """Liveness: every refusal below is the planted defect, not the base page."""
     identity = decode_identify(_page())
@@ -56,8 +71,13 @@ def test_the_plausible_page_the_other_cases_start_from_decodes() -> None:
 
 @pytest.mark.parametrize(
     "page",
-    [_fill(0xFFFF, except_word=0), _fill(0xFFFF, except_word=255), _fill(0x2020)],
-    ids=["ones-with-a-zero-first", "ones-with-a-zero-last", "space-fill"],
+    [
+        _fill(0xFFFF, except_word=0),
+        _fill(0xFFFF, except_word=255),
+        _fill(0x2020),
+        _zeros_with_a_control_byte_model(),
+    ],
+    ids=["ones-with-a-zero-first", "ones-with-a-zero-last", "space-fill", "zeros-with-a-control-byte-model"],
 )
 def test_a_page_that_is_nearly_noise_is_refused(page: bytes) -> None:
     # The implausible-field rule's own verdict; the all-zeros/all-ones check says "carries no identity".
@@ -101,8 +121,13 @@ def test_a_real_rotation_rate_is_kept(rpm: int) -> None:
     assert (identity.kind, identity.rotation_rpm) == (DiskKind.HDD, rpm)
 
 
-def test_the_vpd_wrapper_refuses_the_same_noise() -> None:
-    page = bytes(60) + _fill(0xFFFF, except_word=0)
+@pytest.mark.parametrize(
+    "identify",
+    [_fill(0xFFFF, except_word=0), _zeros_with_a_control_byte_model()],
+    ids=["ones-with-a-zero-first", "zeros-with-a-control-byte-model"],
+)
+def test_the_vpd_wrapper_refuses_the_same_noise(identify: bytes) -> None:
+    page = bytes(60) + identify
 
     with pytest.raises(ValueError, match="it is not an IDENTIFY answer"):
         decode_vpd_ata_information(page)
