@@ -263,12 +263,15 @@ runtime-evaluated-base-classes = [
 # here, where a naive glob whose `*` stops at a slash does not - measured by
 # dropping T20 as inert and watching the gate report the two prints in
 # tests/e2e/hostprobe.py that the waiver had been covering all along.
-# Notebooks: unused imports are often intentional for side effects. F821 covers
-# `_exit_code`, an IPython builtin that only exists in a running kernel and is
-# how a notebook checks that a `!` command actually succeeded; S101 allows the
-# asserts that do the checking, without which a failing `!` passes CI silently.
-# T201: printing is how a notebook shows a result to its reader.
-"notebooks/*.ipynb" = ["F401", "F821", "S101", "T201"]
+# Notebooks: F821 covers `_exit_code`, an IPython builtin that only exists in a
+# running kernel and is how a notebook checks that a `!` command actually
+# succeeded; S101 allows the asserts that do the checking, without which a
+# failing `!` passes CI silently. S603: the install cell runs pip and uv as
+# argument lists with no shell - a `!` line put a checkout path with a space
+# into the shell unquoted - and one argument is the path the cell found, which
+# S603 cannot tell from untrusted input. T201: printing is how a notebook shows
+# a result to its reader.
+"notebooks/*.ipynb" = ["F821", "S101", "S603", "T201"]
 # Tests: assert is standard, test fixtures have passwords, magic values are clearer inline, temp paths are fine.
 # PLC0415: local/deferred imports are a deliberate test idiom - several tests import inside the test
 # body to exercise import-time and cache behaviour, so moving them to module top would defeat intent.
