@@ -242,3 +242,46 @@ def test_a_missing_curl_is_reported_under_the_installers_name_not_the_url(
     assert all(UV_INSTALLER_URL_POSIX not in line for line in shell_lines), shell_lines
     assert all(line.startswith("lsdsk-uv-installer:") for line in shell_lines), shell_lines
     assert list(desktop.iterdir()) == []
+
+
+#: A stand-in ``curl`` answering as the real one does for an address the server
+#: has no file at: with ``-f`` it prints nothing and exits 22, and without it it
+#: prints the server's error page and exits 0, as for any other download.
+_NOT_FOUND_CURL = """#!/bin/sh
+printf '%s\\n' "$@" > "{record}"
+for argument in "$@"; do
+    case "$argument" in
+        --fail|-[!-]*f*)
+            echo "curl: (22) The requested URL returned error: 404" >&2
+            exit 22
+            ;;
+    esac
+done
+echo "404: Not Found"
+exit 0
+"""
+
+
+@pytest.mark.os_posix
+def test_a_download_the_server_refuses_is_reported_as_curls_failure_not_run_as_a_script(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """An HTTP error is ``curl``'s exit 22, and the error page it would have printed is never run.
+
+    Without ``-f`` a 404 is a successful download of the server's error page,
+    which the shell then runs as the installer: the reader would be told of an
+    installer failing on ``404:: not found`` rather than of a download that
+    failed.
+    """
+    desktop, record = _machine_with_curl(tmp_path, monkeypatch, curl=_NOT_FOUND_CURL)
+
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(output_format=OutputFormat.JSON, install_uv=True)
+
+    assert leaving.value.code == ExitCode.CONFIG_ERROR
+    captured = capfd.readouterr()
+    assert "the uv installer failed (exit 22)" in json.loads(captured.out)["error"]["message"]
+    # The shell names itself by $0 in front of every error it reports, so a run error page leaves such a line.
+    assert [line for line in captured.err.splitlines() if line.startswith("lsdsk-uv-installer:")] == []
+    assert UV_INSTALLER_URL_POSIX in record.read_text(encoding="utf-8").splitlines()
+    assert list(desktop.iterdir()) == []
