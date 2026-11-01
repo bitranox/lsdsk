@@ -165,3 +165,36 @@ def test_the_offer_stays_silent_about_a_relative_directory_when_it_is_turned_off
     assert captured.out == ""
     assert captured.err == ""
     assert machine.written() == []
+
+
+def test_install_shortcut_refuses_a_relative_config_home_before_it_installs_uv(
+    machine: _Machine, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """The icon's folder is named before uv is installed, even where the Desktop needs no ``user-dirs.dirs``.
+
+    With ``XDG_DESKTOP_DIR`` set the Desktop is found without reading the config
+    home, so the relative ``XDG_CONFIG_HOME`` is first met by the icon copy - which
+    used to come after uv had been installed for a shortcut that was then refused.
+    """
+    monkeypatch.setenv("XDG_DESKTOP_DIR", str(machine.desktop))
+    (machine.work / "rel").mkdir()
+    variable = machine.set_config_home("rel")
+    installs: list[str] = []
+
+    def recording_install() -> UvInstallResult:
+        installs.append("installed")
+        # A uvx it now resolves to, so an install that did run would go on to the icon copy.
+        return UvInstallResult(exit_code=0, uvx=machine.home / "uvx")
+
+    seams = ShortcutSeams(
+        shortcuts=LinuxDesktopShortcut(), uvx=lambda: None, installed_lsdsk=lambda: None, install_uv=recording_install
+    )
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(output_format=OutputFormat.JSON, install_uv=True, seams=seams, platform="linux")
+
+    assert installs == []
+    assert leaving.value.code == ExitCode.CONFIG_ERROR
+    message = json.loads(capfd.readouterr().out)["error"]["message"]
+    assert message.startswith("the shortcut was not written: ")
+    assert f"set {variable} to an absolute path or unset it" in message
+    assert machine.written() == []

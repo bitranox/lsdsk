@@ -18,6 +18,7 @@ System Role:
     adapters reference.
 
 Contents:
+    * :func:`icon_destination` - name where the copy goes, writing nothing.
     * :func:`copy_shipped_icon` - resolve the packaged icon and copy it into place.
 """
 
@@ -25,7 +26,7 @@ from __future__ import annotations
 
 import sys
 from importlib import resources
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from lsdsk.adapters.atomicfile import replace_bytes_atomically
 from lsdsk.adapters.config.offer import user_config_path
@@ -33,15 +34,53 @@ from lsdsk.adapters.config.offer import user_config_path
 if TYPE_CHECKING:
     from pathlib import Path
 
+
+class _IconFiles(NamedTuple):
+    """One icon format's two file names, named so the shipped one and the copy cannot be swapped.
+
+    Attributes:
+        shipped: The icon's name in the package's ``assets/icon`` folder.
+        copy: The name of the copy the shortcut references.
+    """
+
+    shipped: str
+    copy: str
+
+
 #: The shipped icon and the name of the copy the shortcut references, beside the
 #: user ``config.toml``. Windows takes the ICO, because a ``.lnk`` draws its icon
 #: from an ICO or an executable and never from a PNG; a ``.desktop`` takes the PNG.
-_PNG_ICON = ("lsdsk-256.png", "lsdsk.png")
-_ICO_ICON = ("lsdsk.ico", "lsdsk.ico")
+_PNG_ICON = _IconFiles(shipped="lsdsk-256.png", copy="lsdsk.png")
+_ICO_ICON = _IconFiles(shipped="lsdsk.ico", copy="lsdsk.ico")
 
 #: An icon is not a secret, so unlike the configuration beside it the copy is
 #: world-readable - a desktop environment reads it to draw the launcher.
 _ICON_MODE = 0o644
+
+
+def icon_destination(*, platform: str = sys.platform) -> Path:
+    """The path the icon copy for ``platform`` is written to, named without writing anything.
+
+    Asked on its own so ``install-shortcut`` can refuse an environment that names
+    no folder for it before installing uv, rather than after.
+
+    Args:
+        platform: ``sys.platform`` whose shortcut shows the icon, which decides
+            the file name; this machine's by default.
+
+    Returns:
+        The absolute path of the icon copy, beside the user ``config.toml``.
+
+    Raises:
+        NoUserConfigPathError: No user configuration directory can be named on
+            this machine, such as one built on a relative ``XDG_CONFIG_HOME``.
+    """
+    return user_config_path().parent / _icon_files(platform).copy
+
+
+def _icon_files(platform: str) -> _IconFiles:
+    """The shipped icon's file name and the name of its copy, for ``platform``."""
+    return _ICO_ICON if platform == "win32" else _PNG_ICON
 
 
 def copy_shipped_icon(*, platform: str = sys.platform) -> Path:
@@ -63,12 +102,11 @@ def copy_shipped_icon(*, platform: str = sys.platform) -> Path:
         NoUserConfigPathError: No user configuration directory can be named on
             this machine (an ``OSError``, so it is a failed write like the rest).
     """
-    shipped, copy_name = _ICO_ICON if platform == "win32" else _PNG_ICON
-    body = (resources.files("lsdsk") / "assets" / "icon" / shipped).read_bytes()
-    destination = user_config_path().parent / copy_name
+    body = (resources.files("lsdsk") / "assets" / "icon" / _icon_files(platform).shipped).read_bytes()
+    destination = icon_destination(platform=platform)
     destination.parent.mkdir(parents=True, exist_ok=True)
     replace_bytes_atomically(destination, body, mode=_ICON_MODE)
     return destination
 
 
-__all__ = ["copy_shipped_icon"]
+__all__ = ["copy_shipped_icon", "icon_destination"]

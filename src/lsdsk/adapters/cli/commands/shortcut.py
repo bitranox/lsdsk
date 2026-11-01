@@ -31,6 +31,7 @@ from rich.prompt import Confirm, Prompt
 
 from lsdsk.adapters.config.offer import DisplayNotATableError, NoUserConfigPathError, disable_offer
 from lsdsk.adapters.shortcut.icon import copy_shipped_icon
+from lsdsk.adapters.shortcut.icon import icon_destination as shipped_icon_destination
 from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut, RelativeXdgDirectoryError
 from lsdsk.adapters.shortcut.macos import MacosDesktopShortcut
 from lsdsk.adapters.shortcut.windows import WindowsDesktopShortcut
@@ -108,6 +109,9 @@ class ShortcutSeams:
         copy_icon: Copies the shipped icon into place and returns its path; the real
             copier by default, so a test can inject one that raises to drive the
             offer's degrade-to-iconless path without touching the module.
+        icon_destination: Names where ``copy_icon`` will write, writing nothing,
+            so ``install-shortcut`` can refuse an environment that names no folder
+            for it before installing uv; the real copier's own naming by default.
     """
 
     shortcuts: DesktopShortcuts
@@ -115,6 +119,7 @@ class ShortcutSeams:
     installed_lsdsk: Callable[[], Path | None]
     install_uv: Callable[[], UvInstallResult]
     copy_icon: Callable[[], Path] = copy_shipped_icon
+    icon_destination: Callable[[], Path] = shipped_icon_destination
 
 
 def _installed_lsdsk() -> Path | None:
@@ -237,10 +242,13 @@ def install_shortcut(
             shortcuts=shortcuts, uvx=uvx_path, installed_lsdsk=_installed_lsdsk, install_uv=run_uv_installer
         )
     # Refused before uv could be installed for it: a headless server gains nothing from either,
-    # and neither does an environment naming the shortcut's folders by a relative path.
+    # and neither does an environment naming the shortcut's folders by a relative path. Every
+    # folder the command writes to - the Desktop, the menu (both inside has_desktop) and the
+    # icon's - is named here, because the icon's is otherwise first named after the install.
     try:
         desktop_present = seams.shortcuts.has_desktop()
-    except RelativeXdgDirectoryError as error:
+        seams.icon_destination()
+    except (NoUserConfigPathError, RelativeXdgDirectoryError) as error:
         fail(f"the shortcut was not written: {error}", ExitCode.CONFIG_ERROR, output_format=output_format)
     if not desktop_present:
         fail(

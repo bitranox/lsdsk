@@ -356,3 +356,38 @@ def test_the_human_report_off_windows_has_no_powershell_line(capsys: pytest.Capt
     install_shortcut(seams=_seams(_RecordingShortcuts(), uvx=Path("/usr/bin/uvx")), platform="linux")
 
     assert "PowerShell" not in capsys.readouterr().out
+
+
+def test_an_icon_folder_windows_cannot_name_is_refused_before_uv_is_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A relative ``%APPDATA%`` and ``%LOCALAPPDATA%`` leave the icon no folder, which is said before any install.
+
+    The icon's folder is named the way the Windows build names it - asked for
+    explicitly, so the case runs on every runner - and a refusal there must stop
+    the command before uv is installed for a shortcut that could not be finished.
+    """
+    from lsdsk.adapters.config.offer import user_config_path
+
+    (tmp_path / "rel").mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("APPDATA", "rel")
+    monkeypatch.setenv("LOCALAPPDATA", "rel")
+    installs: list[str] = []
+
+    def recording_install() -> UvInstallResult:
+        installs.append("installed")
+        return UvInstallResult(exit_code=0, uvx=Path("/opt/uv/uvx"))
+
+    recording = _RecordingShortcuts()
+    seams = dataclasses.replace(
+        _seams(recording), install_uv=recording_install, icon_destination=lambda: user_config_path(platform="win32")
+    )
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(output_format=OutputFormat.JSON, install_uv=True, seams=seams, platform="win32")
+
+    assert installs == []
+    assert recording.created is None
+    assert leaving.value.code == ExitCode.CONFIG_ERROR
+    message = json.loads(capsys.readouterr().out)["error"]["message"]
+    assert message.startswith("the shortcut was not written: the user configuration directory rel")
