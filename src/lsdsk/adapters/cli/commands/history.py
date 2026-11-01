@@ -286,7 +286,7 @@ def _in_its_own_words(error: OSError, store: Path) -> str:
     ``str(OSError)`` ends with the filename it carries, and every sentence that
     reports this detail already names the store, so a refusal about the store
     itself read ``... to X: [Errno 11] ...: 'X'``. The filename stays when it is
-    a DIFFERENT file - the lock, a temporary file, a directory in the way -
+    a DIFFERENT file - the lock, or a directory in the way -
     because there it is the part that says where the fault is.
 
     Args:

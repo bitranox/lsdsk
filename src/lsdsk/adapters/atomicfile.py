@@ -172,6 +172,25 @@ def _write_through_the_link(path: Path, body: str) -> None:
     write_through(descriptor, body, sync=False)
 
 
+def _naming_the_destination(error: OSError, path: Path) -> OSError:
+    """The same refusal, naming ``path`` rather than the temporary file beside it.
+
+    A temporary is ``.<name>.<random>.tmp``: a different name on every run, one
+    the reader never asked for, and removed before anybody could look at it, so
+    a message naming it changed from run to run and never named the file that
+    was refused. Built through ``OSError`` itself, which picks the subclass from
+    the errno (or, on Windows, from the Windows error code), so a
+    ``PermissionError`` stays one. An error carrying no errno - which no step of
+    the write raises - is returned unchanged rather than given an invented one.
+    """
+    if error.errno is None or error.strerror is None:
+        return error
+    windows_code: int | None = getattr(error, "winerror", None)
+    if windows_code is None:
+        return OSError(error.errno, error.strerror, str(path))
+    return OSError(error.errno, error.strerror, str(path), windows_code)
+
+
 def replace_atomically(
     path: Path,
     body: str,
@@ -211,10 +230,11 @@ def replace_atomically(
             not a regular file, and no alternative was given; if it is a block
             device or a socket whatever was given; if a link that led to a
             character device or a FIFO no longer does when it is opened; or if
-            the write, the sync or the rename fails. The original
-            exception propagates, so a ``PermissionError`` stays one. The
-            temporary file is removed and any previous file at ``path`` is
-            untouched.
+            the write, the sync or the rename fails. A failure of the
+            temporary file is re-raised naming ``path``, which is the file the
+            caller asked for, with the same errno and so the same subclass: a
+            ``PermissionError`` stays one. The temporary file is removed and
+            any previous file at ``path`` is untouched.
 
     Example:
         >>> import tempfile
@@ -238,24 +258,12 @@ def replace_atomically(
         return
     try:
         handle, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    except OSError:
+    except OSError as error:
         if without_a_temporary_file is None:
-            raise
+            raise _naming_the_destination(error, path) from error
         without_a_temporary_file(path, body)
         return
-    temporary = Path(temporary_name)
-    try:
-        write_through(handle, body, sync=True)
-        # mkstemp already creates at 0600; setting it explicitly means the
-        # guarantee does not rest on that, and a umask cannot widen it. A
-        # filesystem that does not carry modes is not a failure to write.
-        with contextlib.suppress(OSError):
-            temporary.chmod(mode)
-        temporary.replace(path)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            temporary.unlink()
-        raise
+    _write_and_rename(handle, Path(temporary_name), path, body=body, mode=mode)
 
 
 def replace_bytes_atomically(path: Path, body: bytes, *, mode: int) -> None:
@@ -277,10 +285,10 @@ def replace_bytes_atomically(path: Path, body: bytes, *, mode: int) -> None:
 
     Raises:
         OSError: If no temporary file can be created in the destination's
-            directory, or the write, the sync or the rename fails. The original
-            exception propagates, so a ``PermissionError`` stays one. The
-            temporary file is removed and any previous file at ``path`` is
-            untouched.
+            directory, or the write, the sync or the rename fails, naming
+            ``path`` rather than the temporary file and keeping the errno, so a
+            ``PermissionError`` stays one. The temporary file is removed and
+            any previous file at ``path`` is untouched.
 
     Example:
         >>> import tempfile
@@ -290,8 +298,20 @@ def replace_bytes_atomically(path: Path, body: bytes, *, mode: int) -> None:
         ...     target.read_bytes()
         b'icon-bytes'
     """
-    handle, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    temporary = Path(temporary_name)
+    try:
+        handle, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    except OSError as error:
+        raise _naming_the_destination(error, path) from error
+    _write_and_rename(handle, Path(temporary_name), path, body=body, mode=mode)
+
+
+def _write_and_rename(handle: int, temporary: Path, path: Path, *, body: str | bytes, mode: int) -> None:
+    """Write ``body`` through ``handle`` into ``temporary``, narrow it to ``mode``, rename it over ``path``.
+
+    Raises:
+        OSError: If the write, the sync or the rename fails, naming ``path``.
+            The temporary file is removed first.
+    """
     try:
         write_through(handle, body, sync=True)
         # mkstemp already creates at 0600; setting mode explicitly means the
@@ -300,9 +320,11 @@ def replace_bytes_atomically(path: Path, body: bytes, *, mode: int) -> None:
         with contextlib.suppress(OSError):
             temporary.chmod(mode)
         temporary.replace(path)
-    except BaseException:
+    except BaseException as error:
         with contextlib.suppress(OSError):
             temporary.unlink()
+        if isinstance(error, OSError):
+            raise _naming_the_destination(error, path) from error
         raise
 
 
