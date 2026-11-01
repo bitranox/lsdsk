@@ -26,12 +26,13 @@ import pytest
 from rich.cells import cell_len
 from rich.console import Console
 from rich.segment import Segment
+from rich.style import Style
 from rich.table import Table
 
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.tunables import DisplaySettings, Tunables
 from lsdsk.adapters.hw.snapshot import build_from
-from lsdsk.adapters.render import full, report, tables
+from lsdsk.adapters.render import full, report, tables, theme
 from lsdsk.adapters.render.layout import ELLIPSIS
 from lsdsk.adapters.render.trend import render_trend
 from lsdsk.domain.diagnostics import diagnose
@@ -262,3 +263,32 @@ def test_the_banner_gives_up_the_board_then_the_virtual_count_then_the_disk_coun
         assert drawn == lead + "".join(fields[:expected]), f"width {width}"
         shown_counts.add(expected)
     assert shown_counts == {0, 1, 2, 3}, "the control: the walk passed through every stage of the give-up"
+
+
+def _first_line_styles(section: RenderableType, width: int) -> dict[str, Style | None]:
+    """Each piece of text on the first line a console of this width draws, with the style it is drawn in."""
+    console = Console(width=width, color_system=None, file=io.StringIO())
+    first = next(iter(Segment.split_lines(console.render(section, console.options))))
+    return {segment.text: segment.style for segment in first if segment.text.strip()}
+
+
+def test_the_banner_keeps_its_styles_whether_it_fits_or_is_cut() -> None:
+    """The build, the machine and the virtual count keep their styles in a banner that fits, as in one cut short.
+
+    The cut copies the lead's spans through the clip; a banner that fits is
+    assembled field by field, and a lead rebuilt there from its plain text would
+    draw the hostname and the build unstyled on exactly the consoles wide
+    enough to show everything. The cut banner is the control: its styles prove
+    the reading sees them at all.
+    """
+    inventory, _ = _machine("linux-minimal")
+    assert inventory.virtual_disks, "the premise: the capture carries virtual disks to count"
+    virtual = f"   {len(inventory.virtual_disks)} virtual"
+
+    whole = _first_line_styles(report.render_header(inventory, width=400), 400)
+    cut = _first_line_styles(report.render_header(inventory, width=12), 12)
+
+    assert whole.get(f"lsdsk {__init__conf__.version}  ") == Style.parse("bold"), whole
+    assert whole.get(inventory.hostname) == Style.parse(theme.STYLE_IDENTIFIER), whole
+    assert whole.get(virtual) == Style.parse(theme.STYLE_UNKNOWN), whole
+    assert set(cut.values()) == {Style.parse("bold")}, cut
