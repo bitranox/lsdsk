@@ -22,7 +22,7 @@ import pytest
 from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, install_shortcut, offer_shortcut
 from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.config.tunables import DisplaySettings
-from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut
+from lsdsk.adapters.shortcut.linux import LinuxDesktopShortcut, RelativeXdgDirectoryError
 from lsdsk.adapters.uv_bootstrap import UvInstallResult, uvx_path
 from lsdsk.domain.enums import OutputFormat, ShortcutChoice
 
@@ -198,3 +198,107 @@ def test_install_shortcut_refuses_a_relative_config_home_before_it_installs_uv(
     assert message.startswith("the shortcut was not written: ")
     assert f"set {variable} to an absolute path or unset it" in message
     assert machine.written() == []
+
+
+class _RecordingInstall:
+    """An install seam that records each call and reports a ``uvx`` it left, so a run that installed goes on."""
+
+    def __init__(self, uvx: Path) -> None:
+        self.calls: list[str] = []
+        self._uvx = uvx
+
+    def __call__(self) -> UvInstallResult:
+        self.calls.append("installed")
+        return UvInstallResult(exit_code=0, uvx=self._uvx)
+
+
+def _seams_on_a_path_without_uvx(
+    machine: _Machine, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> tuple[ShortcutSeams, _RecordingInstall]:
+    """The real adapter and ``uvx`` lookup over a ``PATH`` holding no ``uvx``, installing through a recorder."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    install = _RecordingInstall(machine.home / "uvx")
+    seams = ShortcutSeams(
+        shortcuts=LinuxDesktopShortcut(), uvx=uvx_path, installed_lsdsk=lambda: None, install_uv=install
+    )
+    return seams, install
+
+
+def test_install_shortcut_refuses_a_relative_data_home_before_it_installs_uv(
+    machine: _Machine, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """With no ``uvx`` anywhere, a relative ``XDG_DATA_HOME`` is refused before uv is installed.
+
+    The menu folder is named when the Desktop is looked for, ahead of the
+    install: met only when the shortcut is written, it would come after uv had
+    been installed for a shortcut that was then refused.
+    """
+    seams, install = _seams_on_a_path_without_uvx(machine, monkeypatch, tmp_path)
+    variable = _relative(monkeypatch, machine, "XDG_DATA_HOME")
+
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(output_format=OutputFormat.JSON, install_uv=True, seams=seams, platform="linux")
+
+    assert install.calls == []
+    assert leaving.value.code == ExitCode.CONFIG_ERROR
+    message = json.loads(capfd.readouterr().out)["error"]["message"]
+    assert f"set {variable} to an absolute path or unset it" in message
+    assert machine.written() == []
+
+
+def test_the_offer_refuses_a_relative_data_home_before_it_installs_uv(
+    machine: _Machine, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """A reader who would agree to the install is not asked into one for a shortcut that is then refused."""
+    seams, install = _seams_on_a_path_without_uvx(machine, monkeypatch, tmp_path)
+    variable = _relative(monkeypatch, machine, "XDG_DATA_HOME")
+
+    offer_shortcut(DisplaySettings(), ask_choice=lambda: ShortcutChoice.CREATE, ask_install=lambda: True, seams=seams)
+
+    assert install.calls == []
+    err = capfd.readouterr().err
+    assert "Could not create the desktop shortcut:" in err
+    assert f"set {variable} to an absolute path or unset it" in err
+    assert machine.written() == []
+
+
+def test_creating_the_shortcut_names_the_menu_before_the_desktop_entry_is_written(
+    machine: _Machine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The adapter itself refuses a relative ``XDG_DATA_HOME`` with nothing on the Desktop.
+
+    Named after the Desktop entry was written, the menu's refusal would leave a
+    shortcut behind on a run reported as having written none.
+    """
+    _relative(monkeypatch, machine, "XDG_DATA_HOME")
+
+    with pytest.raises(RelativeXdgDirectoryError, match="XDG_DATA_HOME=rel is not an absolute path"):
+        LinuxDesktopShortcut().create(launch=("/opt/uv/uvx", "lsdsk"), icon=None)
+
+    assert machine.written() == []
+
+
+@pytest.mark.parametrize("arm", _ARMS)
+def test_an_empty_xdg_directory_counts_as_unset(
+    machine: _Machine, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str], arm: str
+) -> None:
+    """A variable set to the empty string means its default, never a relative path.
+
+    The XDG Base Directory spec reads an empty ``XDG_DATA_HOME`` or
+    ``XDG_CONFIG_HOME`` as unset, and the Desktop variable is read the same way.
+
+    Refused as relative, an exported-but-empty variable - which a shell profile
+    leaves behind easily - would stop every shortcut on that account.
+    """
+    if arm == _CONFIG_HOME_ARM:
+        machine.set_config_home("")
+    else:
+        monkeypatch.setenv(arm, "")
+
+    install_shortcut(output_format=OutputFormat.JSON)
+
+    envelope = json.loads(capfd.readouterr().out)
+    assert envelope["ok"] is True, envelope
+    assert machine.written() == [machine.desktop / "lsdsk.desktop"]
