@@ -33,8 +33,8 @@ def main(
 ) -> int:
     """Console script entry point with production services wired.
 
-    The CLI and the composition are imported here, inside the guard, rather
-    than at the top of the module: they are most of the start's import time,
+    The CLI and the composition are imported inside the guard, in
+    :func:`_run_with`, rather than at the top of the module: they are most of the start's import time,
     and a Ctrl+C in that window used to print a traceback through the import
     machinery before any handler of this project existed.
 
@@ -49,7 +49,8 @@ def main(
             gets; the one that draws on an interactive start when None.
 
     Returns:
-        Exit code from CLI execution, 130 for an interrupt before it started.
+        Exit code from CLI execution, 130 for an interrupt the CLI did not answer
+        itself: one while the line starts or stops, or while lsdsk imports itself.
     """
     args = list(argv) if argv is not None else sys.argv[1:]
     try:
@@ -57,16 +58,29 @@ def main(
             from .adapters.startup_notice import notice_for_this_start  # noqa: PLC0415 - deferred into the interrupt guard
 
             start_notice = notice_for_this_start
-        notice = start_notice(args)
+        return _run_with(start_notice(args), args)
     except KeyboardInterrupt:
         return _INTERRUPTED
-    notice.start()
+
+
+def _run_with(notice: "ShowsStartupProgress", args: "list[str]") -> int:
+    """Draw `notice`, import and run the CLI, and stop the notice on every way out.
+
+    The start is inside the ``try`` as well: a Ctrl+C that lands while the line
+    starts reaches the ``finally`` like one during the import, and the caller's
+    guard answers it with 130.
+
+    Args:
+        notice: The startup line this run gets.
+        args: The arguments after the program name.
+
+    Returns:
+        Exit code from CLI execution.
+    """
     try:
-        try:
-            from .adapters.cli.main import main as cli_main  # noqa: PLC0415 - deferred into the interrupt guard
-            from .composition import build_production  # noqa: PLC0415 - deferred into the interrupt guard
-        except KeyboardInterrupt:
-            return _INTERRUPTED
+        notice.start()
+        from .adapters.cli.main import main as cli_main  # noqa: PLC0415 - deferred into the interrupt guard
+        from .composition import build_production  # noqa: PLC0415 - deferred into the interrupt guard
 
         def services() -> "AppServices":
             return build_production(startup=notice)

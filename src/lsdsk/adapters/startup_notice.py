@@ -30,7 +30,10 @@ Contents:
 
 from __future__ import annotations
 
+import signal
 import sys
+import threading
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from rich.console import Console
@@ -41,7 +44,7 @@ from rich.text import Text
 from .terminal_streams import drawing_stream, streams_that_are_not_terminals
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Generator, Sequence
 
 #: What the line says, as the user asked for it.
 LINE = "Scanning Drives ..."
@@ -138,6 +141,35 @@ def spinner_for(encoding: str) -> str:
     return "dots"
 
 
+@contextmanager
+def _ctrl_c_held() -> Generator[None]:
+    """Hold a Ctrl+C that arrives inside the block, and deliver it once the block is done.
+
+    rich's live display starts and stops in several steps - the cursor, both
+    standard streams, the console's render hooks, a refresh thread - and an
+    interrupt between two of them leaves a state its own stop cannot undo:
+    measured, one landing before the render hook was pushed made the stop fail
+    popping it, and one landing before the cursor was shown again left it
+    hidden. Held, each start and stop is whole, and the interrupt still
+    arrives, through whatever handler was in place.
+
+    Only the main thread may install a handler, and one installed outside
+    Python cannot be put back, so the block runs unheld in either case.
+    """
+    previous = signal.getsignal(signal.SIGINT)
+    if previous is None or threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    held: list[int] = []
+    signal.signal(signal.SIGINT, lambda signum, _frame: held.append(signum))
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, previous)
+    if held:
+        signal.raise_signal(signal.SIGINT)
+
+
 class StartupNotice:
     """The line and its spinner, drawn until the interactive view takes the screen.
 
@@ -173,15 +205,18 @@ class StartupNotice:
             redirect_stdout=True,
             redirect_stderr=True,
         )
-        live.start(refresh=True)
-        self._live = live
+        with _ctrl_c_held():
+            # Recorded first, so a stop reaches a display whatever ends its start.
+            self._live = live
+            live.start(refresh=True)
 
     def pause(self) -> None:
         """Erase the line and give the streams back, so a prompt starts on a clean line."""
         if self._live is None:
             return
         live, self._live = self._live, None
-        live.stop()
+        with _ctrl_c_held():
+            live.stop()
 
     def stop(self) -> None:
         """Erase the line for good."""
