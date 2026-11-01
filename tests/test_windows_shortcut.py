@@ -418,3 +418,43 @@ def test_a_folder_named_like_the_shortcut_is_not_the_shortcut(desktop: Path) -> 
     (desktop / "lsdsk.lnk").mkdir()
 
     assert _adapter(_FakePs(folders={"Desktop": desktop})).exists() is False
+
+
+def _named_refusal(kind: type[Exception], lnk: Path) -> Exception:
+    """A refusal in the words pwshpy's COM wrapper uses, which name the shortcut it was writing."""
+    return kind(f"writing the shortcut {lnk} failed at IPersistFile::Save with HRESULT 0x80070005")
+
+
+@pytest.mark.parametrize(
+    ("kind", "code"),
+    [(_FakeError, ExitCode.IO_ERROR), (_FakeAccessDeniedError, ExitCode.PERMISSION_DENIED)],
+    ids=["refused", "access-denied"],
+)
+def test_a_refused_desktop_lnk_names_its_path_once(
+    desktop: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], kind: type[Exception], code: ExitCode
+) -> None:
+    """The refusal says the ``.lnk`` once, since pwshpy's own message already names it."""
+    lnk = desktop / "lsdsk.lnk"
+    ps = _FakePs(folders={"Desktop": desktop}, refuse_with=_named_refusal(kind, lnk))
+
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(output_format=OutputFormat.JSON, seams=_seams(_adapter(ps), tmp_path / "lsdsk.ico"))
+
+    assert leaving.value.code == code
+    message = json.loads(capsys.readouterr().out)["error"]["message"]
+    assert message.count(str(lnk)) == 1, message
+    assert "0x80070005" in message
+
+
+@pytest.mark.parametrize("kind", [_FakeError, _FakeAccessDeniedError], ids=["refused", "access-denied"])
+def test_a_refused_start_menu_lnk_names_its_path_once(desktop: Path, programs: Path, kind: type[Exception]) -> None:
+    """The skipped sentence carries the Start-menu ``.lnk`` once, with pwshpy's reason for it."""
+    lnk = programs / "lsdsk.lnk"
+    refusal = _named_refusal(kind, lnk)
+    ps = _FakePs(folders={"Desktop": desktop, "Programs": programs}, refuse_with=refusal, refuse_only_in=programs)
+
+    written = _adapter(ps).create(launch=_LAUNCH, icon=None)
+
+    assert len(written.skipped) == 1, written.skipped
+    assert written.skipped[0].count(str(lnk)) == 1, written.skipped[0]
+    assert str(refusal) in written.skipped[0]

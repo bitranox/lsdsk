@@ -250,9 +250,21 @@ class WindowsDesktopShortcut:
         # pwshpy's NativeAccessDeniedError is a PwshPyError AND a PermissionError, so this arm must
         # come first. It is caught by the stdlib type: the facade names only pwshpy's root error.
         except PermissionError as exc:
-            raise ShortcutAccessDeniedError(errno.EACCES, f"not allowed to write {path}: {exc}") from exc
+            raise ShortcutAccessDeniedError(errno.EACCES, _naming(path, exc, "not allowed to write")) from exc
         except pwshpy.PwshPyError as exc:
-            raise ShortcutWriteError(errno.EIO, f"could not write {path}: {exc}") from exc
+            raise ShortcutWriteError(errno.EIO, _naming(path, exc, "could not write")) from exc
+
+
+def _naming(path: Path, error: Exception, verb: str) -> str:
+    """The refusal pwshpy gave for ``path``, naming the shortcut once.
+
+    pwshpy words a failed COM call as "writing the shortcut <path> failed at
+    <step> with HRESULT <code>", which already names the file, so putting
+    "<verb> <path>:" in front of it said the path twice. A refusal that does not
+    name the file - a value pwshpy rejects before any COM call - is given it.
+    """
+    detail = str(error)
+    return detail if str(path) in detail else f"{verb} {path}: {detail}"
 
 
 __all__ = [

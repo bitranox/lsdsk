@@ -204,7 +204,10 @@ class LinuxDesktopShortcut:
             menu.parent.mkdir(parents=True, exist_ok=True)
             _write_executable(menu, body)
         except OSError as exc:
-            return f"the shortcut is on the Desktop, but it could not be added to the application menu at {menu}: {exc}"
+            return (
+                "the shortcut is on the Desktop, but it could not be added to the application menu "
+                f"at {menu}: {_reason_about(exc, menu)}"
+            )
         return None
 
     @staticmethod
@@ -287,6 +290,19 @@ def _encodes_as_utf8(value: str) -> bool:
     except UnicodeEncodeError:
         return False
     return True
+
+
+def _reason_about(error: OSError, path: Path) -> str:
+    """Why ``error`` refused ``path``, for a sentence that has already named ``path``.
+
+    The atomic writer names the destination in the refusal it raises, so the
+    refusal's own text would repeat the path the sentence just gave. Where the
+    refusal names that same file and no second one, its reason alone is said;
+    any other refusal - a folder above it that could not be made - is quoted
+    whole, because the path it names is not the one already given.
+    """
+    names_only_path = error.filename == str(path) and error.filename2 is None
+    return error.strerror if names_only_path and error.strerror is not None else str(error)
 
 
 def _expand(value: str) -> Path | None:

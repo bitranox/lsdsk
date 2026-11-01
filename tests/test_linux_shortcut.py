@@ -9,6 +9,7 @@ under the test's own directory.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import subprocess
@@ -558,3 +559,30 @@ def test_install_shortcut_tells_a_reader_on_stderr_which_menu_copy_failed(
     assert "Shortcut created" in captured.out
     assert "could not be added to the application menu" in captured.err
     assert str(menu / "lsdsk.desktop") in captured.err
+
+
+@pytest.mark.os_linux
+def test_a_read_only_menu_names_the_menu_entry_once_in_the_skipped_sentence(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sentence names the menu entry, then says why; the refusal's own copy of the path is not repeated.
+
+    The atomic writer names the destination in the refusal it raises, so quoting
+    that refusal whole after "at <menu>" put the same path in the sentence twice.
+    """
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root writes into a read-only directory, so nothing is refused")
+    applications = home / "data" / "applications"
+    applications.mkdir(parents=True)
+    applications.chmod(0o555)
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / "data"))
+    menu = applications / "lsdsk.desktop"
+
+    try:
+        written = LinuxDesktopShortcut().create(launch=("lsdsk",), icon=None)
+    finally:
+        applications.chmod(0o755)
+
+    assert len(written.skipped) == 1, written.skipped
+    assert written.skipped[0].count(str(menu)) == 1, written.skipped[0]
+    assert written.skipped[0].endswith(f"at {menu}: {os.strerror(errno.EACCES)}"), written.skipped[0]
