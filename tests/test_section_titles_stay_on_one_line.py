@@ -224,3 +224,41 @@ def test_the_banner_is_whole_wherever_the_console_has_room_for_it() -> None:
     assert f"{len(inventory.disks)} disks on" in whole, "the premise: the counts are fields of the banner"
     for width in range(cell_len(whole), 201):
         assert _first_line(report.render_header(inventory, width=width), width) == whole, f"width {width}"
+
+
+#: A board name for a capture whose DMI named none, as a real one reads.
+_A_BOARD = "Micro-Star International Co., Ltd. MEG Z690 ACE (MS-7D27)"
+
+
+def _banner_fields(inventory: Inventory) -> list[str]:
+    """The banner's fields after the lead, in the order the CHANGELOG says they are given up last to first."""
+    return [
+        f"   {len(inventory.disks)} disks on {len(inventory.controllers)} controllers",
+        f"   {len(inventory.virtual_disks)} virtual",
+        f"   {inventory.board}",
+    ]
+
+
+@pytest.mark.parametrize("capture", ["linux-minimal", "linux-usb-ehci", "linux-zfs-filesystems"])
+def test_the_banner_gives_up_the_board_then_the_virtual_count_then_the_disk_count(capture: str) -> None:
+    """As the room shrinks the board goes first, then the virtual count, then the disk count.
+
+    So whatever is shown is a prefix of [counts, virtual, board] - the board shown
+    means the virtual count is, which means the counts are - and each field is
+    shown at the first width that has room for it and everything before it. A
+    capture that names no board is given one, since the order is only visible
+    where both the board and the virtual count are there to be given up.
+    """
+    machine, _ = _machine(capture)
+    inventory = machine if machine.board else machine.with_changes(board=_A_BOARD)
+    assert inventory.virtual_disks, "the premise: the capture carries virtual disks"
+    lead = _banner_lead(inventory)
+    fields = _banner_fields(inventory)
+    shown_counts: set[int] = set()
+    for width in range(cell_len(lead), cell_len(lead + "".join(fields)) + 3):
+        room = width - cell_len(lead)
+        expected = max(n for n in range(len(fields) + 1) if cell_len("".join(fields[:n])) <= room)
+        drawn = _first_line(report.render_header(inventory, width=width), width)
+        assert drawn == lead + "".join(fields[:expected]), f"width {width}"
+        shown_counts.add(expected)
+    assert shown_counts == {0, 1, 2, 3}, "the control: the walk passed through every stage of the give-up"
