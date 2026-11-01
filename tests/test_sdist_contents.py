@@ -120,15 +120,17 @@ def _without_git_variables() -> dict[str, str]:
     return {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
 
 
-def _untracked_beside_the_tracked_gitignores(root: Path, paths: list[str]) -> list[str]:
-    """Untracked files under ``paths`` in the repository at ``root`` that no tracked ``.gitignore`` hides.
+def _untracked_beside_the_root_gitignore(root: Path, paths: list[str]) -> list[str]:
+    """Untracked files under ``paths`` in the repository at ``root`` that the root ``.gitignore`` does not hide.
 
-    ``--exclude-per-directory`` without ``--exclude-standard`` reads the
-    ``.gitignore`` files alone, which is what hatchling reads - never
-    ``.git/info/exclude`` or the reader's global excludes file.
+    hatchling reads the ROOT ``.gitignore`` and nothing else: measured with
+    hatchling 1.x, a file hidden by ``.git/info/exclude`` or by a nested
+    ``.gitignore`` both shipped. So ``--exclude-from`` names that one file, and
+    neither ``--exclude-standard`` nor ``--exclude-per-directory`` is passed, each
+    of which would hide a file the sdist still carries.
     """
     listed = subprocess.run(  # noqa: S603 - an absolute git path with fixed arguments
-        [_git(), "ls-files", "--others", "--exclude-per-directory=.gitignore", "-z", "--", *paths],
+        [_git(), "ls-files", "--others", f"--exclude-from={root / '.gitignore'}", "-z", "--", *paths],
         cwd=root,
         env=_without_git_variables(),
         capture_output=True,
@@ -142,9 +144,10 @@ def test_no_untracked_file_under_an_allowlisted_path_is_hidden_only_from_git() -
     """A file kept out of git only by ``.git/info/exclude`` is walked into a local sdist.
 
     ``only-include`` names whole directories such as ``docs``, and hatchling
-    applies the tracked ``.gitignore`` files but not ``.git/info/exclude``, so a
-    local build shipped a third party's machine capture that a clean clone never
-    has. Hide such a file with a tracked ``.gitignore`` entry instead. A file
+    applies the root ``.gitignore`` but neither ``.git/info/exclude`` nor a nested
+    ``.gitignore``, so a local build shipped a third party's machine capture that
+    a clean clone never has. Hide such a file with a root ``.gitignore`` entry
+    instead. A file
     that only the sdist's own ``exclude`` keeps out is flagged too: the remedy is
     the same, and a false alarm here is loud rather than a leak.
     """
@@ -152,7 +155,7 @@ def test_no_untracked_file_under_an_allowlisted_path_is_hidden_only_from_git() -
     allowlist = _sdist_config().get("only-include", [])
     assert "docs" in allowlist, "the control: the allowlist names a whole directory"
 
-    escaping = _untracked_beside_the_tracked_gitignores(ROOT, allowlist)
+    escaping = _untracked_beside_the_root_gitignore(ROOT, allowlist)
 
     assert escaping == [], f"a local sdist would ship these untracked files: {escaping}"
 
@@ -161,7 +164,7 @@ def test_no_untracked_file_under_an_allowlisted_path_is_hidden_only_from_git() -
 def test_the_untracked_file_check_names_what_info_exclude_hides_and_not_what_gitignore_hides(
     tmp_path: Path,
 ) -> None:
-    """The control, in a repository of its own: info/exclude does not hide a file, a tracked .gitignore does."""
+    """The control, in a repo of its own: only the root .gitignore hides a file, not info/exclude or a nested one."""
     subprocess.run(  # noqa: S603 - an absolute git path with fixed arguments
         [_git(), "init", "-q", str(tmp_path)], env=_without_git_variables(), check=True
     )
@@ -171,5 +174,12 @@ def test_the_untracked_file_check_names_what_info_exclude_hides_and_not_what_git
     (tmp_path / "docs").mkdir()
     for name in ("by-info-exclude.txt", "by-gitignore.txt"):
         (tmp_path / "docs" / name).write_text("planted\n", encoding="utf-8")
+    (tmp_path / "docs" / "sub").mkdir()
+    (tmp_path / "docs" / "sub" / ".gitignore").write_text("by-nested-gitignore.txt\n", encoding="utf-8")
+    (tmp_path / "docs" / "sub" / "by-nested-gitignore.txt").write_text("planted\n", encoding="utf-8")
 
-    assert _untracked_beside_the_tracked_gitignores(tmp_path, ["docs"]) == ["docs/by-info-exclude.txt"]
+    assert _untracked_beside_the_root_gitignore(tmp_path, ["docs"]) == [
+        "docs/by-info-exclude.txt",
+        "docs/sub/.gitignore",
+        "docs/sub/by-nested-gitignore.txt",
+    ]

@@ -136,8 +136,8 @@ exclude = [
 # Only what is listed here is walked, so neither can reach an sdist. The list is
 # the set of top-level entries git tracks, which is exactly what a clean clone
 # (CI) ships; tests/test_sdist_contents.py holds that equality, and that no
-# untracked file under a listed directory escapes the tracked .gitignore files
-# (hatchling does not read .git/info/exclude). A name listed
+# untracked file under a listed directory escapes the root .gitignore
+# (hatchling reads no other: not .git/info/exclude, not a nested .gitignore). A name listed
 # here as a FILE is shipped whatever `exclude` says, so a state file must never
 # be added to it.
 only-include = [

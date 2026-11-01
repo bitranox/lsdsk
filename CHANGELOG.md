@@ -37,8 +37,9 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 - A source distribution built from a working checkout could include files that were kept out of
   git only by `.git/info/exclude`, because the build walks `docs/` whole and does not read that
   file. Published releases were not affected: CI builds from a clean clone. The local material
-  is now ignored by the tracked `.gitignore`, and the test suite fails on any untracked file a
-  local build would pick up.
+  is now ignored by the root `.gitignore`, and the test suite fails on any untracked file a
+  local build would pick up, including one hidden only by a nested `.gitignore`, which the build
+  does not read either.
 
 ## [1.16.4] - 2026-10-30
 
