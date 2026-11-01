@@ -197,21 +197,43 @@ _POWERSHELL_SYNTAX: Final = (
 )
 
 
+#: The stop-parsing token. PowerShell drops an argument with this value on its way to a native
+#: program however it is spelled - bare, in either quotes, escaped, in parentheses - so no line passes it.
+_STOP_PARSING: Final = "--%"
+
+#: The dash words PowerShell passes on as they are written: a lone dash, or two dashes and a name
+#: (``--exclude-newer``). A single-dash word is a parameter to PowerShell, which splits one holding a
+#: dot (``-a.b`` arrives as ``-a`` and ``.b``) and refuses one ending in a colon as the last word, and
+#: a bare ``--`` is its end-of-parameters token; each of those is written as a literal instead.
+_PLAIN_DASH_WORD: Final = re.compile(r"-|--[A-Za-z0-9_=+/@\\-]+")
+
+
 def _reads_the_same_in_powershell(argument: str) -> bool:
-    """Whether PowerShell reads the cmd form of ``argument`` as ``argument`` itself.
+    """Whether PowerShell hands a native program the cmd form of ``argument`` as ``argument`` itself.
 
     PowerShell takes a double-quoted word literally apart from ``$`` and the
     backtick, so the C runtime's escapes do not apply there: a quoted argument
     ending in a backslash, whose backslashes the cmd form doubles, would arrive
     with the doubled run. A word starting ``@`` (splatting) or ``#`` (a comment)
-    and the stop-parsing token ``--%`` mean something of their own.
+    means something of its own, a leading ``~`` is replaced by the home folder,
+    and a dash word that is more than letters and the like is split or joined.
+    Any character outside printable ASCII is left to a literal string too: the
+    whitespace PowerShell splits a word at includes the no-break and the CJK
+    spaces, which nothing else in this module would think to quote.
     """
-    if not argument or argument == "--%" or argument.startswith(("@", "#")):
+    if not argument or argument.startswith(("@", "#", "~")):
         return False
-    if not _POWERSHELL_SYNTAX.isdisjoint(argument):
+    if argument.startswith("-") and _PLAIN_DASH_WORD.fullmatch(argument) is None:
+        return False
+    if not _POWERSHELL_SYNTAX.isdisjoint(argument) or not _printable_ascii(argument.replace("\t", " ")):
         return False
     quoted = " " in argument or "\t" in argument
     return not (quoted and argument.endswith("\\"))
+
+
+def _printable_ascii(text: str) -> bool:
+    """Whether every character of ``text`` is a printable ASCII one, the space included."""
+    return all(" " <= character <= "~" for character in text)
 
 
 def _powershell_argument(argument: str) -> str:
@@ -228,10 +250,15 @@ def powershell_line(argv: Sequence[str]) -> str:
     A line beginning with a quoted program is an expression to PowerShell, and
     the arguments after it a parse error, so the program is invoked with ``&``.
     Each argument keeps its cmd form (:func:`command_line`) wherever PowerShell
-    reads that form as the argument itself, which is every launch lsdsk builds
-    from an ordinary path, so this is then the cmd line with ``& `` in front. An
-    argument PowerShell would read as syntax - a ``$`` it would expand, a quote,
-    a parenthesis, a semicolon - is written as a single-quoted literal instead.
+    hands a native program that form as the argument itself, which is every
+    launch lsdsk builds from an ordinary path, so this is then the cmd line
+    with ``& `` in front. An argument PowerShell would read as syntax - a ``$``
+    it would expand, a quote, a parenthesis, a semicolon - or change on the
+    way to the program - a leading ``~``, a dash word with a dot, whitespace
+    that is not ASCII - is written as a single-quoted literal instead. Windows
+    PowerShell 5.1 still drops a double quote inside an argument to a native
+    program, which no one-line spelling fixes there; a Windows path cannot hold
+    one, so no launch lsdsk builds carries it.
 
     Args:
         argv: The command, executable first.
@@ -239,12 +266,20 @@ def powershell_line(argv: Sequence[str]) -> str:
     Returns:
         The whole command as one PowerShell line.
 
+    Raises:
+        ValueError: An argument is ``--%``, which PowerShell drops before the
+            program sees it however it is written. No launch lsdsk builds holds
+            one: its arguments are fixed, and its program is an absolute path.
+
     Example:
         >>> powershell_line(("C:/Program Files/uv/uvx.exe", "7 days"))
         '& "C:/Program Files/uv/uvx.exe" "7 days"'
         >>> powershell_line(("C:/Users/O'Brien/uvx.exe", "$HOME"))
         "& 'C:/Users/O''Brien/uvx.exe' '$HOME'"
     """
+    if _STOP_PARSING in argv[1:]:
+        msg = f"PowerShell drops an argument {_STOP_PARSING!r} on its way to a native program, so no line can pass it"
+        raise ValueError(msg)
     return "& " + " ".join(_powershell_argument(argument) for argument in argv)
 
 

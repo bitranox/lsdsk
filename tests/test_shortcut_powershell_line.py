@@ -9,13 +9,17 @@ line carrying it.
 
 Where ``pwsh`` is installed the line is handed to PowerShell's own parser, which
 must find exactly one command, invoked with ``&``, whose words are literal
-strings equal to the argv the line was built from.
+strings equal to the argv the line was built from - and then RUN, because the
+parser is not the last word: PowerShell splits ``-a.b`` into two arguments,
+expands a leading ``~`` and drops ``--%`` when it hands a native program its
+argv, and a word the parser reads as one string constant arrives as two.
 """
 
 from __future__ import annotations
 
 import json
 import shutil
+import sys
 from typing import TYPE_CHECKING
 
 import pytest
@@ -37,7 +41,9 @@ _ARGVS: list[tuple[str, ...]] = [
     ("C:\\Users\\Bob(x)\\uvx.exe", "x"),
     ("C:\\a b$c\\uvx.exe", "$HOME"),
     ("C:\\a{b}\\uvx.exe", "a,b", "a;b", "a&b", "a|b", "a<b", "a>b"),
-    ("prog", "a`b", "@splat", "#comment", "--%", ""),
+    ("prog", "a`b", "@splat", "#comment", ""),
+    # The stop-parsing token's neighbours, which do reach the program.
+    ("prog", "--%x", "a--%", "-", "--"),
     ("prog", "C:\\dir with space\\", "C:\\dir with space\\\\", 'say "hi"', "tab\there", "two\nlines"),
     # PowerShell reads the typographic quotes as quotes too.
     ("prog", "O" + chr(0x2019) + "Brien", "a" + chr(0x201C) + "b" + chr(0x201D)),
@@ -45,6 +51,18 @@ _ARGVS: list[tuple[str, ...]] = [
     ("prog", *("a" + chr(quote) + "b" for quote in (0x2018, 0x2019, 0x201A, 0x201B, 0x201C, 0x201D, 0x201E))),
     # A carriage return alone, and a tab with no space beside a trailing backslash.
     ("prog", "a\rb", "tab\there\\"),
+]
+
+#: Words PowerShell's parser reads as one string and the native call then changes, measured on pwsh 7.6
+#: on Linux and Windows and on Windows PowerShell 5.1: whitespace that is not ASCII splits the word, a
+#: dash word holding a dot is split at it, a dash word ending in a colon is a parse error as the last
+#: word, and a leading tilde is replaced by the home folder (pwsh only).
+_CHANGED_BY_THE_CALL: list[tuple[str, ...]] = [
+    ("prog", *("a" + chr(space) + "b" for space in (0x00A0, 0x2003, 0x3000, 0x2028))),
+    ("prog", "-a.b", "--x.y", "-1.5", "-a=b"),
+    ("prog", "-x:"),
+    ("prog", "~", "~/x", "~\\x", "x~y"),
+    ("prog", "J" + chr(0xFC) + "rgen"),
 ]
 
 _PARSE = r"""
@@ -112,15 +130,74 @@ def test_powershell_parses_each_line_into_one_call_of_the_same_argv(tmp_path: Pa
     pwsh = shutil.which("pwsh")
     if pwsh is None:
         pytest.skip("pwsh is not installed, so PowerShell's own parser cannot be asked")
-    lines = [powershell_line(argv) for argv in _ARGVS]
+    lines = [powershell_line(argv) for argv in [*_ARGVS, *_CHANGED_BY_THE_CALL]]
 
     parsed = _parsed_by_pwsh(pwsh, lines, tmp_path)
 
-    assert len(parsed) == len(_ARGVS)
-    for argv, line, reading in zip(_ARGVS, lines, parsed, strict=True):
+    assert len(parsed) == len(lines)
+    for argv, line, reading in zip([*_ARGVS, *_CHANGED_BY_THE_CALL], lines, parsed, strict=True):
         assert reading.errors == 0, line
         assert reading.commands == 1, line
         assert reading.operator == "Ampersand", line
         assert reading.redirections == 0, line
         assert set(reading.kinds) == {"StringConstantExpressionAst"}, line
         assert reading.values == list(argv), line
+
+
+#: Run each line through ``Invoke-Expression``, so one line's parse error does not stop the others, and
+#: mark where each ends; the program each line runs appends what it received before the mark.
+_RUN = r"""
+param([string]$In, [string]$Out)
+$ErrorActionPreference = 'Stop'
+$lines = Get-Content -LiteralPath $In -Raw -Encoding utf8 | ConvertFrom-Json
+foreach ($line in $lines) {
+    try { Invoke-Expression $line } catch { [System.IO.File]::AppendAllText($Out, "!error`n") }
+    [System.IO.File]::AppendAllText($Out, "@@`n")
+}
+"""
+
+#: The program each line runs: it appends the arguments after its first to the file its first names.
+_RECORD_ARGV = "import sys,json;open(sys.argv[1],'a',encoding='utf-8').write(json.dumps(sys.argv[2:])+chr(10))"
+
+
+def _run_by_pwsh(pwsh: str, lines: list[str], record: Path, tmp_path: Path) -> list[list[str] | None]:
+    """What the program each line runs received, in order; ``None`` where the line did not run it."""
+    script = tmp_path / "run.ps1"
+    script.write_bytes(_RUN.encode("utf-8"))
+    given = tmp_path / "run-lines.json"
+    given.write_bytes(json.dumps(lines).encode("utf-8"))
+    assert (
+        run_installer(
+            [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script), "-In", str(given), "-Out", str(record)]
+        )
+        == 0
+    )
+    blocks = record.read_bytes().decode("utf-8").split("@@\n")[:-1]
+    return [TypeAdapter(list[str]).validate_json(block) if block.startswith("[") else None for block in blocks]
+
+
+def test_powershell_runs_each_line_with_the_argv_it_was_built_from(tmp_path: Path) -> None:
+    """The program a line starts receives exactly the arguments the line was built from."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("pwsh is not installed, so no line can be run")
+    record = tmp_path / "received.txt"
+    cases = [argv[1:] for argv in [*_ARGVS, *_CHANGED_BY_THE_CALL]]
+    lines = [powershell_line((sys.executable, "-c", _RECORD_ARGV, str(record), *case)) for case in cases]
+
+    received = _run_by_pwsh(pwsh, lines, record, tmp_path)
+
+    assert len(received) == len(cases)
+    mismatched = [(list(case), got) for case, got in zip(cases, received, strict=True) if got != list(case)]
+    assert not mismatched, mismatched
+
+
+def test_the_stop_parsing_token_is_refused_because_no_spelling_of_it_reaches_the_program() -> None:
+    """PowerShell drops an argument ``--%`` however it is written: bare, quoted either way, escaped, in parentheses.
+
+    Measured on pwsh 7.6 and Windows PowerShell 5.1. A line that silently loses
+    an argument is not the launch it claims to be, so none is written.
+    """
+    with pytest.raises(ValueError, match="--%"):
+        powershell_line(("prog", "--%"))
+    assert powershell_line(("prog", "--%x", "a--%")) == "& prog '--%x' a--%"
