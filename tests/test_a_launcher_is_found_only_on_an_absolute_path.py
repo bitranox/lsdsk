@@ -140,3 +140,48 @@ def test_a_windows_launcher_is_found_by_its_pathext_suffix(tmp_path: Path) -> No
 
     assert executable_on_path("uvx", search=str(directory), pathext=".COM;.EXE") == launcher
     assert executable_on_path("uvx", search=str(directory), pathext=None) is None
+
+
+@pytest.mark.os_posix
+def test_a_file_without_the_execute_bit_is_passed_over_for_the_executable_behind_it(tmp_path: Path) -> None:
+    """A ``uvx`` the account may not execute is no launcher, so the executable one later on ``PATH`` answers.
+
+    POSIX only: Windows grants execute to every file ``os.access`` is asked about.
+    Root is no exception here, since a file with no execute bit at all is not
+    executable for root either.
+    """
+    readable_only = tmp_path / "first"
+    readable_only.mkdir()
+    (readable_only / "uvx").write_bytes(b"#!/bin/sh\nexit 0\n")
+    (readable_only / "uvx").chmod(0o644)
+    real = _plant(tmp_path / "second", "uvx")
+
+    found = uvx_path(search=_search(readable_only, tmp_path / "second"))
+
+    assert found is not None
+    assert found.samefile(real)
+
+
+@pytest.mark.os_posix
+def test_a_directory_the_account_cannot_enter_is_passed_over_without_raising(tmp_path: Path) -> None:
+    """A mode-000 directory on ``PATH`` holding ``uvx`` answers nothing, and the next directory answers.
+
+    Before Python 3.14 ``Path.is_file`` re-raises the refused ``stat`` as a
+    ``PermissionError``, so without the guard the whole lookup failed on the
+    oldest supported Python and passed on the newest. Root enters any
+    directory, so the refusal cannot be made there.
+    """
+    # Asked through sys.platform, which the type checker narrows on; Windows has no geteuid.
+    if sys.platform != "win32" and os.geteuid() == 0:
+        pytest.skip("root enters a mode-000 directory, so the refused stat cannot be produced")
+    locked = tmp_path / "locked"
+    _plant(locked, "uvx")
+    real = _plant(tmp_path / "real", "uvx")
+    locked.chmod(0)
+    try:
+        found = uvx_path(search=_search(locked, tmp_path / "real"))
+    finally:
+        locked.chmod(stat.S_IRWXU)
+
+    assert found is not None
+    assert found.samefile(real)
