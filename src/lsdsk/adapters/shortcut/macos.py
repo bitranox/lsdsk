@@ -13,6 +13,7 @@ System Role:
 from __future__ import annotations
 
 import errno
+import os
 import shlex
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -30,7 +31,16 @@ _EXECUTABLE_MODE = 0o755
 
 
 class UnwritableCommandFileError(OSError):
-    """A launch argument holds a character the UTF-8 ``.command`` file cannot carry."""
+    """A launch argument holds a character the UTF-8 ``.command`` file cannot carry.
+
+    It carries ``EINVAL`` as its ``errno`` and prints the refusal alone, without
+    the ``[Errno 22]`` an ``OSError`` would put in front of a sentence written
+    for the reader.
+    """
+
+    def __str__(self) -> str:
+        """The refusal as written, with no errno in front of it."""
+        return self.strerror if self.strerror is not None else super().__str__()
 
 
 class MacosDesktopShortcut:
@@ -81,6 +91,9 @@ class MacosDesktopShortcut:
 def _require_utf8(argument: str) -> None:
     """Refuse ``argument`` when UTF-8 cannot encode it, as the lone surrogate of an undecodable filename byte.
 
+    The argument is quoted by its bytes, so the reader sees the byte itself
+    rather than Python's surrogate for it.
+
     Raises:
         UnwritableCommandFileError: ``argument`` has no UTF-8 spelling.
     """
@@ -88,7 +101,7 @@ def _require_utf8(argument: str) -> None:
         argument.encode("utf-8")
     except UnicodeEncodeError:
         raise UnwritableCommandFileError(
-            errno.EINVAL, f"{argument!r} is not valid UTF-8, which the .command file cannot carry"
+            errno.EINVAL, f"{os.fsencode(argument)!r} is not valid UTF-8, which the .command file cannot carry"
         ) from None
 
 

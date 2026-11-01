@@ -65,8 +65,14 @@ class UnwritableDesktopEntryError(OSError):
     """A launch argument or icon path holds a character no desktop entry value can carry.
 
     A control character, or one UTF-8 cannot encode: the lone surrogate Python
-    reads a filename byte as when it is not valid UTF-8.
+    reads a filename byte as when it is not valid UTF-8. It carries ``EINVAL`` as
+    its ``errno`` and prints the refusal alone, without the ``[Errno 22]`` an
+    ``OSError`` would put in front of a sentence written for the reader.
     """
+
+    def __str__(self) -> str:
+        """The refusal as written, with no errno in front of it."""
+        return self.strerror if self.strerror is not None else super().__str__()
 
 
 class RelativeXdgDirectoryError(OSError):
@@ -244,6 +250,9 @@ class LinuxDesktopShortcut:
 def _exec_value(launch: Sequence[str]) -> str:
     """``launch`` as the spec's ``Exec`` value: every argument double-quoted, then string-escaped.
 
+    Each argument is checked on its own before they are joined, so a refusal
+    names the one argument at fault rather than the whole line.
+
     Each argument is quoted whole, so no reserved character (a space, ``'``,
     ``#``, ``;`` and the rest) is ever outside a quote, and inside the quotes a
     backslash escapes the four characters that need it. A literal ``%`` is
@@ -252,7 +261,9 @@ def _exec_value(launch: Sequence[str]) -> str:
     which is why a literal backslash ends up as four in the file. A shell's
     single quotes (``shlex.join``) are not quoting at all here.
     """
-    return _string_value(" ".join(_exec_argument(argument) for argument in launch))
+    for argument in launch:
+        _require_carriable(argument)
+    return _escaped(" ".join(_exec_argument(argument) for argument in launch))
 
 
 def _exec_argument(argument: str) -> str:
@@ -265,12 +276,30 @@ def _string_value(value: str) -> str:
     """``value`` as a Desktop Entry ``string``: a backslash doubled, an uncarriable character refused.
 
     Raises:
+        UnwritableDesktopEntryError: ``value`` holds a character no value in the
+            file can carry (see :func:`_require_carriable`).
+    """
+    _require_carriable(value)
+    return _escaped(value)
+
+
+def _escaped(value: str) -> str:
+    """``value`` with each backslash doubled, as a Desktop Entry ``string`` spells one."""
+    return value.replace("\\", "\\\\")
+
+
+def _require_carriable(value: str) -> None:
+    """Refuse ``value`` - one launch argument or the icon path - when the file cannot carry it.
+
+    A newline would end the key and start one the reader never wrote; the file
+    is UTF-8 by the spec, so a path byte that is not valid UTF-8 has no spelling
+    in it; and refusing is the honest answer for the rest: a path is not text a
+    launcher should be quietly rewriting. An undecodable value is quoted by its
+    bytes, so the reader sees the byte itself rather than Python's surrogate.
+
+    Raises:
         UnwritableDesktopEntryError: ``value`` holds a control character, or a
-            character UTF-8 cannot encode. A newline would end the key and start
-            one the reader never wrote; the file is UTF-8 by the spec, so a path
-            byte that is not valid UTF-8 has no spelling in it; and refusing is
-            the honest answer for the rest: a path is not text a launcher should
-            be quietly rewriting.
+            character UTF-8 cannot encode.
     """
     if _CONTROL_CHARACTER.search(value) is not None:
         raise UnwritableDesktopEntryError(
@@ -278,9 +307,8 @@ def _string_value(value: str) -> str:
         )
     if not _encodes_as_utf8(value):
         raise UnwritableDesktopEntryError(
-            errno.EINVAL, f"{value!r} is not valid UTF-8, which a desktop entry cannot carry"
+            errno.EINVAL, f"{os.fsencode(value)!r} is not valid UTF-8, which a desktop entry cannot carry"
         )
-    return value.replace("\\", "\\\\")
 
 
 def _encodes_as_utf8(value: str) -> bool:

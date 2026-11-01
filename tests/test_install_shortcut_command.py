@@ -391,3 +391,24 @@ def test_an_icon_folder_windows_cannot_name_is_refused_before_uv_is_installed(
     assert leaving.value.code == ExitCode.CONFIG_ERROR
     message = json.loads(capsys.readouterr().out)["error"]["message"]
     assert message.startswith("the shortcut was not written: the user configuration directory rel")
+
+
+@pytest.mark.os_linux
+def test_a_control_character_refusal_names_the_one_argument_without_an_errno_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The message quotes the launcher path holding the newline, not the whole Exec line behind ``[Errno 22]``."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_DESKTOP_DIR", raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    (tmp_path / "Desktop").mkdir()
+    launcher = "/opt/uv\nX-Injected=1/uvx"
+
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(output_format=OutputFormat.JSON, seams=_seams(LinuxDesktopShortcut(), uvx=Path(launcher)))
+
+    assert leaving.value.code == ExitCode.IO_ERROR
+    message = json.loads(capsys.readouterr().out)["error"]["message"]
+    assert f"{launcher!r} holds a control character" in message
+    assert "[Errno" not in message
+    assert "--exclude-newer" not in message

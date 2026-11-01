@@ -10,6 +10,7 @@ refused instead with the ``OSError`` a control character already gets.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import stat
@@ -123,3 +124,48 @@ def test_the_offer_says_why_and_lets_the_view_open(
     assert "Could not create the desktop shortcut:" in err
     assert _REFUSAL in err
     assert _written(home) == []
+
+
+@pytest.mark.os_linux
+def test_the_refusal_names_the_one_argument_at_fault_by_its_bytes(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """The message quotes the launcher path with its real byte, not the whole Exec line, and no errno prefix.
+
+    It quoted the joined ``Exec`` value - every argument, the cooldown ones
+    included - spelt with Python's surrogate escape, behind ``[Errno 22]``.
+    """
+    _plant_uvx_under_an_undecodable_directory(tmp_path, monkeypatch)
+    launcher = os.fsencode(tmp_path / f"bin{_UNDECODABLE}" / "uvx")
+
+    with pytest.raises(SystemExit) as leaving:
+        install_shortcut(output_format=OutputFormat.JSON)
+
+    assert leaving.value.code == ExitCode.IO_ERROR
+    message = json.loads(capfd.readouterr().out)["error"]["message"]
+    assert _REFUSAL in message
+    assert repr(launcher) in message
+    assert "[Errno" not in message
+    assert "--exclude-newer" not in message
+
+
+@pytest.mark.os_linux
+def test_the_linux_refusal_keeps_its_errno_but_does_not_print_it(home: Path) -> None:
+    launcher = f"/opt/bin{_UNDECODABLE}/uvx"
+
+    with pytest.raises(UnwritableDesktopEntryError) as refused:
+        LinuxDesktopShortcut().create(launch=(launcher, "--exclude-newer", "7 days"), icon=None)
+
+    assert refused.value.errno == errno.EINVAL
+    assert str(refused.value) == f"{os.fsencode(launcher)!r} {_REFUSAL}, which a desktop entry cannot carry"
+
+
+@pytest.mark.os_posix
+def test_the_macos_refusal_names_the_argument_by_its_bytes_without_an_errno_prefix(home: Path) -> None:
+    launcher = f"/opt/bin{_UNDECODABLE}/uvx"
+
+    with pytest.raises(UnwritableCommandFileError) as refused:
+        MacosDesktopShortcut().create(launch=(launcher, "--exclude-newer", "7 days"), icon=None)
+
+    assert refused.value.errno == errno.EINVAL
+    assert str(refused.value) == f"{os.fsencode(launcher)!r} {_REFUSAL}, which the .command file cannot carry"
