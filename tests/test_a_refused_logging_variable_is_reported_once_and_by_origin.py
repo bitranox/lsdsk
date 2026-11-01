@@ -72,3 +72,26 @@ def test_two_runs_in_one_process_each_warn(capfd: pytest.CaptureFixture[str], mo
 
     assert len(first) == 1, first
     assert len(second) == 1, second
+
+
+def test_a_refused_key_and_a_refused_variable_each_quote_their_own_value(
+    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With both sources refused, each warning gives its own source's reason, not the other's.
+
+    The library reads ``LOG_CONSOLE_LEVEL`` ahead of the section, so the first refusal is the
+    variable's; the key's warning used to quote that one ('LOUDER') as its own reason.
+    """
+    monkeypatch.setenv("LOG_CONSOLE_LEVEL", "LOUDER")
+
+    main(["--set", "lib_log_rich.console_level=NOISY", *FINDINGS], services_factory=build_production)
+    warnings = [line for line in capfd.readouterr().err.splitlines() if line.startswith("Warning: ignoring")]
+
+    about_the_key = [line for line in warnings if "lib_log_rich.console_level=NOISY" in line]
+    about_the_variable = [line for line in warnings if "LOG_CONSOLE_LEVEL=LOUDER" in line]
+    assert len(about_the_key) == 1, warnings
+    assert len(about_the_variable) == 1, warnings
+    assert "'NOISY'" in about_the_key[0], about_the_key
+    assert "LOUDER" not in about_the_key[0], about_the_key
+    assert "'LOUDER'" in about_the_variable[0], about_the_variable
+    assert "NOISY" not in about_the_variable[0], about_the_variable

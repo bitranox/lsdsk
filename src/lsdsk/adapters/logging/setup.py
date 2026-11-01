@@ -657,6 +657,20 @@ def _set_aside(names: Sequence[str]) -> Generator[None]:
         os.environ.update(kept)
 
 
+def _refused_without(section: Mapping[str, object], hidden: Sequence[str]) -> BaseException | None:
+    """Start the runtime from `section` with the variables `hidden` set aside for the start.
+
+    Args:
+        section: The ``[lib_log_rich]`` table to start from.
+        hidden: ``LOG_*`` variables to take out of the environment while it starts.
+
+    Returns:
+        ``None`` once the runtime is running, or what the library raised.
+    """
+    with _set_aside(hidden):
+        return _refused_by(section)
+
+
 def start_runtime(configured: Mapping[str, object], shipped: Mapping[str, object]) -> list[str]:
     """Start the runtime, falling back to the shipped settings for any value it refused.
 
@@ -675,6 +689,11 @@ def start_runtime(configured: Mapping[str, object], shipped: Mapping[str, object
     shipped settings with those variables set aside are refused too, that is a
     fault in this tool, and the original refusal is raised.
 
+    Where both a setting and a variable were refused, each warning quotes the
+    refusal its own source earned: the first refusal is about whichever the
+    library read first - the variable, which it reads ahead of the setting - so
+    quoting it under the setting gave the setting the variable's reason.
+
     Args:
         configured: The ``[lib_log_rich]`` table as the layers merged it.
         shipped: The same table as the package ships it.
@@ -690,22 +709,28 @@ def start_runtime(configured: Mapping[str, object], shipped: Mapping[str, object
     refused = _refused_by(configured)
     if refused is None:
         return []
+    # Read before any variable is set aside: the sentences quote their values.
+    environ = dict(os.environ)
     offenders = offending_keys(refused, configured, shipped)
-    variables = offending_variables(refused, os.environ)
-    attempts: tuple[tuple[Mapping[str, object], Sequence[str], Sequence[str]], ...] = (
-        (with_shipped_values(configured, shipped, offenders), (), offenders),
-        (configured, variables, ()),
-        (shipped, variables, changed_keys(configured, shipped)),
-    )
-    for section, hidden, keys in attempts:
-        # Read before the variables are hidden: the sentence quotes their values.
-        notes = [variable_sentence(name, refused=refused, environ=os.environ) for name in hidden]
-        with _set_aside(hidden):
-            if _refused_by(section) is None:
-                return [
-                    *(ignored_sentence(key, refused=refused, configured=configured, shipped=shipped) for key in keys),
-                    *notes,
-                ]
+    variables = offending_variables(refused, environ)
+
+    def about_keys(keys: Sequence[str], reason: BaseException) -> list[str]:
+        return [ignored_sentence(key, refused=reason, configured=configured, shipped=shipped) for key in keys]
+
+    def about_variables(reason: BaseException) -> list[str]:
+        return [variable_sentence(name, refused=reason, environ=environ) for name in variables]
+
+    with_keys_put_back = _refused_without(with_shipped_values(configured, shipped, offenders), ())
+    if with_keys_put_back is None:
+        return about_keys(offenders, refused)
+    with_variables_aside = _refused_without(configured, variables)
+    if with_variables_aside is None:
+        return about_variables(refused)
+    if _refused_without(shipped, variables) is None:
+        return [
+            *about_keys(changed_keys(configured, shipped), with_variables_aside),
+            *about_variables(with_keys_put_back),
+        ]
     raise refused
 
 
