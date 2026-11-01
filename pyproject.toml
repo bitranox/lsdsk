@@ -68,6 +68,9 @@ dev = [
   # 1.5.1 was yanked upstream (unintended breaking changes) and has ZERO candidates, so a floor
   # must never land on it. 1.6.0 is the first release past it and is the floor now.
   "build>=1.6.1",
+  # tests/test_sdist_contents.py asks hatchling's own walk what an sdist would ship;
+  # the floor is the build-system's.
+  "hatchling>=1.32.4",
   "twine>=7.0.0",
   # codecov-cli is disabled, not dropped: it requires click<8.3.0, which drags click back to
   # 8.2.1 - the version with CVE-2026-7246 (command injection in click.edit(), fixed in 8.3.3).
@@ -135,11 +138,13 @@ exclude = [
 # walked, and `!.env.example` re-included each copy of that file at any depth.
 # Only what is listed here is walked, so neither can reach an sdist. The list is
 # the set of top-level entries git tracks, which is exactly what a clean clone
-# (CI) ships; tests/test_sdist_contents.py holds that equality, and that no
-# untracked file under a listed directory escapes the root .gitignore
-# (hatchling reads no other: not .git/info/exclude, not a nested .gitignore). A name listed
-# here as a FILE is shipped whatever `exclude` says, so a state file must never
-# be added to it.
+# (CI) ships; tests/test_sdist_contents.py holds that equality, and asks
+# hatchling's own walk (SdistBuilder.recurse_included_files) of the checkout the
+# suite runs in for every file an sdist would carry: that must be exactly the
+# files git tracks, from the main checkout (root .gitignore applied, but not
+# .git/info/exclude or a nested .gitignore) and from a worktree (nothing
+# applied) alike. A name listed here as a FILE is shipped whatever `exclude`
+# says, so a state file must never be added to it.
 only-include = [
     ".bmk-cooldown.mk",
     ".claude-plugin",

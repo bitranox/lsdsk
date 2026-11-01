@@ -6,8 +6,10 @@ build there shipped ``.env``, ``handover.md`` and every other ignored file. The
 sdist is therefore an allowlist in ``pyproject.toml``. Building an sdist is too
 slow for this suite, so these tests hold what decides it: the allowlist equals
 the top-level entries git tracks, nothing on it names a state file or a secret,
-and no untracked file under an allowlisted path is hidden only by something
-hatchling does not read, such as ``.git/info/exclude``.
+and the file walk hatchling itself runs for an sdist, asked directly from
+``SdistBuilder`` rather than imitated with git, yields exactly the files git
+tracks - from whichever checkout the suite runs in, a ``.claude/worktrees/`` one
+included.
 """
 
 from __future__ import annotations
@@ -16,9 +18,10 @@ import os
 import shutil
 import subprocess
 import tomllib
-from pathlib import Path
+from pathlib import Path, PurePath
 
 import pytest
+from hatchling.builders.sdist import SdistBuilder
 
 ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT = ROOT / "pyproject.toml"
@@ -120,66 +123,136 @@ def _without_git_variables() -> dict[str, str]:
     return {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
 
 
-def _untracked_beside_the_root_gitignore(root: Path, paths: list[str]) -> list[str]:
-    """Untracked files under ``paths`` in the repository at ``root`` that the root ``.gitignore`` does not hide.
+def _git_ls_files(root: Path) -> set[str]:
+    """Every file git tracks in the repository at ``root``, as forward-slash paths.
 
-    hatchling reads the ROOT ``.gitignore`` and nothing else: measured with
-    hatchling 1.x, a file hidden by ``.git/info/exclude`` or by a nested
-    ``.gitignore`` both shipped. So ``--exclude-from`` names that one file, and
-    neither ``--exclude-standard`` nor ``--exclude-per-directory`` is passed, each
-    of which would hide a file the sdist still carries.
+    Args:
+        root: The repository's top level.
+
+    Returns:
+        The tracked paths, relative to ``root``.
     """
     listed = subprocess.run(  # noqa: S603 - an absolute git path with fixed arguments
-        [_git(), "ls-files", "--others", f"--exclude-from={root / '.gitignore'}", "-z", "--", *paths],
+        [_git(), "ls-files", "-z"],
         cwd=root,
         env=_without_git_variables(),
         capture_output=True,
         check=True,
     )
-    return sorted(entry for entry in listed.stdout.decode("utf-8", errors="replace").split("\0") if entry)
+    return {entry for entry in listed.stdout.decode("utf-8", errors="replace").split("\0") if entry}
 
 
-@pytest.mark.os_agnostic
-def test_no_untracked_file_under_an_allowlisted_path_is_hidden_only_from_git() -> None:
-    """A file kept out of git only by ``.git/info/exclude`` is walked into a local sdist.
+def _hatchling_would_ship(root: Path) -> set[str]:
+    """Every file hatchling's own walk puts into an sdist built from ``root``.
 
-    ``only-include`` names whole directories such as ``docs``, and hatchling
-    applies the root ``.gitignore`` but neither ``.git/info/exclude`` nor a nested
-    ``.gitignore``, so a local build shipped a third party's machine capture that
-    a clean clone never has. Hide such a file with a root ``.gitignore`` entry
-    instead. A file
-    that only the sdist's own ``exclude`` keeps out is flagged too: the remedy is
-    the same, and a false alarm here is loud rather than a leak.
+    This is the walk ``python -m build --sdist`` runs, asked directly rather than
+    imitated: whether the ``.gitignore`` patterns apply at all depends on the path
+    of the project root (hatchling drops every one when the root matches one, as a
+    ``.claude/worktrees/`` checkout does), and a pattern is matched file by file,
+    so a ``!`` re-inclusion reaches into a directory git never descends. The
+    generated ``PKG-INFO`` is not a file of the tree and is left out.
+
+    Args:
+        root: The project root, holding the ``pyproject.toml`` to build from.
+
+    Returns:
+        The distribution paths, relative to the sdist's top folder.
+    """
+    builder = SdistBuilder(str(root))
+    shipped = {PurePath(included.distribution_path).as_posix() for included in builder.recurse_included_files()}
+    return shipped - {"PKG-INFO"}
+
+
+def _shipped_but_untracked(root: Path) -> list[str]:
+    """Files an sdist built from ``root`` would carry that a clean clone does not have.
+
+    Args:
+        root: A git repository whose top level is a hatchling project.
+
+    Returns:
+        The offending paths, sorted.
+    """
+    return sorted(_hatchling_would_ship(root) - _git_ls_files(root))
+
+
+def test_a_local_sdist_ships_exactly_the_files_git_tracks() -> None:
+    """The walk hatchling runs over this checkout ships what a clean clone ships, file for file.
+
+    ``only-include`` names whole directories such as ``docs``, and what hatchling
+    then drops below them depends on where the checkout sits: from the main
+    checkout it applies the root ``.gitignore`` (and neither ``.git/info/exclude``
+    nor a nested one), from a ``.claude/worktrees/`` checkout it applies no
+    pattern at all. A file named here would reach a release built from this tree.
+    Keep it out of the listed directories, or out of the sdist with an ``exclude``
+    entry.
     """
     _git_tracked_top_level()  # skips outside a git checkout of this project
-    allowlist = _sdist_config().get("only-include", [])
-    assert "docs" in allowlist, "the control: the allowlist names a whole directory"
+    shipped = _hatchling_would_ship(ROOT)
+    tracked = _git_ls_files(ROOT)
+    assert "pyproject.toml" in shipped, "the control: the walk was read"
 
-    escaping = _untracked_beside_the_root_gitignore(ROOT, allowlist)
-
-    assert escaping == [], f"a local sdist would ship these untracked files: {escaping}"
-
-
-@pytest.mark.os_agnostic
-def test_the_untracked_file_check_names_what_info_exclude_hides_and_not_what_gitignore_hides(
-    tmp_path: Path,
-) -> None:
-    """The control, in a repo of its own: only the root .gitignore hides a file, not info/exclude or a nested one."""
-    subprocess.run(  # noqa: S603 - an absolute git path with fixed arguments
-        [_git(), "init", "-q", str(tmp_path)], env=_without_git_variables(), check=True
+    assert sorted(shipped - tracked) == [], (
+        f"a local sdist would ship these untracked files: {sorted(shipped - tracked)}"
     )
-    (tmp_path / ".gitignore").write_text("by-gitignore.txt\n", encoding="utf-8")
-    (tmp_path / ".git" / "info").mkdir(parents=True, exist_ok=True)
-    (tmp_path / ".git" / "info" / "exclude").write_text("docs/by-info-exclude.txt\n", encoding="utf-8")
-    (tmp_path / "docs").mkdir()
-    for name in ("by-info-exclude.txt", "by-gitignore.txt"):
-        (tmp_path / "docs" / name).write_text("planted\n", encoding="utf-8")
-    (tmp_path / "docs" / "sub").mkdir()
-    (tmp_path / "docs" / "sub" / ".gitignore").write_text("by-nested-gitignore.txt\n", encoding="utf-8")
-    (tmp_path / "docs" / "sub" / "by-nested-gitignore.txt").write_text("planted\n", encoding="utf-8")
+    assert sorted(tracked - shipped) == [], f"a local sdist would drop these tracked files: {sorted(tracked - shipped)}"
 
-    assert _untracked_beside_the_root_gitignore(tmp_path, ["docs"]) == [
-        "docs/by-info-exclude.txt",
-        "docs/sub/.gitignore",
-        "docs/sub/by-nested-gitignore.txt",
-    ]
+
+def _project_repository(root: Path, gitignore: str) -> Path:
+    """A git repository at ``root`` holding a minimal hatchling project that ships ``docs``.
+
+    Its ``pyproject.toml``, ``.gitignore`` and ``docs/kept.txt`` are tracked;
+    nothing is committed, because ``git ls-files`` reads the index.
+
+    Args:
+        root: Where to create the repository.
+        gitignore: The text of its root ``.gitignore``.
+
+    Returns:
+        ``root``.
+    """
+    root.mkdir(parents=True)
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "probe"\nversion = "0"\n\n'
+        "[tool.hatch.build.targets.sdist]\n"
+        'only-include = [".gitignore", "docs", "pyproject.toml"]\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    (root / ".gitignore").write_text(gitignore, encoding="utf-8", newline="\n")
+    (root / "docs").mkdir()
+    (root / "docs" / "kept.txt").write_text("tracked\n", encoding="utf-8", newline="\n")
+    env = _without_git_variables()
+    subprocess.run([_git(), "init", "-q", str(root)], env=env, check=True)  # noqa: S603 - an absolute git path with fixed arguments
+    subprocess.run(  # noqa: S603 - an absolute git path with fixed arguments
+        [_git(), "add", "pyproject.toml", ".gitignore", "docs/kept.txt"], cwd=root, env=env, check=True
+    )
+    return root
+
+
+def test_the_check_names_an_ignored_file_a_worktree_build_ships(tmp_path: Path) -> None:
+    """Under a ``.claude/worktrees/`` path the root matches ``.claude/``, so hatchling applies no pattern."""
+    root = _project_repository(tmp_path / ".claude" / "worktrees" / "x", ".claude/\ndocs/local/\n")
+    (root / "docs" / "local").mkdir()
+    (root / "docs" / "local" / "a.txt").write_text("planted\n", encoding="utf-8", newline="\n")
+
+    assert _shipped_but_untracked(root) == ["docs/local/a.txt"]
+
+
+def test_the_check_names_a_file_reincluded_below_an_ignored_directory(tmp_path: Path) -> None:
+    """Git never descends into ``docs/local/``, but hatchling matches ``!.env.example`` file by file."""
+    root = _project_repository(tmp_path / "checkout", "docs/local/\n.env.*\n!.env.example\n")
+    (root / "docs" / "local").mkdir()
+    for name in (".env.example", ".env.secret"):
+        (root / "docs" / "local" / name).write_text("planted\n", encoding="utf-8", newline="\n")
+
+    assert _shipped_but_untracked(root) == ["docs/local/.env.example"]
+
+
+def test_the_check_passes_a_tree_whose_ignored_files_hatchling_drops(tmp_path: Path) -> None:
+    """The control: outside a worktree path the root ``.gitignore`` applies, so an ignored file is not reported."""
+    root = _project_repository(tmp_path / "checkout", "docs/local/\n")
+    (root / "docs" / "local").mkdir()
+    (root / "docs" / "local" / "a.txt").write_text("planted\n", encoding="utf-8", newline="\n")
+
+    assert _hatchling_would_ship(root) == {".gitignore", "docs/kept.txt", "pyproject.toml"}
+    assert _shipped_but_untracked(root) == []
