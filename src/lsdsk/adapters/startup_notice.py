@@ -14,6 +14,12 @@ printed during the start (a configuration value that fell back, a counter
 history this machine cannot use) lands above the line instead of tangling
 with it, and the original streams come back on pause and stop.
 
+lib_layered_config is imported here too, for the profile-name check that
+decides whether a ``--profile`` is refused: the CLI imports it anyway, so the
+start is no slower, and the line comes that much later - measured on the
+development container, 39 ms against 22 ms for this module with rich (not
+measured on the slow guest).
+
 System Role:
     Adapter layer. Outside ``adapters/cli`` because the entry point imports it
     before the CLI; ``lsdsk.adapters.cli`` is the whole command line.
@@ -21,7 +27,11 @@ System Role:
 Contents:
     * :data:`ROOT_OPTIONS_TAKING_A_VALUE` - the root options whose next word is their value.
     * :func:`opens_the_view` - whether a subcommand (or none) opens the interactive view.
+    * :data:`ROOT_FLAGS` - the root options that take no value.
+    * :data:`TREE_DENSITIES` - what ``--tree-density`` takes.
     * :func:`command_word` - the word click will read as the subcommand.
+    * :func:`root_value_accepted` - whether the root group takes a value for one of its options.
+    * :func:`refuses_a_root_option` - whether the root options end the run in a refusal.
     * :func:`spinner_for` - the spinner a stream of this encoding can draw.
     * :class:`StartupNotice` - the line and its spinner, paused around prompts.
     * :class:`NoStartupNotice` - the same steps, doing nothing, for every other start.
@@ -30,12 +40,16 @@ Contents:
 
 from __future__ import annotations
 
+import os
 import signal
+import stat
 import sys
 import threading
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Final
 
+from lib_layered_config import is_valid_profile_name
 from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
@@ -44,7 +58,7 @@ from rich.text import Text
 from .terminal_streams import drawing_stream, streams_that_are_not_terminals
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator, Sequence
+    from collections.abc import Callable, Generator, Mapping, Sequence
 
 #: What the line says, as the user asked for it.
 LINE = "Scanning Drives ..."
@@ -58,6 +72,24 @@ STYLE = "bold green"
 ROOT_OPTIONS_TAKING_A_VALUE: frozenset[str] = frozenset(
     {"--env-file", "--history-file", "--profile", "--replay", "--set", "--tree-density"}
 )
+
+#: The root options that take no value. Held by the same test to the CLI's own.
+ROOT_FLAGS: frozenset[str] = frozenset(
+    {
+        "--elevated-relaunch",
+        "--expand-virtual",
+        "--help",
+        "--no-elevate",
+        "--no-record",
+        "--no-traceback",
+        "--traceback",
+        "--version",
+        "-h",
+    }
+)
+
+#: What ``--tree-density`` takes, held by a test to the CLI's own choices.
+TREE_DENSITIES: frozenset[str] = frozenset({"full", "storage-and-siblings", "storage-only"})
 
 #: The one subcommand that opens the interactive view, as a bare run does.
 _VIEW_COMMAND = "tui"
@@ -118,6 +150,103 @@ def command_word(argv: Sequence[str]) -> str | None:
         if word in ROOT_OPTIONS_TAKING_A_VALUE:
             next(words, None)
     return None
+
+
+def _a_readable_non_directory(value: str) -> bool | None:
+    """Whether `value` names a readable non-directory, as click's path type tests it; None where nothing is there.
+
+    Where the stat fails is where click's own check calls the path missing,
+    and an embedded NUL fails it with ``ValueError`` rather than ``OSError``.
+    """
+    try:
+        found = Path(value).stat()
+    except (OSError, ValueError):
+        return None
+    return not stat.S_ISDIR(found.st_mode) and os.access(value, os.R_OK)
+
+
+def _names_a_readable_file(value: str) -> bool:
+    """Whether `value` can be ``--replay`` or ``--env-file``: a path that is there, not a directory, readable."""
+    return value != "" and _a_readable_non_directory(value) is True
+
+
+def _can_name_a_history_file(value: str) -> bool:
+    """Whether `value` can be ``--history-file``: empty (the default), not there yet, or a readable non-directory."""
+    return value == "" or _a_readable_non_directory(value) is not False
+
+
+def _names_a_density(value: str) -> bool:
+    """Whether `value` is one of the densities, in any case, as ``--tree-density`` compares them."""
+    return value.casefold() in {density.casefold() for density in TREE_DENSITIES}
+
+
+#: What each root option's value must be for the root group to take it; any other takes any text.
+_ACCEPTS: Final[Mapping[str, Callable[[str], bool]]] = {
+    "--env-file": _names_a_readable_file,
+    "--history-file": _can_name_a_history_file,
+    # The library's own judge, the one the root group's refusal delegates to.
+    "--profile": is_valid_profile_name,
+    "--replay": _names_a_readable_file,
+    "--tree-density": _names_a_density,
+}
+
+
+def root_value_accepted(option: str, value: str) -> bool:
+    """Whether the root group accepts `value` for the root `option`, judged without importing the CLI.
+
+    A test asks the CLI the same question for every option and a spread of
+    values, so the two cannot come to disagree unseen.
+
+    Args:
+        option: A root option that takes a value.
+        value: What the command line gave it.
+
+    Returns:
+        False where the run would end in a refusal of this value.
+
+    Example:
+        >>> root_value_accepted("--tree-density", "FULL"), root_value_accepted("--tree-density", "dense")
+        (True, False)
+    """
+    accepts = _ACCEPTS.get(option)
+    return accepts is None or accepts(value)
+
+
+def refuses_a_root_option(argv: Sequence[str]) -> bool:
+    """Whether this run's root options end it in a refusal before any command runs.
+
+    The root options are the words before the command. Each must be one the
+    root group has; a flag takes no value; an option that takes one needs it,
+    as the next word or after ``=``, and needs one it accepts. For an option
+    given twice, the last value is the one judged, as click keeps the last.
+
+    Args:
+        argv: The arguments after the program name.
+
+    Returns:
+        True where click, or the root group, refuses them with a usage error.
+
+    Example:
+        >>> refuses_a_root_option(["--bogus"]), refuses_a_root_option(["--profile"])
+        (True, True)
+        >>> refuses_a_root_option(["--no-elevate", "--tree-density=full", "disks", "--bogus"])
+        False
+    """
+    given: dict[str, str] = {}
+    words = iter(argv)
+    for word in words:
+        if word == _END_OF_OPTIONS or not word.startswith("-"):
+            break
+        name, attached, value = word.partition("=")
+        if name in ROOT_FLAGS and not attached:
+            continue
+        if name not in ROOT_OPTIONS_TAKING_A_VALUE:
+            return True
+        found = value if attached else next(words, None)
+        if found is None:
+            return True
+        given[name] = found
+    return not all(root_value_accepted(name, value) for name, value in given.items())
 
 
 def spinner_for(encoding: str) -> str:
@@ -253,6 +382,9 @@ def notice_for_this_start(
     arguments ask for neither another subcommand nor ``--help``/``--version``.
     A word that names no command at all - a typo - shows nothing either: click
     refuses it at once, and the line would only flash around the usage error.
+    Nor does a root option click or the root group refuses: one it does not
+    have, a value missing or one it does not take (see
+    :func:`refuses_a_root_option`).
     A guess this rule gets wrong is corrected once click has parsed the run,
     which stops the notice for any subcommand but ``tui``.
 
@@ -268,7 +400,7 @@ def notice_for_this_start(
     """
     if any(arg in _LEAVES_WITHOUT_THE_VIEW for arg in argv):
         return NoStartupNotice()
-    if not opens_the_view(command_word(argv)):
+    if not opens_the_view(command_word(argv)) or refuses_a_root_option(argv):
         return NoStartupNotice()
     if not_terminals():
         return NoStartupNotice()
@@ -284,11 +416,15 @@ def _console_on_the_drawing_stream() -> Console:
 
 __all__ = [
     "LINE",
+    "ROOT_FLAGS",
     "ROOT_OPTIONS_TAKING_A_VALUE",
+    "TREE_DENSITIES",
     "NoStartupNotice",
     "StartupNotice",
     "command_word",
     "notice_for_this_start",
     "opens_the_view",
+    "refuses_a_root_option",
+    "root_value_accepted",
     "spinner_for",
 ]

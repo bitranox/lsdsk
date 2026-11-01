@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -20,10 +21,12 @@ from lsdsk.adapters.cli import safe_console
 from lsdsk.adapters.startup_notice import NoStartupNotice, StartupNotice, notice_for_this_start, spinner_for
 
 if TYPE_CHECKING:
-    from pathlib import Path
     from typing import TextIO
 
 LINE = "Scanning Drives ..."
+
+#: A capture that exists, for the root options that must name a readable file.
+FIXTURE = Path(__file__).parent / "fixtures" / "hw" / "linux-minimal.json"
 
 #: The control sequence that erases the line the cursor is on.
 ERASE_LINE = "\x1b[2K"
@@ -114,7 +117,7 @@ def test_a_stream_that_cannot_encode_braille_gets_an_ascii_spinner() -> None:
     [
         pytest.param([], id="bare"),
         pytest.param(["--no-elevate"], id="a root option"),
-        pytest.param(["--replay", "capture.json"], id="a root option with a value"),
+        pytest.param(["--replay", str(FIXTURE)], id="a root option with a value"),
         pytest.param(["tui"], id="the view by name"),
     ],
 )
@@ -206,6 +209,154 @@ def test_the_root_options_the_start_rule_skips_a_value_for_are_the_ones_the_cli_
     }
 
     assert frozenset(taking_a_value) == startup_notice.ROOT_OPTIONS_TAKING_A_VALUE
+
+
+#: Stands for the test's own temporary directory in a parametrised argument list.
+TMP = "<tmp>"
+
+
+def _under(tmp_path: Path, argv: list[str]) -> list[str]:
+    """`argv` with :data:`TMP` replaced by `tmp_path`."""
+    return [word.replace(TMP, str(tmp_path)) for word in argv]
+
+
+def test_the_root_flags_the_start_rule_knows_are_the_ones_the_cli_has() -> None:
+    """Every root option the CLI parses, help included, is a flag or an option taking a value here."""
+    import click
+
+    from lsdsk.adapters.cli import cli  # the CLI is the slow import this module exists to run ahead of
+
+    # The help option comes from the context settings, which a bare Context would not apply.
+    context = click.Context(cli, info_name="lsdsk", **cli.context_settings)
+    flags = {
+        name
+        for param in cli.get_params(context)
+        if isinstance(param, click.Option) and (param.is_flag or param.count)
+        for name in (*param.opts, *param.secondary_opts)
+    }
+
+    assert frozenset(flags) == startup_notice.ROOT_FLAGS
+
+
+def test_the_densities_the_start_rule_accepts_are_the_ones_the_cli_offers() -> None:
+    import click
+
+    from lsdsk.adapters.cli import cli  # the CLI is the slow import this module exists to run ahead of
+
+    (density,) = [param for param in cli.params if "--tree-density" in param.opts]
+    assert isinstance(density.type, click.Choice)
+
+    assert frozenset(str(choice) for choice in density.type.choices) == startup_notice.TREE_DENSITIES
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["--bogus"], id="a mistyped root option"),
+        pytest.param(["-x"], id="a short option the root has not"),
+        pytest.param(["-"], id="a lone dash"),
+        pytest.param(["--no-elevate", "--bogus", "tui"], id="a mistyped root option before the view"),
+        pytest.param(["--profile"], id="a value option as the last word"),
+        pytest.param(["--no-elevate", "--replay"], id="a value option as the last word after a flag"),
+        pytest.param(["--no-elevate=yes"], id="a flag given a value"),
+        pytest.param(["--tree-density", "dense"], id="a density the option does not take"),
+        pytest.param(["--tree-density=dense"], id="a density the option does not take, attached"),
+        pytest.param(["--profile", "../x"], id="a profile name the library refuses"),
+        pytest.param(["--profile="], id="an empty profile name"),
+        pytest.param(["--replay", ""], id="an empty capture path"),
+    ],
+)
+def test_a_root_option_click_refuses_shows_nothing(argv: list[str]) -> None:
+    """Click refuses these with a usage error, which the line would only flash around."""
+    console, _ = a_terminal()
+
+    notice = notice_for_this_start(argv, not_terminals=nothing_is_redirected, console=lambda: console)
+
+    assert isinstance(notice, NoStartupNotice)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["--replay", f"{TMP}/missing.json"], id="a capture that does not exist"),
+        pytest.param(["--replay", TMP], id="a capture path that is a directory"),
+        pytest.param(["--env-file", f"{TMP}/missing.env"], id="an env file that does not exist"),
+        pytest.param(["--history-file", TMP], id="a history file that is a directory"),
+    ],
+)
+def test_a_root_path_click_refuses_shows_nothing(argv: list[str], tmp_path: Path) -> None:
+    console, _ = a_terminal()
+
+    notice = notice_for_this_start(_under(tmp_path, argv), not_terminals=nothing_is_redirected, console=lambda: console)
+
+    assert isinstance(notice, NoStartupNotice)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["--tree-density", "FULL"], id="a density in another case"),
+        pytest.param(["--profile", "production"], id="a profile name the library takes"),
+        pytest.param(["--profile", "../x", "--profile", "production"], id="the last of two values"),
+        pytest.param(["--history-file", ""], id="an empty history file, the default"),
+        pytest.param(["--history-file", f"{TMP}/new.json"], id="a history file not yet written"),
+        pytest.param(["--env-file", str(FIXTURE)], id="an env file that exists"),
+        pytest.param(["--set", "display.piped_width=90"], id="a setting"),
+        pytest.param(["--no-traceback", "--expand-virtual", "--no-record"], id="flags"),
+    ],
+)
+def test_a_root_option_click_accepts_still_shows_the_notice(argv: list[str], tmp_path: Path) -> None:
+    console, _ = a_terminal()
+
+    notice = notice_for_this_start(_under(tmp_path, argv), not_terminals=nothing_is_redirected, console=lambda: console)
+
+    assert isinstance(notice, StartupNotice)
+
+
+def _paths_to_try(tmp_path: Path) -> list[str]:
+    """Paths worth asking both judges about: empty, a file, a directory, nothing, a file nobody may read."""
+    unreadable = tmp_path / "unreadable"
+    unreadable.write_text("x", encoding="utf-8")
+    unreadable.chmod(0)
+    return ["", str(FIXTURE), str(tmp_path), str(tmp_path / "missing"), str(unreadable)]
+
+
+def _values_to_try(option: str, paths: list[str]) -> list[str]:
+    """Values worth asking both judges about, for one root option that takes a value."""
+    by_option = {
+        "--profile": ["production", "staging-v2", "../x", "", "bad name!", "a" * 65, "-x", "CON"],
+        "--tree-density": [*sorted(startup_notice.TREE_DENSITIES), "FULL", "Storage-Only", "dense", ""],
+        "--set": ["display.piped_width=90", "", "no-equals-sign"],
+    }
+    return by_option.get(option, paths)
+
+
+def test_the_start_rule_and_the_cli_agree_on_every_root_option_value(tmp_path: Path) -> None:
+    """The start rule judges each value as the root group does: click's own conversion, then its profile check."""
+    import click
+
+    from lsdsk.adapters.cli import cli  # the CLI is the slow import this module exists to run ahead of
+    from lsdsk.adapters.config.loader import invalid_profile_message
+
+    context = click.Context(cli, info_name="lsdsk", **cli.context_settings)
+    by_name = {name: param for param in cli.params for name in param.opts}
+
+    def the_cli_accepts(option: str, value: str) -> bool:
+        try:
+            by_name[option].type.convert(value, by_name[option], context)
+        except click.BadParameter:
+            return False
+        return option != "--profile" or invalid_profile_message(value) is None
+
+    paths = _paths_to_try(tmp_path)
+    disagreements = [
+        (option, value)
+        for option in sorted(startup_notice.ROOT_OPTIONS_TAKING_A_VALUE)
+        for value in _values_to_try(option, paths)
+        if startup_notice.root_value_accepted(option, value) != the_cli_accepts(option, value)
+    ]
+
+    assert disagreements == []
 
 
 def _a_terminal_file(path: Path) -> tuple[Console, TextIO]:
