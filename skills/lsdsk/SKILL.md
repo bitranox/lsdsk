@@ -142,16 +142,17 @@ picks which logging theme it previews.
   UAC asks for an administrator's credentials, and lsdsk then runs as that
   administrator, with that account's configuration and counter history.
 
-The shortcut runs `uvx ... lsdsk@latest` with a 7-day cooldown (third-party dependencies only from releases at least 7 days
-old; lsdsk and its own libraries are exempt and come at their latest), or a plain
-`lsdsk` already on PATH when there is no `uvx`; `data.launch` in `--format json`
-is the exact argv. Running it again replaces the files, and deleting them
-removes the shortcut; `data.shortcut` is the Desktop one. Launching it is uv's business, not lsdsk's: `uvx` fetches
-`lsdsk@latest` from PyPI. It goes on the Desktop of the account it runs as (read
-from that account's `$HOME` and XDG variables on Linux), so run it as yourself, not
-under `sudo` or as another Administrator account. The icon is copied first to the
-user configuration directory (`lsdsk.png` beside `config.toml`, `lsdsk.ico` on
-Windows), so it survives an upgrade.
+The shortcut runs `uvx ... lsdsk@latest` with a 7-day cooldown (third-party dependencies only from
+releases at least 7 days old; lsdsk and its own libraries are exempt and come at their latest), or a
+plain `lsdsk` already on PATH when there is no `uvx`; `data.launch` in `--format json` is the exact
+argv, starting with the launcher's absolute path. "On PATH" here means in an absolute PATH
+directory: a `uvx` or `lsdsk` reachable only through the current folder or a relative entry (`.`, an
+empty entry, `bin`) counts as not installed. Running it again replaces the files, and deleting them
+removes the shortcut; `data.shortcut` is the Desktop one. Launching it is uv's business, not
+lsdsk's: `uvx` fetches `lsdsk@latest` from PyPI. It goes on the Desktop of the account it runs as
+(read from that account's `$HOME` and XDG variables on Linux), so run it as yourself, not under
+`sudo` or as another Administrator account. The icon is copied first to the user configuration
+directory (`lsdsk.png` beside `config.toml`, `lsdsk.ico` on Windows), so it survives an upgrade.
 
 **An account with no desktop folder gets no shortcut**: the Desktop path above
 does not exist. That covers a headless server, a `$XDG_DESKTOP_DIR` naming a
@@ -169,8 +170,9 @@ Do not create the folder to get past this: nobody double-clicks on a machine wit
 no desktop.
 
 When neither `uvx` nor `lsdsk` is on PATH, it refuses with `78` unless
-`--install-uv` is given; with either on PATH the flag does nothing. The flag IS
-the consent: it runs the official uv installer (a network request, the one
+`--install-uv` is given, writing nothing; the message starts `uv is not installed, so there is no
+launcher for the shortcut` and ends naming `--install-uv`. With either on PATH the flag does
+nothing. The flag IS the consent: it runs the official uv installer (a network request, the one
 subprocess lsdsk ever starts besides relaunching itself) with no further prompt.
 An installer that exits non-zero (no curl, no network, a refused download) refuses
 with `78` and `the uv installer failed (exit N), so there is no launcher for the
@@ -180,28 +182,32 @@ uvx is still not on PATH`. Each refusal goes to stderr as `Error: <text>` and, u
 `--format json`, is also the envelope's `error.message`. The installer's own output
 goes to standard error too, so `--format json` still prints the envelope alone.
 
-| Outcome                                                                                                                                                                     | Exit | `--format json`                                                                         |
-|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------|-----------------------------------------------------------------------------------------|
-| Shortcut written                                                                                                                                                            | `0`  | `ok` true, `data.shortcut` (the path), `data.launch` (the argv)                         |
-| Desktop shortcut written, but its copy into the application menu (Linux) or the Start menu (Windows) failed, for any reason, a refused permission included                  | `0`  | `ok` false, `data` as above, `skipped` naming the copy and the cause                    |
-| Refused (any case above)                                                                                                                                                    | `78` | `ok` false, `error.type` `CONFIG_ERROR`                                                 |
-| No user configuration directory can be named (a relative `$XDG_CONFIG_HOME`)                                                                                                | `78` | `ok` false, `error.type` `CONFIG_ERROR`, the message naming the relative path           |
-| A write refused for permission: the Linux or macOS Desktop shortcut, the Windows Desktop `.lnk` refused with access denied (`0x80070005`), or the icon copy on any platform | `13` | `ok` false, `error.type` `PERMISSION_DENIED` (for a `.lnk`, the HRESULT in the message) |
-| Any other failed write (a full disk, a directory where the file goes)                                                                                                       | `74` | `ok` false, `error.type` `IO_ERROR`                                                     |
-| The Windows Desktop `.lnk` the shell refused to save for any reason other than access denied                                                                                | `74` | `ok` false, `error.type` `IO_ERROR`, the HRESULT in the message                         |
-| A control character (a newline included) in a launch argument or the icon path, which no Linux `.desktop` value can carry                                                   | `74` | `ok` false, `error.type` `IO_ERROR`, nothing written                                    |
+| Outcome                                                                                                                                                                     | Exit | `--format json`                                                                                  |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------|--------------------------------------------------------------------------------------------------|
+| Shortcut written                                                                                                                                                            | `0`  | `ok` true, `data.shortcut` (the path), `data.launch` (the argv)                                  |
+| Desktop shortcut written, but its copy into the application menu (Linux) or the Start menu (Windows) failed, for any reason, a refused permission included                  | `0`  | `ok` false, `data` as above, `skipped` naming the copy and the cause                             |
+| Refused (any case above)                                                                                                                                                    | `78` | `ok` false, `error.type` `CONFIG_ERROR`                                                          |
+| No user configuration directory can be named (a relative `$XDG_CONFIG_HOME`)                                                                                                | `78` | `ok` false, `error.type` `CONFIG_ERROR`, the message naming the relative path                    |
+| On Linux, a relative `$XDG_DESKTOP_DIR` or `$XDG_DATA_HOME`, refused before `--install-uv` could install anything                                                           | `78` | `ok` false, `error.type` `CONFIG_ERROR`, the message naming the variable, nothing written        |
+| A write refused for permission: the Linux or macOS Desktop shortcut, the Windows Desktop `.lnk` refused with access denied (`0x80070005`), or the icon copy on any platform | `13` | `ok` false, `error.type` `PERMISSION_DENIED` (for a `.lnk`, the HRESULT in the message)          |
+| Any other failed write (a full disk, a directory where the file goes)                                                                                                       | `74` | `ok` false, `error.type` `IO_ERROR`                                                              |
+| The Windows Desktop `.lnk` the shell refused to save for any reason other than access denied                                                                                | `74` | `ok` false, `error.type` `IO_ERROR`, the HRESULT in the message                                  |
+| A control character (a newline included) in a launch argument or the icon path, which no Linux `.desktop` value can carry                                                   | `74` | `ok` false, `error.type` `IO_ERROR`, nothing written                                             |
+| On Linux or macOS, a launch argument or the icon path holding a byte that is not valid UTF-8                                                                                | `74` | `ok` false, `error.type` `IO_ERROR`, the message saying it `is not valid UTF-8`, nothing written |
 
 On Linux and Windows the Desktop file is written first and the menu copy second, so a
 failure on the menu copy leaves the Desktop file in place and the run still exits `0`.
 `--format json` then reports `ok` false, and `skipped` is a list holding one sentence, `the shortcut is
 on the Desktop, but it could not be added to the application menu at <path>: <cause>` on Linux or
 `the shortcut is on the Desktop, but it could not be added to the Start menu: <cause>` on Windows,
-where the cause names the `.lnk` path. Text output prints that sentence on stderr after `Warning: `.
+where the cause names the `.lnk` path, or `the shortcut is on the Desktop, but Windows could not
+name the Start menu folder: <cause>` when the folder lookup itself failed. Text output prints that
+sentence on stderr after `Warning: `.
 Branch on `ok` and `skipped`, never on the exit code, to notice a missing menu entry. The icon
 is copied before either, so an icon that will not copy writes no shortcut at all. Any
-other failure ends the run, with one stderr line naming the file, and the JSON is the
-`ok`-false envelope with its `error` and no `data`. Like `record`, its exit code is never a verdict about the
-hardware.
+other failure ends the run, with one stderr line `Error: <text>` naming the file, and the JSON is
+the `ok`-false envelope with its `error` and no `data`. Like `record`, its exit code is never a
+verdict about the hardware.
 
 Bare `lsdsk` at a terminal offers the same shortcut before it asks to elevate,
 under `--replay` and `--no-elevate` too, with three answers:
@@ -229,9 +235,13 @@ offer comes back on the next start. A failed install prints `the uv installer fa
 (exit N)` with the manual install line, a failed shortcut write prints `Could not
 create the desktop shortcut: <reason>`, a Desktop shortcut whose menu copy failed prints
 `Shortcut created at <path>.` on stdout and then the same `Warning:` line on stderr as the command,
+an icon that will not copy does not stop the offer (unlike the command): it writes the shortcut
+without an icon, prints `Shortcut created at <path>.` on stdout and then `Warning: the shortcut was
+created without its icon, which could not be copied: <error>` on stderr,
 and a "never" that cannot be saved (an
 unwritable or malformed config file, a `display` that is not a table) prints `Could
-not save the do-not-offer setting: <reason>` and leaves the file as it was.
+not save the do-not-offer setting: <reason>` and leaves the file as it was. The failed-install line
+and both `Could not ...` lines go to stderr.
 End of input (Ctrl+D) answers "not now" at the shortcut question and "no" at the uv
 question, recording nothing. The view opens in every case.
 
