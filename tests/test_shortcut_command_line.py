@@ -77,6 +77,23 @@ def test_an_argument_holding_a_cmd_operator_is_double_quoted() -> None:
     assert command_line(("C:\\R&D\\uvx.exe",), platform="win32") == '"C:\\R&D\\uvx.exe"'
 
 
+@pytest.mark.parametrize(
+    ("argv", "line"),
+    [
+        pytest.param(("prog", "a|b"), 'prog "a|b"', id="pipe"),
+        pytest.param(("prog", "a<b"), 'prog "a<b"', id="less-than"),
+        pytest.param(("prog", "a>b"), 'prog "a>b"', id="greater-than"),
+    ],
+)
+def test_an_argument_holding_a_cmd_pipe_or_redirection_is_double_quoted(argv: tuple[str, ...], line: str) -> None:
+    """Each operator cmd acts on is quoted on every runner, not only on the Windows cells that run cmd.
+
+    Unquoted, ``|`` pipes the rest of the line into another program and ``<``
+    or ``>`` redirects it, so the pasted line would run something else.
+    """
+    assert command_line(argv, platform="win32") == line
+
+
 @pytest.mark.os_windows
 @pytest.mark.parametrize("argv", [*_ARGVS, *_CMD_OPERATORS])
 def test_windows_parses_the_windows_form_with_a_cmd_operator_back_into_the_same_argv(argv: tuple[str, ...]) -> None:

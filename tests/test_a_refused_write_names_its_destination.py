@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -95,3 +96,28 @@ def test_a_refused_desktop_entry_is_reported_by_the_name_the_reader_knows(
     assert str(desktop_nobody_may_write / "lsdsk.desktop") in messages[0], messages[0]
     assert ".tmp" not in messages[0], messages[0]
     assert messages[0] == messages[1], "the same refusal should read the same on every run"
+
+
+@pytest.mark.os_windows
+def test_a_refused_rename_on_windows_keeps_the_windows_error_code(tmp_path: Path) -> None:
+    """The refusal renamed to the destination still carries the Windows error code the rename failed with.
+
+    Python's ``open`` shares no delete access on Windows, so a destination it
+    holds open cannot be renamed over and the rename itself is refused. Rebuilt
+    from the errno alone, that refusal would name the right file and carry no
+    ``winerror`` - the code a Windows caller reads, and the one ``OSError``
+    picks its subclass from there.
+    """
+    assert sys.platform == "win32"  # narrows OSError.winerror for pyright
+    destination = tmp_path / "store.json"
+    destination.write_text("{}", encoding="utf-8")
+
+    with destination.open("rb"), pytest.raises(OSError) as refused:
+        replace_atomically(destination, '{"new": 1}', mode=0o600)
+
+    original = refused.value.__cause__
+    assert isinstance(original, OSError), refused.value
+    assert refused.value.filename == str(destination), refused.value
+    assert refused.value.winerror is not None, refused.value
+    assert refused.value.winerror == original.winerror
+    assert destination.read_text(encoding="utf-8") == "{}"
