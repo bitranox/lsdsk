@@ -24,11 +24,11 @@ Contents:
 from __future__ import annotations
 
 import os
-import shutil
 
 # subprocess is the one allow-listed shell-out here; see the module docstring and the guard test.
 import subprocess  # nosec B404
 import sys
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -51,7 +51,45 @@ class UvInstallResult(NamedTuple):
     uvx: Path | None
 
 
-def executable_on_path(name: str, *, search: str | None = None) -> Path | None:
+class _ThisMachine(Enum):
+    """The ``pathext`` default: whatever suffixes this machine's executables carry."""
+
+    PATHEXT = "this machine's PATHEXT"
+
+
+_DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD"
+"""Windows' own ``PATHEXT`` when the environment carries none."""
+
+
+def _platform_pathext() -> str | None:
+    """This machine's ``PATHEXT``, or ``None`` where executables carry no suffix."""
+    if sys.platform == "win32":
+        return os.environ.get("PATHEXT") or _DEFAULT_PATHEXT
+    return None
+
+
+def _names_to_try(name: str, pathext: str | None) -> tuple[str, ...]:
+    """The file names ``name`` may have on disk: itself, or itself plus each ``PATHEXT`` suffix.
+
+    Examples:
+        >>> _names_to_try("uvx", None)
+        ('uvx',)
+        >>> _names_to_try("uvx", ".COM;.EXE")
+        ('uvx.COM', 'uvx.EXE')
+        >>> _names_to_try("uvx.exe", ".COM;.EXE")
+        ('uvx.exe',)
+    """
+    if pathext is None:
+        return (name,)
+    suffixes = [suffix for suffix in pathext.split(";") if suffix]
+    if any(name.lower().endswith(suffix.lower()) for suffix in suffixes):
+        return (name,)
+    return tuple(name + suffix for suffix in suffixes)
+
+
+def executable_on_path(
+    name: str, *, search: str | None = None, pathext: str | _ThisMachine | None = _ThisMachine.PATHEXT
+) -> Path | None:
     """The executable ``name`` in the first ABSOLUTE ``PATH`` directory holding it, or ``None``.
 
     What this answers becomes the target of a shortcut that, on Windows, runs as
@@ -60,13 +98,17 @@ def executable_on_path(name: str, *, search: str | None = None) -> Path | None:
     (``.``, an empty entry, ``bin``) against the current directory everywhere, so
     an executable planted in the folder lsdsk was started from would become that
     target. Only an absolute directory names the same file wherever lsdsk runs,
-    so each one is asked about directly: a name that carries a directory makes
-    ``which`` check that one place, with no current-directory insert, while
-    Windows' ``PATHEXT`` still applies.
+    so each one is looked in directly, for the name and, on Windows, the name
+    plus each ``PATHEXT`` suffix. ``which`` is not asked: handed a name that
+    carries a directory, Python 3.11 checks it exactly as written and finds no
+    ``uvx.exe`` for ``uvx``, and handed the directory as ``path`` it searches the
+    current directory on Windows again.
 
     Args:
         name: The executable's bare name, such as ``uvx``.
         search: The ``PATH`` value to search; the process's own when ``None``.
+        pathext: The ``;``-separated suffixes an executable may carry, ``None``
+            for none; this machine's own (``PATHEXT`` on Windows) by default.
 
     Returns:
         The absolute path of the first match, or ``None``.
@@ -76,13 +118,31 @@ def executable_on_path(name: str, *, search: str | None = None) -> Path | None:
         True
     """
     entries = os.environ.get("PATH", "") if search is None else search
+    suffixes = _platform_pathext() if pathext is _ThisMachine.PATHEXT else pathext
+    names = _names_to_try(name, suffixes)
     for entry in entries.split(os.pathsep):
         directory = Path(entry)
         if not entry or not directory.is_absolute():
             continue
-        found = shutil.which(str(directory / name))
-        if found:
-            return Path(found)
+        found = _executable_in(directory, names)
+        if found is not None:
+            return found
+    return None
+
+
+def _executable_in(directory: Path, names: Sequence[str]) -> Path | None:
+    """The first of ``names`` that is an executable file in ``directory``, or ``None``.
+
+    A directory this account cannot enter answers ``None`` rather than raising:
+    before Python 3.14 ``Path.is_file`` re-raises a refused ``stat``.
+    """
+    for candidate in names:
+        path = directory / candidate
+        try:
+            if path.is_file() and os.access(path, os.X_OK):
+                return path
+        except OSError:
+            continue
     return None
 
 

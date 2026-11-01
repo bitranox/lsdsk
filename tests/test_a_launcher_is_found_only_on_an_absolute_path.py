@@ -121,3 +121,22 @@ def test_install_shortcut_ignores_launchers_planted_beside_it(
     envelope = json.loads(capfd.readouterr().out)
     assert "uv is not installed, so there is no launcher for the shortcut" in envelope["error"]["message"]
     assert list(desktop.iterdir()) == []
+
+
+def test_a_windows_launcher_is_found_by_its_pathext_suffix(tmp_path: Path) -> None:
+    """A directory holding only ``uvx.EXE`` answers for ``uvx`` where ``PATHEXT`` lists ``.EXE``.
+
+    The suffix is added by the lookup itself rather than left to
+    ``shutil.which``: on Python 3.11 ``which`` checks a name carrying a
+    directory exactly as written, so ``uvx`` behind a directory never matched ``uvx.exe`` and
+    every Windows machine on 3.11 read as having no uv. The Windows rule is
+    driven here through ``pathext`` so every runner holds it.
+    """
+    directory = tmp_path / "bin"
+    directory.mkdir()
+    launcher = directory / "uvx.EXE"
+    launcher.write_bytes(b"MZ")
+    launcher.chmod(stat.S_IRWXU)
+
+    assert executable_on_path("uvx", search=str(directory), pathext=".COM;.EXE") == launcher
+    assert executable_on_path("uvx", search=str(directory), pathext=None) is None
