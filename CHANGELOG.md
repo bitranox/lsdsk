@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.16.5] - 2026-11-01
+
 ### Security
 
 - The desktop shortcut could launch a `uvx` or `lsdsk` planted in the folder lsdsk was started
