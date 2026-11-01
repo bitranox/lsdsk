@@ -40,8 +40,10 @@ starts a process. Every rule has a planted sample that must read as its label.
 from __future__ import annotations
 
 import ast
+import functools
 from pathlib import Path
 
+import pwshpy
 import pytest
 
 SRC = Path(__file__).parent.parent / "src" / "lsdsk"
@@ -436,169 +438,88 @@ def test_only_the_elevation_and_shortcut_modules_reach_the_library_that_starts_a
     assert naming == sorted([RELAUNCHES, WRITES_SHORTCUTS]), f"pwshpy is imported outside the two allowed: {naming}"
 
 
-#: What a ``getattr`` on pwshpy with a name computed at run time is recorded as. No
-#: allow-list can hold it, so such a read is refused: the member is unknowable here.
+#: What a read of an attribute whose name is computed at run time is recorded as.
+#: No allow-list can hold it, so such a read is refused: the member is unknowable here.
 COMPUTED_MEMBER = "<a member named only at run time>"
+
+#: The calls that read an attribute by a name passed to them, and which argument
+#: carries the name. With a literal the name is a string constant the scan reads
+#: like any other; with anything else it is :data:`COMPUTED_MEMBER`.
+_NAME_TAKING_CALLS: dict[str, int] = {"getattr": 1, "attrgetter": 0, "methodcaller": 0}
+
+#: Names a module spells for its OWN things that pwshpy happens to carry too, so
+#: the closed-world scan reads them as pwshpy members. elevation.py's privilege
+#: check is ``ElevationSeams.is_elevated`` and the Windows reader's
+#: ``is_elevated``, which share ``ps.is_elevated``'s name; were one of them
+#: pwshpy's after all, it asks a question and starts no process. Each entry must
+#: still be spelled in its module, or the exemption is a hole nothing uses.
+ORDINARY_NAMES: dict[str, frozenset[str]] = {
+    RELAUNCHES: frozenset({"is_elevated"}),
+    WRITES_SHORTCUTS: frozenset(),
+}
+
+
+@functools.cache
+def _pwshpy_member_names() -> frozenset[str]:
+    """Every name pwshpy and its ``ps`` facade carry, dunders aside: the closed world the scan matches.
+
+    Read from the installed pwshpy, a dependency on every platform, so a member it
+    grows belongs to the world as soon as a module could call it. Private names
+    count too: ``ps._process_runner`` is as much a way to a process as ``ps.exec``.
+    """
+    names = set(dir(pwshpy)) | set(dir(pwshpy.ps))
+    return frozenset(name for name in names if not (name.startswith("__") and name.endswith("__")))
 
 
 def _pwshpy_members_named(source: str) -> set[str]:
-    """Every pwshpy member ``source`` names, by any route a module could take to one.
+    """Every pwshpy member name ``source`` spells, wherever it spells it.
 
-    A member read off a pwshpy handle (``pwshpy.ps.elevate``), off an alias of
-    one (``shell = pwshpy.ps``), off an import of it (``from pwshpy import ps``),
-    off a dynamic import (``import_module("pwshpy").ps``), off what a loader
-    returns (``_load().ps``, ``self._pwshpy().ps``, a ``cast`` of either), off an
-    attribute that holds the module (``self._module.ps``), and through
-    ``getattr`` - a literal name is that member, a computed one is
-    :data:`COMPUTED_MEMBER`, which no allow-list holds. Every member the module's
-    typed facade declares counts too: a module cast to a ``Protocol`` can call
-    only what that Protocol names, so a new member has to appear there for
-    pyright to accept the call. ``pwshpy`` is a handle by name too, since both
-    modules bind the loaded module to a local of that name.
+    A closed world rather than a trace of where pwshpy flows: a module can bind
+    pwshpy or its ``ps`` facade in more ways than any trace follows (a walrus, an
+    unpacking, ``with ... as``, a default or a passed argument, a loop, a lambda,
+    a list, a class attribute), but to use a member it has to SPELL its name - as
+    an attribute (``s.exec``), as a string a lookup takes (``getattr(s, "exec")``,
+    ``attrgetter("exec")``, ``vars(s)["exec"]``), or in an import from pwshpy. So
+    every attribute, every string constant and every name imported from pwshpy is
+    matched against :func:`_pwshpy_member_names`, whatever it is read off. The
+    cost is that a name the module uses for something else reads as a member too
+    (``self.exec`` would), which :data:`ORDINARY_NAMES` answers name by name. A
+    lookup whose name is computed is :data:`COMPUTED_MEMBER`. Every member a
+    ``Protocol`` in the module declares counts as well: a module cast to its typed
+    facade can call only what the facade names.
     """
     tree = ast.parse(source)
-    reach = _PwshpyReach(tree)
+    world = _pwshpy_member_names()
     named = _protocol_members(tree)
     for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute | ast.Call):
-            reference = reach.resolve(node)
-            if reference is not None:
-                named.update(reference.split(".")[1:])
-        if isinstance(node, ast.Call) and reach.reads_a_computed_member(node):
-            named.add(COMPUTED_MEMBER)
+        named.update(spelled for spelled in _spelled_names(node) if spelled in world or spelled == COMPUTED_MEMBER)
     return named
 
 
-def _dotted(node: ast.expr) -> str | None:
-    """A ``Name`` or a chain of attributes off one (``self._module``) as dotted text, else None."""
-    if isinstance(node, ast.Name):
-        return node.id
+def _spelled_names(node: ast.AST) -> list[str]:
+    """The names ``node`` spells that could be a pwshpy member's."""
     if isinstance(node, ast.Attribute):
-        owner = _dotted(node.value)
-        return None if owner is None else f"{owner}.{node.attr}"
-    return None
+        return [node.attr]
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value]
+    if isinstance(node, ast.Import):
+        return [part for alias in node.names if alias.name.startswith("pwshpy.") for part in alias.name.split(".")[1:]]
+    if isinstance(node, ast.ImportFrom) and node.level == 0 and (node.module or "").split(".")[0] == "pwshpy":
+        imported = [COMPUTED_MEMBER if alias.name == "*" else alias.name for alias in node.names]
+        return [*(node.module or "").split(".")[1:], *imported]
+    if isinstance(node, ast.Call) and _reads_a_computed_attribute(node):
+        return [COMPUTED_MEMBER]
+    return []
 
 
-def _is_getattr(call: ast.Call) -> bool:
-    """Whether ``call`` is the builtin ``getattr`` with an owner and a name."""
-    return isinstance(call.func, ast.Name) and call.func.id == "getattr" and len(call.args) >= 2
-
-
-class _PwshpyReach:
-    """Which expressions in one module stand for pwshpy or a member of it.
-
-    Two tables, filled to a fixpoint: ``handles`` maps a local name or an
-    attribute path (``self._module``) to the pwshpy name it holds, and
-    ``loaders`` maps a callable - a function, a method, an attribute holding one
-    (``self._load = load or _installed``) - to the pwshpy name it returns. A
-    member read off a loader's result is how the shortcut writer reaches pwshpy,
-    so a table of names alone sees nothing that module calls.
-    """
-
-    def __init__(self, tree: ast.AST) -> None:
-        bound = {"pwshpy": "pwshpy"}
-        for node in ast.walk(tree):
-            _import_references(node, bound)
-        self.handles = {name: target for name, target in bound.items() if target.split(".")[0] == "pwshpy"}
-        self.loaders: dict[str, str] = {}
-        while self._learn(tree):
-            pass
-
-    def _learn(self, tree: ast.AST) -> bool:
-        """One pass over ``tree``, recording each new handle and loader; whether anything was new."""
-        grew = False
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                grew |= self._learn_loader(node)
-            elif isinstance(node, ast.Assign | ast.AnnAssign) and node.value is not None:
-                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-                for target in targets:
-                    grew |= self._learn_binding(target, node.value)
-        return grew
-
-    def _learn_loader(self, function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-        """Record ``function`` as a loader when one of its ``return`` statements yields pwshpy."""
-        for node in ast.walk(function):
-            returned = self.resolve(node.value) if isinstance(node, ast.Return) and node.value is not None else None
-            if returned is not None:
-                # Called bare or as a method: the scan does not tell one class's ``self`` from another's.
-                return self._record(self.loaders, function.name, returned) | self._record(
-                    self.loaders, f"self.{function.name}", returned
-                )
+def _reads_a_computed_attribute(call: ast.Call) -> bool:
+    """Whether ``call`` is a ``getattr``, ``attrgetter`` or ``methodcaller`` whose name is not a literal."""
+    func = call.func
+    name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else None
+    position = _NAME_TAKING_CALLS.get(name or "")
+    if position is None or len(call.args) <= position:
         return False
-
-    def _learn_binding(self, target: ast.expr, value: ast.expr) -> bool:
-        """Record ``target`` as a handle, or a loader, when ``value`` is one."""
-        key = _dotted(target)
-        if key is None:
-            return False
-        held = self.resolve(value)
-        if held is not None:
-            return self._record(self.handles, key, held)
-        returned = self._loader_returns(value)
-        return returned is not None and self._record(self.loaders, key, returned)
-
-    @staticmethod
-    def _record(table: dict[str, str], key: str, value: str) -> bool:
-        if key in table:
-            return False
-        table[key] = value
-        return True
-
-    def resolve(self, node: ast.expr) -> str | None:
-        """The pwshpy name ``node`` evaluates to, or None when it is not pwshpy."""
-        if isinstance(node, ast.Name | ast.Attribute):
-            return self._resolve_path(node)
-        if isinstance(node, ast.Call):
-            return self._resolve_call(node)
-        if isinstance(node, ast.IfExp):
-            return self.resolve(node.body) or self.resolve(node.orelse)
-        if isinstance(node, ast.BoolOp):
-            return next((found for value in node.values if (found := self.resolve(value)) is not None), None)
-        return None
-
-    def _resolve_path(self, node: ast.Name | ast.Attribute) -> str | None:
-        """A name or attribute chain, by the longest prefix of it that holds pwshpy."""
-        attributes: list[str] = []
-        current: ast.expr = node
-        while isinstance(current, ast.Attribute):
-            path = _dotted(current)
-            if path is not None and path in self.handles:
-                return ".".join([self.handles[path], *attributes])
-            attributes.insert(0, current.attr)
-            current = current.value
-        if isinstance(current, ast.Name):
-            held = self.handles.get(current.id)
-            return None if held is None else ".".join([held, *attributes])
-        owner = self.resolve(current)
-        return None if owner is None else ".".join([owner, *attributes])
-
-    def _resolve_call(self, call: ast.Call) -> str | None:
-        """What a call returns: a dynamic import, a ``cast``, a literal ``getattr``, or a loader."""
-        if _is_dynamic_import_of(call, "pwshpy"):
-            return "pwshpy"
-        if isinstance(call.func, ast.Name) and call.func.id == "cast" and len(call.args) == 2:
-            return self.resolve(call.args[1])
-        if _is_getattr(call):
-            owner, member = self.resolve(call.args[0]), _literal_text(call.args[1])
-            return None if owner is None or member is None else f"{owner}.{member}"
-        callee = _dotted(call.func)
-        return None if callee is None else self.loaders.get(callee)
-
-    def _loader_returns(self, value: ast.expr) -> str | None:
-        """What ``value``, taken as a callable, returns when it is a loader (``load or _installed``)."""
-        if isinstance(value, ast.BoolOp):
-            return next((found for item in value.values if (found := self._loader_returns(item)) is not None), None)
-        if isinstance(value, ast.IfExp):
-            return self._loader_returns(value.body) or self._loader_returns(value.orelse)
-        if isinstance(value, ast.Lambda):
-            return self.resolve(value.body)
-        path = _dotted(value)
-        return None if path is None else self.loaders.get(path)
-
-    def reads_a_computed_member(self, call: ast.Call) -> bool:
-        """Whether ``call`` is a ``getattr`` on pwshpy whose name is computed at run time."""
-        return _is_getattr(call) and self.resolve(call.args[0]) is not None and _literal_text(call.args[1]) is None
+    return _literal_text(call.args[position]) is None
 
 
 def _protocol_members(tree: ast.AST) -> set[str]:
@@ -650,10 +571,15 @@ def test_each_module_reaching_pwshpy_names_only_the_members_allowed_to_it() -> N
     assert set(reaching) == set(ALLOWED_PWSHPY_MEMBERS), (
         f"a module reaches pwshpy with no allow-list: {sorted(reaching)}"
     )
+    assert set(ORDINARY_NAMES) == set(ALLOWED_PWSHPY_MEMBERS), "every module reaching pwshpy has its ordinary names"
     for module, source in reaching.items():
-        named, allowed = _pwshpy_members_named(source), ALLOWED_PWSHPY_MEMBERS[module]
+        spelled, ordinary = _pwshpy_members_named(source), ORDINARY_NAMES[module]
+        named, allowed = spelled - ordinary, ALLOWED_PWSHPY_MEMBERS[module]
         assert named <= allowed, f"{module} names pwshpy members outside its allow-list: {sorted(named - allowed)}"
         assert named >= allowed, f"{module} no longer names, or the scan cannot see: {sorted(allowed - named)}"
+        assert spelled >= ordinary, (
+            f"{module} no longer spells, so nothing needs exempting: {sorted(ordinary - spelled)}"
+        )
 
 
 @pytest.mark.parametrize(
@@ -661,7 +587,7 @@ def test_each_module_reaching_pwshpy_names_only_the_members_allowed_to_it() -> N
     [
         pytest.param("pwshpy.ps.exec(['x'])\n", "exec", id="off-the-handle"),
         pytest.param("pwshpy = load()\npwshpy.invoke_web_request('u')\n", "invoke_web_request", id="loaded-handle"),
-        pytest.param("shell = pwshpy.ps\nshell.start_process('x')\n", "start_process", id="aliased-member"),
+        pytest.param("shell = pwshpy.ps\nshell.stop_process('x')\n", "stop_process", id="aliased-member"),
         pytest.param("from pwshpy import ps\nps.exec('x')\n", "exec", id="imported-member"),
         pytest.param("import pwshpy as p\np.ps.exec('x')\n", "exec", id="aliased-import"),
         pytest.param('import importlib\nimportlib.import_module("pwshpy").ps.exec("x")\n', "exec", id="dynamic-import"),
@@ -695,6 +621,18 @@ def test_each_module_reaching_pwshpy_names_only_the_members_allowed_to_it() -> N
         ),
         pytest.param('getattr(pwshpy, "ps").exec("x")\n', "exec", id="off-a-getattr-result"),
         pytest.param("getattr(pwshpy.ps, name)('x')\n", COMPUTED_MEMBER, id="getattr-with-a-computed-name"),
+        pytest.param("if (s := pwshpy.ps):\n    s.exec('x')\n", "exec", id="walrus"),
+        pytest.param("a, b = pwshpy.ps, 1\na.exec('x')\n", "exec", id="tuple-unpack"),
+        pytest.param("with pwshpy.ps as s:\n    s.exec('x')\n", "exec", id="with-as"),
+        pytest.param("def f(s=pwshpy.ps):\n    s.exec('x')\n", "exec", id="default-parameter"),
+        pytest.param("def f(s):\n    s.exec('x')\nf(pwshpy.ps)\n", "exec", id="passed-as-an-argument"),
+        pytest.param("for s in (pwshpy.ps,):\n    s.exec('x')\n", "exec", id="for-loop"),
+        pytest.param("operator.attrgetter('exec')(pwshpy.ps)('x')\n", "exec", id="attrgetter"),
+        pytest.param("vars(pwshpy.ps)['exec']('x')\n", "exec", id="vars-subscript"),
+        pytest.param("(lambda s: s.exec('x'))(pwshpy.ps)\n", "exec", id="lambda-parameter"),
+        pytest.param("h = [pwshpy.ps]\nh[0].exec('x')\n", "exec", id="list-element"),
+        pytest.param("class C:\n    s = pwshpy.ps\nC.s.exec('x')\n", "exec", id="class-attribute"),
+        pytest.param("builtins.getattr(pwshpy.ps, 'exec')('x')\n", "exec", id="builtins-getattr"),
     ],
 )
 def test_the_allow_list_refuses_a_planted_member_whichever_way_it_is_reached(source: str, forbidden: str) -> None:
@@ -703,11 +641,34 @@ def test_the_allow_list_refuses_a_planted_member_whichever_way_it_is_reached(sou
         assert forbidden in _pwshpy_members_named(source) - allowed
 
 
-def test_the_member_scan_ignores_an_attribute_read_off_anything_else() -> None:
-    """The false-positive control: ``self.exec`` or ``os.path`` is not a pwshpy member, and must not refuse a module."""
-    unrelated = "self.exec()\nos.path.join('a')\nclass Plain:\n    def exec(self) -> None: ...\n"
+def test_the_member_scan_ignores_a_name_pwshpy_does_not_carry() -> None:
+    """The false-positive control: only a name in pwshpy's own namespace is a member.
 
+    ``os.path.join`` and ``self.frobnicate`` are names pwshpy has no member by, a
+    method a plain class defines is a definition rather than a use, a docstring
+    is a sentence rather than a name, and ``annotations`` - which pwshpy's
+    namespace does carry - is imported here from ``__future__``, not from pwshpy.
+    """
+    unrelated = (
+        '"""Runs exec through nothing."""\n'
+        "from __future__ import annotations\n"
+        "os.path.join('a')\n"
+        "self.frobnicate()\n"
+        "class Plain:\n    def exec(self) -> None: ...\n"
+    )
+
+    assert "annotations" in _pwshpy_member_names(), "the premise: pwshpy's namespace carries the name"
     assert _pwshpy_members_named(unrelated) == set()
+
+
+def test_the_member_scan_reads_a_pwshpy_name_off_anything_as_a_member() -> None:
+    """The closed world's cost, stated: ``self.exec`` reads as ``exec`` whatever ``self`` is.
+
+    Which object a name is read off is what the scan no longer asks, because that
+    is the question every binding route outran. A module that uses such a name for
+    its own thing says so in :data:`ORDINARY_NAMES`.
+    """
+    assert _pwshpy_members_named("self.exec()\n") == {"exec"}
 
 
 # The kernel log is the one plausible SECOND source for the AHCI port bitmap,
