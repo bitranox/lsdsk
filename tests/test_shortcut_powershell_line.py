@@ -51,6 +51,8 @@ _ARGVS: list[tuple[str, ...]] = [
     ("prog", *("a" + chr(quote) + "b" for quote in (0x2018, 0x2019, 0x201A, 0x201B, 0x201C, 0x201D, 0x201E))),
     # A carriage return alone, and a tab with no space beside a trailing backslash.
     ("prog", "a\rb", "tab\there\\"),
+    # A leading closing bracket: pwsh 7.6 splits "]b" into "]" and "b" and refuses "]@" as a parse error.
+    ("prog", "]b", "]@", "]]", "]x.y"),
 ]
 
 #: Words PowerShell's parser reads as one string and the native call then changes, measured on pwsh 7.6

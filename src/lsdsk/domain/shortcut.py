@@ -215,13 +215,15 @@ def _reads_the_same_in_powershell(argument: str) -> bool:
     backtick, so the C runtime's escapes do not apply there: a quoted argument
     ending in a backslash, whose backslashes the cmd form doubles, would arrive
     with the doubled run. A word starting ``@`` (splatting) or ``#`` (a comment)
-    means something of its own, a leading ``~`` is replaced by the home folder,
+    means something of its own, a leading ``]`` ends a word of its own (pwsh 7.6
+    reads ``]b`` as ``]`` and ``b``, and ``]@`` as a parse error), a leading
+    ``~`` is replaced by the home folder,
     and a dash word that is more than letters and the like is split or joined.
     Any character outside printable ASCII is left to a literal string too: the
     whitespace PowerShell splits a word at includes the no-break and the CJK
     spaces, which nothing else in this module would think to quote.
     """
-    if not argument or argument.startswith(("@", "#", "~")):
+    if not argument or argument.startswith(("@", "#", "~", "]")):
         return False
     if argument.startswith("-") and _PLAIN_DASH_WORD.fullmatch(argument) is None:
         return False
