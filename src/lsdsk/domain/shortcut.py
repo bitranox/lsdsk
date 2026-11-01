@@ -135,12 +135,16 @@ _BACKSLASHES_BEFORE_A_QUOTE: Final = re.compile(r'(\\*)"')
 #: Backslashes ending an argument that gets quoted: doubled, or they would escape the closing quote.
 _TRAILING_BACKSLASHES: Final = re.compile(r"(\\*)\Z")
 
+#: What makes an argument need double quotes: the C runtime splits at a blank, and outside quotes
+#: cmd ends the command at ``&`` or ``|``, redirects at ``<`` or ``>``, and drops a caret.
+_QUOTED_FOR_WINDOWS: Final = frozenset(" \t&|<>^")
+
 
 def _windows_argument(argument: str) -> str:
-    """One argument quoted as the MS C runtime and ``CommandLineToArgvW`` read it back."""
+    """One argument quoted as the MS C runtime and ``CommandLineToArgvW`` read it back, and cmd too."""
     # Lambdas, not template strings: re would read the replacement's backslashes as escapes.
     escaped = _BACKSLASHES_BEFORE_A_QUOTE.sub(lambda run: run.group(1) * 2 + '\\"', argument)
-    if argument and " " not in argument and "\t" not in argument:
+    if argument and _QUOTED_FOR_WINDOWS.isdisjoint(argument):
         return escaped
     return '"' + _TRAILING_BACKSLASHES.sub(lambda run: run.group(1) * 2, escaped) + '"'
 
@@ -148,13 +152,21 @@ def _windows_argument(argument: str) -> str:
 def command_line(argv: Sequence[str], *, platform: str) -> str:
     """The launch as one line a reader of ``platform`` can recognise or paste.
 
-    Windows reads a command line by the C runtime's rules (CreateProcess, cmd),
-    which know no single quotes, so the shell form printed a line that does not
-    run there. The rules are those of ``subprocess.list2cmdline``, written out
-    because this module starts nothing. PowerShell does NOT read this form as a
-    command when its program is quoted: a quoted string followed by arguments is
-    a parse error there, which is what :func:`powershell_line` is for. Every
-    other platform gets the shell form.
+    On Windows this is the line CreateProcess hands the program, read back by
+    the C runtime's rules, which know no single quotes, so the shell form
+    printed a line that does not run there. The rules are those of
+    ``subprocess.list2cmdline``, written out because this module starts
+    nothing, with one addition: an argument holding one of cmd's operators
+    (``& | < > ^``) is double-quoted too, which the C runtime reads the same and
+    which keeps cmd from acting on it, so the line also runs pasted into cmd.
+    Two things cmd still does to it, neither of which a Windows path or the
+    launch's fixed arguments can carry, so no quoting is spent on them: it
+    expands ``%NAME%`` for any variable that is set, inside double quotes as
+    well, and an argument holding a double quote beside an operator ends the
+    quoting cmd sees early. PowerShell does NOT read this form as a command when
+    its program is quoted: a quoted string followed by arguments is a parse
+    error there, which is what :func:`powershell_line` is for. Every other
+    platform gets the shell form.
 
     Args:
         argv: The command, executable first.
