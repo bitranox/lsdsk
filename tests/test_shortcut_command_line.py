@@ -71,7 +71,6 @@ _CMD_OPERATORS = [
 ]
 
 
-@pytest.mark.os_agnostic
 def test_an_argument_holding_a_cmd_operator_is_double_quoted() -> None:
     """Outside quotes cmd ends the command at ``&`` and ``|``, redirects at ``<``/``>`` and drops a caret."""
     assert command_line(("prog", "a&b", "a^b", "plain"), platform="win32") == 'prog "a&b" "a^b" plain'

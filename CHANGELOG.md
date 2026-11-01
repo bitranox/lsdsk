@@ -57,6 +57,18 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
   terminal's, instead of at 120 columns whatever the window: in a narrow window the attribute
   tables no longer keep columns the printed view gives up, and in a wide one nothing is cut that
   fits.
+- When the shortcut offer creates a shortcut without its icon because the icon could not be
+  copied, it now says so on stderr and names the error; it said only "Shortcut created".
+- A refused write (the shortcut, its menu copy, a snapshot, the counter history) now names the
+  file asked for, the same on every run; it named a random `.<name>.<random>.tmp` beside it.
+- When `curl` is missing, the uv installer's error now names `lsdsk-uv-installer` rather than
+  putting the download URL where the failing program goes.
+- On Windows, an argument of the `It launches:` line holding `& | < > ^` is now double-quoted, so
+  the line also runs pasted into cmd; 1.16.2's note that it is how cmd reads it was wrong for
+  those. The line is the CreateProcess form; cmd still expands `%NAME%` in it.
+- On Windows, the `In PowerShell:` line now hands the program exactly the arguments it shows:
+  non-ASCII spaces, a leading `~`, single-dash words and a bare `--` are written as quoted
+  literals, where PowerShell split, expanded or refused them.
 
 ## [1.16.4] - 2026-10-30
 

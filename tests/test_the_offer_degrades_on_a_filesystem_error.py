@@ -182,7 +182,6 @@ def test_an_unwritable_icon_degrades_the_offer_to_an_iconless_shortcut() -> None
     assert shortcuts.created[1] is None, "an unwritable icon should degrade to iconless, not abort"
 
 
-@pytest.mark.os_agnostic
 def test_an_iconless_offer_says_why_the_icon_is_missing(capsys: pytest.CaptureFixture[str]) -> None:
     """The degraded shortcut is still reported, and the failed icon copy is named on stderr.
 
