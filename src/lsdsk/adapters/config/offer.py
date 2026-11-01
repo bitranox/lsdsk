@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import tomllib
 from collections.abc import MutableMapping
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import tomlkit
@@ -45,7 +46,7 @@ from lsdsk.adapters.atomicfile import replace_atomically
 from lsdsk.adapters.config.tunables import DISPLAY_SECTION
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Mapping
 
 #: The key the offer writes, the same name the model and the shipped file carry.
 _OFFER_KEY = "offer_desktop_shortcut"
@@ -55,6 +56,19 @@ _USER_CONFIG_NAME = "config.toml"
 
 #: A user file may hold secrets in other keys, so it is owner-only like the store.
 _USER_FILE_MODE = 0o600
+
+#: The variables each platform's user directory can be built from, in the
+#: library's own order of preference. A relative directory is refused, and the
+#: refusal names whichever of these it came from: telling a Windows reader to
+#: set an XDG variable names one Windows never reads.
+_BASE_VARIABLES: dict[str, tuple[str, ...]] = {
+    "win": ("APPDATA", "LOCALAPPDATA", "USERPROFILE"),
+    "darwin": ("HOME",),
+    "linux": ("XDG_CONFIG_HOME", "HOME"),
+}
+
+#: The one variable whose absence is itself a remedy: the XDG spec then falls back to ``~/.config``.
+_UNSETTABLE_BASE = "XDG_CONFIG_HOME"
 
 
 class NoUserConfigPathError(OSError):
@@ -105,9 +119,36 @@ def user_config_path(*, platform: str | None = None) -> Path:
     if not destination.is_absolute():
         raise NoUserConfigPathError(
             f"the user configuration directory {destination.parent} is not an absolute path; "
-            "set XDG_CONFIG_HOME to an absolute path or unset it"
+            f"{_relative_base_remedy(destination, platform=resolver.platform, env=resolver.env)}"
         )
     return destination
+
+
+def _relative_base_remedy(destination: Path, *, platform: str, env: Mapping[str, str]) -> str:
+    """What to set so a relative user directory becomes absolute, naming the variable it came from.
+
+    Args:
+        destination: The refused, relative user ``config.toml``.
+        platform: The resolver's platform, which decides the candidate variables.
+        env: The environment the resolver read.
+
+    Returns:
+        The remedy clause of the refusal.
+
+    Example:
+        >>> _relative_base_remedy(Path("rel/lsdsk/config.toml"), platform="darwin", env={"HOME": "rel"})
+        'set HOME to an absolute path'
+    """
+    if platform.startswith("win"):
+        candidates = _BASE_VARIABLES["win"]
+    else:
+        candidates = _BASE_VARIABLES.get(platform, _BASE_VARIABLES["linux"])
+    for name in candidates:
+        value = env.get(name, "")
+        if value and not Path(value).is_absolute() and destination.is_relative_to(Path(value)):
+            suffix = " or unset it" if name == _UNSETTABLE_BASE else ""
+            return f"set {name} to an absolute path{suffix}"
+    return f"set {' or '.join(candidates)} to an absolute path"
 
 
 def _deployment_for(resolver: DefaultPathResolver) -> DeploymentStrategy | None:

@@ -189,6 +189,70 @@ def test_a_relative_xdg_config_home_is_named_as_the_directory_it_makes_and_refus
     assert "could not write" not in message
 
 
+@pytest.mark.parametrize(
+    ("appdata", "localappdata", "named"),
+    [
+        pytest.param("rel-roaming", None, "APPDATA", id="APPDATA exists and is relative"),
+        pytest.param(None, "rel-local", "LOCALAPPDATA", id="APPDATA missing, LOCALAPPDATA relative"),
+        pytest.param("rel-missing", "rel-local", "LOCALAPPDATA", id="both relative, APPDATA missing"),
+    ],
+)
+def test_a_windows_refusal_names_the_variable_the_relative_directory_came_from(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    appdata: str | None,
+    localappdata: str | None,
+    named: str,
+) -> None:
+    """A Windows reader is told which of its own variables to fix, not an XDG variable Windows never reads.
+
+    The library takes ``%APPDATA%`` when that directory exists and
+    ``%LOCALAPPDATA%`` otherwise, so the variable to name is the one the
+    refused directory was built from.
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "rel-roaming").mkdir()
+    monkeypatch.setenv("APPDATA", appdata if appdata is not None else str(tmp_path / "no-such-roaming"))
+    monkeypatch.setenv("LOCALAPPDATA", localappdata if localappdata is not None else str(tmp_path / "local"))
+
+    with pytest.raises(NoUserConfigPathError) as refused:
+        user_config_path(platform="win32")
+
+    message = str(refused.value)
+    assert f"set {named} to an absolute path" in message
+    assert "XDG" not in message
+
+
+@pytest.mark.os_posix
+def test_a_macos_refusal_names_home_as_the_variable_to_fix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """On macOS the user directory hangs off ``$HOME``, so that is the variable the reader is told to fix."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", "rel-home")
+
+    with pytest.raises(NoUserConfigPathError) as refused:
+        user_config_path(platform="darwin")
+
+    message = str(refused.value)
+    assert "set HOME to an absolute path" in message
+    assert "XDG" not in message
+
+
+@pytest.mark.os_linux
+def test_a_linux_refusal_names_the_config_home_variable_and_offers_to_unset_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    linux_config_home_set_to: Callable[[str], str],
+) -> None:
+    """A relative config home is named, and unsetting it is offered, since the spec then falls back to ``~/.config``."""
+    monkeypatch.chdir(tmp_path)
+    variable = linux_config_home_set_to("relative/config")
+
+    with pytest.raises(NoUserConfigPathError) as refused:
+        user_config_path(platform="linux")
+
+    assert f"set {variable} to an absolute path or unset it" in str(refused.value)
+
+
 @pytest.mark.os_linux
 def test_the_offer_warns_rather_than_aborting_when_no_user_config_path_can_be_named(
     tmp_path: Path,
