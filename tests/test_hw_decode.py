@@ -313,9 +313,9 @@ def test_the_cached_database_refuses_a_write_from_any_caller() -> None:
     pciids.reset_database_cache()
     try:
         cached = pciids._load_database()  # pyright: ignore[reportPrivateUsage] - the shared cache is the subject
-        with pytest.raises(TypeError):
+        with pytest.raises(TypeError, match="'mappingproxy' object does not support item assignment"):
             cached.vendors[0x1000] = "renamed"  # pyright: ignore[reportIndexIssue] - the refused write is the subject
-        with pytest.raises(TypeError):
+        with pytest.raises(TypeError, match="'mappingproxy' object does not support item assignment"):
             cached.devices[(0x1000, 0x0097)] = "renamed"  # pyright: ignore[reportIndexIssue] - the refused write is the subject
         assert pciids.lookup_vendor(0x1000) != "renamed"
     finally:
