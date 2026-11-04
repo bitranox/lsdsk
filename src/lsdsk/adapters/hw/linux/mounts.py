@@ -90,6 +90,10 @@ _KERNEL_PATH_ENCODING = "utf-8"
 # The kernel writes a space, tab, newline or backslash in a mount path as a
 # three-digit octal escape, so "/boot efi" arrives as "/boot\040efi".
 _OCTAL_ESCAPE = re.compile(r"\\([0-7]{3})")
+
+# What separates the columns of /proc/swaps: spaces and tabs only. str.split()
+# would also break on CR, VT and FF, which the kernel leaves unescaped in a path.
+_SWAP_FIELD_GAP = re.compile(r"[ \t]+")
 # The udev properties this tool reads. The database also holds serials and
 # paths; keeping only these keeps a capture's new fields free of identifiers.
 _SIGNATURE_KEYS = {"ID_FS_TYPE": "fs_type", "ID_FS_LABEL": "fs_label"}
@@ -577,7 +581,7 @@ def read_swaps(
 
     rows: list[dict[str, str]] = []
     for line in text.split("\n")[1:]:
-        fields = [field for field in re.split(r"[ \t]+", line) if field]
+        fields = [field for field in _SWAP_FIELD_GAP.split(line) if field]
         if not fields:
             continue
         # The kernel escapes space, tab, newline and backslash the same way in
