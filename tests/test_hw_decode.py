@@ -301,6 +301,28 @@ def test_a_machine_with_no_system_pci_ids_still_names_its_controllers(
 
 
 @pytest.mark.os_agnostic
+def test_the_cached_database_refuses_a_write_from_any_caller() -> None:
+    """The loaded tables are cached for the whole run, so every caller shares one copy.
+
+    A caller that wrote into them would rename devices for every later lookup in
+    the run, silently. So the cached tables are read-only views: a write raises
+    instead of reaching the next caller.
+    """
+    from lsdsk.adapters.hw.decode import pciids
+
+    pciids.reset_database_cache()
+    try:
+        cached = pciids._load_database()  # pyright: ignore[reportPrivateUsage] - the shared cache is the subject
+        with pytest.raises(TypeError):
+            cached.vendors[0x1000] = "renamed"  # pyright: ignore[reportIndexIssue] - the refused write is the subject
+        with pytest.raises(TypeError):
+            cached.devices[(0x1000, 0x0097)] = "renamed"  # pyright: ignore[reportIndexIssue] - the refused write is the subject
+        assert pciids.lookup_vendor(0x1000) != "renamed"
+    finally:
+        pciids.reset_database_cache()
+
+
+@pytest.mark.os_agnostic
 def test_the_bundled_database_is_where_the_package_says_it_is() -> None:
     """A data file that resolves from the checkout can still be missing from the wheel.
 

@@ -28,6 +28,7 @@ from __future__ import annotations
 import gzip
 from functools import lru_cache
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, NamedTuple
 
 from ...textfile import MAX_INPUT_BYTES, read_text_bounded
@@ -215,29 +216,34 @@ def reset_database_cache() -> None:
 
 @lru_cache(maxsize=1)
 def _load_database() -> Database:
-    """Load and cache the PCI identifier database."""
+    """Load and cache the PCI identifier database.
+
+    The tables are read-only views because the cache hands every caller in the
+    run the same object: a write by one caller would rename devices for all the
+    lookups after it.
+    """
     text = _database_text()
     if text is None:
-        return Database(dict(FALLBACK_VENDORS), {})
-    vendors, devices = parse_pci_ids(text)
-    for identifier, name in FALLBACK_VENDORS.items():
-        vendors.setdefault(identifier, name)
-    return Database(vendors, devices)
+        return Database(MappingProxyType(dict(FALLBACK_VENDORS)), MappingProxyType({}))
+    parsed = parse_pci_ids(text)
+    # The database's own names win; the fallback only fills the vendors it lacks.
+    vendors = {**FALLBACK_VENDORS, **parsed.vendors}
+    return Database(MappingProxyType(vendors), MappingProxyType(parsed.devices))
 
 
 class Database(NamedTuple):
     """The pci.ids tables: vendors by id, devices by (vendor, device).
 
-    Both are dicts, so returned as a bare pair a swap type-checks and then every
-    lookup silently misses, leaving every device unnamed rather than failing.
+    Both are mappings, so returned as a bare pair a swap type-checks and then
+    every lookup silently misses, leaving every device unnamed rather than failing.
 
     Attributes:
         vendors: Vendor id to name.
         devices: (vendor id, device id) to name.
     """
 
-    vendors: dict[int, str]
-    devices: dict[tuple[int, int], str]
+    vendors: Mapping[int, str]
+    devices: Mapping[tuple[int, int], str]
 
 
 def lookup_vendor(vendor: int, database: Database | None = None) -> str | None:
