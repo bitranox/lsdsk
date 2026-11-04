@@ -152,6 +152,13 @@ def device_text(value: str) -> str:
         >>> device_text("  Samsung SSD 860 EVO  ")
         'Samsung SSD 860 EVO'
     """
+    # Almost every value is plain ASCII, and walking it one Python call per
+    # character was the largest cost of a test run. The shortcut is exact: below
+    # 0x80 the unsafe set is the C0 controls and DEL, which is precisely what
+    # isprintable() refuses, and no Cf, Zl, Zp or default-ignorable code point is
+    # ASCII. tests/test_text_cut_and_strip.py holds the two paths together.
+    if value.isascii() and value.isprintable():
+        return value.strip()
     return "".join(character for character in value if not _is_unsafe(character)).strip()
 
 

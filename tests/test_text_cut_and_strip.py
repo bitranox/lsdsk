@@ -46,6 +46,32 @@ def test_every_format_and_separator_character_is_stripped() -> None:
     assert survivors == []
 
 
+#: A safe letter outside ASCII. Appended to a value it sends `device_text` down
+#: the per-character path, because the shortcut is taken only for pure ASCII.
+_FORCES_THE_CHARACTER_WALK = chr(0x00E9)
+
+
+def test_the_ascii_shortcut_strips_exactly_what_the_character_walk_strips() -> None:
+    """For every ASCII character, the shortcut and the character walk agree.
+
+    The shortcut trusts ``isprintable()`` to name the unsafe ASCII characters,
+    which holds only while the unsafe set's ASCII part is the C0 controls and
+    DEL. A character added to that set later is stripped by the walk alone, so
+    this comparison fails naming it rather than letting the shortcut keep it.
+    """
+    disagreeing = [
+        f"U+{code:04X}"
+        for code in range(0x80)
+        if device_text(f"a{chr(code)}b")
+        != device_text(f"a{chr(code)}b{_FORCES_THE_CHARACTER_WALK}").removesuffix(_FORCES_THE_CHARACTER_WALK)
+    ]
+
+    assert device_text(f"a\x1bb{_FORCES_THE_CHARACTER_WALK}") == f"ab{_FORCES_THE_CHARACTER_WALK}", (
+        "the appended letter no longer reaches the character walk, so the comparison proves nothing"
+    )
+    assert disagreeing == []
+
+
 def test_the_bound_on_one_piece_of_device_text_is_4096_characters() -> None:
     bounded = TypeAdapter(BoundedDeviceText)
 
