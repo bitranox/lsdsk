@@ -72,6 +72,13 @@ _HYPERVISOR_MARKERS: dict[str, str] = {
     "apple virtualization": "Apple Virtualization",
 }
 
+# Each marker as a whole word: a letter on either side makes it part of another
+# word ("Xenon" is not Xen), while digits and punctuation do not ("VMware7,1").
+# Compiled once here, in the markers' own order, which decides the first match.
+_HYPERVISOR_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(rf"(?<![a-z]){re.escape(marker)}(?![a-z])"), name) for marker, name in _HYPERVISOR_MARKERS.items()
+)
+
 
 # Filesystems that indicate a container, but only where they are mounted.
 _CONTAINER_FILESYSTEMS: dict[str, str] = {"fuse.lxcfs": "lxc", "lxcfs": "lxc"}
@@ -216,8 +223,8 @@ def _match_hypervisor(haystack: str) -> str | None:
     ``VMware7,1`` is still VMware.
     """
     lowered = haystack.lower()
-    for key, name in _HYPERVISOR_MARKERS.items():
-        if re.search(rf"(?<![a-z]){re.escape(key)}(?![a-z])", lowered):
+    for pattern, name in _HYPERVISOR_PATTERNS:
+        if pattern.search(lowered):
             return name
     return None
 
