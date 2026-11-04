@@ -67,9 +67,9 @@ _DEFAULT_IGNORABLE = (
 )
 
 #: Every code point stripped by number rather than by category, as one set.
-#: Every string a domain model holds is cleaned one character at a time, so the
-#: test has to be one lookup: walking the ranges above for each ordinary letter
-#: made a diagnosis seven times slower. About 4,200 entries.
+#: A string that is not plain printable ASCII is cleaned one character at a time,
+#: so the test has to be one lookup: walking the ranges above for each ordinary
+#: letter made a diagnosis seven times slower. About 4,200 entries.
 _UNSAFE_CODES = _UNSAFE | frozenset(code for low, high in _DEFAULT_IGNORABLE for code in range(low, high + 1))
 
 #: Line and paragraph separators: a terminal may break the line on them, which

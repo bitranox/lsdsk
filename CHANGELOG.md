@@ -5,6 +5,21 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.16.7] - 2026-11-04
+
+### Changed
+
+- Text a device reports (a model, serial, firmware or controller name) is cleaned of control and
+  format characters faster: plain printable ASCII, which almost all of it is, now skips the
+  character-by-character check. What is stripped is unchanged, and a test keeps the shortcut
+  agreeing with the full check on every ASCII character.
+- The PCI name tables, read once per run and shared by every lookup, are read-only: a write to
+  them raises instead of renaming a device for the rest of the run. Nothing wrote to them.
+- The hypervisor markers and the `/proc/swaps` field splitter are compiled once instead of on
+  every call.
+- Development dependency floors raised (pytest 9.2.0, hypothesis 6.170.12, ruff 0.17.3,
+  hatchling 1.33.0, virtualenv 21.15.1).
+
 ## [1.16.6] - 2026-11-01
 
 ### Security
