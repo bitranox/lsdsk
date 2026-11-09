@@ -947,6 +947,28 @@ def test_mixed_firmware_is_reported_once_per_model() -> None:
 
 
 @pytest.mark.os_agnostic
+def test_mixed_firmware_advice_leaves_the_verdict_to_the_vendor() -> None:
+    """Verify the advice never claims that one revision fits every drive of a model.
+
+    The rule compares only what the drives report and knows no vendor's release
+    list, so two hardware batches sold under one model name can each be current.
+    """
+    machine = Inventory(
+        hostname="h",
+        disks=(
+            Disk(node="nvme0n1", path="/dev/nvme0n1", model="Model A", firmware="1.0"),
+            Disk(node="nvme1n1", path="/dev/nvme1n1", model="Model A", firmware="2.0"),
+        ),
+    )
+
+    action = diagnose_firmware_consistency(machine)[0].action
+
+    assert action is not None
+    assert "vendor" in action
+    assert "level them up" not in action.lower()
+
+
+@pytest.mark.os_agnostic
 def test_interface_demand_uses_the_pcie_link_for_nvme() -> None:
     """Verify an NVMe drive's demand comes from its PCIe link, not a serial rate."""
     nvme = Disk(

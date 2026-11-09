@@ -5,6 +5,13 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Changed
+
+- The hint for one model running different firmware revisions no longer says "Level them up". lsdsk
+  compares only what the drives report and knows no vendor's release list, and hardware batches of
+  one model can need different revisions, so it now says to check each drive in the vendor's tool
+  and update only where that offers newer firmware. The skill gives the same advice.
+
 ## [1.16.7] - 2026-11-04
 
 ### Changed

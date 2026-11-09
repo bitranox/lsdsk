@@ -1325,7 +1325,11 @@ def diagnose_firmware_consistency(
                 subject=model,
                 title=f"{model} runs {len(revisions)} different firmware revisions",
                 detail=f"Revisions in use: {spread}.",
-                action="Level them up. Mixed firmware in one pool makes performance and bugs hard to attribute.",
+                action=(
+                    "Check each drive in the vendor's tool and update only where it offers newer firmware: "
+                    "batches of one model can need different revisions. "
+                    "Mixed revisions in one pool make performance and bugs hard to attribute."
+                ),
             )
         )
     return findings
