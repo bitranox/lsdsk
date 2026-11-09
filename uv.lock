@@ -1109,7 +1109,7 @@ wheels = [
 
 [[package]]
 name = "lsdsk"
-version = "1.16.7"
+version = "1.16.8"
 source = { editable = "." }
 dependencies = [
     { name = "click" },

@@ -5,12 +5,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.16.8] - 2026-11-09
+
 ### Changed
 
 - The hint for one model running different firmware revisions no longer says "Level them up". lsdsk
   compares only what the drives report and knows no vendor's release list, and hardware batches of
   one model can need different revisions, so it now says to check each drive in the vendor's tool
   and update only where that offers newer firmware. The skill gives the same advice.
+- Dependency floors raised: pydantic 2.14.2, pydantic-core 2.50.2 and pwshpy 1.12.0, and for
+  development pytest-asyncio 1.4.1.post1, hypothesis 6.170.14, python-multipart 0.0.33,
+  virtualenv 21.15.2 and filelock 4.2.6.
 
 ## [1.16.7] - 2026-11-04
 
