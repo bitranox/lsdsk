@@ -66,7 +66,8 @@ def display_config(
     # lib_layered_config 5.7.0 that credits every key it is handed to the
     # override layer, which named "override" as the source of every value.
     safe = with_provenance_kept(config, redact_secrets(config.as_dict()))
-    lib_format = LibOutputFormat(output_format.value)
+    # Coerced first: an untyped caller passing the plain value "json" gets JSON, not an AttributeError.
+    lib_format = LibOutputFormat(OutputFormat(output_format).value)
     _lib_display(safe, output_format=lib_format, section=section, profile=profile, console=console)
 
 
