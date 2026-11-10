@@ -92,7 +92,7 @@ dev = [
   "urllib3>=2.8.0",              # CVE-2025-66471, CVE-2025-66418
   "virtualenv>=21.15.2",        # CVE-2025-22702
   "certifi>=2026.10.23",         # GHSA-6q48-6c7w-9gw2, via requests (pip-audit, twine)
-  "filelock>=4.2.6",             # CVE-2026-112906, CVE-2026-112940, CVE-2026-112914, via virtualenv
+  "filelock>=4.2.7",             # CVE-2026-112906, CVE-2026-112940, CVE-2026-112914, via virtualenv
 ]
 
 [project.scripts]
