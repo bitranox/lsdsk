@@ -9,7 +9,7 @@ dependencies = [
     "lib_cli_exit_tools>=2.4.1",
     "lib_log_rich>=8.1.2",
     "lib_layered_config>=7.7.0",
-    "pydantic>=2.14.2",
+    "pydantic>=2.14.3",
     "orjson>=3.13.0",
     "rich>=15.0.0",
     "textual>=8.2.8",
@@ -20,7 +20,7 @@ dependencies = [
     # a PermissionError, so install-shortcut exits 13 for it (1.9.0 added run-as-Administrator).
     "pwshpy>=1.12.0",
     "click>=8.5.0", # Imported directly (adapters/cli/main.py, exit_codes.py), not only through rich-click.
-    "pydantic-core>=2.50.2", # Imported directly (validation.py, cli/envelope.py, history/store.py); pydantic pins its version.
+    "pydantic-core>=2.50.4", # Imported directly (validation.py, cli/envelope.py, history/store.py); pydantic pins its version.
     "python-dotenv>=1.2.4", # adapters/logging/setup.py reads the LOG_* lines of a .env itself.
     "tomlkit>=0.15.2", # adapters/config/offer.py round-trips the user config.toml to flip one key, comments intact.
 ]

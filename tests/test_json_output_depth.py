@@ -2,7 +2,8 @@
 
 pydantic-core writes every JSON envelope, and it stops at a nesting depth that
 depends on the platform: measured with pydantic-core 2.46.5, 98 levels on Windows
-and 254 on Linux, failing with "Circular reference detected (depth exceeded)".
+and 254 on Linux, failing with "Circular reference detected (depth exceeded)"
+(pydantic-core 2.50.4 words the same refusal "Maximum serialization depth exceeded").
 lib_layered_config accepts a configuration nested 100 levels, and so did a
 ``--set``, so on Windows ``config --format json`` ended with exit 1 and a
 traceback-free crash on a configuration both had accepted, while every Linux and
@@ -17,9 +18,10 @@ from typing import TYPE_CHECKING, Any, cast
 import pydantic_core
 import pytest
 import rtoml
+from pydantic import BaseModel, model_serializer
 
 from lsdsk.adapters.cli import cli
-from lsdsk.adapters.cli.envelope import MappingResult, PayloadTooDeepError, emit_action
+from lsdsk.adapters.cli.envelope import ActionResult, MappingResult, PayloadTooDeepError, emit_action
 from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.config.loader import get_config
 from lsdsk.adapters.config.overrides import MAX_OVERRIDE_DEPTH
@@ -119,6 +121,51 @@ def test_a_payload_too_deep_to_write_is_refused_by_name_and_writes_nothing(capsy
         emit_action(ActionCommand.CONFIG, payload)
 
     assert capsys.readouterr().out == "", "a refused envelope still wrote part of itself"
+
+
+def _result_whose_serializer_says(message: str) -> ActionResult:
+    """A payload whose serialization fails with `message`, the way pydantic-core's depth guard does.
+
+    pydantic-core raises its depth refusal as a ValueError from inside the
+    serializer and wraps it in a PydanticSerializationError, which is what a
+    ValueError raised by a model serializer goes through too. So each phrasing
+    can be put through the real :func:`emit_action` whichever pydantic-core is
+    installed, rather than only the one this machine's version happens to print.
+    """
+
+    class Refusing(BaseModel):
+        @model_serializer(mode="plain")
+        def _refuse(self) -> object:
+            raise ValueError(message)
+
+    class Carrying(ActionResult):
+        part: Refusing
+
+    return Carrying(part=Refusing())
+
+
+@pytest.mark.os_agnostic
+@pytest.mark.parametrize(
+    "message",
+    [
+        pytest.param("Circular reference detected (depth exceeded)", id="pydantic-core-2.50.2-depth"),
+        pytest.param("Circular reference detected (id repeated)", id="pydantic-core-2.50.2-id"),
+        pytest.param("Maximum serialization depth exceeded", id="pydantic-core-2.50.4"),
+    ],
+)
+def test_every_phrasing_of_the_depth_guard_is_refused_by_name(message: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """pydantic-core 2.50.4 renamed its depth refusal, and the old name still ships with older floors."""
+    with pytest.raises(PayloadTooDeepError, match="nests deeper"):
+        emit_action(ActionCommand.CONFIG, _result_whose_serializer_says(message))
+
+    assert capsys.readouterr().out == "", "a refused envelope still wrote part of itself"
+
+
+@pytest.mark.os_agnostic
+def test_a_serialization_failure_that_is_not_about_depth_is_not_relabelled_as_one() -> None:
+    """The control: only the depth guard becomes the named refusal, any other failure stays itself."""
+    with pytest.raises(pydantic_core.PydanticSerializationError, match="some other failure"):
+        emit_action(ActionCommand.CONFIG, _result_whose_serializer_says("some other failure"))
 
 
 @pytest.mark.os_agnostic

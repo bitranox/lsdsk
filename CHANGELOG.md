@@ -8,6 +8,15 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 ### Fixed
 
 - `display_config` takes its `output_format` as the plain value too (`"json"`), as an untyped caller passes it, instead of failing with `AttributeError: 'str' object has no attribute 'value'`.
+- A JSON result nested too deep to write is refused by name again under pydantic-core 2.50.4.
+  That release renamed its depth refusal from "Circular reference detected" to "Maximum
+  serialization depth exceeded", so on Windows, where the JSON writer stops at 98 levels,
+  `config --format json` on a configuration nested that deep failed with pydantic's own
+  serialization error instead of the refusal. Both wordings are recognised now.
+
+### Changed
+
+- Dependency floors raised: pydantic 2.14.3 and pydantic-core 2.50.4.
 
 ## [1.16.8] - 2026-11-09
 

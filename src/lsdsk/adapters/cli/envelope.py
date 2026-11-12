@@ -164,13 +164,18 @@ class ActionEnvelope(BaseModel):
     skipped: list[WireText] = []
 
 
-#: The start of every message pydantic-core's recursion guard raises.
+#: How pydantic-core's recursion guard words its refusal, old phrasing and new.
 #:
-#: It ends "(depth exceeded)" or "(id repeated)" depending on which check
-#: tripped, and both were measured on a merely deep tree: Windows reports the
-#: first past 98 levels, Linux the second past 254. A payload here is parsed from
-#: a file or a command line, so it is a tree and the guard can only mean depth.
-_RECURSION_GUARD = "Circular reference detected"
+#: The exception carries no code and no cause, so its text is the only thing that
+#: tells the guard apart from any other serialization failure. Up to 2.50.2 it reads
+#: "Circular reference detected" ending "(depth exceeded)" or "(id repeated)"
+#: depending on which check tripped, and both were measured on a merely deep tree:
+#: Windows reports the first past 98 levels, Linux the second past 254. From 2.50.4
+#: the same refusal reads "Maximum serialization depth exceeded". A payload here is
+#: parsed from a file or a command line, so it is a tree and the guard can only mean
+#: depth. Both phrasings are kept so the refusal does not depend on which one the
+#: installed pydantic-core uses; the tests put each through emit_action.
+_RECURSION_GUARDS = ("Circular reference detected", "Maximum serialization depth exceeded")
 
 
 def emit_action(command: ActionCommand, data: ActionResult, skipped: list[str] | None = None) -> None:
@@ -195,7 +200,8 @@ def emit_action(command: ActionCommand, data: ActionResult, skipped: list[str] |
     try:
         dumped = envelope.model_dump_json(indent=2, by_alias=True)
     except PydanticSerializationError as exc:
-        if _RECURSION_GUARD not in str(exc):
+        said = str(exc)
+        if not any(guard in said for guard in _RECURSION_GUARDS):
             raise
         message = "the result nests deeper than this platform's JSON writer can carry"
         raise PayloadTooDeepError(message) from exc
