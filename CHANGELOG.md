@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.16.9] - 2026-11-12
+
 ### Fixed
 
 - `display_config` takes its `output_format` as the plain value too (`"json"`), as an untyped caller passes it, instead of failing with `AttributeError: 'str' object has no attribute 'value'`.
