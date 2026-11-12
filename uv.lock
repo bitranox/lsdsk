@@ -1058,7 +1058,7 @@ wheels = [
 
 [[package]]
 name = "lib-log-rich"
-version = "8.2.0"
+version = "8.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lib-cli-exit-tools" },
@@ -1068,9 +1068,9 @@ dependencies = [
     { name = "rich" },
     { name = "rich-click" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/71/0f/e333dffc14cd61ea11dc5998ebf474fab33b4afa4f513fd526a493679814/lib_log_rich-8.2.0.tar.gz", hash = "sha256:6e2bedc8033c73d554e5332467da5cec50118dd225a95d351b627656a7387539", size = 423415, upload-time = "2026-11-12T11:24:23.968Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/20/7065b9d732ad74721d7bb0b113cda1dac49d4c494a0ac5854c80d860e780/lib_log_rich-8.2.1.tar.gz", hash = "sha256:fa91472af8f2890098a51a508f6c10f60caa1eb3e7fe502851f1aaf52a869b3c", size = 424993, upload-time = "2026-11-12T13:05:34.82Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bf/71/70e34febeaa3aebdc314348b4e101a1d8dbc2c8aa2b1d9145c3ea3faf8c8/lib_log_rich-8.2.0-py3-none-any.whl", hash = "sha256:148f7d50b4bfff06410dd30176b4ef578282af5077fe8f504ab6fb5a426015cf", size = 245522, upload-time = "2026-11-12T11:24:21.885Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/3f/a559b1ca92a3c7bcef00367fcfba9e27a0a9a29e97ba16aae72aa428becd/lib_log_rich-8.2.1-py3-none-any.whl", hash = "sha256:37beba7ebcc7d89d4dc00eb9c6b3b838dc9d7f510edcf2bdf7d304ad985b5bb6", size = 246200, upload-time = "2026-11-12T13:05:33.095Z" },
 ]
 
 [[package]]
