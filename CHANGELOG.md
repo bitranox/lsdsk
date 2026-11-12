@@ -16,7 +16,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
-- Dependency floors raised: pydantic 2.14.3 and pydantic-core 2.50.4.
+- Dependency floors raised: pydantic 2.14.3, pydantic-core 2.50.4 and lib_log_rich 8.2.0, and for
+  development virtualenv 21.15.5 and filelock 4.2.9.
 
 ## [1.16.8] - 2026-11-09
 
