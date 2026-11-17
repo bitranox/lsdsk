@@ -5,6 +5,17 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+### Fixed
+
+- lsdsk behaves the same on lib_layered_config 8.0.0 as on 7.7.0. 8.0.0 refuses a relative `HOME`,
+  `APPDATA` or `LOCALAPPDATA` while it builds the user configuration path. lsdsk now turns that
+  refusal into its own "not an absolute path" message, naming every variable to fix, instead of
+  showing the library's error. A relative `XDG_CONFIG_HOME` is still refused, though 8.0.0 would
+  ignore it. 8.0.0 also raises a validation error when the target directory of
+  `config-generate-examples` cannot be created; lsdsk reports it with exit code 74, as on 7.7.0. 8.0.0 gives
+  other Unix platforms (FreeBSD, Solaris) the Linux layout, and the user configuration path follows
+  it there.
+
 ## [1.16.9] - 2026-11-12
 
 ### Fixed

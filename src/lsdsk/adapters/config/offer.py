@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import tomlkit
-from lib_layered_config import Layer
+from lib_layered_config import Layer, ValidationError
 
 # The resolver and the deploy strategies are the code ``config-deploy`` and the
 # loader run themselves, reached directly because the public
@@ -43,6 +43,7 @@ from lib_layered_config.examples.deploy import (
 
 from lsdsk import __init__conf__
 from lsdsk.adapters.atomicfile import replace_atomically
+from lsdsk.adapters.config.reader_strategy import reader_strategy
 from lsdsk.adapters.config.tunables import DISPLAY_SECTION
 
 if TYPE_CHECKING:
@@ -115,40 +116,108 @@ def user_config_path(*, platform: str | None = None) -> Path:
     deployment = _deployment_for(resolver)
     if deployment is None:
         raise NoUserConfigPathError(f"lsdsk reads no user configuration on {resolver.platform}")
-    destination = deployment.destination_for(Layer.USER)
+    remedy = _relative_base_remedy(platform=resolver.platform, env=resolver.env)
+    _refuse_a_relative_config_home(resolver, remedy=remedy)
+    try:
+        destination = deployment.destination_for(Layer.USER)
+    except ValidationError as refused:
+        # lib_layered_config 8.0.0 refuses a relative base directory itself, with
+        # LayerRootNotAbsoluteError (a ValidationError); 7.7.0 returned the relative
+        # path, which the check below refuses. Both reach the same refusal, this
+        # one naming the base the directory would be under, since there is no path.
+        base = _relative_base(platform=resolver.platform, env=resolver.env)
+        where = f" under {base}" if base else ""
+        raise NoUserConfigPathError(
+            f"the user configuration directory{where} is not an absolute path; {remedy}"
+        ) from refused
     if not destination.is_absolute():
         raise NoUserConfigPathError(
-            f"the user configuration directory {destination.parent} is not an absolute path; "
-            f"{_relative_base_remedy(destination, platform=resolver.platform, env=resolver.env)}"
+            f"the user configuration directory {destination.parent} is not an absolute path; {remedy}"
         )
     return destination
 
 
-def _relative_base_remedy(destination: Path, *, platform: str, env: Mapping[str, str]) -> str:
-    """What to set so a relative user directory becomes absolute, naming the variable it came from.
+def _refuse_a_relative_config_home(resolver: DefaultPathResolver, *, remedy: str) -> None:
+    """Refuse a relative ``XDG_CONFIG_HOME`` on a Linux-layout platform, whichever library version reads it.
+
+    lsdsk refuses a relative XDG directory everywhere it meets one (the shortcut
+    adapter does the same), because it names a different folder wherever lsdsk is
+    started. lib_layered_config 7.7.0 builds a relative user directory from it,
+    which the absolute check in :func:`user_config_path` refuses; 8.0.0 ignores it
+    and reads ``~/.config``, as the XDG specification says. Checked here first, so
+    the same environment gets the same refusal on both.
 
     Args:
-        destination: The refused, relative user ``config.toml``.
+        resolver: The path resolver for the platform being answered for.
+        remedy: The remedy clause, naming the variables to fix.
+
+    Raises:
+        NoUserConfigPathError: ``XDG_CONFIG_HOME`` is set to a relative path.
+    """
+    if resolver.platform.startswith("win") or resolver.platform == "darwin":
+        return
+    configured = resolver.env.get(_UNSETTABLE_BASE, "")
+    if configured and not Path(configured).is_absolute():
+        directory = Path(configured) / __init__conf__.LAYEREDCONF_SLUG
+        raise NoUserConfigPathError(f"the user configuration directory {directory} is not an absolute path; {remedy}")
+
+
+def _candidates(platform: str) -> tuple[str, ...]:
+    """The variables ``platform``'s user directory can be built from, in the library's order."""
+    if platform.startswith("win"):
+        return _BASE_VARIABLES["win"]
+    return _BASE_VARIABLES.get(platform, _BASE_VARIABLES["linux"])
+
+
+def _relative_variables(*, platform: str, env: Mapping[str, str]) -> list[str]:
+    """Each candidate variable that is set to a relative path, in the library's order."""
+    return [name for name in _candidates(platform) if env.get(name, "") and not Path(env[name]).is_absolute()]
+
+
+def _relative_base(*, platform: str, env: Mapping[str, str]) -> str:
+    """The value of the first candidate variable set to a relative path, or ``""`` when none is.
+
+    Example:
+        >>> _relative_base(platform="win32", env={"APPDATA": "rel", "LOCALAPPDATA": "C:/x"})
+        'rel'
+    """
+    relative = _relative_variables(platform=platform, env=env)
+    return env[relative[0]] if relative else ""
+
+
+def _relative_base_remedy(*, platform: str, env: Mapping[str, str]) -> str:
+    """What to set so the user directory becomes absolute, naming each variable that is relative.
+
+    Every candidate the platform builds its user directory from is named when it
+    is set to a relative path, not only the one the directory came from: from
+    lib_layered_config 8.0.0 on, a relative ``APPDATA`` is refused even when the
+    directory comes from ``LOCALAPPDATA``, so fixing one of two relative
+    variables could leave the next run refused on the other.
+
+    Args:
         platform: The resolver's platform, which decides the candidate variables.
         env: The environment the resolver read.
 
     Returns:
         The remedy clause of the refusal.
 
-    Example:
-        >>> _relative_base_remedy(Path("rel/lsdsk/config.toml"), platform="darwin", env={"HOME": "rel"})
+    Examples:
+        >>> _relative_base_remedy(platform="darwin", env={"HOME": "rel"})
         'set HOME to an absolute path'
+        >>> _relative_base_remedy(platform="linux", env={"XDG_CONFIG_HOME": "rel", "HOME": "/home/u"})
+        'set XDG_CONFIG_HOME to an absolute path or unset it'
+        >>> _relative_base_remedy(platform="win32", env={"APPDATA": "a", "LOCALAPPDATA": "b"})
+        'set APPDATA and LOCALAPPDATA to absolute paths'
     """
-    if platform.startswith("win"):
-        candidates = _BASE_VARIABLES["win"]
-    else:
-        candidates = _BASE_VARIABLES.get(platform, _BASE_VARIABLES["linux"])
-    for name in candidates:
-        value = env.get(name, "")
-        if value and not Path(value).is_absolute() and destination.is_relative_to(Path(value)):
-            suffix = " or unset it" if name == _UNSETTABLE_BASE else ""
-            return f"set {name} to an absolute path{suffix}"
-    return f"set {' or '.join(candidates)} to an absolute path"
+    candidates = _candidates(platform)
+    relative = _relative_variables(platform=platform, env=env)
+    if not relative:
+        return f"set {' or '.join(candidates)} to an absolute path"
+    if len(relative) == 1:
+        suffix = " or unset it" if relative[0] == _UNSETTABLE_BASE else ""
+        return f"set {relative[0]} to an absolute path{suffix}"
+    suffix = f" ({_UNSETTABLE_BASE} may be unset instead)" if _UNSETTABLE_BASE in relative else ""
+    return f"set {' and '.join(relative)} to absolute paths{suffix}"
 
 
 def _deployment_for(resolver: DefaultPathResolver) -> DeploymentStrategy | None:
@@ -157,7 +226,7 @@ def _deployment_for(resolver: DefaultPathResolver) -> DeploymentStrategy | None:
     Keyed on the resolver's own read strategy, so a platform the loader reads no
     user file on gets no path to write one to either.
     """
-    if resolver.strategy is None:
+    if reader_strategy(resolver) is None:
         return None
     if resolver.platform.startswith("win"):
         return WindowsDeployment(resolver)

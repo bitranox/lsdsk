@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, cast
 from lib_layered_config.adapters.path_resolvers.default import DefaultPathResolver
 
 from lsdsk import __init__conf__
+from lsdsk.adapters.config.reader_strategy import reader_strategy
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -83,7 +84,7 @@ def _profile_root() -> Path | None:
         ``.env`` location to derive one from. The warning then goes out without
         a suggestion rather than with a guessed one.
     """
-    strategy = _resolver(None).strategy
+    strategy = reader_strategy(_resolver(None))
     dotenv = None if strategy is None else strategy.dotenv_path()
     return None if dotenv is None else dotenv.parent / PROFILE_SEGMENT
 

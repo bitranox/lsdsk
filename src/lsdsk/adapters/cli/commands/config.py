@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import lib_log_rich.runtime
 import rich_click as click
-from lib_layered_config import Config, ConfigError, DeployModeError, redact_mapping
+from lib_layered_config import Config, ConfigError, DeployModeError, ValidationError, redact_mapping
 
 # Below the top-level exports because the library exports the parser only inside
 # DeployMode.from_text, which also judges safety - the deploy's job, not the option's.
@@ -786,7 +786,12 @@ def cli_config_generate_examples(
         # catch here would turn a bug in lsdsk into the same one-line message a
         # full disk produces, with the traceback discarded even under
         # --traceback. See the matching note in _execute_deploy.
-        except OSError as exc:
+        # The library's own refusal of a destination it cannot write keeps the
+        # code a failed write leaves: lib_layered_config 8.0.0 raises
+        # GenerateDestinationError (a ValidationError) for a destination whose
+        # nearest existing ancestor is a file, where 7.7.0 raised
+        # NotADirectoryError, so the same input exits 74 on both.
+        except (OSError, ValidationError) as exc:
             logger.error("Failed to generate examples", extra={"error": str(exc)})
             _fail_after_output(str(exc), ExitCode.IO_ERROR, output_format=output_format)
         # What the writer refused before writing: a directory where a file belongs.

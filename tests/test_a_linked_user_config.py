@@ -23,10 +23,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from lib_layered_config.adapters.path_resolvers.default import DefaultPathResolver
 
+from lsdsk import __init__conf__
 from lsdsk.adapters.cli.commands.shortcut import ShortcutSeams, install_shortcut, offer_shortcut
 from lsdsk.adapters.cli.exit_codes import ExitCode
 from lsdsk.adapters.config.offer import NoUserConfigPathError, disable_offer, user_config_path
+from lsdsk.adapters.config.reader_strategy import reader_strategy
 from lsdsk.adapters.config.tunables import DisplaySettings
 from lsdsk.adapters.uv_bootstrap import UvInstallResult
 from lsdsk.domain.enums import OutputFormat, ShortcutChoice
@@ -131,13 +134,31 @@ def test_the_user_config_path_is_the_one_the_loader_reads(user_config_dir: Path)
     assert user_config_path() == user_config_dir / "config.toml"
 
 
-def test_a_platform_with_no_user_layer_names_no_user_config_path() -> None:
-    """The library reads no user layer there, so a write would land somewhere nothing reads."""
-    with pytest.raises(NoUserConfigPathError) as refused:
-        user_config_path(platform="sunos5")
+def _reader_has_a_layout_for(platform: str) -> bool:
+    """Whether the installed configuration library reads a user layer on ``platform``."""
+    resolver = DefaultPathResolver(
+        vendor=__init__conf__.LAYEREDCONF_VENDOR,
+        app=__init__conf__.LAYEREDCONF_APP,
+        slug=__init__conf__.LAYEREDCONF_SLUG,
+        platform=platform,
+    )
+    return reader_strategy(resolver) is not None
 
-    assert isinstance(refused.value, OSError)
-    assert "sunos5" in str(refused.value)
+
+def test_the_user_config_path_on_another_unix_follows_the_reader() -> None:
+    """A user file is named exactly where the library reads one, so a write never lands somewhere nothing reads.
+
+    lib_layered_config 7.7.0 has no layout for Solaris and reads no user layer
+    there, so none is named; from 8.0.0 it reads the Linux layout there, and the
+    file is the one Linux would name. Both versions satisfy lsdsk's floor.
+    """
+    if not _reader_has_a_layout_for("sunos5"):
+        with pytest.raises(NoUserConfigPathError) as refused:
+            user_config_path(platform="sunos5")
+        assert isinstance(refused.value, OSError)
+        assert "sunos5" in str(refused.value)
+        return
+    assert user_config_path(platform="sunos5") == user_config_path(platform="linux")
 
 
 @pytest.mark.os_linux
@@ -190,11 +211,18 @@ def test_a_relative_xdg_config_home_is_named_as_the_directory_it_makes_and_refus
 
 
 @pytest.mark.parametrize(
-    ("appdata", "localappdata", "named"),
+    ("appdata", "localappdata", "remedy"),
     [
-        pytest.param("rel-roaming", None, "APPDATA", id="APPDATA exists and is relative"),
-        pytest.param(None, "rel-local", "LOCALAPPDATA", id="APPDATA missing, LOCALAPPDATA relative"),
-        pytest.param("rel-missing", "rel-local", "LOCALAPPDATA", id="both relative, APPDATA missing"),
+        pytest.param("rel-roaming", None, "set APPDATA to an absolute path", id="APPDATA exists and is relative"),
+        pytest.param(
+            None, "rel-local", "set LOCALAPPDATA to an absolute path", id="APPDATA missing, LOCALAPPDATA relative"
+        ),
+        pytest.param(
+            "rel-missing",
+            "rel-local",
+            "set APPDATA and LOCALAPPDATA to absolute paths",
+            id="both relative, APPDATA missing",
+        ),
     ],
 )
 def test_a_windows_refusal_names_the_variable_the_relative_directory_came_from(
@@ -202,13 +230,14 @@ def test_a_windows_refusal_names_the_variable_the_relative_directory_came_from(
     monkeypatch: pytest.MonkeyPatch,
     appdata: str | None,
     localappdata: str | None,
-    named: str,
+    remedy: str,
 ) -> None:
     """A Windows reader is told which of its own variables to fix, not an XDG variable Windows never reads.
 
-    The library takes ``%APPDATA%`` when that directory exists and
-    ``%LOCALAPPDATA%`` otherwise, so the variable to name is the one the
-    refused directory was built from.
+    Every relative one is named: lib_layered_config 7.7.0 takes ``%APPDATA%``
+    when that directory exists and ``%LOCALAPPDATA%`` otherwise, and 8.0.0
+    refuses a relative ``%APPDATA%`` even when it does not exist, so with both
+    relative, fixing only one leaves the other to be refused next.
     """
     monkeypatch.chdir(tmp_path)
     (tmp_path / "rel-roaming").mkdir()
@@ -219,7 +248,7 @@ def test_a_windows_refusal_names_the_variable_the_relative_directory_came_from(
         user_config_path(platform="win32")
 
     message = str(refused.value)
-    assert f"set {named} to an absolute path" in message
+    assert remedy in message
     assert "XDG" not in message
 
 

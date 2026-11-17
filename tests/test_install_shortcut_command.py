@@ -390,7 +390,10 @@ def test_an_icon_folder_windows_cannot_name_is_refused_before_uv_is_installed(
     assert recording.created is None
     assert leaving.value.code == ExitCode.CONFIG_ERROR
     message = json.loads(capsys.readouterr().out)["error"]["message"]
-    assert message.startswith("the shortcut was not written: the user configuration directory rel")
+    # lib_layered_config 7.7.0 names the relative directory itself (rel/...); 8.0.0
+    # refuses before building one, and the refusal names the base it would be under.
+    assert message.startswith("the shortcut was not written: the user configuration directory ")
+    assert "rel" in message.removeprefix("the shortcut was not written: the user configuration directory ")
 
 
 @pytest.mark.os_linux
