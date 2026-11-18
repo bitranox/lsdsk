@@ -5,6 +5,8 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
 
+## [1.16.10] - 2026-11-18
+
 ### Changed
 
 - `lib_layered_config>=9.0.0`: the user configuration path comes from
