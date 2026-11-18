@@ -204,7 +204,7 @@ def _relative_base_remedy(*, platform: str, env: Mapping[str, str]) -> str:
     Examples:
         >>> _relative_base_remedy(platform="darwin", env={"HOME": "rel"})
         'set HOME to an absolute path'
-        >>> _relative_base_remedy(platform="linux", env={"XDG_CONFIG_HOME": "rel", "HOME": "/home/u"})
+        >>> _relative_base_remedy(platform="linux", env={"XDG_CONFIG_HOME": "rel"})
         'set XDG_CONFIG_HOME to an absolute path or unset it'
         >>> _relative_base_remedy(platform="win32", env={"APPDATA": "a", "LOCALAPPDATA": "b"})
         'set APPDATA and LOCALAPPDATA to absolute paths'
