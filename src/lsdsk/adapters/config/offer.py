@@ -28,18 +28,12 @@ from typing import TYPE_CHECKING, Any, cast
 import tomlkit
 from lib_layered_config import Layer, ValidationError
 
-# The resolver and the deploy strategies are the code ``config-deploy`` and the
-# loader run themselves, reached directly because the public
-# ``deploy_config_paths`` answers with RESOLVED paths: through a symlinked
-# ``config.toml`` those carry the link target's name, so the user file cannot
-# be picked out of them by name (``profiles.py`` reaches the resolver the same way).
+# The resolver is the code ``config-deploy`` and the loader run themselves, reached
+# directly because the public ``deploy_config_paths`` answers with RESOLVED paths:
+# through a symlinked ``config.toml`` those carry the link target's name, so the
+# user file cannot be picked out of them by name (``profiles.py`` reaches the
+# resolver the same way).
 from lib_layered_config.adapters.path_resolvers.default import DefaultPathResolver
-from lib_layered_config.deploy import (
-    DeploymentStrategy,
-    LinuxDeployment,
-    MacDeployment,
-    WindowsDeployment,
-)
 
 from lsdsk import __init__conf__
 from lsdsk.adapters.atomicfile import replace_atomically
@@ -113,13 +107,13 @@ def user_config_path(*, platform: str | None = None) -> Path:
         profile=None,
         platform=platform,
     )
-    deployment = _deployment_for(resolver)
-    if deployment is None:
+    # A platform the loader reads no user file on gets no path to write one to either.
+    if reader_strategy(resolver) is None:
         raise NoUserConfigPathError(f"lsdsk reads no user configuration on {resolver.platform}")
     remedy = _relative_base_remedy(platform=resolver.platform, env=resolver.env)
     _refuse_a_relative_config_home(resolver, remedy=remedy)
     try:
-        destination = deployment.destination_for(Layer.USER)
+        destination = resolver.destination_for(Layer.USER)
     except ValidationError as refused:
         # lib_layered_config 8.0.0 refuses a relative base directory itself, with
         # LayerRootNotAbsoluteError (a ValidationError); 7.7.0 returned the relative
@@ -218,21 +212,6 @@ def _relative_base_remedy(*, platform: str, env: Mapping[str, str]) -> str:
         return f"set {relative[0]} to an absolute path{suffix}"
     suffix = f" ({_UNSETTABLE_BASE} may be unset instead)" if _UNSETTABLE_BASE in relative else ""
     return f"set {' and '.join(relative)} to absolute paths{suffix}"
-
-
-def _deployment_for(resolver: DefaultPathResolver) -> DeploymentStrategy | None:
-    """The deploy strategy for the resolver's platform, or ``None`` where the loader reads no user layer.
-
-    Keyed on the resolver's own read strategy, so a platform the loader reads no
-    user file on gets no path to write one to either.
-    """
-    if reader_strategy(resolver) is None:
-        return None
-    if resolver.platform.startswith("win"):
-        return WindowsDeployment(resolver)
-    if resolver.platform == "darwin":
-        return MacDeployment(resolver)
-    return LinuxDeployment(resolver)
 
 
 def disable_offer() -> Path:

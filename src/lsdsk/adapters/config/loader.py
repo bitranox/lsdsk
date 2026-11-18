@@ -360,7 +360,7 @@ def unparsable_files(paths: Iterable[Path]) -> tuple[tuple[Path, str], ...]:
         if path.suffix.lower() != ".toml":
             continue
         try:
-            loader.load(str(path))
+            loader.load(path)
         except NotFoundError:
             continue
         except InvalidFormatError as error:
@@ -450,10 +450,10 @@ def _dotenv_snapshot(*, profile: str | None, dotenv_path: str | None) -> LayerSn
         profile=profile,
     )
     loader = DefaultDotEnvLoader(extras=list(resolver.dotenv()) if dotenv_path is None else [])
-    data = loader.load(None, dotenv_path=dotenv_path)
-    if not data:
+    loaded = loader.load(None, dotenv_path=None if dotenv_path is None else Path(dotenv_path))
+    if not loaded.data:
         return None
-    return LayerSnapshot(Layer.DOTENV, data, loader.last_loaded_path)
+    return LayerSnapshot(Layer.DOTENV, loaded.data, loaded.path)
 
 
 def _beneath_the_environment(config: Config, dotenv: LayerSnapshot) -> Config:
@@ -463,14 +463,15 @@ def _beneath_the_environment(config: Config, dotenv: LayerSnapshot) -> Config:
     layers that do not overlap; merging them again with `dotenv` placed before the environment's
     is the library's own precedence, with provenance kept for every key.
     """
-    files: dict[tuple[Layer, str | None], dict[str, object]] = {}
+    files: dict[tuple[Layer, Path | None], dict[str, object]] = {}
     environment: dict[str, object] = {}
     for segments, value in table_leaves(config.as_dict()):
         origin = config.origin(".".join(segments))
         # Provenance names the layer as plain text, while a snapshot's layer is typed Layer, so
         # the text is parsed into its member here, where the files below are grouped by it.
         layer = Layer.DEFAULTS if origin is None else Layer(origin["layer"])
-        path = None if origin is None else origin["path"]
+        # Provenance names the file as text; a snapshot takes it as a Path.
+        path = None if origin is None or origin["path"] is None else Path(origin["path"])
         target = environment if layer == Layer.ENV else files.setdefault((layer, path), {})
         _place(target, segments, value)
     layers = [LayerSnapshot(layer, payload, path) for (layer, path), payload in files.items()]

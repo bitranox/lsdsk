@@ -11,6 +11,7 @@ Contents:
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING, Any, NoReturn
 
 import lib_log_rich.runtime
@@ -20,7 +21,6 @@ from lib_layered_config import Config, ConfigError, DeployModeError, ValidationE
 # Below the top-level exports because the library exports the parser only inside
 # DeployMode.from_text, which also judges safety - the deploy's job, not the option's.
 from lib_layered_config.domain.deploy_mode import parse_mode_text
-from lib_layered_config.domain.permissions import modes_apply
 from rich.console import Console
 
 from lsdsk import __init__conf__
@@ -585,7 +585,8 @@ def _reads_configured_modes(request: DeployRequest) -> bool:
         ``False`` when every configured mode is unused whatever layer gave it.
     """
     explicit = request.dir_mode is not None and request.file_mode is not None
-    return modes_apply() and request.set_permissions is not False and not explicit
+    # A deploy sets modes on POSIX only; Windows keeps its ACLs (lib_layered_config's own rule).
+    return os.name == "posix" and request.set_permissions is not False and not explicit
 
 
 def _modes_the_deploy_ignores(config: Config, request: DeployRequest) -> tuple[ModeTheDeployIgnores, ...]:

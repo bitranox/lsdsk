@@ -7,8 +7,12 @@ the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ### Changed
 
-- `lib_layered_config>=8.1.0`: `DeployAction` (and `DeployResult`) are imported from the package
-  root instead of the `lib_layered_config.examples` shim, which lib_layered_config 9.0.0 removes.
+- `lib_layered_config>=9.0.0`: the user configuration path comes from
+  `DefaultPathResolver.destination_for(Layer.USER)` instead of the per-OS deployment classes 9.0.0
+  removes; the dotenv loader is handed a `Path` and its `DotEnvLoad` record is read; whether a deploy
+  sets file modes follows the library's POSIX-only rule without importing its internal helper.
+  `DeployAction` and `DeployResult` are imported from the package root.
+- `pwshpy>=1.12.2`.
 
 ### Fixed
 
