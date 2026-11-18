@@ -7,13 +7,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from lib_layered_config import (
+    DeployAction,
     DeployModeError,
     DeployPermissionsError,
     deploy_config,
     deploy_config_paths,
     generate_examples,
 )
-from lib_layered_config.examples import DeployAction
 
 from lsdsk import __init__conf__
 from lsdsk.adapters.config.loader import get_default_config_path, table_leaves, validate_profile

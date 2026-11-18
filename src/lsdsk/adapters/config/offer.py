@@ -34,7 +34,7 @@ from lib_layered_config import Layer, ValidationError
 # ``config.toml`` those carry the link target's name, so the user file cannot
 # be picked out of them by name (``profiles.py`` reaches the resolver the same way).
 from lib_layered_config.adapters.path_resolvers.default import DefaultPathResolver
-from lib_layered_config.examples.deploy import (
+from lib_layered_config.deploy import (
     DeploymentStrategy,
     LinuxDeployment,
     MacDeployment,
