@@ -6,8 +6,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "rich-click>=1.9.9",
-    "lib_cli_exit_tools>=2.4.1",
-    "lib_log_rich>=8.2.0",
+    "lib_cli_exit_tools>=2.5.0",
+    "lib_log_rich>=8.2.2",
     "lib_layered_config>=8.1.0",
     "pydantic>=2.14.3",
     "orjson>=3.13.0",
@@ -18,8 +18,8 @@ dependencies = [
     # and adapters/shortcut/windows.py writes the Windows .lnk with ps.new_shortcut.
     # 1.11.0 is the floor: from it a .lnk refused for lack of rights raises NativeAccessDeniedError,
     # a PermissionError, so install-shortcut exits 13 for it (1.9.0 added run-as-Administrator).
-    "pwshpy>=1.12.0",
-    "click>=8.5.0", # Imported directly (adapters/cli/main.py, exit_codes.py), not only through rich-click.
+    "pwshpy>=1.12.1",
+    "click>=8.5.1", # Imported directly (adapters/cli/main.py, exit_codes.py), not only through rich-click.
     "pydantic-core>=2.50.4", # Imported directly (validation.py, cli/envelope.py, history/store.py); pydantic pins its version.
     "python-dotenv>=1.2.4", # adapters/logging/setup.py reads the LOG_* lines of a .env itself.
     "tomlkit>=0.15.2", # adapters/config/offer.py round-trips the user config.toml to flip one key, comments intact.
@@ -61,8 +61,8 @@ dev = [
   "pytest-cov>=7.1.0",
   "pytest-xdist>=3.8.0",
   "pytest-asyncio>=1.4.1.post1",
-  "hypothesis>=6.170.14",
-  "ruff>=0.17.3",
+  "hypothesis>=6.170.15",
+  "ruff>=0.17.4",
   "pyright[nodejs]>=1.1.414",
   "bandit>=1.9.4",
   # 1.5.1 was yanked upstream (unintended breaking changes) and has ZERO candidates, so a floor
@@ -80,19 +80,19 @@ dev = [
   # Re-enable once codecov-cli relaxes its click<8.3.0 pin.
   # "codecov-cli>=11.2.8",
   "pip-audit>=2.10.1",
-  "import-linter>=2.15",
+  "import-linter>=2.16",
   "rtoml>=0.14.0",
   "httpx2>=2.16.0",
   # Transitive CVE pins
-  "click>=8.5.0",                # CVE-2026-7246
+  "click>=8.5.1",                # CVE-2026-7246
   "jaraco-context>=6.1.2",       # CVE-2025-23949
   "python-multipart>=0.0.33",    # CVE-2025-24486
   "wheel>=0.48.0",               # CVE-2025-24049
   "pynacl>=1.6.2",               # CVE-2025-69277
   "urllib3>=2.8.0",              # CVE-2025-66471, CVE-2025-66418
-  "virtualenv>=21.15.5",        # CVE-2025-22702
+  "virtualenv>=21.15.6",        # CVE-2025-22702
   "certifi>=2026.10.23",         # GHSA-6q48-6c7w-9gw2, via requests (pip-audit, twine)
-  "filelock>=4.2.9",             # CVE-2026-112906, CVE-2026-112940, CVE-2026-112914, via virtualenv
+  "filelock>=4.2.10",             # CVE-2026-112906, CVE-2026-112940, CVE-2026-112914, via virtualenv
 ]
 
 [project.scripts]
